@@ -1,0 +1,77 @@
+{
+  "id": "PBN8nErrorDiag1",
+  "name": "n8n Error → LLM Self Diagnosis",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "n8n-error-trigger",
+      "name": "Workflow Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PROJECT_BRAIN_API_URL || 'http://api:8000' }}/jobs/self-diagnosis",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.PROJECT_BRAIN_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ use_llm: true, idempotency_key: 'n8n-error:' + ($json.workflow?.id || 'unknown') + ':' + Math.floor(Date.now() / 300000), trigger_source: 'n8n_error', trigger_summary: (($json.execution?.error?.message || $json.execution?.error || 'n8n workflow failed') + '').slice(0, 1000), trigger_reference: (($json.workflow?.name || 'unknown') + ':' + ($json.execution?.id || $execution.id)).slice(0, 255) }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "enqueue-error-diagnosis",
+      "name": "Enqueue LLM Error Diagnosis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 260]
+    }
+  ],
+  "connections": {
+    "Workflow Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Enqueue LLM Error Diagnosis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 300
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "project-brain"
+    },
+    {
+      "name": "production"
+    },
+    {
+      "name": "error-handler"
+    }
+  ]
+}

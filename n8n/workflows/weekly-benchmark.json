@@ -1,0 +1,317 @@
+{
+  "id": "PBWeeklyBench01",
+  "name": "Weekly Harness Smoke Benchmark",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "schedule-weekly-benchmark",
+      "name": "Monday 06:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 180]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "execute-weekly-benchmark",
+      "name": "Harness Execute Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PROJECT_BRAIN_API_URL || 'http://api:8000' }}/jobs/benchmark",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.PROJECT_BRAIN_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"golden\": \"rules/golden_tasks.yaml\", \"smoke\": true}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "enqueue-smoke-benchmark",
+      "name": "Enqueue Smoke Benchmark",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "amount": 20
+      },
+      "id": "wait-benchmark",
+      "name": "Wait for Benchmark Worker",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.PROJECT_BRAIN_API_URL || 'http://api:8000') + '/jobs/' + ($json.job_id || $json.id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.PROJECT_BRAIN_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "check-benchmark",
+      "name": "Check Benchmark Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "benchmark-completed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "completed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-benchmark-completed",
+      "name": "Benchmark Completed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "benchmark-failed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "failed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-benchmark-failed",
+      "name": "Benchmark Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1280, 420]
+    },
+    {
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "={{ 'Benchmark job failed after retries: ' + ($json.error || $json.id) }}"
+      },
+      "id": "fail-benchmark-workflow",
+      "name": "Fail Benchmark Workflow",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1520, 360]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "benchmark-ok",
+              "name": "completed",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "benchmark-job-id",
+              "name": "job_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "benchmark-recall",
+              "name": "avg_recall",
+              "value": "={{ $json.result?.avg_recall }}",
+              "type": "number"
+            },
+            {
+              "id": "benchmark-precision",
+              "name": "avg_precision",
+              "value": "={{ $json.result?.avg_precision }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "record-benchmark-success",
+      "name": "Record Benchmark Success",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1280, 180]
+    }
+  ],
+  "connections": {
+    "Monday 06:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Enqueue Smoke Benchmark",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Harness Execute Trigger": {
+      "main": [
+        [
+          {
+            "node": "Enqueue Smoke Benchmark",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enqueue Smoke Benchmark": {
+      "main": [
+        [
+          {
+            "node": "Wait for Benchmark Worker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Benchmark Worker": {
+      "main": [
+        [
+          {
+            "node": "Check Benchmark Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Benchmark Job": {
+      "main": [
+        [
+          {
+            "node": "Benchmark Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Benchmark Completed?": {
+      "main": [
+        [
+          {
+            "node": "Record Benchmark Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Benchmark Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Benchmark Failed?": {
+      "main": [
+        [
+          {
+            "node": "Fail Benchmark Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait for Benchmark Worker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 14400
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "project-brain"
+    },
+    {
+      "name": "production"
+    },
+    {
+      "name": "closed-loop"
+    }
+  ]
+}

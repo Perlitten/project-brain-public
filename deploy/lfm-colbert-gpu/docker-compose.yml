@@ -1,0 +1,79 @@
+name: lfm-colbert-gpu
+
+services:
+  service:
+    build:
+      context: ../..
+      dockerfile: deploy/lfm-colbert-gpu/Dockerfile
+    image: project-brain/lfm-colbert-gpu:${LFM_GPU_IMAGE_TAG:-pylate-1.4.0}
+    container_name: lfm-colbert-gpu
+    command:
+      - uvicorn
+      - brain.late_interaction.gpu_service:create_app_from_env
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8090"
+      - --workers
+      - "1"
+      - --no-access-log
+    environment:
+      LATE_INTERACTION_SERVICE_ENV: production
+      LATE_INTERACTION_SERVICE_DATABASE_PATH: /var/lib/lfm/late-interaction.sqlite3
+      LATE_INTERACTION_SERVICE_TOKEN: ${LATE_INTERACTION_SERVICE_TOKEN:?set a strong shared token}
+      LATE_INTERACTION_SERVICE_APPROVED_REPOSITORY_ID: ${LATE_INTERACTION_SERVICE_APPROVED_REPOSITORY_ID:-}
+      LATE_INTERACTION_SERVICE_MINIMUM_INDEX_REVISION: ${LATE_INTERACTION_SERVICE_MINIMUM_INDEX_REVISION:-}
+      LATE_INTERACTION_SERVICE_MINIMUM_DOCUMENT_COUNT: ${LATE_INTERACTION_SERVICE_MINIMUM_DOCUMENT_COUNT:-0}
+      LATE_INTERACTION_SERVICE_MODEL: LiquidAI/LFM2.5-ColBERT-350M
+      LATE_INTERACTION_SERVICE_MODEL_REVISION: 59633c2e31717b3502343ff566bee9fda3261943
+      LATE_INTERACTION_SERVICE_DIMENSION: "128"
+      LATE_INTERACTION_SERVICE_QUERY_MAX_TOKENS: "32"
+      LATE_INTERACTION_SERVICE_DOCUMENT_MAX_TOKENS: "512"
+      LATE_INTERACTION_SERVICE_MAX_CANDIDATES: "500"
+      LATE_INTERACTION_SERVICE_MAX_DOCUMENTS: "64"
+      LATE_INTERACTION_SERVICE_ENCODER_BATCH_SIZE: ${LATE_INTERACTION_SERVICE_ENCODER_BATCH_SIZE:-16}
+      LATE_INTERACTION_SERVICE_SCORE_BATCH_SIZE: ${LATE_INTERACTION_SERVICE_SCORE_BATCH_SIZE:-32}
+      LATE_INTERACTION_SERVICE_MAX_CONCURRENCY: ${LATE_INTERACTION_SERVICE_MAX_CONCURRENCY:-2}
+      LFM_LICENSE_ACKNOWLEDGED: ${LFM_LICENSE_ACKNOWLEDGED:?explicit license acknowledgement required}
+      HF_HOME: /models/huggingface
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    ports:
+      - "${LFM_SERVICE_BIND_ADDRESS:-127.0.0.1}:${LFM_SERVICE_PORT:-8090}:8090"
+    volumes:
+      - lfm_matrix_store:/var/lib/lfm
+      - lfm_model_cache:/models/huggingface
+    gpus: all
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    shm_size: 2gb
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    mem_limit: ${LFM_SERVICE_MEMORY_LIMIT:-8g}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=2)"
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+    labels:
+      io.project-brain.role: late-interaction-precision
+      io.project-brain.cutover: "false"
+      io.project-brain.model: LiquidAI/LFM2.5-ColBERT-350M
+      io.project-brain.model-revision: 59633c2e31717b3502343ff566bee9fda3261943
+
+volumes:
+  lfm_matrix_store:
+    name: lfm_colbert_gpu_matrices
+  lfm_model_cache:
+    name: lfm_colbert_gpu_models

@@ -1,0 +1,126 @@
+[
+  {
+    "id": "holdout_01",
+    "question": "Which component claims a worker lease with a fencing token before running a job?",
+    "expect_files": ["brain/workers/queue.py"],
+    "why": "Lease fencing lives in JobQueue.dequeue; the durable variant is asserted by worker tasks.",
+    "language": "en",
+    "query_class": "exact_identifier",
+    "split": "holdout",
+    "provenance": {"kind": "curated", "source": "launch-readiness eval sweep 2026-10", "production_real": false}
+  },
+  {
+    "id": "holdout_02",
+    "question": "Where are scoped API credentials hashed and verified for principals?",
+    "expect_files": ["brain/auth/principals.py"],
+    "why": "pbk_ credential hashing and scope resolution live in brain/auth/principals.py.",
+    "language": "en",
+    "query_class": "exact_identifier",
+    "split": "holdout",
+    "provenance": {"kind": "curated", "source": "launch-readiness eval sweep 2026-10", "production_real": false}
+  },
+  {
+    "id": "holdout_03",
+    "question": "Which middleware writes audit events for mutating API calls and denied attempts?",
+    "expect_files": ["apps/api/audit_middleware.py", "brain/audit/events.py"],
+    "why": "AuditLogMiddleware records outcomes; brain/audit/events.py is the store.",
+    "language": "en",
+    "query_class": "cross_file",
+    "split": "holdout",
+    "provenance": {"kind": "curated", "source": "launch-readiness eval sweep 2026-10", "production_real": false}
+  },
+  {
+    "id": "holdout_04",
+    "question": "How does the request correlation id reach log records and audit rows?",
+    "expect_files": ["apps/api/request_id_middleware.py", "apps/api/logging_setup.py"],
+    "why": "X-Request-ID enters via middleware and is bound into loguru/log context.",
+    "language": "en",
+    "query_class": "cross_file",
+    "split": "holdout",
+    "provenance": {"kind": "curated", "source": "launch-readiness eval sweep 2026-10", "production_real": false}
+  },
+  {
+    "id": "holdout_05",
+    "question": "Where does the code path enforce an OS-level sandbox before running validation commands?",
+    "expect_files": ["brain/lab/sandbox.py"],
+    "why": "Sandbox backend selection and refusal live in brain/lab/sandbox.py.",
+    "language": "en",
+    "query_class": "conceptual",
+    "split": "holdout",
+    "provenance": {"kind": "curated", "source": "launch-readiness eval sweep 2026-10", "production_real": false}
+  },
+  {
+    "id": "holdout_06",
+    "question": "Where is the truthfulness of a backup artifact verified before a restore is attempted?",
+    "expect_files": ["scripts/backup_runner.py", "scripts/restore_verification_drill.py"],
+    "why": "Backup manifest + checksum verification was made truthful in the backups fix.",
+    "language": "en",
+    "query_class": "conceptual",
+    "split": "holdout",
+    "provenance": {"kind": "curated", "source": "launch-readiness eval sweep 2026-10", "production_real": false}
+  },
+  {
+    "id": "holdout_07",
+    "question": "Какой модуль применяет миграции схемы базы данных при старте?",
+    "expect_files": ["brain/database/migrations.py"],
+    "why": "RU phrasing of 'which module applies schema migrations at startup'.",
+    "language": "ru",
+    "query_class": "ru_to_en",
+    "split": "holdout",
+    "provenance": {"kind": "curated_translation", "source": "launch-readiness eval sweep 2026-10", "production_real": false}
+  },
+  {
+    "id": "holdout_08",
+    "question": "A job is retried after its worker lost the lease — where is the stale worker prevented from committing?",
+    "expect_files": ["brain/workers/tasks.py", "brain/workers/queue.py"],
+    "why": "StaleWorkerFencingError path spans the durable-claim assertion and queue lease checks.",
+    "language": "en",
+    "query_class": "bug",
+    "split": "holdout",
+    "provenance": {"kind": "curated", "source": "launch-readiness eval sweep 2026-10", "production_real": false}
+  },
+  {
+    "id": "holdout_09",
+    "question": "Where does the API reject request bodies larger than the configured byte budget?",
+    "expect_files": ["apps/api/request_size_middleware.py"],
+    "why": "Size enforcement is middleware, not nginx config; the nginx conf is a plausible but wrong surface.",
+    "language": "en",
+    "query_class": "adversarial",
+    "split": "holdout",
+    "trap_files": ["deploy/nginx/brain.conf"],
+    "provenance": {"kind": "curated_synthetic", "source": "launch-readiness eval sweep 2026-10", "production_real": false, "notes": "Distractor: nginx client_max_body_size is the same limit at a different layer."}
+  },
+  {
+    "id": "holdout_10",
+    "question": "Which code decides which Redis prefix and pool a job type is enqueued into?",
+    "expect_files": ["brain/workers/queue.py"],
+    "why": "worker_pool_for_job/worker_pool_prefix route job types; tasks.py only executes them.",
+    "language": "en",
+    "query_class": "adversarial",
+    "split": "holdout",
+    "trap_files": ["brain/workers/tasks.py"],
+    "provenance": {"kind": "curated_synthetic", "source": "launch-readiness eval sweep 2026-10", "production_real": false, "notes": "Distractor: tasks.py names the same job types but does not route them."}
+  },
+  {
+    "id": "holdout_11",
+    "question": "Where does the retrieval pipeline assemble the candidate set before reranking?",
+    "expect_files": ["brain/retrieval/pipeline.py"],
+    "why": "Candidate assembly/rerank ordering is in the pipeline; service.py is the API-facing wrapper.",
+    "language": "en",
+    "query_class": "adversarial",
+    "split": "holdout",
+    "trap_files": ["brain/retrieval/service.py"],
+    "provenance": {"kind": "curated_synthetic", "source": "launch-readiness eval sweep 2026-10", "production_real": false, "notes": "Distractor: service.py orchestrates calls but does not build the candidate set."}
+  },
+  {
+    "id": "holdout_12",
+    "question": "Which store records root incidents so the same failure fingerprint is not re-alerted?",
+    "expect_files": ["brain/operations/incidents.py"],
+    "why": "Incident fingerprinting/dedup is in operations/incidents.py; alerts/telegram.py only delivers.",
+    "language": "en",
+    "query_class": "adversarial",
+    "split": "holdout",
+    "trap_files": ["brain/alerts/telegram.py"],
+    "provenance": {"kind": "curated_synthetic", "source": "launch-readiness eval sweep 2026-10", "production_real": false, "notes": "Distractor: the telegram module names the alert kinds but does not fingerprint incidents."}
+  }
+]

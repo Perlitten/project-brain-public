@@ -1,0 +1,200 @@
+{
+  "schema_version": "2.0",
+  "contract_name": "autonomous_engineering_operator_eval_contract",
+  "frozen_at_utc": "2026-08-08T06:45:00Z",
+  "starting_commit_sha": "498bb92f3922d99d10e5aa376aedfa05bd53b1b6",
+  "model_config": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "temperature": 0.0,
+    "max_tokens": 16000
+  },
+  "forbidden_files": [
+    "eval/autonomous_operator_eval_contract.json",
+    "tests/test_autonomous_operator.py"
+  ],
+  "tasks": [
+    {
+      "id": "task_01_revision_comparator_bug",
+      "origin": "real_defect",
+      "category": "failing_test_bug",
+      "description": "Fix source revision comparator to correctly handle short Git SHAs vs snapshot IDs without raising namespace mismatch errors.",
+      "expected_files": [
+        "brain/memory/source_manifest.py"
+      ],
+      "expected_symbols": [
+        "embedded_source_revision",
+        "revision_matches"
+      ],
+      "test_oracle": "tests/test_autonomic_diagnosis_and_recovery.py::test_source_revision_comparator_never_compares_different_revision_namespaces",
+      "success_gate": "test_passed"
+    },
+    {
+      "id": "task_02_champion_anchored_league",
+      "origin": "real_commit",
+      "category": "cross_file_implementation",
+      "description": "Implement Champion-Anchored League Tournament Engine enforcing SEALED_HOLDOUT_IS_NOT_A_TOURNAMENT_POOL invariant.",
+      "expected_files": [
+        "brain/improvement/tournament/engine.py",
+        "brain/improvement/mutation/lever_registry.py"
+      ],
+      "expected_symbols": [
+        "TournamentRun",
+        "LeverRegistry"
+      ],
+      "test_oracle": "tests/improvement/test_holdout_sealing.py::test_multiple_challengers_can_never_access_sealed_pool_in_league",
+      "success_gate": "test_passed"
+    },
+    {
+      "id": "task_03_reindex_lineage_reconcile",
+      "origin": "real_incident",
+      "category": "reindex_lineage_failure",
+      "description": "Autonomously diagnose and reconcile source manifest lineage mismatch when indexed revision differs from source HEAD.",
+      "expected_files": [
+        "brain/memory/source_manifest.py",
+        "brain/operations/remediation.py"
+      ],
+      "expected_symbols": [
+        "validate_source_manifest",
+        "AutonomicRemediationEngine"
+      ],
+      "test_oracle": "tests/test_autonomic_diagnosis_and_recovery.py::test_incident_state_machine_deduplication",
+      "success_gate": "reconciliation_verified"
+    },
+    {
+      "id": "task_04_stale_vectors_lineage_block",
+      "origin": "real_defect",
+      "category": "stale_vectors",
+      "description": "Enforce lineage rule blocking vector embedding backfill whenever repository source lineage is unverified.",
+      "expected_files": [
+        "brain/operations/remediation.py"
+      ],
+      "expected_symbols": [
+        "AutonomicRemediationEngine",
+        "execute_remediation"
+      ],
+      "test_oracle": "tests/test_autonomic_diagnosis_and_recovery.py::test_embedding_backfill_blocked_by_source_lineage",
+      "success_gate": "test_passed"
+    },
+    {
+      "id": "task_05_job_queue_deadlock_recovery",
+      "origin": "real_incident",
+      "category": "worker_job_failure",
+      "description": "Autonomously recover worker job queues stuck on DDL advisory locks during container startup.",
+      "expected_files": [
+        "brain/database/session.py"
+      ],
+      "expected_symbols": [
+        "_init_db_with_advisory_lock"
+      ],
+      "test_oracle": "tests/test_token_efficiency.py::test_retrieval_flood_incident_deduplication",
+      "success_gate": "lock_recovery_verified"
+    },
+    {
+      "id": "task_06_drift_analyzer_coupling",
+      "origin": "real_commit",
+      "category": "config_drift",
+      "description": "Detect architectural drift such as raw ORM bypasses in API layer or direct worker/UI coupling.",
+      "expected_files": [
+        "brain/insights/drift_trends.py"
+      ],
+      "expected_symbols": [
+        "DriftAnalyzer"
+      ],
+      "test_oracle": "tests/test_drift_analyzer_v3.py::test_drift_analyzer_detects_api_layer_raw_orm_bypass",
+      "success_gate": "test_passed"
+    },
+    {
+      "id": "task_07_advisory_lock_nonblocking_startup",
+      "origin": "real_commit",
+      "category": "compatibility_refactor",
+      "description": "Refactor DDL advisory locking to pg_try_advisory_lock to prevent startup deadlocks on container restart.",
+      "expected_files": [
+        "brain/database/session.py"
+      ],
+      "expected_symbols": [
+        "_init_db_with_advisory_lock"
+      ],
+      "test_oracle": "tests/test_release_identity.py::test_release_identity_consistency",
+      "success_gate": "test_passed"
+    },
+    {
+      "id": "task_08_release_identity_reconciliation",
+      "origin": "real_defect",
+      "category": "release_deployment_verification",
+      "description": "Reconcile release identity, build SHA, content digest, and /api/version endpoint response.",
+      "expected_files": [
+        "brain/release_identity.py",
+        "apps/api/main.py"
+      ],
+      "expected_symbols": [
+        "get_release_identity",
+        "build_info"
+      ],
+      "test_oracle": "tests/test_release_identity.py::test_api_version_endpoint",
+      "success_gate": "test_passed"
+    },
+    {
+      "id": "task_09_single_incident_telegram_guard",
+      "origin": "controlled_fault_injection",
+      "category": "notification_deduplication",
+      "description": "Verify Telegram exception channel emits only 1 notification for ongoing incidents until resolved.",
+      "expected_files": [
+        "brain/operations/incidents.py"
+      ],
+      "expected_symbols": [
+        "IncidentStateMachine",
+        "report_root_incident"
+      ],
+      "test_oracle": "tests/test_autonomic_diagnosis_and_recovery.py::test_autonomic_resolution_triggers_single_resolved_notification",
+      "success_gate": "test_passed"
+    },
+    {
+      "id": "task_10_bounded_lever_registry",
+      "origin": "controlled_fault_injection",
+      "category": "parameter_bounds_enforcement",
+      "description": "Verify LeverRegistry validates min/max bounds and calculates mutation distance for context budgets.",
+      "expected_files": [
+        "brain/improvement/mutation/lever_registry.py"
+      ],
+      "expected_symbols": [
+        "LeverRegistry",
+        "validate_mutation"
+      ],
+      "test_oracle": "tests/improvement/test_lever_registry.py::test_lever_registry_bounds_validation",
+      "success_gate": "test_passed"
+    },
+    {
+      "id": "task_11_retrieval_flood_16k_cap",
+      "origin": "controlled_fault_injection",
+      "category": "retrieval_flood_containment",
+      "description": "Verify retrieval flood self-repair caps input to 16,000 tokens and emits at most 1 incident.",
+      "expected_files": [
+        "brain/llm/observability.py",
+        "brain/operations/remediation.py"
+      ],
+      "expected_symbols": [
+        "audit_and_bound_llm_input",
+        "AutonomicRemediationEngine"
+      ],
+      "test_oracle": "tests/test_token_efficiency.py::test_observability_hard_cap_trimming",
+      "success_gate": "test_passed"
+    },
+    {
+      "id": "task_12_workspace_registry_resolution",
+      "origin": "controlled_fault_injection",
+      "category": "end_to_end_workspace_resolution",
+      "description": "Verify multi-repository workspace registry path normalization and repository lookup.",
+      "expected_files": [
+        "brain/memory/repo_scope.py",
+        "brain/database/repository_utils.py"
+      ],
+      "expected_symbols": [
+        "normalize_repo_scope",
+        "get_repository_by_path"
+      ],
+      "test_oracle": "tests/test_token_efficiency.py::test_context_caching_and_repeat_deduplication",
+      "success_gate": "test_passed"
+    }
+  ]
+}

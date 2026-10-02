@@ -1,0 +1,54 @@
+{
+  "corpus": {
+    "acceptance_eligible": false,
+    "acceptance_ineligible_reasons": [
+      "f001:production_real_required",
+      "f002:production_real_required",
+      "f003:production_real_required",
+      "f004:production_real_required",
+      "f005:production_real_required",
+      "f006:production_real_required",
+      "f007:production_real_required",
+      "f008:production_real_required",
+      "f009:production_real_required",
+      "f010:production_real_required",
+      "f011:production_real_required",
+      "f012:production_real_required",
+      "f013:production_real_required",
+      "f014:production_real_required",
+      "f015:production_real_required",
+      "f016:production_real_required"
+    ],
+    "category_counts": {
+      "cli": 1,
+      "config": 2,
+      "helpers": 5,
+      "request_context": 2,
+      "routing": 5,
+      "sessions": 4,
+      "templating": 1
+    },
+    "fixture_sha256": {},
+    "holdout_excluded": [],
+    "holdout_ids": [
+      "f017",
+      "f018",
+      "f019",
+      "f020"
+    ],
+    "manifest_path": "eval/token_economy_tasks_flask.json",
+    "manifest_sha256": "cf4745de96f93c35b209c4c9ebc20447adf61bb0f0405735ac69051993a3a77a",
+    "repository": {
+      "name": "pallets/flask",
+      "pinned_commit": "22d924701a6ae2e4cd01e9a15bbaf3946094af65",
+      "pinned_ref": "tag 3.1.3"
+    },
+    "seed": 17
+  },
+  "task_issues": {},
+  "tasks": 16,
+  "tasks_with_issues": 0,
+  "totals": {
+    "literal_in_expected_range": 32
+  }
+}

@@ -1,0 +1,531 @@
+{
+  "schema_version": 2,
+  "seed": 17,
+  "kind": "curated",
+  "production_real_claim": false,
+  "provenance_note": "Author-curated unfamiliar-repository corpus (Flask). Ground truth verified against the pinned tree by eval/audit_corpus.py. Curated origin makes this corpus acceptance-ineligible for production benefit claims.",
+  "repository": {
+    "name": "pallets/flask",
+    "pinned_commit": "22d924701a6ae2e4cd01e9a15bbaf3946094af65",
+    "pinned_ref": "tag 3.1.3"
+  },
+  "category_split": {
+    "routing": 5,
+    "sessions": 4,
+    "config": 2,
+    "request_context": 2,
+    "helpers": 5,
+    "templating": 1,
+    "cli": 1
+  },
+  "holdout_ids": [
+    "f017",
+    "f018",
+    "f019",
+    "f020"
+  ],
+  "tasks": [
+    {
+      "id": "f001",
+      "question": "Where does @app.route register the view, and what does it delegate to?",
+      "category": "routing",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/sansio/scaffold.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/sansio/scaffold.py",
+          336,
+          366
+        ]
+      ],
+      "expected_symbols": [
+        "route"
+      ],
+      "required_assertions": [
+        "def route",
+        "add_url_rule"
+      ]
+    },
+    {
+      "id": "f002",
+      "question": "Find add_url_rule: what parameters does it accept and how are automatic OPTIONS handled?",
+      "category": "routing",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/sansio/scaffold.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/sansio/scaffold.py",
+          368,
+          420
+        ]
+      ],
+      "expected_symbols": [
+        "add_url_rule"
+      ],
+      "required_assertions": [
+        "def add_url_rule(",
+        "provide_automatic_options"
+      ]
+    },
+    {
+      "id": "f003",
+      "question": "Where is the errorhandler decorator defined and what types does it accept?",
+      "category": "routing",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/sansio/scaffold.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/sansio/scaffold.py",
+          598,
+          640
+        ]
+      ],
+      "expected_symbols": [
+        "errorhandler"
+      ],
+      "required_assertions": [
+        "def errorhandler(",
+        "code_or_exception"
+      ]
+    },
+    {
+      "id": "f004",
+      "question": "Find before_request: where are the callbacks stored?",
+      "category": "routing",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/sansio/scaffold.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/sansio/scaffold.py",
+          460,
+          485
+        ]
+      ],
+      "expected_symbols": [
+        "before_request"
+      ],
+      "required_assertions": [
+        "def before_request(",
+        "before_request_funcs"
+      ]
+    },
+    {
+      "id": "f005",
+      "question": "How is the session cookie signing key assembled, including key rotation fallbacks?",
+      "category": "sessions",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/sessions.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/sessions.py",
+          303,
+          322
+        ]
+      ],
+      "expected_symbols": [
+        "get_signing_serializer"
+      ],
+      "required_assertions": [
+        "SECRET_KEY_FALLBACKS",
+        "URLSafeTimedSerializer"
+      ]
+    },
+    {
+      "id": "f006",
+      "question": "Trace open_session: what happens on a bad signature or missing cookie?",
+      "category": "sessions",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/sessions.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/sessions.py",
+          323,
+          350
+        ]
+      ],
+      "expected_symbols": [
+        "open_session"
+      ],
+      "required_assertions": [
+        "BadSignature",
+        "session_class(data)"
+      ]
+    },
+    {
+      "id": "f007",
+      "question": "When does should_set_cookie decide to emit Set-Cookie?",
+      "category": "sessions",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/sessions.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/sessions.py",
+          233,
+          247
+        ]
+      ],
+      "expected_symbols": [
+        "should_set_cookie"
+      ],
+      "required_assertions": [
+        "SESSION_REFRESH_EACH_REQUEST",
+        "session.modified"
+      ]
+    },
+    {
+      "id": "f008",
+      "question": "Which config keys control the session cookie name and domain?",
+      "category": "sessions",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/sessions.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/sessions.py",
+          171,
+          186
+        ]
+      ],
+      "expected_symbols": [
+        "get_cookie_name",
+        "get_cookie_domain"
+      ],
+      "required_assertions": [
+        "SESSION_COOKIE_NAME",
+        "SESSION_COOKIE_DOMAIN"
+      ]
+    },
+    {
+      "id": "f009",
+      "question": "How does Config.from_object decide which attributes to load?",
+      "category": "config",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/config.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/config.py",
+          218,
+          255
+        ]
+      ],
+      "expected_symbols": [
+        "from_object"
+      ],
+      "required_assertions": [
+        "def from_object",
+        "uppercase"
+      ]
+    },
+    {
+      "id": "f010",
+      "question": "What does from_mapping filter out and what does it return?",
+      "category": "config",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/config.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/config.py",
+          304,
+          322
+        ]
+      ],
+      "expected_symbols": [
+        "from_mapping"
+      ],
+      "required_assertions": [
+        "non-upper keys",
+        "def from_mapping"
+      ]
+    },
+    {
+      "id": "f011",
+      "question": "How does flask.g store attributes internally?",
+      "category": "request_context",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/ctx.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/ctx.py",
+          52,
+          92
+        ]
+      ],
+      "expected_symbols": [
+        "__setattr__",
+        "pop"
+      ],
+      "required_assertions": [
+        "__dict__[name] = value",
+        "_sentinel"
+      ]
+    },
+    {
+      "id": "f012",
+      "question": "Find has_request_context: what does it check?",
+      "category": "request_context",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/ctx.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/ctx.py",
+          196,
+          205
+        ]
+      ],
+      "expected_symbols": [
+        "has_request_context"
+      ],
+      "required_assertions": [
+        "def has_request_context",
+        "request context"
+      ]
+    },
+    {
+      "id": "f013",
+      "question": "Where is flash defined and what is the default category?",
+      "category": "helpers",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/helpers.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/helpers.py",
+          318,
+          340
+        ]
+      ],
+      "expected_symbols": [
+        "flash"
+      ],
+      "required_assertions": [
+        "def flash",
+        "category: str = \"message\""
+      ]
+    },
+    {
+      "id": "f014",
+      "question": "How does get_flashed_messages encode categories in its return value?",
+      "category": "helpers",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/helpers.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/helpers.py",
+          352,
+          380
+        ]
+      ],
+      "expected_symbols": [
+        "get_flashed_messages"
+      ],
+      "required_assertions": [
+        "with_categories",
+        "(category, message)"
+      ]
+    },
+    {
+      "id": "f015",
+      "question": "Find redirect: what is the default status code?",
+      "category": "helpers",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/helpers.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/helpers.py",
+          249,
+          258
+        ]
+      ],
+      "expected_symbols": [
+        "redirect"
+      ],
+      "required_assertions": [
+        "def redirect(",
+        "code: int = 302"
+      ]
+    },
+    {
+      "id": "f016",
+      "question": "How does send_from_directory relate to send_file?",
+      "category": "helpers",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/helpers.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/helpers.py",
+          533,
+          560
+        ]
+      ],
+      "expected_symbols": [
+        "send_from_directory"
+      ],
+      "required_assertions": [
+        "def send_from_directory(",
+        "send_file"
+      ]
+    },
+    {
+      "id": "f017",
+      "question": "How does render_template resolve the template and who renders it?",
+      "category": "templating",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/templating.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/templating.py",
+          139,
+          152
+        ]
+      ],
+      "expected_symbols": [
+        "render_template"
+      ],
+      "required_assertions": [
+        "get_or_select_template",
+        "_render(app, template, context)"
+      ]
+    },
+    {
+      "id": "f018",
+      "question": "Find DefaultJSONProvider.dumps: which kwargs are injected by default?",
+      "category": "helpers",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/json/provider.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/json/provider.py",
+          166,
+          181
+        ]
+      ],
+      "expected_symbols": [
+        "dumps"
+      ],
+      "required_assertions": [
+        "ensure_ascii",
+        "sort_keys"
+      ]
+    },
+    {
+      "id": "f019",
+      "question": "How does with_appcontext wrap a click callback?",
+      "category": "cli",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/cli.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/cli.py",
+          380,
+          404
+        ]
+      ],
+      "expected_symbols": [
+        "with_appcontext"
+      ],
+      "required_assertions": [
+        "def with_appcontext",
+        "click.pass_context"
+      ]
+    },
+    {
+      "id": "f020",
+      "question": "Where does Blueprint.send_static_file serve from, and when is its route registered?",
+      "category": "routing",
+      "kind": "curated",
+      "production_real": false,
+      "original_provenance": "curated",
+      "expected_files": [
+        "src/flask/blueprints.py"
+      ],
+      "expected_ranges": [
+        [
+          "src/flask/blueprints.py",
+          82,
+          100
+        ]
+      ],
+      "expected_symbols": [
+        "send_static_file"
+      ],
+      "required_assertions": [
+        "send_static_file",
+        "static_folder"
+      ]
+    }
+  ]
+}

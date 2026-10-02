@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://project-brain.local/schemas/runtime-parity-corpus-v1.json",
+  "title": "Late-interaction runtime parity corpus",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "queries", "documents"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "queries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text", "relevant_document_ids"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 255},
+          "text": {"type": "string", "minLength": 1, "maxLength": 10000},
+          "relevant_document_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1, "maxLength": 255}
+          }
+        }
+      }
+    },
+    "documents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 255},
+          "text": {"type": "string", "minLength": 1, "maxLength": 100000}
+        }
+      }
+    }
+  }
+}

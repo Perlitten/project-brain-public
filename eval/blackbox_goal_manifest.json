@@ -1,0 +1,55 @@
+{
+  "schema_version": "2.0",
+  "harness_name": "blackbox_goal_queue_acceptance_harness",
+  "frozen_at_utc": "2026-08-08T07:32:00Z",
+  "starting_commit_sha": "30d1d7a964fa694c9db9efefc20bf302d99d3651",
+  "forbidden_files": [
+    "eval/blackbox_goal_manifest.json",
+    "eval/blackbox_goal_queue_harness.py",
+    "tests/test_anti_shortcut_guard.py"
+  ],
+  "goals": [
+    {
+      "id": "goal_01_advisory_lock_refactor",
+      "description": "Refactor DDL advisory locking in brain/database/session.py to prevent startup deadlocks on container restart.",
+      "target_file": "brain/database/session.py",
+      "test_oracle": "tests/test_release_identity.py::test_release_identity_consistency",
+      "requires_deploy": true
+    },
+    {
+      "id": "goal_02_source_comparator_fix",
+      "description": "Fix short SHA revision comparison logic in brain/memory/source_manifest.py to compare full and short Git SHAs safely.",
+      "target_file": "brain/memory/source_manifest.py",
+      "test_oracle": "tests/test_autonomic_diagnosis_and_recovery.py::test_source_revision_comparator_never_compares_different_revision_namespaces",
+      "requires_deploy": false
+    },
+    {
+      "id": "goal_03_champion_anchored_pairing",
+      "description": "Implement Champion-Anchored League pairing rules in brain/improvement/tournament/engine.py enforcing holdout pool isolation.",
+      "target_file": "brain/improvement/tournament/engine.py",
+      "test_oracle": "tests/improvement/test_holdout_sealing.py::test_multiple_challengers_can_never_access_sealed_pool_in_league",
+      "requires_deploy": false
+    },
+    {
+      "id": "goal_04_drift_analyzer_guard",
+      "description": "Implement API/worker ORM coupling detection in brain/insights/drift_trends.py to detect architectural drift.",
+      "target_file": "brain/insights/drift_trends.py",
+      "test_oracle": "tests/test_drift_analyzer_v3.py::test_drift_analyzer_detects_api_layer_raw_orm_bypass",
+      "requires_deploy": false
+    },
+    {
+      "id": "goal_05_lever_registry_validation",
+      "description": "Implement parameter bounds validation in brain/improvement/mutation/lever_registry.py.",
+      "target_file": "brain/improvement/mutation/lever_registry.py",
+      "test_oracle": "tests/improvement/test_lever_registry.py::test_lever_registry_bounds_validation",
+      "requires_deploy": false
+    },
+    {
+      "id": "goal_06_retrieval_flood_containment",
+      "description": "Implement 16,000 token bounding and incident deduplication in brain/llm/observability.py.",
+      "target_file": "brain/llm/observability.py",
+      "test_oracle": "tests/test_token_efficiency.py::test_observability_hard_cap_trimming",
+      "requires_deploy": false
+    }
+  ]
+}

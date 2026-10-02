@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy to .mcp.json (gitignored) and fill BRAIN_API_URL/BRAIN_API_KEY/BRAIN_REPO for your deployment. This connects Cursor/Claude to Project Brain over HTTP; no local datastores are needed. For Cursor, put the same mcpServers block in %USERPROFILE%/.cursor/mcp.json.",
+  "mcpServers": {
+    "project-brain": {
+      "command": "python",
+      "args": ["-m", "apps.mcp_server.remote_server"],
+      "env": {
+        "PYTHONPATH": "/path/to/project-brain",
+        "BRAIN_API_URL": "https://brain.<server-ip>.nip.io",
+        "BRAIN_API_KEY": "REPLACE_WITH_PROJECT_BRAIN_API_KEY",
+        "BRAIN_REPO": "/repo"
+      }
+    }
+  }
+}

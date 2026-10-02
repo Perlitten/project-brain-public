@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "project-brain": {
+      "command": "${BRAIN_MCP_PYTHON:-python3}",
+      "args": ["-m", "apps.mcp_server.remote_server"],
+      "env": {
+        "PYTHONPATH": "${CLAUDE_PROJECT_DIR:-.}",
+        "BRAIN_API_URL": "${BRAIN_API_URL}",
+        "BRAIN_API_KEY": "${BRAIN_API_KEY}",
+        "BRAIN_REPO": "${BRAIN_REPO:-.}"
+      }
+    }
+  }
+}

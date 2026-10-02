@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Project Brain">
+  <rect width="64" height="64" rx="14" fill="#0B0F14"></rect>
+  <rect x="14" y="12" width="9" height="40" fill="#E6EDF3"></rect>
+  <rect x="23" y="16" width="15" height="8" fill="#E6EDF3"></rect>
+  <rect x="23" y="28" width="22" height="8" fill="#2FE3C8"></rect>
+  <rect x="23" y="40" width="15" height="8" fill="#E6EDF3"></rect>
+  <path d="M45 24 L54 32 L45 40 Z" fill="#2FE3C8"></path>
+</svg>

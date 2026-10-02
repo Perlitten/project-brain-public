@@ -1,0 +1,62 @@
+name: lfm-colbert-canary
+
+services:
+  server:
+    build:
+      context: .
+      args:
+        LLAMA_CPP_COMMIT: ${LLAMA_CPP_COMMIT:-7e1e28cae36d41fe7bbe9dae7c9625de6565c063}
+    image: project-brain/lfm-colbert-canary:${LFM_COLBERT_IMAGE_TAG:-llama-7e1e28c}
+    container_name: lfm-colbert-canary
+    command:
+      - -m
+      - /models/LFM2.5-ColBERT-350M-BF16.gguf
+      - --embedding
+      - --pooling
+      - none
+      - --ctx-size
+      - "512"
+      - --batch-size
+      - "512"
+      - --ubatch-size
+      - "512"
+      - --threads
+      - "4"
+      - --parallel
+      - "1"
+      - --metrics
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    ports:
+      - "127.0.0.1:${LFM_COLBERT_CANARY_PORT:-8089}:8080"
+    volumes:
+      - lfm_colbert_models:/models
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 3g
+    cpus: 4.0
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10m
+    restart: unless-stopped
+    labels:
+      io.project-brain.role: lfm-colbert-canary
+      io.project-brain.cutover: "false"
+      io.project-brain.model: LiquidAI/LFM2.5-ColBERT-350M-GGUF
+      io.project-brain.model-revision: bc240003aba07253e261a8aaf0d2c9683318a967
+      io.project-brain.model-sha256: c21d5cacc004cbc7746dbeeaee496c74b01f0f7bfdef1e1a57570d1744ef871b
+
+volumes:
+  lfm_colbert_models:
+    name: lfm_colbert_canary_models
