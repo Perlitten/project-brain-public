@@ -1,0 +1,68 @@
+golden_tasks:
+  - id: task_1
+    description: "Update dashboard HTML branding and base template styling"
+    expected_files:
+      - "apps/api/templates/base.html"
+    expected_modules:
+      - "apps/api/templates"
+    expected_features:
+      - "branding"
+      - "dashboard"
+      - "templates"
+    required_surfaces: []
+    must_include_tests: false
+
+  - id: task_2
+    description: "Fix health check endpoint when database is unavailable"
+    expected_files:
+      - "tests/test_health.py"
+      - "apps/api/main.py"
+      - "brain/database/session.py"
+    expected_modules:
+      - "tests"
+      - "apps/api"
+      - "brain/database"
+    expected_features:
+      - "health check"
+    required_surfaces: []
+    must_include_tests: true
+
+  - id: task_3
+    description: "Improve hybrid context retrieval in context pack builder"
+    expected_files:
+      - "brain/context/context_pack_builder.py"
+      - "brain/search/code_search.py"
+    expected_modules:
+      - "brain/context"
+      - "brain/search"
+    expected_features:
+      - "retrieval"
+      - "context pack"
+    required_surfaces: []
+    must_include_tests: false
+
+  - id: task_4
+    description: "Change API response DTO for status endpoints"
+    expected_files:
+      - "apps/api/main.py"
+      - "brain/database/models.py"
+    expected_modules:
+      - "apps/api"
+      - "brain/database"
+    expected_features:
+      - "api"
+      - "response dto"
+    required_surfaces: []
+    must_include_tests: false
+
+  - id: task_5
+    description: "Find dead code in the API layer"
+    expected_files:
+      - "apps/api/main.py"
+    expected_modules:
+      - "apps/api"
+    expected_features:
+      - "clean code"
+      - "dead code"
+    required_surfaces: []
+    must_include_tests: false

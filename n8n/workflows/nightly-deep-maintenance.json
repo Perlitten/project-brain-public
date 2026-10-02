@@ -1,0 +1,320 @@
+{
+  "id": "PBNightlyDeep01",
+  "name": "Nightly Deep Maintenance",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 0 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-nightly-deep",
+      "name": "Nightly 00:30 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 180]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "execute-nightly-deep",
+      "name": "Harness Execute Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PROJECT_BRAIN_API_URL || 'http://api:8000' }}/jobs/nightly-maintenance",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.PROJECT_BRAIN_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ repo_path: $env.PROJECT_BRAIN_GIT_REPO_PATH || '/app', scheduled: true, notify: true, idempotency_key: 'nightly-deep-maintenance:' + $now.toISODate() }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "enqueue-nightly-deep",
+      "name": "Enqueue Deep Maintenance",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "id": "wait-nightly-deep",
+      "name": "Wait for Maintenance Worker",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.PROJECT_BRAIN_API_URL || 'http://api:8000') + '/jobs/' + ($json.job_id || $json.id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.PROJECT_BRAIN_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "check-nightly-deep",
+      "name": "Check Maintenance Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "maintenance-completed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "completed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-maintenance-completed",
+      "name": "Maintenance Completed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "maintenance-failed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "failed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-maintenance-failed",
+      "name": "Maintenance Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1280, 420]
+    },
+    {
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "={{ 'Nightly deep maintenance failed: ' + ($json.error || $json.id) }}"
+      },
+      "id": "fail-maintenance-workflow",
+      "name": "Fail Maintenance Workflow",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1520, 360]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "maintenance-ok",
+              "name": "completed",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "maintenance-job-id",
+              "name": "job_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "maintenance-lfm-revision",
+              "name": "lfm_index_revision",
+              "value": "={{ $json.result?.late_interaction?.index_revision || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "maintenance-quality-probes",
+              "name": "quality_probe_count",
+              "value": "={{ $json.result?.quality_probes?.length || 0 }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "record-maintenance-success",
+      "name": "Record Maintenance Success",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1280, 180]
+    }
+  ],
+  "connections": {
+    "Nightly 00:30 UTC": {
+      "main": [
+        [
+          {
+            "node": "Enqueue Deep Maintenance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Harness Execute Trigger": {
+      "main": [
+        [
+          {
+            "node": "Enqueue Deep Maintenance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enqueue Deep Maintenance": {
+      "main": [
+        [
+          {
+            "node": "Wait for Maintenance Worker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Maintenance Worker": {
+      "main": [
+        [
+          {
+            "node": "Check Maintenance Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Maintenance Job": {
+      "main": [
+        [
+          {
+            "node": "Maintenance Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Maintenance Completed?": {
+      "main": [
+        [
+          {
+            "node": "Record Maintenance Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Maintenance Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Maintenance Failed?": {
+      "main": [
+        [
+          {
+            "node": "Fail Maintenance Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait for Maintenance Worker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 21600
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "project-brain"
+    },
+    {
+      "name": "production"
+    },
+    {
+      "name": "quality-first"
+    },
+    {
+      "name": "late-interaction"
+    }
+  ]
+}

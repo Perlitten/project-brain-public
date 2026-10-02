@@ -1,0 +1,3910 @@
+{
+ "schema_version": 2,
+ "seed": 20260810,
+ "description": "Schema-v2 production corpus: 50 real codebase tasks with expected files, symbols, line ranges, and completion assertions. Enriched from golden_set + lfm_extension with AST-extracted symbols and assertions from the actual codebase.",
+ "tasks": [
+  {
+   "id": "q001",
+   "question": "How are files chunked during indexing (line window, overlap, and symbol-aware behavior), and where are the chunk-size defaults sourced?",
+   "expect_files": [
+    "brain/indexers/file_indexer.py",
+    "brain/indexers/repo_indexer.py"
+   ],
+   "expect_symbols": [
+    "_normalize_chunk_params",
+    "_iter_overlap_ranges",
+    "_infer_embedding_text_limit",
+    "_coerce_symbol_line",
+    "should_ignore_dir",
+    "should_ignore_file"
+   ],
+   "expect_ranges": [
+    [
+     "brain/indexers/file_indexer.py",
+     49,
+     77
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     80,
+     104
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     107,
+     113
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     116,
+     120
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     59,
+     61
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     64,
+     86
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     89,
+     161
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     164,
+     172
+    ]
+   ],
+   "required_assertions": [
+    "Clamp chunking settings to safe values to avoid zero-step windows.",
+    "Yield inclusive line ranges with overlap between consecutive chunks.",
+    "Return provider-level char limit if explicitly configured.",
+    "LANGUAGE_MAP",
+    "FIGMA_REGEX",
+    ".tsx"
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q002",
+   "question": "How does the hybrid search pipeline combine lexical/symbol/vector/graph/memory surfaces and apply Reciprocal Rank Fusion weights and query caps?",
+   "expect_files": [
+    "brain/retrieval/pipeline.py",
+    "brain/search/filters.py",
+    "brain/retrieval/reranker.py"
+   ],
+   "expect_symbols": [
+    "classify_query_route",
+    "_normalize_channel",
+    "_channel_weight",
+    "_path_keyword_hits",
+    "_markdown_frontmatter",
+    "classify_knowledge_status"
+   ],
+   "expect_ranges": [
+    [
+     "brain/retrieval/pipeline.py",
+     68,
+     86
+    ],
+    [
+     "brain/retrieval/pipeline.py",
+     89,
+     95
+    ],
+    [
+     "brain/retrieval/pipeline.py",
+     98,
+     110
+    ],
+    [
+     "brain/retrieval/pipeline.py",
+     113,
+     114
+    ],
+    [
+     "brain/search/filters.py",
+     56,
+     66
+    ],
+    [
+     "brain/search/filters.py",
+     69,
+     94
+    ],
+    [
+     "brain/search/filters.py",
+     97,
+     104
+    ],
+    [
+     "brain/search/filters.py",
+     107,
+     110
+    ]
+   ],
+   "required_assertions": [
+    "Hybrid retrieval pipeline: query understanding → channels → fusion → rerank.",
+    "Synthetic recall-pool candidate for a co-rank injected path.",
+    "Backward-compatible test/import surface for the shared sampler.",
+    "KNOWLEDGE_STATUS_CURRENT",
+    "KNOWLEDGE_STATUS_HISTORICAL",
+    "HISTORICAL_SUMMARY_PREFIX"
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q003",
+   "question": "Which embedding providers are supported through configuration, and what fallback/error behavior occurs on unknown provider names?",
+   "expect_files": [
+    "brain/llm/__init__.py",
+    "brain/embeddings/config.py",
+    "brain/config/settings.py"
+   ],
+   "expect_symbols": [
+    "get_llm_provider",
+    "get_embedding_provider",
+    "get_summarizer_provider",
+    "EmbeddingConfig",
+    "EmbeddingConfig.as_metadata",
+    "get_embedding_config"
+   ],
+   "expect_ranges": [
+    [
+     "brain/llm/__init__.py",
+     31,
+     52
+    ],
+    [
+     "brain/llm/__init__.py",
+     55,
+     76
+    ],
+    [
+     "brain/llm/__init__.py",
+     79,
+     100
+    ],
+    [
+     "brain/embeddings/config.py",
+     12,
+     22
+    ],
+    [
+     "brain/embeddings/config.py",
+     17,
+     22
+    ],
+    [
+     "brain/embeddings/config.py",
+     25,
+     32
+    ],
+    [
+     "brain/embeddings/config.py",
+     35,
+     38
+    ],
+    [
+     "brain/config/settings.py",
+     17,
+     640
+    ]
+   ],
+   "required_assertions": [
+    "get_llm_provider",
+    "get_embedding_provider",
+    "get_summarizer_provider",
+    "dataclass",
+    "Configured embedding provider metadata and dimension resolution.",
+    "model"
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q004",
+   "question": "What hard caps exist for embedding input size, and where are truncation or warning behaviors implemented for oversized text?",
+   "expect_files": [
+    "brain/llm/providers/nvidia_provider.py",
+    "brain/indexers/file_indexer.py"
+   ],
+   "expect_symbols": [
+    "NvidiaLLMProvider",
+    "NvidiaLLMProvider.__init__",
+    "NvidiaEmbeddingProvider",
+    "NvidiaEmbeddingProvider.__init__",
+    "_normalize_chunk_params",
+    "_iter_overlap_ranges"
+   ],
+   "expect_ranges": [
+    [
+     "brain/llm/providers/nvidia_provider.py",
+     7,
+     14
+    ],
+    [
+     "brain/llm/providers/nvidia_provider.py",
+     10,
+     14
+    ],
+    [
+     "brain/llm/providers/nvidia_provider.py",
+     17,
+     71
+    ],
+    [
+     "brain/llm/providers/nvidia_provider.py",
+     27,
+     33
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     49,
+     77
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     80,
+     104
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     107,
+     113
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     116,
+     120
+    ]
+   ],
+   "required_assertions": [
+    "MAX_INPUT_CHARS",
+    "NVIDIA NIM API implementation of LLMProvider using integrate.api.nvidia.com.",
+    "nvidia",
+    "Clamp chunking settings to safe values to avoid zero-step windows.",
+    "Yield inclusive line ranges with overlap between consecutive chunks.",
+    "Return provider-level char limit if explicitly configured."
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q005",
+   "question": "How does POST /search parse query options and translate them into retrieval behavior?",
+   "expect_files": [
+    "apps/api/routers/core.py",
+    "apps/api/schemas.py",
+    "brain/search/code_search.py"
+   ],
+   "expect_symbols": [
+    "_late_interaction_request_id",
+    "_decision_line",
+    "_agent_v2_mode",
+    "_agent_repo_path",
+    "IndexRequest",
+    "AskRequest"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/routers/core.py",
+     82,
+     87
+    ],
+    [
+     "apps/api/routers/core.py",
+     90,
+     100
+    ],
+    [
+     "apps/api/routers/core.py",
+     103,
+     104
+    ],
+    [
+     "apps/api/routers/core.py",
+     107,
+     108
+    ],
+    [
+     "apps/api/schemas.py",
+     5,
+     6
+    ],
+    [
+     "apps/api/schemas.py",
+     9,
+     17
+    ],
+    [
+     "apps/api/schemas.py",
+     20,
+     27
+    ],
+    [
+     "apps/api/schemas.py",
+     30,
+     33
+    ]
+   ],
+   "required_assertions": [
+    "ASK_RETRIEVAL_LIMIT",
+    "ASK_DECISION_LIMIT",
+    "ASK_DECISION_FIELD_CHARS",
+    "current",
+    "active",
+    "architecture"
+   ],
+   "category": "known_symbol",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q006",
+   "question": "Where and how are decisions/rules injected into /ask (or synthesis) prompts, and what precedence or formatting is applied?",
+   "expect_files": [
+    "apps/api/routers/core.py",
+    "brain/memory/decision_store.py",
+    "brain/memory/rule_store.py"
+   ],
+   "expect_symbols": [
+    "_late_interaction_request_id",
+    "_decision_line",
+    "_agent_v2_mode",
+    "_agent_repo_path",
+    "DecisionStore",
+    "DecisionStore.add_decision"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/routers/core.py",
+     82,
+     87
+    ],
+    [
+     "apps/api/routers/core.py",
+     90,
+     100
+    ],
+    [
+     "apps/api/routers/core.py",
+     103,
+     104
+    ],
+    [
+     "apps/api/routers/core.py",
+     107,
+     108
+    ],
+    [
+     "brain/memory/decision_store.py",
+     9,
+     129
+    ],
+    [
+     "brain/memory/decision_store.py",
+     13,
+     100
+    ],
+    [
+     "brain/memory/decision_store.py",
+     103,
+     107
+    ],
+    [
+     "brain/memory/decision_store.py",
+     110,
+     117
+    ]
+   ],
+   "required_assertions": [
+    "ASK_RETRIEVAL_LIMIT",
+    "ASK_DECISION_LIMIT",
+    "ASK_DECISION_FIELD_CHARS",
+    "classmethod",
+    "Store for managing architectural and technical decisions.",
+    "active"
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q007",
+   "question": "What are the authoritative task states and transition matrix for harness tasks, and how are terminal states enforced?",
+   "expect_files": [
+    "brain/database/harness_models.py",
+    "brain/memory/harness_store.py"
+   ],
+   "expect_symbols": [
+    "AgentTask",
+    "AgentTaskEvent",
+    "AgentTaskArtifact",
+    "AgentValidationResult",
+    "InvalidTransition",
+    "TaskNotFound"
+   ],
+   "expect_ranges": [
+    [
+     "brain/database/harness_models.py",
+     35,
+     57
+    ],
+    [
+     "brain/database/harness_models.py",
+     60,
+     86
+    ],
+    [
+     "brain/database/harness_models.py",
+     89,
+     109
+    ],
+    [
+     "brain/database/harness_models.py",
+     112,
+     133
+    ],
+    [
+     "brain/memory/harness_store.py",
+     32,
+     33
+    ],
+    [
+     "brain/memory/harness_store.py",
+     36,
+     37
+    ],
+    [
+     "brain/memory/harness_store.py",
+     40,
+     41
+    ],
+    [
+     "brain/memory/harness_store.py",
+     44,
+     45
+    ]
+   ],
+   "required_assertions": [
+    "HARNESS_SCHEMA",
+    "TASK_STATUSES",
+    "TERMINAL_STATUSES",
+    "classmethod",
+    "staticmethod",
+    "Raised when a status update doesn't follow the task state machine."
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q008",
+   "question": "How is optimistic concurrency implemented for task updates (version checks, expected_task_version, and lease/version race handling)?",
+   "expect_files": [
+    "brain/memory/harness_store.py",
+    "brain/database/harness_models.py",
+    "brain/database/session.py"
+   ],
+   "expect_symbols": [
+    "InvalidTransition",
+    "TaskNotFound",
+    "VersionConflict",
+    "IdempotencyConflict",
+    "AgentTask",
+    "AgentTaskEvent"
+   ],
+   "expect_ranges": [
+    [
+     "brain/memory/harness_store.py",
+     32,
+     33
+    ],
+    [
+     "brain/memory/harness_store.py",
+     36,
+     37
+    ],
+    [
+     "brain/memory/harness_store.py",
+     40,
+     41
+    ],
+    [
+     "brain/memory/harness_store.py",
+     44,
+     45
+    ],
+    [
+     "brain/database/harness_models.py",
+     35,
+     57
+    ],
+    [
+     "brain/database/harness_models.py",
+     60,
+     86
+    ],
+    [
+     "brain/database/harness_models.py",
+     89,
+     109
+    ],
+    [
+     "brain/database/harness_models.py",
+     112,
+     133
+    ]
+   ],
+   "required_assertions": [
+    "classmethod",
+    "staticmethod",
+    "Raised when a status update doesn't follow the task state machine.",
+    "HARNESS_SCHEMA",
+    "TASK_STATUSES",
+    "TERMINAL_STATUSES"
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q009",
+   "question": "How does DecisionStore implement canonical upsert behavior for decision entries and avoid duplicates?",
+   "expect_files": [
+    "brain/memory/decision_store.py",
+    "brain/database/repository_utils.py",
+    "brain/database/models.py"
+   ],
+   "expect_symbols": [
+    "DecisionStore",
+    "DecisionStore.add_decision",
+    "DecisionStore.list_decisions",
+    "DecisionStore.search_decisions",
+    "get_repository_by_path",
+    "require_repository_by_path"
+   ],
+   "expect_ranges": [
+    [
+     "brain/memory/decision_store.py",
+     9,
+     129
+    ],
+    [
+     "brain/memory/decision_store.py",
+     13,
+     100
+    ],
+    [
+     "brain/memory/decision_store.py",
+     103,
+     107
+    ],
+    [
+     "brain/memory/decision_store.py",
+     110,
+     117
+    ],
+    [
+     "brain/database/repository_utils.py",
+     13,
+     23
+    ],
+    [
+     "brain/database/repository_utils.py",
+     26,
+     36
+    ],
+    [
+     "brain/database/repository_utils.py",
+     39,
+     75
+    ],
+    [
+     "brain/database/repository_utils.py",
+     78,
+     83
+    ]
+   ],
+   "required_assertions": [
+    "classmethod",
+    "Store for managing architectural and technical decisions.",
+    "active",
+    "Repository lookup and index cleanup helpers.",
+    "Return the Repository row for an absolute repo path, if indexed.",
+    "Delete all indexed files, chunks, symbols, and chunk embeddings for a repo."
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q010",
+   "question": "How does RuleStore retrieve active rules scoped by repository and evaluate effective precedence for a repository path?",
+   "expect_files": [
+    "brain/memory/rule_store.py",
+    "brain/database/repository_utils.py",
+    "brain/database/models.py"
+   ],
+   "expect_symbols": [
+    "slugify",
+    "RuleStore",
+    "RuleStore.add_rule",
+    "RuleStore.list_rules",
+    "get_repository_by_path",
+    "require_repository_by_path"
+   ],
+   "expect_ranges": [
+    [
+     "brain/memory/rule_store.py",
+     10,
+     15
+    ],
+    [
+     "brain/memory/rule_store.py",
+     17,
+     140
+    ],
+    [
+     "brain/memory/rule_store.py",
+     21,
+     59
+    ],
+    [
+     "brain/memory/rule_store.py",
+     62,
+     66
+    ],
+    [
+     "brain/database/repository_utils.py",
+     13,
+     23
+    ],
+    [
+     "brain/database/repository_utils.py",
+     26,
+     36
+    ],
+    [
+     "brain/database/repository_utils.py",
+     39,
+     75
+    ],
+    [
+     "brain/database/repository_utils.py",
+     78,
+     83
+    ]
+   ],
+   "required_assertions": [
+    "classmethod",
+    "Helper to convert a rule name to a standard slug ID.",
+    "Store for managing compliance and development rules.",
+    "Repository lookup and index cleanup helpers.",
+    "Return the Repository row for an absolute repo path, if indexed.",
+    "Delete all indexed files, chunks, symbols, and chunk embeddings for a repo."
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q011",
+   "question": "What does API auth require in production versus development, and how are missing/invalid X-API-Key requests handled?",
+   "expect_files": [
+    "apps/api/auth.py",
+    "apps/api/dependencies.py",
+    "apps/api/main.py"
+   ],
+   "expect_symbols": [
+    "require_api_key",
+    "get_db",
+    "get_redis",
+    "get_neo4j",
+    "lifespan",
+    "SecurityHeadersMiddleware"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/auth.py",
+     10,
+     19
+    ],
+    [
+     "apps/api/dependencies.py",
+     8,
+     11
+    ],
+    [
+     "apps/api/dependencies.py",
+     13,
+     15
+    ],
+    [
+     "apps/api/dependencies.py",
+     17,
+     19
+    ],
+    [
+     "apps/api/main.py",
+     40,
+     93
+    ],
+    [
+     "apps/api/main.py",
+     105,
+     114
+    ],
+    [
+     "apps/api/main.py",
+     106,
+     114
+    ],
+    [
+     "apps/api/main.py",
+     139,
+     146
+    ]
+   ],
+   "required_assertions": [
+    "API key authentication for orchestration endpoints.",
+    "X-API-Key",
+    "production",
+    "FastAPI dependency to get a PostgreSQL async database session.",
+    "FastAPI dependency to get the Redis client.",
+    "FastAPI dependency to get the Neo4j driver."
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q012",
+   "question": "How is dashboard authentication enforced (cookie signing, CSRF handling, and route gating), and how is login state invalidated?",
+   "expect_files": [
+    "apps/api/dashboard_auth.py",
+    "apps/api/main.py",
+    "apps/api/dependencies.py"
+   ],
+   "expect_symbols": [
+    "DashboardSession",
+    "dashboard_auth_enabled",
+    "dashboard_auth_config_error",
+    "dashboard_cookie_secure",
+    "lifespan",
+    "SecurityHeadersMiddleware"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/dashboard_auth.py",
+     33,
+     36
+    ],
+    [
+     "apps/api/dashboard_auth.py",
+     39,
+     43
+    ],
+    [
+     "apps/api/dashboard_auth.py",
+     46,
+     55
+    ],
+    [
+     "apps/api/dashboard_auth.py",
+     58,
+     62
+    ],
+    [
+     "apps/api/main.py",
+     40,
+     93
+    ],
+    [
+     "apps/api/main.py",
+     105,
+     114
+    ],
+    [
+     "apps/api/main.py",
+     106,
+     114
+    ],
+    [
+     "apps/api/main.py",
+     139,
+     146
+    ]
+   ],
+   "required_assertions": [
+    "SESSION_COOKIE",
+    "LOGIN_CSRF_COOKIE",
+    "CSRF_HEADER",
+    "asynccontextmanager",
+    "_STATIC_DIR",
+    "font/woff2"
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q013",
+   "question": "Which dashboard APIs expose repository/usage analytics and what is the payload shape for summary metrics?",
+   "expect_files": [
+    "apps/api/routers/dashboard.py",
+    "apps/api/schemas.py",
+    "brain/insights/proactive.py",
+    "brain/embeddings/store.py"
+   ],
+   "expect_symbols": [
+    "_safe_settings",
+    "_operator_actions",
+    "_evidence_href",
+    "_known_rule_ids",
+    "IndexRequest",
+    "AskRequest"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/routers/dashboard.py",
+     87,
+     103
+    ],
+    [
+     "apps/api/routers/dashboard.py",
+     106,
+     236
+    ],
+    [
+     "apps/api/routers/dashboard.py",
+     300,
+     346
+    ],
+    [
+     "apps/api/routers/dashboard.py",
+     349,
+     357
+    ],
+    [
+     "apps/api/schemas.py",
+     5,
+     6
+    ],
+    [
+     "apps/api/schemas.py",
+     9,
+     17
+    ],
+    [
+     "apps/api/schemas.py",
+     20,
+     27
+    ],
+    [
+     "apps/api/schemas.py",
+     30,
+     33
+    ]
+   ],
+   "required_assertions": [
+    "_CORE_SERVICES",
+    "_SERVICE_LABELS",
+    "_LANES",
+    "current",
+    "active",
+    "architecture"
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q014",
+   "question": "What job-management actions does the dashboard expose (trigger, status, artifacts), and are they directly tied to the worker queue APIs?",
+   "expect_files": [
+    "apps/api/routers/dashboard.py",
+    "apps/api/routers/jobs.py",
+    "brain/workers/queue.py"
+   ],
+   "expect_symbols": [
+    "_safe_settings",
+    "_operator_actions",
+    "_evidence_href",
+    "_known_rule_ids",
+    "_queue",
+    "_enqueue_response"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/routers/dashboard.py",
+     87,
+     103
+    ],
+    [
+     "apps/api/routers/dashboard.py",
+     106,
+     236
+    ],
+    [
+     "apps/api/routers/dashboard.py",
+     300,
+     346
+    ],
+    [
+     "apps/api/routers/dashboard.py",
+     349,
+     357
+    ],
+    [
+     "apps/api/routers/jobs.py",
+     23,
+     31
+    ],
+    [
+     "apps/api/routers/jobs.py",
+     34,
+     39
+    ],
+    [
+     "apps/api/routers/jobs.py",
+     43,
+     59
+    ],
+    [
+     "apps/api/routers/jobs.py",
+     63,
+     66
+    ]
+   ],
+   "required_assertions": [
+    "_CORE_SERVICES",
+    "_SERVICE_LABELS",
+    "_LANES",
+    "post",
+    "/reindex",
+    "/health-check"
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q015",
+   "question": "What node and relationship types are allowed in graph ingestion, and how is validation normalized before write?",
+   "expect_files": [
+    "brain/graph/schema.py",
+    "brain/graph/graph_client.py"
+   ],
+   "expect_symbols": [
+    "NodeType",
+    "RelationshipType",
+    "ensure_graph_schema",
+    "build_qualified_symbol_identity",
+    "GraphClient",
+    "GraphClient.__init__"
+   ],
+   "expect_ranges": [
+    [
+     "brain/graph/schema.py",
+     4,
+     24
+    ],
+    [
+     "brain/graph/schema.py",
+     26,
+     50
+    ],
+    [
+     "brain/graph/graph_client.py",
+     36,
+     47
+    ],
+    [
+     "brain/graph/graph_client.py",
+     48,
+     61
+    ],
+    [
+     "brain/graph/graph_client.py",
+     64,
+     444
+    ],
+    [
+     "brain/graph/graph_client.py",
+     67,
+     71
+    ]
+   ],
+   "required_assertions": [
+    "REPOSITORY",
+    "MODULE",
+    "FILE",
+    "GRAPH_SCHEMA_VERSION",
+    "EXCLUDED_HUB_SYMBOLS",
+    "FOCUS_DEFAULT_DEPTH"
+   ],
+   "category": "known_symbol",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q016",
+   "question": "How does graph cleanup behave for repository-level deletions and stale file-node pruning?",
+   "expect_files": [
+    "brain/graph/graph_client.py",
+    "brain/indexers/repo_indexer.py",
+    "brain/indexers/file_indexer.py"
+   ],
+   "expect_symbols": [
+    "ensure_graph_schema",
+    "build_qualified_symbol_identity",
+    "GraphClient",
+    "GraphClient.__init__",
+    "should_ignore_dir",
+    "should_ignore_file"
+   ],
+   "expect_ranges": [
+    [
+     "brain/graph/graph_client.py",
+     36,
+     47
+    ],
+    [
+     "brain/graph/graph_client.py",
+     48,
+     61
+    ],
+    [
+     "brain/graph/graph_client.py",
+     64,
+     444
+    ],
+    [
+     "brain/graph/graph_client.py",
+     67,
+     71
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     59,
+     61
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     64,
+     86
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     89,
+     161
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     164,
+     172
+    ]
+   ],
+   "required_assertions": [
+    "GRAPH_SCHEMA_VERSION",
+    "EXCLUDED_HUB_SYMBOLS",
+    "FOCUS_DEFAULT_DEPTH",
+    "LANGUAGE_MAP",
+    "FIGMA_REGEX",
+    ".tsx"
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q017",
+   "question": "What is the queue contract for background jobs (storage schema, dequeuing semantics, and recovery of crashed workers)?",
+   "expect_files": [
+    "brain/workers/queue.py"
+   ],
+   "expect_symbols": [
+    "worker_pool_for_job",
+    "worker_pool_prefix",
+    "queue_for_job",
+    "worker_pool_status"
+   ],
+   "expect_ranges": [
+    [
+     "brain/workers/queue.py",
+     24,
+     29
+    ],
+    [
+     "brain/workers/queue.py",
+     32,
+     35
+    ],
+    [
+     "brain/workers/queue.py",
+     38,
+     42
+    ],
+    [
+     "brain/workers/queue.py",
+     45,
+     75
+    ]
+   ],
+   "required_assertions": [
+    "WORKER_POOLS",
+    "_FAST_JOB_TYPES",
+    "_DEEP_JOB_TYPES"
+   ],
+   "category": "unknown_location",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q018",
+   "question": "Which job types are supported and which services/modules do they execute when run?",
+   "expect_files": [
+    "brain/workers/tasks.py",
+    "brain/workers/worker.py"
+   ],
+   "expect_symbols": [
+    "StaleWorkerFencingError",
+    "validate_task_fencing",
+    "_deep_repo_path",
+    "_approved_deep_repository",
+    "process_one",
+    "_heartbeat_loop"
+   ],
+   "expect_ranges": [
+    [
+     "brain/workers/tasks.py",
+     37,
+     39
+    ],
+    [
+     "brain/workers/tasks.py",
+     42,
+     53
+    ],
+    [
+     "brain/workers/tasks.py",
+     90,
+     94
+    ],
+    [
+     "brain/workers/tasks.py",
+     97,
+     111
+    ],
+    [
+     "brain/workers/worker.py",
+     25,
+     101
+    ],
+    [
+     "brain/workers/worker.py",
+     104,
+     125
+    ],
+    [
+     "brain/workers/worker.py",
+     128,
+     196
+    ],
+    [
+     "brain/workers/worker.py",
+     199,
+     200
+    ]
+   ],
+   "required_assertions": [
+    "_NIGHTLY_QUALITY_PROBES",
+    "Background job handlers — delegate to existing brain modules.",
+    "Raised when a worker's fencing token is no longer active in Redis.",
+    "Redis worker process — consumes brain:worker queue.",
+    "__main__",
+    "type"
+   ],
+   "category": "cross_surface",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q019",
+   "question": "How does the model router choose models per task kind, and how does it cache provider instances?",
+   "expect_files": [
+    "brain/llm/router.py",
+    "brain/llm/__init__.py",
+    "brain/embeddings/config.py"
+   ],
+   "expect_symbols": [
+    "TaskKind",
+    "ModelRouter",
+    "ModelRouter.__init__",
+    "ModelRouter.task_model",
+    "get_llm_provider",
+    "get_embedding_provider"
+   ],
+   "expect_ranges": [
+    [
+     "brain/llm/router.py",
+     9,
+     13
+    ],
+    [
+     "brain/llm/router.py",
+     24,
+     144
+    ],
+    [
+     "brain/llm/router.py",
+     27,
+     32
+    ],
+    [
+     "brain/llm/router.py",
+     34,
+     35
+    ],
+    [
+     "brain/llm/__init__.py",
+     31,
+     52
+    ],
+    [
+     "brain/llm/__init__.py",
+     55,
+     76
+    ],
+    [
+     "brain/llm/__init__.py",
+     79,
+     100
+    ],
+    [
+     "brain/embeddings/config.py",
+     12,
+     22
+    ]
+   ],
+   "required_assertions": [
+    "_TASK_MODEL_ATTR",
+    "lru_cache",
+    "CLASSIFICATION",
+    "get_llm_provider",
+    "get_embedding_provider",
+    "get_summarizer_provider"
+   ],
+   "category": "cross_surface",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q020",
+   "question": "What provider-specific implementations exist for LLM, embedding, and summarizer interfaces, and how are unsupported operations (e.g., Anthropic embeddings) handled?",
+   "expect_files": [
+    "brain/llm/providers/base.py",
+    "brain/llm/providers/anthropic_provider.py",
+    "brain/llm/providers/openai_provider.py",
+    "brain/llm/providers/google_provider.py",
+    "brain/llm/providers/nvidia_provider.py",
+    "brain/llm/providers/mock_provider.py"
+   ],
+   "expect_symbols": [
+    "LLMProvider",
+    "LLMProvider.generate",
+    "EmbeddingProvider",
+    "EmbeddingProvider.embed",
+    "AnthropicLLMProvider",
+    "AnthropicLLMProvider.__init__"
+   ],
+   "expect_ranges": [
+    [
+     "brain/llm/providers/base.py",
+     4,
+     24
+    ],
+    [
+     "brain/llm/providers/base.py",
+     8,
+     24
+    ],
+    [
+     "brain/llm/providers/base.py",
+     27,
+     54
+    ],
+    [
+     "brain/llm/providers/base.py",
+     31,
+     41
+    ],
+    [
+     "brain/llm/providers/anthropic_provider.py",
+     9,
+     76
+    ],
+    [
+     "brain/llm/providers/anthropic_provider.py",
+     12,
+     15
+    ],
+    [
+     "brain/llm/providers/anthropic_provider.py",
+     17,
+     76
+    ],
+    [
+     "brain/llm/providers/anthropic_provider.py",
+     79,
+     94
+    ]
+   ],
+   "required_assertions": [
+    "abstractmethod",
+    "Abstract base class for LLM text generation providers.",
+    "Abstract base class for text embedding providers.",
+    "_RETRYABLE_STATUS",
+    "Anthropic Claude API implementation of LLMProvider.",
+    "claude-3-5-sonnet-20241022"
+   ],
+   "category": "cross_surface",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from original 20-query Project Brain golden set",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated",
+     "source": "original 20-query Project Brain golden set",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q021",
+   "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+   "expect_files": [
+    "brain/indexers/file_indexer.py",
+    "brain/indexers/repo_indexer.py"
+   ],
+   "expect_symbols": [
+    "_normalize_chunk_params",
+    "_iter_overlap_ranges",
+    "_infer_embedding_text_limit",
+    "_coerce_symbol_line",
+    "should_ignore_dir",
+    "should_ignore_file"
+   ],
+   "expect_ranges": [
+    [
+     "brain/indexers/file_indexer.py",
+     49,
+     77
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     80,
+     104
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     107,
+     113
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     116,
+     120
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     59,
+     61
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     64,
+     86
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     89,
+     161
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     164,
+     172
+    ]
+   ],
+   "required_assertions": [
+    "Clamp chunking settings to safe values to avoid zero-step windows.",
+    "Yield inclusive line ranges with overlap between consecutive chunks.",
+    "Return provider-level char limit if explicitly configured.",
+    "LANGUAGE_MAP",
+    "FIGMA_REGEX",
+    ".tsx"
+   ],
+   "category": "architecture_memory",
+   "language": "ru",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q001",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q001",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q022",
+   "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+   "expect_files": [
+    "brain/retrieval/pipeline.py",
+    "brain/search/filters.py",
+    "brain/retrieval/reranker.py"
+   ],
+   "expect_symbols": [
+    "classify_query_route",
+    "_normalize_channel",
+    "_channel_weight",
+    "_path_keyword_hits",
+    "_markdown_frontmatter",
+    "classify_knowledge_status"
+   ],
+   "expect_ranges": [
+    [
+     "brain/retrieval/pipeline.py",
+     68,
+     86
+    ],
+    [
+     "brain/retrieval/pipeline.py",
+     89,
+     95
+    ],
+    [
+     "brain/retrieval/pipeline.py",
+     98,
+     110
+    ],
+    [
+     "brain/retrieval/pipeline.py",
+     113,
+     114
+    ],
+    [
+     "brain/search/filters.py",
+     56,
+     66
+    ],
+    [
+     "brain/search/filters.py",
+     69,
+     94
+    ],
+    [
+     "brain/search/filters.py",
+     97,
+     104
+    ],
+    [
+     "brain/search/filters.py",
+     107,
+     110
+    ]
+   ],
+   "required_assertions": [
+    "Hybrid retrieval pipeline: query understanding → channels → fusion → rerank.",
+    "Synthetic recall-pool candidate for a co-rank injected path.",
+    "Backward-compatible test/import surface for the shared sampler.",
+    "KNOWLEDGE_STATUS_CURRENT",
+    "KNOWLEDGE_STATUS_HISTORICAL",
+    "HISTORICAL_SUMMARY_PREFIX"
+   ],
+   "category": "architecture_memory",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation and bilingual expansion of q002",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation and bilingual expansion of q002",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q023",
+   "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+   "expect_files": [
+    "brain/embeddings/config.py",
+    "brain/config/settings.py",
+    "brain/llm/__init__.py"
+   ],
+   "expect_symbols": [
+    "EmbeddingConfig",
+    "EmbeddingConfig.as_metadata",
+    "get_embedding_config",
+    "content_hash",
+    "Settings",
+    "Settings.validate_postgres_pool_size"
+   ],
+   "expect_ranges": [
+    [
+     "brain/embeddings/config.py",
+     12,
+     22
+    ],
+    [
+     "brain/embeddings/config.py",
+     17,
+     22
+    ],
+    [
+     "brain/embeddings/config.py",
+     25,
+     32
+    ],
+    [
+     "brain/embeddings/config.py",
+     35,
+     38
+    ],
+    [
+     "brain/config/settings.py",
+     17,
+     640
+    ],
+    [
+     "brain/config/settings.py",
+     263,
+     266
+    ],
+    [
+     "brain/config/settings.py",
+     270,
+     273
+    ],
+    [
+     "brain/config/settings.py",
+     277,
+     280
+    ]
+   ],
+   "required_assertions": [
+    "dataclass",
+    "Configured embedding provider metadata and dimension resolution.",
+    "model",
+    "field_validator",
+    "classmethod",
+    "model_validator"
+   ],
+   "category": "ru_to_en",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q003",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q003",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q024",
+   "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+   "expect_files": [
+    "brain/llm/providers/nvidia_provider.py",
+    "brain/indexers/file_indexer.py"
+   ],
+   "expect_symbols": [
+    "NvidiaLLMProvider",
+    "NvidiaLLMProvider.__init__",
+    "NvidiaEmbeddingProvider",
+    "NvidiaEmbeddingProvider.__init__",
+    "_normalize_chunk_params",
+    "_iter_overlap_ranges"
+   ],
+   "expect_ranges": [
+    [
+     "brain/llm/providers/nvidia_provider.py",
+     7,
+     14
+    ],
+    [
+     "brain/llm/providers/nvidia_provider.py",
+     10,
+     14
+    ],
+    [
+     "brain/llm/providers/nvidia_provider.py",
+     17,
+     71
+    ],
+    [
+     "brain/llm/providers/nvidia_provider.py",
+     27,
+     33
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     49,
+     77
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     80,
+     104
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     107,
+     113
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     116,
+     120
+    ]
+   ],
+   "required_assertions": [
+    "MAX_INPUT_CHARS",
+    "NVIDIA NIM API implementation of LLMProvider using integrate.api.nvidia.com.",
+    "nvidia",
+    "Clamp chunking settings to safe values to avoid zero-step windows.",
+    "Yield inclusive line ranges with overlap between consecutive chunks.",
+    "Return provider-level char limit if explicitly configured."
+   ],
+   "category": "ru_to_en",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q004",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q004",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q025",
+   "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+   "expect_files": [
+    "apps/api/routers/core.py",
+    "apps/api/schemas.py",
+    "brain/search/code_search.py"
+   ],
+   "expect_symbols": [
+    "_late_interaction_request_id",
+    "_decision_line",
+    "_agent_v2_mode",
+    "_agent_repo_path",
+    "IndexRequest",
+    "AskRequest"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/routers/core.py",
+     82,
+     87
+    ],
+    [
+     "apps/api/routers/core.py",
+     90,
+     100
+    ],
+    [
+     "apps/api/routers/core.py",
+     103,
+     104
+    ],
+    [
+     "apps/api/routers/core.py",
+     107,
+     108
+    ],
+    [
+     "apps/api/schemas.py",
+     5,
+     6
+    ],
+    [
+     "apps/api/schemas.py",
+     9,
+     17
+    ],
+    [
+     "apps/api/schemas.py",
+     20,
+     27
+    ],
+    [
+     "apps/api/schemas.py",
+     30,
+     33
+    ]
+   ],
+   "required_assertions": [
+    "ASK_RETRIEVAL_LIMIT",
+    "ASK_DECISION_LIMIT",
+    "ASK_DECISION_FIELD_CHARS",
+    "current",
+    "active",
+    "architecture"
+   ],
+   "category": "ru_to_en",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q005",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q005",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q026",
+   "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+   "expect_files": [
+    "apps/api/routers/core.py",
+    "brain/memory/decision_store.py",
+    "brain/memory/rule_store.py"
+   ],
+   "expect_symbols": [
+    "_late_interaction_request_id",
+    "_decision_line",
+    "_agent_v2_mode",
+    "_agent_repo_path",
+    "DecisionStore",
+    "DecisionStore.add_decision"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/routers/core.py",
+     82,
+     87
+    ],
+    [
+     "apps/api/routers/core.py",
+     90,
+     100
+    ],
+    [
+     "apps/api/routers/core.py",
+     103,
+     104
+    ],
+    [
+     "apps/api/routers/core.py",
+     107,
+     108
+    ],
+    [
+     "brain/memory/decision_store.py",
+     9,
+     129
+    ],
+    [
+     "brain/memory/decision_store.py",
+     13,
+     100
+    ],
+    [
+     "brain/memory/decision_store.py",
+     103,
+     107
+    ],
+    [
+     "brain/memory/decision_store.py",
+     110,
+     117
+    ]
+   ],
+   "required_assertions": [
+    "ASK_RETRIEVAL_LIMIT",
+    "ASK_DECISION_LIMIT",
+    "ASK_DECISION_FIELD_CHARS",
+    "classmethod",
+    "Store for managing architectural and technical decisions.",
+    "active"
+   ],
+   "category": "architecture_memory",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q006",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q006",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q027",
+   "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+   "expect_files": [
+    "brain/database/harness_models.py",
+    "brain/memory/harness_store.py"
+   ],
+   "expect_symbols": [
+    "AgentTask",
+    "AgentTaskEvent",
+    "AgentTaskArtifact",
+    "AgentValidationResult",
+    "InvalidTransition",
+    "TaskNotFound"
+   ],
+   "expect_ranges": [
+    [
+     "brain/database/harness_models.py",
+     35,
+     57
+    ],
+    [
+     "brain/database/harness_models.py",
+     60,
+     86
+    ],
+    [
+     "brain/database/harness_models.py",
+     89,
+     109
+    ],
+    [
+     "brain/database/harness_models.py",
+     112,
+     133
+    ],
+    [
+     "brain/memory/harness_store.py",
+     32,
+     33
+    ],
+    [
+     "brain/memory/harness_store.py",
+     36,
+     37
+    ],
+    [
+     "brain/memory/harness_store.py",
+     40,
+     41
+    ],
+    [
+     "brain/memory/harness_store.py",
+     44,
+     45
+    ]
+   ],
+   "required_assertions": [
+    "HARNESS_SCHEMA",
+    "TASK_STATUSES",
+    "TERMINAL_STATUSES",
+    "classmethod",
+    "staticmethod",
+    "Raised when a status update doesn't follow the task state machine."
+   ],
+   "category": "ru_to_en",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q007",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q007",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q028",
+   "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+   "expect_files": [
+    "brain/memory/harness_store.py",
+    "brain/database/harness_models.py",
+    "brain/database/session.py"
+   ],
+   "expect_symbols": [
+    "InvalidTransition",
+    "TaskNotFound",
+    "VersionConflict",
+    "IdempotencyConflict",
+    "AgentTask",
+    "AgentTaskEvent"
+   ],
+   "expect_ranges": [
+    [
+     "brain/memory/harness_store.py",
+     32,
+     33
+    ],
+    [
+     "brain/memory/harness_store.py",
+     36,
+     37
+    ],
+    [
+     "brain/memory/harness_store.py",
+     40,
+     41
+    ],
+    [
+     "brain/memory/harness_store.py",
+     44,
+     45
+    ],
+    [
+     "brain/database/harness_models.py",
+     35,
+     57
+    ],
+    [
+     "brain/database/harness_models.py",
+     60,
+     86
+    ],
+    [
+     "brain/database/harness_models.py",
+     89,
+     109
+    ],
+    [
+     "brain/database/harness_models.py",
+     112,
+     133
+    ]
+   ],
+   "required_assertions": [
+    "classmethod",
+    "staticmethod",
+    "Raised when a status update doesn't follow the task state machine.",
+    "HARNESS_SCHEMA",
+    "TASK_STATUSES",
+    "TERMINAL_STATUSES"
+   ],
+   "category": "ru_to_en",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q008",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q008",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q029",
+   "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+   "expect_files": [
+    "brain/memory/decision_store.py",
+    "brain/database/repository_utils.py",
+    "brain/database/models.py"
+   ],
+   "expect_symbols": [
+    "DecisionStore",
+    "DecisionStore.add_decision",
+    "DecisionStore.list_decisions",
+    "DecisionStore.search_decisions",
+    "get_repository_by_path",
+    "require_repository_by_path"
+   ],
+   "expect_ranges": [
+    [
+     "brain/memory/decision_store.py",
+     9,
+     129
+    ],
+    [
+     "brain/memory/decision_store.py",
+     13,
+     100
+    ],
+    [
+     "brain/memory/decision_store.py",
+     103,
+     107
+    ],
+    [
+     "brain/memory/decision_store.py",
+     110,
+     117
+    ],
+    [
+     "brain/database/repository_utils.py",
+     13,
+     23
+    ],
+    [
+     "brain/database/repository_utils.py",
+     26,
+     36
+    ],
+    [
+     "brain/database/repository_utils.py",
+     39,
+     75
+    ],
+    [
+     "brain/database/repository_utils.py",
+     78,
+     83
+    ]
+   ],
+   "required_assertions": [
+    "classmethod",
+    "Store for managing architectural and technical decisions.",
+    "active",
+    "Repository lookup and index cleanup helpers.",
+    "Return the Repository row for an absolute repo path, if indexed.",
+    "Delete all indexed files, chunks, symbols, and chunk embeddings for a repo."
+   ],
+   "category": "known_symbol",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q009",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q009",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q030",
+   "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+   "expect_files": [
+    "brain/memory/rule_store.py",
+    "brain/database/repository_utils.py",
+    "brain/database/models.py"
+   ],
+   "expect_symbols": [
+    "slugify",
+    "RuleStore",
+    "RuleStore.add_rule",
+    "RuleStore.list_rules",
+    "get_repository_by_path",
+    "require_repository_by_path"
+   ],
+   "expect_ranges": [
+    [
+     "brain/memory/rule_store.py",
+     10,
+     15
+    ],
+    [
+     "brain/memory/rule_store.py",
+     17,
+     140
+    ],
+    [
+     "brain/memory/rule_store.py",
+     21,
+     59
+    ],
+    [
+     "brain/memory/rule_store.py",
+     62,
+     66
+    ],
+    [
+     "brain/database/repository_utils.py",
+     13,
+     23
+    ],
+    [
+     "brain/database/repository_utils.py",
+     26,
+     36
+    ],
+    [
+     "brain/database/repository_utils.py",
+     39,
+     75
+    ],
+    [
+     "brain/database/repository_utils.py",
+     78,
+     83
+    ]
+   ],
+   "required_assertions": [
+    "classmethod",
+    "Helper to convert a rule name to a standard slug ID.",
+    "Store for managing compliance and development rules.",
+    "Repository lookup and index cleanup helpers.",
+    "Return the Repository row for an absolute repo path, if indexed.",
+    "Delete all indexed files, chunks, symbols, and chunk embeddings for a repo."
+   ],
+   "category": "architecture_memory",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q010",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q010",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q031",
+   "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+   "expect_files": [
+    "apps/api/auth.py",
+    "apps/api/dependencies.py",
+    "apps/api/main.py"
+   ],
+   "expect_symbols": [
+    "require_api_key",
+    "get_db",
+    "get_redis",
+    "get_neo4j",
+    "lifespan",
+    "SecurityHeadersMiddleware"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/auth.py",
+     10,
+     19
+    ],
+    [
+     "apps/api/dependencies.py",
+     8,
+     11
+    ],
+    [
+     "apps/api/dependencies.py",
+     13,
+     15
+    ],
+    [
+     "apps/api/dependencies.py",
+     17,
+     19
+    ],
+    [
+     "apps/api/main.py",
+     40,
+     93
+    ],
+    [
+     "apps/api/main.py",
+     105,
+     114
+    ],
+    [
+     "apps/api/main.py",
+     106,
+     114
+    ],
+    [
+     "apps/api/main.py",
+     139,
+     146
+    ]
+   ],
+   "required_assertions": [
+    "API key authentication for orchestration endpoints.",
+    "X-API-Key",
+    "production",
+    "FastAPI dependency to get a PostgreSQL async database session.",
+    "FastAPI dependency to get the Redis client.",
+    "FastAPI dependency to get the Neo4j driver."
+   ],
+   "category": "stale_or_failure",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q011",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q011",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q032",
+   "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
+   "expect_files": [
+    "apps/api/dashboard_auth.py",
+    "apps/api/main.py",
+    "apps/api/dependencies.py"
+   ],
+   "expect_symbols": [
+    "DashboardSession",
+    "dashboard_auth_enabled",
+    "dashboard_auth_config_error",
+    "dashboard_cookie_secure",
+    "lifespan",
+    "SecurityHeadersMiddleware"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/dashboard_auth.py",
+     33,
+     36
+    ],
+    [
+     "apps/api/dashboard_auth.py",
+     39,
+     43
+    ],
+    [
+     "apps/api/dashboard_auth.py",
+     46,
+     55
+    ],
+    [
+     "apps/api/dashboard_auth.py",
+     58,
+     62
+    ],
+    [
+     "apps/api/main.py",
+     40,
+     93
+    ],
+    [
+     "apps/api/main.py",
+     105,
+     114
+    ],
+    [
+     "apps/api/main.py",
+     106,
+     114
+    ],
+    [
+     "apps/api/main.py",
+     139,
+     146
+    ]
+   ],
+   "required_assertions": [
+    "SESSION_COOKIE",
+    "LOGIN_CSRF_COOKIE",
+    "CSRF_HEADER",
+    "asynccontextmanager",
+    "_STATIC_DIR",
+    "font/woff2"
+   ],
+   "category": "stale_or_failure",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q012",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q012",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q033",
+   "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
+   "expect_files": [
+    "apps/api/routers/dashboard.py",
+    "apps/api/routers/jobs.py",
+    "brain/workers/queue.py"
+   ],
+   "expect_symbols": [
+    "_safe_settings",
+    "_operator_actions",
+    "_evidence_href",
+    "_known_rule_ids",
+    "_queue",
+    "_enqueue_response"
+   ],
+   "expect_ranges": [
+    [
+     "apps/api/routers/dashboard.py",
+     87,
+     103
+    ],
+    [
+     "apps/api/routers/dashboard.py",
+     106,
+     236
+    ],
+    [
+     "apps/api/routers/dashboard.py",
+     300,
+     346
+    ],
+    [
+     "apps/api/routers/dashboard.py",
+     349,
+     357
+    ],
+    [
+     "apps/api/routers/jobs.py",
+     23,
+     31
+    ],
+    [
+     "apps/api/routers/jobs.py",
+     34,
+     39
+    ],
+    [
+     "apps/api/routers/jobs.py",
+     43,
+     59
+    ],
+    [
+     "apps/api/routers/jobs.py",
+     63,
+     66
+    ]
+   ],
+   "required_assertions": [
+    "_CORE_SERVICES",
+    "_SERVICE_LABELS",
+    "_LANES",
+    "post",
+    "/reindex",
+    "/health-check"
+   ],
+   "category": "known_symbol",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q014",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q014",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q034",
+   "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+   "expect_files": [
+    "brain/graph/graph_client.py",
+    "brain/indexers/repo_indexer.py",
+    "brain/indexers/file_indexer.py"
+   ],
+   "expect_symbols": [
+    "ensure_graph_schema",
+    "build_qualified_symbol_identity",
+    "GraphClient",
+    "GraphClient.__init__",
+    "should_ignore_dir",
+    "should_ignore_file"
+   ],
+   "expect_ranges": [
+    [
+     "brain/graph/graph_client.py",
+     36,
+     47
+    ],
+    [
+     "brain/graph/graph_client.py",
+     48,
+     61
+    ],
+    [
+     "brain/graph/graph_client.py",
+     64,
+     444
+    ],
+    [
+     "brain/graph/graph_client.py",
+     67,
+     71
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     59,
+     61
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     64,
+     86
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     89,
+     161
+    ],
+    [
+     "brain/indexers/repo_indexer.py",
+     164,
+     172
+    ]
+   ],
+   "required_assertions": [
+    "GRAPH_SCHEMA_VERSION",
+    "EXCLUDED_HUB_SYMBOLS",
+    "FOCUS_DEFAULT_DEPTH",
+    "LANGUAGE_MAP",
+    "FIGMA_REGEX",
+    ".tsx"
+   ],
+   "category": "cross_surface",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from curated translation of q016",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_translation",
+     "source": "curated translation of q016",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q035",
+   "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+   "expect_files": [
+    "brain/database/session.py",
+    "brain/insights/proactive.py",
+    "tests/test_database_resilience.py",
+    "tests/test_proactive_insights.py"
+   ],
+   "expect_symbols": [
+    "get_async_session",
+    "check_health",
+    "close_database_connections",
+    "_init_db_unlocked",
+    "InsightNotFoundError",
+    "InsightTransitionError"
+   ],
+   "expect_ranges": [
+    [
+     "brain/database/session.py",
+     32,
+     41
+    ],
+    [
+     "brain/database/session.py",
+     64,
+     119
+    ],
+    [
+     "brain/database/session.py",
+     122,
+     140
+    ],
+    [
+     "brain/database/session.py",
+     143,
+     177
+    ],
+    [
+     "brain/insights/proactive.py",
+     64,
+     65
+    ],
+    [
+     "brain/insights/proactive.py",
+     68,
+     69
+    ],
+    [
+     "brain/insights/proactive.py",
+     72,
+     74
+    ],
+    [
+     "brain/insights/proactive.py",
+     77,
+     86
+    ]
+   ],
+   "required_assertions": [
+    "DATABASE_URL is not configured",
+    "REDIS_URL is not configured",
+    "Dependency helper to get an async SQLAlchemy session.",
+    "INSIGHT_ENGINE_VERSION",
+    "_ACTIVE_STATUSES",
+    "_VALID_SEVERITIES"
+   ],
+   "category": "cross_surface",
+   "language": "ru-en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from LFM council exact-query acceptance scenario",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "LFM council exact-query acceptance scenario",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q036",
+   "question": "Which settings keep late-interaction disabled by default and reject a remote provider URL unless it is explicitly allowed?",
+   "expect_files": [
+    "brain/config/settings.py",
+    "brain/late_interaction/provider.py",
+    "tests/test_late_interaction.py"
+   ],
+   "expect_symbols": [
+    "Settings",
+    "Settings.validate_postgres_pool_size",
+    "Settings.validate_postgres_max_overflow",
+    "Settings.validate_postgres_pool_timeout",
+    "LateInteractionProviderError",
+    "EncodedText"
+   ],
+   "expect_ranges": [
+    [
+     "brain/config/settings.py",
+     17,
+     640
+    ],
+    [
+     "brain/config/settings.py",
+     263,
+     266
+    ],
+    [
+     "brain/config/settings.py",
+     270,
+     273
+    ],
+    [
+     "brain/config/settings.py",
+     277,
+     280
+    ],
+    [
+     "brain/late_interaction/provider.py",
+     55,
+     56
+    ],
+    [
+     "brain/late_interaction/provider.py",
+     60,
+     63
+    ],
+    [
+     "brain/late_interaction/provider.py",
+     66,
+     239
+    ],
+    [
+     "brain/late_interaction/provider.py",
+     71,
+     101
+    ]
+   ],
+   "required_assertions": [
+    "field_validator",
+    "classmethod",
+    "model_validator",
+    "_SKIPLIST_WORDS",
+    "dataclass",
+    "LFM2.5-ColBERT client for a loopback llama.cpp sidecar."
+   ],
+   "category": "architecture_memory",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from LFM integration code review",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "LFM integration code review",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q037",
+   "question": "Where is the late_interaction_embeddings table declared and idempotently migrated without changing the dense pgvector column?",
+   "expect_files": [
+    "brain/database/models.py",
+    "brain/database/migrations.py"
+   ],
+   "expect_symbols": [
+    "Base",
+    "Repository",
+    "File",
+    "FileChunk",
+    "apply_migrations",
+    "_cleanup_legacy_memory_probes"
+   ],
+   "expect_ranges": [
+    [
+     "brain/database/models.py",
+     28,
+     31
+    ],
+    [
+     "brain/database/models.py",
+     34,
+     55
+    ],
+    [
+     "brain/database/models.py",
+     58,
+     82
+    ],
+    [
+     "brain/database/models.py",
+     85,
+     101
+    ],
+    [
+     "brain/database/migrations.py",
+     25,
+     44
+    ],
+    [
+     "brain/database/migrations.py",
+     47,
+     57
+    ],
+    [
+     "brain/database/migrations.py",
+     60,
+     69
+    ],
+    [
+     "brain/database/migrations.py",
+     72,
+     89
+    ]
+   ],
+   "required_assertions": [
+    "Base class for all SQLAlchemy declarative models.",
+    "repositories",
+    "files",
+    "SCHEMA_MIGRATION_LOCK_ID",
+    "Lightweight schema migrations run during init_db.",
+    "Apply idempotent PostgreSQL schema upgrades."
+   ],
+   "category": "known_symbol",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from LFM integration code review",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "LFM integration code review",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q038",
+   "question": "How are float16 token matrices encoded, decoded, shape-checked, and scored with MaxSim when a payload is corrupt?",
+   "expect_files": [
+    "brain/late_interaction/codec.py",
+    "tests/test_late_interaction.py"
+   ],
+   "expect_symbols": [
+    "LateInteractionCodecError",
+    "encode_matrix",
+    "decode_matrix",
+    "maxsim_score",
+    "test_late_interaction_defaults_cannot_change_production_ranking",
+    "test_blank_optional_lfm_approval_integers_are_none_while_lfm_is_off"
+   ],
+   "expect_ranges": [
+    [
+     "brain/late_interaction/codec.py",
+     8,
+     9
+    ],
+    [
+     "brain/late_interaction/codec.py",
+     12,
+     20
+    ],
+    [
+     "brain/late_interaction/codec.py",
+     23,
+     34
+    ],
+    [
+     "brain/late_interaction/codec.py",
+     37,
+     47
+    ],
+    [
+     "tests/test_late_interaction.py",
+     38,
+     46
+    ],
+    [
+     "tests/test_late_interaction.py",
+     49,
+     56
+    ],
+    [
+     "tests/test_late_interaction.py",
+     59,
+     74
+    ],
+    [
+     "tests/test_late_interaction.py",
+     77,
+     207
+    ]
+   ],
+   "required_assertions": [
+    "Compact and score ColBERT token matrices.",
+    "Stored matrix metadata and bytes disagree.",
+    "float16",
+    "asyncio",
+    "BRAIN_BUILD_SHA",
+    "BRAIN_SOURCE_DIGEST"
+   ],
+   "category": "stale_or_failure",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from LFM integration code review",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "LFM integration code review",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q039",
+   "question": "How does the LFM provider discover special tokens, expand a query, filter document punctuation, and normalize token vectors?",
+   "expect_files": [
+    "brain/late_interaction/provider.py",
+    "tests/test_late_interaction.py"
+   ],
+   "expect_symbols": [
+    "LateInteractionProviderError",
+    "EncodedText",
+    "LfmColbertProvider",
+    "LfmColbertProvider.__init__",
+    "test_late_interaction_defaults_cannot_change_production_ranking",
+    "test_blank_optional_lfm_approval_integers_are_none_while_lfm_is_off"
+   ],
+   "expect_ranges": [
+    [
+     "brain/late_interaction/provider.py",
+     55,
+     56
+    ],
+    [
+     "brain/late_interaction/provider.py",
+     60,
+     63
+    ],
+    [
+     "brain/late_interaction/provider.py",
+     66,
+     239
+    ],
+    [
+     "brain/late_interaction/provider.py",
+     71,
+     101
+    ],
+    [
+     "tests/test_late_interaction.py",
+     38,
+     46
+    ],
+    [
+     "tests/test_late_interaction.py",
+     49,
+     56
+    ],
+    [
+     "tests/test_late_interaction.py",
+     59,
+     74
+    ],
+    [
+     "tests/test_late_interaction.py",
+     77,
+     207
+    ]
+   ],
+   "required_assertions": [
+    "_SKIPLIST_WORDS",
+    "dataclass",
+    "LFM2.5-ColBERT client for a loopback llama.cpp sidecar.",
+    "asyncio",
+    "BRAIN_BUILD_SHA",
+    "BRAIN_SOURCE_DIGEST"
+   ],
+   "category": "stale_or_failure",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from LFM integration council",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "LFM integration council",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q040",
+   "question": "Which code performs resumable late-interaction backfill, reports coverage, and exposes dry-run/write CLI commands?",
+   "expect_files": [
+    "brain/late_interaction/backfill.py",
+    "apps/cli/commands/embeddings.py",
+    "brain/late_interaction/store.py"
+   ],
+   "expect_symbols": [
+    "LateInteractionBackfillResult",
+    "LateInteractionBackfillResult.to_dict",
+    "_work_items",
+    "backfill_late_interaction",
+    "_resolve_repo_async",
+    "embeddings_status"
+   ],
+   "expect_ranges": [
+    [
+     "brain/late_interaction/backfill.py",
+     19,
+     29
+    ],
+    [
+     "brain/late_interaction/backfill.py",
+     28,
+     29
+    ],
+    [
+     "brain/late_interaction/backfill.py",
+     32,
+     72
+    ],
+    [
+     "brain/late_interaction/backfill.py",
+     75,
+     121
+    ],
+    [
+     "apps/cli/commands/embeddings.py",
+     28,
+     33
+    ],
+    [
+     "apps/cli/commands/embeddings.py",
+     37,
+     64
+    ],
+    [
+     "apps/cli/commands/embeddings.py",
+     68,
+     92
+    ],
+    [
+     "apps/cli/commands/embeddings.py",
+     96,
+     145
+    ]
+   ],
+   "required_assertions": [
+    "dataclass",
+    "Resumable repository backfill for the additive ColBERT store.",
+    "late-interaction backfill requires a positive bounded limit",
+    "command",
+    "CLI commands for embedding integrity reporting.",
+    "status"
+   ],
+   "category": "cross_surface",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from LFM cutover runbook",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "LFM cutover runbook",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q041",
+   "question": "Where does candidate late-interaction reranking check coverage and chunk budget, calculate file scores, and fail open on provider errors?",
+   "expect_files": [
+    "brain/late_interaction/store.py",
+    "tests/test_late_interaction.py"
+   ],
+   "expect_symbols": [
+    "content_hash",
+    "LateInteractionInventory",
+    "LateInteractionInventory.coverage_pct",
+    "LateInteractionInventory.to_dict",
+    "test_late_interaction_defaults_cannot_change_production_ranking",
+    "test_blank_optional_lfm_approval_integers_are_none_while_lfm_is_off"
+   ],
+   "expect_ranges": [
+    [
+     "brain/late_interaction/store.py",
+     27,
+     28
+    ],
+    [
+     "brain/late_interaction/store.py",
+     32,
+     51
+    ],
+    [
+     "brain/late_interaction/store.py",
+     45,
+     48
+    ],
+    [
+     "brain/late_interaction/store.py",
+     50,
+     51
+    ],
+    [
+     "tests/test_late_interaction.py",
+     38,
+     46
+    ],
+    [
+     "tests/test_late_interaction.py",
+     49,
+     56
+    ],
+    [
+     "tests/test_late_interaction.py",
+     59,
+     74
+    ],
+    [
+     "tests/test_late_interaction.py",
+     77,
+     207
+    ]
+   ],
+   "required_assertions": [
+    "dataclass",
+    "Persistence, coverage and MaxSim reranking for ColBERT matrices.",
+    "property",
+    "asyncio",
+    "BRAIN_BUILD_SHA",
+    "BRAIN_SOURCE_DIGEST"
+   ],
+   "category": "known_symbol",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from LFM integration code review",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "LFM integration code review",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q042",
+   "question": "How does late-interaction dual write open its circuit after consecutive failures and preserve the authoritative dense write?",
+   "expect_files": [
+    "brain/indexers/file_indexer.py",
+    "tests/test_late_interaction.py"
+   ],
+   "expect_symbols": [
+    "_normalize_chunk_params",
+    "_iter_overlap_ranges",
+    "_infer_embedding_text_limit",
+    "_coerce_symbol_line",
+    "test_late_interaction_defaults_cannot_change_production_ranking",
+    "test_blank_optional_lfm_approval_integers_are_none_while_lfm_is_off"
+   ],
+   "expect_ranges": [
+    [
+     "brain/indexers/file_indexer.py",
+     49,
+     77
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     80,
+     104
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     107,
+     113
+    ],
+    [
+     "brain/indexers/file_indexer.py",
+     116,
+     120
+    ],
+    [
+     "tests/test_late_interaction.py",
+     38,
+     46
+    ],
+    [
+     "tests/test_late_interaction.py",
+     49,
+     56
+    ],
+    [
+     "tests/test_late_interaction.py",
+     59,
+     74
+    ],
+    [
+     "tests/test_late_interaction.py",
+     77,
+     207
+    ]
+   ],
+   "required_assertions": [
+    "Clamp chunking settings to safe values to avoid zero-step windows.",
+    "Yield inclusive line ranges with overlap between consecutive chunks.",
+    "Return provider-level char limit if explicitly configured.",
+    "asyncio",
+    "BRAIN_BUILD_SHA",
+    "BRAIN_SOURCE_DIGEST"
+   ],
+   "category": "stale_or_failure",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from LFM integration code review",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "LFM integration code review",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q043",
+   "question": "Where are final baseline and counterfactual late-interaction rankings stored durably without retaining the raw query?",
+   "expect_files": [
+    "brain/late_interaction/shadow.py",
+    "brain/database/models.py",
+    "brain/database/migrations.py"
+   ],
+   "expect_symbols": [
+    "hash_query",
+    "make_shadow_idempotency_key",
+    "ShadowRankedItem",
+    "ShadowRankedItem._finite_score",
+    "Base",
+    "Repository"
+   ],
+   "expect_ranges": [
+    [
+     "brain/late_interaction/shadow.py",
+     36,
+     44
+    ],
+    [
+     "brain/late_interaction/shadow.py",
+     47,
+     55
+    ],
+    [
+     "brain/late_interaction/shadow.py",
+     58,
+     73
+    ],
+    [
+     "brain/late_interaction/shadow.py",
+     70,
+     73
+    ],
+    [
+     "brain/database/models.py",
+     28,
+     31
+    ],
+    [
+     "brain/database/models.py",
+     34,
+     55
+    ],
+    [
+     "brain/database/models.py",
+     58,
+     82
+    ],
+    [
+     "brain/database/models.py",
+     85,
+     101
+    ]
+   ],
+   "required_assertions": [
+    "MAX_SHADOW_TOP_K",
+    "MAX_SHADOW_METRICS",
+    "MAX_SHADOW_TIMINGS",
+    "Base class for all SQLAlchemy declarative models.",
+    "repositories",
+    "files"
+   ],
+   "category": "cross_surface",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from LFM council durable-shadow requirement",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "LFM council durable-shadow requirement",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q044",
+   "question": "How is a harness acceptance checkpoint bound to task version, fencing token, hashes, and a signed immutable record?",
+   "expect_files": [
+    "brain/memory/harness_store.py",
+    "brain/database/harness_models.py",
+    "apps/api/routers/harness.py"
+   ],
+   "expect_symbols": [
+    "InvalidTransition",
+    "TaskNotFound",
+    "VersionConflict",
+    "IdempotencyConflict",
+    "AgentTask",
+    "AgentTaskEvent"
+   ],
+   "expect_ranges": [
+    [
+     "brain/memory/harness_store.py",
+     32,
+     33
+    ],
+    [
+     "brain/memory/harness_store.py",
+     36,
+     37
+    ],
+    [
+     "brain/memory/harness_store.py",
+     40,
+     41
+    ],
+    [
+     "brain/memory/harness_store.py",
+     44,
+     45
+    ],
+    [
+     "brain/database/harness_models.py",
+     35,
+     57
+    ],
+    [
+     "brain/database/harness_models.py",
+     60,
+     86
+    ],
+    [
+     "brain/database/harness_models.py",
+     89,
+     109
+    ],
+    [
+     "brain/database/harness_models.py",
+     112,
+     133
+    ]
+   ],
+   "required_assertions": [
+    "classmethod",
+    "staticmethod",
+    "Raised when a status update doesn't follow the task state machine.",
+    "HARNESS_SCHEMA",
+    "TASK_STATUSES",
+    "TERMINAL_STATUSES"
+   ],
+   "category": "known_symbol",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from harness reliability implementation",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "harness reliability implementation",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q045",
+   "question": "How is repository source lineage recorded in a source manifest and checked before freshness is considered proven?",
+   "expect_files": [
+    "brain/memory/source_manifest.py",
+    "scripts/write_source_manifest.py",
+    "brain/memory/repo_freshness.py"
+   ],
+   "expect_symbols": [
+    "read_source_manifest",
+    "source_manifest_revision",
+    "embedded_source_revision",
+    "revision_matches",
+    "_iter_files",
+    "_file_digest"
+   ],
+   "expect_ranges": [
+    [
+     "brain/memory/source_manifest.py",
+     15,
+     34
+    ],
+    [
+     "brain/memory/source_manifest.py",
+     37,
+     41
+    ],
+    [
+     "brain/memory/source_manifest.py",
+     44,
+     59
+    ],
+    [
+     "brain/memory/source_manifest.py",
+     62,
+     89
+    ],
+    [
+     "scripts/write_source_manifest.py",
+     32,
+     50
+    ],
+    [
+     "scripts/write_source_manifest.py",
+     53,
+     58
+    ],
+    [
+     "scripts/write_source_manifest.py",
+     61,
+     98
+    ],
+    [
+     "scripts/write_source_manifest.py",
+     101,
+     124
+    ]
+   ],
+   "required_assertions": [
+    "SOURCE_MANIFEST_FILENAME",
+    "SOURCE_MANIFEST_SCHEMA_VERSION",
+    "_HEX_RE",
+    "MANIFEST_NAME",
+    "CONTENT_DIGEST_RE",
+    "IGNORED_DIRS"
+   ],
+   "category": "cross_surface",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from production freshness diagnostics",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "production freshness diagnostics",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q046",
+   "question": "How does self-diagnosis combine deterministic probes with optional LLM synthesis and degrade when the configured model fails?",
+   "expect_files": [
+    "brain/insights/proactive.py",
+    "brain/workers/tasks.py",
+    "brain/llm/router.py"
+   ],
+   "expect_symbols": [
+    "InsightNotFoundError",
+    "InsightTransitionError",
+    "allowed_status_transitions",
+    "is_legal_status_transition",
+    "StaleWorkerFencingError",
+    "validate_task_fencing"
+   ],
+   "expect_ranges": [
+    [
+     "brain/insights/proactive.py",
+     64,
+     65
+    ],
+    [
+     "brain/insights/proactive.py",
+     68,
+     69
+    ],
+    [
+     "brain/insights/proactive.py",
+     72,
+     74
+    ],
+    [
+     "brain/insights/proactive.py",
+     77,
+     86
+    ],
+    [
+     "brain/workers/tasks.py",
+     37,
+     39
+    ],
+    [
+     "brain/workers/tasks.py",
+     42,
+     53
+    ],
+    [
+     "brain/workers/tasks.py",
+     90,
+     94
+    ],
+    [
+     "brain/workers/tasks.py",
+     97,
+     111
+    ]
+   ],
+   "required_assertions": [
+    "INSIGHT_ENGINE_VERSION",
+    "_ACTIVE_STATUSES",
+    "_VALID_SEVERITIES",
+    "_NIGHTLY_QUALITY_PROBES",
+    "Background job handlers — delegate to existing brain modules.",
+    "Raised when a worker's fencing token is no longer active in Redis."
+   ],
+   "category": "cross_surface",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from Project Brain self-diagnosis incident",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "Project Brain self-diagnosis incident",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q047",
+   "question": "Which checked-in n8n workflows trigger nightly health, proactive insights, git reindex, and the weekly benchmark?",
+   "expect_files": [
+    "n8n/workflows/nightly-health.json",
+    "n8n/workflows/nightly-proactive-insights.json",
+    "n8n/workflows/git-merge-reindex.json",
+    "n8n/workflows/weekly-benchmark.json"
+   ],
+   "expect_symbols": [
+    "nightly-health"
+   ],
+   "expect_ranges": [
+    [
+     "n8n/workflows/nightly-health.json",
+     1,
+     30
+    ]
+   ],
+   "required_assertions": [
+    "name",
+    "nodes",
+    "connections"
+   ],
+   "category": "known_symbol",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from n8n orchestration ADR",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "n8n orchestration ADR",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q048",
+   "question": "Where is dashboard responsive behavior implemented and which smoke script verifies desktop and mobile layouts?",
+   "expect_files": [
+    "apps/api/static/dashboard.css",
+    "apps/api/templates/orchestration.html",
+    "scripts/dashboard_responsive_smoke.py"
+   ],
+   "expect_symbols": [
+    "LoginCheck",
+    "RouteResult",
+    "parse_key_value_file",
+    "import_playwright"
+   ],
+   "expect_ranges": [
+    [
+     "scripts/dashboard_responsive_smoke.py",
+     49,
+     52
+    ],
+    [
+     "scripts/dashboard_responsive_smoke.py",
+     56,
+     66
+    ],
+    [
+     "scripts/dashboard_responsive_smoke.py",
+     69,
+     79
+    ],
+    [
+     "scripts/dashboard_responsive_smoke.py",
+     82,
+     91
+    ]
+   ],
+   "required_assertions": [
+    "dataclass",
+    "__main__",
+    "overview"
+   ],
+   "category": "cross_surface",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from dashboard release verification",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "dashboard release verification",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q049",
+   "question": "How does graph schema v2 scope node identity by repository and prevent legacy unscoped nodes from contaminating strict reads?",
+   "expect_files": [
+    "brain/graph/schema.py",
+    "brain/graph/graph_client.py",
+    "tests/test_graph_repository_isolation.py"
+   ],
+   "expect_symbols": [
+    "NodeType",
+    "RelationshipType",
+    "ensure_graph_schema",
+    "build_qualified_symbol_identity",
+    "GraphClient",
+    "GraphClient.__init__"
+   ],
+   "expect_ranges": [
+    [
+     "brain/graph/schema.py",
+     4,
+     24
+    ],
+    [
+     "brain/graph/schema.py",
+     26,
+     50
+    ],
+    [
+     "brain/graph/graph_client.py",
+     36,
+     47
+    ],
+    [
+     "brain/graph/graph_client.py",
+     48,
+     61
+    ],
+    [
+     "brain/graph/graph_client.py",
+     64,
+     444
+    ],
+    [
+     "brain/graph/graph_client.py",
+     67,
+     71
+    ],
+    [
+     "tests/test_graph_repository_isolation.py",
+     16,
+     33
+    ],
+    [
+     "tests/test_graph_repository_isolation.py",
+     36,
+     45
+    ]
+   ],
+   "required_assertions": [
+    "REPOSITORY",
+    "MODULE",
+    "FILE",
+    "GRAPH_SCHEMA_VERSION",
+    "EXCLUDED_HUB_SYMBOLS",
+    "FOCUS_DEFAULT_DEPTH"
+   ],
+   "category": "known_symbol",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from repository-scoped graph migration",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "repository-scoped graph migration",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  },
+  {
+   "id": "q050",
+   "question": "How is embedding coverage, provider/model identity, dimension, and content hash integrity verified for a repository?",
+   "expect_files": [
+    "brain/embeddings/integrity.py",
+    "brain/embeddings/store.py",
+    "tests/test_embeddings_integrity.py"
+   ],
+   "expect_symbols": [
+    "EmbeddingInventory",
+    "EmbeddingInventory.to_dict",
+    "_is_current_embedding",
+    "_embedding_reason",
+    "EmbeddingDimensionError",
+    "validate_vector"
+   ],
+   "expect_ranges": [
+    [
+     "brain/embeddings/integrity.py",
+     18,
+     53
+    ],
+    [
+     "brain/embeddings/integrity.py",
+     35,
+     53
+    ],
+    [
+     "brain/embeddings/integrity.py",
+     56,
+     74
+    ],
+    [
+     "brain/embeddings/integrity.py",
+     77,
+     100
+    ],
+    [
+     "brain/embeddings/store.py",
+     19,
+     20
+    ],
+    [
+     "brain/embeddings/store.py",
+     23,
+     30
+    ],
+    [
+     "brain/embeddings/store.py",
+     33,
+     52
+    ],
+    [
+     "brain/embeddings/store.py",
+     55,
+     75
+    ]
+   ],
+   "required_assertions": [
+    "dataclass",
+    "Embedding inventory, compatibility checks, and pgvector coverage reporting.",
+    "Return (is_current, reason) for an embedding row.",
+    "Create and validate embedding rows with full metadata.",
+    "Raised when a vector length does not match configured dimension.",
+    "Write the ANN-indexed pgvector column using the correct SQL cast."
+   ],
+   "category": "known_symbol",
+   "language": "en",
+   "provenance": {
+    "kind": "curated",
+    "source": "Enriched from embedding integrity diagnostics",
+    "production_real": false,
+    "original_provenance": {
+     "kind": "curated_synthetic",
+     "source": "embedding integrity diagnostics",
+     "production_real": false
+    },
+    "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved"
+   }
+  }
+ ],
+ "repository": {
+  "name": "Perlitten/Brain",
+  "pinned_commit": "2f2e08e5c8a6b8c4ed18473098d2bb056d25643b",
+  "pinned_ref": "master@2026-10-02"
+ },
+ "category_split": {
+  "unknown_location": 15,
+  "known_symbol": 10,
+  "cross_surface": 10,
+  "architecture_memory": 5,
+  "ru_to_en": 5,
+  "stale_or_failure": 5
+ },
+ "production_real_claim": false,
+ "provenance_note": "Curated corpus: authored/enriched questions about the Brain repository itself. AST enrichment does not make them observed production tasks — acceptance-ineligible for production benefit claims by design."
+}

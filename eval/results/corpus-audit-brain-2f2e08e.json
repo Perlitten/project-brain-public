@@ -1,0 +1,227 @@
+{
+  "corpus": {
+    "acceptance_eligible": false,
+    "acceptance_ineligible_reasons": [
+      "q001:production_real_required",
+      "q002:production_real_required",
+      "q003:production_real_required",
+      "q004:production_real_required",
+      "q005:production_real_required",
+      "q006:production_real_required",
+      "q007:production_real_required",
+      "q008:production_real_required",
+      "q009:production_real_required",
+      "q010:production_real_required",
+      "q011:production_real_required",
+      "q012:production_real_required",
+      "q013:production_real_required",
+      "q014:production_real_required",
+      "q015:production_real_required",
+      "q016:production_real_required",
+      "q017:production_real_required",
+      "q018:production_real_required",
+      "q019:production_real_required",
+      "q020:production_real_required",
+      "q021:production_real_required",
+      "q022:production_real_required",
+      "q023:production_real_required",
+      "q024:production_real_required",
+      "q025:production_real_required",
+      "q026:production_real_required",
+      "q027:production_real_required",
+      "q028:production_real_required",
+      "q029:production_real_required",
+      "q030:production_real_required",
+      "q031:production_real_required",
+      "q032:production_real_required",
+      "q033:production_real_required",
+      "q034:production_real_required",
+      "q035:production_real_required",
+      "q036:production_real_required",
+      "q037:production_real_required",
+      "q038:production_real_required",
+      "q039:production_real_required",
+      "q040:production_real_required",
+      "q041:production_real_required",
+      "q042:production_real_required",
+      "q043:production_real_required",
+      "q044:production_real_required",
+      "q045:production_real_required",
+      "q046:production_real_required",
+      "q047:production_real_required",
+      "q048:production_real_required",
+      "q049:production_real_required",
+      "q050:production_real_required"
+    ],
+    "category_counts": {
+      "architecture_memory": 5,
+      "cross_surface": 10,
+      "known_symbol": 10,
+      "ru_to_en": 5,
+      "stale_or_failure": 5,
+      "unknown_location": 15
+    },
+    "fixture_sha256": {},
+    "holdout_excluded": [],
+    "holdout_ids": [],
+    "manifest_path": "eval/token_economy_tasks_v2.json",
+    "manifest_sha256": "52cbd3517543d5d446cec39242684e30408ef84ce12c4c6c97b94290168efc15",
+    "repository": {
+      "name": "Perlitten/Brain",
+      "pinned_commit": "2f2e08e5c8a6b8c4ed18473098d2bb056d25643b",
+      "pinned_ref": "master@2026-10-02"
+    },
+    "seed": 20260810
+  },
+  "task_issues": {
+    "q003": {
+      "category": "unknown_location",
+      "issues": [
+        "symbols_absent:EmbeddingConfig.as_metadata"
+      ]
+    },
+    "q004": {
+      "category": "unknown_location",
+      "issues": [
+        "symbols_absent:NvidiaLLMProvider.__init__,NvidiaEmbeddingProvider.__init__"
+      ]
+    },
+    "q011": {
+      "category": "unknown_location",
+      "issues": [
+        "unscored_assertions:1"
+      ]
+    },
+    "q013": {
+      "category": "unknown_location",
+      "issues": [
+        "symbols_absent:_operator_actions,_evidence_href",
+        "unscored_assertions:1"
+      ]
+    },
+    "q014": {
+      "category": "unknown_location",
+      "issues": [
+        "symbols_absent:_operator_actions,_evidence_href",
+        "unscored_assertions:1"
+      ]
+    },
+    "q015": {
+      "category": "known_symbol",
+      "issues": [
+        "symbols_absent:GraphClient.__init__"
+      ]
+    },
+    "q016": {
+      "category": "unknown_location",
+      "issues": [
+        "symbols_absent:GraphClient.__init__"
+      ]
+    },
+    "q018": {
+      "category": "cross_surface",
+      "issues": [
+        "unscored_assertions:1"
+      ]
+    },
+    "q019": {
+      "category": "cross_surface",
+      "issues": [
+        "symbols_absent:ModelRouter.__init__,ModelRouter.task_model"
+      ]
+    },
+    "q020": {
+      "category": "cross_surface",
+      "issues": [
+        "symbols_absent:LLMProvider.generate,EmbeddingProvider.embed,AnthropicLLMProvider.__init__"
+      ]
+    },
+    "q023": {
+      "category": "ru_to_en",
+      "issues": [
+        "symbols_absent:EmbeddingConfig.as_metadata,Settings.validate_postgres_pool_size"
+      ]
+    },
+    "q024": {
+      "category": "ru_to_en",
+      "issues": [
+        "symbols_absent:NvidiaLLMProvider.__init__,NvidiaEmbeddingProvider.__init__"
+      ]
+    },
+    "q031": {
+      "category": "stale_or_failure",
+      "issues": [
+        "unscored_assertions:1"
+      ]
+    },
+    "q033": {
+      "category": "known_symbol",
+      "issues": [
+        "symbols_absent:_operator_actions,_evidence_href",
+        "unscored_assertions:1"
+      ]
+    },
+    "q034": {
+      "category": "cross_surface",
+      "issues": [
+        "symbols_absent:GraphClient.__init__"
+      ]
+    },
+    "q036": {
+      "category": "architecture_memory",
+      "issues": [
+        "symbols_absent:Settings.validate_postgres_pool_size,Settings.validate_postgres_max_overflow,Settings.validate_postgres_pool_timeout"
+      ]
+    },
+    "q039": {
+      "category": "stale_or_failure",
+      "issues": [
+        "symbols_absent:LfmColbertProvider.__init__"
+      ]
+    },
+    "q040": {
+      "category": "cross_surface",
+      "issues": [
+        "symbols_absent:LateInteractionBackfillResult.to_dict"
+      ]
+    },
+    "q041": {
+      "category": "known_symbol",
+      "issues": [
+        "symbols_absent:LateInteractionInventory.coverage_pct,LateInteractionInventory.to_dict"
+      ]
+    },
+    "q043": {
+      "category": "cross_surface",
+      "issues": [
+        "symbols_absent:ShadowRankedItem._finite_score"
+      ]
+    },
+    "q046": {
+      "category": "cross_surface",
+      "issues": [
+        "unscored_assertions:1"
+      ]
+    },
+    "q049": {
+      "category": "known_symbol",
+      "issues": [
+        "symbols_absent:GraphClient.__init__"
+      ]
+    },
+    "q050": {
+      "category": "known_symbol",
+      "issues": [
+        "symbols_absent:EmbeddingInventory.to_dict"
+      ]
+    }
+  },
+  "tasks": 50,
+  "tasks_with_issues": 23,
+  "totals": {
+    "literal_in_expected_range": 158,
+    "literal_outside_expected_ranges": 126,
+    "symbols_absent": 31,
+    "unscored_assertions": 7
+  }
+}

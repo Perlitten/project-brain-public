@@ -1,0 +1,317 @@
+{
+  "id": "PBProactiveIn01",
+  "name": "Nightly LLM Self Diagnosis",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 3 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-self-diagnosis",
+      "name": "Nightly 03:30 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 180]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "execute-self-diagnosis",
+      "name": "Harness Execute Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PROJECT_BRAIN_API_URL || 'http://api:8000' }}/jobs/self-diagnosis",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.PROJECT_BRAIN_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ scheduled: true, use_llm: true, idempotency_key: 'nightly-self-diagnosis:' + $now.toISODate(), trigger_source: 'n8n_schedule', trigger_reference: $execution.id }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "enqueue-self-diagnosis",
+      "name": "Enqueue LLM Self Diagnosis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "id": "wait-self-diagnosis",
+      "name": "Wait for Diagnosis Worker",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.PROJECT_BRAIN_API_URL || 'http://api:8000') + '/jobs/' + ($json.job_id || $json.id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.PROJECT_BRAIN_API_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "check-self-diagnosis",
+      "name": "Check Diagnosis Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "diagnosis-completed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "completed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-diagnosis-completed",
+      "name": "Diagnosis Completed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "diagnosis-failed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "failed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-diagnosis-failed",
+      "name": "Diagnosis Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1280, 420]
+    },
+    {
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "={{ 'Self diagnosis job failed after retries: ' + ($json.error || $json.id) }}"
+      },
+      "id": "fail-diagnosis-workflow",
+      "name": "Fail Diagnosis Workflow",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1520, 360]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "diagnosis-ok",
+              "name": "completed",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "diagnosis-job-id",
+              "name": "job_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "telegram-status",
+              "name": "telegram_status",
+              "value": "={{ $json.result?.telegram?.status || 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "llm-status",
+              "name": "llm_status",
+              "value": "={{ $json.result?.llm?.status || 'unknown' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "record-diagnosis-success",
+      "name": "Record Diagnosis Success",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1280, 180]
+    }
+  ],
+  "connections": {
+    "Nightly 03:30 UTC": {
+      "main": [
+        [
+          {
+            "node": "Enqueue LLM Self Diagnosis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Harness Execute Trigger": {
+      "main": [
+        [
+          {
+            "node": "Enqueue LLM Self Diagnosis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enqueue LLM Self Diagnosis": {
+      "main": [
+        [
+          {
+            "node": "Wait for Diagnosis Worker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Diagnosis Worker": {
+      "main": [
+        [
+          {
+            "node": "Check Diagnosis Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Diagnosis Job": {
+      "main": [
+        [
+          {
+            "node": "Diagnosis Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diagnosis Completed?": {
+      "main": [
+        [
+          {
+            "node": "Record Diagnosis Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Diagnosis Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diagnosis Failed?": {
+      "main": [
+        [
+          {
+            "node": "Fail Diagnosis Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait for Diagnosis Worker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 14400
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "project-brain"
+    },
+    {
+      "name": "production"
+    },
+    {
+      "name": "self-diagnosis"
+    }
+  ]
+}

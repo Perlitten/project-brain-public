@@ -1,0 +1,200 @@
+name: lfm-colbert-cpu
+
+x-llama-image: &llama-image
+  build:
+    context: ../lfm-colbert-canary
+    args:
+      LLAMA_CPP_COMMIT: 7e1e28cae36d41fe7bbe9dae7c9625de6565c063
+  image: project-brain/lfm-colbert-cpu-llama:${LFM_CPU_LLAMA_IMAGE_TAG:-llama-7e1e28c-bf16}
+
+services:
+  model-init:
+    <<: *llama-image
+    container_name: lfm-colbert-cpu-model-init
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        model=/models/LFM2.5-ColBERT-350M-BF16.gguf
+        expected=c21d5cacc004cbc7746dbeeaee496c74b01f0f7bfdef1e1a57570d1744ef871b
+        url=https://huggingface.co/LiquidAI/LFM2.5-ColBERT-350M-GGUF/resolve/bc240003aba07253e261a8aaf0d2c9683318a967/LFM2.5-ColBERT-350M-BF16.gguf
+        if [ -f "$$model" ] && [ "$$(sha256sum "$$model" | cut -d' ' -f1)" = "$$expected" ]; then
+          exit 0
+        fi
+        curl -fL --retry 4 --retry-delay 2 "$$url" -o "$$model.partial"
+        actual=$$(sha256sum "$$model.partial" | cut -d' ' -f1)
+        test "$$actual" = "$$expected"
+        mv "$$model.partial" "$$model"
+        chmod 0444 "$$model"
+    volumes:
+      - lfm_cpu_models:/models
+    networks:
+      - cpu_edge
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    restart: "no"
+
+  llama:
+    <<: *llama-image
+    container_name: lfm-colbert-cpu-llama
+    command:
+      - -m
+      - /models/LFM2.5-ColBERT-350M-BF16.gguf
+      - --embedding
+      - --pooling
+      - none
+      - --ctx-size
+      - "1024"
+      - --batch-size
+      - "1024"
+      - --ubatch-size
+      - "512"
+      - --threads
+      - "${LFM_CPU_LLAMA_THREADS:-2}"
+      - --threads-batch
+      - "${LFM_CPU_LLAMA_THREADS_BATCH:-2}"
+      - --parallel
+      - "1"
+      - --metrics
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+    expose:
+      - "8080"
+    volumes:
+      - lfm_cpu_models:/models:ro
+    networks:
+      - cpu_backend
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: ${LFM_CPU_LLAMA_MEMORY_LIMIT:-3g}
+    cpus: ${LFM_CPU_LLAMA_CPUS:-2.0}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 10m
+    restart: unless-stopped
+    labels:
+      io.project-brain.role: late-interaction-cpu-encoder
+      io.project-brain.cutover: "false"
+      io.project-brain.model: LiquidAI/LFM2.5-ColBERT-350M-GGUF
+      io.project-brain.quantization: BF16
+      io.project-brain.model-revision: bc240003aba07253e261a8aaf0d2c9683318a967
+      io.project-brain.model-sha256: c21d5cacc004cbc7746dbeeaee496c74b01f0f7bfdef1e1a57570d1744ef871b
+
+  service:
+    build:
+      context: ../..
+      dockerfile: deploy/lfm-colbert-cpu/Dockerfile
+    image: project-brain/lfm-colbert-cpu-service:${LFM_CPU_SERVICE_IMAGE_TAG:-v1}
+    container_name: lfm-colbert-cpu-service
+    command:
+      - uvicorn
+      - brain.late_interaction.gpu_service:create_app_from_env
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8090"
+      - --workers
+      - "1"
+      - --no-access-log
+    environment:
+      LATE_INTERACTION_SERVICE_ENV: production
+      LATE_INTERACTION_SERVICE_DATABASE_PATH: /var/lib/lfm/late-interaction.sqlite3
+      LATE_INTERACTION_SERVICE_TOKEN: ${LATE_INTERACTION_SERVICE_TOKEN:?set a strong shared token}
+      LATE_INTERACTION_SERVICE_APPROVED_REPOSITORY_ID: ${LATE_INTERACTION_SERVICE_APPROVED_REPOSITORY_ID:-}
+      LATE_INTERACTION_SERVICE_MINIMUM_INDEX_REVISION: ${LATE_INTERACTION_SERVICE_MINIMUM_INDEX_REVISION:-}
+      LATE_INTERACTION_SERVICE_MINIMUM_DOCUMENT_COUNT: ${LATE_INTERACTION_SERVICE_MINIMUM_DOCUMENT_COUNT:-0}
+      LATE_INTERACTION_SERVICE_ENCODER_BACKEND: llama_cpp
+      LATE_INTERACTION_SERVICE_LLAMA_CPP_URL: http://llama:8080
+      LATE_INTERACTION_SERVICE_LLAMA_CPP_TIMEOUT_S: ${LFM_CPU_LLAMA_TIMEOUT_S:-60}
+      LATE_INTERACTION_SERVICE_LLAMA_CPP_MAX_CONCURRENCY: "1"
+      LATE_INTERACTION_SERVICE_LLAMA_CPP_EXPECTED_MODEL_ALIAS: /models/LFM2.5-ColBERT-350M-BF16.gguf
+      LATE_INTERACTION_SERVICE_LLAMA_CPP_EXPECTED_MODEL_FTYPE: BF16
+      LATE_INTERACTION_SERVICE_MODEL: LiquidAI/LFM2.5-ColBERT-350M-GGUF
+      LATE_INTERACTION_SERVICE_MODEL_REVISION: bc240003aba07253e261a8aaf0d2c9683318a967
+      LATE_INTERACTION_SERVICE_DIMENSION: "128"
+      LATE_INTERACTION_SERVICE_QUERY_MAX_TOKENS: "32"
+      LATE_INTERACTION_SERVICE_DOCUMENT_MAX_TOKENS: "512"
+      LATE_INTERACTION_SERVICE_MAX_CANDIDATES: "500"
+      LATE_INTERACTION_SERVICE_MAX_DOCUMENTS: "1"
+      LATE_INTERACTION_SERVICE_ENCODER_BATCH_SIZE: "1"
+      LATE_INTERACTION_SERVICE_SCORE_BATCH_SIZE: ${LFM_CPU_SCORE_BATCH_SIZE:-32}
+      LATE_INTERACTION_SERVICE_MAX_CONCURRENCY: ${LFM_CPU_SERVICE_MAX_CONCURRENCY:-1}
+      LFM_LICENSE_ACKNOWLEDGED: ${LFM_LICENSE_ACKNOWLEDGED:?explicit license acknowledgement required}
+      OPENBLAS_NUM_THREADS: ${LFM_CPU_SCORE_THREADS:-2}
+      OMP_NUM_THREADS: ${LFM_CPU_SCORE_THREADS:-2}
+      MKL_NUM_THREADS: ${LFM_CPU_SCORE_THREADS:-2}
+    depends_on:
+      llama:
+        condition: service_healthy
+    ports:
+      - "${LFM_CPU_SERVICE_BIND_ADDRESS:-127.0.0.1}:${LFM_CPU_SERVICE_PORT:-8094}:8090"
+    volumes:
+      - lfm_cpu_matrices:/var/lib/lfm
+    networks:
+      - cpu_backend
+      - brain
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: ${LFM_CPU_SERVICE_MEMORY_LIMIT:-2g}
+    cpus: ${LFM_CPU_SERVICE_CPUS:-1.0}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=10); urllib.request.urlopen('http://llama:8080/health', timeout=45)"
+      interval: 30s
+      timeout: 60s
+      retries: 20
+      start_period: 10m
+    restart: unless-stopped
+    labels:
+      io.project-brain.role: late-interaction-cpu-precision
+      io.project-brain.cutover: "false"
+      io.project-brain.model: LiquidAI/LFM2.5-ColBERT-350M-GGUF
+      io.project-brain.quantization: BF16
+      io.project-brain.model-revision: bc240003aba07253e261a8aaf0d2c9683318a967
+
+volumes:
+  lfm_cpu_models:
+    name: lfm_colbert_cpu_models
+  lfm_cpu_matrices:
+    name: lfm_colbert_cpu_matrices
+
+networks:
+  cpu_backend:
+    name: lfm_colbert_cpu_backend
+    internal: true
+  cpu_edge:
+    name: lfm_colbert_cpu_edge
+  brain:
+    external: true
+    name: brain_default

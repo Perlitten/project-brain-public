@@ -1,0 +1,27 @@
+# Project Brain v0.5.3 VPS Staging Environment Configuration
+# Set BRAIN_STAGING_HOST in the environment when running against a real VPS.
+
+version: "0.5.3"
+deployment_environment: "vps_staging"
+target_host: "${BRAIN_STAGING_HOST:-127.0.0.1}"
+
+routing:
+  mode: observe
+  default_route: legacy_no_brain
+
+execution:
+  authoritative_mode: legacy
+  shadow_enabled: false # Execution laboratory restricted to trusted local host only
+  allowed_capabilities:
+    - READ_FILES
+    - QUERY_GRAPH
+    - RUN_TASK_ASSESSMENT
+  denied_capabilities:
+    - CREATE_WORKTREE
+    - APPLY_PATCH
+    - ARBITRARY_EXEC
+
+night_operations:
+  dedupe_enabled: true
+  include_repository_ids: true
+  reindex_timeout_seconds: 600

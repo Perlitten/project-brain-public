@@ -1,0 +1,31 @@
+**
+!Dockerfile
+!docker-compose.prod.yml
+!pyproject.toml
+!README.md
+!brain/
+!brain/**
+!apps/
+!apps/**
+# The web UI (Next.js) is deployed separately. Its sources stay in the
+# context because the release digest (scripts/write_source_manifest.py) covers
+# all of apps/; only build output and dependencies are dropped, which the
+# manifest ignores too.
+**/node_modules/
+**/.next/
+!rules/
+!rules/**
+!n8n/
+!n8n/**
+!eval/
+!eval/**
+!scripts/
+!scripts/write_source_manifest.py
+!scripts/validate_lfm_release_gate.py
+!deploy/
+!deploy/server_up.sh
+!deploy/lfm-colbert-cpu/
+!deploy/lfm-colbert-cpu/requirements.lock
+**/__pycache__/
+**/__pycache__/**
+**/*.py[cod]

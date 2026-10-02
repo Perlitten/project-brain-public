@@ -1,0 +1,49 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.env
+.deploy.env
+.secrets/
+
+# Project specific
+reports/
+# Local runtime state: graph generations, registries, ledgers, workspaces.
+.brain/
+# Throwaway fixtures and manual experiments.
+scratch/
+context_packs/
+graphify-out/
+logs/
+*.db
+
+.cache/
+
+# .mcp.json is tracked on purpose so a fresh clone (including a cloud Claude Code
+# session) gets the Brain MCP server. It must stay secret-free: BRAIN_API_URL and
+# BRAIN_API_KEY are ${VAR} references resolved from the environment, never literal
+# values. tests/test_mcp_project_config.py enforces that.
+
+# Raw external-agent transcripts can include environment detail.
+audits/**/raw/
+
+# Generated verification artifact (may contain env detail)
+
+# Screenshot rasters: regenerate with scripts/shoot_dashboard.py, do not version.
+audits/**/shots/
+
+# Deploy stamp: written on the server by server_up.sh, machine-local.
+.project-brain-release
+# npm brings in axe-core for scripts/audit_dashboard.py; the script pins nothing else.
+node_modules/
+# Audit output: regenerate with scripts/audit_dashboard.py, do not version.
+audits/**/*.json

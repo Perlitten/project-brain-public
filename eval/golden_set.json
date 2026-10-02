@@ -1,0 +1,259 @@
+[
+  {
+    "id": "q001",
+    "question": "How are files chunked during indexing (line window, overlap, and symbol-aware behavior), and where are the chunk-size defaults sourced?",
+    "expect_files": [
+      "brain/indexers/file_indexer.py",
+      "brain/indexers/repo_indexer.py"
+    ],
+    "why": "Describes the core indexing granularity and how changing defaults affects retrieval quality and recall.",
+    "language": "en",
+    "query_class": "cross_file",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q002",
+    "question": "How does the hybrid search pipeline combine lexical/symbol/vector/graph/memory surfaces and apply Reciprocal Rank Fusion weights and query caps?",
+    "expect_files": [
+      "brain/retrieval/pipeline.py",
+      "brain/search/filters.py",
+      "brain/retrieval/reranker.py"
+    ],
+    "why": "Defines the full retrieval strategy an engineer needs to tune ranking behavior.",
+    "language": "en",
+    "query_class": "cross_file",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q003",
+    "question": "Which embedding providers are supported through configuration, and what fallback/error behavior occurs on unknown provider names?",
+    "expect_files": [
+      "brain/llm/__init__.py",
+      "brain/embeddings/config.py",
+      "brain/config/settings.py"
+    ],
+    "why": "Answers wiring risk in production where environment configuration can silently route all embedding calls.",
+    "language": "en",
+    "query_class": "conceptual",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q004",
+    "question": "What hard caps exist for embedding input size, and where are truncation or warning behaviors implemented for oversized text?",
+    "expect_files": [
+      "brain/llm/providers/nvidia_provider.py",
+      "brain/indexers/file_indexer.py"
+    ],
+    "why": "Critical for preventing provider-side failures when indexing or backfilling large chunks.",
+    "language": "en",
+    "query_class": "bug",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q005",
+    "question": "How does POST /search parse query options and translate them into retrieval behavior?",
+    "expect_files": [
+      "apps/api/routers/core.py",
+      "apps/api/schemas.py",
+      "brain/search/code_search.py"
+    ],
+    "why": "This is the main ingress path for runtime retrieval and needs precise contract/behavior mapping.",
+    "language": "en",
+    "query_class": "exact_identifier",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q006",
+    "question": "Where and how are decisions/rules injected into /ask (or synthesis) prompts, and what precedence or formatting is applied?",
+    "expect_files": [
+      "apps/api/routers/core.py",
+      "brain/memory/decision_store.py",
+      "brain/memory/rule_store.py"
+    ],
+    "why": "Ensures answer synthesis uses current governance constraints and expected context.",
+    "language": "en",
+    "query_class": "cross_file",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q007",
+    "question": "What are the authoritative task states and transition matrix for harness tasks, and how are terminal states enforced?",
+    "expect_files": [
+      "brain/database/harness_models.py",
+      "brain/memory/harness_store.py"
+    ],
+    "why": "Task orchestration bugs usually come from invalid state transitions, so this is high-risk architecture logic.",
+    "language": "en",
+    "query_class": "conceptual",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q008",
+    "question": "How is optimistic concurrency implemented for task updates (version checks, expected_task_version, and lease/version race handling)?",
+    "expect_files": [
+      "brain/memory/harness_store.py",
+      "brain/database/harness_models.py",
+      "brain/database/session.py"
+    ],
+    "why": "Verifies multi-worker safety and data consistency under concurrent task progress updates.",
+    "language": "en",
+    "query_class": "bug",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q009",
+    "question": "How does DecisionStore implement canonical upsert behavior for decision entries and avoid duplicates?",
+    "expect_files": [
+      "brain/memory/decision_store.py",
+      "brain/database/repository_utils.py",
+      "brain/database/models.py"
+    ],
+    "why": "Duplicate or non-deterministic decisions are a common source of noisy or conflicting context.",
+    "language": "en",
+    "query_class": "exact_identifier",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q010",
+    "question": "How does RuleStore retrieve active rules scoped by repository and evaluate effective precedence for a repository path?",
+    "expect_files": [
+      "brain/memory/rule_store.py",
+      "brain/database/repository_utils.py",
+      "brain/database/models.py"
+    ],
+    "why": "Determines whether rule evaluation is correctly bounded to the target repo scope.",
+    "language": "en",
+    "query_class": "conceptual",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q011",
+    "question": "What does API auth require in production versus development, and how are missing/invalid X-API-Key requests handled?",
+    "expect_files": [
+      "apps/api/auth.py",
+      "apps/api/dependencies.py",
+      "apps/api/main.py"
+    ],
+    "why": "Defines security guarantees at entrypoints and prevents accidental public exposure.",
+    "language": "en",
+    "query_class": "bug",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q012",
+    "question": "How is dashboard authentication enforced (cookie signing, CSRF handling, and route gating), and how is login state invalidated?",
+    "expect_files": [
+      "apps/api/dashboard_auth.py",
+      "apps/api/main.py",
+      "apps/api/dependencies.py"
+    ],
+    "why": "Confirms web UI access control and session security boundaries.",
+    "language": "en",
+    "query_class": "bug",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q013",
+    "question": "Which dashboard APIs expose repository/usage analytics and what is the payload shape for summary metrics?",
+    "expect_files": [
+      "apps/api/routers/dashboard.py",
+      "apps/api/schemas.py",
+      "brain/insights/proactive.py",
+      "brain/embeddings/store.py"
+    ],
+    "why": "Useful for validating whether monitoring dashboards match implemented health/inference data.",
+    "language": "en",
+    "query_class": "cross_file",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q014",
+    "question": "What job-management actions does the dashboard expose (trigger, status, artifacts), and are they directly tied to the worker queue APIs?",
+    "expect_files": [
+      "apps/api/routers/dashboard.py",
+      "apps/api/routers/jobs.py",
+      "brain/workers/queue.py"
+    ],
+    "why": "Shows end-user operability and whether UI controls match backend job execution primitives.",
+    "language": "en",
+    "query_class": "cross_file",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q015",
+    "question": "What node and relationship types are allowed in graph ingestion, and how is validation normalized before write?",
+    "expect_files": [
+      "brain/graph/schema.py",
+      "brain/graph/graph_client.py"
+    ],
+    "why": "Graph integrity depends on strict type validation before creating nodes and edges.",
+    "language": "en",
+    "query_class": "conceptual",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q016",
+    "question": "How does graph cleanup behave for repository-level deletions and stale file-node pruning?",
+    "expect_files": [
+      "brain/graph/graph_client.py",
+      "brain/indexers/repo_indexer.py",
+      "brain/indexers/file_indexer.py"
+    ],
+    "why": "Prevents graph drift and ensures removed files/repositories don’t leave orphaned links.",
+    "language": "en",
+    "query_class": "cross_file",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q017",
+    "question": "What is the queue contract for background jobs (storage schema, dequeuing semantics, and recovery of crashed workers)?",
+    "expect_files": [
+      "brain/workers/queue.py"
+    ],
+    "why": "Reliability of async processing depends on durable queue status transitions and recovery behavior.",
+    "language": "en",
+    "query_class": "conceptual",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q018",
+    "question": "Which job types are supported and which services/modules do they execute when run?",
+    "expect_files": [
+      "brain/workers/tasks.py",
+      "brain/workers/worker.py"
+    ],
+    "why": "Maps operational operations to implementation points for reindexing, health checks, embeddings, and insights.",
+    "language": "en",
+    "query_class": "conceptual",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q019",
+    "question": "How does the model router choose models per task kind, and how does it cache provider instances?",
+    "expect_files": [
+      "brain/llm/router.py",
+      "brain/llm/__init__.py",
+      "brain/embeddings/config.py"
+    ],
+    "why": "Ensures deterministic model/provider usage across CLASSIFICATION/SUMMARIZATION/SYNTHESIS/INSIGHT calls.",
+    "language": "en",
+    "query_class": "conceptual",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  },
+  {
+    "id": "q020",
+    "question": "What provider-specific implementations exist for LLM, embedding, and summarizer interfaces, and how are unsupported operations (e.g., Anthropic embeddings) handled?",
+    "expect_files": [
+      "brain/llm/providers/base.py",
+      "brain/llm/providers/anthropic_provider.py",
+      "brain/llm/providers/openai_provider.py",
+      "brain/llm/providers/google_provider.py",
+      "brain/llm/providers/nvidia_provider.py",
+      "brain/llm/providers/mock_provider.py"
+    ],
+    "why": "Validates provider coverage, interface compliance, and expected failure modes.",
+    "language": "en",
+    "query_class": "conceptual",
+    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+  }
+]

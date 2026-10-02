@@ -1,0 +1,86 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "project-brain"
+version = "0.9.0"
+description = "Project Brain core foundation services and utilities"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "typer[all]",
+    "pydantic>=2.0.0",
+    "pydantic-settings",
+    # asyncio extras pull in greenlet — required by brain.database.session,
+    # which is imported by the CLI entrypoint.
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg",
+    "redis>=4.2.0",
+    "neo4j",
+    "loguru",
+    "pyyaml",
+    "httpx",
+    # MCP 2.0 removed mcp.server.fastmcp while the Project Brain server and
+    # Cockpit tool enumeration use the current stable v1 SDK contract.
+    "mcp==1.29.0",
+    "pgvector",
+    "cryptography>=42.0.0",
+    "numpy>=1.26,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+    "playwright",
+]
+late-interaction-gpu = [
+    "pylate==1.4.0",
+]
+gpu = [
+    "pylate>=1.5,<2",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501", "I001"]
+
+[tool.ruff.lint.per-file-ignores]
+# eval/ contains standalone local tooling that can set sys.path before importing
+# the package (E402) and keep scratch locals (F841) - not shipped runtime code.
+"eval/**" = ["E402", "F841"]
+# tests bootstrap settings/fixtures before importing app modules.
+"tests/**" = ["E402"]
+# scripts/ set sys.path before importing the brain package.
+"scripts/**" = ["E402"]
+
+[project.scripts]
+brain = "apps.cli.main:cli"
+brain-mcp = "apps.mcp_server.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["brain", "apps"]
+
+[tool.hatch.build.targets.editable]
+dev-mode-dirs = ["."]
+
+[tool.mypy]
+# 3.12 required: numpy's shipped stubs use the PEP 695 `type` statement, which
+# mypy rejects under an older --python-version target. The >=3.10 support floor
+# is covered by the CI test matrix, not by this check.
+python_version = "3.12"
+warn_return_any = false
+warn_unused_ignores = false
+ignore_missing_imports = true
+# SQLAlchemy 2.x models type natively via Mapped[...]; the old
+# sqlalchemy.ext.mypy.plugin was removed upstream and breaks mypy startup.
