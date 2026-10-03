@@ -8,6 +8,7 @@ import type {
   ContextPack,
   Corpus,
   Decision,
+  Identity,
   IndexRun,
   Insight,
   Job,
@@ -34,7 +35,7 @@ export function findRepository(slug?: string | null): Repository {
 }
 
 export function condition(repo: Repository): Condition {
-  if (repo.behind > 20) {
+  if ((repo.behind ?? 0) > 20) {
     return {
       tone: "bad",
       headline: `Brain is reading an old copy of your code`,
@@ -49,7 +50,7 @@ export function condition(repo: Repository): Condition {
       ],
     };
   }
-  if (repo.behind > 0) {
+  if ((repo.behind ?? 0) > 0) {
     return {
       tone: "warn",
       headline: `Brain is a few changes behind your code`,
@@ -78,7 +79,7 @@ export function condition(repo: Repository): Condition {
 }
 
 export function corpus(repo: Repository): Corpus {
-  const behind = repo.behind;
+  const behind = repo.behind ?? 0;
   const eligible = 18903;
   const missing = behind > 20 ? 2960 : behind > 0 ? 412 : 0;
   const outdated = behind > 20 ? 4120 : behind > 0 ? 640 : 0;
@@ -219,6 +220,39 @@ export const principals: Principal[] = [
   { id: "p-5", name: "telegram-bridge", kind: "service", scopes: ["core:read", "jobs:write"], lastSeen: "Sep 29", credentials: 1 },
 ];
 
+export const identities: Identity[] = [
+  {
+    id: 1, name: "andrei", kind: "human", disabled: false, createdAt: "Sep 24", activeKeys: 1, scopes: ["principals:write", "setup:write"], lastSeen: "13:58",
+    keys: [
+      { id: 1, scopes: ["principals:write", "setup:write"], status: "active", created: "Sep 24 · 09:12", expires: "never", lastUsed: "13:58", expiringSoon: false, neverUsed: false },
+    ],
+  },
+  {
+    id: 2, name: "claude-code", kind: "agent", disabled: false, createdAt: "Sep 24", activeKeys: 2, scopes: ["core:write", "jobs:read"], lastSeen: "13:41",
+    keys: [
+      { id: 7, scopes: ["core:write", "jobs:read"], status: "active", created: "Oct 1 · 18:20", expires: "Dec 30 · in 89d", lastUsed: "never", expiringSoon: false, neverUsed: true },
+      { id: 3, scopes: ["core:write", "jobs:read"], status: "active", created: "Sep 24 · 09:30", expires: "Oct 9 · in 7d", lastUsed: "13:41", expiringSoon: true, neverUsed: false },
+    ],
+  },
+  {
+    id: 3, name: "codex", kind: "agent", disabled: false, createdAt: "Sep 25", activeKeys: 1, scopes: ["core:read"], lastSeen: "12:58",
+    keys: [
+      { id: 6, scopes: ["core:read"], status: "active", created: "Sep 28 · 11:04", expires: "never", lastUsed: "12:58", expiringSoon: false, neverUsed: false },
+      { id: 4, scopes: ["core:read"], status: "revoked", created: "Sep 25 · 16:40", expires: "never", lastUsed: "Sep 28", expiringSoon: false, neverUsed: false },
+    ],
+  },
+  {
+    id: 4, name: "n8n-bridge", kind: "service", disabled: false, createdAt: "Sep 26", activeKeys: 1, scopes: ["core:read", "jobs:write"], lastSeen: "10:40",
+    keys: [
+      { id: 5, scopes: ["core:read", "jobs:write"], status: "active", created: "Sep 26 · 10:02", expires: "Sep 26, 2027 · in 359d", lastUsed: "10:40", expiringSoon: false, neverUsed: false },
+    ],
+  },
+  {
+    id: 5, name: "old-laptop", kind: "agent", disabled: true, createdAt: "Aug 30", activeKeys: 0, scopes: [], lastSeen: "Sep 12",
+    keys: [{ id: 2, scopes: ["core:write", "jobs:read"], status: "expired", created: "Aug 30 · 08:15", expires: "Sep 29", lastUsed: "Sep 12", expiringSoon: false, neverUsed: false }],
+  },
+];
+
 export const setupSteps: SetupStep[] = [
   { id: "doctor", title: "Run the install preflight", detail: "Checks Postgres, pgvector, Redis, Neo4j and the worker in one pass.", done: true, command: "brain doctor" },
   { id: "repo", title: "Register a repository", detail: "Point Brain at a checkout. It is indexed in place; nothing is copied.", done: true, command: "brain repo add ~/code/project-brain" },
@@ -257,7 +291,7 @@ const moduleSizes: [string, number][] = [
 ];
 
 export function codeModules(repo: Repository): CodeModule[] {
-  const severity = repo.behind > 20 ? 3 : repo.behind > 0 ? 1 : 0;
+  const severity = (repo.behind ?? 0) > 20 ? 3 : (repo.behind ?? 0) > 0 ? 1 : 0;
   const touched = new Set(
     severity === 3
       ? ["apps/api", "brain/workers", "brain/insights", "brain/graph", "tests", "brain/search", "brain/context"]

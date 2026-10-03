@@ -46,9 +46,9 @@ FROZEN_TASKS = [
         "id": "task_01_repo_architecture",
         "category": "repository_questions",
         "question": "How does Project Brain handle API authentication and router middleware?",
-        "expected_files": ["apps/api/main.py", "apps/api/dashboard_auth.py", "apps/api/routers/core.py"],
-        "expected_symbols": ["lifespan", "SecurityHeadersMiddleware", "DashboardAuthMiddleware"],
-        "required_evidence": ["X-API-Key", "Authorization", "DashboardAuthMiddleware"],
+        "expected_files": ["apps/api/main.py", "apps/api/auth.py", "apps/api/routers/core.py"],
+        "expected_symbols": ["lifespan", "require_principal", "require_scope"],
+        "required_evidence": ["X-API-Key", "require_principal", "require_scope"],
     },
     {
         "id": "task_02_bug_diagnosis",

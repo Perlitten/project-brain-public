@@ -114,6 +114,53 @@ Embeddings from different providers are not comparable. After switching the
 embedding provider run `brain embeddings verify` and, if it reports
 incompatible vectors, `brain embeddings backfill`.
 
+#### Any OpenAI-compatible provider
+
+LLM, summarizer and embedding calls go through one generic OpenAI-compatible
+client (`brain/llm/providers/openai_compatible.py`), so any API that speaks
+`/v1/chat/completions` and `/v1/embeddings` works: OpenAI, OpenRouter, Groq,
+Together, DeepSeek, Mistral, Fireworks, NVIDIA NIM, Ollama, LM Studio, vLLM.
+`mock`, `anthropic` and `google` keep their native adapters.
+
+`DEFAULT_LLM_PROVIDER` / `DEFAULT_EMBEDDING_PROVIDER` take a preset name
+(`openai`, `nvidia`, `openrouter`, `groq`, `together`, `deepseek`, `mistral`,
+`ollama`, `lmstudio`) or `openai_compatible` (aliases `custom`,
+`openai-compatible`). Presets only supply defaults (`brain/llm/presets.py`);
+these universal settings override them for the selected provider:
+
+| Variable | Meaning |
+|---|---|
+| `LLM_BASE_URL` | API root incl. version path, e.g. `https://openrouter.ai/api/v1` |
+| `LLM_API_KEY` | Bearer key; falls back to the preset key (`GROQ_API_KEY`, ...). Optional for local endpoints |
+| `LLM_MODEL` / `SUMMARIZER_MODEL` | main (synthesis) model / cheaper model for summaries & classification |
+| `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | default to `LLM_*` when both roles use the same provider |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSION` | dimension is required for non-preset models and must match the pgvector column |
+| `EMBEDDING_MAX_INPUT_CHARS` / `EMBEDDING_BATCH_SIZE` | per-input char cap / inputs per request |
+
+`LLM_TASK_*_MODEL` still override per-task routing. Examples:
+
+```bash
+# OpenRouter (chat); embeddings stay on another provider
+DEFAULT_LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-...
+LLM_MODEL=anthropic/claude-3.5-sonnet
+
+# Groq
+DEFAULT_LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_...
+SUMMARIZER_MODEL=llama-3.1-8b-instant
+
+# Ollama, fully local, no key (768-dim nomic-embed-text)
+DEFAULT_LLM_PROVIDER=ollama
+DEFAULT_EMBEDDING_PROVIDER=ollama
+LLM_MODEL=llama3.1
+```
+
+Changing the embedding provider/model/dimension on an existing database
+requires a full re-index; `brain doctor` fails early when the configured
+dimension is unknown or contradicts the preset, and the embedding client
+rejects vectors of the wrong width.
+
 ### Tests
 
 ```bash
@@ -140,7 +187,7 @@ npm run dev                    # http://localhost:3100
 |---|---|
 | `BRAIN_API_URL` | Base URL of the Brain API |
 | `BRAIN_API_KEY` | Sent as `X-API-Key` from the server only |
-| `WEB_BASIC_AUTH` | Optional `user:password` gate for the whole site |
+| `WEB_BASIC_AUTH` | `user:password` gate; required when live API credentials are configured |
 | `BRAIN_TIMEZONE` | Optional IANA time zone for displayed times (default UTC) |
 
 **Deploy to Vercel:** import the repository, set *Root Directory* to `apps/web`
@@ -297,7 +344,7 @@ cd /opt/project-brain
 
 cp deploy/.env.prod.example .env
 chmod 600 .env
-# Fill BRAIN_PUBLIC_HOST, N8N_HOST, N8N_PUBLIC_URL, NVIDIA_API_KEY,
+# Fill BRAIN_PUBLIC_HOST, N8N_HOST, N8N_PUBLIC_URL, NVIDIA_API_KEY (or your provider key),
 # BRAIN_TARGET_REPO_DIR, and BRAIN_INDEXED_PROJECTS_DIR.
 
 bash deploy/server_up.sh

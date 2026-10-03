@@ -30,8 +30,9 @@ it. Their license texts are kept next to them.
 | Outfit (font) | `apps/web/public/fonts/Outfit-*.woff2` | Copyright 2021 The Outfit Project Authors (https://github.com/Outfitio/Outfit-Fonts) | SIL Open Font License 1.1 — [`apps/web/public/fonts/OFL-Outfit.txt`](apps/web/public/fonts/OFL-Outfit.txt) |
 | Feather Icons (SVG geometry of the `layers`, `zap`, `code`, `key` and `flag` glyphs) | `apps/web/components/Icon.tsx` | Copyright (c) 2013-2023 Cole Bemis | MIT — full text below |
 
-The fonts are latin subsets converted to WOFF2; they are not renamed and are
-not sold on their own, as OFL 1.1 requires.
+The bundled fonts are Latin subsets converted to WOFF2 and are not sold on
+their own. Keep their copyright notices and OFL text with redistributed files;
+the upstream license governs modification and any reserved font names.
 
 ### Feather Icons — MIT License
 
@@ -65,10 +66,12 @@ SOFTWARE.
 
 Declared in `pyproject.toml` and pinned in `requirements.lock` /
 `requirements-dev.lock`. They are installed by `pip`, not vendored, and keep
-their own license files inside each installed distribution. All are
-permissive; none is copyleft. The two MPL-2.0 packages (`certifi`,
-`pathspec`) are used unmodified, which MPL-2.0 permits without further
-obligations for this repository.
+their own license files inside each installed distribution. Most use permissive
+licenses. `certifi` and `pathspec` use MPL-2.0, a file-level weak-copyleft
+license, and are installed unmodified. Private use is permitted; distributing
+their source or executable libraries outside an organization carries the MPL's
+notice and source-availability requirements, even for unchanged copies. See
+the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 
 ### Runtime (`requirements.lock`)
 
@@ -107,6 +110,7 @@ obligations for this repository.
 | pydantic-core | 2.46.5 | MIT |
 | pydantic-settings | 2.15.0 | MIT |
 | pygments | 2.21.0 | BSD-2-Clause |
+| pyjwt[crypto] | 2.15.1 | MIT |
 | python-dotenv | 1.2.4 | BSD-3-Clause |
 | python-multipart | 0.0.32 | Apache-2.0 |
 | pytz | 2026.4 | MIT |
@@ -116,6 +120,7 @@ obligations for this repository.
 | rich | 15.0.0 | MIT |
 | rpds-py | 2026.6.3 | MIT |
 | shellingham | 1.5.4 | ISC |
+| sqlalchemy[asyncio] | 2.1.2 | MIT |
 | sse-starlette | 3.5.0 | BSD-3-Clause |
 | starlette | 1.7.0 | BSD-3-Clause |
 | typer[all] | 0.27.2 | MIT |
@@ -205,7 +210,7 @@ and terms of use.
 | `LiquidAI/LFM2.5-ColBERT-350M` (and `-GGUF`) | Optional late-interaction reranker, downloaded from Hugging Face by the `deploy/lfm-colbert-*` sidecars | **LFM Open License v1.0** — free use, including commercial, for entities under USD 10M annual revenue; larger commercial users need a separate license from Liquid AI. See `docs/runbooks/lfm-colbert-cutover.md` |
 | `meta/llama-3.1-70b-instruct`, `meta/llama-3.1-8b-instruct` | Default LLMs in `.env.example`, called through the NVIDIA API | Llama 3.1 Community License (Meta) and NVIDIA API terms. Weights are not distributed here |
 | `nvidia/nv-embedcode-7b-v1` | Default embedding model in `.env.example`, called through the NVIDIA API | NVIDIA API / model terms |
-| OpenAI, Anthropic, Google, OpenRouter, DeepSeek, Groq, Fireworks, Ollama | Optional, configurable LLM/embedding providers | Each provider's terms of service / model license |
+| OpenAI, Anthropic, Google, NVIDIA | Configurable LLM providers in `brain/llm`; embedding support varies by adapter (Anthropic embeddings are unsupported). `mock` is local test data | Each provider's terms of service / model license |
 
 ---
 

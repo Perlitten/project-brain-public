@@ -6,7 +6,9 @@ export const metadata = { title: "Context packs" };
 
 export default async function Packs() {
   const packs = await getContextPacks();
-  const stale = packs.filter((p) => p.stale).length;
+  const stale = packs.filter((p) => p.stale === true).length;
+  const unknown = packs.filter((p) => p.stale === null).length;
+  const state = (p: (typeof packs)[number]) => (p.stale === null ? "unknown" : p.stale ? "outdated" : "fresh");
   const avg = packs.length ? Math.round(packs.reduce((s, p) => s + p.tokens, 0) / packs.length) : 0;
   return (
     <>
@@ -23,9 +25,13 @@ export default async function Packs() {
       <div className="stats">
         <Stat label="Briefings" value={String(packs.length)} note="prepared recently" />
         <Stat label="Average size" value={fmt(avg)} note="tokens, about ¾ of a word each" />
-        <div className={stale ? "tone-warn" : "tone-ok"}>
-          <Stat label="Outdated" value={String(stale)} note="the code changed after they were built" />
-        </div>
+        {unknown === packs.length && packs.length > 0 ? (
+          <Stat label="Outdated" value="—" note="unknown: these packs don’t record the commit they were built from" />
+        ) : (
+          <div className={stale ? "tone-warn" : "tone-ok"}>
+            <Stat label="Outdated" value={String(stale)} note={unknown ? `the code changed after they were built · ${unknown} unknown` : "the code changed after they were built"} />
+          </div>
+        )}
       </div>
       <Panel id="packs" title="Recent briefings" flush>
         {packs.length === 0 ? (
@@ -35,6 +41,11 @@ export default async function Packs() {
           caption="Context packs"
           rows={packs}
           rowKey={(p) => p.id}
+          filter={{
+            search: (p) => `${p.task} ${p.id} ${p.consumer}`,
+            facet: { label: "State", of: state, values: [{ value: "outdated" }, { value: "fresh" }, { value: "unknown" }] },
+            noun: ["pack", "packs"],
+          }}
           columns={[
             {
               head: "Task",
@@ -50,7 +61,7 @@ export default async function Packs() {
             { head: "Files", cell: (p) => p.files, align: "right" },
             { head: <Term k="tokens">Tokens</Term>, cell: (p) => fmt(p.tokens), align: "right" },
             { head: "Built", cell: (p) => p.createdAt },
-            { head: "State", cell: (p) => (p.stale ? <Chip tone="warn">outdated</Chip> : <Chip tone="ok">fresh</Chip>) },
+            { head: "State", cell: (p) => <Chip tone={p.stale === null ? "idle" : p.stale ? "warn" : "ok"}>{state(p)}</Chip> },
           ]}
         />
         )}

@@ -9,7 +9,11 @@
     "why": "Describes the core indexing granularity and how changing defaults affects retrieval quality and recall.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q002",
@@ -22,7 +26,11 @@
     "why": "Defines the full retrieval strategy an engineer needs to tune ranking behavior.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q003",
@@ -35,7 +43,11 @@
     "why": "Answers wiring risk in production where environment configuration can silently route all embedding calls.",
     "language": "en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q004",
@@ -47,7 +59,11 @@
     "why": "Critical for preventing provider-side failures when indexing or backfilling large chunks.",
     "language": "en",
     "query_class": "bug",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q005",
@@ -60,7 +76,11 @@
     "why": "This is the main ingress path for runtime retrieval and needs precise contract/behavior mapping.",
     "language": "en",
     "query_class": "exact_identifier",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q006",
@@ -73,7 +93,11 @@
     "why": "Ensures answer synthesis uses current governance constraints and expected context.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q007",
@@ -85,7 +109,11 @@
     "why": "Task orchestration bugs usually come from invalid state transitions, so this is high-risk architecture logic.",
     "language": "en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q008",
@@ -98,7 +126,11 @@
     "why": "Verifies multi-worker safety and data consistency under concurrent task progress updates.",
     "language": "en",
     "query_class": "bug",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q009",
@@ -111,7 +143,11 @@
     "why": "Duplicate or non-deterministic decisions are a common source of noisy or conflicting context.",
     "language": "en",
     "query_class": "exact_identifier",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q010",
@@ -124,7 +160,11 @@
     "why": "Determines whether rule evaluation is correctly bounded to the target repo scope.",
     "language": "en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q011",
@@ -137,47 +177,62 @@
     "why": "Defines security guarantees at entrypoints and prevents accidental public exposure.",
     "language": "en",
     "query_class": "bug",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q012",
-    "question": "How is dashboard authentication enforced (cookie signing, CSRF handling, and route gating), and how is login state invalidated?",
+    "question": "How does the Next.js dashboard fail closed for live data and authenticate its API bridge?",
     "expect_files": [
-      "apps/api/dashboard_auth.py",
-      "apps/api/main.py",
-      "apps/api/dependencies.py"
+      "apps/web/lib/web-auth.ts",
+      "apps/web/proxy.ts",
+      "apps/web/app/api/brain/[...path]/route.ts"
     ],
     "why": "Confirms web UI access control and session security boundaries.",
     "language": "en",
     "query_class": "bug",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set; refreshed for Next.js migration 2026-10-02",
+      "production_real": false
+    }
   },
   {
     "id": "q013",
-    "question": "Which dashboard APIs expose repository/usage analytics and what is the payload shape for summary metrics?",
+    "question": "Which read-only web APIs expose repository and usage analytics, and how are overview metrics shaped?",
     "expect_files": [
-      "apps/api/routers/dashboard.py",
-      "apps/api/schemas.py",
-      "brain/insights/proactive.py",
-      "brain/embeddings/store.py"
+      "apps/api/routers/web.py",
+      "apps/api/helpers.py",
+      "apps/web/lib/data.ts"
     ],
     "why": "Useful for validating whether monitoring dashboards match implemented health/inference data.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set; refreshed for Next.js migration 2026-10-02",
+      "production_real": false
+    }
   },
   {
     "id": "q014",
-    "question": "What job-management actions does the dashboard expose (trigger, status, artifacts), and are they directly tied to the worker queue APIs?",
+    "question": "How does the web UI display job status, and which authenticated API and worker modules execute job actions?",
     "expect_files": [
-      "apps/api/routers/dashboard.py",
+      "apps/web/lib/data.ts",
       "apps/api/routers/jobs.py",
       "brain/workers/queue.py"
     ],
     "why": "Shows end-user operability and whether UI controls match backend job execution primitives.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set; refreshed for Next.js migration 2026-10-02",
+      "production_real": false
+    }
   },
   {
     "id": "q015",
@@ -189,7 +244,11 @@
     "why": "Graph integrity depends on strict type validation before creating nodes and edges.",
     "language": "en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q016",
@@ -202,7 +261,11 @@
     "why": "Prevents graph drift and ensures removed files/repositories don’t leave orphaned links.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q017",
@@ -213,7 +276,11 @@
     "why": "Reliability of async processing depends on durable queue status transitions and recovery behavior.",
     "language": "en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q018",
@@ -225,7 +292,11 @@
     "why": "Maps operational operations to implementation points for reindexing, health checks, embeddings, and insights.",
     "language": "en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q019",
@@ -238,7 +309,11 @@
     "why": "Ensures deterministic model/provider usage across CLASSIFICATION/SUMMARIZATION/SYNTHESIS/INSIGHT calls.",
     "language": "en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   },
   {
     "id": "q020",
@@ -254,6 +329,10 @@
     "why": "Validates provider coverage, interface compliance, and expected failure modes.",
     "language": "en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated", "source": "original 20-query Project Brain golden set", "production_real": false}
+    "provenance": {
+      "kind": "curated",
+      "source": "original 20-query Project Brain golden set",
+      "production_real": false
+    }
   }
 ]

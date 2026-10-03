@@ -1,0 +1,74 @@
+/* Long lists: a sticky filter bar, a sticky table head, a pager. */
+.panel:has(.lf) { overflow: clip; }
+.lf { --lf-bar: 0px; min-width: 0; }
+.lf--bar { --lf-bar: 56px; }
+
+.lf__bar {
+  position: sticky; top: var(--plate-h); z-index: 6;
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2) var(--s-3);
+  min-height: var(--lf-bar); padding: var(--s-2) var(--s-5);
+  background: var(--surface-module); border-bottom: 1px solid var(--border-subtle);
+}
+.lf__search { position: relative; flex: 1 1 220px; max-width: 360px; display: flex; align-items: center; }
+.lf__search svg { position: absolute; left: 10px; color: var(--text-3); pointer-events: none; }
+.lf__search .input { height: 34px; padding-left: 32px; }
+.lf__facets { flex-wrap: wrap; }
+.lf__facets button { height: 28px; }
+.lf__n { font: 500 var(--fs-12) / 1 var(--mono); color: var(--text-3); }
+.lf__facets button[aria-pressed="true"] .lf__n { color: var(--teal-fg); }
+.lf__range { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--fs-12); color: var(--text-3); white-space: nowrap; }
+.lf__clear { padding: 0; border: 0; background: none; color: var(--teal-fg); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Tables inside a frame never scroll sideways on a desktop: long words wrap,
+   the head sticks under the filter bar. Phones keep the sideways scroll. */
+@media (min-width: 721px) {
+  .lf__table { overflow: visible; }
+  .lf__table thead th {
+    position: sticky; top: calc(var(--plate-h) + var(--lf-bar)); z-index: 5;
+    background: var(--surface-module);
+  }
+}
+.table td { overflow-wrap: anywhere; }
+.table td .chip, .table td.num, .table td.r { overflow-wrap: normal; }
+/* Hints in a table head open downward and right-aligned so they are never
+   cut off and never widen the table (a hidden tip still counts as overflow,
+   so it is removed from layout until asked for). */
+.table th .term__tip { display: none; left: auto; right: 0; bottom: auto; top: calc(100% + 8px); transform: none; }
+.table th .term:hover .term__tip, .table th .term__word:focus + .term__tip, .table th .term__word:focus-visible + .term__tip { display: block; transform: none; }
+.table th:not(.r) .term__tip { right: auto; left: 0; }
+
+.lf--touched .table tbody tr, .lf--touched > ol > * { animation: none; }
+
+.lf__empty { display: grid; justify-items: start; gap: var(--s-3); padding: var(--s-6) var(--s-5); color: var(--text-2); }
+
+/* The pager is the list's footer: it sticks to the bottom of the viewport
+   while the list is on screen, so paging never needs a scroll to the end. */
+.lf__pager {
+  position: sticky; bottom: 0; z-index: 6;
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2) var(--s-3);
+  padding: var(--s-3) var(--s-5); border-top: 1px solid var(--border-subtle);
+  background: var(--surface-module);
+  box-shadow: 0 -8px 16px -12px rgb(0 0 0 / 0.35);
+}
+.lf__flip svg { transform: rotate(180deg); display: block; }
+.lf__pages { display: inline-flex; align-items: center; gap: 2px; }
+.lf__page {
+  min-width: 30px; height: 30px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--r-sm);
+  background: none; color: var(--text-2); font-size: var(--fs-12); cursor: pointer;
+}
+.lf__page:hover { color: var(--text-1); border-color: var(--border-subtle); }
+.lf__page[aria-current="page"] { color: var(--text-1); background: var(--teal-soft); border-color: var(--teal-line); }
+.lf__gap { padding: 0 4px; color: var(--text-3); }
+.lf__size { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--fs-12); color: var(--text-3); }
+.lf__size .select { width: auto; height: 30px; padding: 0 var(--s-2); }
+
+@media (max-width: 560px) {
+  .lf__bar { position: static; padding: var(--s-2) var(--s-4); }
+  .lf__range { margin-left: 0; }
+  .lf__size span { display: none; }
+}
+
+/* Card lists live outside a panel: the bar and pager get their own frame. */
+.lf:has(> .cards) > .lf__bar { margin-bottom: var(--s-3); border: 1px solid var(--border-subtle); border-radius: var(--r-md); }
+.lf:has(> .cards) > .lf__pager { margin-top: var(--s-3); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--surface-module); }
+.lf:has(> .cards) > .lf__empty { border: 1px dashed var(--border-subtle); border-radius: var(--r-md); }

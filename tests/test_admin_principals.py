@@ -224,3 +224,32 @@ def test_admin_routes_require_principals_scope():
     ):
         response = client.get("/admin/principals")
     assert response.status_code == 403
+
+
+def test_create_principal_mints_first_key_once():
+    created = _principal(id=9, name="claude-laptop", kind="agent")
+    session = _FakeSession(scalars_rows=[[], [created]], exec_scalar=None)
+    with _patch_session(session):
+        response = client.post(
+            "/admin/principals",
+            json={"name": "claude-laptop", "kind": "agent", "scopes": ["core:write", "jobs:read"]},
+        )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["api_key"].startswith("pbk_")
+    assert body["principal"]["name"] == "claude-laptop"
+    minted = [obj for obj in session.added if isinstance(obj, ApiCredential)]
+    assert minted and minted[0].scopes == ["core:write", "jobs:read"]
+    assert body["api_key"] not in str(body["principal"])
+
+
+def test_create_principal_existing_name_409():
+    session = _FakeSession(scalars_rows=[[_principal()]])
+    with _patch_session(session):
+        response = client.post("/admin/principals", json={"name": "ci-indexer", "scopes": ["jobs:read"]})
+    assert response.status_code == 409
+
+
+def test_create_principal_rejects_wildcard_scope():
+    response = client.post("/admin/principals", json={"name": "x", "scopes": ["*"]})
+    assert response.status_code == 422

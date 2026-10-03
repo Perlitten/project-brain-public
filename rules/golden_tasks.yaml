@@ -1,14 +1,14 @@
 golden_tasks:
   - id: task_1
-    description: "Update dashboard HTML branding and base template styling"
+    description: "Update Next.js dashboard branding and shared layout styling"
     expected_files:
-      - "apps/api/templates/base.html"
+      - "apps/web/app/layout.tsx"
     expected_modules:
-      - "apps/api/templates"
+      - "apps/web/app"
     expected_features:
       - "branding"
       - "dashboard"
-      - "templates"
+      - "layout"
     required_surfaces: []
     must_include_tests: false
 

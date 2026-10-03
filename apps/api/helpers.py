@@ -468,10 +468,11 @@ async def run_mcp_self_check(timeout_seconds: float = 30.0) -> Dict[str, Any]:
     from brain.onboarding.readiness import config_fingerprint
     from brain.onboarding.setup_state import record_self_check
 
+    fingerprint = config_fingerprint()
     runtime = await get_mcp_readiness_status(timeout_seconds)
     record_self_check(
         str(runtime.get("readiness_status") or "failed"),
-        config_fingerprint(),
+        fingerprint,
         {
             "retrieval_probe": (runtime.get("retrieval") or {}).get("probe_status"),
             "stage_timings_ms": runtime.get("stage_timings_ms") or {},
@@ -501,6 +502,9 @@ async def get_mcp_readiness_status(timeout_seconds: float = 30.0) -> Dict[str, A
     retrieval_started = perf_counter()
     retrieval_error = None
     retrieval_payload: Dict[str, Any] = {}
+    from brain.config.paths import resolve_repo_path
+
+    probe_repo = str(resolve_repo_path(settings.TARGET_REPO_PATH))
     try:
         from apps.mcp_server import server as mcp_server
 
@@ -509,7 +513,7 @@ async def get_mcp_readiness_status(timeout_seconds: float = 30.0) -> Dict[str, A
             retrieval_error = "search_code tool entrypoint is not callable"
         else:
             payload = await asyncio.wait_for(
-                probe_target("brain readiness probe", repo_path="/app"),
+                probe_target("brain readiness probe", repo_path=probe_repo),
                 timeout=max(1.0, min(float(timeout_seconds), 120.0)),
             )
             if isinstance(payload, dict):
@@ -533,7 +537,7 @@ async def get_mcp_readiness_status(timeout_seconds: float = 30.0) -> Dict[str, A
         "retrieval": {
             "probe_status": "passed" if retrieval_error is None else "failed",
             "probe_target": "search_code",
-            "repo_path": "/app",
+            "repo_path": probe_repo,
             "timeout_seconds": timeout_seconds,
             "error": retrieval_error,
             "payload": retrieval_payload,

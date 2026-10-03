@@ -2,271 +2,505 @@
   {
     "id": "q021",
     "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
-    "expect_files": ["brain/indexers/file_indexer.py", "brain/indexers/repo_indexer.py"],
+    "expect_files": [
+      "brain/indexers/file_indexer.py",
+      "brain/indexers/repo_indexer.py"
+    ],
     "why": "Russian translation checks whether retrieval maps user language to English implementation terms.",
     "language": "ru",
     "query_class": "ru_to_en",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q001", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q001",
+      "production_real": false
+    }
   },
   {
     "id": "q022",
     "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
-    "expect_files": ["brain/retrieval/pipeline.py", "brain/search/filters.py", "brain/retrieval/reranker.py"],
+    "expect_files": [
+      "brain/retrieval/pipeline.py",
+      "brain/search/filters.py",
+      "brain/retrieval/reranker.py"
+    ],
     "why": "Tests a Russian cross-file architecture query containing standard English retrieval terms.",
     "language": "ru-en",
     "query_class": "ru_to_en",
-    "provenance": {"kind": "curated_translation", "source": "curated translation and bilingual expansion of q002", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation and bilingual expansion of q002",
+      "production_real": false
+    }
   },
   {
     "id": "q023",
     "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
-    "expect_files": ["brain/embeddings/config.py", "brain/config/settings.py", "brain/llm/__init__.py"],
+    "expect_files": [
+      "brain/embeddings/config.py",
+      "brain/config/settings.py",
+      "brain/llm/__init__.py"
+    ],
     "why": "Measures bilingual configuration lookup.",
     "language": "ru-en",
     "query_class": "ru_to_en",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q003", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q003",
+      "production_real": false
+    }
   },
   {
     "id": "q024",
     "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
-    "expect_files": ["brain/llm/providers/nvidia_provider.py", "brain/indexers/file_indexer.py"],
+    "expect_files": [
+      "brain/llm/providers/nvidia_provider.py",
+      "brain/indexers/file_indexer.py"
+    ],
     "why": "Tests Russian bug-oriented retrieval with code vocabulary.",
     "language": "ru-en",
     "query_class": "bug",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q004", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q004",
+      "production_real": false
+    }
   },
   {
     "id": "q025",
     "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
-    "expect_files": ["apps/api/routers/core.py", "apps/api/schemas.py", "brain/search/code_search.py"],
+    "expect_files": [
+      "apps/api/routers/core.py",
+      "apps/api/schemas.py",
+      "brain/search/code_search.py"
+    ],
     "why": "Tests exact API identifier retrieval from Russian prose.",
     "language": "ru-en",
     "query_class": "exact_identifier",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q005", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q005",
+      "production_real": false
+    }
   },
   {
     "id": "q026",
     "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
-    "expect_files": ["apps/api/routers/core.py", "brain/memory/decision_store.py", "brain/memory/rule_store.py"],
+    "expect_files": [
+      "apps/api/routers/core.py",
+      "brain/memory/decision_store.py",
+      "brain/memory/rule_store.py"
+    ],
     "why": "Measures cross-file governance retrieval for a bilingual query.",
     "language": "ru-en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q006", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q006",
+      "production_real": false
+    }
   },
   {
     "id": "q027",
     "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
-    "expect_files": ["brain/database/harness_models.py", "brain/memory/harness_store.py"],
+    "expect_files": [
+      "brain/database/harness_models.py",
+      "brain/memory/harness_store.py"
+    ],
     "why": "Tests conceptual retrieval across Russian and English state-machine terms.",
     "language": "ru-en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q007", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q007",
+      "production_real": false
+    }
   },
   {
     "id": "q028",
     "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
-    "expect_files": ["brain/memory/harness_store.py", "brain/database/harness_models.py", "brain/database/session.py"],
+    "expect_files": [
+      "brain/memory/harness_store.py",
+      "brain/database/harness_models.py",
+      "brain/database/session.py"
+    ],
     "why": "Tests bilingual bug/reliability retrieval.",
     "language": "ru-en",
     "query_class": "bug",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q008", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q008",
+      "production_real": false
+    }
   },
   {
     "id": "q029",
     "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
-    "expect_files": ["brain/memory/decision_store.py", "brain/database/repository_utils.py", "brain/database/models.py"],
+    "expect_files": [
+      "brain/memory/decision_store.py",
+      "brain/database/repository_utils.py",
+      "brain/database/models.py"
+    ],
     "why": "Tests exact class-name retrieval from Russian instructions.",
     "language": "ru-en",
     "query_class": "exact_identifier",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q009", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q009",
+      "production_real": false
+    }
   },
   {
     "id": "q030",
     "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
-    "expect_files": ["brain/memory/rule_store.py", "brain/database/repository_utils.py", "brain/database/models.py"],
+    "expect_files": [
+      "brain/memory/rule_store.py",
+      "brain/database/repository_utils.py",
+      "brain/database/models.py"
+    ],
     "why": "Measures scope semantics in a bilingual query.",
     "language": "ru-en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q010", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q010",
+      "production_real": false
+    }
   },
   {
     "id": "q031",
     "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
-    "expect_files": ["apps/api/auth.py", "apps/api/dependencies.py", "apps/api/main.py"],
+    "expect_files": [
+      "apps/api/auth.py",
+      "apps/api/dependencies.py",
+      "apps/api/main.py"
+    ],
     "why": "Tests security retrieval in mixed-language phrasing.",
     "language": "ru-en",
     "query_class": "bug",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q011", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q011",
+      "production_real": false
+    }
   },
   {
     "id": "q032",
-    "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
-    "expect_files": ["apps/api/dashboard_auth.py", "apps/api/main.py", "apps/api/dependencies.py"],
+    "question": "Где Next.js закрывает доступ к live-данным без настроенной авторизации и проверяет Basic credentials?",
+    "expect_files": [
+      "apps/web/lib/web-auth.ts",
+      "apps/web/proxy.ts",
+      "apps/web/app/api/brain/[...path]/route.ts"
+    ],
     "why": "Tests exact security surfaces with Russian connective words.",
     "language": "ru-en",
     "query_class": "bug",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q012", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q012; refreshed for Next.js migration 2026-10-02",
+      "production_real": false
+    }
   },
   {
     "id": "q033",
-    "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
-    "expect_files": ["apps/api/routers/dashboard.py", "apps/api/routers/jobs.py", "brain/workers/queue.py"],
+    "question": "Где web UI читает статусы background jobs, а API и worker queue выполняют действия?",
+    "expect_files": [
+      "apps/web/lib/data.ts",
+      "apps/api/routers/jobs.py",
+      "brain/workers/queue.py"
+    ],
     "why": "Measures a cross-surface bilingual query.",
     "language": "ru-en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q014", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q014; refreshed for Next.js migration 2026-10-02",
+      "production_real": false
+    }
   },
   {
     "id": "q034",
     "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
-    "expect_files": ["brain/graph/graph_client.py", "brain/indexers/repo_indexer.py", "brain/indexers/file_indexer.py"],
+    "expect_files": [
+      "brain/graph/graph_client.py",
+      "brain/indexers/repo_indexer.py",
+      "brain/indexers/file_indexer.py"
+    ],
     "why": "Tests bilingual graph cleanup retrieval.",
     "language": "ru-en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated_translation", "source": "curated translation of q016", "production_real": false}
+    "provenance": {
+      "kind": "curated_translation",
+      "source": "curated translation of q016",
+      "production_real": false
+    }
   },
   {
     "id": "q035",
     "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
-    "expect_files": ["brain/database/session.py", "brain/insights/proactive.py", "tests/test_database_resilience.py", "tests/test_proactive_insights.py"],
+    "expect_files": [
+      "brain/database/session.py",
+      "brain/insights/proactive.py",
+      "tests/test_database_resilience.py",
+      "tests/test_proactive_insights.py"
+    ],
     "why": "Curated bilingual acceptance query spanning runtime and regression tests.",
     "language": "ru-en",
     "query_class": "ru_to_en",
-    "provenance": {"kind": "curated_synthetic", "source": "LFM council exact-query acceptance scenario", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "LFM council exact-query acceptance scenario",
+      "production_real": false
+    }
   },
   {
     "id": "q036",
     "question": "Which settings keep late-interaction disabled by default and reject a remote provider URL unless it is explicitly allowed?",
-    "expect_files": ["brain/config/settings.py", "brain/late_interaction/provider.py", "tests/test_late_interaction.py"],
+    "expect_files": [
+      "brain/config/settings.py",
+      "brain/late_interaction/provider.py",
+      "tests/test_late_interaction.py"
+    ],
     "why": "Covers the additive and private-sidecar safety boundary.",
     "language": "en",
     "query_class": "bug",
-    "provenance": {"kind": "curated_synthetic", "source": "LFM integration code review", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "LFM integration code review",
+      "production_real": false
+    }
   },
   {
     "id": "q037",
     "question": "Where is the late_interaction_embeddings table declared and idempotently migrated without changing the dense pgvector column?",
-    "expect_files": ["brain/database/models.py", "brain/database/migrations.py"],
+    "expect_files": [
+      "brain/database/models.py",
+      "brain/database/migrations.py"
+    ],
     "why": "Verifies the additive storage contract.",
     "language": "en",
     "query_class": "exact_identifier",
-    "provenance": {"kind": "curated_synthetic", "source": "LFM integration code review", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "LFM integration code review",
+      "production_real": false
+    }
   },
   {
     "id": "q038",
     "question": "How are float16 token matrices encoded, decoded, shape-checked, and scored with MaxSim when a payload is corrupt?",
-    "expect_files": ["brain/late_interaction/codec.py", "tests/test_late_interaction.py"],
+    "expect_files": [
+      "brain/late_interaction/codec.py",
+      "tests/test_late_interaction.py"
+    ],
     "why": "Targets the core late-interaction numerical contract.",
     "language": "en",
     "query_class": "bug",
-    "provenance": {"kind": "curated_synthetic", "source": "LFM integration code review", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "LFM integration code review",
+      "production_real": false
+    }
   },
   {
     "id": "q039",
     "question": "How does the LFM provider discover special tokens, expand a query, filter document punctuation, and normalize token vectors?",
-    "expect_files": ["brain/late_interaction/provider.py", "tests/test_late_interaction.py"],
+    "expect_files": [
+      "brain/late_interaction/provider.py",
+      "tests/test_late_interaction.py"
+    ],
     "why": "Covers preprocessing parity risks identified by the council.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated_synthetic", "source": "LFM integration council", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "LFM integration council",
+      "production_real": false
+    }
   },
   {
     "id": "q040",
     "question": "Which code performs resumable late-interaction backfill, reports coverage, and exposes dry-run/write CLI commands?",
-    "expect_files": ["brain/late_interaction/backfill.py", "apps/cli/commands/embeddings.py", "brain/late_interaction/store.py"],
+    "expect_files": [
+      "brain/late_interaction/backfill.py",
+      "apps/cli/commands/embeddings.py",
+      "brain/late_interaction/store.py"
+    ],
     "why": "Maps operations to implementation for safe backfill.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated_synthetic", "source": "LFM cutover runbook", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "LFM cutover runbook",
+      "production_real": false
+    }
   },
   {
     "id": "q041",
     "question": "Where does candidate late-interaction reranking check coverage and chunk budget, calculate file scores, and fail open on provider errors?",
-    "expect_files": ["brain/late_interaction/store.py", "tests/test_late_interaction.py"],
+    "expect_files": [
+      "brain/late_interaction/store.py",
+      "tests/test_late_interaction.py"
+    ],
     "why": "Targets the bounded rerank safety behavior.",
     "language": "en",
     "query_class": "bug",
-    "provenance": {"kind": "curated_synthetic", "source": "LFM integration code review", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "LFM integration code review",
+      "production_real": false
+    }
   },
   {
     "id": "q042",
     "question": "How does late-interaction dual write open its circuit after consecutive failures and preserve the authoritative dense write?",
-    "expect_files": ["brain/indexers/file_indexer.py", "tests/test_late_interaction.py"],
+    "expect_files": [
+      "brain/indexers/file_indexer.py",
+      "tests/test_late_interaction.py"
+    ],
     "why": "Checks fail-open indexing behavior.",
     "language": "en",
     "query_class": "bug",
-    "provenance": {"kind": "curated_synthetic", "source": "LFM integration code review", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "LFM integration code review",
+      "production_real": false
+    }
   },
   {
     "id": "q043",
     "question": "Where are final baseline and counterfactual late-interaction rankings stored durably without retaining the raw query?",
-    "expect_files": ["brain/late_interaction/shadow.py", "brain/database/models.py", "brain/database/migrations.py"],
+    "expect_files": [
+      "brain/late_interaction/shadow.py",
+      "brain/database/models.py",
+      "brain/database/migrations.py"
+    ],
     "why": "Covers the new privacy-bounded shadow evidence path.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated_synthetic", "source": "LFM council durable-shadow requirement", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "LFM council durable-shadow requirement",
+      "production_real": false
+    }
   },
   {
     "id": "q044",
     "question": "How is a harness acceptance checkpoint bound to task version, fencing token, hashes, and a signed immutable record?",
-    "expect_files": ["brain/memory/harness_store.py", "brain/database/harness_models.py", "apps/api/routers/harness.py"],
+    "expect_files": [
+      "brain/memory/harness_store.py",
+      "brain/database/harness_models.py",
+      "apps/api/routers/harness.py"
+    ],
     "why": "Adds an exact durable-orchestration query beyond the original state-machine questions.",
     "language": "en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated_synthetic", "source": "harness reliability implementation", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "harness reliability implementation",
+      "production_real": false
+    }
   },
   {
     "id": "q045",
     "question": "How is repository source lineage recorded in a source manifest and checked before freshness is considered proven?",
-    "expect_files": ["brain/memory/source_manifest.py", "scripts/write_source_manifest.py", "brain/memory/repo_freshness.py"],
+    "expect_files": [
+      "brain/memory/source_manifest.py",
+      "scripts/write_source_manifest.py",
+      "brain/memory/repo_freshness.py"
+    ],
     "why": "Covers repository freshness and provenance.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated_synthetic", "source": "production freshness diagnostics", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "production freshness diagnostics",
+      "production_real": false
+    }
   },
   {
     "id": "q046",
     "question": "How does self-diagnosis combine deterministic probes with optional LLM synthesis and degrade when the configured model fails?",
-    "expect_files": ["brain/insights/proactive.py", "brain/workers/tasks.py", "brain/llm/router.py"],
+    "expect_files": [
+      "brain/insights/proactive.py",
+      "brain/workers/tasks.py",
+      "brain/llm/router.py"
+    ],
     "why": "Covers the current production diagnostic failure mode.",
     "language": "en",
     "query_class": "bug",
-    "provenance": {"kind": "curated_synthetic", "source": "Project Brain self-diagnosis incident", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "Project Brain self-diagnosis incident",
+      "production_real": false
+    }
   },
   {
     "id": "q047",
     "question": "Which checked-in n8n workflows trigger nightly health, proactive insights, git reindex, and the weekly benchmark?",
-    "expect_files": ["n8n/workflows/nightly-health.json", "n8n/workflows/nightly-proactive-insights.json", "n8n/workflows/git-merge-reindex.json", "n8n/workflows/weekly-benchmark.json"],
+    "expect_files": [
+      "n8n/workflows/nightly-health.json",
+      "n8n/workflows/nightly-proactive-insights.json",
+      "n8n/workflows/git-merge-reindex.json",
+      "n8n/workflows/weekly-benchmark.json"
+    ],
     "why": "Adds an orchestration artifact query.",
     "language": "en",
     "query_class": "exact_identifier",
-    "provenance": {"kind": "curated_synthetic", "source": "n8n orchestration ADR", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "n8n orchestration ADR",
+      "production_real": false
+    }
   },
   {
     "id": "q048",
-    "question": "Where is dashboard responsive behavior implemented and which smoke script verifies desktop and mobile layouts?",
-    "expect_files": ["apps/api/static/dashboard.css", "apps/api/templates/orchestration.html", "scripts/dashboard_responsive_smoke.py"],
+    "question": "Where are responsive Next.js layouts and navigation implemented, and which tests verify the advertised routes?",
+    "expect_files": [
+      "apps/web/app/globals.css",
+      "apps/web/components/Shell.tsx",
+      "apps/web/tests/regressions.test.cjs"
+    ],
     "why": "Covers UI implementation and verification surfaces.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated_synthetic", "source": "dashboard release verification", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "dashboard release verification; refreshed for Next.js migration 2026-10-02",
+      "production_real": false
+    }
   },
   {
     "id": "q049",
     "question": "How does graph schema v2 scope node identity by repository and prevent legacy unscoped nodes from contaminating strict reads?",
-    "expect_files": ["brain/graph/schema.py", "brain/graph/graph_client.py", "tests/test_graph_repository_isolation.py"],
+    "expect_files": [
+      "brain/graph/schema.py",
+      "brain/graph/graph_client.py",
+      "tests/test_graph_repository_isolation.py"
+    ],
     "why": "Covers the repository isolation invariant.",
     "language": "en",
     "query_class": "conceptual",
-    "provenance": {"kind": "curated_synthetic", "source": "repository-scoped graph migration", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "repository-scoped graph migration",
+      "production_real": false
+    }
   },
   {
     "id": "q050",
     "question": "How is embedding coverage, provider/model identity, dimension, and content hash integrity verified for a repository?",
-    "expect_files": ["brain/embeddings/integrity.py", "brain/embeddings/store.py", "tests/test_embeddings_integrity.py"],
+    "expect_files": [
+      "brain/embeddings/integrity.py",
+      "brain/embeddings/store.py",
+      "tests/test_embeddings_integrity.py"
+    ],
     "why": "Adds a data-integrity gate query.",
     "language": "en",
     "query_class": "cross_file",
-    "provenance": {"kind": "curated_synthetic", "source": "embedding integrity diagnostics", "production_real": false}
+    "provenance": {
+      "kind": "curated_synthetic",
+      "source": "embedding integrity diagnostics",
+      "production_real": false
+    }
   }
 ]

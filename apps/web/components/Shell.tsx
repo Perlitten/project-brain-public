@@ -4,8 +4,14 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { Tone } from "@/lib/types";
-import { allNavItems, navGroups } from "@/lib/nav";
-import { BrandMark, Icon } from "./Icon";
+import type { ActionResult, ActionsMode } from "@/lib/actions/types";
+import { startBenchmark, startHealthCheck, startInsights, startReindex, startSelfDiagnosis } from "@/lib/actions/jobs";
+import { verifyProviders } from "@/lib/actions/setup";
+import { allNavItems, locate, navGroups } from "@/lib/nav";
+import { ActionsProvider, LOCK_REASON, Toaster, dismissToast, report, toast } from "./act";
+import { Ambient } from "./Ambient";
+import { BrandMark, Icon, type IconName } from "./Icon";
+import { RailPulse } from "./RailPulse";
 
 export interface ShellRepo {
   slug: string;
@@ -16,12 +22,26 @@ export interface ShellRepo {
 
 const isActive = (href: string, path: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
-export function Shell({ repos, demo, children }: { repos: ShellRepo[]; demo: boolean; children: ReactNode }) {
+export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; demo: boolean; mode: ActionsMode; children: ReactNode }) {
   const path = usePathname();
   const params = useSearchParams();
   const repoSlug = params.get("repo") ?? repos[0]?.slug;
   const repo = repos.find((r) => r.slug === repoSlug) ?? repos[0];
   const [drawer, setDrawer] = useState(false);
+  // Icons-only rail, remembered per browser. Medium screens get it from CSS.
+  const [slim, setSlim] = useState(false);
+  useEffect(() => {
+    try {
+      setSlim(localStorage.getItem("brain.rail") === "slim");
+    } catch {}
+  }, []);
+  const toggleSlim = () =>
+    setSlim((v) => {
+      try {
+        localStorage.setItem("brain.rail", v ? "full" : "slim");
+      } catch {}
+      return !v;
+    });
   const [palette, setPalette] = useState(false);
   const [repoMenu, setRepoMenu] = useState(false);
 
@@ -50,22 +70,26 @@ export function Shell({ repos, demo, children }: { repos: ShellRepo[]; demo: boo
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const current = allNavItems.find((i) => isActive(i.href, path));
+  const where = locate(path);
+  const current = where?.item;
+  const scoped = Boolean(current?.repoScoped) && repos.length > 0;
 
   return (
-    <div className={`shell${drawer ? " shell--drawer" : ""}`}>
+    <ActionsProvider mode={mode}>
+    <div className={`shell${drawer ? " shell--drawer" : ""}${slim ? " shell--slim" : ""}`}>
+      <Ambient />
       <a className="skip" href="#main">
         Skip to content
       </a>
       <aside className="rail" aria-label="Main navigation">
-        <Link className="rail__brand" href={withRepo("/")}>
-          <BrandMark size={26} />
-          <span>
-            Project Brain
+        <Link className="rail__brand" href={withRepo("/")} title="Project Brain — overview">
+          <BrandMark size={30} />
+          <span className="rail__word">
+            Project <b>Brain</b>
             <small>memory for your AI agents</small>
           </span>
         </Link>
-        <RailNav path={path} withRepo={withRepo} />
+        <RailNav path={path} withRepo={withRepo} slim={slim} />
         <div className="rail__foot">
           {demo ? (
             <p className="rail__note">
@@ -76,23 +100,40 @@ export function Shell({ repos, demo, children }: { repos: ShellRepo[]; demo: boo
               Numbers are examples until the API is connected.
             </p>
           ) : (
-            <p className="rail__note">
-              <span className="live-dot" aria-hidden="true" /> Connected to Brain
-            </p>
+            <RailPulse withRepo={withRepo} />
           )}
+          <button
+            type="button"
+            className="rail__toggle"
+            onClick={toggleSlim}
+            aria-pressed={slim}
+            title={slim ? "Show the menu with names" : "Collapse the menu to icons"}
+          >
+            <Icon name="sidebar" size={16} />
+            <span className="rail__toggle-text">Collapse menu</span>
+          </button>
         </div>
       </aside>
       <button className="scrim" type="button" aria-label="Close menu" tabIndex={drawer ? 0 : -1} onClick={() => setDrawer(false)} />
 
       <header className="mast">
-        <button className="mast__menu icon-btn" type="button" aria-label="Open menu" onClick={() => setDrawer(true)}>
-          <Icon name="menu" size={20} />
+        <button className="mast__menu btn btn--neutral btn--sm" type="button" onClick={() => setDrawer(true)}>
+          <Icon name="menu" size={16} />
+          Menu
         </button>
-        <p className="mast__where">
+        <p className="mast__where crumb">
           {current && <Icon name={current.icon} />}
-          <span>{current?.label ?? "Project Brain"}</span>
+          {where && (
+            <>
+              <span className="crumb__group">{where.group}</span>
+              <span className="crumb__sep" aria-hidden="true">/</span>
+            </>
+          )}
+          <span className="crumb__page">{current?.label ?? "Project Brain"}</span>
+          {current && <span className="crumb__hint">— {current.hint}</span>}
         </p>
         <div className="mast__tools">
+          {scoped && (
           <div className="repo">
             <button
               type="button"
@@ -122,9 +163,10 @@ export function Shell({ repos, demo, children }: { repos: ShellRepo[]; demo: boo
               </ul>
             )}
           </div>
+          )}
           <button type="button" className="search-btn" onClick={() => setPalette(true)}>
             <Icon name="search" size={16} />
-            <span className="search-btn__text">Jump to…</span>
+            <span className="search-btn__text">Go or run…</span>
             <kbd>Ctrl K</kbd>
           </button>
         </div>
@@ -140,23 +182,34 @@ export function Shell({ repos, demo, children }: { repos: ShellRepo[]; demo: boo
           repos={repos}
           withRepo={withRepo}
           path={path}
+          mode={mode}
+          scoped={scoped}
         />
       )}
+      <Toaster />
     </div>
+    </ActionsProvider>
   );
 }
 
 // The active marker is one element that travels between items, so a route
 // change reads as movement from where you were to where you are.
-function RailNav({ path, withRepo }: { path: string; withRepo: (href: string) => string }) {
+function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: string) => string; slim: boolean }) {
   const ref = useRef<HTMLElement>(null);
   const [mark, setMark] = useState<{ y: number; h: number } | null>(null);
   const [ready, setReady] = useState(false);
 
   useLayoutEffect(() => {
-    const el = ref.current?.querySelector<HTMLElement>("[aria-current='page']");
-    setMark(el ? { y: el.offsetTop, h: el.offsetHeight } : null);
-  }, [path]);
+    const place = () => {
+      const el = ref.current?.querySelector<HTMLElement>("[aria-current='page']");
+      setMark(el ? { y: el.offsetTop, h: el.offsetHeight } : null);
+    };
+    place();
+    // The rail changes shape when it collapses (by hand or at medium widths).
+    const ro = new ResizeObserver(place);
+    if (ref.current) ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, [path, slim]);
   useEffect(() => {
     const t = requestAnimationFrame(() => setReady(true));
     return () => cancelAnimationFrame(t);
@@ -176,10 +229,10 @@ function RailNav({ path, withRepo }: { path: string; withRepo: (href: string) =>
                 href={withRepo(item.href)}
                 className={`nav__item${on ? " is-on" : ""}`}
                 aria-current={on ? "page" : undefined}
-                title={item.hint}
+                title={`${item.label} — ${item.hint}`}
               >
                 <Icon name={item.icon} />
-                {item.label}
+                <span className="nav__text">{item.label}</span>
               </Link>
             );
           })}
@@ -193,22 +246,39 @@ interface Entry {
   id: string;
   label: string;
   hint: string;
-  href: string;
-  icon?: Parameters<typeof Icon>[0]["name"];
+  href?: string;
+  /** A command instead of a destination. */
+  run?: () => Promise<ActionResult>;
+  icon?: IconName;
   tone?: Tone;
   group: string;
 }
+
+// Commands anyone can fire from Ctrl K. Each one is a real job or check; the
+// toast follows it to the end.
+const COMMANDS: { id: string; label: string; hint: string; icon: IconName; run: () => Promise<ActionResult> }[] = [
+  { id: "reindex", label: "Re-index the repository", hint: "Read what changed since the last index", icon: "refresh", run: () => startReindex() },
+  { id: "verify", label: "Verify model providers", hint: "Make one real call to the language model and embeddings", icon: "check", run: () => verifyProviders() },
+  { id: "health", label: "Run a health check", hint: "Check the database, cache, graph and workers", icon: "activity", run: () => startHealthCheck() },
+  { id: "insights", label: "Look for new findings", hint: "Scan the code structure for problems", icon: "trend", run: () => startInsights() },
+  { id: "diagnose", label: "Run self-diagnosis", hint: "Brain checks its own pipeline end to end", icon: "zap", run: () => startSelfDiagnosis() },
+  { id: "bench", label: "Benchmark search quality", hint: "Score how well search finds the right code", icon: "vectors", run: () => startBenchmark() },
+];
 
 function Palette({
   onClose,
   repos,
   withRepo,
   path,
+  mode,
+  scoped,
 }: {
   onClose: () => void;
   repos: ShellRepo[];
   withRepo: (href: string, slug?: string) => string;
   path: string;
+  mode: ActionsMode;
+  scoped: boolean;
 }) {
   const router = useRouter();
   const [q, setQ] = useState("");
@@ -224,29 +294,42 @@ function Palette({
       icon: i.icon,
       group: "Go to",
     }));
+    const commands: Entry[] = COMMANDS.map((c) => ({ ...c, id: `run-${c.id}`, group: "Run" }));
     const repoEntries: Entry[] = repos.map((r) => ({
       id: `repo-${r.slug}`,
       label: `Switch to ${r.name}`,
       hint: r.status,
-      href: withRepo(path, r.slug),
+      href: withRepo(scoped ? path : "/", r.slug),
       tone: r.tone,
       group: "Repository",
     }));
     const needle = q.trim().toLowerCase();
-    return [...pages, ...repoEntries].filter(
+    return [...pages, ...commands, ...repoEntries].filter(
       (e) => !needle || e.label.toLowerCase().includes(needle) || e.hint.toLowerCase().includes(needle),
     );
-  }, [q, repos, withRepo, path]);
+  }, [q, repos, withRepo, path, scoped]);
 
   useEffect(() => setSel(0), [q]);
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-i='${sel}']`)?.scrollIntoView({ block: "nearest" });
   }, [sel]);
 
-  const go = (e?: Entry) => {
+  const go = async (e?: Entry) => {
     if (!e) return;
-    router.push(e.href);
     onClose();
+    if (e.href) return router.push(e.href);
+    if (!e.run) return;
+    if (mode !== "on") return toast({ tone: "warn", title: e.label, message: LOCK_REASON[mode] });
+    const pending = toast({ tone: "info", title: e.label, message: "Starting…" });
+    let res: ActionResult;
+    try {
+      res = await e.run();
+    } catch {
+      res = { ok: false, message: "The dashboard couldn’t reach its server. Reload and try again." };
+    }
+    dismissToast(pending);
+    report(res, e.label);
+    if (res.ok) router.refresh();
   };
 
   return (
@@ -259,8 +342,8 @@ function Palette({
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Where do you want to go? Try “search” or “agents”"
-            aria-label="Search screens and repositories"
+            placeholder="Go to a screen or run a command — try “index” or “verify”"
+            aria-label="Search screens, commands and repositories"
             aria-controls="palette-list"
             aria-activedescendant={entries[sel] ? `pal-${entries[sel].id}` : undefined}
             onKeyDown={(e) => {
@@ -286,7 +369,8 @@ function Palette({
               role="option"
               aria-selected={i === sel}
               data-i={i}
-              className={`palette__row${i === sel ? " is-on" : ""}`}
+              className={`palette__row${i === sel ? " is-on" : ""}${e.run ? " palette__row--run" : ""}`}
+              aria-disabled={e.run && mode !== "on" ? true : undefined}
               style={{ "--i": Math.min(i, 12) } as CSSProperties}
               onMouseMove={() => i !== sel && setSel(i)}
               onClick={() => go(e)}
@@ -309,7 +393,7 @@ function Palette({
             <kbd>↑</kbd> <kbd>↓</kbd> choose
           </span>
           <span>
-            <kbd>Enter</kbd> open
+            <kbd>Enter</kbd> open or run
           </span>
         </p>
       </div>

@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import shutil
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -41,6 +42,8 @@ def test_launch_contract_points_inside_this_install():
     assert server["command"] == sys.executable
     assert server["args"] == ["-m", "apps.mcp_server.server"]
     assert Path(server["env"]["PYTHONPATH"]).resolve() == PROJECT_ROOT.resolve()
+    assert Path(server["env"]["BRAIN_ENV_FILE"]).is_absolute()
+    assert Path(server["env"]["BRAIN_SETUP_STATE_DIR"]).is_absolute()
 
 
 def test_brain_mcp_console_script_is_declared_and_callable():
@@ -150,3 +153,30 @@ def test_claude_code_accepts_generated_config():
 )
 def test_cursor_accepts_generated_config():
     pytest.skip("Live Cursor launch verification is not implemented; JSON contract and stdio handshake are tested separately")
+
+
+def test_copyable_cli_preserves_literal_paths(monkeypatch):
+    from apps.api.routers import setup
+
+    root = "/tmp/brain space'dir/$literal;still-path"
+    executable = "/tmp/python space'dir/$literal"
+    env_file = "/tmp/config space'dir/$literal.env"
+    monkeypatch.setattr(setup, "_mcp_server_launch", lambda: {
+        "command": executable, "args": ["-m", "apps.mcp_server.server"],
+        "env": {"PYTHONPATH": root, "BRAIN_ENV_FILE": env_file},
+    })
+    configs = _client_configs()
+    claude = shlex.split(configs["Claude Code"]["cli"])
+    assert claude[5:10] == [f"PYTHONPATH={root}", "--env", f"BRAIN_ENV_FILE={env_file}", "--", executable]
+    generic = shlex.split(configs["Any MCP client (stdio)"]["cli"], comments=True)
+    assert generic == [f"PYTHONPATH={root}", f"BRAIN_ENV_FILE={env_file}", executable, "-m", "apps.mcp_server.server"]
+
+
+def test_launch_preserves_explicit_instance_configuration(tmp_path, monkeypatch):
+    config = tmp_path / "instance.env"
+    state = tmp_path / "evidence"
+    monkeypatch.setenv("BRAIN_ENV_FILE", str(config))
+    monkeypatch.setenv("BRAIN_SETUP_STATE_DIR", str(state))
+    launch = _mcp_server_launch()
+    assert launch["env"]["BRAIN_ENV_FILE"] == str(config.resolve())
+    assert launch["env"]["BRAIN_SETUP_STATE_DIR"] == str(state.resolve())

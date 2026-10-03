@@ -10,9 +10,16 @@
 set -euo pipefail
 
 BASELINE="$(tr -d '[:space:]' < scripts/mypy_baseline.txt)"
-python -m mypy --explicit-package-bases brain apps scripts > /tmp/mypy_gate.out 2>&1 || true
-cat /tmp/mypy_gate.out
-COUNT="$(grep -c 'error:' /tmp/mypy_gate.out || true)"
+gate_output="$(mktemp "${TMPDIR:-/tmp}/brain-mypy-gate.XXXXXX")"
+trap 'rm -f "$gate_output"' EXIT
+status=0
+"${MYPY_PYTHON:-python}" -m mypy --explicit-package-bases brain apps scripts > "$gate_output" 2>&1 || status=$?
+cat "$gate_output"
+COUNT="$(grep -c 'error:' "$gate_output" || true)"
+if [ "$status" -ne 0 ] && { [ "$status" -ne 1 ] || [ "$COUNT" -eq 0 ]; }; then
+    echo "mypy failed to complete (exit $status); this is not a passing type gate"
+    exit 1
+fi
 
 echo "mypy errors: ${COUNT} (baseline ${BASELINE})"
 if [ "${COUNT}" -gt "${BASELINE}" ]; then

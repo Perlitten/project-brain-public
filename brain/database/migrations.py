@@ -24,7 +24,7 @@ SCHEMA_MIGRATION_LOCK_ID = 8675309
 
 async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) -> None:
     """Apply idempotent PostgreSQL schema upgrades."""
-    dimension = resolve_embedding_dimension()
+    dimension = resolve_embedding_dimension(strict=True)
     if acquire_lock:
         # Transaction-scoped lock releases automatically on commit and rollback,
         # so a failed startup cannot strand a session-level migration lock.
@@ -64,6 +64,24 @@ async def _ensure_context_pack_repo_scope(conn: AsyncConnection) -> None:
     )
     await conn.execute(
         text("ALTER TABLE context_packs ADD COLUMN IF NOT EXISTS repo_commit VARCHAR(255)")
+    )
+    await conn.execute(
+        text(
+            """
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conrelid = 'context_packs'::regclass
+                      AND conname = 'context_packs_repository_id_fkey'
+                ) THEN
+                    ALTER TABLE context_packs
+                    ADD CONSTRAINT context_packs_repository_id_fkey
+                    FOREIGN KEY (repository_id) REFERENCES repositories(id)
+                    ON DELETE CASCADE;
+                END IF;
+            END $$
+            """
+        )
     )
     await conn.execute(
         text(
@@ -451,22 +469,23 @@ async def _ensure_embedding_vector_column(conn: AsyncConnection, dimension: int)
 
     index_dim = pgvector_index_dimension(dimension)
     try:
-        await conn.execute(
-            text(
-                f"""
-                UPDATE embeddings
-                SET embedding = (
-                    (SELECT jsonb_agg(elem::text::float4)
-                     FROM jsonb_array_elements(vector_data::jsonb) WITH ORDINALITY AS t(elem, ord)
-                     WHERE ord <= {index_dim})::text
-                )::{target_type},
-                    dimension = COALESCE(dimension, {dimension})
-                WHERE embedding IS NULL
-                  AND vector_data IS NOT NULL
-                  AND jsonb_array_length(vector_data::jsonb) = {dimension}
-                """
+        async with conn.begin_nested():
+            await conn.execute(
+                text(
+                    f"""
+                    UPDATE embeddings
+                    SET embedding = (
+                        (SELECT jsonb_agg(elem::text::float4)
+                         FROM jsonb_array_elements(vector_data::jsonb) WITH ORDINALITY AS t(elem, ord)
+                         WHERE ord <= {index_dim})::text
+                    )::{target_type},
+                        dimension = COALESCE(dimension, {dimension})
+                    WHERE embedding IS NULL
+                      AND vector_data IS NOT NULL
+                      AND jsonb_array_length(vector_data::jsonb) = {dimension}
+                    """
+                )
             )
-        )
     except Exception as exc:
         logger.warning(f"Could not backfill pgvector embeddings from JSON: {exc}")
 
@@ -477,33 +496,44 @@ async def _ensure_embedding_vector_column(conn: AsyncConnection, dimension: int)
         # (Dropping unconditionally here tore down + full-scan-rebuilt the ANN
         # index on every boot — minutes of degraded search on a populated table.)
         ops = pgvector_distance_ops(dimension)
-        if dimension <= PGVECTOR_VECTOR_MAX_DIM:
-            await conn.execute(
-                text(
-                    f"""
-                    CREATE INDEX IF NOT EXISTS idx_embeddings_vector_cosine
-                    ON embeddings
-                    USING ivfflat (embedding {ops})
-                    WITH (lists = 100)
-                    WHERE embedding IS NOT NULL
-                      AND dimension = {dimension}
-                    """
-                )
-            )
-        else:
-            await conn.execute(
-                text(
-                    f"""
-                    CREATE INDEX IF NOT EXISTS idx_embeddings_vector_hnsw_half
-                    ON embeddings
-                    USING hnsw (embedding {ops})
-                    WHERE embedding IS NOT NULL
-                      AND dimension = {dimension}
-                    """
-                )
-            )
+        # Savepoint: a failed build must not abort the enclosing migration
+        # transaction, which would roll back the column swap above with it.
+        async with conn.begin_nested():
+            await _create_pgvector_index(conn, dimension, ops)
     except Exception as exc:
         logger.warning(f"Could not create pgvector index: {exc}")
+
+
+async def _create_pgvector_index(conn: AsyncConnection, dimension: int, ops: str) -> None:
+    # Parallel index builds allocate maintenance_work_mem in /dev/shm, which is
+    # only 64 MB in a default Docker container. A serial build uses ordinary
+    # backend memory instead.
+    await conn.execute(text("SET LOCAL max_parallel_maintenance_workers = 0"))
+    if dimension <= PGVECTOR_VECTOR_MAX_DIM:
+        await conn.execute(
+            text(
+                f"""
+                CREATE INDEX IF NOT EXISTS idx_embeddings_vector_cosine
+                ON embeddings
+                USING ivfflat (embedding {ops})
+                WITH (lists = 100)
+                WHERE embedding IS NOT NULL
+                  AND dimension = {dimension}
+                """
+            )
+        )
+    else:
+        await conn.execute(
+            text(
+                f"""
+                CREATE INDEX IF NOT EXISTS idx_embeddings_vector_hnsw_half
+                ON embeddings
+                USING hnsw (embedding {ops})
+                WHERE embedding IS NOT NULL
+                  AND dimension = {dimension}
+                """
+            )
+        )
 
 
 async def _ensure_repository_and_symbol_indexes(conn: AsyncConnection) -> None:

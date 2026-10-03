@@ -26,78 +26,41 @@ from brain.llm.providers.nvidia_provider import (
     NvidiaEmbeddingProvider,
     NvidiaSummarizerProvider
 )
+from brain.llm.providers.openai_compatible import (
+    OpenAICompatibleLLMProvider,
+    OpenAICompatibleEmbeddingProvider,
+    OpenAICompatibleSummarizerProvider
+)
+from brain.llm.factory import (
+    create_llm_provider,
+    create_embedding_provider,
+    create_summarizer_provider
+)
 from brain.llm.router import ModelRouter, TaskKind, get_model_router
 
 def get_llm_provider(provider_name: Optional[str] = None) -> LLMProvider:
     """Returns the configured LLMProvider.
 
     Args:
-        provider_name: Optional override for the provider name (e.g. 'openai', 'anthropic', 'google', 'nvidia', 'mock').
+        provider_name: Optional override for the provider name: 'mock', 'anthropic',
+            'google', or any OpenAI-compatible preset ('openai', 'nvidia',
+            'openrouter', 'groq', 'together', 'deepseek', 'mistral', 'ollama',
+            'lmstudio', 'openai_compatible' / 'custom').
 
     Returns:
         An instance of LLMProvider.
     """
-    name = (provider_name or settings.DEFAULT_LLM_PROVIDER).lower()
-    if name == "mock":
-        return MockLLMProvider()
-    elif name == "openai":
-        return OpenAILLMProvider()
-    elif name == "anthropic":
-        return AnthropicLLMProvider()
-    elif name == "google":
-        return GoogleLLMProvider()
-    elif name == "nvidia":
-        return NvidiaLLMProvider()
-    else:
-        raise ValueError(f"Unknown LLM provider: {name}")
+    return create_llm_provider(provider_name or settings.DEFAULT_LLM_PROVIDER)
 
 
 def get_embedding_provider(provider_name: Optional[str] = None) -> EmbeddingProvider:
-    """Returns the configured EmbeddingProvider.
-
-    Args:
-        provider_name: Optional override for the provider name (e.g. 'openai', 'google', 'nvidia', 'mock').
-
-    Returns:
-        An instance of EmbeddingProvider.
-    """
-    name = (provider_name or settings.DEFAULT_EMBEDDING_PROVIDER).lower()
-    if name == "mock":
-        return MockEmbeddingProvider()
-    elif name == "openai":
-        return OpenAIEmbeddingProvider()
-    elif name == "anthropic":
-        return AnthropicEmbeddingProvider()
-    elif name == "google":
-        return GoogleEmbeddingProvider()
-    elif name == "nvidia":
-        return NvidiaEmbeddingProvider()
-    else:
-        raise ValueError(f"Unknown Embedding provider: {name}")
+    """Returns the configured EmbeddingProvider (see :func:`get_llm_provider` for names)."""
+    return create_embedding_provider(provider_name or settings.DEFAULT_EMBEDDING_PROVIDER)
 
 
 def get_summarizer_provider(provider_name: Optional[str] = None) -> SummarizerProvider:
-    """Returns the configured SummarizerProvider.
-
-    Args:
-        provider_name: Optional override for the provider name (e.g. 'openai', 'anthropic', 'google', 'nvidia', 'mock').
-
-    Returns:
-        An instance of SummarizerProvider.
-    """
-    name = (provider_name or settings.DEFAULT_LLM_PROVIDER).lower()
-    if name == "mock":
-        return MockSummarizerProvider()
-    elif name == "openai":
-        return OpenAISummarizerProvider()
-    elif name == "anthropic":
-        return AnthropicSummarizerProvider()
-    elif name == "google":
-        return GoogleSummarizerProvider()
-    elif name == "nvidia":
-        return NvidiaSummarizerProvider()
-    else:
-        raise ValueError(f"Unknown Summarizer provider: {name}")
+    """Returns the configured SummarizerProvider (see :func:`get_llm_provider` for names)."""
+    return create_summarizer_provider(provider_name or settings.DEFAULT_LLM_PROVIDER)
 
 
 __all__ = [
@@ -110,5 +73,26 @@ __all__ = [
     "LLMProvider",
     "EmbeddingProvider",
     "SummarizerProvider",
+    "MockLLMProvider",
+    "MockEmbeddingProvider",
+    "MockSummarizerProvider",
+    "OpenAILLMProvider",
+    "OpenAIEmbeddingProvider",
+    "OpenAISummarizerProvider",
+    "AnthropicLLMProvider",
+    "AnthropicEmbeddingProvider",
+    "AnthropicSummarizerProvider",
+    "GoogleLLMProvider",
+    "GoogleEmbeddingProvider",
+    "GoogleSummarizerProvider",
+    "NvidiaLLMProvider",
+    "NvidiaEmbeddingProvider",
+    "NvidiaSummarizerProvider",
+    "OpenAICompatibleLLMProvider",
+    "OpenAICompatibleEmbeddingProvider",
+    "OpenAICompatibleSummarizerProvider",
+    "create_llm_provider",
+    "create_embedding_provider",
+    "create_summarizer_provider",
 ]
 

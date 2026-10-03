@@ -9,6 +9,9 @@ export default async function Runs() {
   const briefed = runs.filter((r) => r.packHit).length;
   const briefingTracked = runs.some((r) => r.packHit !== undefined);
   const failed = runs.filter((r) => r.status === "failed" || r.status === "error").length;
+  // Tasks nobody closed get closed by the reaper after their deadline. That's
+  // not a failure: the agent may well have finished and just not reported it.
+  const timedOut = runs.filter((r) => r.status === "timed_out").length;
   return (
     <>
       <PageHead
@@ -33,6 +36,11 @@ export default async function Runs() {
         <div className={failed ? "tone-bad" : "tone-ok"}>
           <Stat label="Failed" value={String(failed)} note="ended with an error" />
         </div>
+        {timedOut > 0 && (
+          <div className="tone-warn">
+            <Stat label="Timed out" value={String(timedOut)} note="never reported back; closed after the deadline" />
+          </div>
+        )}
       </div>
       <Panel id="runs" title="Recent tasks" flush>
         {runs.length === 0 ? (
@@ -42,6 +50,7 @@ export default async function Runs() {
           caption="Agent runs"
           rows={runs}
           rowKey={(r) => r.id}
+          filter={{ search: (r) => `${r.task} ${r.id} ${r.agent}`, facet: { label: "Result", of: (r) => r.status, values: [{ value: "timed_out", label: "timed out" }] }, noun: ["task", "tasks"] }}
           columns={[
             {
               head: "Task",

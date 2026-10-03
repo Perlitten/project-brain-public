@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,7 +10,9 @@ from token_economy_benchmark import _outcome, _pin_check  # noqa: E402
 from token_economy_schema import (  # noqa: E402
     TokenEconomyTask,
     is_literal_assertion,
+    load_manifest,
     load_tasks,
+    DEFAULT_MANIFEST_PATH,
 )
 
 
@@ -100,6 +103,25 @@ def test_v2_corpus_is_pinned_and_curated_ineligible():
         "acceptance_ineligible_reasons"
     ]
     assert all(task.provenance.get("production_real") is not True for task in tasks)
+
+
+def test_current_web_corpus_replaces_deleted_targets_and_preserves_curated_provenance():
+    tasks, corpus = load_tasks()
+    assert len(tasks) == 50
+    assert DEFAULT_MANIFEST_PATH.name == "token_economy_tasks_web.json"
+    assert corpus["acceptance_eligible"] is False
+    assert all((ROOT / file).is_file() for task in tasks for file in task.expected_files)
+    assert all(task.provenance.get("production_real") is False for task in tasks)
+    auth = next(task for task in tasks if task.id == "q012")
+    assert "apps/web/lib/web-auth.ts" in auth.expected_files
+    assert "authorizeWebRequest" in auth.expected_symbols
+
+
+def test_current_web_corpus_rejects_unrecorded_byte_drift(tmp_path):
+    tampered = tmp_path / DEFAULT_MANIFEST_PATH.name
+    tampered.write_bytes(DEFAULT_MANIFEST_PATH.read_bytes() + b"\n")
+    with pytest.raises(ValueError, match="frozen recording"):
+        load_manifest(tampered)
 
 
 def test_flask_corpus_holdout_is_excluded_by_default():

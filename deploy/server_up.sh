@@ -89,6 +89,108 @@ env_value() {
     sed -n -E "s/^${key}=//p" "$ENV_FILE" | head -1
 }
 
+# --- LLM / embedding provider credentials (mirrors brain/llm/presets.py) ---
+# Prints the preset-specific API-key variable for a provider, "-" when the
+# endpoint needs no key, "?" when the provider is unknown. Unset = nvidia
+# (the historical production default).
+provider_key_env() {
+    case "$1" in
+        ""|nvidia) printf 'NVIDIA_API_KEY\n' ;;
+        openai) printf 'OPENAI_API_KEY\n' ;;
+        openrouter) printf 'OPENROUTER_API_KEY\n' ;;
+        groq) printf 'GROQ_API_KEY\n' ;;
+        together) printf 'TOGETHER_API_KEY\n' ;;
+        deepseek) printf 'DEEPSEEK_API_KEY\n' ;;
+        mistral) printf 'MISTRAL_API_KEY\n' ;;
+        anthropic) printf 'ANTHROPIC_API_KEY\n' ;;
+        google) printf 'GOOGLE_API_KEY\n' ;;
+        mock|ollama|lmstudio|openai_compatible) printf -- '-\n' ;;
+        *) printf '?\n' ;;
+    esac
+}
+
+normalize_provider() {
+    local p
+    p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "$p" in
+        custom|openai-compatible) p=openai_compatible ;;
+    esac
+    printf '%s\n' "$p"
+}
+
+# provider_env_problems <llm|embedding>: one human-readable problem per line
+# (variable names only, never values); prints nothing when the config is usable.
+provider_env_problems() {
+    local kind="$1" var provider llm_provider key_env key base model dim universal
+    if [[ "$kind" == "llm" ]]; then var=DEFAULT_LLM_PROVIDER; else var=DEFAULT_EMBEDDING_PROVIDER; fi
+    provider="$(normalize_provider "$(env_value "$var" || true)")"
+    llm_provider="$(normalize_provider "$(env_value DEFAULT_LLM_PROVIDER || true)")"
+    key_env="$(provider_key_env "$provider")"
+    if [[ "$kind" == "llm" ]]; then
+        universal=LLM_API_KEY
+        key="$(env_value LLM_API_KEY || true)"
+        base="$(env_value LLM_BASE_URL || true)"
+        model="$(env_value LLM_MODEL || true)"
+    else
+        universal=EMBEDDING_API_KEY
+        key="$(env_value EMBEDDING_API_KEY || true)"
+        base="$(env_value EMBEDDING_BASE_URL || true)"
+        model="$(env_value EMBEDDING_MODEL || true)"
+        dim="$(env_value EMBEDDING_DIMENSION || true)"
+        # EMBEDDING_* fall back to LLM_* when both roles use the same provider.
+        if [[ "$provider" == "$llm_provider" ]]; then
+            universal="EMBEDDING_API_KEY/LLM_API_KEY"
+            [[ -n "$key" ]] || key="$(env_value LLM_API_KEY || true)"
+            [[ -n "$base" ]] || base="$(env_value LLM_BASE_URL || true)"
+        fi
+    fi
+
+    case "$key_env" in
+        "?")
+            printf '%s=%s is not a supported provider\n' "$var" "$provider"
+            return 0
+            ;;
+        "-")
+            ;;
+        *)
+            if [[ -z "$key" ]]; then
+                key="$(env_value "$key_env" || true)"
+            fi
+            if [[ -z "$key" ]]; then
+                printf '%s is not set (or %s) for %s=%s\n' "$key_env" "$universal" "$var" "${provider:-nvidia}"
+            elif [[ "$key_env" == "NVIDIA_API_KEY" && -z "$base" && ! "$key" =~ ^nvapi- ]]; then
+                printf 'NVIDIA API key for %s=%s does not start with nvapi-\n' "$var" "${provider:-nvidia}"
+            fi
+            ;;
+    esac
+
+    if [[ "$provider" == "openai_compatible" && -z "$base" ]]; then
+        if [[ "$kind" == "llm" ]]; then
+            printf 'LLM_BASE_URL is not set for %s=openai_compatible\n' "$var"
+        else
+            printf 'EMBEDDING_BASE_URL (or LLM_BASE_URL) is not set for %s=openai_compatible\n' "$var"
+        fi
+    fi
+    # Presets without a default model for this role need it spelled out.
+    local no_default=" openai_compatible lmstudio "
+    if [[ "$kind" == "embedding" ]]; then
+        no_default=" openai_compatible lmstudio openrouter groq deepseek "
+    fi
+    if [[ "$no_default" == *" $provider "* ]]; then
+        if [[ -z "$model" ]]; then
+            if [[ "$kind" == "llm" ]]; then
+                printf 'LLM_MODEL is not set for %s=%s\n' "$var" "$provider"
+            else
+                printf 'EMBEDDING_MODEL is not set for %s=%s\n' "$var" "$provider"
+            fi
+        fi
+        if [[ "$kind" == "embedding" && ( -z "${dim:-}" || "${dim:-0}" == "0" ) ]]; then
+            printf 'EMBEDDING_DIMENSION is not set for %s=%s\n' "$var" "$provider"
+        fi
+    fi
+    return 0
+}
+
 # Deployment-only credentials must never flow through Compose's `env_file`.
 # Keep these values in the host-mode-600 .deploy.env file instead.
 deploy_env_value() {
@@ -263,10 +365,17 @@ if grep -q 'REPLACE_WITH' "$ENV_FILE"; then
     exit 1
 fi
 
-# --- preflight: NVIDIA key must be present for production embeddings/LLM ---
-if ! grep -qE '^NVIDIA_API_KEY=nvapi-' "$ENV_FILE"; then
-    echo "ERROR: NVIDIA_API_KEY is not set in .env (required for production)." >&2
-    echo "       Set NVIDIA_API_KEY in .env from your password manager and re-run." >&2
+# --- preflight: the configured LLM/embedding providers must have credentials ---
+# DEFAULT_LLM_PROVIDER / DEFAULT_EMBEDDING_PROVIDER (nvidia when unset) select
+# the provider; its key (or LLM_API_KEY) must be present. The nvapi- prefix is
+# enforced only for nvidia. Keyless endpoints (ollama, lmstudio,
+# openai_compatible) need a base URL / model instead.
+provider_problems="$(provider_env_problems llm; provider_env_problems embedding)"
+if [[ -n "$provider_problems" ]]; then
+    while IFS= read -r line; do
+        echo "ERROR: $line" >&2
+    done <<< "$provider_problems"
+    echo "       Set the provider credentials in .env from your password manager and re-run." >&2
     exit 1
 fi
 

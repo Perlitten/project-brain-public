@@ -15,7 +15,11 @@ from brain.workers.runtime import check_job_lease
 def git_source_is_clean(path, files) -> bool:
     """Require indexed Git files to belong to an unchanged committed tree."""
     command = ["git", "-c", f"safe.directory={path}", "-C", str(path)]
-    probe = subprocess.run([*command, "rev-parse", "--is-inside-work-tree"], capture_output=True)
+    try:
+        probe = subprocess.run([*command, "rev-parse", "--is-inside-work-tree"], capture_output=True)
+    except FileNotFoundError:
+        # No git binary: a snapshot is still fine, a checkout cannot be verified.
+        return not (path / ".git").exists()
     if probe.returncode:
         return not (path / ".git").exists()  # File snapshots have no Git tree.
     status = subprocess.run([*command, "status", "--porcelain", "--untracked-files=all"], capture_output=True)

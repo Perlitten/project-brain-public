@@ -201,8 +201,13 @@ async def collect_embedding_inventory(
             stmt = stmt.where(File.repository_id == repository_id)
 
         rows = (await session.execute(stmt)).all()
+        # Many chunks share a file; decide each path once (45k chunks -> ~7k paths).
+        excluded: dict[str, bool] = {}
         for path, content, emb_id, dim, provider, model, chash, vec_len, has_vec in rows:
-            if should_exclude_from_retrieval(path):
+            skip = excluded.get(path)
+            if skip is None:
+                skip = excluded[path] = should_exclude_from_retrieval(path)
+            if skip:
                 continue
             inventory.total_eligible_chunks += 1
             if fast:

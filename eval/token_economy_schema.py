@@ -14,7 +14,7 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST_PATH = PROJECT_ROOT / "eval" / "token_economy_tasks_v2.json"
+DEFAULT_MANIFEST_PATH = PROJECT_ROOT / "eval" / "token_economy_tasks_web.json"
 
 
 
@@ -48,6 +48,11 @@ def _read_json(path: Path) -> Any:
 
 
 def load_manifest(path: Path = DEFAULT_MANIFEST_PATH) -> dict[str, Any]:
+    if path.name == DEFAULT_MANIFEST_PATH.name:
+        freeze = _read_json(PROJECT_ROOT / "eval" / "frozen_datasets.json")
+        expected = freeze.get("files", {}).get(path.name)
+        if not expected or sha256_file(path) != expected:
+            raise ValueError("Current web corpus digest does not match its frozen recording")
     manifest = _read_json(path)
     if manifest.get("schema_version") not in {1, 2}:
         raise ValueError("Unsupported token economy manifest schema")

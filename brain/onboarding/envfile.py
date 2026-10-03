@@ -1,8 +1,10 @@
-"""Persist non-secret setup configuration into the checkout's ``.env``.
+"""Persist setup configuration into the checkout's ``.env``.
 
-Only an explicit allowlist of keys may be written through this module —
-provider credentials and tokens never pass through here; they stay in the
-operator's own environment or the secret store, and are never echoed back.
+Only an explicit allowlist of keys may be written through this module. The two
+universal provider keys (``LLM_API_KEY`` / ``EMBEDDING_API_KEY``) are writable
+only when the caller opts in with ``allow_secrets=True`` (the scoped
+``/api/setup/provider`` endpoint); they are write-only and never echoed back.
+Every other credential stays in the operator's own environment.
 """
 from __future__ import annotations
 
@@ -12,22 +14,48 @@ import stat
 import tempfile
 from io import StringIO
 from pathlib import Path
-from typing import Dict
+from typing import Dict, FrozenSet
+from urllib.parse import urlparse
 
 from dotenv.parser import parse_stream
 
+PROVIDER_SETUP_KEYS = frozenset(
+    {
+        "LLM_BASE_URL",
+        "LLM_MODEL",
+        "SUMMARIZER_MODEL",
+        "EMBEDDING_BASE_URL",
+        "EMBEDDING_MODEL",
+        "EMBEDDING_DIMENSION",
+    }
+)
 ALLOWED_SETUP_KEYS = frozenset(
     {
         "TARGET_REPO_PATH",
         "DEFAULT_LLM_PROVIDER",
         "DEFAULT_EMBEDDING_PROVIDER",
     }
-)
+) | PROVIDER_SETUP_KEYS
+SECRET_SETUP_KEYS = frozenset({"LLM_API_KEY", "EMBEDDING_API_KEY"})
+_URL_KEYS = frozenset({"LLM_BASE_URL", "EMBEDDING_BASE_URL"})
 
+_OPENAI_COMPATIBLE_ALIASES = frozenset({"openai_compatible", "custom", "openai-compatible"})
 SUPPORTED_SETUP_PROVIDERS = {
-    "DEFAULT_LLM_PROVIDER": frozenset({"mock", "openai", "anthropic", "google", "nvidia"}),
-    "DEFAULT_EMBEDDING_PROVIDER": frozenset({"mock", "openai", "google", "nvidia"}),
+    "DEFAULT_LLM_PROVIDER": frozenset(
+        {"mock", "anthropic", "google", "openai", "nvidia", "openrouter", "groq",
+         "together", "deepseek", "mistral", "ollama", "lmstudio"}
+    ) | _OPENAI_COMPATIBLE_ALIASES,
+    # Only providers that serve an /embeddings endpoint.
+    "DEFAULT_EMBEDDING_PROVIDER": frozenset(
+        {"mock", "google", "openai", "nvidia", "together", "mistral", "ollama", "lmstudio"}
+    ) | _OPENAI_COMPATIBLE_ALIASES,
 }
+
+
+def setup_env_path() -> Path:
+    """Write the instance override that setup and generated MCP launches share."""
+    explicit = os.environ.get("BRAIN_ENV_FILE", "").strip()
+    return Path(explicit).expanduser() if explicit else Path(".env")
 
 
 def _sanitize_value(key: str, value: str) -> str:
@@ -37,6 +65,16 @@ def _sanitize_value(key: str, value: str) -> str:
         raise ValueError(f"{key}: environment interpolation is not supported")
     if key in SUPPORTED_SETUP_PROVIDERS and value not in SUPPORTED_SETUP_PROVIDERS[key]:
         raise ValueError(f"{key}: unsupported provider")
+    if key in _URL_KEYS and value:
+        parsed = urlparse(value)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError(f"{key}: must be an http(s) URL such as https://api.openai.com/v1")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError(f"{key}: put credentials in the API key, not in the URL")
+    if key == "EMBEDDING_DIMENSION" and value and not (value.isdigit() and 0 < int(value) <= 65536):
+        raise ValueError(f"{key}: must be a positive whole number")
+    if (key in SECRET_SETUP_KEYS or key.endswith("_MODEL")) and any(ch.isspace() for ch in value):
+        raise ValueError(f"{key}: must not contain spaces")
     return value
 
 
@@ -46,15 +84,25 @@ def _assignment(key: str, value: str) -> str:
     return f"{key}={value}\n"
 
 
-def update_env_file(env_path: Path, updates: Dict[str, str]) -> Dict[str, str]:
+def update_env_file(
+    env_path: Path,
+    updates: Dict[str, str],
+    *,
+    allow_secrets: bool = False,
+    extra_keys: FrozenSet[str] = frozenset(),
+) -> Dict[str, str]:
     """Write ``updates`` into ``env_path`` (created if absent), KEY=VALUE lines.
 
-    Returns the applied allowlisted updates. Raises ``ValueError`` on a key
-    outside :data:`ALLOWED_SETUP_KEYS` or an unsafe value.
+    Returns the applied allowlisted updates (callers must not echo secret
+    values). Raises ``ValueError`` on a key outside :data:`ALLOWED_SETUP_KEYS`
+    (plus :data:`SECRET_SETUP_KEYS` when ``allow_secrets``, plus the caller's
+    own validated ``extra_keys``) or an unsafe value.
     """
+    allowed = ALLOWED_SETUP_KEYS | SECRET_SETUP_KEYS if allow_secrets else ALLOWED_SETUP_KEYS
+    allowed = allowed | extra_keys
     applied: Dict[str, str] = {}
     for key, value in updates.items():
-        if key not in ALLOWED_SETUP_KEYS:
+        if key not in allowed:
             raise ValueError(f"{key} is not a writable setup key")
         applied[key] = _sanitize_value(key, value)
     if not applied:

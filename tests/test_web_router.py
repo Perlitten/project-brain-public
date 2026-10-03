@@ -4,9 +4,11 @@ Pure shaping/aggregation helpers are tested directly; endpoints are driven
 through TestClient with every DB/graph/Redis loader patched at the router.
 """
 
+import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 with (
     patch("sqlalchemy.ext.asyncio.create_async_engine"),
@@ -64,8 +66,8 @@ def test_shape_context_pack_marks_stale_against_latest_index(tmp_path):
     pack_file = tmp_path / "pack.md"
     pack_file.write_text("- **Token Budget Mode**: deep\n### Files\n- [a](a)\n", encoding="utf-8")
     created = datetime(2026, 9, 1, tzinfo=timezone.utc)
-    pack = SimpleNamespace(id=5, task_description="fix x", created_at=created, path=str(pack_file))
-    shaped = web.shape_context_pack(pack, pack_file, created + timedelta(hours=1))
+    pack = SimpleNamespace(id=5, task_description="fix x", created_at=created, path=str(pack_file), repo_commit="old")
+    shaped = web.shape_context_pack(pack, pack_file, "new")
     assert shaped["stale"] is True
     assert shaped["budget"] == "deep"
     assert shaped["files"] == 1
@@ -77,6 +79,9 @@ def test_shape_context_pack_marks_stale_against_latest_index(tmp_path):
     assert missing["available"] is False
     assert missing["stale"] is None
     assert missing["tokens"] is None
+    assert web.shape_context_pack(pack, pack_file, "old")["stale"] is False
+    pack.repo_commit = None
+    assert web.shape_context_pack(pack, pack_file, "new")["stale"] is None
 
 
 def test_aggregate_module_edges_weights_and_violations():
@@ -174,6 +179,44 @@ def test_report_kind_and_shape():
 
 
 # ---- endpoints ---------------------------------------------------------
+
+
+def test_context_pack_freshness_uses_each_repository_commit():
+    packs = [
+        SimpleNamespace(id=1, repository_id=3, repo_commit="a", created_at=datetime(2026, 8, 1), task_description="A", path="missing-a"),
+        SimpleNamespace(id=2, repository_id=7, repo_commit="b", created_at=datetime(2026, 9, 1), task_description="B", path="missing-b"),
+        SimpleNamespace(id=3, repository_id=None, repo_commit=None, created_at=datetime(2026, 9, 1), task_description="unknown", path="missing-c"),
+    ]
+    pack_result = MagicMock()
+    pack_result.scalars.return_value.all.return_value = packs
+    commit_result = MagicMock()
+    commit_result.all.return_value = [(3, "a"), (7, "b")]
+    session = AsyncMock()
+    session.execute.side_effect = [pack_result, commit_result]
+    @asynccontextmanager
+    async def factory():
+        yield session
+    with patch.object(web, "async_session_factory", factory), patch.object(web, "resolve_context_pack_file", return_value=None):
+        result = asyncio.run(web.web_context_packs(limit=50))
+    assert [pack["stale"] for pack in result["packs"]] == [False, False, None]
+
+
+def test_modules_streams_chunk_rows_without_materializing_query_results():
+    async def stream():
+        for row in [("brain/search/a.py", 1, 1024, "nvidia", "m-1"),
+                    ("brain/search/a.py", None, None, None, None),
+                    ("brain/search/b.py", 2, 512, "nvidia", "m-1")]:
+            yield row
+    session = AsyncMock()
+    session.stream.return_value = stream()
+    @asynccontextmanager
+    async def factory():
+        yield session
+    with patch.object(web, "async_session_factory", factory), patch.object(web, "_resolve_repository", AsyncMock(return_value=REPO)), patch("brain.embeddings.config.get_embedding_config", return_value=CONFIG):
+        result = asyncio.run(web.web_modules(repository_id=REPO.id))
+    assert result["modules"] == [{"name": "brain/search", "chunks": 3, "current": 1, "outdated": 1, "missing": 1, "excluded": 0}]
+    session.execute.assert_not_awaited()
+    assert session.stream.call_args.args[0].get_execution_options()["yield_per"] == 1000
 
 
 def test_reports_endpoint():

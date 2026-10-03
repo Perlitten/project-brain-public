@@ -13,7 +13,7 @@ from starlette.responses import Response
 from apps.api.audit_middleware import AuditLogMiddleware
 from apps.api.request_id_middleware import RequestIdMiddleware
 from apps.api.request_size_middleware import RequestSizeLimitMiddleware
-from apps.api.routers import telegram_bridge, core, harness, jobs, setup, drift, graph_v2, coupling, impact, remediation, workspace, portfolio, freshness, lab, experiments, ledger, control, execution, routing, shadow, operations, improvement, autonomy, audit, admin, web
+from apps.api.routers import telegram_bridge, core, harness, jobs, setup, drift, graph_v2, coupling, impact, remediation, workspace, portfolio, freshness, lab, experiments, ledger, control, execution, routing, shadow, operations, improvement, autonomy, audit, admin, web, app_settings
 from brain.config.settings import settings
 from brain.database.session import close_database_connections, init_db
 from brain.workers.queue import QueueDepthExceeded
@@ -168,6 +168,7 @@ async def retired_dashboard(path: str = "") -> Response:
 
 app.include_router(core.router)
 app.include_router(setup.router)
+app.include_router(app_settings.router)
 app.include_router(jobs.router)
 # JSON read API for the web UI (apps/web).
 app.include_router(web.router)

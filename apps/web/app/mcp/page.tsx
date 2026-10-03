@@ -4,7 +4,7 @@ import { getMcpTools } from "@/lib/data";
 
 export const metadata = { title: "Agent tools" };
 
-const health = { ok: "healthy", warn: "slow", bad: "failing", info: "new", idle: "unused" } as const;
+const health = { ok: "healthy", warn: "slow", bad: "failing", info: "not measured", idle: "unused" } as const;
 
 export default async function Mcp() {
   const tools = await getMcpTools();
@@ -14,7 +14,15 @@ export default async function Mcp() {
     <>
       <PageHead
         eyebrow="Agent tools"
-        title={tools.length === 0 ? "No agent tools reported" : troubled ? `${troubled} tool${troubled > 1 ? "s are" : " is"} slow or failing` : "All agent tools are healthy"}
+        title={
+          tools.length === 0
+            ? "No agent tools reported"
+            : troubled
+              ? `${troubled} tool${troubled > 1 ? "s are" : " is"} slow or failing`
+              : tracked
+                ? "All agent tools are healthy"
+                : `${tools.length} agent tools available — their calls aren’t measured yet`
+        }
         lede={
           <>
             Agents talk to Brain through tools over <Term k="mcp">MCP</Term>. Here you can see which tools they use most, how
@@ -30,6 +38,11 @@ export default async function Mcp() {
           caption="Agent tools"
           rows={tools}
           rowKey={(t) => t.name}
+          filter={{
+            search: (t) => `${t.name} ${t.surface}`,
+            facet: { label: "Health", of: (t) => t.status, values: (["bad", "warn", "ok", "info", "idle"] as const).map((v) => ({ value: v, label: health[v] })) },
+            noun: ["tool", "tools"],
+          }}
           columns={[
             {
               head: "Tool",

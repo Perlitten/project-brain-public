@@ -1,0 +1,53 @@
+/* Access: identities that open into their keys, and the permission picker. */
+
+.access-list__status { padding: var(--s-3) var(--s-5) 0; }
+
+.idents { display: grid; }
+.ident { border-bottom: 1px solid var(--border-subtle); animation: fade-up 420ms var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * var(--stagger-row) + 300ms); }
+.ident:last-child { border-bottom: 0; }
+.ident__head {
+  display: grid; grid-template-columns: minmax(160px, 1.1fr) minmax(0, 2fr) auto auto; align-items: center; gap: var(--s-2) var(--s-4);
+  width: 100%; padding: var(--s-3) var(--s-5); border: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit;
+  transition: background-color var(--dur-control);
+}
+.ident__head:hover { background: var(--surface-inset); }
+.ident__name { min-width: 0; overflow-wrap: anywhere; }
+.ident__count { font-size: var(--fs-12); color: var(--text-2); white-space: nowrap; }
+.ident__toggle { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-12); font-weight: 500; color: var(--text-3); }
+.ident__toggle svg { transition: transform 220ms var(--ease); transform: rotate(90deg); }
+.ident.is-open .ident__toggle svg { transform: rotate(-90deg); }
+.ident__head:hover .ident__toggle, .ident__head:focus-visible .ident__toggle { color: var(--teal-fg); }
+.ident.is-disabled .ident__name .mono { color: var(--text-3); }
+.ident__panel {
+  display: grid; gap: var(--s-3); padding: var(--s-2) var(--s-5) var(--s-4);
+  animation: fade-up 260ms var(--ease-out) backwards;
+}
+.ident__panel .table-wrap { border: 1px solid var(--border-subtle); border-radius: var(--r-sm); }
+.keys th:first-child, .keys td:first-child { padding-left: var(--s-4); }
+.keys th:last-child, .keys td:last-child { padding-right: var(--s-4); }
+.keys td { white-space: nowrap; }
+.keys td .chips { flex-wrap: nowrap; }
+.keys__gone td { color: var(--text-3); }
+
+@media (max-width: 720px) {
+  .ident__head { grid-template-columns: minmax(0, 1fr) auto; }
+  .ident__scopes { grid-column: 1 / -1; grid-row: 2; }
+  .ident__count { display: none; }
+}
+
+/* Permission picker: presets above, every scope behind "one by one". */
+.scope-pick { border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--gray-1); }
+.scope-pick > summary { padding: var(--s-2) var(--s-3); cursor: pointer; font-size: var(--fs-14); font-weight: 500; color: var(--text-2); }
+.scope-pick > summary:hover { color: var(--text-1); }
+.scope-pick[open] > summary { border-bottom: 1px solid var(--border-subtle); }
+.scope-pick > .field__hint { padding: var(--s-2) var(--s-3) 0; }
+.scope-pick__group { display: grid; gap: 2px; margin: 0; padding: var(--s-2) var(--s-3) var(--s-3); border: 0; }
+.scope-pick__group legend { padding: var(--s-2) 0 var(--s-1); font-size: var(--fs-12); font-weight: 500; color: var(--text-3); }
+.scope-pick__row { display: grid; grid-template-columns: minmax(0, 1fr) 72px 72px; align-items: center; gap: var(--s-3); padding: 4px 0; border-top: 1px solid var(--border-subtle); }
+.scope-pick__row:first-of-type { border-top: 0; }
+.scope-pick__name { display: grid; gap: 1px; min-width: 0; }
+.scope-pick__name b { font-size: var(--fs-14); font-weight: 500; }
+.scope-pick__name small { font-size: var(--fs-12); color: var(--text-3); line-height: var(--lh-ui); }
+.scope-pick__row .check { font-size: var(--fs-12); }
+.scope-pick__row .check:has(input:disabled) { cursor: default; opacity: 0.7; }
+.scope-pick__none { font-size: var(--fs-11); color: var(--text-3); }

@@ -18,9 +18,15 @@ const paths = {
   // Drawn for the web app in the same geometry.
   trend: <><polyline points="3 17 9 11 13 15 21 7" /><polyline points="15 7 21 7 21 13" /></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>,
   close: <path d="M6 6l12 12M18 6 6 18" />,
   arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
   check: <polyline points="4 12.5 9.5 18 20 6" />,
+  activity: <polyline points="2 12 6 12 9 4 15 20 18 12 22 12" />,
+  play: <polygon points="7 4 19 12 7 20 7 4" />,
+  refresh: <><path d="M20 11a8 8 0 0 0-14.8-4.2L3 9" /><path d="M3 3v6h6" /><path d="M4 13a8 8 0 0 0 14.8 4.2L21 15" /><path d="M21 21v-6h-6" /></>,
+  plus: <path d="M12 5v14M5 12h14" />,
+  gear: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></>,
   copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>,
 } as const;
 
@@ -46,14 +52,59 @@ export function Icon({ name, size = 17, className }: { name: IconName; size?: nu
   );
 }
 
-export function BrandMark({ size = 24 }: { size?: number }) {
+// The mark: a brain built from lines of code. Seven rows of "tokens" grow out
+// of a central fissure, left hemisphere right-aligned, right one left-aligned,
+// so the outline reads as a brain seen from above and the fill reads as code.
+// Teal tokens are what Brain remembers; on hover a signal runs through them.
+// Each row: [left segments from the fissure outward], [right segments]; a
+// segment is [length, teal].
+type Seg = [number, 0 | 1];
+const MARK_ROWS: [Seg[], Seg[]][] = [
+  [[[16, 0]], [[10, 0], [4, 1]]],
+  [[[8, 1], [13, 0]], [[23, 0]]],
+  [[[27, 0]], [[14, 0], [11, 0]]],
+  [[[12, 0], [14, 0]], [[6, 1], [20, 0]]],
+  [[[18, 1], [7, 0]], [[27, 0]]],
+  [[[23, 0]], [[9, 0], [12, 1]]],
+  [[[5, 0], [8, 0]], [[15, 0]]],
+];
+const MID = 32;
+const GAP = 2;
+
+export const MARK_TOKENS = (() => {
+  const out: { x: number; y: number; w: number; teal: boolean; side: "l" | "r"; row: number; k: number }[] = [];
+  let signal = 0;
+  MARK_ROWS.forEach(([left, right], row) => {
+    const y = 4 + row * 8;
+    let edge = MID - GAP / 2;
+    left.forEach(([w, t], k) => {
+      out.push({ x: edge - w, y, w, teal: !!t, side: "l", row, k: t ? signal++ : k });
+      edge -= w + GAP;
+    });
+    edge = MID + GAP / 2;
+    right.forEach(([w, t], k) => {
+      out.push({ x: edge, y, w, teal: !!t, side: "r", row, k: t ? signal++ : k });
+      edge += w + GAP;
+    });
+  });
+  return out;
+})();
+
+export function BrandMark({ size = 24, className = "" }: { size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
-      <rect x="14" y="12" width="9" height="40" fill="var(--text-1)" />
-      <rect x="23" y="16" width="15" height="8" fill="var(--text-1)" />
-      <rect x="23" y="28" width="22" height="8" fill="var(--teal-fg)" />
-      <rect x="23" y="40" width="15" height="8" fill="var(--text-1)" />
-      <path d="M45 24 L54 32 L45 40 Z" fill="var(--teal-fg)" />
+    <svg className={`mark ${className}`} width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
+      {MARK_TOKENS.map((t, i) => (
+        <rect
+          key={i}
+          className={`mark__tok mark__tok--${t.side}${t.teal ? " mark__tok--teal" : ""}`}
+          x={t.x}
+          y={t.y}
+          width={t.w}
+          height={6}
+          rx={1}
+          style={{ "--row": t.row, "--k": t.k } as React.CSSProperties}
+        />
+      ))}
     </svg>
   );
 }
