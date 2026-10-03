@@ -91,6 +91,16 @@ class RuntimeContextBuilder:
         if include_debug:
             builder.add("debug", {"timings_ms": result.timings_ms, "degraded": result.degraded}, priority=-1)
         built = builder.build()
+        if not built.get("slices"):
+            # Navigation alone cannot satisfy an evidence-bearing context.
+            # Report a budget gap rather than caching a false successful pack.
+            metadata["status"] = "partial"
+            metadata["missing"].append("code_slices_excluded_by_budget")
+            return (
+                BudgetedPayloadBuilder(max_bytes, metadata=metadata)
+                .add("candidates", built.get("candidates", []), priority=1)
+                .build()
+            )
         if freshness == "current":
             put_cached_context(repo_str, task_description, built, source_revision=repo.get("source_revision"))
         return built
