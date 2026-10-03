@@ -208,7 +208,7 @@ def parse_context_pack_markdown(text: str) -> dict[str, Any]:
     return {"budget": budget_match.group(1) if budget_match else None, "files": files}
 
 
-def shape_context_pack(pack: Any, resolved: Path | None, latest_index_at: datetime | None) -> dict[str, Any]:
+def shape_context_pack(pack: Any, resolved: Path | None, index_commit: str | None) -> dict[str, Any]:
     budget: str | None = None
     files: int | None = None
     tokens: int | None = None
@@ -223,8 +223,9 @@ def shape_context_pack(pack: Any, resolved: Path | None, latest_index_at: dateti
             pass
     created = _parse_dt(pack.created_at)
     stale = None
-    if created is not None and latest_index_at is not None:
-        stale = created < latest_index_at
+    pack_commit = getattr(pack, "repo_commit", None)
+    if pack_commit and index_commit:
+        stale = pack_commit != index_commit
     return {
         "id": pack.id,
         "task": pack.task_description,
@@ -246,12 +247,23 @@ async def web_context_packs(limit: int = Query(50, ge=1, le=500)) -> dict[str, A
         packs = (
             await session.execute(select(ContextPack).order_by(ContextPack.created_at.desc()).limit(limit))
         ).scalars().all()
-        latest_index_at = await session.scalar(
-            select(func.max(IndexingRun.completed_at)).where(func.lower(IndexingRun.status) == "completed")
-        )
-    latest = _parse_dt(latest_index_at)
+        repo_ids = {pack.repository_id for pack in packs if pack.repository_id is not None}
+        latest_commits: dict[int, str | None] = {}
+        if repo_ids:
+            ranked = (
+                select(IndexingRun.repository_id, IndexingRun.commit_hash,
+                       func.row_number().over(partition_by=IndexingRun.repository_id,
+                                              order_by=IndexingRun.id.desc()).label("rank"))
+                .where(IndexingRun.repository_id.in_(repo_ids), func.lower(IndexingRun.status) == "completed")
+                .subquery()
+            )
+            rows = (await session.execute(
+                select(ranked.c.repository_id, ranked.c.commit_hash).where(ranked.c.rank == 1)
+            )).all()
+            latest_commits = {repo_id: commit for repo_id, commit in rows}
     return {
-        "packs": [shape_context_pack(pack, resolve_context_pack_file(pack.path), latest) for pack in packs]
+        "packs": [shape_context_pack(pack, resolve_context_pack_file(pack.path),
+                                     latest_commits.get(pack.repository_id)) for pack in packs]
     }
 
 
@@ -448,29 +460,28 @@ async def web_module_graph(repository_id: int | None = None) -> dict[str, Any]:
 # --------------------------------------------------------------------------- modules
 
 
-def aggregate_modules(rows: list[tuple[Any, ...]], config: Any) -> list[dict[str, Any]]:
-    """rows: (path, embedding_id, dimension, provider, model) per chunk."""
+def _add_module_row(row: tuple[Any, ...], modules: dict[str, dict[str, Any]], config: Any) -> None:
     from brain.embeddings.integrity import fast_embedding_reason
     from brain.search.filters import should_exclude_from_retrieval
 
+    path, emb_id, dim, provider, model = row
+    name = module_of(path)
+    bucket = modules.setdefault(
+        name, {"name": name, "chunks": 0, "current": 0, "outdated": 0, "missing": 0, "excluded": 0},
+    )
+    bucket["chunks"] += 1
+    if should_exclude_from_retrieval(path):
+        bucket["excluded"] += 1
+        return
+    reason = fast_embedding_reason(emb_id, dim, provider, model, None, config)
+    bucket["current" if reason == "current" else "missing" if reason == "missing" else "outdated"] += 1
+
+
+def aggregate_modules(rows: list[tuple[Any, ...]], config: Any) -> list[dict[str, Any]]:
+    """rows: (path, embedding_id, dimension, provider, model) per chunk."""
     modules: dict[str, dict[str, Any]] = {}
-    for path, emb_id, dim, provider, model in rows:
-        name = module_of(path)
-        bucket = modules.setdefault(
-            name,
-            {"name": name, "chunks": 0, "current": 0, "outdated": 0, "missing": 0, "excluded": 0},
-        )
-        bucket["chunks"] += 1
-        if should_exclude_from_retrieval(path):
-            bucket["excluded"] += 1
-            continue
-        reason = fast_embedding_reason(emb_id, dim, provider, model, None, config)
-        if reason == "current":
-            bucket["current"] += 1
-        elif reason == "missing":
-            bucket["missing"] += 1
-        else:
-            bucket["outdated"] += 1
+    for row in rows:
+        _add_module_row(row, modules, config)
     return sorted(modules.values(), key=lambda item: (-item["chunks"], item["name"]))
 
 
@@ -481,19 +492,22 @@ async def web_modules(repository_id: int | None = None) -> dict[str, Any]:
     repository = await _resolve_repository(repository_id)
     if repository is None:
         return {"repository": None, "modules": []}
+    config = get_embedding_config()
+    modules: dict[str, dict[str, Any]] = {}
     async with async_session_factory() as session:
-        rows = (
-            await session.execute(
+        rows = await session.stream(
                 select(File.path, Embedding.id, Embedding.dimension, Embedding.provider, Embedding.model)
                 .select_from(FileChunk)
                 .join(File, FileChunk.file_id == File.id)
                 .outerjoin(Embedding, FileChunk.embedding_id == Embedding.id)
                 .where(File.repository_id == repository.id)
-            )
-        ).all()
+                .execution_options(yield_per=1000)
+        )
+        async for row in rows:
+            _add_module_row(tuple(row), modules, config)
     return {
         "repository": _repository_dict(repository),
-        "modules": aggregate_modules([tuple(row) for row in rows], get_embedding_config()),
+        "modules": sorted(modules.values(), key=lambda item: (-item["chunks"], item["name"])),
     }
 
 

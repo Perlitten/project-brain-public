@@ -8,6 +8,8 @@ import { cache } from "react";
 import { apiConfigured, brainFetch } from "./api";
 import * as mock from "./mock";
 import type {
+  AccessKey,
+  AccessView,
   AgentRun,
   CodeModule,
   Condition,
@@ -15,6 +17,7 @@ import type {
   ContextPack,
   Corpus,
   Decision,
+  Identity,
   IndexRun,
   Insight,
   Job,
@@ -125,7 +128,8 @@ function jobStatus(v: unknown): JobStatus {
   const s = str(v).toLowerCase();
   if (["completed", "complete", "success", "succeeded", "passed", "done", "ok"].includes(s)) return "completed";
   if (["failed", "failure", "fail"].includes(s)) return "failed";
-  if (["error", "errored", "timed_out", "timeout"].includes(s)) return "error";
+  if (["error", "errored"].includes(s)) return "error";
+  if (["timed_out", "timeout", "expired"].includes(s)) return "timed_out";
   if (["running", "in_progress", "started", "indexing", "processing", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending"].includes(s))
     return "running";
   if (["queued", "pending", "created", "routed", "scheduled", "waiting"].includes(s)) return "queued";
@@ -180,11 +184,12 @@ function toRepository(r: RawRepo): Repository {
     path: str(r.path),
     branch: str(f.branch),
     head: commit.startsWith("snapshot:") ? commit.slice(9, 16) : commit.slice(0, 7),
-    behind: int(f.commits_behind),
+    behind: num(f.commits_behind) ?? null,
+    freshness: str(f.status) || "unknown",
   };
 }
 
-const noRepository: Repository = { id: 0, slug: "", name: "No repository", path: "", branch: "", head: "", behind: 0 };
+const noRepository: Repository = { id: 0, slug: "", name: "No repository", path: "", branch: "", head: "", behind: null, freshness: "unindexed" };
 
 const pickRepo = (repos: RawRepo[] | null, slug?: string | null) =>
   repos?.find((r) => String(r.id) === slug) ?? repos?.[0] ?? null;
@@ -430,7 +435,7 @@ function evidenceText(e: unknown): string {
 }
 
 async function loadInsights(): Promise<Insight[] | null> {
-  const data = await brainFetch<Json>("/insights?limit=50");
+  const data = await brainFetch<Json>("/insights?limit=100");
   if (!data) return null;
   return list(data, "insights")
     .filter((i) => !["resolved", "dismissed", "closed", "archived"].includes(str(i.status).toLowerCase()))
@@ -548,7 +553,7 @@ export const getJobs = async (): Promise<Job[]> => {
 export const getAgentRuns = async (): Promise<AgentRun[]> => {
   if (!apiConfigured) return mock.agentRuns;
   return live<AgentRun[]>([], async () => {
-    const data = await brainFetch<Json>("/harness/tasks?limit=20", { fresh: true });
+    const data = await brainFetch<Json>("/harness/tasks?limit=100", { fresh: true });
     if (!data) return null;
     return list(data, "tasks").map((t) => {
       const status = jobStatus(t.status);
@@ -567,9 +572,9 @@ export const getAgentRuns = async (): Promise<AgentRun[]> => {
   });
 };
 
-export const getEvents = async (): Promise<LedgerEvent[]> => {
+export const getEvents = async (limit = 50): Promise<LedgerEvent[]> => {
   if (!apiConfigured) return mock.events;
-  return live<LedgerEvent[]>([], () => loadEvents());
+  return live<LedgerEvent[]>([], () => loadEvents(limit));
 };
 
 const triggers: IndexRun["trigger"][] = ["push", "schedule", "manual", "auto-heal"];
@@ -593,10 +598,12 @@ function completeness(v: unknown, status: JobStatus): IndexRun["completeness"] {
   return status === "completed" ? "complete" : "partial";
 }
 
-export const getIndexRuns = async (): Promise<IndexRun[]> => {
+export const getIndexRuns = async (slug?: string | null): Promise<IndexRun[]> => {
   if (!apiConfigured) return mock.indexRuns;
   return live<IndexRun[]>([], async () => {
-    const data = await brainFetch<Json>("/api/web/index-runs?limit=20", { fresh: true });
+    const repo = pickRepo(await fetchRepos(), slug);
+    if (!repo) return null;
+    const data = await brainFetch<Json>(`/api/web/index-runs?limit=200&repository_id=${repo.id}`, { fresh: true });
     if (!data) return null;
     return list(data, "runs").map((r) => {
       const status = jobStatus(r.status);
@@ -620,7 +627,7 @@ export const getIndexRuns = async (): Promise<IndexRun[]> => {
 export const getContextPacks = async (): Promise<ContextPack[]> => {
   if (!apiConfigured) return mock.contextPacks;
   return live<ContextPack[]>([], async () => {
-    const data = await brainFetch<Json>("/api/web/context-packs?limit=50");
+    const data = await brainFetch<Json>("/api/web/context-packs?limit=200");
     if (!data) return null;
     return list(data, "packs").map((p) => {
       const budget = str(p.budget).toLowerCase();
@@ -631,7 +638,7 @@ export const getContextPacks = async (): Promise<ContextPack[]> => {
         tokens: int(p.tokens),
         files: int(p.files),
         createdAt: fmtShort(p.created_at),
-        stale: p.stale === true,
+        stale: typeof p.stale === "boolean" ? p.stale : null,
         consumer: str(p.consumer) || "an agent",
       };
     });
@@ -703,10 +710,12 @@ export const getInsights = async (): Promise<Insight[]> => {
   return live<Insight[]>([], () => loadInsights());
 };
 
-export const getModuleEdges = async (): Promise<ModuleEdge[]> => {
+export const getModuleEdges = async (slug?: string | null): Promise<ModuleEdge[]> => {
   if (!apiConfigured) return mock.moduleEdges;
   return live<ModuleEdge[]>([], async () => {
-    const data = await brainFetch<Json>("/api/web/module-graph");
+    const repo = pickRepo(await fetchRepos(), slug);
+    if (!repo) return null;
+    const data = await brainFetch<Json>(`/api/web/module-graph?repository_id=${repo.id}`);
     if (!data) return null;
     return list(data, "edges")
       .filter((e) => str(e.from) && str(e.to))
@@ -730,7 +739,16 @@ export const getMcpTools = async (): Promise<McpTool[]> => {
           calls24h: num(t.calls_24h),
           p95ms: num(t.p95_ms),
           errorRate,
-          status: !online ? "bad" : errorRate !== undefined && errorRate > 0.05 ? "bad" : errorRate !== undefined && errorRate > 0.02 ? "warn" : "ok",
+          // Without call counts a tool is only known to exist, not to be healthy.
+          status: !online
+            ? "bad"
+            : errorRate === undefined && num(t.calls_24h) === undefined
+              ? "info"
+              : errorRate !== undefined && errorRate > 0.05
+                ? "bad"
+                : errorRate !== undefined && errorRate > 0.02
+                  ? "warn"
+                  : "ok",
         } satisfies McpTool;
       });
   });
@@ -739,7 +757,7 @@ export const getMcpTools = async (): Promise<McpTool[]> => {
 export const getReports = async (): Promise<Report[]> => {
   if (!apiConfigured) return mock.reports;
   return live<Report[]>([], async () => {
-    const data = await brainFetch<Json>("/api/web/reports?limit=50");
+    const data = await brainFetch<Json>("/api/web/reports?limit=200");
     if (!data) return null;
     return list(data, "reports").map((r) => ({
       id: str(r.id),
@@ -781,10 +799,94 @@ export const getPrincipals = async (): Promise<Principal[]> => {
   });
 };
 
+const fetchSetup = cache(() => brainFetch<Json>("/api/setup/status", { fresh: true }));
+
+export const getClientConfigs = async (): Promise<{ name: string; where: string; config: string; cli: string }[]> => {
+  if (!apiConfigured) return [];
+  return live([], async () => {
+    const data = await fetchSetup();
+    return Object.entries(obj(data?.client_configs)).map(([name, raw]) => {
+      const entry = obj(raw);
+      return { name, where: str(entry.where), config: str(entry.config), cli: str(entry.cli) };
+    }).filter(entry => entry.config);
+  });
+};
+
+// Access: every principal, disabled ones included, with each key's whole life
+// (created, expires, last used, revoked) — what /admin needs to manage them.
+const SOON_MS = 14 * 86400_000;
+const yearFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric" });
+/** "Oct 30", or "Oct 30, 2027" outside this year. */
+const fmtDay = (d: Date) => (d.getUTCFullYear() === new Date().getUTCFullYear() ? dayFmt.format(d) : yearFmt.format(d));
+
+function summarize(identities: Identity[]): AccessView["summary"] {
+  const live = identities.filter((i) => !i.disabled).flatMap((i) => i.keys.filter((k) => k.status === "active"));
+  return {
+    identities: identities.length,
+    disabled: identities.filter((i) => i.disabled).length,
+    activeKeys: live.length,
+    expiringSoon: live.filter((k) => k.expiringSoon).length,
+    neverUsed: live.filter((k) => k.neverUsed).length,
+  };
+}
+
+function toAccessKey(c: Json, now: number): AccessKey & { at: number; seen: Date | null } {
+  const expires = parseDate(c.expires_at);
+  const seen = parseDate(c.last_used_at);
+  const status: AccessKey["status"] = c.revoked_at ? "revoked" : expires && expires.getTime() < now ? "expired" : "active";
+  const left = expires ? expires.getTime() - now : Infinity;
+  return {
+    id: int(c.id),
+    scopes: [...new Set(arr(c.scopes).map((s) => str(s)).filter(Boolean))].sort(),
+    status,
+    created: fmtWhen(c.created_at),
+    expires: !expires ? "never" : status === "active" ? `${fmtDay(expires)} · in ${fmtAge(left / 1000)}` : fmtDay(expires),
+    lastUsed: seen ? fmtShort(seen.toISOString()) : "never",
+    expiringSoon: status === "active" && left < SOON_MS,
+    neverUsed: status === "active" && !seen,
+    at: parseDate(c.created_at)?.getTime() ?? int(c.id),
+    seen,
+  };
+}
+
+export const getAccessView = async (): Promise<AccessView> => {
+  if (!apiConfigured) return { readable: true, identities: mock.identities, summary: summarize(mock.identities) };
+  const empty: AccessView = { readable: false, identities: [], summary: summarize([]) };
+  return live<AccessView>(empty, async () => {
+    const data = await brainFetch<Json>("/admin/principals", { fresh: true });
+    if (!data) return null;
+    const now = Date.now();
+    const identities = list(data, "principals").map((p): Identity => {
+      const keys = arr(p.credentials)
+        .map((c) => toAccessKey(obj(c), now))
+        .sort((a, b) => b.at - a.at);
+      const active = keys.filter((k) => k.status === "active");
+      const seen = keys
+        .map((k) => k.seen)
+        .filter((d): d is Date => d !== null)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+      const kind = str(p.kind).toLowerCase();
+      const created = parseDate(p.created_at);
+      return {
+        id: int(p.id),
+        name: str(p.name) || `principal ${str(p.id)}`,
+        kind: kind === "human" ? "human" : kind === "agent" ? "agent" : "service",
+        disabled: Boolean(p.disabled_at),
+        createdAt: created ? fmtDay(created) : "—",
+        activeKeys: active.length,
+        scopes: [...new Set(active.flatMap((k) => k.scopes))].sort(),
+        lastSeen: seen ? fmtShort(seen.toISOString()) : "never",
+        keys: keys.map(({ at: _at, seen: _seen, ...k }) => k),
+      };
+    });
+    return { readable: true, identities, summary: summarize(identities) };
+  });
+};
+
 export const getSetupSteps = async (): Promise<SetupStep[]> => {
   if (!apiConfigured) return mock.setupSteps;
   return live<SetupStep[]>([], async () => {
-    const data = await brainFetch<Json>("/api/setup/status", { fresh: true });
+    const data = await fetchSetup();
     if (!data) return null;
     return list(data, "steps").map((s) => {
       const detail = sentence(str(s.detail));
@@ -822,38 +924,68 @@ export const getReranker = async (): Promise<RerankerStatus> => {
     const provider = obj(data.provider);
     const metrics = obj(data.metrics);
     const traffic = obj(data.traffic);
+    const approval = obj(data.approval);
     const pStatus = str(provider.status).toLowerCase();
+    const serviceUp = ["healthy", "ok", "ready"].includes(pStatus);
+    const on = traffic.enabled === true && traffic.rerank === true && int(traffic.canary_percent) > 0;
     const [state, stateText]: [Tone, string] =
-      traffic.enabled === false
-        ? ["idle", "Turned off"]
-        : ["healthy", "ok", "ready"].includes(pStatus)
-          ? ["ok", "Serving"]
-          : pStatus
-            ? ["bad", "Not responding"]
-            : ["idle", "Unknown"];
+      traffic.enabled === undefined && !pStatus
+        ? ["idle", "Unknown"]
+        : !on
+          ? ["idle", "Turned off"]
+          : serviceUp
+            ? ["ok", "Serving"]
+            : ["bad", "Not responding"];
+
+    // Newer servers count encoded documents; older ones counted chunks.
+    const docs = int(inv.document_count);
     const total = int(inv.total_chunks);
     const current = int(inv.current_chunks);
     const pending = Math.max(0, total - current);
     const pct = num(inv.coverage_pct) ?? (total ? (current / total) * 100 : 0);
+    const revision = str(inv.index_revision);
+    const approvedRevision = str(approval.approved_index_revision);
+    const approvedDocs = int(approval.approved_document_count);
+
+    const offReasons: string[] = [];
+    if (!on) {
+      if (traffic.enabled !== true) offReasons.push("Switched off in the server settings (LATE_INTERACTION_ENABLED).");
+      else if (traffic.rerank !== true) offReasons.push("Re-ranking itself is switched off (LATE_INTERACTION_RERANK_ENABLED).");
+      if (int(traffic.canary_percent) <= 0) offReasons.push("0% of searches are routed to it (LATE_INTERACTION_CANARY_PERCENT).");
+      if (revision && approvedRevision && revision !== approvedRevision)
+        offReasons.push(
+          `The encoded index (${revision}, ${fmtN(docs)} documents) is newer than the one approved for live use (${approvedRevision}, ${fmtN(approvedDocs)}). It has to be checked and approved again before it can serve.`,
+        );
+      if (approval.production_gates_passed === false) offReasons.push("Its quality checks for live traffic haven’t passed yet.");
+    }
+    if (!serviceUp && pStatus) offReasons.push(`The model service reports “${pStatus}”${str(provider.reason) ? `: ${str(provider.reason)}` : ""}.`);
+
     return {
-      model: str(inv.model) || str(provider.model_revision) || "—",
+      model: str(inv.model) || str(provider.model_revision).slice(0, 12) || "—",
       state,
       stateText,
       coverage: {
         label: "Ready for precise ranking",
-        value: total ? `${pct.toFixed(1)}%` : "—",
+        value: total ? `${pct.toFixed(1)}%` : docs ? fmtN(docs) : "—",
         parts: total
           ? [
               { tone: "filled", count: current, text: `${fmtN(current)} encoded` },
               { tone: "missing", count: pending, text: `${fmtN(pending)} pending` },
             ]
-          : [],
+          : docs
+            ? [{ tone: "filled", count: docs, text: `${fmtN(docs)} documents encoded` }]
+            : [],
       },
       p50ms: Math.round(int(metrics.rerank_latency_ms_p50)),
       p95ms: Math.round(int(metrics.rerank_latency_ms_p95)),
       ndcgLift: "—",
       queries24h: int(metrics.rerank_requests),
       queriesWindow: "since the API last restarted",
+      service: pStatus ? (serviceUp ? { tone: "ok", text: "Model service ready" } : { tone: "bad", text: `Model service ${pStatus}` }) : undefined,
+      offReasons,
+      index: revision
+        ? { revision, documents: docs, updated: inv.last_update ? fmtShort(inv.last_update) : undefined, approvedRevision: approvedRevision || undefined, approvedDocuments: approvedDocs || undefined }
+        : undefined,
       available: true,
     };
   });

@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { RunButton } from "@/components/act";
 import { MemoryMap } from "@/components/MemoryMap";
 import { Term } from "@/components/Term";
 import { Chip, EmptyState, JobChip, Ledger, Meter, Panel, Verdict } from "@/components/ui";
+import { startReindex } from "@/lib/actions/jobs";
 import { getAgentRuns, getCodeModules, getCondition, getCorpus, getEvents, getJobs, getRepository } from "@/lib/data";
 
 type Props = { searchParams: Promise<{ repo?: string }> };
@@ -25,12 +27,19 @@ export default async function Overview({ searchParams }: Props) {
     getEvents(),
     getAgentRuns(),
   ]);
-  const scanning = repo.behind > 0 && jobs.some((j) => j.status === "running" && j.kind.startsWith("index"));
+  const scanning = (repo.behind ?? 0) > 0 && jobs.some((j) => j.status === "running" && j.kind.startsWith("index"));
   const withRepo = (href: string) => (slug ? `${href}?repo=${slug}` : href);
 
   return (
     <>
-      <Verdict condition={condition} />
+      <Verdict
+        condition={condition}
+        action={
+          condition.action ? (
+            <RunButton action={startReindex} label={condition.action.label} icon="refresh" variant="primary" title="Re-index" />
+          ) : undefined
+        }
+      />
 
       {modules.some((m) => m.chunks > 0 && m.current + m.outdated + m.missing + m.excluded > 0) ? (
         <MemoryMap modules={modules} repoName={repo.name} scanning={scanning} />

@@ -21,7 +21,9 @@ The production stack runs:
 - 4+ vCPU, 8+ GiB RAM recommended
 - Docker Engine + Docker Compose plugin
 - nginx, certbot, apache2-utils
-- a NVIDIA API key for production embeddings/LLM (`NVIDIA_API_KEY=nvapi-...`)
+- an API key for the LLM/embedding provider. The production default is NVIDIA
+  NIM (`NVIDIA_API_KEY=nvapi-...`); any OpenAI-compatible provider works, see
+  "Any OpenAI-compatible provider" below
 - a repository to index, cloned on the VPS or copied there
 - either real DNS records or nip.io hostnames based on the server IP
 
@@ -76,6 +78,45 @@ read -rsp "NVIDIA_API_KEY: " NVIDIA_API_KEY
 echo
 sed -i "s|^NVIDIA_API_KEY=.*|NVIDIA_API_KEY=${NVIDIA_API_KEY}|" .env
 ```
+
+### Any OpenAI-compatible provider
+
+NVIDIA is just one preset. `DEFAULT_LLM_PROVIDER` / `DEFAULT_EMBEDDING_PROVIDER`
+accept `openai`, `nvidia`, `openrouter`, `groq`, `together`, `deepseek`,
+`mistral`, `ollama`, `lmstudio`, or `openai_compatible` (aliases `custom`,
+`openai-compatible`) for any other endpoint (vLLM, LiteLLM, Fireworks, ...).
+The universal settings `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`,
+`SUMMARIZER_MODEL`, `EMBEDDING_BASE_URL`, `EMBEDDING_API_KEY`,
+`EMBEDDING_MODEL`, `EMBEDDING_DIMENSION`, `EMBEDDING_MAX_INPUT_CHARS` and
+`EMBEDDING_BATCH_SIZE` override the preset defaults (base URLs include `/v1`).
+
+`deploy/server_up.sh` and `deploy/doctor.sh preflight` require the key of the
+configured provider (preset key such as `GROQ_API_KEY`, or `LLM_API_KEY`); the
+`nvapi-` prefix is enforced only for `nvidia`. `ollama`, `lmstudio` and
+`openai_compatible` may be keyless but need a base URL and model.
+
+```bash
+# OpenRouter for chat, keep NVIDIA embeddings (no re-index needed)
+DEFAULT_LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-...
+LLM_MODEL=anthropic/claude-3.5-sonnet
+DEFAULT_EMBEDDING_PROVIDER=nvidia
+
+# Groq for chat
+DEFAULT_LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_...
+
+# Ollama on the host or as a compose service, no key
+DEFAULT_LLM_PROVIDER=ollama
+LLM_BASE_URL=http://ollama:11434/v1
+LLM_MODEL=llama3.1
+```
+
+Also clear or replace the NVIDIA-specific `LLM_TASK_*_MODEL` values when you
+switch the LLM provider. Production already stores 4096-dim NVIDIA vectors:
+switching `DEFAULT_EMBEDDING_PROVIDER`, `EMBEDDING_MODEL` or
+`EMBEDDING_DIMENSION` means a full re-index. `brain doctor` flags an unknown or
+conflicting dimension before anything is written.
 
 Choose the repository mount. If the target repo is `/opt/repos/my-app`:
 
@@ -277,7 +318,8 @@ docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embed
 docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
 ```
 
-The web UI (`apps/web/`) exposes the same repair flow on its indexing page.
+The web UI (`apps/web/`) displays index history. Run the CLI commands above
+to reindex or repair embeddings; the web UI currently has no repair actions.
 
 Optional file cards:
 

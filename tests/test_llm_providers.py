@@ -107,8 +107,7 @@ async def test_real_providers_error_on_missing_keys():
     from brain.llm.providers.nvidia_provider import NvidiaLLMProvider, NvidiaEmbeddingProvider
 
     nvidia_llm = NvidiaLLMProvider(api_key="")
-    with pytest.raises(ValueError, match="OpenAI API key is not configured"):
-        # Since it inherits from OpenAILLMProvider and uses its check
+    with pytest.raises(ValueError, match="NVIDIA API key is not configured"):
         await nvidia_llm.generate("test")
 
     nvidia_emb = NvidiaEmbeddingProvider(api_key="")
@@ -128,3 +127,13 @@ async def test_get_nvidia_providers():
 
     summarizer = get_summarizer_provider("nvidia")
     assert isinstance(summarizer, NvidiaSummarizerProvider)
+
+
+def test_nvidia_embedding_dimension_follows_setting(monkeypatch):
+    from brain.config.settings import settings
+    from brain.llm.providers.nvidia_provider import NvidiaEmbeddingProvider
+
+    monkeypatch.setattr(settings, "EMBEDDING_DIMENSION", 0)
+    assert NvidiaEmbeddingProvider(api_key="k").dimension == 4096
+    monkeypatch.setattr(settings, "EMBEDDING_DIMENSION", 2048)
+    assert NvidiaEmbeddingProvider(api_key="k", model="nvidia/nemotron-3-embed-1b").dimension == 2048

@@ -10,7 +10,7 @@ disabling — all attributable and scope-gated so a dedicated
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional, Sequence
+from typing import Annotated, Literal, Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -29,6 +29,19 @@ class MintCredentialRequest(BaseModel):
     kind: str = "service"
     org_id: Optional[int] = None
     ttl_days: Optional[int] = Field(default=None, gt=0)
+
+
+_SCOPE_RE = r"^[a-z_]+:[a-z_]+$"
+
+
+class CreatePrincipalRequest(BaseModel):
+    """A new principal with its first credential in one step. Wildcard
+    access is not mintable here — use named scopes."""
+
+    name: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9 ._@-]*$")
+    kind: Literal["agent", "service", "human"] = "agent"
+    scopes: list[Annotated[str, Field(pattern=_SCOPE_RE)]] = Field(min_length=1, max_length=32)
+    ttl_days: Optional[int] = Field(default=None, gt=0, le=3650)
 
 
 def _serialize_principal(principal: Principal) -> dict[str, object]:
@@ -81,6 +94,40 @@ async def list_principals() -> dict[str, object]:
             for principal in principals
         ]
     }
+
+
+@router.post(
+    "/principals",
+    dependencies=[Depends(require_scope("principals:write"))],
+    status_code=201,
+)
+async def create_principal(body: CreatePrincipalRequest) -> dict[str, object]:
+    """Create a principal and mint its first credential.
+
+    The plaintext key is returned once — only its hash is persisted."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            existing = (
+                await session.scalars(select(Principal).where(Principal.name == body.name))
+            ).one_or_none()
+            if existing is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A principal with that name already exists — mint a key on it instead",
+                )
+            raw, cred = await mint_credential(
+                session,
+                name=body.name,
+                scopes=sorted(set(body.scopes)),
+                kind=body.kind,
+                ttl_days=body.ttl_days,
+            )
+            await session.flush()
+            principal = (
+                await session.scalars(select(Principal).where(Principal.name == body.name))
+            ).one()
+            serialized = {**_serialize_principal(principal), "credentials": [_serialize_credential(cred)]}
+    return {"api_key": raw, "principal": serialized}
 
 
 @router.post(

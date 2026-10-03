@@ -53,6 +53,7 @@ from brain.graph.graph_client import GraphClient
 from brain.graph.schema import NodeType
 from brain.indexers.file_indexer import FileIndexer
 from brain.indexers.repo_indexer import get_git_commit_hash
+from brain.llm.presets import llm_provider_ready
 from brain.llm.router import TaskKind, get_model_router
 from brain.late_interaction.client import (
     get_late_interaction_client,
@@ -273,10 +274,11 @@ async def readiness_check():
                 and bool(settings.TELEGRAM_ALERT_BOT_TOKEN and settings.TELEGRAM_ALERT_CHAT_ID)
             )
         ),
+        # Any OpenAI-compatible provider must have its base URL, model and
+        # (unless it is a keyless local endpoint) API key configured.
         "llm_provider": (
             settings.ENVIRONMENT.lower() != "production"
-            or settings.DEFAULT_LLM_PROVIDER != "nvidia"
-            or bool(settings.NVIDIA_API_KEY)
+            or llm_provider_ready(settings)[0]
         ),
         "worker_heartbeat": True,
     }

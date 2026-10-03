@@ -487,7 +487,7 @@ async def run_self_diagnosis(params: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-async def auto_heal_stale_repositories() -> dict[str, Any]:
+async def auto_heal_stale_repositories(exclude_repository_id: int | None = None) -> dict[str, Any]:
     """Iterate registered repositories and autonomously reindex/repair any stale or behind ones."""
     healed: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -495,6 +495,9 @@ async def auto_heal_stale_repositories() -> dict[str, Any]:
     try:
         repos = await list_all_repositories()
         for repo in repos:
+            if repo.id == exclude_repository_id:
+                skipped.append({"path": repo.path, "reason": "handled_by_nightly_target"})
+                continue
             repo_p = Path(repo.path)
             if not repo_p.exists():
                 skipped.append({"path": repo.path, "reason": "source_missing"})
@@ -505,14 +508,16 @@ async def auto_heal_stale_repositories() -> dict[str, Any]:
             inv_dict = inventory.to_dict()
             missing = inv_dict.get("missing_embeddings") or 0
             stale = inv_dict.get("stale_embeddings") or 0
+            incompatible = inv_dict.get("incompatible_embeddings") or 0
 
-            if status in ("behind", "stale", "unindexed") or missing > 0 or stale > 0:
-                logger.info(f"Autonomous Self-Healing: reindexing {repo.path} (status={status}, missing={missing}, stale={stale})")
+            if status in ("behind", "stale", "unindexed") or missing > 0 or stale > 0 or incompatible > 0:
+                logger.info(f"Autonomous Self-Healing: reindexing {repo.path} (status={status}, missing={missing}, stale={stale}, incompatible={incompatible})")
                 indexed_repo = await indexer.index_repository(repo_p, clean=False)
                 backfill_res = await backfill_embeddings(indexed_repo.id)
                 healed.append({
                     "path": repo.path,
                     "previous_status": status,
+                    "incompatible_embeddings": incompatible,
                     "backfill": backfill_res.to_dict(),
                 })
             else:
@@ -535,11 +540,10 @@ async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
 
     await init_db()
 
-    # Autonomous self-healing sweep across all registered repositories
-    auto_heal_result = await auto_heal_stale_repositories()
-
     repo_path = _deep_repo_path(params)
     record = await _approved_deep_repository(repo_path)
+    # The selected target has its own reindex below; sweep only other repos.
+    auto_heal_result = await auto_heal_stale_repositories(exclude_repository_id=record.id)
 
     reindex = await run_reindex(
         {

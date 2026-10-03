@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Term } from "@/components/Term";
+import { ListFrame } from "@/components/ListFrame";
 import { Chip, EmptyState, PageHead } from "@/components/ui";
 import { getInsights } from "@/lib/data";
 import type { Insight } from "@/lib/types";
@@ -27,9 +28,15 @@ export default async function Insights() {
       {insights.length === 0 && (
         <EmptyState title="No findings yet" body="Brain hasn’t flagged anything in this code. Findings appear here as Brain notices risky changes." />
       )}
-      <div className="cards">
-        {insights.map((f, i) => (
-          <article key={f.id} className={`card tone-${f.tone}`} style={{ "--i": i } as CSSProperties}>
+      {insights.length > 0 && (
+      <ListFrame
+        listTag="div"
+        listClass="cards"
+        noun={["finding", "findings"]}
+        meta={insights.map((f) => ({ q: `${f.title} ${f.evidence} ${f.module} ${f.kind}`.toLowerCase(), f: f.tone }))}
+        facet={{ label: "Severity", values: [{ value: "bad", label: "Rule broken" }, { value: "warn", label: "Worth a look" }, { value: "info", label: "FYI" }] }}
+        rows={insights.map((f, i) => (
+          <article key={f.id} className={`card tone-${f.tone}`} style={{ "--i": Math.min(i, 12) } as CSSProperties}>
             <div className="card__top">
               <Chip tone={f.tone}>{f.tone === "bad" ? "Rule broken" : f.tone === "warn" ? "Worth a look" : "FYI"}</Chip>
               <span className="text-dim">{kindWords[f.kind]}</span>
@@ -42,7 +49,8 @@ export default async function Insights() {
             </p>
           </article>
         ))}
-      </div>
+      />
+      )}
     </>
   );
 }

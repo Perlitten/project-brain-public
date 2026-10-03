@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { authorizeWebRequest, sessionFrom, webAuthResponse } from "@/lib/web-auth";
 
 // Server-side bridge to the Brain API on the VPS. The API key lives only in
 // the Vercel environment and is attached here, so it never reaches a browser.
@@ -6,6 +7,8 @@ import type { NextRequest } from "next/server";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
+  const authorization = authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")));
+  if (authorization !== 200) return webAuthResponse(authorization);
   const base = process.env.BRAIN_API_URL;
   const key = process.env.BRAIN_API_KEY;
   if (!base || !key) {
@@ -15,7 +18,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
     );
   }
   const { path } = await ctx.params;
-  const target = new URL(`/api/${path.map(encodeURIComponent).join("/")}`, base);
+  const target = new URL(`api/${path.map(encodeURIComponent).join("/")}`, base.endsWith("/") ? base : `${base}/`);
   target.search = req.nextUrl.search;
   try {
     const upstream = await fetch(target, {

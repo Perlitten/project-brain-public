@@ -28,7 +28,7 @@ def get_embedding_config(provider_name: Optional[str] = None) -> EmbeddingConfig
     name = resolve_provider_name(provider_name)
     provider = get_embedding_provider(name)
     model = getattr(provider, "model", name)
-    dimension = getattr(provider, "dimension", None) or resolve_embedding_dimension(name)
+    dimension = getattr(provider, "dimension", None) or resolve_embedding_dimension(name, strict=True)
     return EmbeddingConfig(provider=name, model=model, dimension=dimension)
 
 

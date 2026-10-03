@@ -21,6 +21,8 @@ ${PROJECT_BRAIN_RELEASE_ROOT:-/opt/project-brain}/
   deploy/server_up.sh
   deploy/nginx/brain.conf
   deploy/nginx/brain-n8n.conf
+  scripts/verify_release.sh
+  apps/web/                    # Next.js app, deployed separately on Vercel
 ```
 
 The managed VPS provider currently uses a release root inside the deploy
@@ -63,10 +65,11 @@ Named volumes:
 - API binds to `127.0.0.1:${BRAIN_API_PORT:-8010}`.
 - n8n binds to `127.0.0.1:${BRAIN_N8N_PORT:-5680}`.
 - nginx terminates TLS for both public hosts.
-- The API serves JSON only and authenticates every call with `X-API-Key`.
-  `/dashboard*` only redirects to `BRAIN_WEB_URL`, the separately deployed
-  web UI (`apps/web/`), which calls the API server-side and can be gated with
-  `WEB_BASIC_AUTH`.
+- The Next.js dashboard uses `WEB_BASIC_AUTH=user:password` on Vercel.
+  Live `BRAIN_API_URL` + `BRAIN_API_KEY` credentials require this gate; missing
+  or malformed gate configuration returns 503 instead of exposing live data.
+- The self-hosted API uses API-key and scope dependencies. `/dashboard/*`
+  redirects to `BRAIN_WEB_URL`; there is no legacy login form or session cookie.
 - n8n editor is protected by nginx Basic Auth.
 - n8n `/webhook/` and `/webhook-test/` stay public at nginx level; workflows
   must authenticate calls into Brain with `PROJECT_BRAIN_API_KEY` or their own
@@ -257,22 +260,29 @@ sudo systemctl reload nginx
 
 ## Smoke Tests
 
+The API and Next.js UI deploy separately. Run local release gates with a
+prepared Python 3.12 environment, configured datastores and Node 22:
+
 ```bash
-set -a && . ./.env && set +a
-curl -fsS "https://${BRAIN_PUBLIC_HOST}/health"
-curl -fsS -H "X-API-Key: ${PROJECT_BRAIN_API_KEY}" \
-  "https://${BRAIN_PUBLIC_HOST}/api/web/overview" > /dev/null && echo overview-ok
-curl -s -o /dev/null -w '%{http_code}\n' "https://${BRAIN_PUBLIC_HOST}/api/web/overview"
+bash scripts/verify_release.sh
 ```
 
-Expected:
+The script runs Python lint, types, migrations, tests, deployment identity and
+wheel checks, then the Next.js auth/data regressions, typecheck and build.
+Skipped gates exit 2 (incomplete); failures exit 1. Actions being disabled
+does not turn these local checks into a CI run.
 
-- `/health` returns JSON with `status`
-- `/api/web/overview` with the key prints `overview-ok`
-- `/api/web/overview` without the key returns `401`
+For a deployed live UI, verify an unauthenticated request to `BRAIN_WEB_URL`
+and `/api/brain/web/reports` returns 401. A 503 means live authentication is
+missing or malformed. Enter the configured Basic credentials in the browser,
+then verify Overview, Activity, Reports, Get Started and a second repository's
+Indexing and Code Map. Check both desktop and mobile widths for overflow.
+The UI has no mutation controls; repair with the CLI commands in DEPLOYMENT.md.
 
-The API serves JSON only. The human UI is the separate Next.js app in
-`apps/web/` (see the README, "Web UI"); it has its own deploy and checks.
+Check the self-hosted API's `/health` and `/api/version`, and confirm
+`/dashboard/` redirects to the configured `BRAIN_WEB_URL`. The Vercel project
+Root Directory must be `apps/web`. A successful deployment must match the
+release commit; an older READY deployment is insufficient.
 
 ## Import n8n Workflows
 
@@ -417,5 +427,6 @@ docker images --filter reference='brain-api:*'
 - Never paste `PROJECT_BRAIN_API_KEY`, `WEB_BASIC_AUTH`, n8n Basic Auth
   password, `NVIDIA_API_KEY`, or `N8N_ENCRYPTION_KEY` into chat, docs, issues,
   screenshots, or reports.
-- The web UI keeps `BRAIN_API_KEY` server-side; it never reaches the browser.
+- The web UI is read-only. Its server attaches the API key; browser bundles
+  must never contain `BRAIN_API_KEY` or `PROJECT_BRAIN_API_KEY`.
 - `.env` should be `0600` on the server.

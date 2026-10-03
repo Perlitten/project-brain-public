@@ -1,4 +1,6 @@
 import type { CSSProperties } from "react";
+import { ListFrame } from "@/components/ListFrame";
+import { PageTabs, pickTab } from "@/components/PageTabs";
 import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
 import { getDecisions, getRules } from "@/lib/data";
 import type { Decision, Rule, Tone } from "@/lib/types";
@@ -13,9 +15,14 @@ const severity: Record<Rule["severity"], [Tone, string]> = {
   advise: ["idle", "suggests"],
 };
 
-export default async function Memory() {
+const VIEWS = ["decisions", "rules"] as const;
+
+export default async function Memory({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+  const { view } = await searchParams;
+  const tab = pickTab(VIEWS, view);
   const [decisions, rules] = await Promise.all([getDecisions(), getRules()]);
   const hitsTracked = rules.some((r) => r.hits30d !== undefined);
+  const blocking = rules.filter((r) => r.severity === "block").length;
   return (
     <>
       <PageHead
@@ -23,26 +30,45 @@ export default async function Memory() {
         title="What your team decided, so agents remember it too"
         lede="Decisions explain why the code is the way it is. Rules are checks an agent’s change must pass before it is accepted."
       />
-      <div className="grid-halves">
-        <section className="cards" aria-label="Decisions">
-          {decisions.length === 0 && (
+      <PageTabs
+        label="Decisions or rules"
+        path="/memory"
+        current={tab}
+        tabs={[
+          { id: "decisions", label: "Decisions", badge: decisions.length },
+          { id: "rules", label: "Rules", badge: blocking ? `${rules.length} · ${blocking} blocking` : rules.length },
+        ]}
+      />
+      {tab === "decisions" ? (
+        <section aria-label="Decisions">
+          {decisions.length === 0 ? (
             <EmptyState title="No decisions recorded" body="Nobody has recorded a decision yet. Agents and people can record one through Brain." />
-          )}
-          {decisions.map((d, i) => (
-            <article key={d.id} className={`card tone-${statusTone[d.status]}`} style={{ "--i": i } as CSSProperties}>
+          ) : (
+          <ListFrame
+            listTag="div"
+            listClass="cards cards--grid"
+            noun={["decision", "decisions"]}
+            meta={decisions.map((d) => ({ q: `${d.title} ${d.summary} ${d.scope} ${d.id}`.toLowerCase(), f: d.status }))}
+            facet={{ label: "Status", values: (["accepted", "proposed", "superseded"] as const).map((v) => ({ value: v, label: statusWords[v] })) }}
+            pageSize={20}
+            rows={decisions.map((d, i) => (
+            <article key={d.id} className={`card tone-${statusTone[d.status]}`} style={{ "--i": Math.min(i, 12) } as CSSProperties}>
               <div className="card__top">
                 <Chip tone={statusTone[d.status]}>{statusWords[d.status]}</Chip>
                 <span className="mono text-faint">{d.id}</span>
               </div>
               <h2 className="card__title">{d.title}</h2>
-              <p className="card__body">{d.summary}</p>
+              <p className="card__body" title={d.summary}>{d.summary}</p>
               <p className="card__meta">
                 <span className="mono">{d.scope}</span>
                 <span>recorded {d.recordedAt}</span>
               </p>
             </article>
           ))}
+          />
+          )}
         </section>
+      ) : (
         <Panel id="rules" title="Rules agents must follow" desc={hitsTracked ? "“Caught” counts problems each rule stopped in the last 30 days." : "Brain doesn’t count how often each rule fires yet."}
           flush
         >
@@ -53,6 +79,11 @@ export default async function Memory() {
             caption="Rules"
             rows={rules}
             rowKey={(r) => r.id}
+            filter={{
+              search: (r) => `${r.rule} ${r.id} ${r.scope}`,
+              facet: { label: "If broken", of: (r) => r.severity, values: (["block", "warn", "advise"] as const).map((v) => ({ value: v, label: severity[v][1] })) },
+              noun: ["rule", "rules"],
+            }}
             columns={[
               {
                 head: "Rule",
@@ -71,7 +102,7 @@ export default async function Memory() {
           />
           )}
         </Panel>
-      </div>
+      )}
     </>
   );
 }

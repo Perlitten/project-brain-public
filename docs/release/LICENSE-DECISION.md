@@ -12,8 +12,10 @@ Status: **decided 2026-10-02 — MIT.**
 ## Why MIT
 
 - Already declared in `pyproject.toml`; the decision only adds the missing file.
-- Every runtime dependency is permissive (MIT / BSD / Apache-2.0 / ISC /
-  PSF; MPL-2.0 used unmodified), so MIT creates no compatibility conflict.
+- The project license does not replace dependency licenses. Most Python
+  packages use permissive licenses; `certifi` and `pathspec` use the
+  file-level weak-copyleft MPL-2.0. They are installed unmodified; any
+  redistributed copies retain their own notice and source requirements.
 - Copyleft components (Neo4j Community GPL-3.0, libvips LGPL-3.0) and
   restricted-terms components (Redis 7.4+ RSALv2/SSPL, n8n Sustainable Use
   License, LFM Open License v1.0) run as separate services or runtime

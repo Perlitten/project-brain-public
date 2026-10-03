@@ -5,6 +5,19 @@ This directory contains the golden-set evaluation harness for measuring retrieva
 
 ## Token-economy baseline
 
+The current default is `token_economy_tasks_web.json`: a separately frozen
+revision for the Next.js migration. It updates six UI cases, rebases source
+ranges and uses source method identifiers. The 50 tasks remain curated and
+ineligible for production benefit claims. Its source pin and byte digest are
+recorded; loading a modified corpus without an explicit re-freeze fails.
+
+`token_economy_tasks_v2.json` and all saved measurements remain unchanged at
+their historical source pin. Pre-migration golden fixtures and the old API
+benchmark are retained under `historical/pre-web/`; the schema-v1 replay
+points at those fixtures. Compare results only within one corpus digest and
+source pin. Replaying historical tasks requires their pinned source tree.
+`holdout_set.json` is unchanged by this migration.
+
 `token_economy_benchmark.py` compares complete **Brain-first** and local
 `rg → targeted range-read` task loops. It charges both the locator and the
 follow-up code reads, and records expected file/symbol/range recall plus an
@@ -40,8 +53,8 @@ that repo's code — the harness is already parameterized for it.
 
 ## LFM paired evaluation and runtime parity
 
-The original `golden_set.json` remains the 20-query historical baseline. It now
-has explicit language/class/provenance metadata. `lfm_eval_extension.json`
+The active `golden_set.json` contains 20 curated queries with the migration's
+current web targets and explicit language/class/provenance metadata. `lfm_eval_extension.json`
 contains 30 separate curated fixtures, bringing the paired set to 50, including
 15 RU or RU-to-EN queries. These are translations/synthetic evaluation probes,
 not production-real traffic; every item has required provenance and

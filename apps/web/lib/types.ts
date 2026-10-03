@@ -9,7 +9,9 @@ export type JobStatus =
   | "degraded"
   | "cancelled"
   | "running"
-  | "retrying";
+  | "retrying"
+  /** Closed by the lifecycle reaper after its deadline; the work itself may have finished. */
+  | "timed_out";
 
 export interface Repository {
   id: number;
@@ -18,7 +20,8 @@ export interface Repository {
   path: string;
   branch: string;
   head: string;
-  behind: number;
+  behind: number | null;
+  freshness?: string;
 }
 
 export interface ConditionTile {
@@ -103,7 +106,8 @@ export interface ContextPack {
   tokens: number;
   files: number;
   createdAt: string;
-  stale: boolean;
+  /** null: Brain can't tell (the pack doesn't record which commit it was built from). */
+  stale: boolean | null;
   consumer: string;
 }
 
@@ -169,6 +173,45 @@ export interface Principal {
   credentials: number;
 }
 
+// Access: every identity (disabled ones too) with the full life of each key.
+export type KeyStatus = "active" | "expired" | "revoked";
+
+export interface AccessKey {
+  id: number;
+  scopes: string[];
+  status: KeyStatus;
+  created: string;
+  /** "never", or a date (with "in 12d" while the key is active). */
+  expires: string;
+  lastUsed: string;
+  /** Active and running out within 14 days. */
+  expiringSoon: boolean;
+  /** Active and never presented to Brain. */
+  neverUsed: boolean;
+}
+
+export interface Identity {
+  id: number;
+  name: string;
+  kind: "human" | "agent" | "service";
+  disabled: boolean;
+  createdAt: string;
+  /** Keys that still work (not revoked, not expired). */
+  activeKeys: number;
+  /** Union of the active keys' permissions. */
+  scopes: string[];
+  lastSeen: string;
+  /** Newest first. */
+  keys: AccessKey[];
+}
+
+export interface AccessView {
+  /** False when Brain wouldn't list identities (no admin key, or it's down). */
+  readable: boolean;
+  identities: Identity[];
+  summary: { identities: number; disabled: number; activeKeys: number; expiringSoon: number; neverUsed: number };
+}
+
 export interface SetupStep {
   id: string;
   title: string;
@@ -190,6 +233,12 @@ export interface RerankerStatus {
   queriesWindow?: string;
   /** False when the live API returned no reranker status at all. */
   available?: boolean;
+  /** Whether the model service itself answers (separate from being switched on). */
+  service?: { tone: Tone; text: string };
+  /** Plain reasons it is not re-ranking searches; empty when it is. */
+  offReasons?: string[];
+  /** The encoded index next to the one approved for live traffic. */
+  index?: { revision: string; documents: number; updated?: string; approvedRevision?: string; approvedDocuments?: number };
 }
 
 export interface CodeModule {

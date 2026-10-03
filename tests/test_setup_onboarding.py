@@ -141,11 +141,13 @@ def _collect(*, health=None, repo=None, run=None, packs=None, total_packs=None,
         patch.object(readiness, "check_health", new=AsyncMock(return_value=health or _healthy())),
         patch.object(readiness, "async_session_factory", new=_factory_for(session)),
         patch.object(readiness, "get_repository_by_path", new=AsyncMock(return_value=repo)),
-        patch.object(readiness, "resolve_repo_path", return_value="/repos/brain"),
+        patch.object(readiness, "resolve_repo_path", return_value="/repos/brain") as resolver,
         patch.object(readiness, "load_state", return_value=state or {}),
         patch.object(readiness, "last_client_activity", return_value=client_activity),
     ):
-        return _run(readiness.collect_setup_status())
+        status = _run(readiness.collect_setup_status())
+        resolver.assert_called_once_with(readiness.settings.TARGET_REPO_PATH)
+        return status
 
 
 def test_readiness_blocked_services_is_first_action():
@@ -238,6 +240,19 @@ def test_readiness_is_stable_across_refresh(tmp_path):
     second = _collect(repo=_repo(), run=_indexing_run(), packs=[_pack(tmp_path)])
     assert first["first_use_complete"] == second["first_use_complete"] is True
     assert [s["status"] for s in first["steps"]] == [s["status"] for s in second["steps"]]
+
+
+def test_readiness_unknown_pack_revision_does_not_complete(tmp_path):
+    status = _collect(repo=_repo(), run=_indexing_run(),
+                      packs=[_pack(tmp_path, repo_commit=None)])
+    assert status["first_use_complete"] is False
+    step = next(s for s in status["steps"] if s["id"] == "first_task")
+    assert "revision is unknown" in step["detail"]
+
+
+def test_readiness_unknown_index_revision_does_not_complete(tmp_path):
+    status = _collect(repo=_repo(), run=_indexing_run(commit=None), packs=[_pack(tmp_path)])
+    assert status["first_use_complete"] is False
 
 
 def test_readiness_unindexed_repo_guides_to_index():
@@ -383,6 +398,123 @@ def test_api_setup_config_never_writes_secret_keys(tmp_path, monkeypatch):
     assert not (tmp_path / ".env").exists()
 
 
+_PROVIDER_ATTRS = (
+    "DEFAULT_LLM_PROVIDER", "DEFAULT_EMBEDDING_PROVIDER", "LLM_BASE_URL", "LLM_API_KEY",
+    "LLM_MODEL", "SUMMARIZER_MODEL", "EMBEDDING_BASE_URL", "EMBEDDING_API_KEY",
+    "EMBEDDING_MODEL", "EMBEDDING_DIMENSION",
+)
+
+
+def _restore_provider_settings():
+    settings = api_setup.settings
+    saved = {name: getattr(settings, name) for name in _PROVIDER_ATTRS}
+
+    def restore():
+        for name, value in saved.items():
+            setattr(settings, name, value)
+
+    return restore
+
+
+def test_api_setup_provider_writes_key_but_never_echoes_it(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    restore = _restore_provider_settings()
+    try:
+        response = client.post(
+            "/api/setup/provider",
+            json={
+                "slot": "llm",
+                "provider": "custom",
+                "base_url": "https://llm.example.com/v1/",
+                "model": "my-model",
+                "api_key": "sk-secret-value-123",
+            },
+        )
+        assert response.status_code == 200
+        body = response.text
+        assert "sk-secret-value-123" not in body
+        data = response.json()
+        assert data["api_key_written"] is True
+        assert "LLM_API_KEY" in data["applied"]
+        assert data["current"]["llm"]["provider"] == "openai_compatible"
+        assert data["current"]["llm"]["base_url"] == "https://llm.example.com/v1"
+        assert data["current"]["llm"]["key_set"] is True
+        from dotenv import dotenv_values
+
+        env = dotenv_values(tmp_path / ".env")
+        assert env["LLM_API_KEY"] == "sk-secret-value-123"
+        assert env["DEFAULT_LLM_PROVIDER"] == "openai_compatible"
+        assert api_setup.settings.LLM_MODEL == "my-model"
+    finally:
+        restore()
+
+
+def test_api_setup_provider_blank_key_keeps_existing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("LLM_API_KEY=sk-keep\n")
+    restore = _restore_provider_settings()
+    try:
+        response = client.post(
+            "/api/setup/provider", json={"slot": "llm", "provider": "groq", "api_key": "  "}
+        )
+        assert response.status_code == 200
+        assert response.json()["api_key_written"] is False
+        assert "LLM_API_KEY=sk-keep" in (tmp_path / ".env").read_text()
+    finally:
+        restore()
+
+
+def test_api_setup_provider_rejects_credentials_in_url(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    restore = _restore_provider_settings()
+    try:
+        response = client.post(
+            "/api/setup/provider",
+            json={"slot": "embedding", "provider": "openai_compatible",
+                  "base_url": "https://user:pw@emb.example.com/v1"},
+        )
+    finally:
+        restore()
+    assert response.status_code == 400
+    assert "pw" not in response.json()["detail"]
+    assert not (tmp_path / ".env").exists()
+
+
+def test_api_setup_provider_rejects_chat_only_preset_for_embeddings(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    response = client.post("/api/setup/provider", json={"slot": "embedding", "provider": "groq"})
+    assert response.status_code == 400
+
+
+def test_api_setup_providers_lists_presets_without_secrets():
+    restore = _restore_provider_settings()
+    try:
+        api_setup.settings.DEFAULT_LLM_PROVIDER = "openai"
+        api_setup.settings.LLM_API_KEY = "sk-should-not-leak"
+        response = client.get("/api/setup/providers")
+    finally:
+        restore()
+    assert response.status_code == 200
+    assert "sk-should-not-leak" not in response.text
+    data = response.json()
+    names = {p["name"] for p in data["presets"]}
+    assert {"openai", "nvidia", "groq", "ollama", "openai_compatible"} <= names
+    assert data["current"]["llm"]["key_set"] is True
+    groq = next(p for p in data["presets"] if p["name"] == "groq")
+    assert groq["embeddings"] is False
+
+
+def test_envfile_secret_keys_need_explicit_opt_in(tmp_path):
+    env = tmp_path / ".env"
+    try:
+        envfile.update_env_file(env, {"LLM_API_KEY": "sk-x"})
+    except ValueError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("secret keys need allow_secrets=True")
+    assert envfile.update_env_file(env, {"LLM_API_KEY": "sk-x"}, allow_secrets=True) == {"LLM_API_KEY": "sk-x"}
+
+
 # ---- setup_state / provider verification / client activity -------------
 
 
@@ -413,6 +545,16 @@ def test_setup_state_provider_verification_roundtrip(tmp_path, monkeypatch):
 def test_provider_state_mock_is_demo(tmp_path, monkeypatch):
     monkeypatch.setenv("BRAIN_SETUP_STATE_DIR", str(tmp_path))
     assert provider_check.provider_state("mock", "llm")["state"] == "demo"
+
+
+def test_unsupported_provider_kind_never_probes(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRAIN_SETUP_STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(api_setup.settings, "ANTHROPIC_API_KEY", "test-key")
+    probe = AsyncMock()
+    monkeypatch.setattr(provider_check, "_probe_embedding", probe)
+    assert _run(provider_check.verify_provider("anthropic", "embedding"))["state"] == "missing"
+    assert _run(provider_check.verify_provider("mock", "unknown"))["state"] == "missing"
+    probe.assert_not_awaited()
 
 
 def test_provider_state_missing_key(tmp_path, monkeypatch):
@@ -486,6 +628,20 @@ def test_verify_agent_records_self_check(tmp_path, monkeypatch):
     recorded = setup_state.load_state()["mcp_self_check"]
     assert recorded["status"] == "ready"
     assert recorded["fingerprint"] == readiness.config_fingerprint()
+
+
+def test_self_check_records_the_configuration_it_started_with(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRAIN_SETUP_STATE_DIR", str(tmp_path))
+    original_fingerprint = readiness.config_fingerprint()
+
+    async def changed_during_probe(timeout):
+        monkeypatch.setattr(readiness.settings, "TARGET_REPO_PATH", "/changed-during-probe")
+        return {"readiness_status": "ready", "retrieval": {"probe_status": "passed"}}
+
+    with patch.object(api_helpers, "get_mcp_readiness_status", new=changed_during_probe):
+        _run(api_helpers.run_mcp_self_check())
+    assert setup_state.load_state()["mcp_self_check"]["fingerprint"] == original_fingerprint
+    assert readiness.config_fingerprint() != original_fingerprint
 
 
 def test_api_setup_verify_provider_returns_probe_results():

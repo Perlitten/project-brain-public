@@ -16,17 +16,24 @@ import typer
 from brain.config.paths import context_packs_dir, reports_dir
 from brain.config.settings import settings
 from brain.database.session import check_health
+from brain.llm.presets import (
+    is_openai_compatible,
+    normalize_provider_name,
+    resolve_embedding_endpoint,
+    resolve_llm_endpoint,
+    supported_provider_names,
+)
 from brain.version import build_info
 
 _FAIL = "FAIL"
 _WARN = "WARN"
 _PASS = "PASS"
 
+# Native providers; OpenAI-compatible presets (openai, nvidia, groq, ollama,
+# openai_compatible…) are resolved through brain.llm.presets.
 _PROVIDER_KEYS = {
-    "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "google": "GOOGLE_API_KEY",
-    "nvidia": "NVIDIA_API_KEY",
 }
 
 
@@ -94,11 +101,79 @@ def _check_target_repo(failures: list[str]) -> None:
         )
 
 
-def _check_provider(failures: list[str]) -> None:
-    for kind, provider in (
-        ("LLM", settings.DEFAULT_LLM_PROVIDER.lower()),
-        ("embedding", settings.DEFAULT_EMBEDDING_PROVIDER.lower()),
+def _check_openai_compatible(kind: str, provider: str, failures: list[str]) -> None:
+    """Endpoint/key/model/dimension checks for an OpenAI-compatible preset."""
+    if kind == "embedding":
+        endpoint = resolve_embedding_endpoint(provider, cfg=settings)
+        url_var, model_var = "EMBEDDING_BASE_URL", "EMBEDDING_MODEL"
+    else:
+        endpoint = resolve_llm_endpoint(provider, cfg=settings)
+        url_var, model_var = "LLM_BASE_URL", "LLM_MODEL"
+    preset = endpoint.preset
+    ok = True
+    if not endpoint.base_url:
+        _report(
+            _FAIL,
+            f"{kind} provider '{provider}' needs {url_var} (OpenAI-compatible base URL incl. "
+            "version path, e.g. https://host/v1)",
+            failures,
+        )
+        ok = False
+    if not endpoint.model:
+        _report(_FAIL, f"{kind} provider '{provider}' has no model — set {model_var}", failures)
+        ok = False
+    key_name = endpoint.key_source or "LLM_API_KEY"
+    if endpoint.requires_key and not endpoint.api_key:
+        _report(_FAIL, f"{kind} provider '{provider}' configured but {key_name} is not set", failures)
+        ok = False
+    elif (
+        provider == "nvidia"
+        and endpoint.api_key
+        and endpoint.base_url == preset.base_url
+        and not endpoint.api_key.startswith("nvapi-")
     ):
+        _report(_FAIL, f"{key_name} does not look like an NVIDIA key (expected nvapi-…)", failures)
+        ok = False
+    if kind == "embedding" and endpoint.model:
+        configured_dim = getattr(settings, "EMBEDDING_DIMENSION", 0) or 0
+        if not endpoint.dimension:
+            _report(
+                _FAIL,
+                f"embedding dimension unknown for model '{endpoint.model}' — set EMBEDDING_DIMENSION "
+                "to the model's output width (changing it rebuilds the vector column; re-index)",
+                failures,
+            )
+            ok = False
+        elif (
+            configured_dim > 0
+            and preset.embedding_dimension
+            and endpoint.model == preset.embedding_model
+            and configured_dim != preset.embedding_dimension
+        ):
+            _report(
+                _FAIL,
+                f"EMBEDDING_DIMENSION={configured_dim} conflicts with '{endpoint.model}' "
+                f"({preset.embedding_dimension} dims) — fix it before indexing",
+                failures,
+            )
+            ok = False
+    if ok:
+        key_note = f"{key_name} set" if endpoint.api_key else "no API key (keyless endpoint)"
+        dim_note = f", {endpoint.dimension} dims" if kind == "embedding" else ""
+        _report(
+            _PASS,
+            f"{kind} provider '{provider}' → {endpoint.base_url_host} model {endpoint.model}"
+            f"{dim_note}; {key_note}",
+            failures,
+        )
+
+
+def _check_provider(failures: list[str]) -> None:
+    for kind, raw in (
+        ("LLM", getattr(settings, "DEFAULT_LLM_PROVIDER", None) or "mock"),
+        ("embedding", getattr(settings, "DEFAULT_EMBEDDING_PROVIDER", None) or "mock"),
+    ):
+        provider = normalize_provider_name(raw)
         if provider == "mock":
             _report(
                 _WARN,
@@ -107,15 +182,20 @@ def _check_provider(failures: list[str]) -> None:
                 failures,
             )
             continue
+        if is_openai_compatible(provider):
+            _check_openai_compatible(kind, provider, failures)
+            continue
         key_name = _PROVIDER_KEYS.get(provider)
         if key_name is None:
-            _report(_FAIL, f"unknown {kind} provider '{provider}' — supported: mock, openai, anthropic, google, nvidia", failures)
+            _report(
+                _FAIL,
+                f"unknown {kind} provider '{provider}' — supported: {', '.join(supported_provider_names())}",
+                failures,
+            )
             continue
         key = getattr(settings, key_name, None)
         if not key:
             _report(_FAIL, f"{kind} provider '{provider}' configured but {key_name} is not set", failures)
-        elif provider == "nvidia" and not key.startswith("nvapi-"):
-            _report(_FAIL, f"{key_name} does not look like an NVIDIA key (expected nvapi-…)", failures)
         else:
             _report(_PASS, f"{kind} provider '{provider}' has {key_name} set", failures)
 

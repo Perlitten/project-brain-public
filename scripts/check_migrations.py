@@ -21,6 +21,8 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("audit_events", "request_id"),
     ("context_packs", "repository_id"),
     ("context_packs", "repo_commit"),
+    ("context_packs", "repository_id"),
+    ("context_packs", "repo_commit"),
 ]
 
 

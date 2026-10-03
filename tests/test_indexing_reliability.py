@@ -42,6 +42,18 @@ def test_clean_git_source_rejects_dirty_and_ignored_indexed_files(tmp_path):
     assert not git_source_is_clean(tmp_path, [source, extra])
 
 
+def test_clean_git_source_without_git_binary(tmp_path, monkeypatch):
+    def missing(*args, **kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr("brain.indexers.reliability.subprocess.run", missing)
+    source = tmp_path / "service.py"
+    source.write_text("value = 1\n")
+    assert git_source_is_clean(tmp_path, [source])  # snapshot: nothing to verify
+    (tmp_path / ".git").mkdir()
+    assert not git_source_is_clean(tmp_path, [source])  # checkout we cannot verify
+
+
 @pytest.mark.asyncio
 async def test_progress_heartbeat_retries_transport_errors(monkeypatch):
     indexer = FileIndexer()
@@ -109,7 +121,9 @@ async def test_nvidia_retry_preserves_order_and_retry_after(monkeypatch, status)
     monkeypatch.setattr("brain.llm.providers.nvidia_provider.httpx.AsyncClient", lambda: context)
     sleep = AsyncMock()
     monkeypatch.setattr("brain.llm.providers.nvidia_provider.asyncio.sleep", sleep)
-    assert await NvidiaEmbeddingProvider(api_key="test-only").embed_batch(["a", "b"]) == [[1], [2]]
+    provider = NvidiaEmbeddingProvider(api_key="test-only")
+    provider.dimension = 1  # toy vectors; the width check itself is covered in test_openai_compatible
+    assert await provider.embed_batch(["a", "b"]) == [[1], [2]]
     sleep.assert_awaited_once_with(4.0)
 
 

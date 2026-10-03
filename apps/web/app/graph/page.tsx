@@ -1,14 +1,27 @@
 import { CodeGraph } from "@/components/CodeGraph";
+import { PageTabs, pickTab } from "@/components/PageTabs";
 import { Term } from "@/components/Term";
-import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
+import { Chip, EmptyState, PageHead, Panel, Table, type Column } from "@/components/ui";
 import { getModuleEdges } from "@/lib/data";
+import type { ModuleEdge } from "@/lib/types";
 
 export const metadata = { title: "Code map" };
 
-export default async function Graph() {
-  const edges = await getModuleEdges();
+const VIEWS = ["map", "connections"] as const;
+
+export default async function Graph({ searchParams }: { searchParams: Promise<{ repo?: string; view?: string }> }) {
+  const { repo, view } = await searchParams;
+  const tab = pickTab(VIEWS, view);
+  const edges = await getModuleEdges(repo);
   const violations = edges.filter((e) => e.violation).length;
   const sorted = [...edges].sort((a, b) => Number(b.violation) - Number(a.violation) || b.weight - a.weight);
+  // Rule breaks and the strongest links up front; the long tail is paged.
+  const columns: Column<ModuleEdge>[] = [
+    { head: "This part", cell: (e) => <span className="mono">{e.from}</span> },
+    { head: "uses", cell: (e) => <span className="mono">{e.to}</span> },
+    { head: "Connections", cell: (e) => e.weight, align: "right" },
+    { head: "Status", cell: (e) => (e.violation ? <Chip tone="bad">breaks a rule</Chip> : <Chip tone="ok">fine</Chip>) },
+  ];
   return (
     <>
       <PageHead
@@ -29,39 +42,52 @@ export default async function Graph() {
           />
         </Panel>
       ) : (
-      <>
-      <Panel id="map" title="Module map" desc="Read left to right: entry points, then core logic, then storage." flush>
-        <div className="graph-wrap">
-          <CodeGraph edges={edges} />
-        </div>
-        <p className="graph-legend">
-          <span>
-            <i aria-hidden="true" /> normal dependency
-          </span>
-          <span>
-            <i className="bad" aria-hidden="true" /> breaks a rule
-          </span>
-        </p>
-      </Panel>
-      <Panel
-        id="edges"
-        title={violations ? `${violations} connection${violations > 1 ? "s" : ""} break${violations > 1 ? "" : "s"} a rule` : "All connections follow the rules"}
-        spine={violations ? "bad" : "ok"}
-        flush
-      >
-        <Table
-          caption="Module connections"
-          rows={sorted}
-          rowKey={(e) => `${e.from}-${e.to}`}
-          columns={[
-            { head: "This part", cell: (e) => <span className="mono">{e.from}</span> },
-            { head: "uses", cell: (e) => <span className="mono">{e.to}</span> },
-            { head: "Connections", cell: (e) => e.weight, align: "right" },
-            { head: "Status", cell: (e) => (e.violation ? <Chip tone="bad">breaks a rule</Chip> : <Chip tone="ok">fine</Chip>) },
-          ]}
-        />
-      </Panel>
-      </>
+        <>
+          <PageTabs
+            label="Code map views"
+            path="/graph"
+            params={{ repo }}
+            current={tab}
+            tabs={[
+              { id: "map", label: "Map" },
+              { id: "connections", label: "Connections", badge: violations ? `${violations} break${violations > 1 ? "" : "s"} a rule` : edges.length, alarm: violations > 0 },
+            ]}
+          />
+          {tab === "map" ? (
+            <Panel id="map" title="Module map" desc="Read left to right: entry points, then core logic, then storage." flush>
+              <div className="graph-wrap graph-wrap--full">
+                <CodeGraph edges={edges} />
+              </div>
+              <p className="graph-legend">
+                <span>
+                  <i aria-hidden="true" /> normal dependency
+                </span>
+                <span>
+                  <i className="bad" aria-hidden="true" /> breaks a rule
+                </span>
+              </p>
+            </Panel>
+          ) : (
+            <Panel
+              id="edges"
+              title={violations ? `${violations} connection${violations > 1 ? "s" : ""} break${violations > 1 ? "" : "s"} a rule` : "All connections follow the rules"}
+              spine={violations ? "bad" : "ok"}
+              flush
+            >
+              <Table
+                caption="Module connections"
+                rows={sorted}
+                rowKey={(e) => `${e.from}-${e.to}`}
+                columns={columns}
+                filter={{
+                  search: (e) => `${e.from} ${e.to}`,
+                  facet: { label: "Status", of: (e) => (e.violation ? "bad" : "ok"), values: [{ value: "bad", label: "breaks a rule" }, { value: "ok", label: "fine" }] },
+                  noun: ["connection", "connections"],
+                }}
+              />
+            </Panel>
+          )}
+        </>
       )}
     </>
   );

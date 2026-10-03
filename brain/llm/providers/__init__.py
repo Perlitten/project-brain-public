@@ -8,6 +8,12 @@ from brain.llm.providers.mock_provider import (
     MockEmbeddingProvider,
     MockSummarizerProvider
 )
+from brain.llm.providers.openai_compatible import (
+    OpenAICompatibleLLMProvider,
+    OpenAICompatibleEmbeddingProvider,
+    OpenAICompatibleSummarizerProvider,
+    EmbeddingDimensionMismatchError
+)
 from brain.llm.providers.openai_provider import (
     OpenAILLMProvider,
     OpenAIEmbeddingProvider,
@@ -36,6 +42,10 @@ __all__ = [
     "MockLLMProvider",
     "MockEmbeddingProvider",
     "MockSummarizerProvider",
+    "OpenAICompatibleLLMProvider",
+    "OpenAICompatibleEmbeddingProvider",
+    "OpenAICompatibleSummarizerProvider",
+    "EmbeddingDimensionMismatchError",
     "OpenAILLMProvider",
     "OpenAIEmbeddingProvider",
     "OpenAISummarizerProvider",

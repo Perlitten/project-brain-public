@@ -16,14 +16,16 @@ than assumed:
 The file lives in the user's home (``~/.project_brain/setup_state.json``):
 the MCP stdio server may run from any working directory and under a different
 process owner than the API, and reports/ volumes can be container-owned.
-Writes are read-modify-write with atomic rename; two writers (API + spawned
-MCP server) only ever touch disjoint keys.
+Writes hold a process lock across read-modify-write and use a private temporary
+file plus atomic rename, so API and MCP updates preserve each other's keys.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -49,19 +51,49 @@ def _now() -> str:
 
 def load_state() -> Dict[str, Any]:
     try:
-        return json.loads(state_path().read_text())
+        state = json.loads(state_path().read_text())
+        return state if isinstance(state, dict) else {}
     except (OSError, ValueError):
         return {}
 
 
+@contextmanager
+def _state_lock(path: Path):
+    """Lock a stable sibling file, rather than the inode replaced on save."""
+    fd = os.open(path.with_suffix(".lock"), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"\0")
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
 def _save(mutator) -> None:
-    state = load_state()
-    mutator(state)
     path = state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
-    os.replace(tmp, path)
+    with _state_lock(path):
+        state = load_state()
+        mutator(state)
+        fd, name = tempfile.mkstemp(prefix=".setup-state-", dir=path.parent)
+        tmp = Path(name)
+        try:
+            with os.fdopen(fd, "w") as stream:
+                json.dump(state, stream, indent=2, sort_keys=True)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
 
 
 def record_self_check(readiness_status: str, fingerprint: str, detail: Dict[str, Any]) -> None:

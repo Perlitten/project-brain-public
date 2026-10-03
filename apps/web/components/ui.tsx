@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Condition, JobStatus, LedgerEvent, Meter as MeterData, Tone } from "@/lib/types";
-import { dataSource } from "@/lib/data";
+import { Decode } from "./Decode";
+import { ListFrame, type FacetSpec } from "./ListFrame";
 import { Odometer, Rise } from "./motion";
 
 export const fmt = (n: number) => n.toLocaleString("en-US");
@@ -32,7 +33,7 @@ export function Chip({ tone, children, dot = true }: { tone: Tone; children: Rea
 }
 
 export function JobChip({ status }: { status: JobStatus }) {
-  return <Chip tone={jobTone(status)}>{status}</Chip>;
+  return <Chip tone={jobTone(status)}>{status.replace("_", " ")}</Chip>;
 }
 
 export function PageHead({
@@ -49,7 +50,9 @@ export function PageHead({
   return (
     <header className="page-head">
       <div>
-        <p className="eyebrow">{eyebrow}</p>
+        <p className="eyebrow">
+          <Decode text={eyebrow} />
+        </p>
         <h1 className="page-head__title">
           <Rise text={title} />
         </h1>
@@ -99,40 +102,22 @@ export function Panel({
   );
 }
 
-// An action that cannot run must say why instead of pretending (component
-// contract: a button that does nothing must not render as live).
-export function ActionButton({
-  label,
-  hint,
-  variant = "primary",
-}: {
-  label: string;
-  hint?: string;
-  variant?: "primary" | "neutral";
-}) {
-  const demo = dataSource === "demo";
-  return (
-    <span className="action">
-      <button type="button" className={`btn btn--${variant}`} disabled={demo}>
-        {label}
-      </button>
-      <span className="action__hint">{demo ? "Connect the API to run actions" : hint}</span>
-    </span>
-  );
-}
-
-export function Verdict({ condition }: { condition: Condition }) {
+/** `action` is a live control (e.g. a RunButton) for the condition's next step. */
+export function Verdict({ condition, action }: { condition: Condition; action?: ReactNode }) {
   return (
     <section className={`verdict verdict--${condition.tone}`} aria-labelledby="verdict-title">
       <div className="verdict__main">
-        <p className="eyebrow">Condition</p>
+        <p className="eyebrow">
+          <Decode text="Condition" delay={80} />
+        </p>
         <h2 className="verdict__headline" id="verdict-title">
           <Rise text={condition.headline} delay={120} />
         </h2>
         <p className="verdict__detail">{condition.detail}</p>
-        {condition.action && (
+        {action && (
           <div className="verdict__action">
-            <ActionButton label={condition.action.label} hint={condition.action.hint} />
+            {action}
+            {condition.action?.hint && <span className="action__hint">{condition.action.hint}</span>}
           </div>
         )}
       </div>
@@ -146,7 +131,47 @@ export function Verdict({ condition }: { condition: Condition }) {
           </div>
         ))}
       </dl>
+      <Pulse tone={condition.tone} />
     </section>
+  );
+}
+
+// A vital-signs trace along the bottom of the verdict. The rhythm is the
+// condition: a calm beat when memory is current, quicker when it is falling
+// behind, racing when it is badly out of date, flat when nothing is indexed.
+const BEAT: Record<Tone, number> = { ok: 220, info: 180, warn: 140, bad: 92, idle: 0 };
+
+function ecg(period: number, width = 1200, base = 24): string {
+  if (!period) return `M 0 ${base} H ${width}`;
+  let d = `M 0 ${base}`;
+  for (let x = 0; x < width; x += period) {
+    const u = period / 22;
+    d +=
+      ` H ${x + u * 6} q ${u} -4 ${u * 2} 0 H ${x + u * 10}` +
+      ` l ${u * 0.6} 3 l ${u * 0.9} -21 l ${u} 27 l ${u * 0.7} -9` +
+      ` H ${x + u * 15} q ${u * 1.6} -7 ${u * 3.2} 0 H ${x + period}`;
+  }
+  return d;
+}
+
+function Pulse({ tone }: { tone: Tone }) {
+  const d = ecg(BEAT[tone]);
+  const id = `pulse-${tone}`;
+  return (
+    <svg className="pulse" viewBox="0 0 1200 40" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={`${id}-g`}>
+          <stop offset="0" stopColor="#000" />
+          <stop offset="0.85" stopColor="#fff" />
+          <stop offset="1" stopColor="#000" />
+        </linearGradient>
+        <mask id={`${id}-m`} maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="40">
+          <rect className="pulse__sweep" x="-360" y="0" width="360" height="40" fill={`url(#${id}-g)`} />
+        </mask>
+      </defs>
+      <path className="pulse__base" d={d} pathLength={1} />
+      <path className="pulse__trace" d={d} mask={`url(#${id}-m)`} />
+    </svg>
   );
 }
 
@@ -196,21 +221,34 @@ export function Meter({ meter, slots = 20 }: { meter: MeterData; slots?: number 
   );
 }
 
-export function Ledger({ events, limit, compact }: { events: LedgerEvent[]; limit?: number; compact?: boolean }) {
+const TONE_WORD: Record<string, string> = { bad: "Failed", warn: "Worth checking", ok: "Fine", info: "Info", idle: "Idle" };
+
+/** `paged` adds search, a filter by outcome and a pager for the full log. */
+export function Ledger({ events, limit, compact, paged }: { events: LedgerEvent[]; limit?: number; compact?: boolean; paged?: boolean }) {
   const rows = limit ? events.slice(0, limit) : events;
-  return (
-    <ol className={compact ? "ledger ledger--compact" : "ledger"}>
-      {rows.map((e, i) => (
-        <li className="ledger__row" key={`${e.at}-${i}`} style={{ "--i": Math.min(i, 12) } as CSSProperties}>
-          <time className="ledger__time num">{compact ? e.at.slice(0, 5) : e.at}</time>
-          <span className={`ledger__dot tone-${e.tone}`} aria-label={e.tone} role="img" />
-          <span className="ledger__source">{e.source}</span>
-          <span className="ledger__text">{e.text}</span>
-          {e.ref && <span className="ledger__ref num">{e.ref}</span>}
-        </li>
-      ))}
-    </ol>
-  );
+  const items = rows.map((e, i) => (
+    <li className="ledger__row" key={`${e.at}-${i}`} style={{ "--i": Math.min(i, 12) } as CSSProperties}>
+      <time className="ledger__time num">{compact ? e.at.slice(0, 5) : e.at}</time>
+      <span className={`ledger__dot tone-${e.tone}`} aria-label={e.tone} role="img" />
+      <span className="ledger__source">{e.source}</span>
+      <span className="ledger__text">{e.text}</span>
+      {e.ref && <span className="ledger__ref num">{e.ref}</span>}
+    </li>
+  ));
+  const cls = compact ? "ledger ledger--compact" : "ledger";
+  if (paged) {
+    return (
+      <ListFrame
+        rows={items}
+        listClass={cls}
+        meta={rows.map((e) => ({ q: `${e.source} ${e.text} ${e.ref ?? ""} ${e.at}`.toLowerCase(), f: e.tone }))}
+        facet={{ label: "Outcome", values: ["bad", "warn", "ok", "info", "idle"].map((v) => ({ value: v, label: TONE_WORD[v] })) }}
+        noun={["event", "events"]}
+        pageSize={50}
+      />
+    );
+  }
+  return <ol className={cls}>{items}</ol>;
 }
 
 export function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
@@ -225,11 +263,13 @@ export function Stat({ label, value, note }: { label: string; value: string; not
   );
 }
 
-export function EmptyState({ title, body }: { title: string; body: string }) {
+/** An empty screen says what would fill it and, when it can, offers the control that does. */
+export function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
   return (
     <div className="empty">
       <p className="empty__title">{title}</p>
       <p className="empty__body">{body}</p>
+      {action && <div className="empty__action">{action}</div>}
     </div>
   );
 }
@@ -240,32 +280,69 @@ export interface Column<T> {
   align?: "right";
 }
 
-// Rows enter in sequence (capped at 12 so long tables never wait).
-export function Table<T>({ rows, columns, rowKey, caption }: { rows: T[]; columns: Column<T>[]; rowKey: (row: T) => string; caption: string }) {
+export interface TableFilter<T> {
+  /** Text the search box matches (row title, ids, owner…). */
+  search?: (row: T) => string;
+  /** One value per row to filter by, e.g. its status. */
+  facet?: { label: string; of: (row: T) => string | undefined; values?: FacetSpec["values"] };
+  /** Singular and plural, for "Search 87 runs". */
+  noun?: [string, string];
+  pageSize?: number;
+}
+
+// Rows enter in sequence (capped at 12 so long tables never wait). Long or
+// filterable tables get a search box, a filter and a pager (see ListFrame).
+export function Table<T>({
+  rows,
+  columns,
+  rowKey,
+  caption,
+  filter,
+}: {
+  rows: T[];
+  columns: Column<T>[];
+  rowKey: (row: T) => string;
+  caption: string;
+  filter?: TableFilter<T>;
+}) {
+  const head = (
+    <tr>
+      {columns.map((c, i) => (
+        <th key={i} className={c.align === "right" ? "r" : undefined} scope="col">
+          {c.head}
+        </th>
+      ))}
+    </tr>
+  );
+  const body = rows.map((r, i) => (
+    <tr key={rowKey(r)} style={{ "--i": Math.min(i, 12) } as CSSProperties}>
+      {columns.map((c, j) => (
+        <td key={j} className={c.align === "right" ? "r num" : undefined}>
+          {c.cell(r)}
+        </td>
+      ))}
+    </tr>
+  ));
+  if (filter || rows.length > 20) {
+    return (
+      <ListFrame
+        rows={body}
+        head={head}
+        caption={caption}
+        meta={rows.map((r) => ({ q: (filter?.search?.(r) ?? "").toLowerCase(), f: filter?.facet?.of(r) }))}
+        facet={filter?.facet ? { label: filter.facet.label, values: filter.facet.values } : undefined}
+        noun={filter?.noun}
+        pageSize={filter?.pageSize}
+        searchable={Boolean(filter?.search)}
+      />
+    );
+  }
   return (
     <div className="table-wrap">
       <table className="table">
         <caption className="sr-only">{caption}</caption>
-        <thead>
-          <tr>
-            {columns.map((c, i) => (
-              <th key={i} className={c.align === "right" ? "r" : undefined} scope="col">
-                {c.head}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={rowKey(r)} style={{ "--i": Math.min(i, 12) } as CSSProperties}>
-              {columns.map((c, j) => (
-                <td key={j} className={c.align === "right" ? "r num" : undefined}>
-                  {c.cell(r)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
+        <thead>{head}</thead>
+        <tbody>{body}</tbody>
       </table>
     </div>
   );

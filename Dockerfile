@@ -51,6 +51,11 @@ WORKDIR /app
 # 2026-07-30). 999 matches what production already has on disk.
 RUN groupadd -r -g 999 brain && useradd -r -u 999 -g brain -s /bin/false brain
 
+# The indexer and freshness checks shell out to git (commit hash, clean-tree
+# verification). Without it every index run failed with "No such file or
+# directory: 'git'" (2026-10).
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin

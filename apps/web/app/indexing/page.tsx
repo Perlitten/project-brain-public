@@ -13,8 +13,9 @@ const triggerWords: Record<IndexRun["trigger"], string> = {
   unknown: "trigger not recorded",
 };
 
-export default async function Indexing() {
-  const runs = await getIndexRuns();
+export default async function Indexing({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
+  const { repo } = await searchParams;
+  const runs = await getIndexRuns(repo);
   const last = runs.find((r) => r.status === "completed");
   const troubled = runs.filter((r) => r.status === "failed" || r.status === "degraded").length;
   return (
@@ -44,6 +45,7 @@ export default async function Indexing() {
           caption="Index runs"
           rows={runs}
           rowKey={(r) => String(r.id)}
+          filter={{ search: (r) => `#${r.id} ${r.revision} ${r.startedAt} ${r.trigger}`, facet: { label: "Result", of: (r) => r.status }, noun: ["run", "runs"] }}
           columns={[
             { head: "Run", cell: (r) => <span className="num">#{r.id}</span> },
             {

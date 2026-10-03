@@ -210,7 +210,7 @@ def _classify_pack(pack: ContextPack, index_commit: Optional[str]) -> str:
             return "empty"
     except OSError:
         return "missing"
-    if pack.repo_commit and index_commit and pack.repo_commit != index_commit:
+    if not pack.repo_commit or not index_commit or pack.repo_commit != index_commit:
         return "stale"
     return "usable"
 
@@ -251,7 +251,7 @@ def _first_task_step(
         return step
     reasons = []
     if buckets["stale"]:
-        reasons.append("predates the latest index — rebuild for the current revision")
+        reasons.append("revision is unknown or predates the latest index — rebuild for the current revision")
     if buckets["missing"] or buckets["empty"]:
         reasons.append("artifact file missing or empty — rebuild it")
     if unattributed:
@@ -275,7 +275,7 @@ async def collect_setup_status() -> Dict[str, Any]:
     services = _services_step(health)
 
     try:
-        repo_path: Optional[Path] = resolve_repo_path()
+        repo_path: Optional[Path] = resolve_repo_path(settings.TARGET_REPO_PATH)
     except ValueError:
         repo_path = None
 

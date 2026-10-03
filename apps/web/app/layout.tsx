@@ -1,9 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { Suspense } from "react";
+import { BOOT_SCRIPT, Boot } from "@/components/Boot";
 import { Shell, type ShellRepo } from "@/components/Shell";
+import { actionsMode } from "@/lib/actions/gate";
 import { dataSource, getRepositories } from "@/lib/data";
+import { repositoryStatus } from "@/lib/repository-status";
 import "./globals.css";
+import "./actions.css";
 
 const sans = localFont({
   src: [
@@ -35,14 +39,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const repos: ShellRepo[] = (await getRepositories()).map((r) => ({
     slug: r.slug,
     name: r.name,
-    tone: r.behind > 20 ? "bad" : r.behind > 0 ? "warn" : "ok",
-    status: r.behind ? `${r.behind} changes not read yet` : "Up to date",
+    ...repositoryStatus(r),
   }));
+  const live = dataSource !== "demo";
+  const first = repos[0];
+  const bootLines = [
+    "› waking up project brain",
+    live ? `› memory online · ${repos.length} repositor${repos.length === 1 ? "y" : "ies"}` : "› demo data · api not connected",
+    first ? `› ${first.name} · ${first.status.toLowerCase()}` : "› no repositories yet",
+    "› ready",
+  ];
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
+      </head>
       <body>
+        <Boot lines={bootLines} />
         <Suspense>
-          <Shell repos={repos} demo={dataSource === "demo"}>
+          <Shell repos={repos} demo={dataSource === "demo"} mode={actionsMode()}>
             {children}
           </Shell>
         </Suspense>

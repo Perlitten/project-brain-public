@@ -3,8 +3,8 @@
   "seed": 20260802,
   "description": "Historical curated retrieval baseline only. It is deliberately schema v1 with non-production provenance and must not be used for release acceptance; create a schema-v2 production task-loop corpus with expected files, symbols, ranges and completion assertions.",
   "sources": [
-    "eval/golden_set.json",
-    "eval/lfm_eval_extension.json"
+    "eval/historical/pre-web/golden_set.json",
+    "eval/historical/pre-web/lfm_eval_extension.json"
   ],
   "categories": {
     "unknown_location": ["q001", "q002", "q003", "q004", "q006", "q007", "q008", "q009", "q010", "q011", "q012", "q013", "q014", "q016", "q017"],

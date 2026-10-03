@@ -110,6 +110,9 @@ services:
       REPO_ROOT: /app
       CONTEXT_PACK_OUTPUT_DIR: /app/context_packs
       REPORT_OUTPUT_DIR: /app/reports
+      # The image's brain user has no home directory; keep setup verification
+      # state on the persisted reports volume instead of ~/.project_brain.
+      BRAIN_SETUP_STATE_DIR: /app/reports/.setup
       ENVIRONMENT: production
     volumes:
       - ./reports:/app/reports
@@ -173,6 +176,9 @@ services:
       REPO_ROOT: /app
       CONTEXT_PACK_OUTPUT_DIR: /app/context_packs
       REPORT_OUTPUT_DIR: /app/reports
+      # The image's brain user has no home directory; keep setup verification
+      # state on the persisted reports volume instead of ~/.project_brain.
+      BRAIN_SETUP_STATE_DIR: /app/reports/.setup
       ENVIRONMENT: production
       WORKER_POOL_NAME: ${WORKER_POOL_NAME:-maintenance}
     volumes:

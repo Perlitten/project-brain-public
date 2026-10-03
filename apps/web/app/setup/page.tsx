@@ -1,83 +1,57 @@
-import type { CSSProperties } from "react";
 import { CopyCommand } from "@/components/CopyCommand";
 import { Term } from "@/components/Term";
-import { EmptyState, Meter, PageHead } from "@/components/ui";
-import { getSetupSteps } from "@/lib/data";
+import { Tip } from "@/components/Tip";
+import { SetupSteps } from "@/components/setup/SetupSteps";
+import { PageHead, Panel } from "@/components/ui";
+import { getClientConfigs } from "@/lib/data";
+import { getSetupView } from "@/lib/setup-view";
 
 export const metadata = { title: "Get started" };
 
 export default async function Setup() {
-  const steps = await getSetupSteps();
+  const [view, clients] = await Promise.all([getSetupView(), getClientConfigs()]);
+  const steps = view.steps;
   const done = steps.filter((s) => s.done).length;
-  const next = steps.find((s) => !s.done);
+  const next = steps.find((s) => s.id === view.nextStep) ?? steps.find((s) => !s.done);
   return (
     <>
       <PageHead
         eyebrow="Get started"
-        title={steps.length === 0 ? "Setup status unavailable" : next ? `${done} of ${steps.length} steps done` : "Brain is fully set up"}
+        title={steps.length === 0 ? "Setup status unavailable" : next ? `${done} of ${steps.length} done` : "Brain is fully set up"}
         lede={
           <>
-            A few steps from zero to <Term k="agent">AI agents</Term> that know your code. Copy each command and run it in a
-            terminal on the machine where Brain is installed.
+            Connect Brain to your code and your <Term k="agent">agents</Term>.
+            <Tip>Each step opens the control that finishes it. Changes go straight to the Brain server.</Tip>
           </>
         }
       />
-      {steps.length === 0 ? (
-        <EmptyState title="No setup steps to show" body="Brain didn’t report its setup status. Check that the API is reachable, then reload this page." />
+      {view.mode === "down" ? (
+        <div className="callout tone-warn">
+          <b>Brain isn’t answering.</b>
+          <span>
+            The dashboard can’t reach the Brain API, so it can’t show or change setup. Start the server (<code>docker compose up -d</code> on the Brain
+            machine), then reload this page.
+          </span>
+        </div>
       ) : (
-      <Meter
-        meter={{
-          label: "Setup progress",
-          value: `${done}/${steps.length}`,
-          parts: [
-            { tone: "filled", count: done, text: `${done} done` },
-            { tone: "excluded", count: steps.length - done, text: `${steps.length - done} to go` },
-          ],
-        }}
-      />
+        <>
+          {view.mode === "demo" && (
+            <div className="callout tone-info">
+              <b>Demo data.</b>
+              <span>Connect the dashboard to a Brain server (BRAIN_API_URL) to make these steps live.</span>
+            </div>
+          )}
+          <SetupSteps view={view} />
+        </>
       )}
-      <ol className="steps">
-        {steps.map((s, i) => {
-          const state = s.done ? "done" : s === next ? "next" : "todo";
-          return (
-            <li key={s.id} className={`step step--${state}`} style={{ "--i": i } as CSSProperties}>
-              <span className="step__badge" aria-label={s.done ? "Done" : `Step ${i + 1}`}>
-                {s.done ? (
-                  <svg
-                    className="step__check"
-                    width={18}
-                    height={18}
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2.2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <polyline points="4 12.5 9.5 18 20 6" pathLength={1} />
-                  </svg>
-                ) : (
-                  i + 1
-                )}
-              </span>
-              <div>
-                <p className="step__title">
-                  {s.title}{" "}
-                  {state === "next" && (
-                    <span className="chip chip--info">
-                      <span className="chip__dot" aria-hidden="true" />
-                      Do this next
-                    </span>
-                  )}
-                </p>
-                <p className="step__detail">{s.detail}</p>
-                {s.command && <CopyCommand command={s.command} />}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+      {clients.length > 0 && <Panel id="client-configs" title="Agent configurations">
+        {clients.map(client => <section key={client.name}>
+          <h3>{client.name}</h3>
+          <p>{client.where}</p>
+          <CopyCommand command={client.config} />
+          {client.cli && <CopyCommand command={client.cli} />}
+        </section>)}
+      </Panel>}
     </>
   );
 }

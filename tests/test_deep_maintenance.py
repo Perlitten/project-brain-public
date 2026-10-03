@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,10 +12,45 @@ import pytest
 from brain.config.settings import settings
 from brain.workers.errors import PermanentJobError
 from brain.workers.tasks import run_deep_context, run_nightly_maintenance
+import brain.workers.tasks as worker_tasks
 
 
 def _repository():
     return SimpleNamespace(id=3, path="/app", name="project-brain")
+
+
+def test_auto_heal_repairs_incompatible_embeddings(tmp_path):
+    record = SimpleNamespace(id=9, path=str(tmp_path))
+    indexer = SimpleNamespace(index_repository=AsyncMock(return_value=record))
+    inventory = SimpleNamespace(to_dict=lambda: {"missing_embeddings": 0, "stale_embeddings": 0, "incompatible_embeddings": 1})
+    repair = SimpleNamespace(to_dict=lambda: {"regenerated": 1})
+    with (
+        patch.object(worker_tasks, "FileIndexer", return_value=indexer),
+        patch.object(worker_tasks, "list_all_repositories", AsyncMock(return_value=[record])),
+        patch.object(worker_tasks, "assess_repository_freshness", AsyncMock(return_value={"status": "current"})),
+        patch.object(worker_tasks, "collect_embedding_inventory", AsyncMock(return_value=inventory)),
+        patch.object(worker_tasks, "backfill_embeddings", AsyncMock(return_value=repair)) as backfill,
+    ):
+        result = asyncio.run(worker_tasks.auto_heal_stale_repositories())
+    indexer.index_repository.assert_awaited_once_with(tmp_path, clean=False)
+    backfill.assert_awaited_once_with(record.id)
+    assert result["healed"][0]["incompatible_embeddings"] == 1
+
+
+def test_auto_heal_excludes_nightly_target_before_reading_inventory(tmp_path):
+    record = SimpleNamespace(id=9, path=str(tmp_path))
+    indexer = SimpleNamespace(index_repository=AsyncMock())
+    with (
+        patch.object(worker_tasks, "FileIndexer", return_value=indexer),
+        patch.object(worker_tasks, "list_all_repositories", AsyncMock(return_value=[record])),
+        patch.object(worker_tasks, "assess_repository_freshness", AsyncMock()) as freshness,
+        patch.object(worker_tasks, "collect_embedding_inventory", AsyncMock()) as inventory,
+    ):
+        result = asyncio.run(worker_tasks.auto_heal_stale_repositories(exclude_repository_id=record.id))
+    freshness.assert_not_awaited()
+    inventory.assert_not_awaited()
+    indexer.index_repository.assert_not_awaited()
+    assert result["skipped"] == [{"path": record.path, "reason": "handled_by_nightly_target"}]
 
 
 def _dense_result(*, passed: bool = True):
@@ -67,6 +103,7 @@ async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality():
 
     with (
         patch("brain.workers.tasks.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.auto_heal_stale_repositories", new=AsyncMock(return_value={"healed": [], "skipped": []})) as sweep,
         patch(
             "brain.workers.tasks._deep_repo_path",
             return_value=Path("/app"),
@@ -83,7 +120,7 @@ async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality():
                     "commit_hash": "build-sha",
                 }
             ),
-        ),
+        ) as reindex,
         patch(
             "brain.workers.tasks.verify_embeddings",
             new=AsyncMock(
@@ -137,6 +174,8 @@ async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality():
         )
 
     assert result["status"] == "completed"
+    sweep.assert_awaited_once_with(exclude_repository_id=record.id)
+    reindex.assert_awaited_once()
     assert result["dense_after"]["pass"] is True
     assert result["late_interaction"]["verification_mode"] == "exact"
     assert all(probe["passed"] for probe in result["quality_probes"])

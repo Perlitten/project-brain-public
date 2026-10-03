@@ -24,6 +24,24 @@ from brain.database.repository_utils import get_repository_by_path
 from brain.memory.repo_scope import normalize_repo_scope, repository_scope_clause
 
 
+async def _latest_index_revision(repository_id: Optional[int]) -> Optional[Tuple[int, str]]:
+    """Only a completed latest run can identify stable indexed evidence."""
+    if repository_id is None:
+        return None
+    async with async_session_factory() as session:
+        row = (
+            await session.execute(
+                select(IndexingRun.id, IndexingRun.commit_hash, IndexingRun.status)
+                .where(IndexingRun.repository_id == repository_id)
+                .order_by(IndexingRun.id.desc())
+                .limit(1)
+            )
+        ).one_or_none()
+    if row is None or row.status != "completed" or not row.commit_hash:
+        return None
+    return row.id, row.commit_hash
+
+
 def _decision_scope_clause(repo_scope: Optional[str]):
     """Include global decisions plus decisions owned by this repository."""
     return repository_scope_clause(Decision, repo_scope)
@@ -287,6 +305,7 @@ class ContextPackBuilder:
 
         repo_record = await get_repository_by_path(repo_path)
         repository_id = repo_record.id if repo_record else None
+        index_revision = await _latest_index_revision(repository_id)
         repository_name = repo_record.name if repo_record else repo_path.resolve().name
         repository_scope = normalize_repo_scope(repo_record.path if repo_record else repo_path.resolve().as_posix())
         graph_client = GraphClient(repository_id=repository_id) if repository_id is not None else None
@@ -823,21 +842,13 @@ class ContextPackBuilder:
         # 11. Save ContextPack to database with provenance: the repository and
         # the index revision its evidence came from. Readiness scopes first-use
         # completion on these — a pack from another repository must not count.
-        repo_commit: str | None = None
+        final_index_revision = await _latest_index_revision(repository_id)
+        repo_commit = (
+            index_revision[1]
+            if index_revision is not None and index_revision == final_index_revision
+            else None
+        )
         async with async_session_factory() as session:
-            if repository_id is not None:
-                latest_index_commit = (
-                    await session.execute(
-                        select(IndexingRun.commit_hash)
-                        .where(
-                            IndexingRun.repository_id == repository_id,
-                            IndexingRun.status == "completed",
-                        )
-                        .order_by(IndexingRun.id.desc())
-                        .limit(1)
-                    )
-                ).scalar_one_or_none()
-                repo_commit = latest_index_commit
             cp_record = ContextPack(
                 task_description=task_description,
                 path=output_file_path.as_posix(),
