@@ -477,6 +477,7 @@ def resolve_task_model(task: str, provider_name: Optional[str] = None, *, cfg: A
     if preset is None:
         return LEGACY_SYNTHESIS_TASK_MODEL if synthesis else LEGACY_FAST_TASK_MODEL
     llm_model = _str(cfg, "LLM_MODEL")
+    candidates: tuple[Optional[str], ...]
     if synthesis:
         candidates = (llm_model, preset.llm_model)
     else:
