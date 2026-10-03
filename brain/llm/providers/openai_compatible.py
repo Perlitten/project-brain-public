@@ -73,7 +73,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         self.require_key = require_key
         self.key_source = key_source
         self.timeout = timeout
-        self.api_url = join_url(self.base_url, "chat/completions") if self.base_url else None
+        self.api_url = join_url(self.base_url, "chat/completions") if self.base_url else ""
 
     @classmethod
     def from_endpoint(cls, endpoint: ResolvedEndpoint, **overrides: Any) -> "OpenAICompatibleLLMProvider":
@@ -201,7 +201,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
             self.MAX_INPUT_CHARS = int(max_input_chars)
         if max_batch_size:
             self.MAX_BATCH_SIZE = int(max_batch_size)
-        self.api_url = join_url(self.base_url, "embeddings") if self.base_url else None
+        self.api_url = join_url(self.base_url, "embeddings") if self.base_url else ""
 
     @classmethod
     def from_endpoint(cls, endpoint: ResolvedEndpoint, **overrides: Any) -> "OpenAICompatibleEmbeddingProvider":

@@ -248,7 +248,7 @@ async def web_context_packs(limit: int = Query(50, ge=1, le=500)) -> dict[str, A
             await session.execute(select(ContextPack).order_by(ContextPack.created_at.desc()).limit(limit))
         ).scalars().all()
         repo_ids = {pack.repository_id for pack in packs if pack.repository_id is not None}
-        latest_commits: dict[int, str | None] = {}
+        latest_commits: dict[int | None, str | None] = {}
         if repo_ids:
             ranked = (
                 select(IndexingRun.repository_id, IndexingRun.commit_hash,

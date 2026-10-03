@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -62,7 +63,7 @@ def _state_lock(path: Path):
     """Lock a stable sibling file, rather than the inode replaced on save."""
     fd = os.open(path.with_suffix(".lock"), os.O_CREAT | os.O_RDWR, 0o600)
     try:
-        if os.name == "nt":
+        if sys.platform == "win32":
             import msvcrt
 
             if os.fstat(fd).st_size == 0:

@@ -478,7 +478,7 @@ def resolve_task_model(task: str, provider_name: Optional[str] = None, *, cfg: A
         return LEGACY_SYNTHESIS_TASK_MODEL if synthesis else LEGACY_FAST_TASK_MODEL
     llm_model = _str(cfg, "LLM_MODEL")
     if synthesis:
-        candidates = (llm_model, preset.llm_model)
+        candidates: tuple[Optional[str], ...] = (llm_model, preset.llm_model)
     else:
         candidates = (_str(cfg, "SUMMARIZER_MODEL"), preset.summarizer_model, llm_model, preset.llm_model)
     for candidate in candidates:
