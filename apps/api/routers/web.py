@@ -263,7 +263,8 @@ async def web_context_packs(limit: int = Query(50, ge=1, le=500)) -> dict[str, A
             latest_commits = {repo_id: commit for repo_id, commit in rows}
     return {
         "packs": [shape_context_pack(pack, resolve_context_pack_file(pack.path),
-                                     latest_commits.get(pack.repository_id)) for pack in packs]
+                                     latest_commits.get(pack.repository_id) if pack.repository_id is not None else None)
+                  for pack in packs]
     }
 
 

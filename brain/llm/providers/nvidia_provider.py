@@ -11,6 +11,7 @@ import asyncio  # noqa: F401  (tests patch nvidia_provider.asyncio.sleep)
 import httpx  # noqa: F401  (tests patch nvidia_provider.httpx.AsyncClient)
 
 from brain.llm.presets import PRESETS
+from brain.llm.providers.openai_compatible import DEFAULT_EMBEDDING_BATCH_SIZE
 from brain.llm.providers.openai_provider import (
     OpenAIEmbeddingProvider,
     OpenAILLMProvider,
@@ -32,8 +33,8 @@ class NvidiaEmbeddingProvider(OpenAIEmbeddingProvider):
     PRESET = "nvidia"
     # nv-embedcode has a per-request TOKEN limit (~1k); see the preset comment.
     # (Re-index after changing this so stored vectors are consistent.)
-    MAX_INPUT_CHARS = _NVIDIA.embedding_max_input_chars
-    MAX_BATCH_SIZE = _NVIDIA.embedding_max_batch_size
+    MAX_INPUT_CHARS = _NVIDIA.embedding_max_input_chars or 0
+    MAX_BATCH_SIZE = _NVIDIA.embedding_max_batch_size or DEFAULT_EMBEDDING_BATCH_SIZE
 
 
 class NvidiaSummarizerProvider(OpenAISummarizerProvider):
