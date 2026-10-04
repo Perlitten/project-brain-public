@@ -10,7 +10,7 @@
   "nice_to_have_files": [
     "brain/search/code_search.py"
   ],
-  "base_commit": "b789f6c6ee49cf7ec817dba925142c3668a8ec3a",
+  "base_commit": "51b0eb0c83ecc72662a1a72ea8df5cb76868e5bd",
   "provenance": {
     "kind": "curated",
     "source": "manual harness evaluation 2026-10-05",
