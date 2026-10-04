@@ -35,9 +35,10 @@ API key is read from `PROJECT_BRAIN_API_KEY` or `<repo>/.env`.
 
 Drop a JSON file into `tasks/`. Fields:
 
-- `id`, `type` (`context` | `impact` | `review`), `base_commit` (HEAD must
-  match, otherwise the task is skipped — results are only comparable on the
-  pinned tree)
+- `id`, `type` (`context` | `impact` | `review`), `base_commit` (the tree
+  the ground truth was verified on — recorded as provenance; the runner
+  applies the patch to the current HEAD and records `base_used`, so keep
+  the tree stable when comparing runs)
 - `context`: `task_description`, `must_have_files`, `nice_to_have_files`
 - `impact`: `change_request`, `must_have_files`, `nice_to_have_files`
 - `review`: `patch` (unified diff applied to a temp branch), `clean`

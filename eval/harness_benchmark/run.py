@@ -111,18 +111,17 @@ def run_impact(api_url, api_key, repo, task):
 def run_review(api_url, api_key, repo, task):
     if git(repo, "status", "--porcelain").stdout.strip():
         return {"skipped": "dirty worktree — review tasks refuse to run"}
-    base = task["base_commit"]
-    head = git(repo, "rev-parse", "HEAD").stdout.strip()
-    if head != base:
-        return {"skipped": f"HEAD {head[:8]} != task base {base[:8]}"}
+    base = git(repo, "rev-parse", "HEAD").stdout.strip()
     branch = f"bench/{task['id']}"
     orig_branch = git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    orig_ref = orig_branch if orig_branch != "HEAD" else base
     try:
         git(repo, "checkout", "-q", "-b", branch)
         proc = subprocess.run(["git", "apply", "--check", "-"], cwd=repo,
                               input=task["patch"], capture_output=True, text=True)
         if proc.returncode != 0:
-            return {"skipped": f"patch does not apply: {proc.stderr.strip()[:200]}"}
+            return {"skipped": f"patch does not apply on {base[:8]}: {proc.stderr.strip()[:200]}",
+                    "base_used": base}
         subprocess.run(["git", "apply", "-"], cwd=repo,
                        input=task["patch"], check=True, capture_output=True, text=True)
         git(repo, "-c", "user.name=bench", "-c", "user.email=bench@local",
@@ -131,7 +130,7 @@ def run_review(api_url, api_key, repo, task):
             "base": base, "head": branch, "repo_path": repo,
         }, timeout=420)
     finally:
-        git(repo, "checkout", "-q", orig_branch if orig_branch != "HEAD" else head)
+        git(repo, "checkout", "-q", orig_ref)
         git(repo, "branch", "-D", branch, check=False)
 
     llm_status = data.get("llm_review_status", "unknown")
@@ -150,6 +149,8 @@ def run_review(api_url, api_key, repo, task):
         metrics["detected"] = 1.0 if (detected and llm_status == "completed") else 0.0
         metrics["pass"] = metrics["detected"]
     return {
+        "base_used": base,
+        "base_pinned": task.get("base_commit"),
         "status": data.get("status"),
         "llm_review_status": llm_status,
         "rule_violations": data.get("rule_violations", []),
