@@ -61,3 +61,11 @@ did not verify is a guess, not a measurement — mark its provenance honestly.
 The strongest claim this benchmark supports is comparative: run the same
 tasks with and without the harness (or before/after a change) and report
 the delta.
+
+## A note on LLM nondeterminism
+
+`review` tasks depend on an LLM judgment call, so a single run can vary:
+the same planted bug may be flagged in one run and missed in the next.
+Treat a single review-task result as a sample, not a verdict — run review
+tasks 3x and report the mean detection rate for stable numbers. `context`
+and `impact` tasks are deterministic given a fixed index.
