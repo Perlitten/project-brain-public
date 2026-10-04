@@ -35,10 +35,9 @@ API key is read from `PROJECT_BRAIN_API_KEY` or `<repo>/.env`.
 
 Drop a JSON file into `tasks/`. Fields:
 
-- `id`, `type` (`context` | `impact` | `review`), `base_commit` (the tree
-  the ground truth was verified on — recorded as provenance; the runner
-  applies the patch to the current HEAD and records `base_used`, so keep
-  the tree stable when comparing runs)
+- `id`, `type` (`context` | `impact` | `review`), `base_commit` (HEAD must
+  match, otherwise the task is skipped — results are only comparable on the
+  pinned tree)
 - `context`: `task_description`, `must_have_files`, `nice_to_have_files`
 - `impact`: `change_request`, `must_have_files`, `nice_to_have_files`
 - `review`: `patch` (unified diff applied to a temp branch), `clean`
@@ -61,11 +60,3 @@ did not verify is a guess, not a measurement — mark its provenance honestly.
 The strongest claim this benchmark supports is comparative: run the same
 tasks with and without the harness (or before/after a change) and report
 the delta.
-
-## A note on LLM nondeterminism
-
-`review` tasks depend on an LLM judgment call, so a single run can vary:
-the same planted bug may be flagged in one run and missed in the next.
-Treat a single review-task result as a sample, not a verdict — run review
-tasks 3x and report the mean detection rate for stable numbers. `context`
-and `impact` tasks are deterministic given a fixed index.

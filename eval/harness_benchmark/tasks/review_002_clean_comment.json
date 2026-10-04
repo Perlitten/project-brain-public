@@ -4,7 +4,7 @@
   "clean": true,
   "patch": "diff --git a/brain/embeddings/constants.py b/brain/embeddings/constants.py\nindex 2ef97b7..ca49428 100644\n--- a/brain/embeddings/constants.py\n+++ b/brain/embeddings/constants.py\n@@ -53,6 +53,7 @@ def resolve_embedding_dimension(provider_name: Optional[str] = None, *, strict:\n                 f\"'{endpoint.model or '<unset>'}'. Set EMBEDDING_DIMENSION to the model's \"\n                 \"output width (changing it rebuilds the vector column; re-index afterwards).\"\n             )\n+        # Historical default: kept for backwards compatibility with pre-2.0 indexes.\n         return 1536\n     if strict:\n         raise EmbeddingDimensionUnknownError(f\"Unknown embedding provider '{name}'.\")\n",
   "must_detect_keywords": [],
-  "base_commit": "d30a11bf68ed9b706c81169b4f525f3908b5d143",
+  "base_commit": "b789f6c6ee49cf7ec817dba925142c3668a8ec3a",
   "provenance": {
     "kind": "curated",
     "source": "manual harness evaluation 2026-10-05",

@@ -108,65 +108,21 @@ def run_impact(api_url, api_key, repo, task):
     }
 
 
-def run_memory(api_url, api_key, repo, task):
-    """Plant a learning, ask a question, check the answer recalls it."""
-    import urllib.error
-
-    learning_id = None
-    try:
-        planted = api_post(api_url, api_key, "/learnings", {
-            "statement": task["learning_statement"],
-            "category": task.get("learning_category", "benchmark"),
-            "confidence": 0.9,
-        })
-        learning_id = planted.get("learning_id")
-        data = api_post(api_url, api_key, "/ask", {
-            "question": task["question"],
-            "repo_path": repo,
-        })
-        answer = data.get("answer", "") or ""
-        learnings_used = data.get("learnings_used", []) or []
-        used_statements = " ".join(lrng.get("statement", "") for lrng in learnings_used)
-        mentioned = [p for p in task.get("must_mention", []) if p in used_statements]
-        missing = [p for p in task.get("must_mention", []) if p not in used_statements]
-        recalled = len(missing) == 0 and len(task.get("must_mention", [])) > 0
-        return {
-            "recalled": recalled,
-            "answer_preview": answer[:300],
-            "metrics": {
-                "recall": 1.0 if recalled else 0.0,
-                "phrases_found": len(mentioned),
-                "phrases_missing": missing,
-            },
-        }
-    finally:
-        if learning_id:
-            try:
-                req = urllib.request.Request(
-                    api_url.rstrip("/") + f"/learnings/{learning_id}",
-                    headers={"X-API-Key": api_key},
-                    method="DELETE",
-                )
-                with urllib.request.urlopen(req, timeout=30):
-                    pass
-            except Exception:  # noqa: BLE001 - cleanup is best-effort
-                pass
-
-
 def run_review(api_url, api_key, repo, task):
     if git(repo, "status", "--porcelain").stdout.strip():
         return {"skipped": "dirty worktree — review tasks refuse to run"}
-    base = git(repo, "rev-parse", "HEAD").stdout.strip()
+    base = task["base_commit"]
+    head = git(repo, "rev-parse", "HEAD").stdout.strip()
+    if head != base:
+        return {"skipped": f"HEAD {head[:8]} != task base {base[:8]}"}
     branch = f"bench/{task['id']}"
     orig_branch = git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-    orig_ref = orig_branch if orig_branch != "HEAD" else base
     try:
         git(repo, "checkout", "-q", "-b", branch)
         proc = subprocess.run(["git", "apply", "--check", "-"], cwd=repo,
                               input=task["patch"], capture_output=True, text=True)
         if proc.returncode != 0:
-            return {"skipped": f"patch does not apply on {base[:8]}: {proc.stderr.strip()[:200]}",
-                    "base_used": base}
+            return {"skipped": f"patch does not apply: {proc.stderr.strip()[:200]}"}
         subprocess.run(["git", "apply", "-"], cwd=repo,
                        input=task["patch"], check=True, capture_output=True, text=True)
         git(repo, "-c", "user.name=bench", "-c", "user.email=bench@local",
@@ -175,7 +131,7 @@ def run_review(api_url, api_key, repo, task):
             "base": base, "head": branch, "repo_path": repo,
         }, timeout=420)
     finally:
-        git(repo, "checkout", "-q", orig_ref)
+        git(repo, "checkout", "-q", orig_branch if orig_branch != "HEAD" else head)
         git(repo, "branch", "-D", branch, check=False)
 
     llm_status = data.get("llm_review_status", "unknown")
@@ -194,8 +150,6 @@ def run_review(api_url, api_key, repo, task):
         metrics["detected"] = 1.0 if (detected and llm_status == "completed") else 0.0
         metrics["pass"] = metrics["detected"]
     return {
-        "base_used": base,
-        "base_pinned": task.get("base_commit"),
         "status": data.get("status"),
         "llm_review_status": llm_status,
         "rule_violations": data.get("rule_violations", []),
@@ -235,8 +189,6 @@ def main():
                 outcome = run_impact(args.api_url, api_key, repo, task)
             elif task["type"] == "review":
                 outcome = run_review(args.api_url, api_key, repo, task)
-            elif task["type"] == "memory":
-                outcome = run_memory(args.api_url, api_key, repo, task)
             else:
                 outcome = {"skipped": f"unknown type {task['type']}"}
         except Exception as e:  # noqa: BLE001 - benchmark must report, not crash
@@ -272,14 +224,14 @@ def summarize(results):
             val, key = "ERROR", r["error"]
         else:
             key = {"context": "must_have_hit_rate", "impact": "must_have_recall",
-                   "review": "pass", "memory": "recall"}.get(r["type"], "")
+                   "review": "pass"}.get(r["type"], "")
             val = m.get(key, "?")
         lines.append(f"| {r['id']} | {r['type']} | {key} | {val} | {r['duration_s']} |")
     lines.append("")
     for ttype, group in by_type.items():
         vals = [g["metrics"][k] for g in group
                 for k in [{"context": "must_have_hit_rate", "impact": "must_have_recall",
-                            "review": "pass", "memory": "recall"}[ttype]]
+                            "review": "pass"}[ttype]]
                 if isinstance(g.get("metrics", {}).get(k), (int, float))]
         if vals:
             scores[ttype] = round(mean(vals), 3)
