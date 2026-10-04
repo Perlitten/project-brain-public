@@ -45,7 +45,6 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_context_pack_repo_scope(conn)
     await _ensure_repository_and_symbol_indexes(conn)
     await _ensure_audit_request_id_column(conn)
-    await _ensure_memory_learnings_table(conn)
     pgvector_ready = await _ensure_pgvector_extension(conn)
     if pgvector_ready:
         await _ensure_embedding_vector_column(conn, dimension)
@@ -509,7 +508,7 @@ async def _ensure_embedding_vector_column(conn: AsyncConnection, dimension: int)
                     f"""
                     UPDATE embeddings
                     SET embedding = (
-                        (SELECT jsonb_agg(elem::text::float8 ORDER BY ord)
+                        (SELECT jsonb_agg(elem::text::float4)
                          FROM jsonb_array_elements(vector_data::jsonb) WITH ORDINALITY AS t(elem, ord)
                          WHERE ord <= {index_dim})::text
                     )::{target_type},
@@ -597,38 +596,3 @@ async def _ensure_audit_request_id_column(conn: AsyncConnection) -> None:
             await conn.execute(text(ddl))
         except Exception as exc:
             logger.warning(f"Could not apply audit request_id migration ({ddl}): {exc}")
-
-
-async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
-    """Create the L3 semantic memory table for consolidated learnings.
-
-    Fresh databases get this from SQLAlchemy metadata before migrations run;
-    this idempotent DDL keeps older self-hosted installs upgradeable by restart.
-    """
-    try:
-        await conn.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS memory_learnings (
-                    id BIGSERIAL PRIMARY KEY,
-                    statement TEXT NOT NULL,
-                    category VARCHAR(64),
-                    confidence FLOAT NOT NULL DEFAULT 0.5,
-                    evidence JSONB NOT NULL DEFAULT '[]',
-                    status VARCHAR(16) NOT NULL DEFAULT 'active',
-                    superseded_by BIGINT REFERENCES memory_learnings(id) ON DELETE SET NULL,
-                    valid_until TIMESTAMPTZ,
-                    repo_scope VARCHAR(1024),
-                    promoted_from VARCHAR(64),
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-                )
-                """
-            )
-        )
-        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memory_learnings_status ON memory_learnings (status)"))
-        await conn.execute(
-            text("CREATE INDEX IF NOT EXISTS ix_memory_learnings_status_scope ON memory_learnings (status, repo_scope)")
-        )
-    except Exception as exc:
-        logger.warning(f"Could not apply memory_learnings table migration: {exc}")

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -22,7 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from brain.embeddings.constants import EMBEDDING_DIMENSION
-from brain.embeddings.pgvector_sql import pgvector_column_type
+from brain.embeddings.pgvector_sql import pgvector_index_dimension
 
 
 class Base(DeclarativeBase):
@@ -211,7 +212,7 @@ class Embedding(Base):
     dimension: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(
-        pgvector_column_type(EMBEDDING_DIMENSION), nullable=True
+        Vector(pgvector_index_dimension(EMBEDDING_DIMENSION)), nullable=True
     )
 
 
@@ -396,35 +397,6 @@ class BrainInsight(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-
-class Learning(Base):
-    """Durable fact distilled from episodic traces by the memory consolidation pipeline.
-
-    L3 semantic memory: promoted from agent_task_events / MemoryHandoff via
-    lexicographic promotion gates (see brain/memory/consolidation.py).
-    Supersede, never delete — the chain is the audit trail.
-    """
-
-    __tablename__ = "memory_learnings"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
-    statement: Mapped[str] = mapped_column(Text, nullable=False)
-    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
-    evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", index=True)
-    # active | superseded | rejected
-    superseded_by: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
-    )
-    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    repo_scope: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    promoted_from: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
 
 
 class WorkerJobLease(Base):
