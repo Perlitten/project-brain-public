@@ -33,11 +33,18 @@ def _learning_scope_clause(repo_scope: Optional[str]):
     )
 
 
-async def _load_active_learnings(repo_scope: Optional[str]) -> List[Learning]:
+async def _load_active_learnings(
+    repo_scope: Optional[str],
+    query: Optional[str] = None,
+    limit: int = 10,
+) -> List[Learning]:
     """Read active, non-expired learnings fresh for every context-pack build.
 
     Uses this module's async_session_factory (same seam as normative memory)
     so tests can mock all pack-time DB access in one place.
+
+    When ``query`` is given, learnings are ranked by embedding cosine
+    similarity to the query (most relevant first); otherwise by confidence.
     """
     now = datetime.now(timezone.utc)
     async with async_session_factory() as session:
@@ -48,7 +55,31 @@ async def _load_active_learnings(repo_scope: Optional[str]) -> List[Learning]:
                 _learning_scope_clause(repo_scope),
             ).order_by(Learning.confidence.desc(), Learning.id.desc())
         )
-        return list(result.scalars().all())
+        learnings = list(result.scalars().all())
+
+    if query and len(learnings) > 1:
+        try:
+            from brain.llm import get_embedding_provider
+
+            embedder = get_embedding_provider()
+            query_vec = await embedder.embed(query)
+            vectors = await embedder.embed_batch([lrng.statement for lrng in learnings])
+            scored = sorted(
+                zip(learnings, vectors),
+                key=lambda pair: _cosine_similarity(query_vec, pair[1]),
+                reverse=True,
+            )
+            learnings = [lrng for lrng, _ in scored]
+        except Exception as exc:
+            logger.warning(f"Learning rerank by query failed, using confidence order: {exc}")
+    return learnings[:limit]
+
+
+def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    denom = (sum(x * x for x in a) ** 0.5) * (sum(x * x for x in b) ** 0.5)
+    if denom == 0:
+        return 0.0
+    return sum(x * y for x, y in zip(a, b)) / denom
 
 
 async def _latest_index_revision(repository_id: Optional[int]) -> Optional[Tuple[int, str]]:

@@ -108,6 +108,51 @@ def run_impact(api_url, api_key, repo, task):
     }
 
 
+def run_memory(api_url, api_key, repo, task):
+    """Plant a learning, ask a question, check the answer recalls it."""
+    import urllib.error
+
+    learning_id = None
+    try:
+        planted = api_post(api_url, api_key, "/learnings", {
+            "statement": task["learning_statement"],
+            "category": task.get("learning_category", "benchmark"),
+            "confidence": 0.9,
+        })
+        learning_id = planted.get("learning_id")
+        data = api_post(api_url, api_key, "/ask", {
+            "question": task["question"],
+            "repo_path": repo,
+        })
+        answer = data.get("answer", "") or ""
+        learnings_used = data.get("learnings_used", []) or []
+        used_statements = " ".join(lrng.get("statement", "") for lrng in learnings_used)
+        mentioned = [p for p in task.get("must_mention", []) if p in used_statements]
+        missing = [p for p in task.get("must_mention", []) if p not in used_statements]
+        recalled = len(missing) == 0 and len(task.get("must_mention", [])) > 0
+        return {
+            "recalled": recalled,
+            "answer_preview": answer[:300],
+            "metrics": {
+                "recall": 1.0 if recalled else 0.0,
+                "phrases_found": len(mentioned),
+                "phrases_missing": missing,
+            },
+        }
+    finally:
+        if learning_id:
+            try:
+                req = urllib.request.Request(
+                    api_url.rstrip("/") + f"/learnings/{learning_id}",
+                    headers={"X-API-Key": api_key},
+                    method="DELETE",
+                )
+                with urllib.request.urlopen(req, timeout=30):
+                    pass
+            except Exception:  # noqa: BLE001 - cleanup is best-effort
+                pass
+
+
 def run_review(api_url, api_key, repo, task):
     if git(repo, "status", "--porcelain").stdout.strip():
         return {"skipped": "dirty worktree — review tasks refuse to run"}
@@ -190,6 +235,8 @@ def main():
                 outcome = run_impact(args.api_url, api_key, repo, task)
             elif task["type"] == "review":
                 outcome = run_review(args.api_url, api_key, repo, task)
+            elif task["type"] == "memory":
+                outcome = run_memory(args.api_url, api_key, repo, task)
             else:
                 outcome = {"skipped": f"unknown type {task['type']}"}
         except Exception as e:  # noqa: BLE001 - benchmark must report, not crash
@@ -225,14 +272,14 @@ def summarize(results):
             val, key = "ERROR", r["error"]
         else:
             key = {"context": "must_have_hit_rate", "impact": "must_have_recall",
-                   "review": "pass"}.get(r["type"], "")
+                   "review": "pass", "memory": "recall"}.get(r["type"], "")
             val = m.get(key, "?")
         lines.append(f"| {r['id']} | {r['type']} | {key} | {val} | {r['duration_s']} |")
     lines.append("")
     for ttype, group in by_type.items():
         vals = [g["metrics"][k] for g in group
                 for k in [{"context": "must_have_hit_rate", "impact": "must_have_recall",
-                            "review": "pass"}[ttype]]
+                            "review": "pass", "memory": "recall"}[ttype]]
                 if isinstance(g.get("metrics", {}).get(k), (int, float))]
         if vals:
             scores[ttype] = round(mean(vals), 3)
