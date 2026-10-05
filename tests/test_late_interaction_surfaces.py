@@ -775,7 +775,7 @@ async def test_api_ask_and_search_share_integrated_code_search(monkeypatch):
     assert await core.ask_project(
         AskRequest(query="parser", repo_path="/app"),
         request,
-    ) == {"answer": "answer"}
+    ) == {"answer": "answer", "learnings_used": []}
     assert await core.search_code_endpoint(
         SearchRequest(query="parser", repo_path="/app", limit=3),
         request,
