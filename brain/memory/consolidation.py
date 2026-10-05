@@ -19,7 +19,6 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 
 from brain.database.harness_models import AgentTaskEvent
-from brain.database.models import Learning
 from brain.database.session import async_session_factory
 from brain.llm import get_embedding_provider, get_summarizer_provider
 from brain.memory.learning_store import LearningStore
@@ -176,7 +175,7 @@ async def evaluate_gates(
     if active:
         embedder = get_embedding_provider()
         cand_vec = await embedder.embed(candidate.statement)
-        act_vecs = await embedder.embed_batch([l.statement for l in active])
+        act_vecs = await embedder.embed_batch([lrng.statement for lrng in active])
         best_idx, best_sim = -1, -1.0
         for i, vec in enumerate(act_vecs):
             sim = _cosine(cand_vec, vec)
@@ -202,7 +201,7 @@ async def evaluate_gates(
     # G3 — Non-contradiction with active memory.
     if active:
         summarizer = get_summarizer_provider()
-        existing_text = "\n".join(f"- [{l.id}] {l.statement}" for l in active[:20])
+        existing_text = "\n".join(f"- [{lrng.id}] {lrng.statement}" for lrng in active[:20])
         try:
             raw = await summarizer.summarize(
                 _CONTRADICTION_PROMPT.format(statement=candidate.statement, existing=existing_text)
@@ -269,7 +268,7 @@ async def run_consolidation(
         candidate = await distill_candidate(cluster)
         report["candidates"] += 1
         gate = await evaluate_gates(candidate, require_approval=require_approval)
-        entry = {"statement": candidate.statement, "reasons": gate.reasons}
+        entry: Dict[str, Any] = {"statement": candidate.statement, "reasons": gate.reasons}
         if gate.outcome == GateOutcome.PROMOTE:
             if dry_run:
                 entry["dry_run"] = True

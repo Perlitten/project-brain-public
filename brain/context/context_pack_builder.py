@@ -798,8 +798,8 @@ class ContextPackBuilder:
 
         learnings_md = ""
         if active_learnings:
-            for l in active_learnings[:10]:
-                learnings_md += f"- {l.statement} _(confidence {l.confidence:.2f})_\n"
+            for lrng in active_learnings[:10]:
+                learnings_md += f"- {lrng.statement} _(confidence {lrng.confidence:.2f})_\n"
         else:
             learnings_md = "*No consolidated learnings yet.*\n"
 

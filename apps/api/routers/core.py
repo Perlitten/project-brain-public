@@ -3,7 +3,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -34,7 +34,6 @@ from apps.api.schemas import (
     FeatureCreate,
     ImpactRequest,
     IndexRequest,
-    LearningCreate,
     RelatedRequest,
     RuleCreate,
     SearchRequest,
@@ -369,12 +368,8 @@ async def late_interaction_status(repo_path: str):
 @router.post("/index", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def index_repository(body: IndexRequest):
     try:
-        repo_path = resolve_repo_path(body.repo_path)
-    except ValueError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    try:
         indexer = FileIndexer()
-        repo = await indexer.index_repository(repo_path)
+        repo = await indexer.index_repository(body.repo_path)
         return {
             "status": "success",
             "repo_id": repo.id,
@@ -440,7 +435,6 @@ async def ask_project(body: AskRequest, request: Request):
             logger.warning(f"Decision retrieval skipped for /ask: {exc}")
             recorded_decisions_str = "Unavailable"
 
-        learnings = []
         try:
             learnings = await LearningStore.list_active_learnings(rule_scope)
             learnings_str = (
@@ -514,13 +508,7 @@ async def ask_project(body: AskRequest, request: Request):
             # the shorter answer better rather than thinner.
             max_tokens=ASK_MAX_ANSWER_TOKENS,
         )
-        return {
-            "answer": response,
-            "learnings_used": [
-                {"id": lrng.id, "statement": lrng.statement, "confidence": lrng.confidence}
-                for lrng in learnings[:ASK_DECISION_LIMIT]
-            ],
-        }
+        return {"answer": response}
     except Exception as exc:
         # The exception type carries the diagnosis here: httpx timeouts and
         # asyncio cancellations both stringify to "", so the old message was
@@ -735,57 +723,6 @@ async def create_rule(body: RuleCreate):
     except Exception as exc:
         logger.error(f"Failed to add rule: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to add rule") from exc
-
-
-@router.get("/learnings", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def get_learnings(repo_path: Optional[str] = None):
-    try:
-        learnings = await LearningStore.list_active_learnings(repo_path)
-        return [
-            {
-                "id": lrng.id,
-                "statement": lrng.statement,
-                "category": lrng.category,
-                "confidence": lrng.confidence,
-                "repo_scope": lrng.repo_scope,
-                "status": lrng.status,
-            }
-            for lrng in learnings
-        ]
-    except Exception as exc:
-        logger.error(f"Failed to fetch learnings: {type(exc).__name__}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to fetch learnings") from exc
-
-
-@router.post("/learnings", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def create_learning(body: LearningCreate):
-    try:
-        valid_until = None
-        if body.valid_until:
-            from datetime import datetime
-
-            valid_until = datetime.fromisoformat(body.valid_until)
-        learning_id = await LearningStore.add_learning(
-            statement=body.statement,
-            category=body.category,
-            confidence=body.confidence,
-            repo_scope=body.repo_scope,
-            valid_until=valid_until,
-        )
-        return {"status": "success", "learning_id": learning_id}
-    except Exception as exc:
-        logger.error(f"Failed to add learning: {type(exc).__name__}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to add learning") from exc
-
-
-@router.delete("/learnings/{learning_id}", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def delete_learning(learning_id: int):
-    try:
-        await LearningStore.reject(learning_id)
-        return {"status": "success", "learning_id": learning_id}
-    except Exception as exc:
-        logger.error(f"Failed to reject learning: {type(exc).__name__}: {exc}")
-        raise HTTPException(status_code=500, detail="Failed to reject learning") from exc
 
 
 @router.get("/features", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
