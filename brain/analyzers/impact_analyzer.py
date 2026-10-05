@@ -9,12 +9,44 @@ from sqlalchemy import select
 
 from brain.config.paths import get_repo_root, reports_dir
 from brain.config.settings import settings
-
 from brain.database.session import async_session_factory
 from brain.database.models import Rule
 from brain.database.repository_utils import require_repository_by_path
 from brain.graph.graph_client import GraphClient
 from brain.llm.router import TaskKind, get_model_router
+
+# Words that end up as Symbol nodes when the graph extractor parses SQL text
+# or prose, but are essentially never real code symbols. They pollute impact
+# analysis ("WHERE", "VARCHAR", "btrim" showing up as affected by a rename).
+# Matching is case-insensitive; file paths are never filtered.
+_SQL_NOISE_WORDS = frozenset(
+    """
+    select where and or not insert update delete from join on as into values
+    create table index varchar text integer bigint timestamp timestamptz
+    boolean json jsonb primary key foreign references if exists add column
+    order by group limit offset union distinct null like ilike in between
+    case when then else end coalesce now count sum avg min max lower upper
+    trim btrim ltrim rtrim length set
+    """.split()
+)
+
+_ENGLISH_NOISE_WORDS = frozenset(
+    """
+    the a an in on of to for with ok width know
+    """.split()
+)
+
+
+def _is_noise_node(name: str | None) -> bool:
+    """True for graph nodes that look like SQL/prose debris, not code."""
+    if not name:
+        return True
+    if "/" in name or "." in name:
+        return False  # file paths and dotted paths are always meaningful
+    low = name.strip().lower()
+    if low in ("unknown", ""):
+        return True
+    return low in _SQL_NOISE_WORDS or low in _ENGLISH_NOISE_WORDS
 
 
 class ImpactAnalyzer:
@@ -60,9 +92,12 @@ class ImpactAnalyzer:
                             node = record.get(key)
                             if not node:
                                 continue
+                            node_name = node.get("path") or node.get("name") or "Unknown"
+                            if _is_noise_node(node_name):
+                                continue
                             node_id = getattr(node, "element_id", None) or str(node)
                             nodes[node_id] = {
-                                "name": node.get("path") or node.get("name") or "Unknown",
+                                "name": node_name,
                                 "type": next(iter(node.labels), "Unknown"),
                                 "distance": distance,
                             }
@@ -173,7 +208,7 @@ class ImpactAnalyzer:
                         n_labels = list(node_n.labels)
                         n_label = n_labels[0] if n_labels else "Unknown"
 
-                        if n_id not in visited_nodes:
+                        if n_id not in visited_nodes and not _is_noise_node(n_name):
                             visited_nodes[n_id] = {
                                 "name": n_name,
                                 "type": n_label,
@@ -194,7 +229,7 @@ class ImpactAnalyzer:
                                 d_name = direct_node.get("name", "Unknown")
                                 d_labels = list(direct_node.labels)
                                 d_label = d_labels[0] if d_labels else "Unknown"
-                                if d_id not in visited_nodes:
+                                if d_id not in visited_nodes and not _is_noise_node(d_name):
                                     visited_nodes[d_id] = {
                                         "name": d_name,
                                         "type": d_label,
@@ -213,7 +248,7 @@ class ImpactAnalyzer:
                                 i_name = indirect_node.get("name", "Unknown")
                                 i_labels = list(indirect_node.labels)
                                 i_label = i_labels[0] if i_labels else "Unknown"
-                                if i_id not in visited_nodes:
+                                if i_id not in visited_nodes and not _is_noise_node(i_name):
                                     visited_nodes[i_id] = {
                                         "name": i_name,
                                         "type": i_label,

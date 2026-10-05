@@ -23,6 +23,46 @@ def _safe_git_ref(ref: str) -> bool:
     return bool(ref) and not ref.startswith("-") and bool(_GIT_REF_RE.match(ref))
 
 
+# Matches a backslash that does NOT start a valid JSON escape sequence.
+# LLMs frequently emit raw backslashes (Windows paths, regexes) inside the
+# JSON they are asked to produce, which makes json.loads fail with
+# "Invalid \escape".
+_INVALID_ESCAPE_RE = re.compile(r"\\(?![\"\\/bfnrtu])")
+
+
+def _repair_invalid_escapes(text: str) -> str:
+    """Escape lone backslashes so the text becomes parseable JSON."""
+    return _INVALID_ESCAPE_RE.sub(r"\\\\", text)
+
+
+def _extract_json_object(text: str) -> str:
+    """Cut surrounding prose/fences down to the outermost JSON object."""
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError("No JSON object found in LLM response")
+    return text[start : end + 1]
+
+
+def _parse_llm_json_response(response: str) -> dict:
+    """Parse the reviewer's JSON, tolerating fences, prose and bad escapes.
+
+    Raises the underlying exception when the payload cannot be salvaged,
+    so callers can mark the automated review as failed instead of silently
+    reporting "no issues found".
+    """
+    cleaned = response.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\n", "", cleaned)
+        cleaned = re.sub(r"\n```$", "", cleaned)
+    cleaned = _extract_json_object(cleaned.strip())
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    return json.loads(_repair_invalid_escapes(cleaned))
+
+
 class DiffAnalyzer:
     """Analyzes git diffs for rule compliance, test coverage, and code quality."""
 
@@ -175,32 +215,38 @@ class DiffAnalyzer:
         rule_violations = []
         suspicious_changes = []
         feedback = "No feedback generated."
+        llm_review_status = "failed"
 
         try:
             response = await self.router.llm(TaskKind.SYNTHESIS).generate(
                 prompt=llm_prompt,
                 system_instruction="You are an expert code reviewer. Respond with valid JSON only."
             )
-            cleaned = response.strip()
-            if cleaned.startswith("```"):
-                cleaned = re.sub(r"^```(?:json)?\n", "", cleaned)
-                cleaned = re.sub(r"\n```$", "", cleaned)
-            review_data = json.loads(cleaned.strip())
+            review_data = _parse_llm_json_response(response)
             rule_violations = review_data.get("rule_violations", [])
             suspicious_changes = review_data.get("suspicious_changes", [])
             feedback = review_data.get("feedback", feedback)
+            llm_review_status = "completed"
         except Exception as e:
-            logger.warning(f"Failed to run LLM diff review: {e}. Using fallback defaults.")
-            # Fallback
-            feedback = "Automatic LLM review unavailable. Checked files manually."
+            logger.warning(f"Failed to run LLM diff review: {e}. Marking automated review as failed.")
+            # Fallback: be explicit that the automated checks did NOT run, so an
+            # empty findings list must never be read as "the diff is clean".
+            feedback = (
+                "Automatic LLM review could not be completed, so rule-violation and "
+                "suspicious-change checks were NOT performed. Treat this report as "
+                "incomplete and review the diff manually."
+            )
 
         # 5. Format Markdown Report
-        violations_md = ""
-        if rule_violations:
-            for violation in rule_violations:
-                violations_md += f"- **Rule violation**: `{violation.get('rule_id')}`: {violation.get('details')}\n"
+        if llm_review_status == "completed":
+            violations_md = ""
+            if rule_violations:
+                for violation in rule_violations:
+                    violations_md += f"- **Rule violation**: `{violation.get('rule_id')}`: {violation.get('details')}\n"
+            else:
+                violations_md = "*No rule violations detected.*\n"
         else:
-            violations_md = "*No rule violations detected.*\n"
+            violations_md = "*Automated review did not run — rule violations were not checked.*\n"
 
         test_coverage_md = ""
         if source_files:
@@ -213,11 +259,14 @@ class DiffAnalyzer:
             test_coverage_md = "*No source files modified in this diff.*\n"
 
         unrelated_changes_md = ""
-        if suspicious_changes:
-            for item in suspicious_changes:
-                unrelated_changes_md += f"- {item}\n"
+        if llm_review_status == "completed":
+            if suspicious_changes:
+                for item in suspicious_changes:
+                    unrelated_changes_md += f"- {item}\n"
+            else:
+                unrelated_changes_md = "*No suspicious or unrelated changes identified.*\n"
         else:
-            unrelated_changes_md = "*No suspicious or unrelated changes identified.*\n"
+            unrelated_changes_md = "*Automated review did not run — suspicious changes were not checked.*\n"
 
         markdown_content = f"""# Git Diff Review Report
 
@@ -256,7 +305,9 @@ class DiffAnalyzer:
             head_commit = "unknown"
 
         status = "approved"
-        if rule_violations or missing_tests or suspicious_changes:
+        if rule_violations or missing_tests or suspicious_changes or llm_review_status == "failed":
+            # Never report "approved" when the automated review did not run:
+            # an unchecked diff is not a clean diff.
             status = "needs_review"
 
         async with async_session_factory() as session:
@@ -273,6 +324,7 @@ class DiffAnalyzer:
         return {
             "id": review_id,
             "status": status,
+            "llm_review_status": llm_review_status,
             "modified_files": modified_files,
             "rule_violations": rule_violations,
             "missing_tests": missing_tests,

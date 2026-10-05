@@ -32,6 +32,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _cleanup_legacy_memory_probes(conn)
     await _ensure_decision_repo_scope(conn)
     await _ensure_rule_repo_scope(conn)
+    await _ensure_files_path_uniqueness(conn)
     await _ensure_decision_title_uniqueness(conn)
     await _backfill_non_current_knowledge_authority(conn)
     await _ensure_insights_table(conn)
@@ -131,6 +132,38 @@ async def _ensure_rule_repo_scope(conn: AsyncConnection) -> None:
             """
             CREATE INDEX IF NOT EXISTS ix_rules_repo_path
             ON rules (repo_path)
+            """
+        )
+    )
+
+
+async def _ensure_files_path_uniqueness(conn: AsyncConnection) -> None:
+    """One canonical files row per (repository_id, path).
+
+    The file indexer's read-then-write upsert could race and insert duplicate
+    rows for the same path; every later reindex of such a file then failed
+    with MultipleResultsFound and the whole run degraded to stale_blocked.
+    Dedupe first (keep the latest row; FK cascades clean up chunks/symbols),
+    then enforce uniqueness.
+    """
+    await conn.execute(
+        text(
+            """
+            DELETE FROM files WHERE id IN (
+                SELECT id FROM (
+                    SELECT id, ROW_NUMBER() OVER (
+                        PARTITION BY repository_id, path ORDER BY id DESC
+                    ) AS rn FROM files
+                ) s WHERE rn > 1
+            )
+            """
+        )
+    )
+    await conn.execute(
+        text(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_files_repository_path
+            ON files (repository_id, path)
             """
         )
     )
