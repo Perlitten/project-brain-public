@@ -630,5 +630,15 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
         await conn.execute(
             text("CREATE INDEX IF NOT EXISTS ix_memory_learnings_status_scope ON memory_learnings (status, repo_scope)")
         )
+        from brain.embeddings.pgvector_sql import pgvector_column_sql_type
+        from brain.embeddings.constants import EMBEDDING_DIMENSION
+
+        vec_type = pgvector_column_sql_type(EMBEDDING_DIMENSION)
+        await conn.execute(
+            text(f"ALTER TABLE memory_learnings ADD COLUMN IF NOT EXISTS embedding {vec_type}")
+        )
+        await conn.execute(
+            text("ALTER TABLE memory_learnings ADD COLUMN IF NOT EXISTS embedding_model VARCHAR(128)")
+        )
     except Exception as exc:
         logger.warning(f"Could not apply memory_learnings table migration: {exc}")

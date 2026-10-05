@@ -7,6 +7,7 @@ around async_session_factory, no ORM sessions leak past this module.
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from sqlalchemy import func, or_, select
 
 from brain.database.models import Learning
@@ -37,10 +38,28 @@ class LearningStore:
         valid_until: Optional[datetime] = None,
         promoted_from: Optional[str] = None,
     ) -> int:
-        """Save a new learning and return its id."""
+        """Save a new learning and return its id.
+
+        Computes the statement embedding once at write time so query-ranked
+        retrieval and G1 dedup never pay per-query embedding costs. If the
+        embedding provider is unavailable, the learning is still saved with
+        a NULL embedding; retrieval falls back to confidence ordering.
+        """
         statement = statement.strip()
         if not statement:
             raise ValueError("Learning statement must not be empty")
+        embedding: Optional[List[float]] = None
+        embedding_model: Optional[str] = None
+        try:
+            from brain.llm import get_embedding_provider
+
+            embedder = get_embedding_provider()
+            embedding = await embedder.embed(statement)
+            embedding_model = getattr(embedder, "model", None) or getattr(
+                embedder, "provider", "unknown"
+            )
+        except Exception as exc:
+            logger.warning(f"Learning embedding failed, storing NULL: {exc}")
         async with async_session_factory() as session:
             learning = Learning(
                 statement=statement,
@@ -51,6 +70,8 @@ class LearningStore:
                 repo_scope=normalize_repo_scope(repo_scope),
                 valid_until=valid_until,
                 promoted_from=promoted_from,
+                embedding=embedding,
+                embedding_model=embedding_model,
             )
             session.add(learning)
             await session.commit()

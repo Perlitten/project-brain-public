@@ -421,6 +421,10 @@ class Learning(Base):
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     repo_scope: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     promoted_from: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(
+        pgvector_column_type(EMBEDDING_DIMENSION), nullable=True
+    )
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

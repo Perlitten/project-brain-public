@@ -1,0 +1,38 @@
+{
+  "results": {
+    "dedup": {
+      "n_pairs": 5,
+      "duplicates_caught": 3,
+      "dedup_rate": 0.6,
+      "details": [
+        {
+          "dup": "Embeddings use dimension 2048.",
+          "caught": true,
+          "reason": "G1: similarity 0.96 to learning 24"
+        },
+        {
+          "dup": "Diff-review must not approve when LLM JSON ca",
+          "caught": true,
+          "reason": "G1: similarity 0.94 to learning 25"
+        },
+        {
+          "dup": "In docker-compose, postgres listens on 5433.",
+          "caught": false,
+          "reason": "G1 pass: no duplicate"
+        },
+        {
+          "dup": "The daily backup cron writes to ~/workspace/b",
+          "caught": false,
+          "reason": "G1 pass: no duplicate"
+        },
+        {
+          "dup": "The neo4j graph is rebuilt by running reindex",
+          "caught": true,
+          "reason": "G1: similarity 0.95 to learning 28"
+        }
+      ],
+      "status": "ok",
+      "duration_s": 55.4
+    }
+  }
+}

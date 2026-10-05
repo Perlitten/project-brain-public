@@ -1,0 +1,13 @@
+{
+  "results": {
+    "double_promote": {
+      "run1_status": "completed",
+      "run2_status": "skipped",
+      "runs_skipped": 1,
+      "serialized": true,
+      "note": "Advisory lock serializes concurrent consolidation runs; the loser skips instead of racing through G1.",
+      "status": "ok",
+      "duration_s": 0.1
+    }
+  }
+}
