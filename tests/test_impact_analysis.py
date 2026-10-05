@@ -132,3 +132,51 @@ def test_deterministic_keywords_empty_request():
 
     assert _deterministic_keywords("a b c") == []
     assert _deterministic_keywords("") == []
+
+
+def test_split_keyword_compounds():
+    """Compound keywords are split into searchable parts, original kept."""
+    from brain.analyzers.impact_analyzer import _split_keyword
+
+    parts = _split_keyword("indexing_source")
+    assert "indexing_source" in parts
+    assert "indexing" in parts
+    assert "source" in parts
+
+    parts = _split_keyword("getEmbeddingDims")
+    assert "get" in parts
+    assert "Embedding" in parts or "embedding" in [p.lower() for p in parts]
+
+    # Short fragments are dropped, but the original compound is kept
+    # if it meets the length threshold.
+    assert _split_keyword("a_bc") == ["a_bc"]
+    assert _split_keyword("ab") == []
+
+
+def test_llm_keywords_union_with_deterministic():
+    """LLM keywords are merged with deterministic ones for robustness."""
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+    from brain.analyzers.impact_analyzer import ImpactAnalyzer
+
+    async def go():
+        analyzer = ImpactAnalyzer("/tmp")
+        mock_llm = AsyncMock()
+        # LLM omits 'database' and returns a compound that matches nothing.
+        mock_llm.generate.return_value = '["File", "indexing_source", "nullable", "column"]'
+        with patch.object(type(analyzer.router), "llm", return_value=mock_llm):
+            kws = await analyzer._llm_keywords(
+                "Add a new nullable column to the File database model for tracking the indexing source"
+            )
+        low = {k.lower() for k in kws}
+        # LLM terms preserved...
+        assert "file" in low
+        # ...compounds split...
+        assert "indexing" in low
+        assert "source" in low
+        # ...and deterministic backup fills the gap the LLM left.
+        assert "database" in low
+        assert "model" in low
+        return True
+
+    assert asyncio.run(go())
