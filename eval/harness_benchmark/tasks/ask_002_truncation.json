@@ -1,0 +1,14 @@
+{
+  "id": "ask-002",
+  "type": "ask",
+  "query": "Explain the full indexing pipeline from file discovery through embedding storage, including all major components and their interactions.",
+  "must_not_contain": ["thinking process", "<think>"],
+  "must_contain": ["index", "embedding"],
+  "max_answer_chars": 8000,
+  "check_truncation": true,
+  "provenance": {
+    "kind": "quality",
+    "source": "harsh benchmark 2026-10-05",
+    "note": "Long complex query. Tests if answer completes without mid-sentence truncation."
+  }
+}

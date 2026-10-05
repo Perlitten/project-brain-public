@@ -1,0 +1,13 @@
+{
+  "id": "ask-001",
+  "type": "ask",
+  "query": "How does the worker queue handle retries?",
+  "must_not_contain": ["thinking process", "<think>", "1.  **Analyze", "Let me scan through", "I need to output"],
+  "must_contain": ["schedule_retry", "backoff", "Redis"],
+  "max_answer_chars": 3000,
+  "provenance": {
+    "kind": "quality",
+    "source": "harsh benchmark 2026-10-05",
+    "note": "Tests /ask answer quality: no thinking leak, no truncation, relevant content."
+  }
+}
