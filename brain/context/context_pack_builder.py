@@ -122,7 +122,7 @@ async def _load_active_learnings(
             for lrng in learnings:
                 vec = getattr(lrng, "embedding", None)
                 if _debug:
-                    logger.warning(f"DEDUP check id={getattr(lrng, 'id', '?')} vec={'set' if vec else 'NONE'}")
+                    logger.warning(f"DEDUP check id={getattr(lrng, 'id', '?')} vec={'set' if vec else 'NONE'} stmt={str(getattr(lrng, 'statement', ''))[:50]}")
                 if vec is None:
                     deduped.append(lrng)
                     continue
@@ -140,9 +140,13 @@ async def _load_active_learnings(
                         # Same topic as an already-selected (newer, higher-ranked)
                         # learning — this one is stale.
                         is_superseded = True
+                        if _debug:
+                            logger.warning(f"DEDUP suppressed id={getattr(lrng, 'id', '?')} sim={sim:.3f} vs kept id={getattr(kept, 'id', '?')}")
                         break
                 if not is_superseded:
                     deduped.append(lrng)
+            if _debug:
+                logger.warning(f"DEDUP result: {[getattr(l, 'id', '?') for l in deduped]}")
             learnings = deduped
         except Exception as exc:
             logger.warning(f"Learning rerank by query failed, using confidence order: {exc}")
