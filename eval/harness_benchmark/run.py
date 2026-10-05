@@ -94,6 +94,10 @@ def run_impact(api_url, api_key, repo, task):
     data = api_post(api_url, api_key, "/impact", {
         "change_request": task["change_request"],
         "repo_path": repo,
+        # Fast mode: deterministic keyword extraction, no LLM calls.
+        # Full mode takes ~4min per query (two LLM calls); fast mode
+        # returns in ~1s with equal or better recall on these tasks.
+        "fast": True,
     })
     raw = list(data.get("directly_affected", [])) + list(data.get("indirectly_affected", []))
     files = [e for e in raw if is_fileish(e)]
