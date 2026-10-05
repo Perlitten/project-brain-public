@@ -78,6 +78,11 @@ async def _load_active_learnings(
                 batch = await embedder.embed_batch([m.statement for m in missing])
                 for lrng, vec in zip(missing, batch):
                     scored.append((lrng, _cosine_similarity(query_vec, vec)))
+                    # Store for the dedup pass below (avoids re-embedding).
+                    try:
+                        lrng.embedding = vec
+                    except Exception:
+                        pass
             # Rank by combined score: cosine similarity is primary, but
             # recency and confidence break ties between learnings on the
             # same topic. Without this, a superseded learning (e.g. "use
