@@ -1,0 +1,13 @@
+{
+  "id": "review-007",
+  "type": "review",
+  "clean": true,
+  "patch": "diff --git a/brain/config/paths.py b/brain/config/paths.py\nindex 69805af..40892a1 100644\n--- a/brain/config/paths.py\n+++ b/brain/config/paths.py\n@@ -1,5 +1,6 @@\n \"\"\"Path helpers for portable repo-root resolution.\"\"\"\n \n+import subprocess\n from pathlib import Path\n import tempfile\n from typing import Optional\n",
+  "must_detect_keywords": [],
+  "base_commit": "63affdfa6da232ea9f92b050ac1670d6d85ef780",
+  "provenance": {
+    "kind": "false-positive-trap",
+    "source": "benchmark hardening 2026-10-05",
+    "note": "Clean diff: subprocess with hardcoded safe args (no user input). A good reviewer should NOT flag this. Tests false-positive rate."
+  }
+}

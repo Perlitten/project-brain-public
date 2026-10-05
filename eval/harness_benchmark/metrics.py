@@ -47,6 +47,33 @@ def detection(must_detect_keywords, review_text):
     return all(kw.lower() in text for kw in must_detect_keywords)
 
 
+def mrr(expected, got):
+    """Mean Reciprocal Rank: 1/rank of the first expected item found (0..1).
+
+    Rewards putting the right files early, not just somewhere in the list.
+    """
+    expected_set = set(expected)
+    if not expected_set:
+        return 1.0
+    for i, g in enumerate(got):
+        if g in expected_set:
+            return 1.0 / (i + 1)
+    return 0.0
+
+
+def percentile(values, p):
+    """p-th percentile of values (0..100)."""
+    values = sorted(values)
+    if not values:
+        return 0.0
+    k = (len(values) - 1) * p / 100
+    f = int(k)
+    c = min(f + 1, len(values) - 1)
+    if f == c:
+        return values[f]
+    return values[f] * (c - k) + values[c] * (k - f)
+
+
 def mean(values):
     values = list(values)
     return sum(values) / len(values) if values else 0.0
