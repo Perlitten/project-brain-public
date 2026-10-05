@@ -56,3 +56,9 @@ audits/**/*.json
 eval/harness_benchmark/results/
 eval/memory_benchmark/results/
 eval/mutation_testing/results/
+
+# Agent and IDE directories
+.claude/
+.cursor/
+.agents/
+.cline/
