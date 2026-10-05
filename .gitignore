@@ -51,3 +51,8 @@ audits/**/shots/
 node_modules/
 # Audit output: regenerate with scripts/audit_dashboard.py, do not version.
 audits/**/*.json
+
+# Benchmark / eval result artifacts (generated, not source)
+eval/harness_benchmark/results/
+eval/memory_benchmark/results/
+eval/mutation_testing/results/
