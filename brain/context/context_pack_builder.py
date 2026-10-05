@@ -135,7 +135,17 @@ async def _load_active_learnings(
                             gsim = _cosine_similarity(vec_list, list(rep_vec))
                         except Exception:
                             continue
-                        if gsim >= 0.8:
+                        # Same topic if high cosine similarity, OR moderate
+                        # similarity with strong keyword overlap (handles
+                        # paraphrases like "systemctl restart" vs "brain-env.sh
+                        # wrapper" for the same "restart Brain API" topic).
+                        same_topic = gsim >= 0.8
+                        if not same_topic and gsim >= 0.65:
+                            kw1 = _keywords(str(getattr(lrng, "statement", "")))
+                            kw2 = _keywords(str(getattr(group[0][0], "statement", "")))
+                            if len(kw1 & kw2) >= 3:
+                                same_topic = True
+                        if same_topic:
                             group.append((lrng, sim, ts, conf))
                             placed = True
                             break
@@ -160,6 +170,17 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
     if denom == 0:
         return 0.0
     return sum(x * y for x, y in zip(a, b)) / denom
+
+
+def _keywords(text: str) -> set:
+    """Extract significant keywords for topic-overlap detection."""
+    import re
+    words = re.findall(r"\b[a-z]{3,}\b", text.lower())
+    stop = {
+        "the", "with", "via", "and", "for", "are", "was", "were", "been",
+        "probe", "benchmark", "this", "that", "from", "into", "over",
+    }
+    return {w for w in words if w not in stop}
 
 
 async def _latest_index_revision(repository_id: Optional[int]) -> Optional[Tuple[int, str]]:
