@@ -1,0 +1,18 @@
+{
+  "id": "context-001",
+  "type": "context",
+  "task_description": "Add a new LLM provider preset for a fictional provider called AcmeAI with OpenAI-compatible API",
+  "must_have_files": [
+    "brain/llm/presets.py"
+  ],
+  "nice_to_have_files": [
+    "brain/llm/providers/openai_compatible.py",
+    "brain/llm/providers/openai_provider.py"
+  ],
+  "base_commit": "d30a11bf68ed9b706c81169b4f525f3908b5d143",
+  "provenance": {
+    "kind": "curated",
+    "source": "manual harness evaluation 2026-10-05",
+    "note": "Verified: /context returned presets.py among 6 candidates."
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "context-002",
+  "type": "context",
+  "task_description": "How does the embedding backfill work and how is it triggered? Which files implement it?",
+  "must_have_files": [
+    "brain/embeddings/backfill.py"
+  ],
+  "nice_to_have_files": [
+    "apps/cli/commands/embeddings.py",
+    "brain/embeddings/__init__.py"
+  ],
+  "base_commit": "682ea7c53179964823785f5591b20e3d2a430226",
+  "provenance": {
+    "kind": "curated",
+    "source": "benchmark expansion 2026-10-05",
+    "note": "backfill.py is the core implementation; CLI command triggers it."
+  }
+}
