@@ -1034,10 +1034,14 @@ class FileIndexer:
         async with async_session_factory() as session:
             async with session.begin():
                 await assert_current_db_fence(session)
-                # Check if file has already been indexed and hash matches
-                stmt = select(File).where(File.repository_id == repo_id, File.path == rel_path)
+                # Check if file has already been indexed and hash matches.
+                # The unique index on (repository_id, path) guarantees at most
+                # one row; order defensively so a pre-migration duplicate still
+                # resolves to the latest instead of raising.
+                stmt = (select(File).where(File.repository_id == repo_id, File.path == rel_path)
+                        .order_by(File.id.desc()))
                 res = await session.execute(stmt)
-                existing_file = res.scalar_one_or_none()
+                existing_file = res.scalars().first()
 
                 existing_chunks = 0
                 if existing_file:
@@ -1173,12 +1177,16 @@ class FileIndexer:
                 async with session.begin():
                     await assert_current_db_fence(session)
                     await check_job_lease()
-                    existing = (await session.execute(select(File).where(File.repository_id == repo_id,
-                                                                         File.path == rel_path))).scalar_one_or_none()
-                    if existing is not None:
-                        obsolete_chunk_ids = list((await session.scalars(select(FileChunk.id)
+                    # Delete-all (not delete-one): with the unique index there can
+                    # only be one row, but a pre-migration duplicate must not
+                    # raise MultipleResultsFound and fail the whole run.
+                    existing_rows = (await session.scalars(select(File).where(
+                        File.repository_id == repo_id, File.path == rel_path))).all()
+                    for existing in existing_rows:
+                        obsolete_chunk_ids.extend((await session.scalars(select(FileChunk.id)
                                                   .where(FileChunk.file_id == existing.id))).all())
                         await session.delete(existing)
+                    if existing_rows:
                         await session.flush()
                     file_obj = File(repository_id=repo_id, path=rel_path, language=ext[1:] if ext else "unknown",
                                     file_type=file_type, hash=file_hash, summary=file_summary,
