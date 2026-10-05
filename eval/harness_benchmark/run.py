@@ -396,7 +396,8 @@ def summarize(results):
     for ttype, group in by_type.items():
         vals = [g["metrics"][k] for g in group
                 for k in [{"context": "must_have_hit_rate", "impact": "must_have_recall",
-                            "review": "pass", "memory": "recall"}[ttype]]
+                            "review": "pass", "memory": "recall",
+                            "ask": "ask_quality"}[ttype]]
                 if isinstance(g.get("metrics", {}).get(k), (int, float))]
         if vals:
             scores[ttype] = round(mean(vals), 3)
