@@ -84,7 +84,7 @@ ASK_DECISION_FIELD_CHARS = 280
 # concern (MCP proxy timeout) is real, but 700 tokens is too low for a useful
 # answer once the prompt context is large. Thinking blocks are stripped
 # separately (see _strip_thinking_blocks) so these tokens go to the answer.
-ASK_MAX_ANSWER_TOKENS = 1200
+ASK_MAX_ANSWER_TOKENS = 2500
 
 
 def _strip_thinking_blocks(text: str) -> str:
@@ -100,11 +100,6 @@ def _strip_thinking_blocks(text: str) -> str:
 
     if not text:
         return text
-    # Primary: extract <answer>...</answer> if present. The /ask prompt asks
-    # the model to put the final answer in these tags, keeping reasoning out.
-    m = re.search(r"<answer>(.*?)</answer>", text, flags=re.DOTALL | re.IGNORECASE)
-    if m:
-        return m.group(1).strip()
     # <think>...</think>, <reasoning>...</reasoning>, <thought>...</thought> (any case).
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<reasoning>.*?</reasoning>", "", text, flags=re.DOTALL | re.IGNORECASE)
@@ -556,10 +551,9 @@ async def ask_project(body: AskRequest, request: Request):
             system_instruction=(
                 "You are an expert developer working on Project Brain. Be specific and "
                 "brief — at most ~8 sentences unless the question demands more. "
-                "Put your final answer inside <answer>...</answer> tags. You may "
-                "reason before the tags, but the ONLY text the user sees is what "
-                "is inside the tags. Never put reasoning, analysis steps, or "
-                "phrases like 'Here's a thinking process' inside the tags. "
+                "Output ONLY the final answer: never include your reasoning process, "
+                "analysis steps, thinking blocks, or phrases like 'Here's a thinking "
+                "process'. "
                 # Without this the model refuses non-English questions outright
                 # ("I couldn't understand your query as it seems to be in a
                 # different language"), which makes the Telegram bot useless to
