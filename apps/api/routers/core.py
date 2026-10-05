@@ -80,7 +80,47 @@ ASK_RETRIEVAL_LIMIT = 10
 # retrieved code out of the prompt.
 ASK_DECISION_LIMIT = 12
 ASK_DECISION_FIELD_CHARS = 280
-ASK_MAX_ANSWER_TOKENS = 700
+# Raised 2026-10-05 from 700: answers were truncated mid-sentence. The latency
+# concern (MCP proxy timeout) is real, but 700 tokens is too low for a useful
+# answer once the prompt context is large. Thinking blocks are stripped
+# separately (see _strip_thinking_blocks) so these tokens go to the answer.
+ASK_MAX_ANSWER_TOKENS = 1200
+
+
+def _strip_thinking_blocks(text: str) -> str:
+    """Remove LLM reasoning/thinking blocks from a response.
+
+    Reasoning models (e.g. Nemotron) emit their chain-of-thought inline in
+    several formats: <think>...</think> tags, prose like "Here's a thinking
+    process: ...", or a numbered analysis ("1. **Analyze User Query**: ...").
+    Users should never see this — it leaks internal reasoning and wastes
+    the token budget meant for the answer.
+    """
+    import re
+
+    if not text:
+        return text
+    # <think>...</think>, <reasoning>...</reasoning>, <thought>...</thought> (any case).
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<reasoning>.*?</reasoning>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<thought>.*?</thought>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    # Prose thinking preamble: "Here's a thinking process:" etc.
+    text = re.sub(
+        r"^(?:here'?s|here is) (?:a |my )?thinking process:.*?(?=\n\n|\Z)",
+        "",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    # Numbered chain-of-thought: "1. **Analyze User Query**: ..." — a leading
+    # sequence of numbered bold-headed steps is reasoning, not the answer.
+    # Only strip if the numbered block is at the very start.
+    text = re.sub(
+        r"\A(\d+\.\s+\*\*[^*\n]+\*\*:.*?\n)+",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    return text.strip()
 
 
 def _late_interaction_request_id(request: Request) -> str | None:
@@ -442,9 +482,19 @@ async def ask_project(body: AskRequest, request: Request):
 
         learnings = []
         try:
-            learnings = await LearningStore.list_active_learnings(rule_scope)
+            # Query-ranked: most relevant learnings first, not just newest.
+            # Uses pre-computed embeddings (stored at write time) so this
+            # costs one query embedding, not N. Falls back to confidence
+            # order if ranking fails.
+            from brain.context.context_pack_builder import _load_active_learnings
+
+            learnings = await _load_active_learnings(
+                rule_scope,
+                query=body.retrieval_query or body.query,
+                limit=ASK_DECISION_LIMIT,
+            )
             learnings_str = (
-                "\n".join(f"- {lrng.statement}" for lrng in learnings[:ASK_DECISION_LIMIT])
+                "\n".join(f"- {lrng.statement}" for lrng in learnings)
                 or "None"
             )
         except Exception as exc:
@@ -499,6 +549,9 @@ async def ask_project(body: AskRequest, request: Request):
             system_instruction=(
                 "You are an expert developer working on Project Brain. Be specific and "
                 "brief — at most ~8 sentences unless the question demands more. "
+                "Output ONLY the final answer: never include your reasoning process, "
+                "analysis steps, thinking blocks, or phrases like 'Here's a thinking "
+                "process'. "
                 # Without this the model refuses non-English questions outright
                 # ("I couldn't understand your query as it seems to be in a
                 # different language"), which makes the Telegram bot useless to
@@ -515,10 +568,10 @@ async def ask_project(body: AskRequest, request: Request):
             max_tokens=ASK_MAX_ANSWER_TOKENS,
         )
         return {
-            "answer": response,
+            "answer": _strip_thinking_blocks(response),
             "learnings_used": [
                 {"id": lrng.id, "statement": lrng.statement, "confidence": lrng.confidence}
-                for lrng in learnings[:ASK_DECISION_LIMIT]
+                for lrng in learnings
             ],
         }
     except Exception as exc:
@@ -570,7 +623,7 @@ async def analyze_change_impact(body: ImpactRequest):
             logger.warning("/impact v2 shadow failed open: {}", type(exc).__name__)
     try:
         analyzer = ImpactAnalyzer(resolve_repo_path(body.repo_path))
-        return await analyzer.analyze_impact(body.change_request, max_results=body.max_results)
+        return await analyzer.analyze_impact(body.change_request, max_results=body.max_results, fast=body.fast)
     except Exception as exc:
         logger.error(f"Impact analysis failed for {body.repo_path}: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Impact analysis failed due to an internal error") from exc
