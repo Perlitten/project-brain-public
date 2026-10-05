@@ -1,1 +1,30 @@
-{"id":"memory-002","learning_category":"benchmark","learning_statement":"Benchmark probe (2026-10): the worker queue processes jobs in FIFO order; the older LIFO note was wrong and is superseded.","learnings":[{"category":"benchmark","confidence":0.6,"statement":"Benchmark probe (superseded 2026-09): the worker queue processes jobs in LIFO order, newest first."},{"category":"benchmark","confidence":0.95,"statement":"Benchmark probe (2026-10): the worker queue processes jobs in FIFO order; the older LIFO note was wrong and is superseded."}],"must_mention":["FIFO"],"must_not_mention_as_answer":["LIFO"],"provenance":{"kind":"curated","note":"Contradiction task: two learnings disagree on job order. The runner must plant BOTH (see 'learnings' array, in order). The newer, higher-confidence FIFO learning must win: 'FIFO' must appear in learnings_used, 'LIFO' must not be presented as the answer. Requires run_memory to support the 'learnings' array; falls back to single-learning mode via learning_statement.","source":"manual harness evaluation 2026-10-05"},"question":"In what order does the worker queue process jobs?","type":"memory"}
+{
+  "id": "memory-002",
+  "learning_category": "benchmark",
+  "learning_statement": "Benchmark probe (2026-10): the worker queue processes jobs in FIFO order; the older LIFO note was wrong and is superseded.",
+  "learnings": [
+    {
+      "category": "benchmark",
+      "confidence": 0.6,
+      "statement": "Benchmark probe (superseded 2026-09): the worker queue processes jobs in LIFO order, newest first."
+    },
+    {
+      "category": "benchmark",
+      "confidence": 0.95,
+      "statement": "Benchmark probe (2026-10): the worker queue processes jobs in FIFO order, oldest first."
+    }
+  ],
+  "must_mention": [
+    "FIFO"
+  ],
+  "must_not_mention_as_answer": [
+    "LIFO"
+  ],
+  "provenance": {
+    "kind": "curated",
+    "note": "Contradiction task: two learnings disagree on job order. The runner must plant BOTH (see 'learnings' array, in order). The newer, higher-confidence FIFO learning must win: 'FIFO' must appear in learnings_used, 'LIFO' must not be presented as the answer. Requires run_memory to support the 'learnings' array; falls back to single-learning mode via learning_statement.",
+    "source": "manual harness evaluation 2026-10-05"
+  },
+  "question": "In what order does the worker queue process jobs?",
+  "type": "memory"
+}
