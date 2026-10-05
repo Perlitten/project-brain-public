@@ -78,8 +78,63 @@ async def _load_active_learnings(
                 batch = await embedder.embed_batch([m.statement for m in missing])
                 for lrng, vec in zip(missing, batch):
                     scored.append((lrng, _cosine_similarity(query_vec, vec)))
-            scored.sort(key=lambda pair: pair[1], reverse=True)
-            learnings = [lrng for lrng, _ in scored]
+            # Rank by combined score: cosine similarity is primary, but
+            # recency and confidence break ties between learnings on the
+            # same topic. Without this, a superseded learning (e.g. "use
+            # LIFO", conf 0.6) ranks alongside its replacement ("use FIFO",
+            # conf 0.95) because both match the query equally well —
+            # and the stale one can surface in learnings_used.
+            # Weights: similarity dominates; recency/confidence decide
+            # near-ties (e.g. sim 0.91 vs 0.90 with conf 0.6 vs 0.95).
+            now_ts = now.timestamp()
+            # Normalize recency across the candidate set (0=oldest, 1=newest).
+            created = [getattr(lrng, "created_at", None) for lrng, _ in scored]
+            ts_list = [
+                c.timestamp() if c is not None else now_ts
+                for c in created
+            ]
+            t_min, t_max = min(ts_list), max(ts_list)
+            t_span = t_max - t_min if t_max > t_min else 1.0
+            ranked = []
+            for (lrng, sim), ts in zip(scored, ts_list):
+                recency = (ts - t_min) / t_span
+                conf = float(getattr(lrng, "confidence", 0.5) or 0.5)
+                conf = max(0.0, min(1.0, conf))
+                # Combined: similarity is the main signal; recency and
+                # confidence each contribute up to ~0.1 to break ties.
+                combined = sim + 0.1 * recency + 0.1 * conf
+                ranked.append((combined, lrng))
+            ranked.sort(key=lambda pair: pair[0], reverse=True)
+            learnings = [lrng for _, lrng in ranked]
+            # Contradiction suppression: if a learning is highly similar to an
+            # already-selected NEWER learning (same topic, different content),
+            # it's likely superseded — skip it. This handles the case where
+            # "use LIFO" (old) and "use FIFO" (new) both match the query: only
+            # the newer surfaces. Uses pre-computed embeddings when available.
+            deduped: List = []
+            for lrng in learnings:
+                vec = getattr(lrng, "embedding", None)
+                if vec is None:
+                    deduped.append(lrng)
+                    continue
+                vec_list = list(vec)
+                is_superseded = False
+                for kept in deduped:
+                    kept_vec = getattr(kept, "embedding", None)
+                    if kept_vec is None:
+                        continue
+                    try:
+                        sim = _cosine_similarity(vec_list, list(kept_vec))
+                    except Exception:
+                        continue
+                    if sim >= 0.8:
+                        # Same topic as an already-selected (newer, higher-ranked)
+                        # learning — this one is stale.
+                        is_superseded = True
+                        break
+                if not is_superseded:
+                    deduped.append(lrng)
+            learnings = deduped
         except Exception as exc:
             logger.warning(f"Learning rerank by query failed, using confidence order: {exc}")
     return learnings[:limit]
