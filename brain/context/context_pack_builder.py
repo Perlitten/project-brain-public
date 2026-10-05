@@ -110,44 +110,46 @@ async def _load_active_learnings(
                 combined = sim + 0.1 * recency + 0.1 * conf
                 ranked.append((combined, lrng))
             ranked.sort(key=lambda pair: pair[0], reverse=True)
-            learnings = [lrng for _, lrng in ranked]
-            # Contradiction suppression: if a learning is highly similar to an
-            # already-selected NEWER learning (same topic, different content),
-            # it's likely superseded — skip it. This handles the case where
-            # "use LIFO" (old) and "use FIFO" (new) both match the query: only
-            # the newer surfaces. Uses pre-computed embeddings when available.
-            deduped: List = []
-            import os as _os
-            _debug = _os.environ.get("LEARNING_DEDUP_DEBUG")
-            for lrng in learnings:
+            # Topic dedup: group learnings by inter-similarity (>= 0.8 = same
+            # topic). Within each group keep only the NEWEST (by created_at,
+            # then confidence) — this suppresses superseded learnings like
+            # "use LIFO" when "use FIFO" exists. Then rank groups by the best
+            # query-similarity in the group.
+            #
+            # This fixes the case where an older learning has slightly higher
+            # query cosine similarity than its newer replacement: pure cosine
+            # ranking surfaces the stale one.
+            groups: List[List] = []  # each group: list of (lrng, sim, ts, conf)
+            for (lrng, sim), ts in zip(scored, ts_list):
                 vec = getattr(lrng, "embedding", None)
-                if _debug:
-                    logger.warning(f"DEDUP check id={getattr(lrng, 'id', '?')} vec={'set' if vec else 'NONE'} stmt={str(getattr(lrng, 'statement', ''))[:50]}")
-                if vec is None:
-                    deduped.append(lrng)
-                    continue
-                vec_list = list(vec)
-                is_superseded = False
-                for kept in deduped:
-                    kept_vec = getattr(kept, "embedding", None)
-                    if kept_vec is None:
-                        continue
-                    try:
-                        sim = _cosine_similarity(vec_list, list(kept_vec))
-                    except Exception:
-                        continue
-                    if sim >= 0.8:
-                        # Same topic as an already-selected (newer, higher-ranked)
-                        # learning — this one is stale.
-                        is_superseded = True
-                        if _debug:
-                            logger.warning(f"DEDUP suppressed id={getattr(lrng, 'id', '?')} sim={sim:.3f} vs kept id={getattr(kept, 'id', '?')}")
-                        break
-                if not is_superseded:
-                    deduped.append(lrng)
-            if _debug:
-                logger.warning(f"DEDUP result: {[getattr(l, 'id', '?') for l in deduped]}")
-            learnings = deduped
+                conf = float(getattr(lrng, "confidence", 0.5) or 0.5)
+                conf = max(0.0, min(1.0, conf))
+                placed = False
+                if vec is not None:
+                    vec_list = list(vec)
+                    for group in groups:
+                        rep_vec = getattr(group[0][0], "embedding", None)
+                        if rep_vec is None:
+                            continue
+                        try:
+                            gsim = _cosine_similarity(vec_list, list(rep_vec))
+                        except Exception:
+                            continue
+                        if gsim >= 0.8:
+                            group.append((lrng, sim, ts, conf))
+                            placed = True
+                            break
+                if not placed:
+                    groups.append([(lrng, sim, ts, conf)])
+            # Within each group: newest first, then highest confidence.
+            # Across groups: rank by max query-similarity in the group.
+            winners = []
+            for group in groups:
+                group.sort(key=lambda t: (t[2], t[3]), reverse=True)
+                best_sim = max(t[1] for t in group)
+                winners.append((best_sim, group[0][0]))
+            winners.sort(key=lambda p: p[0], reverse=True)
+            learnings = [lrng for _, lrng in winners]
         except Exception as exc:
             logger.warning(f"Learning rerank by query failed, using confidence order: {exc}")
     return learnings[:limit]
