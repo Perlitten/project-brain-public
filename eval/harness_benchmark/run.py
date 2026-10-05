@@ -121,7 +121,7 @@ def run_memory(api_url, api_key, repo, task):
         })
         learning_id = planted.get("learning_id")
         data = api_post(api_url, api_key, "/ask", {
-            "question": task["question"],
+            "query": task["question"],
             "repo_path": repo,
         })
         answer = data.get("answer", "") or ""
@@ -184,16 +184,9 @@ def run_review(api_url, api_key, repo, task):
         *[str(v.get("details", v)) for v in data.get("rule_violations", [])],
         *data.get("suspicious_changes", []),
     ])
-    metrics = {"llm_review_status": llm_status}
-    if task.get("clean"):
-        false_alarm = bool(data.get("rule_violations") or data.get("suspicious_changes"))
-        metrics["false_alarm"] = 1.0 if (false_alarm and llm_status == "completed") else 0.0
-        metrics["pass"] = 1.0 if (llm_status == "completed" and not false_alarm) else 0.0
-    else:
-        detected = detection(task.get("must_detect_keywords", []), review_text)
-        metrics["detected"] = 1.0 if (detected and llm_status == "completed") else 0.0
-        metrics["pass"] = metrics["detected"]
-    return {
+    metrics = {"llm_review_status": llm_status,
+               "llm_available": 1.0 if llm_status == "completed" else 0.0}
+    result = {
         "base_used": base,
         "base_pinned": task.get("base_commit"),
         "status": data.get("status"),
@@ -202,6 +195,21 @@ def run_review(api_url, api_key, repo, task):
         "suspicious_changes": data.get("suspicious_changes", []),
         "metrics": metrics,
     }
+    if llm_status != "completed":
+        # Infrastructure failure, not a detection failure: report as error so it
+        # does not pollute the detection-quality score. Availability is tracked
+        # separately via the llm_available metric.
+        result["error"] = f"llm_unavailable (llm_review_status={llm_status})"
+        return result
+    if task.get("clean"):
+        false_alarm = bool(data.get("rule_violations") or data.get("suspicious_changes"))
+        metrics["false_alarm"] = 1.0 if false_alarm else 0.0
+        metrics["pass"] = 0.0 if false_alarm else 1.0
+    else:
+        detected = detection(task.get("must_detect_keywords", []), review_text)
+        metrics["detected"] = 1.0 if detected else 0.0
+        metrics["pass"] = metrics["detected"]
+    return result
 
 
 def main():
