@@ -34,6 +34,10 @@ class ImpactRequest(BaseModel):
     # Caps the combined directly+indirectly affected lists (ranked by
     # relevance). Default 75 (25 direct / 50 indirect). 0 = no truncation.
     max_results: Optional[int] = Field(default=None, ge=0, le=10000)
+    # Fast mode skips both LLM calls (deterministic keywords + rationale),
+    # cutting latency from ~4 min to ~30 s. Ranked lists and the deterministic
+    # risk score are unaffected.
+    fast: bool = False
 
 
 class DiffReviewRequest(BaseModel):
