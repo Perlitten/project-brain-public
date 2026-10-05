@@ -5,13 +5,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from brain.improvement.models import TrajectoryRecord, AgentBundleManifest, PairedEvaluationReport
 from brain.improvement.storage.blob_store import ContentAddressedBlobStore
+from brain.config.paths import reports_dir
 
 
 class RelationalControlPlaneStore:
     """Manages transactional relational metadata for trajectories, bundles, and promotion audit trails."""
 
     def __init__(self, db_dir: Optional[Path] = None, blob_store: Optional[ContentAddressedBlobStore] = None):
-        self.db_dir = db_dir or Path("d:/Brain/project-brain/reports/improvement/db_store")
+        self.db_dir = db_dir or reports_dir() / "improvement/db_store"
         self.db_dir.mkdir(parents=True, exist_ok=True)
         self.blob_store = blob_store or ContentAddressedBlobStore()
 

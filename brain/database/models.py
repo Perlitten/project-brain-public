@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -23,7 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from brain.embeddings.constants import EMBEDDING_DIMENSION
-from brain.embeddings.pgvector_sql import pgvector_index_dimension
+from brain.embeddings.pgvector_sql import pgvector_column_type
 
 
 class Base(DeclarativeBase):
@@ -212,7 +211,7 @@ class Embedding(Base):
     dimension: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(pgvector_index_dimension(EMBEDDING_DIMENSION)), nullable=True
+        pgvector_column_type(EMBEDDING_DIMENSION), nullable=True
     )
 
 

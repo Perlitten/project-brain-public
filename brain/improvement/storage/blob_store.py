@@ -3,13 +3,14 @@
 import hashlib
 from pathlib import Path
 from typing import Optional
+from brain.config.paths import reports_dir
 
 
 class ContentAddressedBlobStore:
     """Stores encrypted or content-addressed blobs indexed by SHA-256 hash."""
 
     def __init__(self, base_dir: Optional[Path] = None):
-        self.base_dir = base_dir or Path("d:/Brain/project-brain/reports/improvement/blob_store")
+        self.base_dir = base_dir or reports_dir() / "improvement/blob_store"
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def put_blob(self, content: str) -> str:
