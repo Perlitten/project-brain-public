@@ -1,0 +1,12 @@
+{
+  "results": {
+    "double_promote": {
+      "racer_A": "promoted:81",
+      "racer_B": "promoted:80",
+      "duplicate_promotions": 1,
+      "note": "G1 dedup is check-then-act without a DB uniqueness guard; concurrent racers can both pass G1 before either commits.",
+      "status": "ok",
+      "duration_s": 40.8
+    }
+  }
+}

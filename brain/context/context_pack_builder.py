@@ -62,13 +62,23 @@ async def _load_active_learnings(
             from brain.llm import get_embedding_provider
 
             embedder = get_embedding_provider()
-            query_vec = await embedder.embed(query)
-            vectors = await embedder.embed_batch([lrng.statement for lrng in learnings])
-            scored = sorted(
-                zip(learnings, vectors),
-                key=lambda pair: _cosine_similarity(query_vec, pair[1]),
-                reverse=True,
+            current_model = getattr(embedder, "model", None) or getattr(
+                embedder, "provider", "unknown"
             )
+            query_vec = await embedder.embed(query)
+            scored: List[tuple] = []
+            missing: List = []
+            for lrng in learnings:
+                vec = getattr(lrng, "embedding", None)
+                if vec and getattr(lrng, "embedding_model", None) == current_model and len(vec) == len(query_vec):
+                    scored.append((lrng, _cosine_similarity(query_vec, list(vec))))
+                else:
+                    missing.append(lrng)
+            if missing:
+                batch = await embedder.embed_batch([m.statement for m in missing])
+                for lrng, vec in zip(missing, batch):
+                    scored.append((lrng, _cosine_similarity(query_vec, vec)))
+            scored.sort(key=lambda pair: pair[1], reverse=True)
             learnings = [lrng for lrng, _ in scored]
         except Exception as exc:
             logger.warning(f"Learning rerank by query failed, using confidence order: {exc}")

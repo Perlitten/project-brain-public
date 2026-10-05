@@ -29,7 +29,13 @@ logger = logging.getLogger(__name__)
 LEARNING_CLASSIFICATIONS = ("learning", "failure_lesson")
 
 # G1: cosine similarity at or above this means "already known".
-DEDUP_SIMILARITY_THRESHOLD = 0.92
+# Calibrated 2026-10-05 on 7 paraphrase pairs + 6 unrelated pairs:
+# 0.85 gives recall 0.86 with zero false positives (F1 0.92);
+# 0.92 dropped recall to 0.71. Unrelated pairs max out at ~0.12.
+DEDUP_SIMILARITY_THRESHOLD = 0.85
+
+# Postgres advisory lock id serializing consolidation runs across processes.
+CONSOLIDATION_LOCK_ID = 0x4D454D01  # "MEM\x01"
 
 # G2: minimum independent episodes for auto-promotion (1 episode needs human confirm).
 MIN_EPISODES_AUTO = 2
@@ -174,8 +180,23 @@ async def evaluate_gates(
     active = await LearningStore.list_active_learnings()
     if active:
         embedder = get_embedding_provider()
+        current_model = getattr(embedder, "model", None) or getattr(
+            embedder, "provider", "unknown"
+        )
         cand_vec = await embedder.embed(candidate.statement)
-        act_vecs = await embedder.embed_batch([lrng.statement for lrng in active])
+        act_vecs: List[List[float]] = []
+        missing_idx: List[int] = []
+        for i, lrng in enumerate(active):
+            vec = getattr(lrng, "embedding", None)
+            if vec and getattr(lrng, "embedding_model", None) == current_model and len(vec) == len(cand_vec):
+                act_vecs.append(list(vec))
+            else:
+                missing_idx.append(i)
+                act_vecs.append([])
+        if missing_idx:
+            batch = await embedder.embed_batch([active[i].statement for i in missing_idx])
+            for i, vec in zip(missing_idx, batch):
+                act_vecs[i] = vec
         best_idx, best_sim = -1, -1.0
         for i, vec in enumerate(act_vecs):
             sim = _cosine(cand_vec, vec)
@@ -245,6 +266,57 @@ async def promote_candidate(
 
 
 async def run_consolidation(
+    since: Optional[datetime] = None,
+    *,
+    require_approval: bool = False,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """Run one consolidation pass. Returns a summary report.
+
+    Serialized across processes via a Postgres advisory lock: two concurrent
+    runs would both pass G1 (check-then-act) and double-promote the same
+    candidates. If the lock is held, the run is skipped (not queued).
+    """
+    from sqlalchemy import text
+
+    from brain.database.session import async_engine
+
+    async with async_engine.connect() as lock_conn:
+        try:
+            res = await lock_conn.execute(
+                text(f"SELECT pg_try_advisory_lock({CONSOLIDATION_LOCK_ID})")
+            )
+            acquired = res.scalar()
+        except Exception as exc:
+            logger.warning(f"Consolidation lock check failed: {exc}; running unlocked.")
+            acquired = True
+        if not acquired:
+            logger.info("Consolidation already running elsewhere; skipping this pass.")
+            return {
+                "run_id": None,
+                "status": "skipped",
+                "reason": "advisory lock held by concurrent consolidation",
+                "episodes": 0,
+                "candidates": 0,
+                "promoted": [],
+                "rejected": [],
+                "needs_approval": [],
+            }
+        try:
+            return await _run_consolidation_unlocked(
+                since, require_approval=require_approval, dry_run=dry_run
+            )
+        finally:
+            try:
+                await lock_conn.execute(
+                    text(f"SELECT pg_advisory_unlock({CONSOLIDATION_LOCK_ID})")
+                )
+                await lock_conn.commit()
+            except Exception as exc:
+                logger.warning(f"Consolidation lock release failed: {exc}")
+
+
+async def _run_consolidation_unlocked(
     since: Optional[datetime] = None,
     *,
     require_approval: bool = False,

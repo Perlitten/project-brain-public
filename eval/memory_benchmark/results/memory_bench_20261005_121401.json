@@ -1,0 +1,16 @@
+{
+  "results": {
+    "concurrency": {
+      "n_agents": 10,
+      "writes_per_agent": 5,
+      "reads_per_agent": 3,
+      "expected_writes": 50,
+      "actual_writes": 50,
+      "lost_writes": 0,
+      "errors": 0,
+      "residue_learnings": 0,
+      "duration_s": 56.1,
+      "status": "ok"
+    }
+  }
+}

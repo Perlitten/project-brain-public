@@ -1,0 +1,64 @@
+{
+  "results": {
+    "retrieval": {
+      "n_learnings": 20,
+      "n_questions": 10,
+      "mean_recall@5": 1.0,
+      "mean_reciprocal_rank": 1.0,
+      "details": [
+        {
+          "q": "What embedding dimension does the NVIDIA model use",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "Which port is postgres on?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "How do I check if the API is fully ready?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "What should diff-review do with unparseable JSON?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "How is the neo4j graph recovered after data loss?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "How are learnings ranked for a query?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "What does the G1 gate do?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "How do I set up a new machine quickly?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "What controls LLM retry behavior?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "Where do backups go?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        }
+      ],
+      "status": "ok",
+      "duration_s": 39.7
+    }
+  }
+}

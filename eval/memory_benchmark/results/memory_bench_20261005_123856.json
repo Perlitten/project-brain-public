@@ -1,0 +1,126 @@
+{
+  "results": {
+    "retrieval": {
+      "n_learnings": 20,
+      "n_questions": 10,
+      "mean_recall@5": 1.0,
+      "mean_reciprocal_rank": 1.0,
+      "details": [
+        {
+          "q": "What embedding dimension does the NVIDIA model use",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "Which port is postgres on?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "How do I check if the API is fully ready?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "What should diff-review do with unparseable JSON?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "How is the neo4j graph recovered after data loss?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "How are learnings ranked for a query?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "What does the G1 gate do?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "How do I set up a new machine quickly?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "What controls LLM retry behavior?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        },
+        {
+          "q": "Where do backups go?",
+          "recall@5": 1.0,
+          "rr": 1.0
+        }
+      ],
+      "status": "ok",
+      "duration_s": 26.9
+    },
+    "dedup": {
+      "n_pairs": 5,
+      "duplicates_caught": 4,
+      "dedup_rate": 0.8,
+      "details": [
+        {
+          "dup": "Embeddings use dimension 2048.",
+          "caught": true,
+          "reason": "G1: similarity 0.96 to learning 202"
+        },
+        {
+          "dup": "Diff-review must not approve when LLM JSON ca",
+          "caught": true,
+          "reason": "G1: similarity 0.94 to learning 203"
+        },
+        {
+          "dup": "In docker-compose, postgres listens on 5433.",
+          "caught": true,
+          "reason": "G1: similarity 0.92 to learning 204"
+        },
+        {
+          "dup": "The daily backup cron writes to ~/workspace/b",
+          "caught": false,
+          "reason": "G1 pass: no duplicate"
+        },
+        {
+          "dup": "The neo4j graph is rebuilt by running reindex",
+          "caught": true,
+          "reason": "G1: similarity 0.95 to learning 206"
+        }
+      ],
+      "status": "ok",
+      "duration_s": 32.1
+    },
+    "concurrency": {
+      "n_agents": 10,
+      "writes_per_agent": 5,
+      "reads_per_agent": 3,
+      "expected_writes": 50,
+      "actual_writes": 50,
+      "lost_writes": 0,
+      "errors": 0,
+      "residue_learnings": 0,
+      "duration_s": 14.7,
+      "status": "ok"
+    },
+    "double_promote": {
+      "racer_A": "promoted:259",
+      "racer_B": "promoted:258",
+      "duplicate_promotions": 1,
+      "note": "G1 dedup is check-then-act without a DB uniqueness guard; concurrent racers can both pass G1 before either commits.",
+      "status": "ok",
+      "duration_s": 30.3
+    },
+    "overhead": {
+      "baseline_learnings": 3,
+      "learnings_ms_baseline": 722.6,
+      "learnings_ms_100": 984.2,
+      "est_tokens_per_ask": 91,
+      "status": "ok",
+      "duration_s": 91.9
+    }
+  }
+}
