@@ -84,7 +84,7 @@ ASK_DECISION_FIELD_CHARS = 280
 # concern (MCP proxy timeout) is real, but 700 tokens is too low for a useful
 # answer once the prompt context is large. Thinking blocks are stripped
 # separately (see _strip_thinking_blocks) so these tokens go to the answer.
-ASK_MAX_ANSWER_TOKENS = 2500
+ASK_MAX_ANSWER_TOKENS = 1500
 
 
 def _strip_thinking_blocks(text: str) -> str:
@@ -551,15 +551,18 @@ async def ask_project(body: AskRequest, request: Request):
         )
 
         llm = get_model_router().llm(TaskKind.SYNTHESIS)
-        response = await llm.generate(
+        # Harsh benchmark revealed /ask hanging 3+ min on slow LLM API.
+        # 120s timeout with graceful 500 (not a hang) is the honest behavior.
+        import asyncio as _asyncio
+        response = await _asyncio.wait_for(llm.generate(
             prompt=prompt,
             system_instruction=(
                 "You are an expert developer working on Project Brain. Be specific and "
                 "brief — at most ~8 sentences unless the question demands more. "
-                "You may think through the problem first, but you MUST end your "
-                "response with a line containing exactly 'FINAL ANSWER:' followed "
-                "by the answer itself. Only the text after 'FINAL ANSWER:' is shown "
-                "to the user. "
+                "If you need to reason, do it in at most 3 short sentences. "
+                "You MUST end your response with a line containing exactly "
+                "'FINAL ANSWER:' followed by the answer itself. Only the text "
+                "after 'FINAL ANSWER:' is shown to the user. "
                 # Without this the model refuses non-English questions outright
                 # ("I couldn't understand your query as it seems to be in a
                 # different language"), which makes the Telegram bot useless to
@@ -574,7 +577,7 @@ async def ask_project(body: AskRequest, request: Request):
             # the endpoint inside that budget; the wider retrieval above is what makes
             # the shorter answer better rather than thinner.
             max_tokens=ASK_MAX_ANSWER_TOKENS,
-        )
+        ), timeout=120)
         return {
             "answer": _strip_thinking_blocks(response),
             "learnings_used": [
