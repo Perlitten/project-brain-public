@@ -1,0 +1,17 @@
+{
+  "id": "context-003",
+  "type": "context",
+  "task_description": "Where is the git diff review implemented and how does the LLM fallback behave when the review cannot run?",
+  "must_have_files": [
+    "brain/analyzers/diff_analyzer.py"
+  ],
+  "nice_to_have_files": [
+    "tests/test_diff_review_llm_fallback.py"
+  ],
+  "base_commit": "682ea7c53179964823785f5591b20e3d2a430226",
+  "provenance": {
+    "kind": "curated",
+    "source": "benchmark expansion 2026-10-05",
+    "note": "diff_analyzer.py owns review_diff; fallback behavior fixed 2026-10-05."
+  }
+}
