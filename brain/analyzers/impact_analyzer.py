@@ -119,6 +119,28 @@ _KEYWORD_STOPWORDS = frozenset(
 )
 
 
+def _split_keyword(keyword: str) -> list:
+    """Split snake_case, kebab-case, and camelCase into parts.
+
+    The LLM often returns compound tokens like 'indexing_source' that match
+    nothing in the graph. Splitting gives the parts a chance to match, while
+    the original compound is kept as well.
+    """
+    parts = re.split(r"[_\-]+", keyword)
+    # camelCase split
+    expanded = []
+    for p in parts:
+        expanded.extend(re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+", p))
+    seen = set()
+    out = []
+    for token in [keyword] + expanded:
+        low = token.lower()
+        if len(low) >= 3 and low not in seen:
+            seen.add(low)
+            out.append(token)
+    return out
+
+
 def _deterministic_keywords(change_request: str) -> list:
     """Extract search keywords without an LLM call.
 
@@ -233,7 +255,21 @@ class ImpactAnalyzer:
                 cleaned = re.sub(r"^```(?:json)?\n", "", cleaned)
                 cleaned = re.sub(r"\n```$", "", cleaned)
             keywords = json.loads(cleaned.strip())
-            return [k for k in keywords if isinstance(k, str) and len(k.strip()) >= 3]
+            llm_kws = [k for k in keywords if isinstance(k, str) and len(k.strip()) >= 3]
+            # Robustness: the LLM is non-deterministic and sometimes omits
+            # obvious terms (e.g. 'database') or returns compounds that match
+            # nothing ('indexing_source'). Union with deterministic keywords
+            # and split compounds so the graph search degrades gracefully.
+            # IDF-weighted ranking keeps the extra terms from adding noise.
+            merged: list = []
+            seen = set()
+            for kw in llm_kws + _deterministic_keywords(change_request):
+                for part in _split_keyword(kw):
+                    low = part.lower()
+                    if low not in seen:
+                        seen.add(low)
+                        merged.append(part)
+            return merged
         except Exception as e:
             logger.warning(f"Failed to extract keywords using LLM: {e}. Falling back to words extraction.")
             return _deterministic_keywords(change_request)
