@@ -1,0 +1,1 @@
+{"note":"Conservative initial minimums for the CI (mock-provider) configuration. Calibrate upward after several green runs. The reference real-provider run (2026-10-05, NVIDIA) scored overall 0.833.","overall_floor":0.5,"type_minimums":{"context":0.5,"impact":0.5,"memory":0.5,"review":0.5}}

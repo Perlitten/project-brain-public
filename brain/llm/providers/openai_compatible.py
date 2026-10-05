@@ -27,6 +27,7 @@ from brain.llm.presets import (
     resolve_summarizer_endpoint,
 )
 from brain.llm.providers.base import EmbeddingProvider, LLMProvider, SummarizerProvider
+from brain.config.settings import settings
 
 _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
 DEFAULT_EMBEDDING_BATCH_SIZE = 64
@@ -123,8 +124,8 @@ class OpenAICompatibleLLMProvider(LLMProvider):
 
         payload = {"model": self.model, "messages": messages, **kwargs}
         headers = _auth_headers(self.api_key)
-        retries = 3
-        delay = 1.0
+        retries = max(1, settings.LLM_MAX_RETRIES)
+        delay = max(0.1, settings.LLM_RETRY_BASE_DELAY_S)
         for attempt in range(retries):
             try:
                 async with httpx.AsyncClient() as client:
@@ -281,7 +282,9 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
         return vectors
 
     async def _post(self, headers: Dict[str, str], payload: Dict[str, Any], expected: int) -> List[List[float]]:
-        for attempt in range(3):
+        max_retries = max(1, settings.LLM_MAX_RETRIES)
+        base_delay = max(0.1, settings.LLM_RETRY_BASE_DELAY_S)
+        for attempt in range(max_retries):
             try:
                 async with httpx.AsyncClient() as client:
                     response = await client.post(self.api_url, headers=headers, json=payload, timeout=self.timeout)
@@ -295,15 +298,15 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
             except (httpx.HTTPStatusError, httpx.TransportError) as exc:
                 if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code not in _RETRYABLE_STATUS:
                     raise
-                if attempt == 2:
+                if attempt == max_retries - 1:
                     raise
-                delay = float(2 ** attempt)
+                delay = base_delay * float(2 ** attempt)
                 if isinstance(exc, httpx.HTTPStatusError):
                     try:
                         delay = max(delay, min(60.0, float(exc.response.headers.get("Retry-After", "0"))))
                     except ValueError:
                         pass
-                logger.warning("{} embedding retry {}/3 after {}", self.label, attempt + 1, type(exc).__name__)
+                logger.warning("{} embedding retry {}/{} after {}", self.label, attempt + 1, max_retries, type(exc).__name__)
                 await asyncio.sleep(delay)
         raise RuntimeError(f"{self.label} embedding retries exhausted")
 

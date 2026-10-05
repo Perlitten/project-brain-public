@@ -423,6 +423,29 @@ async def run_benchmark(params: Dict[str, Any]) -> Dict[str, Any]:
     return await evaluator.run_evaluation(repo_path)
 
 
+async def run_memory_consolidation(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Run one L2 memory consolidation pass (episodic → learnings)."""
+    if params.get("scheduled") and not settings.MEMORY_CONSOLIDATION_ENABLED:
+        return {
+            "status": "skipped",
+            "reason": "MEMORY_CONSOLIDATION_ENABLED=false",
+            "scheduled": True,
+        }
+    await init_db()
+    from brain.memory.consolidation import run_consolidation
+
+    require_approval = params.get(
+        "require_approval", settings.MEMORY_CONSOLIDATION_REQUIRE_APPROVAL
+    )
+    report = await run_consolidation(
+        require_approval=require_approval,
+        dry_run=params.get("dry_run", False),
+    )
+    report["status"] = "completed"
+    report["scheduled"] = bool(params.get("scheduled"))
+    return report
+
+
 async def run_proactive_insights(params: Dict[str, Any]) -> Dict[str, Any]:
     if params.get("scheduled") and not settings.PROACTIVE_INSIGHTS_ENABLED:
         return {
@@ -599,6 +622,15 @@ async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
             },
         )
 
+    # Memory consolidation: best-effort, must not break the nightly run.
+    memory_consolidation: Dict[str, Any] = {"status": "skipped"}
+    if settings.MEMORY_CONSOLIDATION_ENABLED:
+        try:
+            memory_consolidation = await run_memory_consolidation({"scheduled": True})
+        except Exception as exc:
+            logger.warning(f"Nightly memory consolidation failed (best-effort): {exc}")
+            memory_consolidation = {"status": "failed", "error": str(exc)[:200]}
+
     notify = bool(
         params.get(
             "notify",
@@ -633,6 +665,7 @@ async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
         "quality_probes": quality_probes,
         "telegram": telegram,
         "auto_heal": auto_heal_result,
+        "memory_consolidation": memory_consolidation,
     }
     await redis_client.set(
         "brain:nightly-maintenance:last-result",
@@ -775,6 +808,7 @@ async def execute_job(
         "embedding_backfill": run_embedding_backfill,
         "benchmark": run_benchmark,
         "proactive_insights": run_proactive_insights,
+        "memory_consolidation": run_memory_consolidation,
         "self_diagnosis": run_self_diagnosis,
         "nightly_maintenance": run_nightly_maintenance,
         "deep_context": run_deep_context,
