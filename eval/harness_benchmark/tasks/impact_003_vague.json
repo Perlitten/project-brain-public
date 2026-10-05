@@ -1,0 +1,14 @@
+{
+  "id": "impact-003",
+  "type": "impact",
+  "change_request": "Improve the performance of the system",
+  "must_have_files": [],
+  "nice_to_have_files": [],
+  "adversarial": true,
+  "expectation": "Vague request with no specific technical terms. A good harness should return few/no results or low-confidence results, NOT hallucinate a huge impact list. Pass criteria: affected_file_count < 20 OR risk_level in ['Low'].",
+  "provenance": {
+    "kind": "adversarial",
+    "source": "harsh benchmark 2026-10-05",
+    "note": "Tests if /impact hallucinates impact for vague requests."
+  }
+}

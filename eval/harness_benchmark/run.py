@@ -32,6 +32,17 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from metrics import detection, hit_rate, mean, mrr, noise_ratio, percentile  # noqa: E402
 
+# Harsh benchmark: hard latency SLA per endpoint (seconds).
+# A task FAILS if it exceeds its SLA, regardless of quality metrics.
+SLA = {
+    "context": 15,
+    "impact_fast": 30,
+    "impact_full": 330,
+    "ask": 180,
+    "review": 330,
+    "memory": 120,
+}
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 TASKS_DIR = os.path.join(HERE, "tasks")
@@ -81,13 +92,18 @@ def run_context(api_url, api_key, repo, task):
     files = [c.get("path") for c in data.get("candidates", []) if c.get("path")]
     must = task.get("must_have_files", [])
     nice = task.get("nice_to_have_files", [])
+    metrics = {
+        "must_have_hit_rate": hit_rate(must, files),
+        "mrr": mrr(must, files),
+        "noise_ratio": noise_ratio(must, nice, files),
+    }
+    # Adversarial: query with no good answer (e.g. Kubernetes for a Python
+    # repo). Honest harness returns little/nothing; hallucinating fails.
+    if task.get("adversarial") and task["id"] == "context-007":
+        metrics["adversarial_pass"] = 1.0 if len(files) <= 3 else 0.0
     return {
         "candidates": files,
-        "metrics": {
-            "must_have_hit_rate": hit_rate(must, files),
-            "mrr": mrr(must, files),
-            "noise_ratio": noise_ratio(must, nice, files),
-        },
+        "metrics": metrics,
     }
 
 
@@ -103,12 +119,70 @@ def run_impact(api_url, api_key, repo, task):
     raw = list(data.get("directly_affected", [])) + list(data.get("indirectly_affected", []))
     files = [e for e in raw if is_fileish(e)]
     must = task.get("must_have_files", [])
+    metrics = {
+        "must_have_recall": hit_rate(must, files),
+        "affected_file_count": len(files),
+    }
+    # Adversarial tasks: vague or ultra-common requests should NOT produce
+    # huge hallucinated impact lists. Score restraint, not recall.
+    if task.get("adversarial"):
+        if task["id"] == "impact-003":
+            # Vague "improve performance": restrained output passes.
+            metrics["adversarial_pass"] = 1.0 if len(files) < 20 else 0.0
+        elif task["id"] == "impact-004":
+            # Common word 'get': top-k must bound the explosion.
+            metrics["adversarial_pass"] = 1.0 if len(files) <= 75 else 0.0
     return {
         "risk_level": data.get("risk_level"),
         "affected_files": files,
+        "metrics": metrics,
+    }
+
+
+def run_ask(api_url, api_key, repo, task):
+    """Test /ask answer quality: no thinking leak, no truncation, relevant."""
+    data = api_post(api_url, api_key, "/ask", {
+        "query": task["query"],
+        "repo_path": repo,
+    }, timeout=SLA["ask"])
+    answer = data.get("answer", "")
+    ans_lower = answer.lower()
+
+    # Thinking leak: any reasoning markers in the visible answer.
+    leak_markers = task.get("must_not_contain", [])
+    leaks = [m for m in leak_markers if m.lower() in ans_lower]
+
+    # Content coverage: does the answer mention expected key terms?
+    must_contain = task.get("must_contain", [])
+    missing = [m for m in must_contain if m.lower() not in ans_lower]
+
+    # Truncation: ends mid-word or mid-sentence without terminal punctuation.
+    truncated = False
+    if task.get("check_truncation"):
+        stripped = answer.rstrip()
+        if stripped and stripped[-1] not in '.!?:;`"\'':
+            if not stripped.endswith("```"):
+                truncated = True
+
+    # Length bound.
+    max_chars = task.get("max_answer_chars", 10000)
+    too_long = len(answer) > max_chars
+
+    passed = not leaks and not missing and not truncated and not too_long
+    return {
+        "answer_length": len(answer),
+        "answer_preview": answer[:200],
         "metrics": {
-            "must_have_recall": hit_rate(must, files),
-            "affected_file_count": len(files),
+            "no_thinking_leak": 1.0 if not leaks else 0.0,
+            "content_coverage": 1.0 - len(missing) / max(len(must_contain), 1),
+            "not_truncated": 1.0 if not truncated else 0.0,
+            "length_ok": 1.0 if not too_long else 0.0,
+            "ask_quality": 1.0 if passed else 0.0,
+        },
+        "details": {
+            "leaks_found": leaks,
+            "terms_missing": missing,
+            "truncated": truncated,
         },
     }
 
@@ -268,12 +342,24 @@ def main():
                 outcome = run_review(args.api_url, api_key, repo, task)
             elif task["type"] == "memory":
                 outcome = run_memory(args.api_url, api_key, repo, task)
+            elif task["type"] == "ask":
+                outcome = run_ask(args.api_url, api_key, repo, task)
             else:
                 outcome = {"skipped": f"unknown type {task['type']}"}
         except Exception as e:  # noqa: BLE001 - benchmark must report, not crash
             outcome = {"error": f"{type(e).__name__}: {e}"}
         outcome["id"] = task["id"]
         outcome["type"] = task["type"]
+        elapsed = time.time() - started
+        outcome["seconds"] = round(elapsed, 1)
+        # SLA enforcement: harsh benchmark fails tasks that breach latency.
+        sla_key = task["type"]
+        if task["type"] == "impact":
+            sla_key = "impact_fast"  # benchmark uses fast mode
+        sla_limit = SLA.get(sla_key)
+        if sla_limit and elapsed > sla_limit and "skipped" not in outcome and "error" not in outcome:
+            outcome["sla_breach"] = True
+            outcome["sla_limit"] = sla_limit
         outcome["duration_s"] = round(time.time() - started, 1)
         results.append(outcome)
         print(f"  -> {json.dumps(outcome.get('metrics', outcome.get('skipped', outcome.get('error', 'ok'))))}")

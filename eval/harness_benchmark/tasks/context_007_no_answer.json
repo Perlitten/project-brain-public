@@ -1,0 +1,14 @@
+{
+  "id": "context-007",
+  "type": "context",
+  "task_description": "How do I configure the Kubernetes deployment for the mobile app?",
+  "must_have_files": [],
+  "nice_to_have_files": [],
+  "adversarial": true,
+  "expectation": "No Kubernetes or mobile app code exists. A good harness should return empty/minimal results or explicitly state no relevant files found, NOT hallucinate.",
+  "provenance": {
+    "kind": "adversarial",
+    "source": "harsh benchmark 2026-10-05",
+    "note": "Tests honest 'don't know' behavior vs hallucination."
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "impact-004",
+  "type": "impact",
+  "change_request": "Rename the function get to fetch across the codebase",
+  "must_have_files": [],
+  "nice_to_have_files": [],
+  "adversarial": true,
+  "expectation": "Extremely common word 'get' matches thousands of nodes. Tests if IDF ranking prevents noise explosion. Pass criteria: affected_file_count <= 75 (respects top-k) AND noise is bounded.",
+  "provenance": {
+    "kind": "adversarial",
+    "source": "harsh benchmark 2026-10-05",
+    "note": "Tests IDF robustness against ultra-common keywords."
+  }
+}
