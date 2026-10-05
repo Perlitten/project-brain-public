@@ -1,0 +1,18 @@
+{
+  "id": "review-006",
+  "type": "review",
+  "clean": false,
+  "patch": "diff --git a/brain/config/paths.py b/brain/config/paths.py\n--- a/brain/config/paths.py\n+++ b/brain/config/paths.py\n@@ -15,7 +15,8 @@\n def resolve_repo_path(repo: Optional[str | Path] = None) -> Path:\n     \"\"\"Resolve a repository path from CLI/API input or fall back to defaults.\"\"\"\n     if repo:\n-        return validate_secure_repo_path(repo)\n+        # Fast path: skip validation for absolute paths (assumed safe)\n+        return Path(repo).resolve() if os.path.isabs(str(repo)) else validate_secure_repo_path(repo)\n     configured = get_repo_root()\n     if configured.exists():\n         return configured\n",
+  "must_detect_keywords": [
+    "validation",
+    "bypass",
+    "traversal",
+    "security"
+  ],
+  "base_commit": "63affdfa6da232ea9f92b050ac1670d6d85ef780",
+  "provenance": {
+    "kind": "mutation",
+    "source": "benchmark hardening 2026-10-05",
+    "note": "Planted bug: path validation bypassed for absolute paths. Allows directory traversal via absolute paths. Security-sensitive."
+  }
+}

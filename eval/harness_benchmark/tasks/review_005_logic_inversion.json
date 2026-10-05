@@ -1,0 +1,18 @@
+{
+  "id": "review-005",
+  "type": "review",
+  "clean": false,
+  "patch": "diff --git a/brain/memory/consolidation.py b/brain/memory/consolidation.py\n--- a/brain/memory/consolidation.py\n+++ b/brain/memory/consolidation.py\n@@ -202,7 +202,7 @@\n         for i, vec in enumerate(act_vecs):\n             sim = _cosine(cand_vec, vec)\n             if sim > best_sim:\n                 best_idx, best_sim = i, sim\n-        if best_sim >= DEDUP_SIMILARITY_THRESHOLD:\n+        if best_sim < DEDUP_SIMILARITY_THRESHOLD:\n             return GateResult(\n                 outcome=GateOutcome.LINK_DUPLICATE,\n                 reasons=[f\"G1: similarity {best_sim:.2f} to learning {active[best_idx].id}\"],",
+  "must_detect_keywords": [
+    "similarity",
+    "threshold",
+    "inverted",
+    "duplicate"
+  ],
+  "base_commit": "63affdfa6da232ea9f92b050ac1670d6d85ef780",
+  "provenance": {
+    "kind": "mutation",
+    "source": "benchmark hardening 2026-10-05",
+    "note": "Planted bug: dedup gate comparison inverted (>= to <). Flags non-duplicates, misses real duplicates. Requires understanding gate logic to catch."
+  }
+}

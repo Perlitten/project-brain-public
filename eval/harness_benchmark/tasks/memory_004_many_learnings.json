@@ -1,0 +1,270 @@
+{
+  "id": "memory-004",
+  "type": "memory",
+  "learnings": [
+    {
+      "statement": "Benchmark probe: RuleStore lists active rules scoped by repository path.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The API serves on 127.0.0.1:8000; 0.0.0.0 binding is disabled by policy.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Benchmark result JSONs are gitignored under eval/*/results/.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The /ask system prompt forces answers in the question's language.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Native git push from this VM is impossible; use the GitHub API via the skill.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: G1 dedup uses cosine similarity with threshold 0.85 — pairs above 0.85 are linked as duplicates.",
+      "category": "benchmark",
+      "confidence": 0.9
+    },
+    {
+      "statement": "Benchmark probe: DecisionStore keeps decisions with NULL repo_path as cross-project.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Impact analysis fast mode skips LLM calls: ~1s vs ~4min for full mode.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: nv-embedcode has a ~1k token per-request limit; long texts are truncated.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Confidence scores are clamped to [0,1]; out-of-range values are normalized.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Failed validations are not integrated into the memory pipeline yet.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: VM replacements wipe /home/postgres; pgdata survives in ~/workspace.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Thinking blocks (<think>, numbered chain-of-thought) are stripped from /ask answers.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The daily backup cron runs at 03:38 EEST and keeps 7 days of pg_dump archives.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Vercel deploys from master; feature branches use preview URLs.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The web UI is a Next.js app under apps/web; API types are generated.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Context packs are capped at 14000 tokens; sections beyond budget are excluded.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: MCP proxy client timeout is shorter than unbounded LLM answers; cap generation tokens.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: MemoryHandoff events are not ingested into consolidation.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Postgres runs on port 5433 in docker compose; the default 5432 is taken by another service.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The user prefers concise Russian-language summaries with facts and dates.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Harness benchmark review tasks need a clean git worktree or they refuse to run.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: There is no memory_consolidation_runs ledger; reruns may re-read old episodes.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: a paraphrase scoring 0.90 similarity is caught by G1; an unrelated pair at 0.10 passes through.",
+      "category": "benchmark",
+      "confidence": 0.9
+    },
+    {
+      "statement": "Benchmark probe: Threads drafts need explicit approval before publishing.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The worker pool status is exposed via /jobs/worker-status.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Reindex after changing embedding models; stored vectors become inconsistent.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The background Muse process works on /impact noise; its commits are signed 'Muse <muse@local>'.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: pgvector was built from source; the apt package was too old.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Instagram banner is blocked by region_unavailable in Cyprus.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: the G1 threshold was calibrated on 7 paraphrase pairs; 0.85 catches real paraphrases without false positives.",
+      "category": "benchmark",
+      "confidence": 0.9
+    },
+    {
+      "statement": "Benchmark probe: Token-budget integration for learnings in context packs is not implemented.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: G3 contradiction check stays fail-open when the LLM errors.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Nothing is pushed to GitHub without explicit approval per change.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: ASK_MAX_ANSWER_TOKENS is 1200; lower values truncated answers mid-sentence.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: G1 threshold 0.85 was chosen because unrelated pairs score 0.01-0.12 and paraphrases 0.79-0.96.",
+      "category": "benchmark",
+      "confidence": 0.9
+    },
+    {
+      "statement": "Benchmark probe: G1 dedup embeddings are precomputed at write time and stored in pgvector for fast query-time ranking.",
+      "category": "benchmark",
+      "confidence": 0.9
+    },
+    {
+      "statement": "Benchmark probe: Neo4j browser is available at http://localhost:7474 with default credentials.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The /context endpoint returns stale_blocked when the index lags behind HEAD.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: CI benchmark baseline needs calibration after several real runs.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: NVIDIA API key lives only in .env; never paste it into chat or logs.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Processed markers for L1 events do not exist yet.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: /tmp is a 512MB tmpfs; heavy npm installs go under ~/workspace/scratch/.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Diff-review LLM responses must be parsed with _parse_llm_json_response.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Consolidation runs under a Postgres advisory lock; concurrent runs return 'skipped'.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Learning statements must be non-empty; empty strings are rejected at write time.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The memory benchmark replants its probe learning on every run, then deletes it.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: Redis persistence is disabled; all queue state is ephemeral and rebuilt on restart.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The Telegram bridge polls every 30s; webhooks are not supported behind NAT.",
+      "category": "benchmark",
+      "confidence": 0.7
+    },
+    {
+      "statement": "Benchmark probe: The skill-creator skill scaffolds new workspace skills under ~/workspace/skills/.",
+      "category": "benchmark",
+      "confidence": 0.7
+    }
+  ],
+  "learning_category": "benchmark",
+  "learning_statement": "Benchmark probe: G1 dedup uses cosine similarity with threshold 0.85 — pairs above 0.85 are linked as duplicates.",
+  "question": "What similarity threshold does G1 dedup use, and how was it chosen?",
+  "must_mention": [
+    "0.85",
+    "cosine similarity"
+  ],
+  "must_not_mention_as_answer": [],
+  "min_relevant_in_learnings_used": 3,
+  "provenance": {
+    "kind": "curated",
+    "source": "manual harness evaluation 2026-10-05",
+    "note": "Many-learnings task: plant ALL 50 learnings (45 irrelevant + 5 relevant about G1 dedup). The question is answerable only from the 5 relevant ones. Checks that must_mention phrases appear in learnings_used and that at least min_relevant_in_learnings_used relevant learnings surface. Requires run_memory to support the 'learnings' array and plant all entries."
+  }
+}

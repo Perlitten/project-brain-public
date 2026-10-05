@@ -30,7 +30,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from metrics import detection, hit_rate, mean, noise_ratio  # noqa: E402
+from metrics import detection, hit_rate, mean, mrr, noise_ratio, percentile  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
@@ -85,6 +85,7 @@ def run_context(api_url, api_key, repo, task):
         "candidates": files,
         "metrics": {
             "must_have_hit_rate": hit_rate(must, files),
+            "mrr": mrr(must, files),
             "noise_ratio": noise_ratio(must, nice, files),
         },
     }
@@ -113,17 +114,28 @@ def run_impact(api_url, api_key, repo, task):
 
 
 def run_memory(api_url, api_key, repo, task):
-    """Plant a learning, ask a question, check the answer recalls it."""
+    """Plant learning(s), ask a question, check the answer recalls them."""
     import urllib.error
 
-    learning_id = None
+    learning_ids = []
     try:
-        planted = api_post(api_url, api_key, "/learnings", {
-            "statement": task["learning_statement"],
-            "category": task.get("learning_category", "benchmark"),
-            "confidence": 0.9,
-        })
-        learning_id = planted.get("learning_id")
+        # Support both single learning_statement and a learnings array.
+        to_plant = task.get("learnings") or [
+            {
+                "statement": task["learning_statement"],
+                "category": task.get("learning_category", "benchmark"),
+                "confidence": 0.9,
+            }
+        ]
+        for lrng in to_plant:
+            planted = api_post(api_url, api_key, "/learnings", {
+                "statement": lrng["statement"],
+                "category": lrng.get("category", task.get("learning_category", "benchmark")),
+                "confidence": lrng.get("confidence", 0.9),
+            })
+            if planted.get("learning_id"):
+                learning_ids.append(planted["learning_id"])
+        learning_id = learning_ids[0] if learning_ids else None
         data = api_post(api_url, api_key, "/ask", {
             "query": task["question"],
             "repo_path": repo,
@@ -133,7 +145,14 @@ def run_memory(api_url, api_key, repo, task):
         used_statements = " ".join(lrng.get("statement", "") for lrng in learnings_used)
         mentioned = [p for p in task.get("must_mention", []) if p in used_statements]
         missing = [p for p in task.get("must_mention", []) if p not in used_statements]
-        recalled = len(missing) == 0 and len(task.get("must_mention", [])) > 0
+        # must_not_mention_as_answer: stale/superseded phrases that must NOT surface.
+        forbidden = [p for p in task.get("must_not_mention_as_answer", []) if p in used_statements]
+        # min_relevant_in_learnings_used: for many-learnings tasks, at least N
+        # of the relevant ones must be in learnings_used.
+        min_relevant = task.get("min_relevant_in_learnings_used", 0)
+        relevant_hit = len(mentioned) >= min_relevant if min_relevant else True
+        recalled = (len(missing) == 0 and len(task.get("must_mention", [])) > 0
+                    and not forbidden and relevant_hit)
         return {
             "recalled": recalled,
             "answer_preview": answer[:300],
@@ -144,10 +163,10 @@ def run_memory(api_url, api_key, repo, task):
             },
         }
     finally:
-        if learning_id:
+        for lid in learning_ids:
             try:
                 req = urllib.request.Request(
-                    api_url.rstrip("/") + f"/learnings/{learning_id}",
+                    api_url.rstrip("/") + f"/learnings/{lid}",
                     headers={"X-API-Key": api_key},
                     method="DELETE",
                 )
@@ -296,6 +315,13 @@ def summarize(results):
         if vals:
             scores[ttype] = round(mean(vals), 3)
             lines.append(f"- **{ttype}**: mean = {scores[ttype]} (n={len(vals)})")
+    # Latency percentiles across all tasks (robustness signal).
+    durations = [r["duration_s"] for r in results if isinstance(r.get("duration_s"), (int, float))]
+    if durations:
+        lines.append("")
+        lines.append(f"- **latency**: p50 = {percentile(durations, 50):.1f}s, "
+                     f"p95 = {percentile(durations, 95):.1f}s, "
+                     f"max = {max(durations):.1f}s (n={len(durations)})")
     done = [s for s in scores.values()]
     if done:
         scores["overall"] = round(mean(done), 3)
