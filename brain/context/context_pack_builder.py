@@ -1,13 +1,13 @@
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from loguru import logger
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 
 from brain.database.session import async_session_factory
-from brain.database.models import File, Symbol, Rule, Decision, Learning, ContextPack, IndexingRun
+from brain.database.models import File, Symbol, Rule, Decision, ContextPack, IndexingRun
 from brain.config.settings import settings
 from brain.config.paths import context_packs_dir
 from brain.graph.graph_client import GraphClient
@@ -22,64 +22,7 @@ from brain.search.code_search import extract_keywords
 from brain.search.path_hints import expand_keywords
 from brain.database.repository_utils import get_repository_by_path
 from brain.memory.repo_scope import normalize_repo_scope, repository_scope_clause
-
-
-def _learning_scope_clause(repo_scope: Optional[str]):
-    """Include global learnings plus learnings owned by one repository."""
-    normalized_scope = normalize_repo_scope(repo_scope)
-    return or_(
-        Learning.repo_scope.is_(None),
-        func.lower(func.trim(Learning.repo_scope)) == (normalized_scope or "").casefold(),
-    )
-
-
-async def _load_active_learnings(
-    repo_scope: Optional[str],
-    query: Optional[str] = None,
-    limit: int = 10,
-) -> List[Learning]:
-    """Read active, non-expired learnings fresh for every context-pack build.
-
-    Uses this module's async_session_factory (same seam as normative memory)
-    so tests can mock all pack-time DB access in one place.
-
-    When ``query`` is given, learnings are ranked by embedding cosine
-    similarity to the query (most relevant first); otherwise by confidence.
-    """
-    now = datetime.now(timezone.utc)
-    async with async_session_factory() as session:
-        result = await session.execute(
-            select(Learning).where(
-                Learning.status == "active",
-                or_(Learning.valid_until.is_(None), Learning.valid_until > now),
-                _learning_scope_clause(repo_scope),
-            ).order_by(Learning.confidence.desc(), Learning.id.desc())
-        )
-        learnings = list(result.scalars().all())
-
-    if query and len(learnings) > 1:
-        try:
-            from brain.llm import get_embedding_provider
-
-            embedder = get_embedding_provider()
-            query_vec = await embedder.embed(query)
-            vectors = await embedder.embed_batch([lrng.statement for lrng in learnings])
-            scored = sorted(
-                zip(learnings, vectors),
-                key=lambda pair: _cosine_similarity(query_vec, pair[1]),
-                reverse=True,
-            )
-            learnings = [lrng for lrng, _ in scored]
-        except Exception as exc:
-            logger.warning(f"Learning rerank by query failed, using confidence order: {exc}")
-    return learnings[:limit]
-
-
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
-    denom = (sum(x * x for x in a) ** 0.5) * (sum(x * x for x in b) ** 0.5)
-    if denom == 0:
-        return 0.0
-    return sum(x * y for x, y in zip(a, b)) / denom
+from brain.memory.learning_store import LearningStore
 
 
 async def _latest_index_revision(repository_id: Optional[int]) -> Optional[Tuple[int, str]]:
@@ -612,7 +555,7 @@ class ContextPackBuilder:
 
         # 6b. Consolidated learnings (L3 semantic memory). Same freshness
         # guarantee as normative memory: always read live from Postgres.
-        active_learnings = await _load_active_learnings(repository_scope)
+        active_learnings = await LearningStore.list_active_learnings(repository_scope)
 
         # 7. Critique the Context Pack
         critic_res = RetrievalCritic.critique(
@@ -829,8 +772,8 @@ class ContextPackBuilder:
 
         learnings_md = ""
         if active_learnings:
-            for lrng in active_learnings[:10]:
-                learnings_md += f"- {lrng.statement} _(confidence {lrng.confidence:.2f})_\n"
+            for l in active_learnings[:10]:
+                learnings_md += f"- {l.statement} _(confidence {l.confidence:.2f})_\n"
         else:
             learnings_md = "*No consolidated learnings yet.*\n"
 
