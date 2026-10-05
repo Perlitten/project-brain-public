@@ -60,6 +60,7 @@ class File(Base):
     __tablename__ = "files"
     __table_args__ = (
         Index("ix_files_repository_path", "repository_id", "path"),
+        UniqueConstraint("repository_id", "path", name="uq_files_repository_path"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
