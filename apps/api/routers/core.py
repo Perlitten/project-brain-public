@@ -64,6 +64,7 @@ from brain.late_interaction.operator_status import (
 )
 from brain.late_interaction.provider import LfmColbertProvider
 from brain.memory.decision_store import DecisionStore
+from brain.memory.learning_store import LearningStore
 from brain.memory.repo_freshness import assess_repository_freshness
 from brain.memory.repo_scope import normalize_repo_scope
 from brain.memory.rule_store import RuleStore
@@ -434,6 +435,16 @@ async def ask_project(body: AskRequest, request: Request):
             logger.warning(f"Decision retrieval skipped for /ask: {exc}")
             recorded_decisions_str = "Unavailable"
 
+        try:
+            learnings = await LearningStore.list_active_learnings(rule_scope)
+            learnings_str = (
+                "\n".join(f"- {lrng.statement}" for lrng in learnings[:ASK_DECISION_LIMIT])
+                or "None"
+            )
+        except Exception as exc:
+            logger.warning(f"Learning retrieval skipped for /ask: {exc}")
+            learnings_str = "Unavailable"
+
         repository_freshness = repository_scope.get("freshness", {}) if isinstance(repository_scope, dict) else {}
         freshness_status = repository_freshness.get("status")
         freshness_warning = ""
@@ -460,7 +471,8 @@ async def ask_project(body: AskRequest, request: Request):
             f"### Relevant Symbols:\n{symbols_str or 'None'}\n\n"
             f"### Relevant Code Chunks:\n{chunks_str or 'None'}\n\n"
             f"### Recorded Decisions:\n{recorded_decisions_str}\n\n"
-            f"### Active Rules:\n{rules_str or 'None'}"
+            f"### Active Rules:\n{rules_str or 'None'}\n\n"
+            f"### Consolidated Learnings:\n{learnings_str}"
         )
 
         prompt = (
