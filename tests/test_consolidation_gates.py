@@ -41,6 +41,29 @@ def _orthogonal_embedder():
     return SimpleNamespace(embed=embed, embed_batch=embed_batch)
 
 
+def _similarity_embedder(similarities: dict):
+    """Mock embedder with controllable cosine similarities.
+
+    Each text maps to a 2D unit vector chosen so that the cosine similarity
+    between the candidate's vector and a stored learning's vector equals
+    the configured value. This simulates real embedding behavior where
+    paraphrases score 0.85-0.95 and unrelated texts score near 0 —
+    unlike the one-hot _orthogonal_embedder, which can only produce
+    similarity 1.0 or 0.0 and therefore cannot test the dedup threshold.
+    """
+    import math
+
+    async def embed(text, **kwargs):
+        s = similarities.get(text, 0.0)
+        s = max(-1.0, min(1.0, s))
+        return [s, math.sqrt(max(0.0, 1.0 - s * s))]
+
+    async def embed_batch(texts, **kwargs):
+        return [await embed(t) for t in texts]
+
+    return SimpleNamespace(embed=embed, embed_batch=embed_batch)
+
+
 def test_cosine_identical_vectors():
     assert _cosine([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
 
@@ -84,6 +107,105 @@ async def test_gate_g1_detects_duplicate():
         result = await evaluate_gates(candidate)
     assert result.outcome == GateOutcome.LINK_DUPLICATE
     assert result.duplicate_of == 7
+
+
+@pytest.mark.asyncio
+async def test_gate_g1_detects_paraphrase():
+    """G1 must catch near-duplicates, not just identical strings.
+
+    Real paraphrases score 0.85-0.95 with production embeddings (measured
+    2026-10-05 on 7 paraphrase pairs). A test using only identical strings
+    (similarity exactly 1.0) cannot detect a broken threshold — it passes
+    even when the gate is effectively disabled.
+    """
+    existing = SimpleNamespace(id=7, statement="Postgres runs on port 5433 in docker compose")
+    candidate = ConsolidationCandidate(
+        statement="In docker-compose, postgres listens on 5433",
+        evidence=[{"event_id": 1}, {"event_id": 2}],
+        severity="low",
+    )
+    # Paraphrase similarity 0.90: above the 0.85 threshold, must be caught.
+    embedder = _similarity_embedder({
+        "Postgres runs on port 5433 in docker compose": 0.90,
+        "In docker-compose, postgres listens on 5433": 1.0,
+    })
+    # The mock needs a model attribute for the stored-embedding fast path.
+    embedder.model = "test-mock"
+    with patch(
+        "brain.memory.consolidation.LearningStore.list_active_learnings",
+        new=AsyncMock(return_value=[existing]),
+    ), patch(
+        "brain.memory.consolidation.get_embedding_provider",
+        return_value=embedder,
+    ):
+        result = await evaluate_gates(candidate)
+    assert result.outcome == GateOutcome.LINK_DUPLICATE
+    assert result.duplicate_of == 7
+
+
+@pytest.mark.asyncio
+async def test_gate_g1_ignores_unrelated():
+    """G1 must not flag unrelated learnings as duplicates."""
+    existing = SimpleNamespace(id=7, statement="The embeddings dimension is 2048")
+    candidate = ConsolidationCandidate(
+        statement="Backups go to ~/workspace/backups daily",
+        evidence=[{"event_id": 1}, {"event_id": 2}],
+        severity="low",
+    )
+    embedder = _similarity_embedder({
+        "The embeddings dimension is 2048": 0.08,
+        "Backups go to ~/workspace/backups daily": 1.0,
+    })
+    embedder.model = "test-mock"
+    with patch(
+        "brain.memory.consolidation.LearningStore.list_active_learnings",
+        new=AsyncMock(return_value=[existing]),
+    ), patch(
+        "brain.memory.consolidation.get_embedding_provider",
+        return_value=embedder,
+    ):
+        result = await evaluate_gates(candidate)
+    # G1 passes; G2 has enough evidence, so the candidate promotes.
+    assert result.outcome == GateOutcome.PROMOTE
+    assert any("G1 pass" in r for r in result.reasons)
+
+
+@pytest.mark.asyncio
+async def test_gate_g1_threshold_is_meaningful():
+    """The dedup threshold must actually discriminate.
+
+    A similarity just below the threshold passes; just above is caught.
+    This fails if the threshold comparison is broken (e.g. >= 1.0).
+    """
+    from brain.memory.consolidation import DEDUP_SIMILARITY_THRESHOLD
+
+    for sim, expect_duplicate in [
+        (DEDUP_SIMILARITY_THRESHOLD - 0.05, False),
+        (DEDUP_SIMILARITY_THRESHOLD + 0.05, True),
+    ]:
+        existing = SimpleNamespace(id=7, statement="stored learning")
+        candidate = ConsolidationCandidate(
+            statement="candidate statement",
+            evidence=[{"event_id": 1}, {"event_id": 2}],
+            severity="low",
+        )
+        embedder = _similarity_embedder({
+            "stored learning": sim,
+            "candidate statement": 1.0,
+        })
+        embedder.model = "test-mock"
+        with patch(
+            "brain.memory.consolidation.LearningStore.list_active_learnings",
+            new=AsyncMock(return_value=[existing]),
+        ), patch(
+            "brain.memory.consolidation.get_embedding_provider",
+            return_value=embedder,
+        ):
+            result = await evaluate_gates(candidate)
+        if expect_duplicate:
+            assert result.outcome == GateOutcome.LINK_DUPLICATE, f"sim={sim}"
+        else:
+            assert result.outcome != GateOutcome.LINK_DUPLICATE, f"sim={sim}"
 
 
 @pytest.mark.asyncio
