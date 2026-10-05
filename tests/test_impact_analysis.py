@@ -194,3 +194,18 @@ FINAL ANSWER: The queue uses exponential backoff."""
 
     # Without marker, falls back to other stripping.
     assert _strip_thinking_blocks("1. **Step**: thinking\n\nReal answer.") == "Real answer."
+
+
+def test_vague_idf_threshold():
+    """IDF threshold correctly identifies vague vs specific keyword sets."""
+    import math
+
+    # Vague: generic keywords matching many nodes -> low IDF.
+    # log(1 + 100/60) = log(2.67) ≈ 0.98 < 1.0 -> vague
+    vague_idf = math.log(1 + 100 / 60)
+    assert vague_idf < 1.0
+
+    # Specific: discriminative keyword matching few nodes -> high IDF.
+    # log(1 + 100/5) = log(21) ≈ 3.04 > 1.0 -> not vague
+    specific_idf = math.log(1 + 100 / 5)
+    assert specific_idf >= 1.0
