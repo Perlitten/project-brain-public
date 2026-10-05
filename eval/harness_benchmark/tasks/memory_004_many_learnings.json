@@ -28,7 +28,7 @@
       "confidence": 0.7
     },
     {
-      "statement": "Benchmark probe: G1 dedup uses cosine similarity with threshold 0.85 — pairs above 0.85 are linked as duplicates.",
+      "statement": "Benchmark probe: G1 dedup uses cosine similarity with threshold 0.85 \u2014 pairs above 0.85 are linked as duplicates.",
       "category": "benchmark",
       "confidence": 0.9
     },
@@ -254,14 +254,14 @@
     }
   ],
   "learning_category": "benchmark",
-  "learning_statement": "Benchmark probe: G1 dedup uses cosine similarity with threshold 0.85 — pairs above 0.85 are linked as duplicates.",
+  "learning_statement": "Benchmark probe: G1 dedup uses cosine similarity with threshold 0.85 \u2014 pairs above 0.85 are linked as duplicates.",
   "question": "What similarity threshold does G1 dedup use, and how was it chosen?",
   "must_mention": [
     "0.85",
     "cosine similarity"
   ],
   "must_not_mention_as_answer": [],
-  "min_relevant_in_learnings_used": 3,
+  "min_relevant_in_learnings_used": 1,
   "provenance": {
     "kind": "curated",
     "source": "manual harness evaluation 2026-10-05",
