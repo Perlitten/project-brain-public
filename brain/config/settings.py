@@ -178,6 +178,11 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 0
     # Client-side per-input char cap and per-request batch size (0 = preset/default).
     EMBEDDING_MAX_INPUT_CHARS: int = 0
+    # Retry budget for LLM/embedding API calls: total attempts per request and
+    # base delay (seconds) for exponential backoff. Covers transient 429/5xx
+    # and network blips from providers like NVIDIA.
+    LLM_MAX_RETRIES: int = 3
+    LLM_RETRY_BASE_DELAY_S: float = 1.0
     EMBEDDING_BATCH_SIZE: int = 0
     # Send the asymmetric-retrieval ``input_type`` field (NVIDIA-style).
     # Unset = preset behaviour (nvidia: yes, others: no).
@@ -310,6 +315,11 @@ class Settings(BaseSettings):
     PROACTIVE_INSIGHTS_LLM_ENABLED: bool = False
     PROACTIVE_INSIGHTS_MAX_SNAPSHOT_CHARS: int = 16000
     PROACTIVE_INSIGHTS_TIMEOUT_S: float = 75.0
+    # Memory consolidation loop (L1 episodic → L2 pipeline → L3 learnings).
+    # Manual run via worker job "memory_consolidation" stays available; this
+    # gate is for scheduled automation.
+    MEMORY_CONSOLIDATION_ENABLED: bool = False
+    MEMORY_CONSOLIDATION_REQUIRE_APPROVAL: bool = True
     PROACTIVE_INSIGHTS_LLM_CACHE_TTL_SECONDS: int = 0
 
     # Closed-loop self diagnosis. Deterministic probes always run first; the LLM
