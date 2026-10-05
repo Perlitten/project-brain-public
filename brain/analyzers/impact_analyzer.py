@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import re
 from datetime import datetime
 from pathlib import Path
@@ -49,6 +50,67 @@ def _is_noise_node(name: str | None) -> bool:
     return low in _SQL_NOISE_WORDS or low in _ENGLISH_NOISE_WORDS
 
 
+# Default caps for the ranked impact lists. The graph traversal fans out
+# combinatorially (every keyword CONTAINS-match plus its 2-hop neighborhood),
+# so without a cutoff a simple change can return thousands of entries —
+# ~80% of them single generic words like "provider" or "model". Ranking by
+# relevance and cutting at top-k keeps the output actionable.
+IMPACT_DEFAULT_MAX_DIRECT = 25
+IMPACT_DEFAULT_MAX_INDIRECT = 50
+
+_DISTANCE_WEIGHT = {0: 1.0, 1: 0.6, 2: 0.3}
+
+
+def _score_node(info: dict, kw_idf: dict) -> float:
+    """Relevance score for an impact candidate node (higher = more relevant).
+
+    Rewards: close to a keyword match (low distance), matched by
+    discriminative (rare) keywords, exact name match, reachable via multiple
+    paths (hub), and File nodes (directly actionable for a developer).
+    Generic keywords like "file" that match hundreds of nodes contribute
+    little; a rare keyword like "migrations" contributes a lot.
+    """
+    distance_w = _DISTANCE_WEIGHT.get(info.get("distance", 2), 0.3)
+    matched = info.get("matched_keywords") or set()
+    name = (info.get("name") or "").strip().lower()
+    kw_score = 0.0
+    for kw in matched:
+        w = kw_idf.get(kw, 1.0)
+        if kw.lower() == name:
+            w *= 1.5  # exact name match
+        kw_score += w
+    # Reached via several traversal paths = structural hub.
+    hub_boost = 1.0 + 0.1 * min(max(0, info.get("path_count", 1) - 1), 5)
+    type_boost = 1.3 if str(info.get("type", "")).lower() == "file" else 1.0
+    return distance_w * kw_score * hub_boost * type_boost
+
+
+def _register_node(
+    visited: dict, node_id: str, name: str, label: str, distance: int, keyword: str, properties: dict
+) -> None:
+    """Register a candidate node, accumulating match evidence across keywords.
+
+    Keeps the minimum distance seen and unions the matched keywords, so a node
+    hit by several keywords (or at several distances) scores higher instead of
+    being recorded once with first-visit-wins data.
+    """
+    existing = visited.get(node_id)
+    if existing is None:
+        visited[node_id] = {
+            "name": name,
+            "type": label,
+            "distance": distance,
+            "matched_keywords": {keyword},
+            "path_count": 1,
+            "properties": properties,
+        }
+    else:
+        existing["matched_keywords"].add(keyword)
+        existing["path_count"] += 1
+        if distance < existing["distance"]:
+            existing["distance"] = distance
+
+
 class ImpactAnalyzer:
     """Analyzes the impact of changes across project components."""
 
@@ -82,11 +144,10 @@ class ImpactAnalyzer:
         )
         nodes: dict[str, dict] = {}
         try:
+
             async def query_graph() -> None:
                 async with graph_client.driver.session() as session:
-                    result = await session.run(
-                        cypher, keywords=keywords, repository_id=repository.id, limit=160
-                    )
+                    result = await session.run(cypher, keywords=keywords, repository_id=repository.id, limit=160)
                     async for record in result:
                         for key, distance in (("n", 0), ("m", int(record.get("distance") or 0))):
                             node = record.get(key)
@@ -101,12 +162,18 @@ class ImpactAnalyzer:
                                 "type": next(iter(node.labels), "Unknown"),
                                 "distance": distance,
                             }
+
             await asyncio.wait_for(query_graph(), timeout=settings.AGENT_IMPACT_DEADLINE_S * 0.8)
         except asyncio.TimeoutError:
             return {"status": "partial", "keywords": keywords, "degraded": ["graph_deadline_exceeded"], "affected": []}
         except Exception as exc:
             logger.warning("Bounded impact graph degraded: {}", type(exc).__name__)
-            return {"status": "partial", "keywords": keywords, "degraded": [f"graph_error:{type(exc).__name__}"], "affected": []}
+            return {
+                "status": "partial",
+                "keywords": keywords,
+                "degraded": [f"graph_error:{type(exc).__name__}"],
+                "affected": [],
+            }
 
         affected = sorted(nodes.values(), key=lambda item: (item["distance"], item["name"]))[:80]
         critical = {"security", "auth", "payment", "billing", "database", "migration"}
@@ -120,10 +187,14 @@ class ImpactAnalyzer:
             "degraded": [],
         }
 
-    async def analyze_impact(self, change_request: str) -> dict:
+    async def analyze_impact(self, change_request: str, max_results: Optional[int] = None) -> dict:
         """Finds directly/indirectly affected surfaces using graph queries,
 
         computes a risk score, and generates an impact analysis markdown report.
+
+        Results are relevance-ranked and truncated: ``max_results`` caps the
+        combined directly+indirectly affected lists (default 75, split 25/50).
+        Pass ``max_results=0`` for the full untruncated lists.
         """
         logger.info(f"ImpactAnalyzer: Analyzing change request: {change_request}")
 
@@ -169,9 +240,9 @@ class ImpactAnalyzer:
             keywords = list(set([w.lower() for w in words if w.lower() not in stopwords]))
 
         # 2. Query Neo4j for start nodes and their neighbors (1-2 steps)
-        directly_affected = []
-        indirectly_affected = []
-        visited_nodes = {}
+        directly_affected: list = []
+        indirectly_affected: list = []
+        visited_nodes: dict = {}
         repository = await require_repository_by_path(self.repo_path)
         graph_client = GraphClient(repository_id=repository.id)
 
@@ -202,19 +273,14 @@ class ImpactAnalyzer:
                         if not node_n:
                             continue
 
-                        # Register start node
+                        # Register start node (accumulates evidence across keywords)
                         n_id = node_n.element_id if hasattr(node_n, "element_id") else str(node_n)
                         n_name = node_n.get("name", "Unknown")
                         n_labels = list(node_n.labels)
                         n_label = n_labels[0] if n_labels else "Unknown"
 
-                        if n_id not in visited_nodes and not _is_noise_node(n_name):
-                            visited_nodes[n_id] = {
-                                "name": n_name,
-                                "type": n_label,
-                                "distance": 0,
-                                "properties": dict(node_n),
-                            }
+                        if not _is_noise_node(n_name):
+                            _register_node(visited_nodes, n_id, n_name, n_label, 0, kw, dict(node_n))
 
                         path = record["path"]
                         if path:
@@ -229,13 +295,8 @@ class ImpactAnalyzer:
                                 d_name = direct_node.get("name", "Unknown")
                                 d_labels = list(direct_node.labels)
                                 d_label = d_labels[0] if d_labels else "Unknown"
-                                if d_id not in visited_nodes and not _is_noise_node(d_name):
-                                    visited_nodes[d_id] = {
-                                        "name": d_name,
-                                        "type": d_label,
-                                        "distance": 1,
-                                        "properties": dict(direct_node),
-                                    }
+                                if not _is_noise_node(d_name):
+                                    _register_node(visited_nodes, d_id, d_name, d_label, 1, kw, dict(direct_node))
 
                             # Indirectly affected are at distance 2
                             if len(nodes_in_path) >= 3:
@@ -248,25 +309,57 @@ class ImpactAnalyzer:
                                 i_name = indirect_node.get("name", "Unknown")
                                 i_labels = list(indirect_node.labels)
                                 i_label = i_labels[0] if i_labels else "Unknown"
-                                if i_id not in visited_nodes and not _is_noise_node(i_name):
-                                    visited_nodes[i_id] = {
-                                        "name": i_name,
-                                        "type": i_label,
-                                        "distance": 2,
-                                        "properties": dict(indirect_node),
-                                    }
+                                if not _is_noise_node(i_name):
+                                    _register_node(visited_nodes, i_id, i_name, i_label, 2, kw, dict(indirect_node))
                 except Exception as e:
                     logger.warning(f"Error executing Cypher for keyword '{kw}': {e}")
 
-        # Separate nodes into directly and indirectly affected
+        # Separate nodes into directly and indirectly affected, ranked by
+        # relevance. The raw traversal fans out combinatorially, so we score
+        # every candidate and keep only the top-k per list.
+        #
+        # Keywords are IDF-weighted: a keyword matching hundreds of nodes
+        # (e.g. "file") is far less discriminative than one matching a few
+        # (e.g. "migrations"), so nodes hit only by generic keywords rank low.
+        total_nodes = max(1, len(visited_nodes))
+        kw_df: dict = {}
+        for _info in visited_nodes.values():
+            for _kw in _info.get("matched_keywords") or set():
+                kw_df[_kw] = kw_df.get(_kw, 0) + 1
+        kw_idf = {kw: math.log(1 + total_nodes / df) for kw, df in kw_df.items()}
+
         start_nodes = []
+        direct_candidates = []
+        indirect_candidates = []
         for n_info in visited_nodes.values():
+            n_info["score"] = _score_node(n_info, kw_idf)
             if n_info["distance"] == 0:
                 start_nodes.append(n_info)
             elif n_info["distance"] == 1:
-                directly_affected.append(n_info)
+                direct_candidates.append(n_info)
             elif n_info["distance"] == 2:
-                indirectly_affected.append(n_info)
+                indirect_candidates.append(n_info)
+
+        max_direct: Optional[int]
+        max_indirect: Optional[int]
+        if max_results is None:
+            max_direct, max_indirect = IMPACT_DEFAULT_MAX_DIRECT, IMPACT_DEFAULT_MAX_INDIRECT
+        elif max_results <= 0:
+            max_direct = max_indirect = None  # 0 = no truncation
+        else:
+            # Split the budget ~1:2 between direct and indirect.
+            max_direct = max(1, max_results // 3)
+            max_indirect = max_results - max_direct
+
+        def _top(candidates: list, limit) -> list:
+            ranked = sorted(candidates, key=lambda n: (-n["score"], n["name"]))
+            return ranked if limit is None else ranked[:limit]
+
+        # Start nodes (distance 0) are keyword hits — they lead the direct list.
+        directly_affected = _top(start_nodes + direct_candidates, max_direct)
+        indirectly_affected = _top(indirect_candidates, max_indirect)
+        total_direct_found = len(start_nodes) + len(direct_candidates)
+        total_indirect_found = len(indirect_candidates)
 
         # If graph search yields nothing, mock/deduce some files based on keywords or postgres
         if not start_nodes:
@@ -289,7 +382,7 @@ class ImpactAnalyzer:
         screen_count = 0
         file_count = 0
 
-        all_affected = start_nodes + directly_affected + indirectly_affected
+        all_affected = directly_affected + indirectly_affected
         for node in all_affected:
             ntype = node["type"].lower()
             if "apiendpoint" in ntype:
@@ -355,7 +448,7 @@ class ImpactAnalyzer:
             )
 
         # 4. Generate checks and markdown report using LLM
-        directly_list = "\n".join([f"- **{n['name']}** ({n['type']})" for n in start_nodes + directly_affected])
+        directly_list = "\n".join([f"- **{n['name']}** ({n['type']})" for n in directly_affected])
         indirectly_list = (
             "\n".join([f"- **{n['name']}** ({n['type']})" for n in indirectly_affected])
             if indirectly_affected
@@ -418,7 +511,7 @@ class ImpactAnalyzer:
 
 ## Affected Surfaces
 ### Directly Affected
-{directly_list if (start_nodes + directly_affected) else "- No directly affected surfaces identified."}
+{directly_list if directly_affected else "- No directly affected surfaces identified."}
 
 ### Indirectly Affected
 {indirectly_list}
@@ -440,8 +533,13 @@ class ImpactAnalyzer:
         return {
             "risk_level": risk_level,
             "risk_score": risk_score,
-            "directly_affected": [n["name"] for n in start_nodes + directly_affected],
+            "directly_affected": [n["name"] for n in directly_affected],
             "indirectly_affected": [n["name"] for n in indirectly_affected],
+            "total_direct_found": total_direct_found,
+            "total_indirect_found": total_indirect_found,
+            "truncated": (
+                len(directly_affected) < total_direct_found or len(indirectly_affected) < total_indirect_found
+            ),
             "rationale": rationale,
             "verification_checks": verification_checks,
             "report_path": report_path.as_posix(),

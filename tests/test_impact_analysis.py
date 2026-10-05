@@ -64,3 +64,45 @@ def test_impact_api_endpoints(tmp_path):
                 assert "suggested_tests" in r3.json()
     finally:
         app.dependency_overrides.clear()
+
+
+def test_impact_node_scoring_prefers_discriminative_keywords():
+    """IDF-weighted scoring: nodes matched by rare keywords outrank nodes
+    matched only by generic high-frequency keywords."""
+    from brain.analyzers.impact_analyzer import _score_node
+
+    # 'file' matches hundreds of nodes, 'migrations' only a handful.
+    kw_idf = {"file": 2.6, "migrations": 6.4, "database": 4.4}
+    generic = {
+        "name": "File", "type": "Symbol", "distance": 0,
+        "matched_keywords": {"file"}, "path_count": 1,
+    }
+    specific = {
+        "name": "brain/database/migrations.py", "type": "File", "distance": 0,
+        "matched_keywords": {"database", "migrations"}, "path_count": 2,
+    }
+    assert _score_node(specific, kw_idf) > _score_node(generic, kw_idf)
+
+
+def test_impact_register_node_accumulates_evidence():
+    """Repeated registration unions keywords, bumps path count, keeps min distance."""
+    from brain.analyzers.impact_analyzer import _register_node
+
+    visited: dict = {}
+    _register_node(visited, "n1", "models.py", "File", 2, "file", {})
+    _register_node(visited, "n1", "models.py", "File", 0, "database", {})
+    info = visited["n1"]
+    assert info["distance"] == 0
+    assert info["matched_keywords"] == {"file", "database"}
+    assert info["path_count"] == 2
+
+
+def test_impact_noise_node_filter_unchanged():
+    """The SQL/prose debris filter still rejects junk and keeps file paths."""
+    from brain.analyzers.impact_analyzer import _is_noise_node
+
+    assert _is_noise_node("SELECT")
+    assert _is_noise_node("where")
+    assert _is_noise_node("")
+    assert not _is_noise_node("brain/database/models.py")
+    assert not _is_noise_node("get_embedding_provider")

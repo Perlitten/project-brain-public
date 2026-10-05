@@ -570,7 +570,7 @@ async def analyze_change_impact(body: ImpactRequest):
             logger.warning("/impact v2 shadow failed open: {}", type(exc).__name__)
     try:
         analyzer = ImpactAnalyzer(resolve_repo_path(body.repo_path))
-        return await analyzer.analyze_impact(body.change_request)
+        return await analyzer.analyze_impact(body.change_request, max_results=body.max_results)
     except Exception as exc:
         logger.error(f"Impact analysis failed for {body.repo_path}: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Impact analysis failed due to an internal error") from exc
