@@ -31,6 +31,9 @@ class ImpactRequest(BaseModel):
     change_request: str = Field(..., min_length=1, max_length=4000)
     repo_path: Optional[str] = Field(default=None, max_length=1000)
     include_debug: bool = False
+    # Caps the combined directly+indirectly affected lists (ranked by
+    # relevance). Default 75 (25 direct / 50 indirect). 0 = no truncation.
+    max_results: Optional[int] = Field(default=None, ge=0, le=10000)
 
 
 class DiffReviewRequest(BaseModel):
