@@ -31,6 +31,17 @@ Instead of replacing execution tools, Project Brain operates as a reasoning and 
 
 Runs on one machine with your own repositories. **No API keys are needed** to
 try it: the shipped `.env.example` uses mock LLM and embedding providers.
+
+One command:
+
+```bash
+git clone https://github.com/Perlitten/project-brain-public.git project-brain
+cd project-brain
+./scripts/bootstrap.sh
+```
+
+This creates the venv, installs the package, writes `.env`, starts
+postgres+redis+neo4j via Docker, and runs the `brain doctor` preflight.
 The step-by-step guide with measured timings and troubleshooting is
 [`docs/release/0.9.0-rc1/INSTALL.md`](docs/release/0.9.0-rc1/INSTALL.md).
 

@@ -39,6 +39,14 @@ class DiffReviewRequest(BaseModel):
     repo_path: Optional[str] = None
 
 
+class LearningCreate(BaseModel):
+    statement: str
+    category: Optional[str] = None
+    confidence: float = 0.5
+    repo_scope: Optional[str] = None
+    valid_until: Optional[str] = None
+
+
 class DecisionCreate(BaseModel):
     title: str
     repo_path: Optional[str] = None
@@ -100,6 +108,12 @@ class ProactiveInsightsJobRequest(BaseModel):
     repo_path: Optional[str] = None
     use_llm: Optional[bool] = None
     scheduled: bool = False
+
+
+class MemoryConsolidationJobRequest(BaseModel):
+    scheduled: bool = False
+    require_approval: Optional[bool] = None
+    dry_run: bool = False
 
 
 class SelfDiagnosisJobRequest(BaseModel):

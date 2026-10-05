@@ -8,6 +8,7 @@ from apps.api.schemas import (
     DeepContextJobRequest,
     EmbeddingBackfillRequest,
     EmbeddingVerifyRequest,
+    MemoryConsolidationJobRequest,
     NightlyMaintenanceJobRequest,
     ProactiveInsightsJobRequest,
     ReindexJobRequest,
@@ -117,6 +118,20 @@ async def enqueue_proactive_insights(body: ProactiveInsightsJobRequest | None = 
         if body.scheduled:
             params["scheduled"] = True
     job_id = await _queue("proactive_insights").enqueue("proactive_insights", params or None)
+    return _enqueue_response(job_id)
+
+
+@router.post("/memory-consolidation", dependencies=[Depends(require_scope("jobs:write"))])
+async def enqueue_memory_consolidation(body: MemoryConsolidationJobRequest | None = None):
+    params: dict[str, Any] = {}
+    if body:
+        if body.scheduled:
+            params["scheduled"] = True
+        if body.require_approval is not None:
+            params["require_approval"] = body.require_approval
+        if body.dry_run:
+            params["dry_run"] = True
+    job_id = await _queue("memory_consolidation").enqueue("memory_consolidation", params or None)
     return _enqueue_response(job_id)
 
 
