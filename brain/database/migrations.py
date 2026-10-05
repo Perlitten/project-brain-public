@@ -509,7 +509,7 @@ async def _ensure_embedding_vector_column(conn: AsyncConnection, dimension: int)
                     f"""
                     UPDATE embeddings
                     SET embedding = (
-                        (SELECT jsonb_agg(elem::text::float4)
+                        (SELECT jsonb_agg(elem::text::float8 ORDER BY ord)
                          FROM jsonb_array_elements(vector_data::jsonb) WITH ORDINALITY AS t(elem, ord)
                          WHERE ord <= {index_dim})::text
                     )::{target_type},

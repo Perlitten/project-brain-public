@@ -5,13 +5,14 @@ from pathlib import Path
 from typing import List, Optional
 from brain.improvement.models import TrajectoryRecord
 from brain.improvement.redaction import redact_trajectory_content
+from brain.config.paths import reports_dir
 
 
 class TrajectoryStore:
     """Manages raw restricted vault (14-30d), structured store (180d), and metrics store (13mo)."""
 
     def __init__(self, base_dir: Optional[Path] = None):
-        self.base_dir = base_dir or Path("d:/Brain/project-brain/reports/improvement/trajectories")
+        self.base_dir = base_dir or reports_dir() / "improvement/trajectories"
         self.raw_vault = self.base_dir / "raw_vault"
         self.structured_store = self.base_dir / "structured"
         self.metrics_store = self.base_dir / "metrics"

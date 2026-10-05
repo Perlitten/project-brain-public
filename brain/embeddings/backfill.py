@@ -94,7 +94,7 @@ async def sync_pgvector_from_json(config: Optional[EmbeddingConfig] = None) -> i
                     f"""
                     UPDATE embeddings
                     SET embedding = (
-                        (SELECT jsonb_agg(elem::text::float4)
+                        (SELECT jsonb_agg(elem::text::float8 ORDER BY ord)
                          FROM jsonb_array_elements(vector_data::jsonb) WITH ORDINALITY AS t(elem, ord)
                          WHERE ord <= {index_dim})::text
                     )::{cast_type},

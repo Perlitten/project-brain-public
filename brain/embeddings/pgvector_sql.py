@@ -33,6 +33,21 @@ def pgvector_cast_type(configured_dimension: int) -> str:
     return pgvector_column_sql_type(configured_dimension)
 
 
+def pgvector_column_type(configured_dimension: int):
+    """SQLAlchemy column type matching pgvector_column_sql_type().
+
+    Keeps declarative models in sync with what the migrations actually
+    create (vector(N) up to 2000 dims, halfvec(N) above) so create_all and
+    autogenerate never disagree with the migrated schema.
+    """
+    from pgvector.sqlalchemy import HALFVEC, Vector
+
+    index_dim = pgvector_index_dimension(configured_dimension)
+    if configured_dimension <= PGVECTOR_VECTOR_MAX_DIM:
+        return Vector(index_dim)
+    return HALFVEC(index_dim)
+
+
 def truncate_vector_for_index(vector: List[float], configured_dimension: int) -> List[float]:
     """Truncate a full embedding to the indexed pgvector width."""
     index_dim = pgvector_index_dimension(configured_dimension)

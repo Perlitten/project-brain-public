@@ -5,13 +5,14 @@ from pathlib import Path
 from typing import Dict, Optional
 from brain.improvement.models import AgentBundleManifest
 from brain.improvement.registry.bundle import create_agent_bundle
+from brain.config.paths import reports_dir
 
 
 class BundleRegistry:
     """Manages immutable AgentBundle manifests and alias pointers (champion, previous_champion)."""
 
     def __init__(self, registry_dir: Optional[Path] = None):
-        self.registry_dir = registry_dir or Path("d:/Brain/project-brain/reports/improvement/registry")
+        self.registry_dir = registry_dir or reports_dir() / "improvement/registry"
         self.registry_dir.mkdir(parents=True, exist_ok=True)
         self.aliases_file = self.registry_dir / "aliases.json"
         self._bundles: Dict[str, AgentBundleManifest] = {}

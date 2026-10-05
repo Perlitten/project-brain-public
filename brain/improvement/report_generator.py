@@ -4,13 +4,14 @@ import json
 from pathlib import Path
 from typing import Dict, Optional
 from brain.improvement.models import PairedEvaluationReport, CandidateHypothesis
+from brain.config.paths import reports_dir
 
 
 class PromotionReportGenerator:
     """Formats human-reviewable markdown and JSON promotion decision records."""
 
     def __init__(self, output_dir: Optional[Path] = None):
-        self.output_dir = output_dir or Path("d:/Brain/project-brain/reports/improvement/promotions")
+        self.output_dir = output_dir or reports_dir() / "improvement/promotions"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def generate_report(

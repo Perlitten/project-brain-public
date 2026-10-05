@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 from pydantic import BaseModel
+from brain.config.paths import reports_dir
 
 
 class RekorEntry(BaseModel):
@@ -23,7 +24,7 @@ class RekorClient:
     """Manages immutable Rekor transparency log entries for execution attestations."""
 
     def __init__(self, ledger_dir: Optional[Path] = None):
-        self.ledger_dir = ledger_dir or Path("d:/Brain/project-brain/reports/v0.6.0-rekor-ledger")
+        self.ledger_dir = ledger_dir or reports_dir() / "v0.6.0-rekor-ledger"
         self.ledger_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = self.ledger_dir / "rekor-transparency-log.json"
         self._entries: Dict[str, RekorEntry] = self._load_ledger()
