@@ -117,8 +117,12 @@ async def _load_active_learnings(
             # "use LIFO" (old) and "use FIFO" (new) both match the query: only
             # the newer surfaces. Uses pre-computed embeddings when available.
             deduped: List = []
+            import os as _os
+            _debug = _os.environ.get("LEARNING_DEDUP_DEBUG")
             for lrng in learnings:
                 vec = getattr(lrng, "embedding", None)
+                if _debug:
+                    logger.warning(f"DEDUP check id={getattr(lrng, 'id', '?')} vec={'set' if vec else 'NONE'}")
                 if vec is None:
                     deduped.append(lrng)
                     continue
