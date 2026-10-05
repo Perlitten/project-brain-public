@@ -61,3 +61,23 @@ async def test_bounded_impact_uses_one_graph_query_and_no_llm():
     assert params["repository_id"] == 7
     assert result["status"] == "ok"
     assert result["affected"][0]["name"] == "apps/api/routers/core.py"
+
+
+from brain.analyzers.impact_analyzer import _is_noise_node
+
+
+def test_noise_filter_drops_sql_and_prose_debris():
+    for junk in ["WHERE", "VARCHAR", "btrim", "COALESCE", "AND", "The", "in", "OK", "width", "Unknown", "", None]:
+        assert _is_noise_node(junk), junk
+
+
+def test_noise_filter_keeps_real_code():
+    for real in [
+        "resolve_embedding_dimension",
+        "brain/embeddings/config.py",
+        "brain.llm.presets",
+        "/health",
+        "ValueError",
+        "get_db",
+    ]:
+        assert not _is_noise_node(real), real

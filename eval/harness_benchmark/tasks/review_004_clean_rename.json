@@ -1,0 +1,13 @@
+{
+  "id": "review-004",
+  "type": "review",
+  "clean": true,
+  "patch": "diff --git a/brain/embeddings/constants.py b/brain/embeddings/constants.py\nindex 2ef97b7..bf2ee12 100644\n--- a/brain/embeddings/constants.py\n+++ b/brain/embeddings/constants.py\n@@ -37,9 +37,9 @@ def resolve_embedding_dimension(provider_name: Optional[str] = None, *, strict:\n     \"\"\"\n     if settings.EMBEDDING_DIMENSION > 0:\n         return settings.EMBEDDING_DIMENSION\n-    name = resolve_provider_name(provider_name)\n-    if name in _PROVIDER_DIMENSIONS and name not in (\"openai\", \"nvidia\"):\n-        return _PROVIDER_DIMENSIONS[name]\n+    provider = resolve_provider_name(provider_name)\n+    if provider in _PROVIDER_DIMENSIONS and provider not in (\"openai\", \"nvidia\"):\n+        return _PROVIDER_DIMENSIONS[provider]\n \n     from brain.llm.presets import get_preset, resolve_embedding_endpoint\n \n",
+  "must_detect_keywords": [],
+  "base_commit": "682ea7c53179964823785f5591b20e3d2a430226",
+  "provenance": {
+    "kind": "curated",
+    "source": "benchmark expansion 2026-10-05",
+    "note": "Clean local variable rename. Expect no rule violations or suspicious changes."
+  }
+}

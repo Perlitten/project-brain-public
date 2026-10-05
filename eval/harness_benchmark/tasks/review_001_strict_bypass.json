@@ -1,0 +1,16 @@
+{
+  "id": "review-001",
+  "type": "review",
+  "clean": false,
+  "patch": "diff --git a/brain/embeddings/constants.py b/brain/embeddings/constants.py\nindex 2ef97b7..91cef66 100644\n--- a/brain/embeddings/constants.py\n+++ b/brain/embeddings/constants.py\n@@ -47,13 +47,7 @@ def resolve_embedding_dimension(provider_name: Optional[str] = None, *, strict:\n         endpoint = resolve_embedding_endpoint(name)\n         if endpoint.dimension:\n             return endpoint.dimension\n-        if strict:\n-            raise EmbeddingDimensionUnknownError(\n-                f\"Embedding dimension is unknown for provider '{name}' model \"\n-                f\"'{endpoint.model or '<unset>'}'. Set EMBEDDING_DIMENSION to the model's \"\n-                \"output width (changing it rebuilds the vector column; re-index afterwards).\"\n-            )\n-        return 1536\n+        return endpoint.dimension or 1536\n     if strict:\n         raise EmbeddingDimensionUnknownError(f\"Unknown embedding provider '{name}'.\")\n     return 1536\n",
+  "must_detect_keywords": [
+    "strict",
+    "1536"
+  ],
+  "base_commit": "d30a11bf68ed9b706c81169b4f525f3908b5d143",
+  "provenance": {
+    "kind": "mutation",
+    "source": "manual harness evaluation 2026-10-05",
+    "note": "Planted bug: strict-mode safety raise replaced with silent 1536 fallback. The fixed reviewer flagged the behavioral shift."
+  }
+}
