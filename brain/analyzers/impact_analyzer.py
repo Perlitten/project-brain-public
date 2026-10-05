@@ -386,6 +386,18 @@ class ImpactAnalyzer:
                 kw_df[_kw] = kw_df.get(_kw, 0) + 1
         kw_idf = {kw: math.log(1 + total_nodes / df) for kw, df in kw_df.items()}
 
+        # Vagueness guard: if even the most discriminative keyword has low IDF,
+        # the request has no specific technical anchor (e.g. "improve
+        # performance"). Returning a huge hallucinated impact list is worse
+        # than admitting uncertainty. Cap results hard in this case.
+        max_idf = max(kw_idf.values()) if kw_idf else 0.0
+        is_vague = max_idf < 1.0  # log(1 + N/df) < 1 means df > N/1.7
+        if is_vague:
+            logger.info(
+                f"ImpactAnalyzer: vague request detected (max_idf={max_idf:.2f}); "
+                "returning restrained results."
+            )
+
         start_nodes = []
         direct_candidates = []
         indirect_candidates = []
@@ -400,7 +412,11 @@ class ImpactAnalyzer:
 
         max_direct: Optional[int]
         max_indirect: Optional[int]
-        if max_results is None:
+        if is_vague:
+            # Vague request: hard cap to avoid hallucinated impact lists.
+            # The caller sees few results and a low-confidence signal.
+            max_direct, max_indirect = 5, 5
+        elif max_results is None:
             max_direct, max_indirect = IMPACT_DEFAULT_MAX_DIRECT, IMPACT_DEFAULT_MAX_INDIRECT
         elif max_results <= 0:
             max_direct = max_indirect = None  # 0 = no truncation
