@@ -113,9 +113,10 @@ def _strip_thinking_blocks(text: str) -> str:
     )
     # Numbered chain-of-thought: "1. **Analyze User Query**: ..." — a leading
     # sequence of numbered bold-headed steps is reasoning, not the answer.
-    # Only strip if the numbered block is at the very start.
+    # Only strip if the numbered block is at the very start. Steps may be
+    # separated by blank lines.
     text = re.sub(
-        r"\A(\d+\.\s+\*\*[^*\n]+\*\*:.*?\n)+",
+        r"\A(\d+\.\s+\*\*[^*\n]+\*\*:.*?(?:\n\n|\n(?!\d+\.\s)|\Z))+",
         "",
         text,
         flags=re.DOTALL,
