@@ -100,6 +100,11 @@ def _strip_thinking_blocks(text: str) -> str:
 
     if not text:
         return text
+    # Primary: the /ask prompt requires the model to end with 'FINAL ANSWER:'
+    # followed by the answer. Extract only that part.
+    m = re.search(r"FINAL ANSWER:\s*(.*)", text, flags=re.DOTALL | re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
     # <think>...</think>, <reasoning>...</reasoning>, <thought>...</thought> (any case).
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<reasoning>.*?</reasoning>", "", text, flags=re.DOTALL | re.IGNORECASE)
@@ -551,9 +556,10 @@ async def ask_project(body: AskRequest, request: Request):
             system_instruction=(
                 "You are an expert developer working on Project Brain. Be specific and "
                 "brief — at most ~8 sentences unless the question demands more. "
-                "Output ONLY the final answer: never include your reasoning process, "
-                "analysis steps, thinking blocks, or phrases like 'Here's a thinking "
-                "process'. "
+                "You may think through the problem first, but you MUST end your "
+                "response with a line containing exactly 'FINAL ANSWER:' followed "
+                "by the answer itself. Only the text after 'FINAL ANSWER:' is shown "
+                "to the user. "
                 # Without this the model refuses non-English questions outright
                 # ("I couldn't understand your query as it seems to be in a
                 # different language"), which makes the Telegram bot useless to
