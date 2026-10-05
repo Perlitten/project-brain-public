@@ -369,8 +369,12 @@ async def late_interaction_status(repo_path: str):
 @router.post("/index", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def index_repository(body: IndexRequest):
     try:
+        repo_path = resolve_repo_path(body.repo_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    try:
         indexer = FileIndexer()
-        repo = await indexer.index_repository(body.repo_path)
+        repo = await indexer.index_repository(repo_path)
         return {
             "status": "success",
             "repo_id": repo.id,
