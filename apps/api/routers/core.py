@@ -100,6 +100,11 @@ def _strip_thinking_blocks(text: str) -> str:
 
     if not text:
         return text
+    # Primary: extract <answer>...</answer> if present. The /ask prompt asks
+    # the model to put the final answer in these tags, keeping reasoning out.
+    m = re.search(r"<answer>(.*?)</answer>", text, flags=re.DOTALL | re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
     # <think>...</think>, <reasoning>...</reasoning>, <thought>...</thought> (any case).
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<reasoning>.*?</reasoning>", "", text, flags=re.DOTALL | re.IGNORECASE)
@@ -126,9 +131,7 @@ def _strip_thinking_blocks(text: str) -> str:
 
 def _late_interaction_request_id(request: Request) -> str | None:
     """Return a bounded caller identity; raw values are never persisted."""
-    value = request.headers.get("x-request-id") or request.headers.get(
-        "x-correlation-id"
-    )
+    value = request.headers.get("x-request-id") or request.headers.get("x-correlation-id")
     return value[:256] if value else None
 
 
@@ -196,7 +199,10 @@ async def _compact_locator(body: SearchRequest) -> dict:
         logger.warning("v2 locator degraded: {}", type(exc).__name__)
         return BudgetedPayloadBuilder(
             cap,
-            metadata={"repo": {"path": body.repo_path, "freshness": "unknown"}, "degraded": [f"locator_error:{type(exc).__name__}"]},
+            metadata={
+                "repo": {"path": body.repo_path, "freshness": "unknown"},
+                "degraded": [f"locator_error:{type(exc).__name__}"],
+            },
         ).build()
 
 
@@ -213,10 +219,14 @@ async def _ask_v2(body: AskRequest) -> dict:
         logger.warning("/ask v2 retrieval degraded: {}", type(exc).__name__)
         runtime = {"status": "partial", "missing": [f"context_error:{type(exc).__name__}"]}
     if runtime.get("status") != "ok":
-        return BudgetedPayloadBuilder(
-            settings.AGENT_ASK_OUTPUT_MAX_BYTES,
-            metadata={"status": "partial", "degraded": runtime.get("missing", ["insufficient_context"])},
-        ).add("answer", "Current indexed context is not fresh enough to answer safely.", priority=1).build()
+        return (
+            BudgetedPayloadBuilder(
+                settings.AGENT_ASK_OUTPUT_MAX_BYTES,
+                metadata={"status": "partial", "degraded": runtime.get("missing", ["insufficient_context"])},
+            )
+            .add("answer", "Current indexed context is not fresh enough to answer safely.", priority=1)
+            .build()
+        )
 
     context_json = json.dumps(runtime, ensure_ascii=False, separators=(",", ":"))
     prompt_context = truncate_utf8(context_json, settings.AGENT_ASK_INPUT_MAX_BYTES)
@@ -227,17 +237,23 @@ async def _ask_v2(body: AskRequest) -> dict:
     )
     remaining = settings.AGENT_ASK_DEADLINE_S - (time.perf_counter() - started)
     if remaining <= 0:
-        return BudgetedPayloadBuilder(
-            settings.AGENT_ASK_OUTPUT_MAX_BYTES,
-            metadata={"status": "partial", "degraded": ["ask_deadline_exceeded"]},
-        ).add(
-            "answer",
-            "Retrieval exceeded the answer deadline; no speculative synthesis was attempted.",
-            priority=1,
-        ).build()
+        return (
+            BudgetedPayloadBuilder(
+                settings.AGENT_ASK_OUTPUT_MAX_BYTES,
+                metadata={"status": "partial", "degraded": ["ask_deadline_exceeded"]},
+            )
+            .add(
+                "answer",
+                "Retrieval exceeded the answer deadline; no speculative synthesis was attempted.",
+                priority=1,
+            )
+            .build()
+        )
     try:
         response = await asyncio.wait_for(
-            get_model_router().llm(TaskKind.SYNTHESIS).generate(
+            get_model_router()
+            .llm(TaskKind.SYNTHESIS)
+            .generate(
                 prompt=prompt,
                 system_instruction="Be concise, evidence-grounded, and do not invent code facts.",
                 max_tokens=min(500, ASK_MAX_ANSWER_TOKENS),
@@ -319,10 +335,7 @@ async def readiness_check():
         ),
         # Any OpenAI-compatible provider must have its base URL, model and
         # (unless it is a keyless local endpoint) API key configured.
-        "llm_provider": (
-            settings.ENVIRONMENT.lower() != "production"
-            or llm_provider_ready(settings)[0]
-        ),
+        "llm_provider": (settings.ENVIRONMENT.lower() != "production" or llm_provider_ready(settings)[0]),
         "worker_heartbeat": True,
     }
     worker_pools = {}
@@ -357,15 +370,11 @@ async def readiness_check():
                 late_health = await get_late_interaction_client().ready()
                 healthy = late_health.status == "ready"
             else:
-                late_health = await get_late_interaction_client().status(
-                    repository_id
-                )
+                late_health = await get_late_interaction_client().status(repository_id)
                 healthy = late_health.status == "ready"
             if strict_release_readiness:
                 checks["late_interaction_release"] = healthy
-            optional_dependencies["late_interaction_provider"] = (
-                "healthy" if healthy else "unhealthy"
-            )
+            optional_dependencies["late_interaction_provider"] = "healthy" if healthy else "unhealthy"
         else:
             probe = LfmColbertProvider(timeout_s=2.0)
             try:
@@ -494,10 +503,7 @@ async def ask_project(body: AskRequest, request: Request):
                 query=body.retrieval_query or body.query,
                 limit=ASK_DECISION_LIMIT,
             )
-            learnings_str = (
-                "\n".join(f"- {lrng.statement}" for lrng in learnings)
-                or "None"
-            )
+            learnings_str = "\n".join(f"- {lrng.statement}" for lrng in learnings) or "None"
         except Exception as exc:
             logger.warning(f"Learning retrieval skipped for /ask: {exc}")
             learnings_str = "Unavailable"
@@ -550,9 +556,10 @@ async def ask_project(body: AskRequest, request: Request):
             system_instruction=(
                 "You are an expert developer working on Project Brain. Be specific and "
                 "brief — at most ~8 sentences unless the question demands more. "
-                "Output ONLY the final answer: never include your reasoning process, "
-                "analysis steps, thinking blocks, or phrases like 'Here's a thinking "
-                "process'. "
+                "Put your final answer inside <answer>...</answer> tags. You may "
+                "reason before the tags, but the ONLY text the user sees is what "
+                "is inside the tags. Never put reasoning, analysis steps, or "
+                "phrases like 'Here's a thinking process' inside the tags. "
                 # Without this the model refuses non-English questions outright
                 # ("I couldn't understand your query as it seems to be in a
                 # different language"), which makes the Telegram bot useless to
@@ -571,8 +578,7 @@ async def ask_project(body: AskRequest, request: Request):
         return {
             "answer": _strip_thinking_blocks(response),
             "learnings_used": [
-                {"id": lrng.id, "statement": lrng.statement, "confidence": lrng.confidence}
-                for lrng in learnings
+                {"id": lrng.id, "statement": lrng.statement, "confidence": lrng.confidence} for lrng in learnings
             ],
         }
     except Exception as exc:
@@ -832,7 +838,9 @@ async def create_learning(body: LearningCreate):
         raise HTTPException(status_code=500, detail="Failed to add learning") from exc
 
 
-@router.delete("/learnings/{learning_id}", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
+@router.delete(
+    "/learnings/{learning_id}", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))]
+)
 async def delete_learning(learning_id: int):
     try:
         await LearningStore.reject(learning_id)
