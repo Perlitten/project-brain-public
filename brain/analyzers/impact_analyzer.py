@@ -111,6 +111,33 @@ def _register_node(
             existing["distance"] = distance
 
 
+_KEYWORD_STOPWORDS = frozenset(
+    """
+    the and for that this with from should would could about change update
+    request across codebase new add
+    """.split()
+)
+
+
+def _deterministic_keywords(change_request: str) -> list:
+    """Extract search keywords without an LLM call.
+
+    Splits on word boundaries, drops stopwords and short tokens, and keeps
+    both the original and lowercased forms. Used as the fast path and as the
+    fallback when the LLM keyword extractor fails.
+    """
+    words = re.findall(r"\b[a-zA-Z][a-zA-Z0-9_]{2,}\b", change_request)
+    seen = set()
+    keywords = []
+    for w in words:
+        low = w.lower()
+        if low in _KEYWORD_STOPWORDS or low in seen:
+            continue
+        seen.add(low)
+        keywords.append(w)
+    return keywords
+
+
 class ImpactAnalyzer:
     """Analyzes the impact of changes across project components."""
 
@@ -187,18 +214,8 @@ class ImpactAnalyzer:
             "degraded": [],
         }
 
-    async def analyze_impact(self, change_request: str, max_results: Optional[int] = None) -> dict:
-        """Finds directly/indirectly affected surfaces using graph queries,
-
-        computes a risk score, and generates an impact analysis markdown report.
-
-        Results are relevance-ranked and truncated: ``max_results`` caps the
-        combined directly+indirectly affected lists (default 75, split 25/50).
-        Pass ``max_results=0`` for the full untruncated lists.
-        """
-        logger.info(f"ImpactAnalyzer: Analyzing change request: {change_request}")
-
-        # 1. Extract keywords/features from change request using LLM
+    async def _llm_keywords(self, change_request: str) -> list:
+        """Extract graph search keywords via LLM, falling back to deterministic."""
         prompt = (
             f"Analyze the following change request:\n"
             f'"""\n{change_request}\n"""\n\n'
@@ -206,8 +223,6 @@ class ImpactAnalyzer:
             f"that are likely start nodes of this change request.\n"
             f"Respond ONLY with a JSON list of strings (keywords). Do not include markdown code block formatting."
         )
-
-        keywords = []
         try:
             response = await self.router.llm(TaskKind.CLASSIFICATION).generate(
                 prompt=prompt,
@@ -218,26 +233,33 @@ class ImpactAnalyzer:
                 cleaned = re.sub(r"^```(?:json)?\n", "", cleaned)
                 cleaned = re.sub(r"\n```$", "", cleaned)
             keywords = json.loads(cleaned.strip())
+            return [k for k in keywords if isinstance(k, str) and len(k.strip()) >= 3]
         except Exception as e:
             logger.warning(f"Failed to extract keywords using LLM: {e}. Falling back to words extraction.")
-            words = re.findall(r"\b[a-zA-Z]{3,}\b", change_request)
-            stopwords = {
-                "the",
-                "and",
-                "for",
-                "that",
-                "this",
-                "with",
-                "from",
-                "should",
-                "would",
-                "could",
-                "about",
-                "change",
-                "update",
-                "request",
-            }
-            keywords = list(set([w.lower() for w in words if w.lower() not in stopwords]))
+            return _deterministic_keywords(change_request)
+
+    async def analyze_impact(self, change_request: str, max_results: Optional[int] = None, fast: bool = False) -> dict:
+        """Finds directly/indirectly affected surfaces using graph queries,
+
+        computes a risk score, and generates an impact analysis markdown report.
+
+        Results are relevance-ranked and truncated: ``max_results`` caps the
+        combined directly+indirectly affected lists (default 75, split 25/50).
+        Pass ``max_results=0`` for the full untruncated lists.
+
+        ``fast=True`` skips both LLM calls (deterministic keyword extraction,
+        deterministic risk rationale), cutting typical latency from ~4 minutes
+        to ~30 seconds. The ranked affected lists and deterministic risk score
+        are unaffected; only the LLM-written rationale and verification checks
+        are replaced by generic ones.
+        """
+        logger.info(f"ImpactAnalyzer: Analyzing change request: {change_request} (fast={fast})")
+
+        # 1. Extract keywords/features from change request
+        if fast:
+            keywords = _deterministic_keywords(change_request)
+        else:
+            keywords = await self._llm_keywords(change_request)
 
         # 2. Query Neo4j for start nodes and their neighbors (1-2 steps)
         directly_affected: list = []
@@ -471,15 +493,29 @@ class ImpactAnalyzer:
 
         rationale = "No rationale provided."
         verification_checks = []
-        try:
-            response = await self.router.llm(TaskKind.SYNTHESIS).generate(
-                prompt=llm_prompt, system_instruction="You are an expert risk auditor. Respond with valid JSON only."
-            )
+        # Fast mode skips the synthesis LLM call entirely (~2-3 min saved);
+        # the deterministic rationale below is used instead.
+        llm_assessment_ok = False
+        if not fast:
+            try:
+                response = await self.router.llm(TaskKind.SYNTHESIS).generate(
+                    prompt=llm_prompt,
+                    system_instruction="You are an expert risk auditor. Respond with valid JSON only.",
+                )
+                llm_assessment_ok = True
+            except Exception as e:
+                logger.warning(f"Failed to generate LLM assessment: {e}. Using deterministic values.")
+
+        if llm_assessment_ok:
             cleaned = response.strip()
             if cleaned.startswith("```"):
                 cleaned = re.sub(r"^```(?:json)?\n", "", cleaned)
                 cleaned = re.sub(r"\n```$", "", cleaned)
-            assessment_data = json.loads(cleaned.strip())
+            try:
+                assessment_data = json.loads(cleaned.strip())
+            except Exception as e:
+                logger.warning(f"Failed to parse LLM assessment JSON: {e}. Using deterministic values.")
+                assessment_data = {}
             # Trust the LLM only to RAISE the deterministic risk, never to lower
             # it — a prompt-injected change_request must not be able to fabricate
             # a "Low" verdict for a genuinely High/Critical change.
@@ -491,8 +527,9 @@ class ImpactAnalyzer:
                 risk_level = llm_level
             rationale = assessment_data.get("rationale", rationale)
             verification_checks = assessment_data.get("verification_checks", [])
-        except Exception as e:
-            logger.warning(f"Failed to generate LLM assessment: {e}. Using deterministic values.")
+
+        if not verification_checks:
+            # Deterministic fallback (also used in fast mode).
             rationale = " - " + "\n - ".join(reasons) if reasons else "Simple local scope modification."
             verification_checks = [
                 "Compile the codebase and verify no syntax/compilation errors.",

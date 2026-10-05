@@ -106,3 +106,29 @@ def test_impact_noise_node_filter_unchanged():
     assert _is_noise_node("")
     assert not _is_noise_node("brain/database/models.py")
     assert not _is_noise_node("get_embedding_provider")
+
+
+def test_deterministic_keywords_extracts_technical_terms():
+    """Fast-mode keyword extraction keeps technical terms, drops stopwords."""
+    from brain.analyzers.impact_analyzer import _deterministic_keywords
+
+    kws = _deterministic_keywords(
+        "Rename the function resolve_embedding_dimension to get_embedding_dims across the codebase"
+    )
+    assert "resolve_embedding_dimension" in kws
+    assert "get_embedding_dims" in kws
+    # Stopwords and short tokens are dropped.
+    assert "the" not in kws
+    assert "to" not in kws
+    assert "across" not in kws
+    assert "codebase" not in kws
+    # No duplicates (case-insensitive).
+    assert len(kws) == len({k.lower() for k in kws})
+
+
+def test_deterministic_keywords_empty_request():
+    """Degenerate input yields no keywords instead of crashing."""
+    from brain.analyzers.impact_analyzer import _deterministic_keywords
+
+    assert _deterministic_keywords("a b c") == []
+    assert _deterministic_keywords("") == []
