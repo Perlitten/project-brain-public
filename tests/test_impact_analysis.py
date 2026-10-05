@@ -180,3 +180,17 @@ def test_llm_keywords_union_with_deterministic():
         return True
 
     assert asyncio.run(go())
+
+
+def test_strip_thinking_final_answer_marker():
+    """FINAL ANSWER marker extracts only the answer part."""
+    from apps.api.routers.core import _strip_thinking_blocks
+
+    text = """1. **Analyze**: The user asks about retries.
+Let me think about this...
+
+FINAL ANSWER: The queue uses exponential backoff."""
+    assert _strip_thinking_blocks(text) == "The queue uses exponential backoff."
+
+    # Without marker, falls back to other stripping.
+    assert _strip_thinking_blocks("1. **Step**: thinking\n\nReal answer.") == "Real answer."
