@@ -10,7 +10,10 @@ behavior-flipping keys here restores the unconfigured baseline; individual
 tests still patch ``settings`` per module as usual.
 """
 
+import asyncio
 import os
+
+import pytest
 
 _NEUTRAL_ENV = {
     "PROJECT_BRAIN_API_KEY": "",
@@ -42,3 +45,25 @@ _NEUTRAL_ENV = {
 
 for _key, _value in _NEUTRAL_ENV.items():
     os.environ[_key] = _value
+
+
+@pytest.fixture(autouse=True)
+def _discard_stale_db_connections():
+    """Drop pooled DB connections between tests.
+
+    pytest-asyncio gives every async test its own event loop, and each
+    ``TestClient`` runs the app on its own portal loop. An asyncpg
+    connection checked into the shared ``async_engine`` pool is bound to the
+    loop that opened it, so the next test to check it out dies with
+    "attached to a different loop". Discarding the pool after every test
+    makes each test open connections on its own loop; ``close=False``
+    skips awaiting per-connection closes on loops that are already closed.
+    Checked-out connections are not in the pool, so in-flight use is
+    unaffected.
+    """
+    yield
+    from brain.database.session import async_engine
+
+    pending = async_engine.dispose(close=False)
+    if asyncio.iscoroutine(pending):  # skipped when tests mock the engine
+        asyncio.run(pending)
