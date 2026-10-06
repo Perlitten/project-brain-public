@@ -339,19 +339,65 @@ async def evaluate_gates(
     return GateResult(outcome=GateOutcome.PROMOTE, reasons=reasons)
 
 
+async def _derive_candidate_repo_scope(candidate: ConsolidationCandidate) -> Optional[str]:
+    """Modal repository scope of a candidate's L1 evidence events.
+
+    Same derivation as episode clustering: ``event_id`` → ``agent_task_events.task_id``
+    → ``agent_tasks.repo_path``. None when no evidence event has a known repo
+    (the learning then stays unscoped, the honest answer).
+    """
+    event_ids = []
+    for item in candidate.evidence or []:
+        try:
+            event_ids.append(int(item["event_id"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not event_ids:
+        return None
+    async with async_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(AgentTaskEvent.id, AgentTask.repo_path)
+                .join(AgentTask, AgentTaskEvent.task_id == AgentTask.id)
+                .where(AgentTaskEvent.id.in_(event_ids))
+            )
+        ).all()
+    counts = Counter(
+        scope for _event_id, repo_path in rows if (scope := normalize_repo_scope(repo_path)) is not None
+    )
+    if not counts:
+        return None
+    # Deterministic tie-break: highest count, then lexicographic scope.
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+
 async def promote_candidate(
     candidate: ConsolidationCandidate,
     gate: GateResult,
     run_id: Optional[str] = None,
+    repo_scope: Optional[str] = None,
 ) -> Optional[int]:
-    """Write a gated candidate to L3. Returns the learning id, or None."""
+    """Write a gated candidate to L3. Returns the learning id, or None.
+
+    The learning is scoped like an approved episode's: an explicit
+    ``repo_scope`` wins (normalized); otherwise it is derived from the
+    candidate's evidence events. Underivable scope stays NULL.
+    """
     if gate.outcome != GateOutcome.PROMOTE:
         return None
+    scope = normalize_repo_scope(repo_scope) if repo_scope else None
+    if scope is None:
+        try:
+            scope = await _derive_candidate_repo_scope(candidate)
+        except Exception as exc:
+            logger.warning(f"Could not derive repo_scope for promoted candidate: {exc}")
+            scope = None
     return await LearningStore.add_learning(
         statement=candidate.statement,
         category=candidate.category,
         confidence=candidate.confidence,
         evidence=candidate.evidence,
+        repo_scope=scope,
         promoted_from=run_id,
     )
 
