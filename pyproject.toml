@@ -39,6 +39,8 @@ dev = [
     "ruff",
     "mypy",
     "playwright",
+    # eval benchmarks report real token counts, not chars/4 estimates.
+    "tiktoken",
 ]
 late-interaction-gpu = [
     "pylate==1.4.0",
