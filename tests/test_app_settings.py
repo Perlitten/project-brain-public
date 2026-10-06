@@ -1,6 +1,6 @@
 """/api/settings: typed, allowlisted .env writes; secrets are write-only."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 with (
     patch("sqlalchemy.ext.asyncio.create_async_engine"),
@@ -12,7 +12,6 @@ with (
 import pytest
 from fastapi.testclient import TestClient
 
-import apps.api.helpers as api_helpers
 from brain.config.settings import settings
 
 client = TestClient(app, raise_server_exceptions=False)
