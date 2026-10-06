@@ -79,8 +79,9 @@ async def git_merge_webhook(request: Request, body: GitMergeWebhook):
         ).strip():
             raise HTTPException(status_code=503, detail="No webhook credential is configured")
         raise HTTPException(status_code=401, detail="Invalid webhook credentials")
-    if body.ref != "refs/heads/master":
-        return {"status": "ignored", "reason": f"ref {body.ref} is not refs/heads/master"}
+    expected_ref = settings.PROJECT_BRAIN_WEBHOOK_REF
+    if body.ref != expected_ref:
+        return {"status": "ignored", "reason": f"ref {body.ref} is not {expected_ref}"}
     revision = body.sha or body.after or ""
     queue = queue_for_job(
         redis_client, settings.WORKER_REDIS_PREFIX, "reindex", pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED
