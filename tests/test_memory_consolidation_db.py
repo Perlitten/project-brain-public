@@ -328,3 +328,72 @@ async def test_reopen_disabled_keeps_events_consumed(memory_db, monkeypatch):
         ledger = (await session.execute(select(MemoryEpisodeEvent))).scalars().all()
     episode_event_ids = {row.event_id for row in ledger if row.episode_id == episode.id}
     assert len(episode_event_ids) == 2
+
+
+@pytest.mark.asyncio
+async def test_null_scope_episode_reopened_by_null_scope_event(memory_db):
+    # NULL↔NULL: a rejected unscoped episode re-opens on a fresh unscoped event.
+    await _add_task_events(memory_db.sessions, "", 2)
+    await memory_db.run(require_approval=True)
+    async with memory_db.sessions() as session:
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+    assert episode.repo_scope is None
+    await reject_episode(episode.id, "unscoped rejection")
+
+    await _add_task_events(memory_db.sessions, "", 1)
+    await memory_db.run()
+
+    async with memory_db.sessions() as session:
+        episodes = (await session.execute(select(MemoryEpisode).order_by(MemoryEpisode.id))).scalars().all()
+        ledger = (await session.execute(select(MemoryEpisodeEvent))).scalars().all()
+    assert len(episodes) == 2
+    assert episodes[0].status == "rejected"
+    assert len(episodes[1].source_event_ids) == 3
+    assert {row.episode_id for row in ledger} == {episodes[1].id}
+
+
+@pytest.mark.asyncio
+async def test_null_scope_episode_not_reopened_by_scoped_event(memory_db):
+    # NULL matches only NULL: a scoped event must not re-open an unscoped
+    # episode — otherwise any repo's activity could resurrect unscoped memory.
+    await _add_task_events(memory_db.sessions, "", 2)
+    await memory_db.run(require_approval=True)
+    async with memory_db.sessions() as session:
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+    assert episode.repo_scope is None
+    await reject_episode(episode.id, "unscoped rejection")
+
+    await memory_db.add_events(1)  # scoped to /tmp/consolidation-test
+    await memory_db.run()
+
+    async with memory_db.sessions() as session:
+        episodes = (await session.execute(select(MemoryEpisode).order_by(MemoryEpisode.id))).scalars().all()
+        ledger = (await session.execute(select(MemoryEpisodeEvent))).scalars().all()
+    assert len(episodes) == 2
+    # The rejected episode kept its 2 events; the fresh event formed its own.
+    assert len(episodes[1].source_event_ids) == 1
+    episode_event_ids = {row.event_id for row in ledger if row.episode_id == episodes[0].id}
+    assert len(episode_event_ids) == 2
+
+
+@pytest.mark.asyncio
+async def test_scoped_episode_not_reopened_by_null_scope_event(memory_db):
+    # Symmetric direction: an unscoped event must not re-open a scoped episode.
+    await memory_db.add_events(2)  # scoped to /tmp/consolidation-test
+    await memory_db.run(require_approval=True)
+    async with memory_db.sessions() as session:
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+    assert episode.repo_scope == "/tmp/consolidation-test"
+    await reject_episode(episode.id, "scoped rejection")
+
+    await _add_task_events(memory_db.sessions, "", 1)  # unscoped event
+    await memory_db.run()
+
+    async with memory_db.sessions() as session:
+        episodes = (await session.execute(select(MemoryEpisode).order_by(MemoryEpisode.id))).scalars().all()
+        ledger = (await session.execute(select(MemoryEpisodeEvent))).scalars().all()
+    assert len(episodes) == 2
+    assert len(episodes[1].source_event_ids) == 1
+    assert episodes[1].repo_scope is None
+    episode_event_ids = {row.event_id for row in ledger if row.episode_id == episodes[0].id}
+    assert len(episode_event_ids) == 2

@@ -129,8 +129,9 @@ async def _reopen_rejected_episode_events(
     A rejected episode's events stay consumed forever unless new evidence shows
     up: when a fresh L1 event arrives in the episode's repository scope within
     ``MEMORY_EPISODE_REOPEN_DAYS`` of the rejection, the episode's ledger rows
-    are deleted and its events join the next clustering pass. A NULL-scope
-    (global) episode re-opens on any fresh event. 0 days disables re-opening.
+    are deleted and its events join the next clustering pass. Scopes match
+    exactly: a NULL-scope episode re-opens only on a fresh NULL-scope event,
+    never on an event belonging to a repository. 0 days disables re-opening.
     """
     days = settings.MEMORY_EPISODE_REOPEN_DAYS
     if days <= 0 or not fresh_repos:
@@ -147,7 +148,7 @@ async def _reopen_rejected_episode_events(
     reopen_ids = [
         episode_id
         for episode_id, scope in rejected
-        if scope is None or normalize_repo_scope(scope) in fresh_repos
+        if normalize_repo_scope(scope) in fresh_repos
     ]
     if not reopen_ids:
         return 0
@@ -173,7 +174,9 @@ async def collect_l1_events(
     released events are included in this pass's count and clustering."""
     async with async_session_factory() as session:
         events, repo_by_event = await _collect_unconsumed_l1_events(session, since)
-        fresh_repos = {repo for repo in repo_by_event.values() if repo is not None}
+        # Keep NULL in the set: a NULL-scope event may re-open a NULL-scope
+        # episode, but never a scoped one (NULL matches only NULL).
+        fresh_repos = set(repo_by_event.values())
         reopened = await _reopen_rejected_episode_events(session, fresh_repos)
         if reopened:
             events, repo_by_event = await _collect_unconsumed_l1_events(session, since)
