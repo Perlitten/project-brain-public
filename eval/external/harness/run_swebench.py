@@ -1,0 +1,348 @@
+"""Phase 1: SWE-bench file localization against Project Brain + baselines.
+
+Per instance: checkout repo@base_commit -> incremental `brain index` -> run all
+system arms -> append one JSONL row. Resumable via --out (already-done ids are
+skipped). Protocol: ../PROTOCOL.md + ../PROTOCOL_AMENDMENTS.md.
+
+Usage:
+  python run_swebench.py --subset stratified60
+  python run_swebench.py --subset all
+  python run_swebench.py --instances django__django-11019 --out results/dev.jsonl
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import random
+import sys
+import time
+import traceback
+from collections import defaultdict
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import common  # noqa: E402  (sets env before brain imports)
+
+from common import (  # noqa: E402
+    DEV_FOLD,
+    EVAL_DIR,
+    REPOS_DIR,
+    SEED,
+    JsonlWriter,
+    commit_timestamp,
+    done_ids,
+    git,
+    grep_baseline,
+    parse_gold_patch,
+    perf_ms,
+    repo_local_name,
+    tokenize,
+)
+
+from datasets import load_dataset  # noqa: E402
+from rank_bm25 import BM25Okapi  # noqa: E402
+from sqlalchemy import select  # noqa: E402
+
+from brain.config.settings import settings  # noqa: E402
+from brain.context.context_pack_builder import ContextPackBuilder  # noqa: E402
+from brain.database.models import File, FileChunk, Symbol  # noqa: E402
+from brain.database.repository_utils import get_repository_by_path  # noqa: E402
+from brain.database.session import async_session_factory, init_db  # noqa: E402
+from brain.indexers.file_indexer import FileIndexer  # noqa: E402
+from brain.retrieval.pipeline import HybridRetrievalPipeline  # noqa: E402
+import brain.retrieval.pipeline as pipeline_mod  # noqa: E402
+from brain.retrieval.service import RetrievalService  # noqa: E402
+from brain.search.code_search import VectorSearchResult, extract_keywords  # noqa: E402
+from brain.embeddings.constants import VectorSearchStatus  # noqa: E402
+
+FILE_LIMIT = 30
+TOP_K = 30
+
+
+async def run_pipeline(issue: str, repo_id: int, repo_name: str, task_type: str, keywords: list[str]):
+    t0 = time.perf_counter()
+    pipe = HybridRetrievalPipeline()
+    res = await pipe.run(
+        task_description=issue,
+        task_type=task_type,
+        keywords=keywords,
+        repository_id=repo_id,
+        repository_name=repo_name,
+        file_limit=FILE_LIMIT,
+        retrieval_mode="fast",
+    )
+    return res, perf_ms(t0)
+
+
+def channel_rank(cands) -> list[str]:
+    return [c.item_id for c in cands]
+
+
+async def brain_arms(issue: str, repo_id: int, repo_name: str, builder: ContextPackBuilder) -> dict:
+    out: dict[str, dict] = {}
+    task_type, keywords, _risks, _feats = await builder._classify_task(issue)
+    meta = {"task_type": task_type, "n_keywords": len(keywords), "keywords": keywords[:60]}
+
+    async def _pack(res, ms):
+        by_ch = res.candidates_by_channel
+        return {
+            "paths": list(res.selected_paths)[:TOP_K],
+            "fused": [c.item_id for c in res.fused_ranking][:TOP_K],
+            "dense": channel_rank(by_ch.get("vector", []))[:TOP_K],
+            "lex": channel_rank(by_ch.get("lexical", []))[:TOP_K],
+            "pool": list(res.pool_paths)[:100],
+            "ms": ms,
+            "route": res.route.value,
+            "vector_status": res.vector_status,
+            "channel_counts": {k: len(v) for k, v in by_ch.items()},
+        }
+
+    # brain-v5 (prod defaults)
+    try:
+        res, ms = await run_pipeline(issue, repo_id, repo_name, task_type, keywords)
+        packed = await _pack(res, ms)
+        out["brain_v5"] = {"paths": packed["paths"], "ms": ms}
+        out["brain_fused"] = {"paths": packed["fused"], "ms": 0.0}
+        out["dense"] = {"paths": packed["dense"], "ms": 0.0}
+        out["lex_only_channel"] = {"paths": packed["lex"], "ms": 0.0}
+        out["brain_v5_meta"] = {k: packed[k] for k in ("route", "vector_status", "channel_counts")}
+        out["_pool"] = packed["pool"]
+    except Exception as exc:
+        out["brain_v5"] = {"paths": [], "ms": 0.0, "error": f"{type(exc).__name__}: {exc}"}
+
+    # brain-v6 (shipped feature flag on)
+    try:
+        settings.RETRIEVAL_V6_ENABLED = True
+        res, ms = await run_pipeline(issue, repo_id, repo_name, task_type, keywords)
+        packed = await _pack(res, ms)
+        out["brain_v6"] = {"paths": packed["paths"], "ms": ms}
+        out["brain_v6_meta"] = {k: packed[k] for k in ("route", "vector_status", "channel_counts")}
+    except Exception as exc:
+        out["brain_v6"] = {"paths": [], "ms": 0.0, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        settings.RETRIEVAL_V6_ENABLED = False
+
+    # brain-novector: dense channel patched empty
+    try:
+        empty = VectorSearchResult(matches=[], status=VectorSearchStatus.OK)
+        with mock.patch.object(
+            pipeline_mod, "vector_search_chunks",
+            new=mock.AsyncMock(return_value=empty),
+        ):
+            res, ms = await run_pipeline(issue, repo_id, repo_name, task_type, keywords)
+        packed = await _pack(res, ms)
+        out["brain_novector"] = {"paths": packed["paths"], "ms": ms}
+    except Exception as exc:
+        out["brain_novector"] = {"paths": [], "ms": 0.0, "error": f"{type(exc).__name__}: {exc}"}
+
+    # brain-nolex: no lexical/symbol/hints signal at all
+    try:
+        with mock.patch.object(pipeline_mod, "expand_keywords", new=lambda *a, **k: []), \
+             mock.patch.object(pipeline_mod, "derive_path_hints", new=lambda *a, **k: []):
+            res, ms = await run_pipeline(issue, repo_id, repo_name, task_type, keywords)
+        packed = await _pack(res, ms)
+        out["brain_nolex"] = {"paths": packed["paths"], "ms": ms}
+    except Exception as exc:
+        out["brain_nolex"] = {"paths": [], "ms": 0.0, "error": f"{type(exc).__name__}: {exc}"}
+
+    out["query_meta"] = meta
+    return out
+
+
+async def mcp_arm(issue: str, repo_path: str) -> dict:
+    try:
+        t0 = time.perf_counter()
+        svc = RetrievalService()
+        result = await svc.retrieve(
+            issue, repo_path=repo_path, intent="locator", candidate_budget=TOP_K, deadline_s=10.0
+        )
+        paths = [c.path for c in result.candidates][:TOP_K]
+        return {"paths": paths, "ms": perf_ms(t0), "degraded": result.degraded}
+    except Exception as exc:
+        return {"paths": [], "ms": 0.0, "error": f"{type(exc).__name__}: {exc}"}
+
+
+async def bm25_arm(issue: str, repo_id: int) -> dict:
+    t0 = time.perf_counter()
+    async with async_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(FileChunk.content, File.path)
+                .join(File, FileChunk.file_id == File.id)
+                .where(File.repository_id == repo_id)
+            )
+        ).all()
+    if not rows:
+        return {"paths": [], "ms": 0.0, "n_docs": 0}
+    corpus = [tokenize(r[0] or "") for r in rows]
+    bm = BM25Okapi(corpus)
+    scores = bm.get_scores(tokenize(issue))
+    by_path: dict[str, float] = {}
+    for (content, path), s in zip(rows, scores):
+        if s > by_path.get(path, 0.0):
+            by_path[path] = float(s)
+    ranked = [p for p, _ in sorted(by_path.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_K]]
+    return {"paths": ranked, "ms": perf_ms(t0), "n_docs": len(rows)}
+
+
+async def gold_symbols(repo_id: int, gold_files: list[str], hunks: dict) -> list[str]:
+    """Names of symbols overlapping gold hunks — for symbol-level recall."""
+    if not gold_files:
+        return []
+    async with async_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(Symbol.name, Symbol.start_line, Symbol.end_line, File.path)
+                .join(File, Symbol.file_id == File.id)
+                .where(File.repository_id == repo_id, File.path.in_(gold_files))
+            )
+        ).all()
+    names = []
+    for name, s, e, path in rows:
+        for hs, hl in hunks.get(path, []):
+            if s is None:
+                continue
+            if s <= hs + hl and (e or s) >= hs:
+                names.append(f"{path}::{name}")
+                break
+    return names
+
+
+async def index_repo(repo_dir: Path) -> dict:
+    t0 = time.perf_counter()
+    indexer = FileIndexer()
+    rec = await indexer.index_repository(repo_dir, clean=False)
+    return {
+        "ms": perf_ms(t0),
+        "repo_id": rec.id,
+        "repo_name": rec.name,
+        "last_commit": rec.last_indexed_commit,
+        "file_counts": getattr(indexer, "file_counts", {}),
+    }
+
+
+def select_instances(ds, subset: str, ids: list[str] | None) -> list[dict]:
+    rows = [dict(r) for r in ds]
+    if ids:
+        # explicit ids bypass the dev-fold exclusion (dev fold exists for smoke tests)
+        keep = set(ids)
+        return [r for r in rows if r["instance_id"] in keep]
+    rows = [r for r in rows if r["instance_id"] not in DEV_FOLD]
+    if subset == "all":
+        return rows
+    if subset == "stratified60":
+        rng = random.Random(SEED)
+        by_repo: dict[str, list[dict]] = defaultdict(list)
+        for r in rows:
+            by_repo[r["repo"]].append(r)
+        total = len(rows)
+        picked: list[dict] = []
+        for repo, items in sorted(by_repo.items()):
+            k = max(2, round(60 * len(items) / total))
+            k = min(k, len(items))
+            picked.extend(rng.sample(items, k))
+        # trim to exactly 60 deterministically
+        rng2 = random.Random(SEED + 1)
+        rng2.shuffle(picked)
+        return picked[:60]
+    raise SystemExit(f"unknown subset {subset}")
+
+
+async def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--subset", default="stratified60", choices=["stratified60", "all"])
+    ap.add_argument("--instances", nargs="*", default=None)
+    ap.add_argument("--repos", nargs="*", default=None, help="restrict to these repos (sharding)")
+    ap.add_argument("--dataset", default="princeton-nlp/SWE-bench_Lite")
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--limit", type=int, default=0)
+    args = ap.parse_args()
+
+    out_path = Path(args.out) if args.out else (
+        Path(__file__).resolve().parent.parent / "results" / f"swebench_{args.subset}.jsonl"
+    )
+    seen = done_ids(out_path)
+    ds = load_dataset(args.dataset, split="test")
+    insts = select_instances(ds, args.subset, args.instances)
+    if args.repos:
+        insts = [i for i in insts if i["repo"] in set(args.repos)]
+    insts = [i for i in insts if i["instance_id"] not in seen]
+    if args.limit:
+        insts = insts[: args.limit]
+    print(f"[run] {len(insts)} instances -> {out_path}", flush=True)
+
+    await init_db()
+    builder = ContextPackBuilder()
+    writer = JsonlWriter(out_path)
+
+    by_repo: dict[str, list[dict]] = defaultdict(list)
+    for r in insts:
+        by_repo[r["repo"]].append(r)
+
+    done = 0
+    for repo, items in sorted(by_repo.items()):
+        repo_dir = REPOS_DIR / repo_local_name(repo)
+        if not repo_dir.exists():
+            print(f"[skip] missing clone {repo_dir}", flush=True)
+            continue
+        items.sort(key=lambda r: commit_timestamp(repo_dir, r["base_commit"]))
+        for inst in items:
+            iid = inst["instance_id"]
+            issue = inst["problem_statement"]
+            gold_files, hunks = parse_gold_patch(inst["patch"])
+            row = {
+                "instance_id": iid,
+                "repo": repo,
+                "base_commit": inst["base_commit"],
+                "gold_files": gold_files,
+                "gold_hunks": hunks,
+                "issue_sha256": __import__("hashlib").sha256(issue.encode()).hexdigest()[:16],
+                "graph_available": False,
+            }
+            try:
+                git(repo_dir, "checkout", "-q", "-f", inst["base_commit"])
+            except Exception as exc:
+                row["error"] = f"checkout: {exc}"
+                writer.write(row)
+                continue
+            try:
+                idx = await index_repo(repo_dir)
+            except Exception as exc:
+                row["error"] = f"index: {type(exc).__name__}: {exc}"
+                row["trace"] = traceback.format_exc()[-2000:]
+                writer.write(row)
+                continue
+            row["index"] = idx
+            repo_id = idx["repo_id"]
+
+            try:
+                arms = await brain_arms(issue, repo_id, idx["repo_name"], builder)
+            except Exception as exc:
+                arms = {"fatal": f"{type(exc).__name__}: {exc}", "trace": traceback.format_exc()[-2000:]}
+            pool = arms.pop("_pool", [])
+            row["arms"] = arms
+            row["brain_v5_pool"] = pool
+
+            row["arms"]["brain_mcp"] = await mcp_arm(issue, str(repo_dir))
+            row["arms"]["bm25"] = await bm25_arm(issue, repo_id)
+            t0 = time.perf_counter()
+            row["arms"]["grep"] = {
+                "paths": grep_baseline(
+                    repo_dir,
+                    arms.get("query_meta", {}).get("keywords") or extract_keywords(issue),
+                    TOP_K,
+                ),
+                "ms": perf_ms(t0),
+            }
+            row["gold_symbols"] = await gold_symbols(repo_id, gold_files, hunks)
+            writer.write(row)
+            done += 1
+            print(f"[{done}/{len(insts)}] {iid} index={idx['ms']}ms", flush=True)
+    writer.close()
+    print("[run] done", flush=True)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
