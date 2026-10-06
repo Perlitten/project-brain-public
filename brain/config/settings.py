@@ -191,6 +191,11 @@ class Settings(BaseSettings):
     EMBEDDING_SEND_INPUT_TYPE: Optional[bool] = None
     # Target product repo for embeddings / re-index (override via env)
     TARGET_REPO_PATH: str = "."
+    # Extra repository roots accepted by repo_path validation (comma-separated).
+    ALLOWED_REPO_ROOTS: Optional[str] = None
+    # Also accept the process cwd and the system tempdir as repo roots (eval
+    # scratch repos, local dev). Unset = on everywhere except production.
+    ALLOW_SCRATCH_REPO_ROOTS: Optional[bool] = None
     # Grafify graph JSON export (override via env GRAFIFY_OUTPUT_PATH)
     GRAFIFY_OUTPUT_PATH: Optional[str] = None
     # Obsidian vault directory for rules/decisions import

@@ -397,3 +397,44 @@ async def test_scoped_episode_not_reopened_by_null_scope_event(memory_db):
     assert episodes[1].repo_scope is None
     episode_event_ids = {row.event_id for row in ledger if row.episode_id == episodes[0].id}
     assert len(episode_event_ids) == 2
+
+
+def _promotable_candidate(event_ids):
+    return consolidation.ConsolidationCandidate(
+        statement=STATEMENT,
+        category="infra",
+        confidence=0.9,
+        evidence=[{"event_id": event_id} for event_id in event_ids],
+    )
+
+
+@pytest.mark.asyncio
+async def test_promote_candidate_derives_modal_repo_scope(memory_db):
+    # Manual L3 promotion is scoped like the approve path: modal repo of the
+    # candidate's evidence events (2 events in repo-a beat 1 in repo-b).
+    _, a_events = await _add_task_events(memory_db.sessions, "/tmp/promote-repo-a/", 2)
+    _, b_events = await _add_task_events(memory_db.sessions, "/tmp/promote-repo-b", 1)
+    gate = consolidation.GateResult(outcome=consolidation.GateOutcome.PROMOTE)
+    learning_id = await consolidation.promote_candidate(
+        _promotable_candidate(a_events + b_events), gate, run_id="manual"
+    )
+    async with memory_db.sessions() as session:
+        learning = await session.get(Learning, learning_id)
+    assert learning.repo_scope == "/tmp/promote-repo-a"
+
+
+@pytest.mark.asyncio
+async def test_promote_candidate_explicit_scope_wins_and_underivable_stays_null(memory_db):
+    _, events = await _add_task_events(memory_db.sessions, "/tmp/promote-repo-a", 2)
+    gate = consolidation.GateResult(outcome=consolidation.GateOutcome.PROMOTE)
+    explicit_id = await consolidation.promote_candidate(
+        _promotable_candidate(events), gate, repo_scope="/tmp/explicit-repo/"
+    )
+    orphan_id = await consolidation.promote_candidate(
+        consolidation.ConsolidationCandidate(statement="orphan learning", evidence=[{"event_id": -1}]), gate
+    )
+    async with memory_db.sessions() as session:
+        explicit = await session.get(Learning, explicit_id)
+        orphan = await session.get(Learning, orphan_id)
+    assert explicit.repo_scope == "/tmp/explicit-repo"
+    assert orphan.repo_scope is None
