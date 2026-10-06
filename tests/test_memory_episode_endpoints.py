@@ -44,7 +44,7 @@ class _Session:
 
 def test_get_episodes_caps_limit():
     session = _Session()
-    with patch("apps.api.routers.core.async_session_factory", return_value=session):
+    with patch("apps.api.routers.core_memory.async_session_factory", return_value=session):
         assert client.get("/episodes?limit=200", headers=HEADERS).status_code == 200
         assert client.get("/episodes?limit=201", headers=HEADERS).status_code == 422
         assert client.get("/episodes?limit=0", headers=HEADERS).status_code == 422

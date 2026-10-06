@@ -14,7 +14,7 @@ client = TestClient(app)
 
 
 @pytest.mark.asyncio
-@patch("apps.api.routers.core.check_health")
+@patch("apps.api.routers.core_lifecycle.check_health")
 async def test_health_endpoint_healthy(mock_check_health):
     mock_check_health.return_value = {
         "postgres": {"status": "healthy", "message": "SQLAlchemy async engine connection successful"},
@@ -32,7 +32,7 @@ async def test_health_endpoint_healthy(mock_check_health):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.routers.core.check_health")
+@patch("apps.api.routers.core_lifecycle.check_health")
 async def test_health_endpoint_unhealthy(mock_check_health):
     mock_check_health.return_value = {
         "postgres": {"status": "healthy", "message": "SQLAlchemy async engine connection successful"},
@@ -51,11 +51,11 @@ async def test_health_endpoint_unhealthy(mock_check_health):
 
 @pytest.mark.asyncio
 @patch(
-    "apps.api.routers.core.redis_client.get",
+    "apps.api.routers.core_lifecycle.redis_client.get",
     new_callable=AsyncMock,
 )
-@patch("apps.api.routers.core.build_info")
-@patch("apps.api.routers.core.check_health")
+@patch("apps.api.routers.core_lifecycle.build_info")
+@patch("apps.api.routers.core_lifecycle.check_health")
 async def test_ready_requires_release_worker_and_alert_channel(
     mock_check_health, mock_build_info, mock_worker_heartbeat
 ):
@@ -70,20 +70,20 @@ async def test_ready_requires_release_worker_and_alert_channel(
     }
     mock_worker_heartbeat.return_value = '{"at":"now"}'
     with (
-        patch("apps.api.routers.core.settings.ENVIRONMENT", "production"),
-        patch("apps.api.routers.core.settings.SELF_DIAGNOSIS_ENABLED", True),
-        patch("apps.api.routers.core.settings.SELF_DIAGNOSIS_USE_LLM", True),
-        patch("apps.api.routers.core.settings.TELEGRAM_ALERTS_ENABLED", True),
+        patch("apps.api.routers.core_lifecycle.settings.ENVIRONMENT", "production"),
+        patch("apps.api.routers.core_lifecycle.settings.SELF_DIAGNOSIS_ENABLED", True),
+        patch("apps.api.routers.core_lifecycle.settings.SELF_DIAGNOSIS_USE_LLM", True),
+        patch("apps.api.routers.core_lifecycle.settings.TELEGRAM_ALERTS_ENABLED", True),
         patch(
-            "apps.api.routers.core.settings.TELEGRAM_ALERT_BOT_TOKEN",
+            "apps.api.routers.core_lifecycle.settings.TELEGRAM_ALERT_BOT_TOKEN",
             "configured",
         ),
         patch(
-            "apps.api.routers.core.settings.TELEGRAM_ALERT_CHAT_ID",
+            "apps.api.routers.core_lifecycle.settings.TELEGRAM_ALERT_CHAT_ID",
             "configured",
         ),
-        patch("apps.api.routers.core.settings.DEFAULT_LLM_PROVIDER", "nvidia"),
-        patch("apps.api.routers.core.settings.NVIDIA_API_KEY", "configured"),
+        patch("apps.api.routers.core_lifecycle.settings.DEFAULT_LLM_PROVIDER", "nvidia"),
+        patch("apps.api.routers.core_lifecycle.settings.NVIDIA_API_KEY", "configured"),
     ):
         response = client.get("/ready")
 
@@ -94,15 +94,15 @@ async def test_ready_requires_release_worker_and_alert_channel(
 
 @pytest.mark.asyncio
 @patch(
-    "apps.api.routers.core.redis_client.get",
+    "apps.api.routers.core_lifecycle.redis_client.get",
     new_callable=AsyncMock,
     return_value=None,
 )
 @patch(
-    "apps.api.routers.core.build_info",
+    "apps.api.routers.core_lifecycle.build_info",
     return_value={"build_sha": "unknown", "source_digest": "unknown"},
 )
-@patch("apps.api.routers.core.check_health")
+@patch("apps.api.routers.core_lifecycle.check_health")
 async def test_ready_fails_closed_on_unknown_build_and_missing_worker(
     mock_check_health, _mock_build_info, _mock_worker_heartbeat
 ):
@@ -111,7 +111,7 @@ async def test_ready_fails_closed_on_unknown_build_and_missing_worker(
         "redis": {"status": "healthy"},
         "neo4j": {"status": "healthy"},
     }
-    with patch("apps.api.routers.core.settings.ENVIRONMENT", "production"):
+    with patch("apps.api.routers.core_lifecycle.settings.ENVIRONMENT", "production"):
         response = client.get("/ready")
 
     assert response.status_code == 503
@@ -121,12 +121,12 @@ async def test_ready_fails_closed_on_unknown_build_and_missing_worker(
 
 
 @pytest.mark.asyncio
-@patch("apps.api.routers.core.redis_client.get", new_callable=AsyncMock, return_value="alive")
+@patch("apps.api.routers.core_lifecycle.redis_client.get", new_callable=AsyncMock, return_value="alive")
 @patch(
-    "apps.api.routers.core.build_info",
+    "apps.api.routers.core_lifecycle.build_info",
     return_value={"build_sha": "a" * 40, "source_digest": "b" * 64},
 )
-@patch("apps.api.routers.core.check_health")
+@patch("apps.api.routers.core_lifecycle.check_health")
 async def test_ready_accepts_deterministic_only_self_diagnosis(
     mock_check_health, _mock_build_info, _mock_worker_heartbeat
 ):
@@ -136,25 +136,25 @@ async def test_ready_accepts_deterministic_only_self_diagnosis(
         "neo4j": {"status": "healthy"},
     }
     with (
-        patch("apps.api.routers.core.settings.ENVIRONMENT", "production"),
-        patch("apps.api.routers.core.settings.SELF_DIAGNOSIS_ENABLED", True),
-        patch("apps.api.routers.core.settings.SELF_DIAGNOSIS_USE_LLM", False),
-        patch("apps.api.routers.core.settings.TELEGRAM_ALERTS_ENABLED", True),
-        patch("apps.api.routers.core.settings.TELEGRAM_ALERT_BOT_TOKEN", "configured"),
-        patch("apps.api.routers.core.settings.TELEGRAM_ALERT_CHAT_ID", "configured"),
+        patch("apps.api.routers.core_lifecycle.settings.ENVIRONMENT", "production"),
+        patch("apps.api.routers.core_lifecycle.settings.SELF_DIAGNOSIS_ENABLED", True),
+        patch("apps.api.routers.core_lifecycle.settings.SELF_DIAGNOSIS_USE_LLM", False),
+        patch("apps.api.routers.core_lifecycle.settings.TELEGRAM_ALERTS_ENABLED", True),
+        patch("apps.api.routers.core_lifecycle.settings.TELEGRAM_ALERT_BOT_TOKEN", "configured"),
+        patch("apps.api.routers.core_lifecycle.settings.TELEGRAM_ALERT_CHAT_ID", "configured"),
     ):
         response = client.get("/ready")
 
     assert response.status_code == 200
 
 
-@patch("apps.api.routers.core.LfmColbertProvider.aclose", new_callable=AsyncMock)
+@patch("apps.api.routers.core_lifecycle.LfmColbertProvider.aclose", new_callable=AsyncMock)
 @patch(
-    "apps.api.routers.core.LfmColbertProvider.health",
+    "apps.api.routers.core_lifecycle.LfmColbertProvider.health",
     new_callable=AsyncMock,
     side_effect=RuntimeError("sidecar down"),
 )
-@patch("apps.api.routers.core.check_health")
+@patch("apps.api.routers.core_lifecycle.check_health")
 def test_ready_reports_optional_late_interaction_failure_without_draining_api(
     mock_check_health, _mock_late_health, _mock_late_close
 ):
@@ -164,8 +164,8 @@ def test_ready_reports_optional_late_interaction_failure_without_draining_api(
         "neo4j": {"status": "healthy"},
     }
     with (
-        patch("apps.api.routers.core.settings.ENVIRONMENT", "local"),
-        patch("apps.api.routers.core.settings.LATE_INTERACTION_RERANK_ENABLED", True),
+        patch("apps.api.routers.core_lifecycle.settings.ENVIRONMENT", "local"),
+        patch("apps.api.routers.core_lifecycle.settings.LATE_INTERACTION_RERANK_ENABLED", True),
     ):
         response = client.get("/ready")
 
@@ -176,7 +176,7 @@ def test_ready_reports_optional_late_interaction_failure_without_draining_api(
     assert payload["optional_dependencies"]["late_interaction_provider"] == "unhealthy"
 
 
-@patch("apps.api.routers.core.check_health")
+@patch("apps.api.routers.core_lifecycle.check_health")
 def test_ready_probes_remote_late_interaction_without_draining_api(
     mock_check_health,
 ):
@@ -190,11 +190,11 @@ def test_ready_probes_remote_late_interaction_without_draining_api(
         return_value=SimpleNamespace(status="failed_open"),
     )
     with (
-        patch("apps.api.routers.core.settings.ENVIRONMENT", "local"),
-        patch("apps.api.routers.core.settings.LATE_INTERACTION_RERANK_ENABLED", True),
-        patch("apps.api.routers.core.settings.LATE_INTERACTION_REMOTE_ENABLED", True),
+        patch("apps.api.routers.core_lifecycle.settings.ENVIRONMENT", "local"),
+        patch("apps.api.routers.core_lifecycle.settings.LATE_INTERACTION_RERANK_ENABLED", True),
+        patch("apps.api.routers.core_lifecycle.settings.LATE_INTERACTION_REMOTE_ENABLED", True),
         patch(
-            "apps.api.routers.core.get_late_interaction_client",
+            "apps.api.routers.core_lifecycle.get_late_interaction_client",
             return_value=remote,
         ),
     ):

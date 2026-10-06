@@ -745,7 +745,7 @@ async def test_pipeline_counterfactual_never_reuses_baseline_cache_or_llm(
 
 @pytest.mark.asyncio
 async def test_api_ask_and_search_share_integrated_code_search(monkeypatch):
-    from apps.api.routers import core
+    from apps.api.routers import core, core_retrieval
     from apps.api.schemas import AskRequest, SearchRequest
 
     payload = {
@@ -760,11 +760,11 @@ async def test_api_ask_and_search_share_integrated_code_search(monkeypatch):
     }
     hybrid = AsyncMock(return_value=payload)
     generate = AsyncMock(return_value="answer")
-    monkeypatch.setattr(core, "hybrid_search_code", hybrid)
+    monkeypatch.setattr(core_retrieval, "hybrid_search_code", hybrid)
     monkeypatch.setattr(core.RuleStore, "list_active_rules", AsyncMock(return_value=[]))
     monkeypatch.setattr(core.DecisionStore, "list_decisions", AsyncMock(return_value=[]))
     monkeypatch.setattr(
-        core,
+        core_retrieval,
         "get_model_router",
         lambda: types.SimpleNamespace(
             llm=lambda _kind: types.SimpleNamespace(generate=generate)

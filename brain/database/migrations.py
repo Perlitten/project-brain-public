@@ -4,7 +4,7 @@ from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from brain.embeddings.constants import resolve_embedding_dimension
+from brain.embeddings.constants import EMBEDDING_DIMENSION, resolve_embedding_dimension
 from brain.embeddings.pgvector_sql import (
     PGVECTOR_VECTOR_MAX_DIM,
     pgvector_column_sql_type,
@@ -51,6 +51,13 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     pgvector_ready = await _ensure_pgvector_extension(conn)
     if pgvector_ready:
         await _ensure_embedding_vector_column(conn, dimension)
+
+
+async def _ensure_embedding_column(conn: AsyncConnection, table: str) -> None:
+    """Add the pgvector ``embedding`` column to a memory table (memory_learnings,
+    memory_episodes, memory_skills all repeat this block)."""
+    vec_type = pgvector_column_sql_type(EMBEDDING_DIMENSION)
+    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS embedding {vec_type}"))
 
 
 async def _ensure_indexing_progress_columns(conn: AsyncConnection) -> None:
@@ -632,13 +639,7 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
         await conn.execute(
             text("CREATE INDEX IF NOT EXISTS ix_memory_learnings_status_scope ON memory_learnings (status, repo_scope)")
         )
-        from brain.embeddings.pgvector_sql import pgvector_column_sql_type
-        from brain.embeddings.constants import EMBEDDING_DIMENSION
-
-        vec_type = pgvector_column_sql_type(EMBEDDING_DIMENSION)
-        await conn.execute(
-            text(f"ALTER TABLE memory_learnings ADD COLUMN IF NOT EXISTS embedding {vec_type}")
-        )
+        await _ensure_embedding_column(conn, "memory_learnings")
         await conn.execute(
             text("ALTER TABLE memory_learnings ADD COLUMN IF NOT EXISTS embedding_model VARCHAR(128)")
         )
@@ -668,13 +669,7 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
         )
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memory_episodes_status ON memory_episodes (status)"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memory_episodes_topic ON memory_episodes (topic)"))
-        from brain.embeddings.pgvector_sql import pgvector_column_sql_type
-        from brain.embeddings.constants import EMBEDDING_DIMENSION
-
-        vec_type = pgvector_column_sql_type(EMBEDDING_DIMENSION)
-        await conn.execute(
-            text(f"ALTER TABLE memory_episodes ADD COLUMN IF NOT EXISTS embedding {vec_type}")
-        )
+        await _ensure_embedding_column(conn, "memory_episodes")
     except Exception as exc:
         logger.warning(f"Could not apply memory_episodes table migration: {exc}")
 
@@ -707,13 +702,7 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
         )
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memory_skills_status ON memory_skills (status)"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memory_skills_name ON memory_skills (name)"))
-        from brain.embeddings.pgvector_sql import pgvector_column_sql_type
-        from brain.embeddings.constants import EMBEDDING_DIMENSION
-
-        vec_type = pgvector_column_sql_type(EMBEDDING_DIMENSION)
-        await conn.execute(
-            text(f"ALTER TABLE memory_skills ADD COLUMN IF NOT EXISTS embedding {vec_type}")
-        )
+        await _ensure_embedding_column(conn, "memory_skills")
         # Explicit global marker for context injection; a NULL repo_scope is
         # not global and is never injected (underivable backfills stay NULL).
         await conn.execute(
