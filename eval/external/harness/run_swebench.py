@@ -223,6 +223,15 @@ async def index_repo(repo_dir: Path) -> dict:
     }
 
 
+def neo4j_up() -> bool:
+    import socket
+    try:
+        with socket.create_connection(("localhost", 7687), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
 def select_instances(ds, subset: str, ids: list[str] | None) -> list[dict]:
     rows = [dict(r) for r in ds]
     if ids:
@@ -276,6 +285,8 @@ async def main() -> None:
     await init_db()
     builder = ContextPackBuilder()
     writer = JsonlWriter(out_path)
+    graph_up = neo4j_up()
+    print(f"[run] neo4j={'up' if graph_up else 'down'}", flush=True)
 
     by_repo: dict[str, list[dict]] = defaultdict(list)
     for r in insts:
@@ -299,7 +310,7 @@ async def main() -> None:
                 "gold_files": gold_files,
                 "gold_hunks": hunks,
                 "issue_sha256": __import__("hashlib").sha256(issue.encode()).hexdigest()[:16],
-                "graph_available": False,
+                "graph_available": graph_up,
             }
             try:
                 git(repo_dir, "checkout", "-q", "-f", inst["base_commit"])
