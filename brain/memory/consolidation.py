@@ -392,6 +392,11 @@ async def promote_candidate(
         except Exception as exc:
             logger.warning(f"Could not derive repo_scope for promoted candidate: {exc}")
             scope = None
+        if scope is None:
+            logger.info(
+                "promote_candidate: repo_scope underivable from %d evidence event(s); learning stays unscoped",
+                len(candidate.evidence or []),
+            )
     return await LearningStore.add_learning(
         statement=candidate.statement,
         category=candidate.category,

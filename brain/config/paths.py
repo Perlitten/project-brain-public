@@ -35,6 +35,26 @@ def scratch_repo_roots_allowed() -> bool:
     return str(getattr(settings, "ENVIRONMENT", "local")).lower() != "production"
 
 
+def allowed_repo_roots() -> list[Path]:
+    """Base directories validate_secure_repo_path accepts as repository roots."""
+    allowed_bases = [
+        get_repo_root(),
+        Path(settings.TARGET_REPO_PATH).resolve(),
+    ]
+    if scratch_repo_roots_allowed():
+        allowed_bases.append(Path.cwd().resolve())
+        allowed_bases.append(Path(tempfile.gettempdir()).resolve())
+
+    # Explicit user configured extra roots if present
+    extra_roots = getattr(settings, "ALLOWED_REPO_ROOTS", None)
+    if extra_roots:
+        for r in str(extra_roots).split(","):
+            if r.strip():
+                allowed_bases.append(Path(r.strip()).resolve())
+
+    return allowed_bases
+
+
 def validate_secure_repo_path(repo_input: str | Path) -> Path:
     """Strictly validate repository path against traversal, symlink escape, and non-existent targets."""
     raw_str = str(repo_input).strip()
@@ -52,25 +72,9 @@ def validate_secure_repo_path(repo_input: str | Path) -> Path:
     if not resolved.is_dir():
         raise ValueError(f"Repository path is not a directory: {raw_str}")
 
-    # Root sandboxing check against allowed base directories
-    allowed_bases = [
-        get_repo_root(),
-        Path(settings.TARGET_REPO_PATH).resolve(),
-    ]
-    if scratch_repo_roots_allowed():
-        allowed_bases.append(Path.cwd().resolve())
-        allowed_bases.append(Path(tempfile.gettempdir()).resolve())
-
-    # Explicit user configured extra roots if present
-    extra_roots = getattr(settings, "ALLOWED_REPO_ROOTS", None)
-    if extra_roots:
-        for r in str(extra_roots).split(","):
-            if r.strip():
-                allowed_bases.append(Path(r.strip()).resolve())
-
     is_inside = any(
         resolved == base or base in resolved.parents
-        for base in allowed_bases
+        for base in allowed_repo_roots()
     )
 
     if not is_inside:

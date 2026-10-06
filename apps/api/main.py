@@ -14,6 +14,7 @@ from apps.api.audit_middleware import AuditLogMiddleware
 from apps.api.request_id_middleware import RequestIdMiddleware
 from apps.api.request_size_middleware import RequestSizeLimitMiddleware
 from apps.api.routers import telegram_bridge, core, harness, jobs, scheduler, setup, drift, graph_v2, coupling, impact, remediation, workspace, portfolio, freshness, lab, experiments, ledger, control, execution, routing, shadow, operations, improvement, autonomy, audit, admin, web, app_settings
+from brain.config.paths import allowed_repo_roots
 from brain.config.settings import settings
 from brain.database.session import close_database_connections, init_db
 from brain.workers.queue import QueueDepthExceeded
@@ -35,6 +36,11 @@ configure_file_log_sink()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     late_warmup_task: asyncio.Task | None = None
+    # Sandbox misconfiguration is only visible at request time otherwise.
+    logger.warning(
+        "Repo path sandbox roots: {}",
+        ", ".join(str(base) for base in allowed_repo_roots()),
+    )
     try:
         await init_db()
     except Exception as exc:
