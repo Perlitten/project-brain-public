@@ -513,6 +513,103 @@ def run_procedural(api_url, api_key, repo, task):
                 "checks": checks,
                 "top_match": top,
             }
+        elif task_id == "l4-003":
+            # Scoped matching: a planted repo-scoped skill must win for its own
+            # repo and must not be returned at all for another repo's scope.
+            suffix = f"{int(time.time())}-{os.getpid()}"
+            repo_a = "/tmp/l4-003-repo-a"
+            repo_b = "/tmp/l4-003-repo-b"
+            on_topic = f"bench-scoped-deploy-{suffix}"
+            off_topic = f"bench-scoped-watermark-{suffix}"
+            null_scope = f"bench-nullscope-deploy-{suffix}"
+            planted = [on_topic, off_topic, null_scope]
+            checks = {}
+            try:
+                api_post(api_url, api_key, "/skills", {
+                    "name": on_topic,
+                    "description": "restart the alpha deploy pipeline",
+                    "triggers": ["restart", "deploy"],
+                    "repo_scope": repo_a,
+                })
+                api_post(api_url, api_key, "/skills", {
+                    "name": off_topic,
+                    "description": "batch-add a watermark to product photos",
+                    "triggers": ["watermark", "photos"],
+                    "repo_scope": repo_a,
+                })
+                # NULL scope, is_global unset: underivable-backfill shape —
+                # must stay listable yet never enter a prompt context.
+                api_post(api_url, api_key, "/skills", {
+                    "name": null_scope,
+                    "description": "unscoped deploy runbook notes",
+                    "triggers": ["deploy"],
+                })
+                own = api_post(api_url, api_key, "/skills/match", {
+                    "query": task.get("query", ""),
+                    "limit": 10,
+                    "repo_path": repo_a,
+                })
+                own_names = [m.get("name") for m in own] if isinstance(own, list) else []
+                # Chosen over the off-topic plant for its own repo: present in
+                # the match set and ranked above the off-topic skill (global
+                # skills may legitimately outrank both on a live database).
+                checks["scoped_chosen_over_offtopic"] = (
+                    on_topic in own_names
+                    and (off_topic not in own_names or own_names.index(on_topic) < own_names.index(off_topic))
+                )
+                other = api_post(api_url, api_key, "/skills/match", {
+                    "query": task.get("query", ""),
+                    "limit": 10,
+                    "repo_path": repo_b,
+                })
+                other_names = {m.get("name") for m in other} if isinstance(other, list) else set()
+                checks["not_visible_for_other_repo"] = on_topic not in other_names
+
+                # Injection contract: select_skills_for_context is the code path
+                # /ask and the runtime context use. NULL scope is listable but
+                # never injected — for any repo scope or an unscoped request.
+                listed = api_get(api_url, api_key, "/skills?limit=200")
+                checks["null_scope_still_listed"] = null_scope in {
+                    s.get("name") for s in listed
+                } if isinstance(listed, list) else False
+
+                async def _injection_probe():
+                    from brain.database.session import async_engine
+                    from brain.memory.skill_store import select_skills_for_context
+                    try:
+                        names_by_scope = {}
+                        for scope in (repo_a, repo_b, None):
+                            picked = await select_skills_for_context(
+                                task.get("query", ""), scope, max_count=10
+                            )
+                            names_by_scope[str(scope)] = {m.get("name") for m in picked}
+                        return names_by_scope
+                    finally:
+                        # Pooled connections bind to this event loop; release
+                        # them so later asyncio.run() calls reuse nothing stale.
+                        await async_engine.dispose(close=False)
+
+                names_by_scope = asyncio.run(_injection_probe())
+                checks["null_scope_never_injected"] = all(
+                    null_scope not in names for names in names_by_scope.values()
+                )
+            finally:
+                try:
+                    asyncio.run(_delete_rows(
+                        repo, "DELETE FROM memory_skills WHERE name = ANY($1::text[])", planted
+                    ))
+                except Exception:
+                    pass
+            passed = bool(
+                checks.get("scoped_chosen_over_offtopic")
+                and checks.get("not_visible_for_other_repo")
+                and checks.get("null_scope_never_injected")
+            )
+            return {
+                "passed": passed,
+                "metrics": {"l4_scoped_matching": 1.0 if passed else 0.0},
+                "checks": checks,
+            }
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}", "metrics": {"l4_test": 0.0}}
     return {"skipped": f"unknown procedural task {task_id}"}

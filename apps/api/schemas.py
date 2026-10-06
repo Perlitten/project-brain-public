@@ -73,11 +73,16 @@ class SkillCreate(BaseModel):
     source_learning_ids: List[int] = Field(default_factory=list)
     confidence: float = Field(0.5, ge=0.0, le=1.0)
     repo_scope: Optional[str] = None
+    # Explicit opt-in for prompt injection into every repo's context.
+    is_global: bool = False
 
 
 class SkillMatchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     limit: int = Field(5, ge=1, le=20)
+    # Restrict matching to one repository scope (plus global skills). Omitted
+    # means "global only" — same convention as repo_scope on learnings.
+    repo_path: Optional[str] = Field(None, max_length=1024)
 
 
 class DecisionCreate(BaseModel):
