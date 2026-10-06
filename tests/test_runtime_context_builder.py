@@ -79,6 +79,34 @@ async def test_runtime_context_marks_empty_slices_as_insufficient_evidence(monke
 
 
 @pytest.mark.asyncio
+async def test_runtime_context_does_not_report_success_when_budget_excludes_all_code(monkeypatch):
+    result = RetrievalResult(
+        query="budget gap",
+        intent="runtime_context",
+        repository={"repository_path": "/app", "freshness": {"status": "current"}},
+        candidates=[RetrievalCandidate(path="apps/api/routers/core.py")],
+    )
+    builder = RuntimeContextBuilder(_Retrieval(result))
+    builder._load_slices = AsyncMock(return_value=[{
+        "path": "apps/api/routers/core.py", "range": [1, 50], "content": "x" * 2500,
+    }])
+    monkeypatch.setattr(
+        "brain.context.runtime_context_builder.select_relevant_normative_memory",
+        AsyncMock(return_value={"rules": [], "decisions": []}),
+    )
+    cache_write = AsyncMock()
+    monkeypatch.setattr("brain.context.context_cache.put_cached_context", cache_write)
+
+    payload = await builder.build("budget gap", "/app", max_tokens=500)
+
+    assert payload["status"] == "partial"
+    assert "code_slices_excluded_by_budget" in payload["missing"]
+    assert not payload.get("slices")
+    cache_write.assert_not_called()
+    assert len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()) <= 2000
+
+
+@pytest.mark.asyncio
 async def test_slice_loader_is_repository_scoped_and_matches_symbol_overlap(monkeypatch):
     """Same relative paths in another repository must never reach a runtime pack."""
     result = RetrievalResult(

@@ -181,31 +181,51 @@ class BudgetedPayloadBuilder:
                 self.budget.sections[section] = _payload_bytes({section: value})
             else:
                 self.budget.exclude(section, "byte_cap")
-        result = self._envelope(payload)
-        # Exclusion metadata itself can grow after the final field. Compact it
-        # deterministically until the *actual* serialized payload fits.
-        while _payload_bytes(result) > self.budget.max_bytes and added_sections:
-            removed = added_sections.pop()
-            payload.pop(removed, None)
-            self.budget.sections.pop(removed, None)
-            self.budget.truncated = True
+        def settled_envelope() -> dict[str, Any]:
+            # The byte count is itself serialized. Settle its digit overhead
+            # before deciding which evidence fits, including after each trim.
             result = self._envelope(payload)
+            for _ in range(6):
+                actual_bytes = _payload_bytes(result)
+                if self.budget.consumed_bytes == actual_bytes:
+                    return result
+                self.budget.consumed_bytes = actual_bytes
+                result = self._envelope(payload)
+            raise BudgetExceeded("Budget metadata did not converge")
+
+        result = settled_envelope()
+        # Exclusion metadata can grow after admitting the final item. Trim
+        # only the lowest-priority tail, preserving the admitted evidence
+        # prefix instead of discarding an entire list of code slices.
+        while _payload_bytes(result) > self.budget.max_bytes and added_sections:
+            section = added_sections[-1]
+            value = payload[section]
+            if isinstance(value, list) and len(value) > 1:
+                payload[section] = value[:-1]
+                self.budget.sections[section] = _payload_bytes({section: payload[section]})
+            elif isinstance(value, str) and value:
+                excess = _payload_bytes(result) - self.budget.max_bytes
+                shorter = truncate_utf8(value, max(0, utf8_bytes(value) - excess))
+                if shorter:
+                    payload[section] = shorter
+                    self.budget.sections[section] = _payload_bytes({section: shorter})
+                else:
+                    added_sections.pop()
+                    payload.pop(section)
+                    self.budget.sections.pop(section, None)
+            else:
+                added_sections.pop()
+                payload.pop(section)
+                self.budget.sections.pop(section, None)
+            self.budget.truncated = True
+            if not any(item["section"] == section for item in self.budget.exclusions):
+                self.budget.exclude(section, "envelope_overhead")
+            result = settled_envelope()
         while _payload_bytes(result) > self.budget.max_bytes and self.budget.exclusions:
             self.budget.exclusions.pop()
-            result = self._envelope(payload)
+            result = settled_envelope()
         if _payload_bytes(result) > self.budget.max_bytes:
             raise BudgetExceeded("Response cannot fit hard byte cap")
-        # Report the complete serialized transport envelope, not only the
-        # admitted sections. Updating the value can change JSON digit counts,
-        # so settle this small fixed point before returning it.
-        for _ in range(3):
-            actual_bytes = _payload_bytes(result)
-            if self.budget.consumed_bytes == actual_bytes:
-                break
-            self.budget.consumed_bytes = actual_bytes
-            result = self._envelope(payload)
-        if _payload_bytes(result) > self.budget.max_bytes:
-            raise BudgetExceeded("Budget metadata exceeds hard byte cap")
         return result
 
 
