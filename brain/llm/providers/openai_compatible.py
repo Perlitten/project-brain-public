@@ -64,7 +64,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         label: str = "OpenAI-compatible",
         require_key: bool = False,
         key_source: Optional[str] = None,
-        timeout: float = 60.0,
+        timeout: float = 120.0,
     ):
         self.base_url = (base_url or "").strip() or None
         self.api_key = api_key or None
@@ -183,7 +183,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
         label: str = "OpenAI-compatible",
         require_key: bool = False,
         key_source: Optional[str] = None,
-        timeout: float = 60.0,
+        timeout: float = 120.0,
     ):
         self.base_url = (base_url or "").strip() or None
         self.api_key = api_key or None

@@ -642,3 +642,72 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
         )
     except Exception as exc:
         logger.warning(f"Could not apply memory_learnings table migration: {exc}")
+
+    # L2 episodic memory: clustered, distilled episodes (industry-standard 4-tier).
+    try:
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS memory_episodes (
+                    id BIGSERIAL PRIMARY KEY,
+                    source_event_ids JSONB NOT NULL DEFAULT '[]',
+                    distilled_summary TEXT NOT NULL,
+                    topic VARCHAR(128),
+                    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                    promoted_to_learning_id BIGINT REFERENCES memory_learnings(id) ON DELETE SET NULL,
+                    merged_into_episode_id BIGINT REFERENCES memory_episodes(id) ON DELETE SET NULL,
+                    confidence FLOAT NOT NULL DEFAULT 0.5,
+                    repo_scope VARCHAR(1024),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memory_episodes_status ON memory_episodes (status)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memory_episodes_topic ON memory_episodes (topic)"))
+        from brain.embeddings.pgvector_sql import pgvector_column_sql_type
+        from brain.embeddings.constants import EMBEDDING_DIMENSION
+
+        vec_type = pgvector_column_sql_type(EMBEDDING_DIMENSION)
+        await conn.execute(
+            text(f"ALTER TABLE memory_episodes ADD COLUMN IF NOT EXISTS embedding {vec_type}")
+        )
+    except Exception as exc:
+        logger.warning(f"Could not apply memory_episodes table migration: {exc}")
+
+    # L4 procedural memory: skills registry (industry-standard 4-tier).
+    try:
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS memory_skills (
+                    id BIGSERIAL PRIMARY KEY,
+                    name VARCHAR(128) NOT NULL UNIQUE,
+                    description TEXT NOT NULL,
+                    triggers JSONB NOT NULL DEFAULT '[]',
+                    workflow JSONB NOT NULL DEFAULT '[]',
+                    source_episode_ids JSONB NOT NULL DEFAULT '[]',
+                    source_learning_ids JSONB NOT NULL DEFAULT '[]',
+                    times_used INTEGER NOT NULL DEFAULT 0,
+                    times_successful INTEGER NOT NULL DEFAULT 0,
+                    status VARCHAR(16) NOT NULL DEFAULT 'active',
+                    confidence FLOAT NOT NULL DEFAULT 0.5,
+                    repo_scope VARCHAR(1024),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memory_skills_status ON memory_skills (status)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_memory_skills_name ON memory_skills (name)"))
+        from brain.embeddings.pgvector_sql import pgvector_column_sql_type
+        from brain.embeddings.constants import EMBEDDING_DIMENSION
+
+        vec_type = pgvector_column_sql_type(EMBEDDING_DIMENSION)
+        await conn.execute(
+            text(f"ALTER TABLE memory_skills ADD COLUMN IF NOT EXISTS embedding {vec_type}")
+        )
+    except Exception as exc:
+        logger.warning(f"Could not apply memory_skills table migration: {exc}")

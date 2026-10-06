@@ -337,10 +337,54 @@ async def _run_consolidation_unlocked(
         return report
     clusters = await cluster_episodes(episodes)
     for cluster in clusters:
+        # L2: persist the cluster as an episodic memory before distillation.
+        # This makes L2 a queryable dynamic layer, not just a transient process.
+        episode_id = None
+        if not dry_run:
+            try:
+                from brain.database.models import MemoryEpisode
+                from brain.database.session import async_session_factory
+                async with async_session_factory() as session:
+                    ep = MemoryEpisode(
+                        source_event_ids=[e.id for e in cluster if hasattr(e, "id")],
+                        distilled_summary="",  # filled after distillation
+                        topic=None,
+                        status="pending",
+                        confidence=0.5,
+                    )
+                    session.add(ep)
+                    await session.commit()
+                    episode_id = ep.id
+            except Exception as exc:
+                logger.warning(f"L2 episode persist failed: {exc}")
         candidate = await distill_candidate(cluster)
         report["candidates"] += 1
+        # L2: update with distilled summary + embedding for semantic search.
+        if episode_id and not dry_run:
+            try:
+                from brain.database.models import MemoryEpisode
+                from brain.database.session import async_session_factory
+                from brain.llm import get_embedding_provider
+                async with async_session_factory() as session:
+                    ep = await session.get(MemoryEpisode, episode_id)
+                    if ep:
+                        ep.distilled_summary = candidate.statement
+                        ep.topic = candidate.category
+                        ep.confidence = candidate.confidence
+                        # Generate embedding for L2 semantic retrieval.
+                        try:
+                            embedder = get_embedding_provider()
+                            vec = await embedder.embed(candidate.statement)
+                            ep.embedding = list(vec) if vec else None
+                        except Exception as emb_exc:
+                            logger.warning(f"L2 episode embedding failed: {emb_exc}")
+                        await session.commit()
+            except Exception as exc:
+                logger.warning(f"L2 episode update failed: {exc}")
         gate = await evaluate_gates(candidate, require_approval=require_approval)
         entry: Dict[str, Any] = {"statement": candidate.statement, "reasons": gate.reasons}
+        if episode_id:
+            entry["episode_id"] = episode_id
         if gate.outcome == GateOutcome.PROMOTE:
             if dry_run:
                 entry["dry_run"] = True
@@ -349,10 +393,35 @@ async def _run_consolidation_unlocked(
                 learning_id = await promote_candidate(candidate, gate, run_id)
                 entry["learning_id"] = learning_id
                 report["promoted"].append(entry)
+                # L2: mark as promoted with link to L3.
+                if episode_id and learning_id:
+                    try:
+                        from brain.database.models import MemoryEpisode
+                        from brain.database.session import async_session_factory
+                        async with async_session_factory() as session:
+                            ep = await session.get(MemoryEpisode, episode_id)
+                            if ep:
+                                ep.status = "promoted"
+                                ep.promoted_to_learning_id = learning_id
+                                await session.commit()
+                    except Exception as exc:
+                        logger.warning(f"L2 episode promote-mark failed: {exc}")
         elif gate.outcome == GateOutcome.NEEDS_APPROVAL:
             report["needs_approval"].append(entry)
         else:
             report["rejected"].append(entry)
+            # L2: mark rejected episodes.
+            if episode_id and not dry_run:
+                try:
+                    from brain.database.models import MemoryEpisode
+                    from brain.database.session import async_session_factory
+                    async with async_session_factory() as session:
+                        ep = await session.get(MemoryEpisode, episode_id)
+                        if ep:
+                            ep.status = "rejected"
+                            await session.commit()
+                except Exception:
+                    pass
     logger.info(
         "Consolidation %s: %d episodes → %d candidates, %d promoted",
         run_id, len(episodes), report["candidates"], len(report["promoted"]),
