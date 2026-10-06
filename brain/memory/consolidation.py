@@ -15,18 +15,21 @@ from __future__ import annotations
 import json
 import logging
 import math
+from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
-from brain.database.harness_models import AgentTaskEvent
+from brain.config.settings import settings
+from brain.database.harness_models import AgentTask, AgentTaskEvent
 from brain.database.models import MemoryEpisode, MemoryEpisodeEvent
 from brain.database.session import async_session_factory
 from brain.llm import get_embedding_provider, get_summarizer_provider
 from brain.memory.learning_store import LearningStore
+from brain.memory.repo_scope import normalize_repo_scope
 
 logger = logging.getLogger(__name__)
 
@@ -87,19 +90,94 @@ def _l1_event_text(event: AgentTaskEvent) -> str:
     return " | ".join(p for p in parts if p)
 
 
-async def collect_l1_events(since: Optional[datetime] = None) -> List[AgentTaskEvent]:
-    """Collect L1 events eligible for consolidation that no L2 episode has consumed yet."""
-    async with async_session_factory() as session:
-        consumed = select(MemoryEpisodeEvent.event_id)
-        query = select(AgentTaskEvent).where(
+async def _collect_unconsumed_l1_events(
+    session,
+    since: Optional[datetime],
+) -> Tuple[List[AgentTaskEvent], Dict[int, Optional[str]]]:
+    """Unconsumed L1 events plus each event's normalized repository scope.
+
+    L1 events carry no repo column; their scope is derived through
+    ``task_id`` → ``agent_tasks.repo_path``. An outer join keeps events whose
+    task row is gone — they consolidate as unscoped (NULL repo_scope)."""
+    consumed = select(MemoryEpisodeEvent.event_id)
+    query = (
+        select(AgentTaskEvent, AgentTask.repo_path)
+        .outerjoin(AgentTask, AgentTaskEvent.task_id == AgentTask.id)
+        .where(
             AgentTaskEvent.classification.in_(LEARNING_CLASSIFICATIONS),
             AgentTaskEvent.id.not_in(consumed),
         )
-        if since:
-            query = query.where(AgentTaskEvent.created_at >= since)
-        query = query.order_by(AgentTaskEvent.created_at, AgentTaskEvent.id)
-        result = await session.execute(query)
-        return list(result.scalars().all())
+    )
+    if since:
+        query = query.where(AgentTaskEvent.created_at >= since)
+    query = query.order_by(AgentTaskEvent.created_at, AgentTaskEvent.id)
+    result = await session.execute(query)
+    events: List[AgentTaskEvent] = []
+    repo_by_event: Dict[int, Optional[str]] = {}
+    for event, repo_path in result.all():
+        events.append(event)
+        repo_by_event[event.id] = normalize_repo_scope(repo_path)
+    return events, repo_by_event
+
+
+async def _reopen_rejected_episode_events(
+    session,
+    fresh_repos: set,
+) -> int:
+    """Release the L1 events of recently rejected episodes back for re-clustering.
+
+    A rejected episode's events stay consumed forever unless new evidence shows
+    up: when a fresh L1 event arrives in the episode's repository scope within
+    ``MEMORY_EPISODE_REOPEN_DAYS`` of the rejection, the episode's ledger rows
+    are deleted and its events join the next clustering pass. A NULL-scope
+    (global) episode re-opens on any fresh event. 0 days disables re-opening.
+    """
+    days = settings.MEMORY_EPISODE_REOPEN_DAYS
+    if days <= 0 or not fresh_repos:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rejected = (
+        await session.execute(
+            select(MemoryEpisode.id, MemoryEpisode.repo_scope).where(
+                MemoryEpisode.status == "rejected",
+                MemoryEpisode.updated_at >= cutoff,
+            )
+        )
+    ).all()
+    reopen_ids = [
+        episode_id
+        for episode_id, scope in rejected
+        if scope is None or normalize_repo_scope(scope) in fresh_repos
+    ]
+    if not reopen_ids:
+        return 0
+    deleted = await session.execute(
+        delete(MemoryEpisodeEvent).where(MemoryEpisodeEvent.episode_id.in_(reopen_ids))
+    )
+    await session.commit()
+    logger.info(
+        "Re-opened %d rejected episodes (%d L1 events) for re-clustering",
+        len(reopen_ids),
+        deleted.rowcount or 0,
+    )
+    return deleted.rowcount or 0
+
+
+async def collect_l1_events(
+    since: Optional[datetime] = None,
+) -> Tuple[List[AgentTaskEvent], Dict[int, Optional[str]]]:
+    """Collect L1 events eligible for consolidation, with per-event repo scope.
+
+    Returns the unconsumed events and a ``event_id → normalized repo_path`` map.
+    Rejected-episode re-opening (``MEMORY_EPISODE_REOPEN_DAYS``) runs here so the
+    released events are included in this pass's count and clustering."""
+    async with async_session_factory() as session:
+        events, repo_by_event = await _collect_unconsumed_l1_events(session, since)
+        fresh_repos = {repo for repo in repo_by_event.values() if repo is not None}
+        reopened = await _reopen_rejected_episode_events(session, fresh_repos)
+        if reopened:
+            events, repo_by_event = await _collect_unconsumed_l1_events(session, since)
+        return events, repo_by_event
 
 
 async def cluster_l1_events(
@@ -179,12 +257,15 @@ async def evaluate_gates(
     candidate: ConsolidationCandidate,
     *,
     require_approval: bool = False,
+    repo_scope: Optional[str] = None,
 ) -> GateResult:
     """Run lexicographic promotion gates G1–G4. First failure decides."""
     reasons: List[str] = []
 
-    # G1 — Dedup against active learnings.
-    active = await LearningStore.list_active_learnings()
+    # G1 — Dedup against active learnings visible to this cluster's repo
+    # (global plus same-repo); a learning scoped to another repo must not
+    # dedup a candidate it never applied to.
+    active = await LearningStore.list_active_learnings(repo_scope)
     if active:
         embedder = get_embedding_provider()
         current_model = getattr(embedder, "model", None) or getattr(
@@ -355,11 +436,25 @@ async def _episode_embedding(statement: str) -> Optional[List[float]]:
     return truncate_vector_for_index(list(vec), EMBEDDING_DIMENSION)
 
 
+def _cluster_repo_scope(
+    cluster: List[AgentTaskEvent],
+    repo_by_event: Dict[int, Optional[str]],
+) -> Optional[str]:
+    """Modal repository scope of a cluster; None when no event has a repo."""
+    counts = Counter(
+        repo for event in cluster if (repo := repo_by_event.get(event.id)) is not None
+    )
+    if not counts:
+        return None
+    return counts.most_common(1)[0][0]
+
+
 async def _persist_cluster(
     cluster: List[AgentTaskEvent],
     candidate: ConsolidationCandidate,
     gate: GateResult,
     run_id: str,
+    repo_scope: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Write one L2 episode, its L1 ledger rows and (if promoted) its L3 learning in one transaction."""
     embedding = await _episode_embedding(candidate.statement)
@@ -374,6 +469,7 @@ async def _persist_cluster(
                 gate_reasons=list(gate.reasons),
                 duplicate_of_learning_id=gate.duplicate_of,
                 embedding=embedding,
+                repo_scope=normalize_repo_scope(repo_scope),
             )
             session.add(episode)
             await session.flush()
@@ -385,6 +481,7 @@ async def _persist_cluster(
                     category=candidate.category,
                     confidence=candidate.confidence,
                     evidence=candidate.evidence,
+                    repo_scope=episode.repo_scope,
                     promoted_from=run_id,
                     session=session,
                 )
@@ -401,7 +498,7 @@ async def _run_consolidation_unlocked(
 ) -> Dict[str, Any]:
     """Run one consolidation pass. Returns a summary report."""
     run_id = f"consolidation-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
-    events = await collect_l1_events(since)
+    events, repo_by_event = await collect_l1_events(since)
     report: Dict[str, Any] = {
         "run_id": run_id,
         "l1_events": len(events),
@@ -418,7 +515,11 @@ async def _run_consolidation_unlocked(
     for cluster in await cluster_l1_events(events):
         candidate = await distill_candidate(cluster)
         report["candidates"] += 1
-        gate = await evaluate_gates(candidate, require_approval=require_approval)
+        gate = await evaluate_gates(
+            candidate,
+            require_approval=require_approval,
+            repo_scope=_cluster_repo_scope(cluster, repo_by_event),
+        )
         entry: Dict[str, Any] = {"statement": candidate.statement, "reasons": gate.reasons}
         if gate.duplicate_of is not None:
             entry["duplicate_of"] = gate.duplicate_of
@@ -426,7 +527,12 @@ async def _run_consolidation_unlocked(
             entry["dry_run"] = True
         else:
             try:
-                entry.update(await _persist_cluster(cluster, candidate, gate, run_id))
+                entry.update(
+                    await _persist_cluster(
+                        cluster, candidate, gate, run_id,
+                        repo_scope=_cluster_repo_scope(cluster, repo_by_event),
+                    )
+                )
             except Exception as exc:
                 # The transaction rolled back as a whole: no episode, no ledger rows, no
                 # learning. The L1 events stay unconsumed and are retried on the next run.

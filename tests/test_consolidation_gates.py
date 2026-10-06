@@ -302,7 +302,7 @@ async def test_distill_candidate_survives_garbage_llm_output():
 @pytest.mark.asyncio
 async def test_run_consolidation_empty_episodes():
     with patch(
-        "brain.memory.consolidation.collect_l1_events", new=AsyncMock(return_value=[])
+        "brain.memory.consolidation.collect_l1_events", new=AsyncMock(return_value=([], {}))
     ):
         report = await run_consolidation()
     assert report["l1_events"] == 0
