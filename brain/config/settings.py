@@ -317,7 +317,7 @@ class Settings(BaseSettings):
     PROACTIVE_INSIGHTS_LLM_ENABLED: bool = False
     PROACTIVE_INSIGHTS_MAX_SNAPSHOT_CHARS: int = 16000
     PROACTIVE_INSIGHTS_TIMEOUT_S: float = 75.0
-    # Memory consolidation loop (L1 episodic → L2 pipeline → L3 learnings).
+    # Memory consolidation loop (L1 working events → L2 episodes → L3 learnings; L4 skills separate).
     # Manual run via worker job "memory_consolidation" stays available; this
     # gate is for scheduled automation.
     MEMORY_CONSOLIDATION_ENABLED: bool = False
