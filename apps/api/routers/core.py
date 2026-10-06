@@ -1092,6 +1092,7 @@ async def create_skill(body: SkillCreate):
             source_learning_ids=body.source_learning_ids,
             confidence=body.confidence,
             repo_scope=body.repo_scope,
+            is_global=body.is_global,
         )
         return {"id": skill.id, "name": skill.name, "status": "created"}
     except SkillConflictError as exc:

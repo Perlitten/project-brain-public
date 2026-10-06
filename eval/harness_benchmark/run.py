@@ -521,7 +521,8 @@ def run_procedural(api_url, api_key, repo, task):
             repo_b = "/tmp/l4-003-repo-b"
             on_topic = f"bench-scoped-deploy-{suffix}"
             off_topic = f"bench-scoped-watermark-{suffix}"
-            planted = [on_topic, off_topic]
+            null_scope = f"bench-nullscope-deploy-{suffix}"
+            planted = [on_topic, off_topic, null_scope]
             checks = {}
             try:
                 api_post(api_url, api_key, "/skills", {
@@ -535,6 +536,13 @@ def run_procedural(api_url, api_key, repo, task):
                     "description": "batch-add a watermark to product photos",
                     "triggers": ["watermark", "photos"],
                     "repo_scope": repo_a,
+                })
+                # NULL scope, is_global unset: underivable-backfill shape —
+                # must stay listable yet never enter a prompt context.
+                api_post(api_url, api_key, "/skills", {
+                    "name": null_scope,
+                    "description": "unscoped deploy runbook notes",
+                    "triggers": ["deploy"],
                 })
                 own = api_post(api_url, api_key, "/skills/match", {
                     "query": task.get("query", ""),
@@ -556,6 +564,35 @@ def run_procedural(api_url, api_key, repo, task):
                 })
                 other_names = {m.get("name") for m in other} if isinstance(other, list) else set()
                 checks["not_visible_for_other_repo"] = on_topic not in other_names
+
+                # Injection contract: select_skills_for_context is the code path
+                # /ask and the runtime context use. NULL scope is listable but
+                # never injected — for any repo scope or an unscoped request.
+                listed = api_get(api_url, api_key, "/skills?limit=200")
+                checks["null_scope_still_listed"] = null_scope in {
+                    s.get("name") for s in listed
+                } if isinstance(listed, list) else False
+
+                async def _injection_probe():
+                    from brain.database.session import async_engine
+                    from brain.memory.skill_store import select_skills_for_context
+                    try:
+                        names_by_scope = {}
+                        for scope in (repo_a, repo_b, None):
+                            picked = await select_skills_for_context(
+                                task.get("query", ""), scope, max_count=10
+                            )
+                            names_by_scope[str(scope)] = {m.get("name") for m in picked}
+                        return names_by_scope
+                    finally:
+                        # Pooled connections bind to this event loop; release
+                        # them so later asyncio.run() calls reuse nothing stale.
+                        await async_engine.dispose(close=False)
+
+                names_by_scope = asyncio.run(_injection_probe())
+                checks["null_scope_never_injected"] = all(
+                    null_scope not in names for names in names_by_scope.values()
+                )
             finally:
                 try:
                     asyncio.run(_delete_rows(
@@ -566,6 +603,7 @@ def run_procedural(api_url, api_key, repo, task):
             passed = bool(
                 checks.get("scoped_chosen_over_offtopic")
                 and checks.get("not_visible_for_other_repo")
+                and checks.get("null_scope_never_injected")
             )
             return {
                 "passed": passed,

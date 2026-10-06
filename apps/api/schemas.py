@@ -73,6 +73,8 @@ class SkillCreate(BaseModel):
     source_learning_ids: List[int] = Field(default_factory=list)
     confidence: float = Field(0.5, ge=0.0, le=1.0)
     repo_scope: Optional[str] = None
+    # Explicit opt-in for prompt injection into every repo's context.
+    is_global: bool = False
 
 
 class SkillMatchRequest(BaseModel):

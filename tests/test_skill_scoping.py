@@ -102,6 +102,18 @@ async def _seed_skills():
         source_learning_ids=[],
         confidence=0.8,
         repo_scope=None,
+        is_global=True,
+    )
+    await skill_store.create_skill(
+        name="null-scope-deploy",
+        description="unscoped deploy notes (backfill-style, no explicit global flag)",
+        triggers=[],
+        workflow=[{"step": 1, "action": "legacy"}],
+        source_episode_ids=[],
+        source_learning_ids=[],
+        confidence=0.8,
+        repo_scope=None,
+        is_global=False,
     )
 
 
@@ -128,7 +140,9 @@ async def test_match_prefers_on_topic_over_off_topic(skill_db):
 async def test_match_unscoped_query_sees_only_global(skill_db):
     await _seed_skills()
     names = {m["name"] for m in await skill_store.match_skills("deploy runbook", limit=10)}
-    assert names == {"global-deploy"}
+    # Match semantics: every NULL-scope row is "global" — is_global only
+    # governs injection, not listing/matching.
+    assert names == {"global-deploy", "null-scope-deploy"}
 
 
 @pytest.mark.asyncio
@@ -137,10 +151,12 @@ async def test_select_skills_for_context_respects_top_and_scope(skill_db):
     picked = await skill_store.select_skills_for_context("deploy runbook", "/tmp/repo-b", max_count=2)
     names = {m["name"] for m in picked}
     assert len(picked) <= 2
-    # Repo B sees its own deploy skill and the global one — never repo A's.
+    # Repo B sees its own deploy skill — never repo A's, and never a NULL-scope
+    # skill that is not explicitly global.
     assert "repo-b-deploy" in names
     assert "repo-a-deploy" not in names
     assert "repo-a-migrate" not in names
+    assert "null-scope-deploy" not in names
 
 
 @pytest.mark.asyncio
@@ -173,3 +189,57 @@ async def test_deprecated_skill_not_matched(skill_db):
         await session.commit()
     names = {m["name"] for m in await skill_store.match_skills("deploy runbook", repo_scope="/tmp/repo-a", limit=10)}
     assert "repo-a-deploy" not in names
+
+
+@pytest.mark.asyncio
+async def test_injection_never_returns_null_scope(skill_db):
+    """The injection path (/ask, runtime context) rejects NULL-scope skills.
+
+    NULL scope is not global: only `is_global` rows or exact-scope rows may be
+    injected. A NULL-scope row stays visible to match/list endpoints.
+    """
+    await _seed_skills()
+    for scope in ("/tmp/repo-a", "/tmp/repo-b", None):
+        injected = {m["name"] for m in await skill_store.select_skills_for_context("deploy runbook", scope, max_count=10)}
+        assert "null-scope-deploy" not in injected
+    # The same NULL-scope row is still returned by the (non-injection) match
+    # contract, where NULL scope means global.
+    loose = {m["name"] for m in await skill_store.match_skills("deploy runbook", repo_scope="/tmp/repo-a", limit=10)}
+    assert "null-scope-deploy" in loose
+
+
+@pytest.mark.asyncio
+async def test_injection_scoped_repo_and_is_global(skill_db):
+    await _seed_skills()
+    injected = {m["name"] for m in await skill_store.select_skills_for_context("deploy runbook", "/tmp/repo-a", max_count=10)}
+    # Own repo's skills plus explicitly-global ones — never another repo's,
+    # never an unflagged NULL-scope one.
+    assert "repo-a-deploy" in injected
+    assert "global-deploy" in injected
+    assert "repo-b-deploy" not in injected
+    assert "null-scope-deploy" not in injected
+
+
+@pytest.mark.asyncio
+async def test_unscoped_injection_sees_only_is_global(skill_db):
+    await _seed_skills()
+    injected = {m["name"] for m in await skill_store.select_skills_for_context("deploy runbook", None, max_count=10)}
+    assert injected == {"global-deploy"}
+
+
+@pytest.mark.asyncio
+async def test_create_skill_is_global_roundtrip(skill_db):
+    skill = await skill_store.create_skill(
+        name="explicitly-global",
+        description="available everywhere",
+        triggers=["deploy"],
+        workflow=[],
+        source_episode_ids=[],
+        source_learning_ids=[],
+        confidence=0.5,
+        repo_scope=None,
+        is_global=True,
+    )
+    assert skill.is_global is True
+    injected = {m["name"] for m in await skill_store.select_skills_for_context("deploy runbook", "/tmp/repo-z", max_count=10)}
+    assert "explicitly-global" in injected

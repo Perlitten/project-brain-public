@@ -698,6 +698,7 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
                     status VARCHAR(16) NOT NULL DEFAULT 'active',
                     confidence FLOAT NOT NULL DEFAULT 0.5,
                     repo_scope VARCHAR(1024),
+                    is_global BOOLEAN NOT NULL DEFAULT false,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
                 )
@@ -712,6 +713,11 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
         vec_type = pgvector_column_sql_type(EMBEDDING_DIMENSION)
         await conn.execute(
             text(f"ALTER TABLE memory_skills ADD COLUMN IF NOT EXISTS embedding {vec_type}")
+        )
+        # Explicit global marker for context injection; a NULL repo_scope is
+        # not global and is never injected (underivable backfills stay NULL).
+        await conn.execute(
+            text("ALTER TABLE memory_skills ADD COLUMN IF NOT EXISTS is_global BOOLEAN NOT NULL DEFAULT false")
         )
     except Exception as exc:
         logger.warning(f"Could not apply memory_skills table migration: {exc}")
