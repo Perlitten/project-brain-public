@@ -434,7 +434,7 @@ async def run_benchmark(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def run_memory_consolidation(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Run one L2 memory consolidation pass (episodic → learnings)."""
+    """Run one memory consolidation pass (L1 events → L2 episodes → L3 learnings)."""
     if params.get("scheduled") and not settings.MEMORY_CONSOLIDATION_ENABLED:
         return {
             "status": "skipped",

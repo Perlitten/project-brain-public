@@ -131,3 +131,99 @@ async def test_slice_loader_is_repository_scoped_and_matches_symbol_overlap(monk
     assert slices[0] == {"path": "brain/context/session.py", "range": [80, 110], "content": "overlap"}
     compiled = str(statements[0].compile(compile_kwargs={"literal_binds": True}))
     assert "files.repository_id = 42" in compiled
+
+
+class _FakeRedis:
+    """SET NX EX with a controllable clock."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.keys: dict[str, float] = {}
+        self.set_calls: list[dict] = []
+
+    async def set(self, key, value, nx=False, ex=None):
+        self.set_calls.append({"key": key, "nx": nx, "ex": ex})
+        expires = self.keys.get(key)
+        if nx and expires is not None and expires > self.now:
+            return False
+        self.keys[key] = self.now + (ex or 0)
+        return True
+
+    async def delete(self, key):
+        self.keys.pop(key, None)
+
+
+def _stale_result():
+    return RetrievalResult(
+        query="change search endpoint",
+        intent="runtime_context",
+        repository={"repository_path": "/app", "freshness": {"status": "stale"}},
+        candidates=[RetrievalCandidate(path="apps/api/routers/core.py")],
+    )
+
+
+@pytest.fixture
+def auto_reindex_env(monkeypatch):
+    from brain.config.settings import settings
+
+    redis = _FakeRedis()
+    queue = SimpleNamespace(enqueue=AsyncMock(return_value="job-1"))
+    calls = []
+
+    def fake_queue_for_job(redis_arg, prefix, job_type, *, pools_enabled):
+        calls.append({"job_type": job_type, "pools_enabled": pools_enabled, "prefix": prefix})
+        return queue
+
+    monkeypatch.setattr("brain.database.session.redis_client", redis)
+    monkeypatch.setattr("brain.workers.queue.queue_for_job", fake_queue_for_job)
+    monkeypatch.setattr(settings, "BRAIN_WORKER_POOLS_V2_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTO_REINDEX_MIN_INTERVAL_S", 3600)
+    return SimpleNamespace(redis=redis, queue=queue, calls=calls)
+
+
+@pytest.mark.asyncio
+async def test_stale_blocked_auto_reindex_routes_to_the_reindex_pool(auto_reindex_env):
+    builder = RuntimeContextBuilder(_Retrieval(_stale_result()))
+
+    payload = await builder.build("change search endpoint", "/app", max_tokens=1000)
+
+    assert "auto_reindex_queued" in payload["missing"]
+    assert auto_reindex_env.calls == [
+        {"job_type": "reindex", "pools_enabled": True, "prefix": auto_reindex_env.calls[0]["prefix"]}
+    ]
+    auto_reindex_env.queue.enqueue.assert_awaited_once_with("reindex", {"repo_path": "/app"})
+
+
+@pytest.mark.asyncio
+async def test_stale_blocked_auto_reindex_is_rate_limited_to_one_hour(auto_reindex_env):
+    redis, queue = auto_reindex_env.redis, auto_reindex_env.queue
+
+    async def build():
+        return await RuntimeContextBuilder(_Retrieval(_stale_result())).build(
+            "change search endpoint", "/app", max_tokens=1000
+        )
+
+    first = await build()
+    redis.now = 3599
+    second = await build()
+    redis.now = 3601
+    third = await build()
+
+    assert "auto_reindex_queued" in first["missing"]
+    assert "auto_reindex_queued" not in second["missing"]
+    assert "auto_reindex_queued" in third["missing"]
+    assert queue.enqueue.await_count == 2
+    assert {c["ex"] for c in redis.set_calls} == {3600}
+    assert all(c["nx"] for c in redis.set_calls)
+
+
+@pytest.mark.asyncio
+async def test_failed_auto_reindex_enqueue_releases_the_throttle(auto_reindex_env):
+    auto_reindex_env.queue.enqueue = AsyncMock(side_effect=[RuntimeError("redis down"), "job-2"])
+    builder = RuntimeContextBuilder(_Retrieval(_stale_result()))
+
+    first = await builder.build("change search endpoint", "/app", max_tokens=1000)
+    second = await builder.build("change search endpoint", "/app", max_tokens=1000)
+
+    assert "auto_reindex_queued" not in first["missing"]
+    assert "auto_reindex_queued" in second["missing"]

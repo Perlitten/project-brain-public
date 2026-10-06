@@ -399,10 +399,11 @@ class BrainInsight(Base):
 
 
 class Learning(Base):
-    """Durable fact distilled from episodic traces by the memory consolidation pipeline.
+    """L3 semantic memory: a durable fact promoted from an L2 episode.
 
-    L3 semantic memory: promoted from agent_task_events / MemoryHandoff via
-    lexicographic promotion gates (see brain/memory/consolidation.py).
+    Written by the consolidation pipeline (L1 events → L2 episode → gates G1–G4,
+    see brain/memory/consolidation.py), by human approval of a pending episode,
+    or directly via POST /learnings.
     Supersede, never delete — the chain is the audit trail.
     """
 
@@ -515,18 +516,11 @@ class AuditEvent(Base):
 
 
 class MemoryEpisode(Base):
-    """L2 episodic memory: clustered, distilled episodes awaiting promotion.
+    """L2 episodic memory: one distilled cluster of L1 events and its gate outcome.
 
-    Industry-standard 4-tier architecture:
-    - L1 (Working): in-memory context window, current task
-    - L2 (Episodic): THIS TABLE — clustered episodes, dynamic, queryable
-    - L3 (Semantic): memory_learnings — immutable wiki, supersede-never-delete
-    - L4 (Procedural): skills registry (future)
-
-    L2 bridges raw L1 events and L3 learnings: episodes are clustered,
-    distilled by LLM, then gated (G1-G4) for promotion to L3.
-    Unlike L3, L2 episodes are mutable — they can be updated, merged,
-    or discarded before promotion.
+    Memory tiers: L1 working (``agent_task_events``), L2 episodic (this table),
+    L3 semantic (``memory_learnings``), L4 procedural (``memory_skills``).
+    Status: pending (awaiting human approval) | promoted | rejected | duplicate.
     """
 
     __tablename__ = "memory_episodes"
@@ -544,6 +538,11 @@ class MemoryEpisode(Base):
     promoted_to_learning_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
     )
+    # G1 outcome: the active L3 learning this episode duplicates
+    duplicate_of_learning_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
+    )
+    gate_reasons: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # If merged, link to the surviving episode
     merged_into_episode_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("memory_episodes.id", ondelete="SET NULL"), nullable=True
@@ -557,6 +556,22 @@ class MemoryEpisode(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class MemoryEpisodeEvent(Base):
+    """Consumption ledger: each L1 event belongs to at most one L2 episode.
+
+    The primary key makes consolidation idempotent: a re-run (or a concurrent
+    run) cannot turn the same L1 event into a second episode.
+    """
+
+    __tablename__ = "memory_episode_events"
+
+    event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    episode_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("memory_episodes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class MemorySkill(Base):
