@@ -66,9 +66,10 @@ Named volumes:
   or malformed gate configuration returns 503 instead of exposing live data.
 - The self-hosted API uses API-key and scope dependencies. `/dashboard/*`
   redirects to `BRAIN_WEB_URL`; there is no legacy login form or session cookie.
-- `POST /webhooks/git-merge` is the only unauthenticated-by-API-key route; it
-  requires `X-Project-Brain-Token` = `PROJECT_BRAIN_WEBHOOK_TOKEN` (constant-time
-  compare) and fails closed (503) when the token is unset.
+- `POST /webhooks/git-merge` accepts either a GitHub-style
+  `X-Hub-Signature-256: sha256=<hmac>` over the raw body (HMAC secret
+  `PROJECT_BRAIN_WEBHOOK_TOKEN`) or a valid `X-API-Key`, and rejects everything
+  else. It fails closed (503) when neither credential is configured.
 - `deploy/server_up.sh` generates blank secrets in `.env`.
 - `NVIDIA_API_KEY` is required in production and must be supplied by the deployer.
 - Change-lab validation commands run inside an OS sandbox (`LAB_SANDBOX_MODE`,
