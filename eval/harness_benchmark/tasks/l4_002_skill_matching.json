@@ -1,1 +1,22 @@
-{"id":"l4-002","must_mention":["cosine","trigger_score"],"provenance":{"kind":"curated","note":"Tests L4 skill matching via embedding similarity + trigger keywords.","source":"L4 benchmark 2026-10-06"},"query":"The API is not responding, I need to restart the brain service","skills_to_create":[{"description":"Restart the Brain API using the brain-env.sh wrapper","name":"restart-brain-api","triggers":["restart","brain api"]},{"description":"Run database backup via backup_runner.py","name":"backup-database","triggers":["backup","database"]}],"task_description":"L4 procedural memory matching: given a task description, POST /skills/match should return the most relevant skill first.","test_steps":["Create two skills with distinct triggers","POST /skills/match with a restart-related query","Verify restart-brain-api ranks first","Verify backup-database is not top result"],"type":"procedural"}
+{
+  "id": "l4-002",
+  "must_mention": [
+    "cosine",
+    "trigger_score"
+  ],
+  "provenance": {
+    "kind": "curated",
+    "note": "Tests L4 skill matching via embedding similarity + trigger keywords.",
+    "source": "L4 benchmark 2026-10-06"
+  },
+  "query": "The API is not responding, I need to restart the brain service",
+  "task_description": "L4 procedural memory matching: given a task description, POST /skills/match should rank the most relevant skill first out of a benchmark fixture corpus.",
+  "test_steps": [
+    "Benchmark run seeds fixture skills (restart + distractors) before procedural tasks",
+    "POST /skills/match with a restart-related query",
+    "Verify the restart fixture skill ranks first",
+    "Verify a distractor is not the top result",
+    "Verify an unrelated control query ranks a different skill first"
+  ],
+  "type": "procedural"
+}
