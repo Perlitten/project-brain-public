@@ -267,6 +267,8 @@ async def main() -> None:
     ap.add_argument("--dataset", default="princeton-nlp/SWE-bench_Lite")
     ap.add_argument("--out", default=None)
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--index-once", action="store_true",
+                    help="index each repo once at its earliest base_commit (amendment A5)")
     args = ap.parse_args()
 
     out_path = Path(args.out) if args.out else (
@@ -299,6 +301,29 @@ async def main() -> None:
             print(f"[skip] missing clone {repo_dir}", flush=True)
             continue
         items.sort(key=lambda r: commit_timestamp(repo_dir, r["base_commit"]))
+        snapshot_idx = None
+        if args.index_once:
+            rec = await get_repository_by_path(str(repo_dir))
+            snap_commit = (rec.last_indexed_commit if rec else None) or items[0]["base_commit"]
+            try:
+                git(repo_dir, "checkout", "-q", "-f", snap_commit)
+            except Exception as exc:
+                print(f"[skip] snapshot checkout {repo}: {exc}", flush=True)
+                continue
+            if rec is None:
+                try:
+                    snapshot_idx = await index_repo(repo_dir)
+                    print(f"[snap] {repo} indexed once at {snap_commit[:8]} "
+                          f"({snapshot_idx['ms']}ms)", flush=True)
+                except Exception as exc:
+                    print(f"[skip] snapshot index {repo}: {exc}", flush=True)
+                    continue
+            else:
+                snapshot_idx = {"ms": 0.0, "repo_id": rec.id, "repo_name": rec.name,
+                                "last_commit": rec.last_indexed_commit,
+                                "file_counts": "reused"}
+                print(f"[snap] {repo} reusing index at "
+                      f"{(rec.last_indexed_commit or '?')[:8]}", flush=True)
         for inst in items:
             iid = inst["instance_id"]
             issue = inst["problem_statement"]
@@ -312,19 +337,26 @@ async def main() -> None:
                 "issue_sha256": __import__("hashlib").sha256(issue.encode()).hexdigest()[:16],
                 "graph_available": graph_up,
             }
-            try:
-                git(repo_dir, "checkout", "-q", "-f", inst["base_commit"])
-            except Exception as exc:
-                row["error"] = f"checkout: {exc}"
-                writer.write(row)
-                continue
-            try:
-                idx = await index_repo(repo_dir)
-            except Exception as exc:
-                row["error"] = f"index: {type(exc).__name__}: {exc}"
-                row["trace"] = traceback.format_exc()[-2000:]
-                writer.write(row)
-                continue
+            if args.index_once:
+                idx = snapshot_idx
+                # gold file absent from the snapshot index => scored as a natural miss
+                row["snapshot_commit"] = idx.get("last_commit") or items[0]["base_commit"]
+                row["gold_at_snapshot"] = bool(
+                    gold_files and all((repo_dir / gf).exists() for gf in gold_files))
+            else:
+                try:
+                    git(repo_dir, "checkout", "-q", "-f", inst["base_commit"])
+                except Exception as exc:
+                    row["error"] = f"checkout: {exc}"
+                    writer.write(row)
+                    continue
+                try:
+                    idx = await index_repo(repo_dir)
+                except Exception as exc:
+                    row["error"] = f"index: {type(exc).__name__}: {exc}"
+                    row["trace"] = traceback.format_exc()[-2000:]
+                    writer.write(row)
+                    continue
             row["index"] = idx
             repo_id = idx["repo_id"]
 
