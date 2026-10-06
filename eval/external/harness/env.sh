@@ -2,8 +2,9 @@
 export DATABASE_URL="postgresql+asyncpg://postgres:postgres_password@localhost:5433/brain_db_eval"
 export DEFAULT_EMBEDDING_PROVIDER=openai_compatible
 export EMBEDDING_BASE_URL="http://127.0.0.1:18099/v1"
-export EMBEDDING_MODEL="jina-code"
-export EMBEDDING_DIMENSION=768
+export EVAL_EMBED_MODEL="BAAI/bge-small-en-v1.5"
+export EMBEDDING_MODEL="bge-small-en-v1.5"
+export EMBEDDING_DIMENSION=384
 export EMBEDDING_API_KEY="eval-local"
 export EMBEDDING_MAX_INPUT_CHARS=8000
 export INDEX_EMBEDDING_BATCH_SIZE=96

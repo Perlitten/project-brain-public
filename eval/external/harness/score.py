@@ -60,6 +60,68 @@ def bootstrap_ci(vals: list[float], seed: int = SEED) -> tuple[float, float, flo
     return mean, boots[int(0.025 * BOOT_B)], boots[int(0.975 * BOOT_B)]
 
 
+def ndcg_graded(rank: list[str], rels: dict[str, int], k: int = 10) -> float:
+    dcg = sum(rels.get(p, 0) / math.log2(i + 1) for i, p in enumerate(rank[:k], 1))
+    ideal = sum(r / math.log2(i + 1) for i, r in enumerate(sorted(rels.values(), reverse=True)[:k], 1))
+    return dcg / ideal if ideal else 0.0
+
+
+def score_coir_rows(rows: list[dict]) -> dict:
+    """CoIR rows: graded qrels, arm orders in 'ids' (corpus ids)."""
+    per_arm: dict[str, dict[str, list[float]]] = {}
+    for row in rows:
+        rels = row.get("qrels", {})
+        if not rels:
+            continue
+        for arm_name, arm in row.get("arms", {}).items():
+            if not isinstance(arm, dict) or "ids" not in arm:
+                continue
+            rank = arm["ids"]
+            m = per_arm.setdefault(arm_name, {k: [] for k in ("ndcg10", "mrr10", "r10", "r30", "ms")})
+            m["ndcg10"].append(ndcg_graded(rank, rels, 10))
+            gold = set(rels)
+            m["mrr10"].append(mrr(rank, gold, 10))
+            m["r10"].append(recall_at(rank, gold, 10))
+            m["r30"].append(recall_at(rank, gold, 30))
+            m["ms"].append(float(arm.get("ms") or 0.0))
+    return _emit(per_arm, rows)
+
+
+def score_repobench_rows(rows: list[dict]) -> dict:
+    """RepoBench rows: arm 'order' is candidate-index order; gold_index."""
+    per_arm: dict[str, dict[str, list[float]]] = {}
+    for row in rows:
+        gold = row.get("gold_index")
+        if gold is None:
+            continue
+        for arm_name, arm in row.get("arms", {}).items():
+            if not isinstance(arm, dict) or "order" not in arm:
+                continue
+            order = arm["order"]
+            m = per_arm.setdefault(arm_name, {k: [] for k in ("acc1", "acc3", "acc5", "ms")})
+            top = set(order[:1]); m["acc1"].append(1.0 if gold in top else 0.0)
+            top = set(order[:3]); m["acc3"].append(1.0 if gold in top else 0.0)
+            top = set(order[:5]); m["acc5"].append(1.0 if gold in top else 0.0)
+            m["ms"].append(float(arm.get("ms") or 0.0))
+    return _emit(per_arm, rows)
+
+
+def _emit(per_arm: dict, rows: list[dict]) -> dict:
+    out: dict[str, dict] = {}
+    for arm, metrics in sorted(per_arm.items()):
+        out[arm] = {}
+        for metric, vals in metrics.items():
+            if metric == "ms":
+                s = sorted(v for v in vals if v > 0)
+                if s:
+                    out[arm]["ms_p50"] = s[len(s) // 2]
+                    out[arm]["ms_p95"] = s[min(len(s) - 1, int(len(s) * 0.95))]
+                continue
+            mean, lo, hi = bootstrap_ci(vals)
+            out[arm][metric] = {"mean": round(mean, 4), "lo": round(lo, 4), "hi": round(hi, 4), "n": len(vals)}
+    return {"arms": out, "scored_rows": len(rows)}
+
+
 def score_rows(rows: list[dict]) -> dict:
     """rows: list of result dicts. Returns {arm: {metric: (mean, lo, hi, n)}}."""
     per_arm: dict[str, dict[str, list[float]]] = {}
@@ -113,7 +175,13 @@ def main() -> None:
                     rows.append(json.loads(line))
                 except Exception:
                     pass
-    res = score_rows(rows)
+    sample = rows[0] if rows else {}
+    if "qrels" in sample:
+        res = score_coir_rows(rows)
+    elif "gold_index" in sample:
+        res = score_repobench_rows(rows)
+    else:
+        res = score_rows(rows)
     res["label"] = args.label
     res["n_rows"] = len(rows)
     print(json.dumps(res, indent=2))

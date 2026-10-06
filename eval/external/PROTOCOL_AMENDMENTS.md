@@ -30,3 +30,39 @@ on issue text; file score = max chunk BM25 score; top-30 retained.
 **file_limit for v5**: `file_limit=30` keeps the v5 path (`RETRIEVAL_V6_ENABLED`
 is False in shipped defaults; the 30-item `selected_paths` is the "deep" pack
 budget). `brain-v6` repeats the run with the flag toggled to True in-process.
+
+## A2 — embedder switch (2026-10-06, before any test-set scoring)
+
+`jinaai/jina-embeddings-v2-base-code` (768-dim, ~137M params) measured
+0.57 chunks/s on this 8-core box → ~7 h for django's first index alone:
+infeasible within the budget. Switched the openai-compatible shim to
+`BAAI/bge-small-en-v1.5` (384-dim) BEFORE any stratified-60/300 test data
+was produced (only dev-fold smoke ran, now wiped). `EMBEDDING_DIMENSION=384`,
+eval DB and embedding cache recreated. All systems (Brain arms AND the
+dense/BM25 baselines) share this same embedder, so comparisons remain
+paired; absolute recall is expected lower than a code-specialized embedder
+would give — a disclosed caveat, same class as A1.
+
+## A3 — CoIR corpus loading (before any CoIR test queries run)
+
+CoIR corpora are snippet collections, not repositories. Indexing 20k
+synthetic files through FileIndexer costs ~2.5 h/subset of pure
+AST/symbol overhead with zero retrieval benefit (snippets are
+function-level; there is no repo structure to extract). Instead the
+corpus is bulk-loaded: one File + one FileChunk + one Embedding row per
+snippet via `build_embedding_record` — the same record builder the
+indexer uses. Text channels (lexical ILIKE, vector, hints, rerank
+features derived from content) behave identically to a real index;
+symbol/graph/memory channels contribute nothing, which matches what a
+snippet-level corpus contains anyway. grep baseline runs on
+materialized files under /home/ubuntu/eval_external/coir_corpus/.
+
+## A4 — RepoBench-R scoring
+
+RepoBench-R (tianyang/repobench-r, files python_cff.gz/python_cfr.gz are
+gzipped pickles: dict test->{easy,hard}->8000 items) gives each instance
+its own candidate pool (`context` list) with `golden_snippet_index`.
+Per-instance repos are not indexed (8000 distinct repos, infeasible);
+arms = bm25, dense (same embedder), and brain-rerank (Brain's
+deterministic feature scorer on candidate snippets). Query = `code` +
+`import_statement`. Metric: Acc@k (gold snippet in top-k).
