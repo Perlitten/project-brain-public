@@ -605,6 +605,9 @@ class MemorySkill(Base):
         pgvector_column_type(EMBEDDING_DIMENSION), nullable=True
     )
     repo_scope: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Explicit opt-in for prompt injection: a NULL scope is *not* global —
+    # only is_global skills may be injected into contexts for any repo.
+    is_global: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

@@ -124,6 +124,24 @@ class RuntimeContextBuilder:
         builder.add("candidates", [candidate.to_locator_dict() for candidate in result.candidates[:6]], priority=4)
         builder.add("slices", slices, priority=3)
         builder.add("memory", memory, priority=1)
+        # L4 procedural memory, opt-in behind MEMORY_SKILLS_IN_ASK: top matching
+        # active skills for this repo, strictly scope-filtered, inside the same
+        # byte budget as every other section.
+        if settings.MEMORY_SKILLS_IN_ASK:
+            try:
+                from loguru import logger
+
+                from brain.memory.skill_store import select_skills_for_context
+
+                procedures = await select_skills_for_context(
+                    task_description,
+                    repo.get("path"),
+                    max_count=settings.MEMORY_SKILLS_IN_ASK_TOP,
+                )
+                if procedures:
+                    builder.add("procedures", {"skills": procedures, "skills_used": [s["id"] for s in procedures]}, priority=2)
+            except Exception as exc:
+                logger.warning(f"Skill retrieval skipped for runtime context: {exc}")
         if include_debug:
             builder.add("debug", {"timings_ms": result.timings_ms, "degraded": result.degraded}, priority=-1)
         built = builder.build()

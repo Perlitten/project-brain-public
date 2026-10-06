@@ -530,6 +530,31 @@ async def ask_project(body: AskRequest, request: Request):
             logger.warning(f"Learning retrieval skipped for /ask: {exc}")
             learnings_str = "Unavailable"
 
+        # L4 procedural memory, opt-in behind MEMORY_SKILLS_IN_ASK: top matching
+        # active skills for this repository scope injected as a procedures
+        # block, byte-capped. A skill scoped to another repo is never injected.
+        skills_used = []
+        procedures_str = ""
+        if settings.MEMORY_SKILLS_IN_ASK:
+            try:
+                from brain.memory.skill_store import select_skills_for_context
+
+                skills_used = await select_skills_for_context(
+                    body.retrieval_query or body.query,
+                    rule_scope,
+                    max_count=settings.MEMORY_SKILLS_IN_ASK_TOP,
+                )
+                if skills_used:
+                    lines = []
+                    for skill in skills_used:
+                        steps = "; ".join(str(step) for step in skill["workflow"]) or skill["description"]
+                        lines.append(f"- {skill['name']}: {steps}")
+                    procedures_str = "\n".join(lines)[: settings.MEMORY_SKILLS_IN_ASK_MAX_BYTES]
+            except Exception as exc:
+                logger.warning(f"Skill retrieval skipped for /ask: {exc}")
+                skills_used = []
+                procedures_str = ""
+
         repository_freshness = repository_scope.get("freshness", {}) if isinstance(repository_scope, dict) else {}
         freshness_status = repository_freshness.get("status")
         freshness_warning = ""
@@ -558,6 +583,9 @@ async def ask_project(body: AskRequest, request: Request):
             f"### Recorded Decisions:\n{recorded_decisions_str}\n\n"
             f"### Active Rules:\n{rules_str or 'None'}\n\n"
             f"### Consolidated Learnings:\n{learnings_str}"
+            # The procedures section only exists when the L4-in-/ask flag is
+            # on — flag-off output is byte-identical to before the feature.
+            + (f"\n\n### Procedures:\n{procedures_str}" if settings.MEMORY_SKILLS_IN_ASK else "")
         )
 
         prompt = (
@@ -600,12 +628,19 @@ async def ask_project(body: AskRequest, request: Request):
             # the shorter answer better rather than thinner.
             max_tokens=ASK_MAX_ANSWER_TOKENS,
         ), timeout=120)
-        return {
+        result = {
             "answer": _strip_thinking_blocks(response),
             "learnings_used": [
                 {"id": lrng.id, "statement": lrng.statement, "confidence": lrng.confidence} for lrng in learnings
             ],
         }
+        # The key only exists when the L4-in-/ask flag is on — flag-off
+        # responses are byte-identical to before the feature.
+        if settings.MEMORY_SKILLS_IN_ASK:
+            result["skills_used"] = [
+                {"id": skill["id"], "name": skill["name"]} for skill in skills_used
+            ]
+        return result
     except Exception as exc:
         # The exception type carries the diagnosis here: httpx timeouts and
         # asyncio cancellations both stringify to "", so the old message was
@@ -1016,32 +1051,27 @@ async def reject_pending_episode(episode_id: int, body: Optional[EpisodeDecision
 # === L4 Procedural Memory: Skills Registry ===
 
 @router.get("/skills", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def get_skills(status: Optional[str] = "active", limit: int = 50):
+async def get_skills(status: Optional[str] = "active", limit: int = Query(50, ge=1, le=200)):
     """L4 procedural memory: list learned skills and workflows."""
     try:
-        from brain.database.models import MemorySkill
-        from sqlalchemy import desc
+        from brain.memory.skill_store import list_skills
 
-        async with async_session_factory() as session:
-            q = select(MemorySkill).order_by(desc(MemorySkill.confidence)).limit(limit)
-            if status:
-                q = q.where(MemorySkill.status == status)
-            skills = (await session.execute(q)).scalars().all()
-            return [
-                {
-                    "id": s.id,
-                    "name": s.name,
-                    "description": s.description,
-                    "triggers": s.triggers,
-                    "workflow": s.workflow,
-                    "times_used": s.times_used,
-                    "times_successful": s.times_successful,
-                    "success_rate": round(s.times_successful / s.times_used, 3) if s.times_used > 0 else None,
-                    "status": s.status,
-                    "confidence": s.confidence,
-                }
-                for s in skills
-            ]
+        skills = await list_skills(status=status, limit=limit)
+        return [
+            {
+                "id": s.id,
+                "name": s.name,
+                "description": s.description,
+                "triggers": s.triggers,
+                "workflow": s.workflow,
+                "times_used": s.times_used,
+                "times_successful": s.times_successful,
+                "success_rate": round(s.times_successful / s.times_used, 3) if s.times_used > 0 else None,
+                "status": s.status,
+                "confidence": s.confidence,
+            }
+            for s in skills
+        ]
     except Exception as exc:
         logger.error(f"Failed to fetch skills: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch skills") from exc
@@ -1051,42 +1081,24 @@ async def get_skills(status: Optional[str] = "active", limit: int = 50):
 async def create_skill(body: SkillCreate):
     """L4 procedural memory: register a new skill/workflow."""
     try:
-        from brain.database.models import MemorySkill
-        from brain.llm import get_embedding_provider
+        from brain.memory.skill_store import SkillConflictError, create_skill as create_skill_row
 
-        name = body.name.strip()
-        description = body.description.strip()
-        if not name or not description:
-            raise HTTPException(status_code=400, detail="name and description are required")
-
-        async with async_session_factory() as session:
-            existing = await session.execute(select(MemorySkill).where(MemorySkill.name == name))
-            if existing.scalar_one_or_none():
-                raise HTTPException(status_code=409, detail=f"Skill '{name}' already exists")
-
-            embedding = None
-            try:
-                vec = await get_embedding_provider().embed(f"{name}: {description}")
-                embedding = list(vec) if vec else None
-            except Exception as emb_exc:
-                logger.warning(f"Skill embedding failed, storing NULL: {emb_exc}")
-
-            skill = MemorySkill(
-                name=name,
-                description=description,
-                triggers=body.triggers,
-                workflow=body.workflow,
-                source_episode_ids=body.source_episode_ids,
-                source_learning_ids=body.source_learning_ids,
-                confidence=body.confidence,
-                embedding=embedding,
-                repo_scope=body.repo_scope,
-            )
-            session.add(skill)
-            await session.commit()
-            return {"id": skill.id, "name": skill.name, "status": "created"}
-    except HTTPException:
-        raise
+        skill = await create_skill_row(
+            name=body.name,
+            description=body.description,
+            triggers=body.triggers,
+            workflow=body.workflow,
+            source_episode_ids=body.source_episode_ids,
+            source_learning_ids=body.source_learning_ids,
+            confidence=body.confidence,
+            repo_scope=body.repo_scope,
+            is_global=body.is_global,
+        )
+        return {"id": skill.id, "name": skill.name, "status": "created"}
+    except SkillConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(f"Failed to create skill: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to create skill") from exc
@@ -1096,44 +1108,9 @@ async def create_skill(body: SkillCreate):
 async def match_skills(body: SkillMatchRequest):
     """L4 procedural memory: find skills relevant to a task (embedding order, trigger re-rank)."""
     try:
-        from brain.database.models import MemorySkill
-        from brain.llm import get_embedding_provider
+        from brain.memory.skill_store import match_skills as match_skills_query
 
-        query_vec = await get_embedding_provider().embed(body.query)
-
-        async with async_session_factory() as session:
-            q = select(MemorySkill).where(
-                MemorySkill.status == "active",
-                MemorySkill.embedding.isnot(None),
-            )
-            if query_vec:
-                q = q.order_by(MemorySkill.embedding.cosine_distance(query_vec))
-            q = q.limit(body.limit * 2)  # over-fetch for trigger re-ranking
-            skills = (await session.execute(q)).scalars().all()
-
-            query_lower = body.query.lower()
-            scored = []
-            for s in skills:
-                score = 0.0
-                for trigger in (s.triggers or []):
-                    if trigger.lower() in query_lower:
-                        score += 1.0
-                if s.times_used > 0:
-                    score += (s.times_successful / s.times_used) * 0.5
-                scored.append((score, s))
-            scored.sort(key=lambda x: x[0], reverse=True)
-
-            return [
-                {
-                    "id": s.id,
-                    "name": s.name,
-                    "description": s.description,
-                    "workflow": s.workflow,
-                    "confidence": s.confidence,
-                    "trigger_score": score,
-                }
-                for score, s in scored[: body.limit]
-            ]
+        return await match_skills_query(body.query, repo_scope=body.repo_path, limit=body.limit)
     except HTTPException:
         raise
     except Exception as exc:

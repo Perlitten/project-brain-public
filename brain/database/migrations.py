@@ -12,6 +12,7 @@ from brain.embeddings.pgvector_sql import (
     pgvector_index_dimension,
     pgvector_index_names,
 )
+from brain.memory.repo_scope import normalize_repo_scope
 from brain.search.filters import (
     HISTORICAL_AUTHORITY_NOTE,
     HISTORICAL_SUMMARY_PREFIX,
@@ -46,6 +47,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_repository_and_symbol_indexes(conn)
     await _ensure_audit_request_id_column(conn)
     await _ensure_memory_learnings_table(conn)
+    await _backfill_memory_repo_scope(conn)
     pgvector_ready = await _ensure_pgvector_extension(conn)
     if pgvector_ready:
         await _ensure_embedding_vector_column(conn, dimension)
@@ -696,6 +698,7 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
                     status VARCHAR(16) NOT NULL DEFAULT 'active',
                     confidence FLOAT NOT NULL DEFAULT 0.5,
                     repo_scope VARCHAR(1024),
+                    is_global BOOLEAN NOT NULL DEFAULT false,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
                 )
@@ -710,6 +713,11 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
         vec_type = pgvector_column_sql_type(EMBEDDING_DIMENSION)
         await conn.execute(
             text(f"ALTER TABLE memory_skills ADD COLUMN IF NOT EXISTS embedding {vec_type}")
+        )
+        # Explicit global marker for context injection; a NULL repo_scope is
+        # not global and is never injected (underivable backfills stay NULL).
+        await conn.execute(
+            text("ALTER TABLE memory_skills ADD COLUMN IF NOT EXISTS is_global BOOLEAN NOT NULL DEFAULT false")
         )
     except Exception as exc:
         logger.warning(f"Could not apply memory_skills table migration: {exc}")
@@ -749,6 +757,78 @@ async def _ensure_memory_episode_ledger(conn: AsyncConnection) -> None:
         )
     except Exception as exc:
         logger.warning(f"Could not apply memory_episode ledger migration: {exc}")
+
+
+async def _backfill_memory_repo_scope(conn: AsyncConnection) -> None:
+    """Populate repo_scope on existing L2 episodes and L4 skills where derivable.
+
+    Episodes derive their scope from their L1 source events
+    (``source_event_ids`` → ``harness.agent_task_events`` →
+    ``harness.agent_tasks.repo_path``), taking the modal repo when the cluster
+    mixed repositories. Skills derive from their ``source_episode_ids``.
+    Rows with no derivable scope stay NULL (= global scope) — that is
+    intentional, not a gap: an episode built from deleted tasks or a manually
+    registered skill has no provable repository, and NULL is the honest answer.
+    """
+    # Each half runs in its own savepoint: a failure rolls back the backfill
+    # only, not the outer migration transaction (Postgres aborts the whole
+    # transaction on any failed statement).
+    try:
+        async with conn.begin_nested():
+            rows = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT ep.id, t.repo_path, COUNT(*) AS n
+                        FROM memory_episodes ep
+                        CROSS JOIN LATERAL jsonb_array_elements_text(ep.source_event_ids::jsonb) AS ev(eid)
+                        JOIN harness.agent_task_events e ON e.id = ev.eid::bigint
+                        JOIN harness.agent_tasks t ON t.id = e.task_id
+                        WHERE ep.repo_scope IS NULL
+                        GROUP BY ep.id, t.repo_path
+                        ORDER BY ep.id, n DESC, t.repo_path
+                        """
+                    )
+                )
+            ).all()
+            best: dict[int, str] = {}
+            for episode_id, repo_path, _n in rows:
+                best.setdefault(int(episode_id), repo_path)
+            for episode_id, repo_path in best.items():
+                await conn.execute(
+                    text("UPDATE memory_episodes SET repo_scope = :scope WHERE id = :id"),
+                    {"scope": normalize_repo_scope(repo_path), "id": episode_id},
+                )
+    except Exception as exc:
+        logger.warning(f"Could not backfill memory_episodes repo_scope: {exc}")
+
+    try:
+        async with conn.begin_nested():
+            rows = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT s.id, ep.repo_scope, COUNT(*) AS n
+                        FROM memory_skills s
+                        CROSS JOIN LATERAL jsonb_array_elements_text(s.source_episode_ids::jsonb) AS ev(eid)
+                        JOIN memory_episodes ep ON ep.id = ev.eid::bigint
+                        WHERE s.repo_scope IS NULL AND ep.repo_scope IS NOT NULL
+                        GROUP BY s.id, ep.repo_scope
+                        ORDER BY s.id, n DESC, ep.repo_scope
+                        """
+                    )
+                )
+            ).all()
+            best_skill: dict[int, str] = {}
+            for skill_id, scope, _n in rows:
+                best_skill.setdefault(int(skill_id), scope)
+            for skill_id, scope in best_skill.items():
+                await conn.execute(
+                    text("UPDATE memory_skills SET repo_scope = :scope WHERE id = :id"),
+                    {"scope": normalize_repo_scope(scope), "id": skill_id},
+                )
+    except Exception as exc:
+        logger.warning(f"Could not backfill memory_skills repo_scope: {exc}")
 
 
 async def downgrade_memory_episode_ledger(conn: AsyncConnection) -> None:

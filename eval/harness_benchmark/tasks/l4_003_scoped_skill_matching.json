@@ -1,0 +1,20 @@
+{
+  "id": "l4-003",
+  "provenance": {
+    "kind": "curated",
+    "note": "Tests repo_scope filtering in L4 skill matching and strict injection scoping (NULL scope is never injected unless is_global).",
+    "source": "L4 scoping benchmark 2026-10-06"
+  },
+  "query": "restart the deploy pipeline",
+  "task_description": "L4 procedural memory scoping: a skill planted with repo_scope must be chosen over an off-topic skill for its own repository and must not be chosen for another repository. A NULL-scope skill (no repo_scope, is_global unset) must stay listable via GET /skills but must never be injected into a runtime context.",
+  "test_steps": [
+    "Plant an on-topic skill and an off-topic skill, both scoped to repo A, plus a NULL-scope deploy skill (no repo_scope, is_global unset)",
+    "POST /skills/match with a deploy query and repo_path=repo A",
+    "Verify the on-topic scoped skill ranks above the off-topic plant",
+    "POST /skills/match with the same query and repo_path=repo B",
+    "Verify the repo-A skill is not returned at all",
+    "Verify the NULL-scope skill is listed by GET /skills but absent from select_skills_for_context for repo A, repo B, and an unscoped request",
+    "Hard-delete the planted skills"
+  ],
+  "type": "procedural"
+}

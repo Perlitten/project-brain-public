@@ -322,6 +322,16 @@ class Settings(BaseSettings):
     # gate is for scheduled automation.
     MEMORY_CONSOLIDATION_ENABLED: bool = False
     MEMORY_CONSOLIDATION_REQUIRE_APPROVAL: bool = True
+    # Re-open rule: a rejected L2 episode's L1 events may re-cluster when a new
+    # event in the same repository scope arrives within this many days of the
+    # rejection. 0 disables re-opening (rejected episodes keep their events).
+    MEMORY_EPISODE_REOPEN_DAYS: int = 14
+    # L4 procedural memory in /ask and the runtime context: inject the top
+    # matching active skills as a procedures block, strictly filtered by repo
+    # scope. Off by default — opt-in rollout.
+    MEMORY_SKILLS_IN_ASK: bool = False
+    MEMORY_SKILLS_IN_ASK_TOP: int = 2
+    MEMORY_SKILLS_IN_ASK_MAX_BYTES: int = 1500
     PROACTIVE_INSIGHTS_LLM_CACHE_TTL_SECONDS: int = 0
 
     # Closed-loop self diagnosis. Deterministic probes always run first; the LLM

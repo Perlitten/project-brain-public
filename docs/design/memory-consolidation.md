@@ -170,3 +170,36 @@ automatically.
   budget system.
 - The benchmark methodology from `eval/harness_benchmark/` extends
   naturally to a `memory` task type with verifiable ground truth.
+
+## 6. Implemented semantics (repo scoping + L4 rollout)
+
+- **`repo_scope` population**: L1 events carry no repo column; a cluster's
+  scope is the modal normalized `agent_tasks.repo_path` of its L1 events
+  (`task_id` join; orphan events → NULL). The episode, and any learning it
+  promotes to (including the approve-endpoint path), inherit it. Skills take
+  `repo_scope` from the request, normalized at write time.
+- **Backfill**: `_backfill_memory_repo_scope` derives existing episodes from
+  their `source_event_ids` → `agent_task_events` → `agent_tasks.repo_path`
+  (modal repo), and skills from `source_episode_ids`. Rows with no derivable
+  scope (deleted tasks, hand-registered skills) stay NULL. NULL scope means
+  *unscoped*: the row stays visible to every repo in list/match endpoints
+  (GET /skills, POST /skills/match — same contract as learnings) but is
+  **never injected** into prompts. Only skills with an explicit
+  `is_global = true` marker (settable on POST /skills, default false) are
+  injectable across repositories. That is the documented semantic, not a gap.
+- **Re-open rule**: a `rejected` episode keeps its L1 events consumed unless
+  new evidence arrives — when a fresh L1 event lands in the episode's repo
+  scope within `MEMORY_EPISODE_REOPEN_DAYS` (default 14, 0 disables) of the
+  rejection, its ledger rows are released and the events re-cluster. Scopes
+  match exactly: a NULL-scope episode re-opens only on a fresh NULL-scope
+  event, never on a scoped one.
+- **L4 in /ask and the runtime context** (`MEMORY_SKILLS_IN_ASK=false`
+  default): `brain/memory/skill_store.py` holds matching; `/ask` injects the
+  top `MEMORY_SKILLS_IN_ASK_TOP` active skills as a `### Procedures` block
+  capped at `MEMORY_SKILLS_IN_ASK_MAX_BYTES` and returns `skills_used`;
+  `RuntimeContextBuilder` adds a `procedures` section inside the same byte
+  budget. Injection is strictly filtered: skills whose `repo_scope` equals
+  the request repo, plus skills explicitly marked `is_global` — a NULL scope
+  alone is never injected, and a skill scoped elsewhere is never injected.
+  With the flag off, /ask context and response shape are byte-identical to
+  before (no Procedures section, no `skills_used` key in the response).
