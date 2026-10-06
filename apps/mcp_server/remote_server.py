@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, List, Optional
+from urllib.parse import quote
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -248,7 +249,11 @@ async def review_diff(
     head: Optional[str] = "current",
     repo_path: Optional[str] = None,
 ) -> dict:
-    """Review one repository; omitted base resolves from that repository's origin/HEAD."""
+    """Queue a diff review; omitted base resolves from that repository's origin/HEAD.
+
+    Returns ``{"status": "processing", "job_id": ...}``. Poll ``get_diff_review(job_id)``
+    for the report.
+    """
     return await _post(
         "/diff-review",
         {
@@ -257,6 +262,12 @@ async def review_diff(
             "repo_path": repo_path or DEFAULT_REPO,
         },
     )
+
+
+@mcp.tool()
+async def get_diff_review(job_id: str) -> dict:
+    """Poll a diff review queued by ``review_diff``; ``status`` is completed, failed, or still running."""
+    return await _get(f"/diff-review/{quote(job_id, safe='')}")
 
 
 if __name__ == "__main__":

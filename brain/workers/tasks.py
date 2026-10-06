@@ -228,20 +228,6 @@ async def run_reindex(params: Dict[str, Any]) -> Dict[str, Any]:
     clean = bool(params.get("clean", False))
     await init_db()
     indexer = FileIndexer()
-
-
-async def run_diff_review(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Worker task: run diff review in background (LLM calls can take minutes)."""
-    from brain.analyzers.diff_analyzer import DiffAnalyzer
-    from brain.utils.paths import resolve_repo_path
-
-    repo_path = resolve_repo_path(params.get("repo_path"))
-    base = params.get("base")
-    head = params.get("head")
-    await init_db()
-    analyzer = DiffAnalyzer(repo_path)
-    result = await analyzer.review_diff(base=base, head=head)
-    return result
     expected_revision = str(params.get("source_revision") or "").strip()
     repo = await indexer.index_repository(repo_path, clean=clean, expected_revision=expected_revision)
     actual_revision = str(repo.last_indexed_commit or "").strip()
@@ -290,6 +276,16 @@ async def run_diff_review(params: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
     return result
+
+
+async def run_diff_review(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Worker task: run diff review in background (LLM calls can take minutes)."""
+    from brain.analyzers.diff_analyzer import DiffAnalyzer
+
+    repo_path = resolve_repo_path(params.get("repo_path"))
+    await init_db()
+    analyzer = DiffAnalyzer(repo_path)
+    return await analyzer.review_diff(base=params.get("base"), head=params.get("head"))
 
 
 async def run_health_check(params: Dict[str, Any]) -> Dict[str, Any]:
