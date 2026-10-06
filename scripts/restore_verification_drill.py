@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Restore Verification Drill for Project Brain.
 
-Restores PostgreSQL dumps, pgvector embeddings, and n8n sqlite metadata from
-a backup archive into an isolated verification context.
+Restores PostgreSQL dumps and pgvector embeddings from a backup archive into
+an isolated verification context.
 Validates SHA-256 checksums, schema integrity, and row/vector counts.
 
 Truthfulness contract: the drill reports ``verified`` only when a live restore
@@ -18,7 +18,6 @@ import argparse
 import hashlib
 import json
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
@@ -71,23 +70,6 @@ def _check_postgres_artifact(file_path: Path) -> list[str]:
     if not any(token in text for token in _PG_DUMP_CONTENT_TOKENS):
         violations.append("postgres_dump.sql contains no DDL/DML statements")
     return violations
-
-
-def _check_sqlite_artifact(file_path: Path) -> tuple[list[str], int]:
-    """Return (violations, table_count)."""
-    if _is_marker_file(file_path):
-        return ["n8n_database.sqlite is a v1 placeholder marker, not a real database"], 0
-    try:
-        conn = sqlite3.connect(str(file_path))
-        cur = conn.cursor()
-        cur.execute("SELECT count(*) FROM sqlite_master WHERE type='table';")
-        table_count = cur.fetchone()[0]
-        conn.close()
-    except Exception as exc:
-        return [f"n8n_database.sqlite is not a readable sqlite database: {exc}"], 0
-    if table_count < 1:
-        return ["n8n_database.sqlite contains zero tables"], 0
-    return [], table_count
 
 
 def _check_neo4j_artifact(file_path: Path) -> tuple[list[str], dict]:
@@ -247,13 +229,6 @@ def verify_restore_drill(backup_dir: str, *, pg_url: str | None = None) -> dict:
             live_violations, live_stats = _live_restore_postgres(pg_file, pg_url)
             checks["postgres"]["live_restore"] = live_stats
             failures.extend(live_violations)
-
-    n8n_item = artifact_by_name.get("n8n")
-    if n8n_item and n8n_item.get("status") == "ok":
-        n8n_file = dir_path / (n8n_item.get("file") or "n8n_database.sqlite")
-        violations, table_count = _check_sqlite_artifact(n8n_file)
-        checks["n8n"] = {"violations": violations, "sqlite_tables": table_count}
-        failures.extend(violations)
 
     neo4j_item = artifact_by_name.get("neo4j")
     if neo4j_item and neo4j_item.get("status") == "ok":

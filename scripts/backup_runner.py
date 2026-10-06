@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Automated Backup Runner for Project Brain.
 
-Exports PostgreSQL schemas/embeddings, Neo4j graph data, and n8n sqlite metadata.
+Exports PostgreSQL schemas/embeddings and Neo4j graph data.
 Generates an explicit manifest with SHA-256 checksums and per-artifact status.
 
 Truthfulness contract: an artifact is only recorded as ``ok`` when a real export
 was produced. Missing tools, failed exports, and absent required stores are
-recorded as ``failed``/``absent_source`` and make the overall manifest status
+recorded as ``failed``/``skipped`` and make the overall manifest status
 ``failed`` (non-zero exit). No placeholder/marker files are ever written.
 """
 
@@ -22,11 +22,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-BACKUP_VERSION = "2.0.0"
+# 2.1.0: n8n artifact removed — the orchestration layer is gone (ADR 013).
+BACKUP_VERSION = "2.1.0"
 ARTIFACT_POSTGRES = "postgres"
 ARTIFACT_NEO4J = "neo4j"
-ARTIFACT_N8N = "n8n"
-ARTIFACT_NAMES = (ARTIFACT_POSTGRES, ARTIFACT_NEO4J, ARTIFACT_N8N)
+ARTIFACT_NAMES = (ARTIFACT_POSTGRES, ARTIFACT_NEO4J)
 
 
 def calculate_sha256(filepath: Path) -> str:
@@ -130,7 +130,6 @@ def run_backup(
     output_dir: str | None = None,
     *,
     pg_dsn: str | None = None,
-    n8n_source: str | None = None,
     neo4j_uri: str | None = None,
     neo4j_user: str | None = None,
     neo4j_password: str | None = None,
@@ -140,7 +139,7 @@ def run_backup(
 
     Every store reports an explicit status; the backup fails (``status: failed``)
     whenever a required artifact could not be produced. ``allow_missing`` demotes
-    named artifacts (``postgres``, ``neo4j``, ``n8n``) to optional for
+    named artifacts (``postgres``, ``neo4j``) to optional for
     environments where that store is genuinely out of scope.
     """
     unknown = set(allow_missing) - set(ARTIFACT_NAMES)
@@ -185,20 +184,6 @@ def run_backup(
             neo4j_file.unlink(missing_ok=True)
             artifacts.append(_artifact_failed(ARTIFACT_NEO4J, str(exc)))
 
-    # 3. n8n sqlite (optional store: absent source is recorded, never faked)
-    n8n_db = Path(n8n_source) if n8n_source else Path("n8n_data/database.sqlite")
-    n8n_file = target_path / "n8n_database.sqlite"
-    if ARTIFACT_N8N in allow_missing:
-        artifacts.append(_artifact_skipped(ARTIFACT_N8N, "skipped", "demoted by --allow-missing n8n"))
-    elif n8n_db.exists():
-        shutil.copy2(n8n_db, n8n_file)
-        artifacts.append(_artifact_ok(ARTIFACT_N8N, n8n_file))
-    else:
-        artifacts.append(_artifact_skipped(
-            ARTIFACT_N8N, "absent_source",
-            f"n8n sqlite not found at {n8n_db}; store not present in this deployment",
-        ))
-
     status = "ok" if all(a["status"] == "ok" for a in artifacts if a["required"]) else "failed"
     manifest = {
         "backup_version": BACKUP_VERSION,
@@ -231,7 +216,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Demote a store to optional when it is out of scope for this deployment",
     )
     parser.add_argument("--pg-dsn", help="PostgreSQL DSN (default: $DATABASE_URL)")
-    parser.add_argument("--n8n-source", help="Path to n8n database.sqlite")
     parser.add_argument("--neo4j-uri", help="Neo4j bolt URI (default: $NEO4J_URI)")
     parser.add_argument("--neo4j-user", help="Neo4j user (default: $NEO4J_USER)")
     parser.add_argument("--neo4j-password", help="Neo4j password (default: $NEO4J_PASSWORD)")
@@ -239,7 +223,6 @@ def main(argv: list[str] | None = None) -> int:
     manifest = run_backup(
         args.output,
         pg_dsn=args.pg_dsn,
-        n8n_source=args.n8n_source,
         neo4j_uri=args.neo4j_uri,
         neo4j_user=args.neo4j_user,
         neo4j_password=args.neo4j_password,
