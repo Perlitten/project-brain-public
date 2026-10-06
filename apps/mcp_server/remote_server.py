@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, List, Optional
+from urllib.parse import quote
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -266,7 +267,7 @@ async def review_diff(
 @mcp.tool()
 async def get_diff_review(job_id: str) -> dict:
     """Poll a diff review queued by ``review_diff``; ``status`` is completed, failed, or still running."""
-    return await _get(f"/diff-review/{job_id}")
+    return await _get(f"/diff-review/{quote(job_id, safe='')}")
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ _RedisMapping = Mapping[
     bytes | bytearray | memoryview | str | int | float,
     bytes | bytearray | memoryview | str | int | float,
 ]
-_DEEP_JOB_TYPES = {"deep_context", "nightly_maintenance"}
+_DEEP_JOB_TYPES = {"deep_context", "nightly_maintenance", "diff_review"}
 
 
 def worker_pool_for_job(job_type: str) -> str:
