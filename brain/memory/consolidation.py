@@ -366,16 +366,16 @@ async def _run_consolidation_unlocked(
                 from brain.database.session import async_session_factory
                 from brain.llm import get_embedding_provider
                 async with async_session_factory() as session:
-                    ep = await session.get(MemoryEpisode, episode_id)
-                    if ep:
-                        ep.distilled_summary = candidate.statement
-                        ep.topic = candidate.category
-                        ep.confidence = candidate.confidence
+                    stored = await session.get(MemoryEpisode, episode_id)
+                    if stored:
+                        stored.distilled_summary = candidate.statement
+                        stored.topic = candidate.category
+                        stored.confidence = candidate.confidence
                         # Generate embedding for L2 semantic retrieval.
                         try:
                             embedder = get_embedding_provider()
                             vec = await embedder.embed(candidate.statement)
-                            ep.embedding = list(vec) if vec else None
+                            stored.embedding = list(vec) if vec else None
                         except Exception as emb_exc:
                             logger.warning(f"L2 episode embedding failed: {emb_exc}")
                         await session.commit()
@@ -399,10 +399,10 @@ async def _run_consolidation_unlocked(
                         from brain.database.models import MemoryEpisode
                         from brain.database.session import async_session_factory
                         async with async_session_factory() as session:
-                            ep = await session.get(MemoryEpisode, episode_id)
-                            if ep:
-                                ep.status = "promoted"
-                                ep.promoted_to_learning_id = learning_id
+                            stored = await session.get(MemoryEpisode, episode_id)
+                            if stored:
+                                stored.status = "promoted"
+                                stored.promoted_to_learning_id = learning_id
                                 await session.commit()
                     except Exception as exc:
                         logger.warning(f"L2 episode promote-mark failed: {exc}")
@@ -416,9 +416,9 @@ async def _run_consolidation_unlocked(
                     from brain.database.models import MemoryEpisode
                     from brain.database.session import async_session_factory
                     async with async_session_factory() as session:
-                        ep = await session.get(MemoryEpisode, episode_id)
-                        if ep:
-                            ep.status = "rejected"
+                        stored = await session.get(MemoryEpisode, episode_id)
+                        if stored:
+                            stored.status = "rejected"
                             await session.commit()
                 except Exception:
                     pass
