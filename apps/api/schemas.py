@@ -160,3 +160,38 @@ class SearchRequest(BaseModel):
 class RelatedRequest(BaseModel):
     file_path: str = Field(..., min_length=1, max_length=1000)
     repo_path: Optional[str] = Field(default=None, max_length=1000)
+
+
+class ScheduledJobView(BaseModel):
+    job_type: str
+    description: str
+    cron: str
+    pool: str
+    interval_seconds: int
+    next_run_at: Optional[str] = None
+    last_scheduled_at: Optional[str] = None
+    last_job_id: Optional[str] = None
+    last_success_at: Optional[str] = None
+    last_failure_at: Optional[str] = None
+    last_error: Optional[str] = None
+    last_attempts: Optional[int] = None
+    max_attempts: int
+    deadman_configured: bool
+    status: Literal["ok", "stale", "degraded", "pending", "disabled"]
+    trigger_path: str
+
+
+class SchedulerJobsResponse(BaseModel):
+    enabled: bool
+    started_at: Optional[str] = None
+    grace_seconds: int
+    stale: List[str]
+    jobs: List[ScheduledJobView]
+
+
+class GitMergeWebhook(BaseModel):
+    ref: str = Field(..., max_length=255)
+    sha: Optional[str] = Field(default=None, max_length=128)
+    after: Optional[str] = Field(default=None, max_length=128)
+    repo_path: Optional[str] = Field(default=None, max_length=1000)
+

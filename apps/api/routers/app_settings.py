@@ -1,7 +1,7 @@
-"""Operator settings: alerts, n8n, automation, search and indexing knobs.
+"""Operator settings: alerts, automation, search and indexing knobs.
 
 Only the fields in :data:`FIELDS` are readable or writable here, each with its
-own type and range. Secrets (bot token, n8n API key) are write-only: GET says
+own type and range. Secrets (bot token) are write-only: GET says
 whether one is set, never what it is. Writes land in the checkout's ``.env``
 (through ``brain.onboarding.envfile``) and on the live API settings; workers
 and the scheduler read ``.env`` when they start.
@@ -41,7 +41,6 @@ class SettingField:
 
 SECTIONS: Dict[str, str] = {
     "telegram": "Telegram alerts",
-    "n8n": "n8n automation",
     "automation": "Background checks",
     "search": "Search & context packs",
     "indexing": "Indexing & workers",
@@ -53,9 +52,6 @@ FIELDS: List[SettingField] = [
     SettingField("TELEGRAM_ALERT_CHAT_ID", "telegram", "Chat ID", "text", "Numeric id of the chat or channel (e.g. -1001234567890) or @channel.", pattern=r"-?\d{1,20}|@[A-Za-z0-9_]{4,64}", clearable=True),
     SettingField("TELEGRAM_ALERT_COOLDOWN_SECONDS", "telegram", "Repeat cooldown, s", "int", "The same findings are not re-sent within this window.", min=60, max=7 * 24 * 3600),
     SettingField("BRAIN_TELEGRAM_DEFAULT_REPO", "telegram", "Default repository for the bot", "text", "Repository the Telegram bridge uses when a message names none.", clearable=True),
-    SettingField("N8N_BASE_URL", "n8n", "n8n URL (from the Brain server)", "url", "How the Brain API reaches n8n, e.g. http://n8n:5678 inside docker."),
-    SettingField("N8N_PUBLIC_URL", "n8n", "n8n URL (in your browser)", "url", "Used for “Open in n8n” links."),
-    SettingField("N8N_API_KEY", "n8n", "n8n API key", "secret", "n8n → Settings → n8n API → Create an API key. Lets Brain see which workflows are active. Write-only.", clearable=True),
     SettingField("SELF_DIAGNOSIS_ENABLED", "automation", "Scheduled self-diagnosis", "bool", "Brain checks its own health on a schedule and reports findings."),
     SettingField("SELF_DIAGNOSIS_USE_LLM", "automation", "Summarize diagnosis with the LLM", "bool", "Off = deterministic probes only, no model calls."),
     SettingField("PROACTIVE_INSIGHTS_ENABLED", "automation", "Proactive insights", "bool", "Scheduled scan for risks and drift in the indexed code."),
@@ -231,21 +227,4 @@ async def test_telegram() -> Dict[str, Any]:
         "status": result.get("status"),
         "detail": result.get("reason") or result.get("error_type"),
         "enabled": bool(settings.TELEGRAM_ALERTS_ENABLED),
-    }
-
-
-@router.post("/test/n8n", dependencies=[Depends(require_scope("setup:write"))])
-async def test_n8n() -> Dict[str, Any]:
-    """Reach n8n and, with an API key, list its Project Brain workflows."""
-    from apps.api.helpers import check_n8n_health, get_n8n_workflows
-
-    health = await check_n8n_health()
-    workflows = await get_n8n_workflows()
-    return {
-        "health": {k: health.get(k) for k in ("status", "message", "error") if k in health},
-        "api_status": workflows.get("api_status"),
-        "api_error": workflows.get("api_error"),
-        "source": workflows.get("source"),
-        "workflows": len(workflows.get("workflows") or []),
-        "active": workflows.get("active_workflows_count", 0),
     }

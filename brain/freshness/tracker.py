@@ -239,7 +239,7 @@ class FreshnessTracker:
 class InvalidationBus:
     """Phase C4 — internal event-driven invalidation bus.
 
-    Deliberately in-process and dependency-free: Git hooks, CI, or n8n can call
+    Deliberately in-process and dependency-free: Git hooks, CI, or the worker scheduler can call
     :meth:`emit` later without this module knowing about them.
     """
 

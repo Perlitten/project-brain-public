@@ -22,8 +22,6 @@ TOUCHED = (
     "TELEGRAM_ALERT_BOT_TOKEN",
     "TELEGRAM_ALERT_CHAT_ID",
     "TELEGRAM_ALERT_COOLDOWN_SECONDS",
-    "N8N_BASE_URL",
-    "N8N_API_KEY",
 )
 
 
@@ -46,15 +44,14 @@ def _field(body, key):
 
 def test_get_never_returns_secret_values():
     settings.TELEGRAM_ALERT_BOT_TOKEN = "123:secret-token"
-    settings.N8N_API_KEY = None
     response = client.get("/api/settings")
     assert response.status_code == 200
     body = response.json()
     assert "123:secret-token" not in response.text
     token = _field(body, "TELEGRAM_ALERT_BOT_TOKEN")
     assert token["set"] is True and token["value"] is None
-    assert _field(body, "N8N_API_KEY")["set"] is False
-    assert {s["id"] for s in body["sections"]} >= {"telegram", "n8n"}
+    assert {s["id"] for s in body["sections"]} >= {"telegram", "automation"}
+    assert "n8n" not in response.text.lower()
 
 
 def test_patch_writes_env_and_applies_live(tmp_path):
@@ -65,30 +62,28 @@ def test_patch_writes_env_and_applies_live(tmp_path):
                 "TELEGRAM_ALERTS_ENABLED": True,
                 "TELEGRAM_ALERT_CHAT_ID": "-1001234567890",
                 "TELEGRAM_ALERT_COOLDOWN_SECONDS": 3600,
-                "N8N_API_KEY": "n8n-key-abc",
-                "N8N_BASE_URL": "http://n8n:5678/",
+                "TELEGRAM_ALERT_BOT_TOKEN": "123:bot-token-abc",
             }
         },
     )
     assert response.status_code == 200, response.text
-    assert "n8n-key-abc" not in response.text
+    assert "bot-token-abc" not in response.text
     env = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "TELEGRAM_ALERTS_ENABLED=true" in env
     assert "TELEGRAM_ALERT_CHAT_ID=-1001234567890" in env
     assert "TELEGRAM_ALERT_COOLDOWN_SECONDS=3600" in env
-    assert "N8N_API_KEY=n8n-key-abc" in env
-    assert "N8N_BASE_URL=http://n8n:5678\n" in env
+    assert "TELEGRAM_ALERT_BOT_TOKEN=123:bot-token-abc" in env
     assert settings.TELEGRAM_ALERTS_ENABLED is True
     assert settings.TELEGRAM_ALERT_COOLDOWN_SECONDS == 3600
-    assert settings.N8N_API_KEY == "n8n-key-abc"
+    assert settings.TELEGRAM_ALERT_BOT_TOKEN == "123:bot-token-abc"
 
 
 def test_patch_clear_removes_a_secret(tmp_path):
-    settings.N8N_API_KEY = "old"
-    response = client.patch("/api/settings", json={"clear": ["N8N_API_KEY"]})
+    settings.TELEGRAM_ALERT_BOT_TOKEN = "old"
+    response = client.patch("/api/settings", json={"clear": ["TELEGRAM_ALERT_BOT_TOKEN"]})
     assert response.status_code == 200
-    assert settings.N8N_API_KEY is None
-    assert "N8N_API_KEY=''\n" in (tmp_path / ".env").read_text(encoding="utf-8")
+    assert settings.TELEGRAM_ALERT_BOT_TOKEN is None
+    assert "TELEGRAM_ALERT_BOT_TOKEN=''\n" in (tmp_path / ".env").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -101,11 +96,10 @@ def test_patch_clear_removes_a_secret(tmp_path):
         {"values": {"TELEGRAM_ALERTS_ENABLED": "yes"}},
         {"values": {"TELEGRAM_ALERT_CHAT_ID": "123\nOPENAI_API_KEY=sk"}},
         {"values": {"TELEGRAM_ALERT_CHAT_ID": "not a chat"}},
-        {"values": {"N8N_BASE_URL": "file:///etc/passwd"}},
-        {"values": {"N8N_BASE_URL": "http://user:pw@n8n:5678"}},
-        {"values": {"N8N_API_KEY": "has space"}},
-        {"values": {"N8N_API_KEY": ""}},
-        {"clear": ["N8N_BASE_URL"]},  # required, not clearable
+        {"values": {"N8N_BASE_URL": "http://n8n:5678"}},  # removed with n8n
+        {"values": {"TELEGRAM_ALERT_BOT_TOKEN": "has space"}},
+        {"values": {"TELEGRAM_ALERT_BOT_TOKEN": ""}},
+        {"clear": ["TELEGRAM_ALERT_COOLDOWN_SECONDS"]},  # not clearable
         {},
     ],
 )
@@ -130,14 +124,5 @@ def test_telegram_test_reports_missing_credentials():
     assert response.json()["status"] == "disabled"
 
 
-def test_n8n_test_reports_health_and_api_status():
-    with (
-        patch.object(api_helpers, "check_n8n_health", new=AsyncMock(return_value={"status": "healthy", "url": "http://n8n:5678", "message": "ok"})),
-        patch.object(api_helpers, "get_n8n_workflows", new=AsyncMock(return_value={"workflows": [{}, {}], "source": "repo", "api_status": "missing_key", "api_error": "N8N_API_KEY not configured", "active_workflows_count": 0})),
-    ):
-        response = client.post("/api/settings/test/n8n")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["health"]["status"] == "healthy"
-    assert body["api_status"] == "missing_key"
-    assert body["workflows"] == 2
+def test_n8n_test_endpoint_is_gone():
+    assert client.post("/api/settings/test/n8n").status_code in (404, 405)

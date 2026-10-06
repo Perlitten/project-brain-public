@@ -47,3 +47,10 @@
 .settings-form .field__label { align-items: center; }
 .settings-form .form__row { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .settings__warn { margin-bottom: var(--s-3); }
+.settings__pad { padding: var(--s-4) var(--s-4) 0; }
+.settings__pad .status-line { margin-bottom: var(--s-3); }
+/* Nine columns: scroll sideways on narrow screens instead of crushing cells. */
+.sched-scroll { overflow-x: auto; max-width: 100%; }
+.sched-scroll .table { min-width: 980px; }
+.sched-scroll .table-wrap { overflow: visible; }
+.settings > * { min-width: 0; }

@@ -191,7 +191,6 @@ unmodified service.
 | `pgvector/pgvector:pg15` | compose | PostgreSQL License (PostgreSQL and pgvector) |
 | `redis:7-alpine` | compose | Redis 7.4+: dual RSALv2 / SSPLv1. Self-hosting as a private backing store is permitted; offering Redis itself as a managed service is not. Earlier 7.x: BSD-3-Clause |
 | `neo4j:5.12-community` | compose | GPL-3.0 (Neo4j Community Edition), run as a separate server process; Brain talks to it over the network via the Apache-2.0 `neo4j` driver |
-| `n8nio/n8n` | compose | n8n Sustainable Use License (fair-code). Free for internal business, personal and non-commercial use; reselling n8n as a hosted product is not allowed |
 | `pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime` | `deploy/lfm-colbert-gpu` | PyTorch: BSD-3-Clause; bundled CUDA/cuDNN: NVIDIA license agreements |
 | llama.cpp (cloned and built at image build time) | `deploy/lfm-colbert-cpu` | MIT — https://github.com/ggml-org/llama.cpp |
 | nginx | `deploy/nginx` (config only) | BSD-2-Clause |
@@ -218,7 +217,7 @@ and terms of use.
 
 Product and company names used in this repository — including Claude and
 Anthropic, Codex and OpenAI, Gemini and Google, Cursor, Devin, Kiro, NVIDIA,
-Llama and Meta, Liquid AI, Neo4j, Redis, PostgreSQL, n8n, Docker, Next.js and
+Llama and Meta, Liquid AI, Neo4j, Redis, PostgreSQL, Docker, Next.js and
 Vercel, Obsidian, GitHub and Hugging Face — are trademarks of their
 respective owners. They are used only to identify compatible tools and
 services. Project Brain is an independent personal project and is not
