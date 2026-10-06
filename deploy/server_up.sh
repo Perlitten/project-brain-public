@@ -484,6 +484,15 @@ fi
 echo "==> Scheduler state (from /health; jobs fire inside the worker):"
 curl -fsS "http://127.0.0.1:${port}/health" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin).get("scheduler"), indent=2))' || true
 
+# Repo path sandbox check: every repositories row and every dir under the
+# ALLOWED_REPO_ROOTS mounts must pass validate_secure_repo_path inside the
+# container, or indexing that path fails at request time. A misconfig here
+# must not fail a deploy that already passed its health gates, so this runs
+# in an || context and reports FAIL lines instead.
+echo "==> Repo path sandbox check (validate_secure_repo_path)"
+$COMPOSE exec -T api python -m brain.config.repo_root_check \
+    || echo "    FAIL: repository path sandbox check failed (see FAIL lines above)" >&2
+
 # --- release image retention -------------------------------------------------
 # Every deploy leaves behind a brain-api:<sha> image, and on this host they grew
 # until the disk hit 95%. Those images are also the rollback mechanism, so they

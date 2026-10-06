@@ -96,3 +96,50 @@ async def test_promote_candidate_skips_non_promote_gate():
             consolidation.ConsolidationCandidate(statement="s"), gate
         ) is None
     add.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_repo_root_check_collects_dirs_under_allowed_roots(tmp_path, monkeypatch):
+    # Deploy check: immediate dirs under each ALLOWED_REPO_ROOTS entry become
+    # validation candidates (DB rows are additive when a database is up).
+    from brain.config.repo_root_check import _candidate_paths
+
+    indexed = tmp_path / "indexed"
+    (indexed / "repo-a").mkdir(parents=True)
+    (indexed / "repo-b").mkdir(parents=True)
+    (indexed / "not-a-dir").write_text("x")
+    other = tmp_path / "other"
+    (other / "repo-c").mkdir(parents=True)
+    monkeypatch.setattr(settings, "ALLOWED_REPO_ROOTS", f"{indexed},{other}")
+
+    candidates = await _candidate_paths()
+
+    assert str(indexed / "repo-a") in candidates
+    assert str(indexed / "repo-b") in candidates
+    assert str(other / "repo-c") in candidates
+    assert str(indexed / "not-a-dir") not in candidates
+
+
+@pytest.mark.asyncio
+async def test_repo_root_check_reports_symlink_escape(tmp_path, monkeypatch, capsys):
+    # A dir under an allowed mount that resolves outside it (symlink escape)
+    # must surface as a FAIL line naming the offending path.
+    from brain.config import repo_root_check
+
+    configured = tmp_path / "configured"
+    configured.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    indexed = tmp_path / "indexed"
+    indexed.mkdir()
+    (indexed / "repo-link").symlink_to(outside)
+    monkeypatch.setattr(paths, "get_repo_root", lambda: configured)
+    monkeypatch.setattr(settings, "TARGET_REPO_PATH", str(configured))
+    monkeypatch.setattr(settings, "ALLOWED_REPO_ROOTS", str(indexed))
+    monkeypatch.setattr(settings, "ALLOW_SCRATCH_REPO_ROOTS", False)
+
+    assert await repo_root_check._main() == 1
+    out = capsys.readouterr().out
+    assert f"FAIL {indexed / 'repo-link'}" in out
+    assert "outside allowed repository roots" in out
+    assert "ALLOWED_ROOTS=" in out
