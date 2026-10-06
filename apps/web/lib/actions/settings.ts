@@ -1,5 +1,5 @@
 "use server";
-// Settings: typed writes to the server's .env, plus one-click connection tests.
+// Settings: typed writes to the server's .env, plus a one-click Telegram test.
 import { mutate } from "./gate";
 import type { ActionResult } from "./types";
 
@@ -28,27 +28,5 @@ export async function testTelegram(): Promise<ActionResult<TelegramReply>> {
         : d.status === "disabled"
           ? "Not sent: bot token or chat ID is missing."
           : `Telegram refused it (${d.detail ?? d.status}). Check the token and chat ID.`,
-  });
-}
-
-type N8nReply = { health?: { status?: string; error?: string }; api_status?: string; workflows?: number; active?: number };
-
-export async function testN8n(): Promise<ActionResult<N8nReply>> {
-  return mutate<N8nReply>("/api/settings/test/n8n", {
-    body: {},
-    timeoutMs: 20_000,
-    success: (d) => {
-      const up = d.health?.status === "healthy" ? "n8n answers" : `n8n unreachable${d.health?.error ? ` (${d.health.error})` : ""}`;
-      const api =
-        d.api_status === "available"
-          ? `API key works — ${d.active ?? 0} of ${d.workflows ?? 0} workflows active`
-          : d.api_status === "missing_key"
-            ? "no API key, so workflow state is unknown"
-            : d.api_status === "auth_failed"
-              ? "API key rejected"
-              : `API: ${d.api_status}`;
-      return `${up} · ${api}.`;
-    },
-    revalidate: ["/settings"],
   });
 }

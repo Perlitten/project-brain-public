@@ -21,6 +21,8 @@ from brain.workers.db_fencing import (
     renew_db_lease_open,
     try_claim_db_lease,
 )
+from brain.workers.job_outcomes import record_failure, record_success, retry_delay_seconds, route_final_failure
+from brain.workers.scheduler import run_scheduler
 from brain.workers.queue import JobQueue, JobStatus, worker_pool_prefix, queue_for_job
 from brain.workers.errors import PermanentJobError
 from brain.workers.tasks import StaleWorkerFencingError, execute_job, validate_task_fencing
@@ -120,6 +122,14 @@ async def _execute_owned_job(
         await asyncio.gather(renew_task, lost_wait, exec_task, return_exceptions=True)
 
 
+async def _final_failure(queue: JobQueue, job_type: str, job_id: str, attempt: int, error: str) -> None:
+    """A job is done failing: record it per type and hand it to self-diagnosis."""
+    await record_failure(queue.redis, job_type, job_id, attempt, error)
+    diagnosis_id = await route_final_failure(queue.redis, job_type, job_id, error)
+    if diagnosis_id:
+        logger.warning(f"Job {job_id} ({job_type}) failed for good; self-diagnosis job {diagnosis_id} queued")
+
+
 async def process_one(queue: JobQueue) -> bool:
     lease_ttl = max(1, int(settings.WORKER_JOB_LEASE_SECONDS))
     try:
@@ -206,6 +216,7 @@ async def process_one(queue: JobQueue) -> bool:
                 error=f"Exceeded {max_attempts} attempts after worker crash recovery",
             )
             acknowledge_delivery = True
+            await _final_failure(queue, job_type, job_id, attempt, f"Exceeded {max_attempts} attempts after worker crash recovery")
             queue.available_capacity = 1
             return True
 
@@ -223,6 +234,7 @@ async def process_one(queue: JobQueue) -> bool:
             status = JobStatus.DEGRADED if result.get("status") == "degraded" else JobStatus.COMPLETED
             await _finish_status(queue, job_id, fencing_token, status, result=result)
             acknowledge_delivery = True
+            await record_success(queue.redis, job_type, job_id, attempt)
             mark_completed = getattr(queue, "mark_completed", None)
             if mark_completed is not None:
                 completion_marker = mark_completed()
@@ -243,12 +255,13 @@ async def process_one(queue: JobQueue) -> bool:
                 result=exc.result,
             )
             acknowledge_delivery = True
+            await _final_failure(queue, job_type, job_id, attempt, str(exc))
         except Exception as exc:
             if isinstance(exc, asyncio.TimeoutError):
                 exc = RuntimeError(f"Job exceeded {job_timeout}s timeout")
             logger.exception(f"Job {job_id} failed: {exc}")
             if attempt < max_attempts:
-                delay_seconds = min(5 * (2 ** (attempt - 1)), 300)
+                delay_seconds = retry_delay_seconds(attempt)
                 retry_args: dict = {"fencing_token": fencing_token} if fencing_token else {}
                 scheduled = await queue.schedule_retry(job_id, str(exc), delay_seconds, **retry_args)
                 if scheduled is False:
@@ -261,6 +274,7 @@ async def process_one(queue: JobQueue) -> bool:
             else:
                 await _finish_status(queue, job_id, fencing_token, JobStatus.FAILED, error=str(exc))
                 acknowledge_delivery = True
+                await _final_failure(queue, job_type, job_id, attempt, str(exc))
     except StaleWorkerFencingError as exc:
         logger.warning("Job {} transition stopped after lease loss: {}", job_id, exc)
     finally:
@@ -341,6 +355,7 @@ async def run_worker() -> None:
     logger.info(f"Worker started (pool={pool}, prefix={queue.prefix})")
     stop = asyncio.Event()
     heartbeat_task = asyncio.create_task(_heartbeat_loop(queue, stop))
+    scheduler_task = asyncio.create_task(run_scheduler(redis_client, stop))
 
     # Graceful shutdown: handle SIGTERM/SIGINT so in-flight jobs finish cleanly.
     import signal
@@ -362,8 +377,11 @@ async def run_worker() -> None:
     finally:
         stop.set()
         heartbeat_task.cancel()
+        scheduler_task.cancel()
         with suppress(asyncio.CancelledError):
             await heartbeat_task
+        with suppress(asyncio.CancelledError):
+            await scheduler_task
         await queue.clear_heartbeat()
         try:
             await close_late_interaction_client()

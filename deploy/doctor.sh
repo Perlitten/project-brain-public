@@ -157,7 +157,7 @@ check_required_env() {
     local missing=()
     local invalid=()
     local key val
-    for key in BRAIN_PUBLIC_HOST N8N_HOST N8N_PUBLIC_URL BRAIN_TARGET_REPO_DIR BRAIN_INDEXED_PROJECTS_DIR; do
+    for key in BRAIN_PUBLIC_HOST BRAIN_TARGET_REPO_DIR BRAIN_INDEXED_PROJECTS_DIR; do
         val="$(env_value "$key")"
         if [[ -z "$val" ]]; then
             missing+=("$key")
@@ -169,10 +169,6 @@ check_required_env() {
         pass "required env keys are set"
     fi
 
-    val="$(env_value N8N_PUBLIC_URL)"
-    if [[ -n "$val" && ! "$val" =~ ^https:// ]]; then
-        invalid+=("N8N_PUBLIC_URL")
-    fi
     if [[ "${#invalid[@]}" -gt 0 ]]; then
         fail "invalid env key format: ${invalid[*]}"
     else
@@ -197,7 +193,7 @@ check_required_env() {
 check_generated_secrets() {
     local blank=()
     local key val
-    for key in POSTGRES_PASSWORD NEO4J_PASSWORD PROJECT_BRAIN_API_KEY N8N_ENCRYPTION_KEY; do
+    for key in POSTGRES_PASSWORD NEO4J_PASSWORD PROJECT_BRAIN_API_KEY PROJECT_BRAIN_WEBHOOK_TOKEN; do
         val="$(env_value "$key")"
         if [[ -z "$val" ]]; then
             blank+=("$key")
@@ -329,22 +325,14 @@ check_compose_config() {
 }
 
 check_local_health() {
-    local api_port n8n_port
+    local api_port
     api_port="$(env_value BRAIN_API_PORT)"
     api_port="${api_port:-8010}"
-    n8n_port="$(env_value BRAIN_N8N_PORT)"
-    n8n_port="${n8n_port:-5680}"
 
     if curl -fsS "http://127.0.0.1:${api_port}/ready" >/dev/null; then
         pass "local API readiness"
     else
         fail "local API readiness failed"
-    fi
-
-    if curl -fsS "http://127.0.0.1:${n8n_port}/healthz" >/dev/null; then
-        pass "local n8n health"
-    else
-        fail "local n8n health failed"
     fi
 }
 
@@ -358,12 +346,11 @@ check_containers() {
 }
 
 check_public() {
-    local brain_host n8n_host
+    local brain_host
     brain_host="$(env_value BRAIN_PUBLIC_HOST)"
-    n8n_host="$(env_value N8N_HOST)"
 
-    if [[ -z "$brain_host" || -z "$n8n_host" ]]; then
-        fail "BRAIN_PUBLIC_HOST or N8N_HOST missing"
+    if [[ -z "$brain_host" ]]; then
+        fail "BRAIN_PUBLIC_HOST missing"
         return
     fi
 
@@ -372,25 +359,11 @@ check_public() {
     else
         fail "DNS does not resolve: BRAIN_PUBLIC_HOST"
     fi
-    if getent hosts "$n8n_host" >/dev/null 2>&1; then
-        pass "DNS resolves: N8N_HOST"
-    else
-        fail "DNS does not resolve: N8N_HOST"
-    fi
 
     if curl -fsS "https://${brain_host}/health" >/dev/null; then
         pass "public API reachable"
     else
         fail "public API not reachable"
-    fi
-    local n8n_status
-    n8n_status="$(
-        curl -sS -o /dev/null -w '%{http_code}' "https://${n8n_host}/" || true
-    )"
-    if [[ "$n8n_status" == "401" ]]; then
-        pass "public n8n host reachable and auth-protected"
-    else
-        fail "public n8n host must return the Basic Auth boundary (expected 401, got ${n8n_status:-none})"
     fi
 }
 

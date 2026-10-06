@@ -20,7 +20,6 @@ ${PROJECT_BRAIN_RELEASE_ROOT:-/opt/project-brain}/
   .env                         # secrets, chmod 600, never committed
   deploy/server_up.sh
   deploy/nginx/brain.conf
-  deploy/nginx/brain-n8n.conf
   scripts/verify_release.sh
   apps/web/                    # Next.js app, deployed separately on Vercel
 ```
@@ -48,8 +47,7 @@ Containers in compose project `brain`:
 - `brain-redis`
 - `brain-neo4j`
 - `brain-api`
-- `brain-worker`
-- `brain-n8n`
+- `brain-worker` (also runs the scheduler)
 
 Named volumes:
 
@@ -57,27 +55,22 @@ Named volumes:
 - `brain_redis_data`
 - `brain_neo4j_data`
 - `brain_neo4j_logs`
-- `brain_n8n_data`
 
 ## Security Model
 
 - Postgres, Redis, and Neo4j are internal Docker services with no host ports.
 - API binds to `127.0.0.1:${BRAIN_API_PORT:-8010}`.
-- n8n binds to `127.0.0.1:${BRAIN_N8N_PORT:-5680}`.
-- nginx terminates TLS for both public hosts.
+- nginx terminates TLS for the public API host.
 - The Next.js dashboard uses `WEB_BASIC_AUTH=user:password` on Vercel.
   Live `BRAIN_API_URL` + `BRAIN_API_KEY` credentials require this gate; missing
   or malformed gate configuration returns 503 instead of exposing live data.
 - The self-hosted API uses API-key and scope dependencies. `/dashboard/*`
   redirects to `BRAIN_WEB_URL`; there is no legacy login form or session cookie.
-- n8n editor is protected by nginx Basic Auth.
-- n8n `/webhook/` and `/webhook-test/` stay public at nginx level; workflows
-  must authenticate calls into Brain with `PROJECT_BRAIN_API_KEY` or their own
-  trigger secret.
+- `POST /webhooks/git-merge` is the only unauthenticated-by-API-key route; it
+  requires `X-Project-Brain-Token` = `PROJECT_BRAIN_WEBHOOK_TOKEN` (constant-time
+  compare) and fails closed (503) when the token is unset.
 - `deploy/server_up.sh` generates blank secrets in `.env`.
 - `NVIDIA_API_KEY` is required in production and must be supplied by the deployer.
-- `N8N_API_KEY` is optional. It only enables live n8n workflow introspection in
-  the web UI.
 - Change-lab validation commands run inside an OS sandbox (`LAB_SANDBOX_MODE`,
   default `auto`): a disposable container when the Docker daemon and
   `LAB_SANDBOX_IMAGE` are present (requires `/var/run/docker.sock` in the
@@ -135,7 +128,6 @@ and remains valid for offline sync/eval.
 cd /opt/project-brain
 docker compose -f docker-compose.prod.yml ps
 curl -fsS http://127.0.0.1:${BRAIN_API_PORT:-8010}/health
-curl -fsS http://127.0.0.1:${BRAIN_N8N_PORT:-5680}/healthz
 ```
 
 Read public hosts from `.env`:
@@ -143,7 +135,6 @@ Read public hosts from `.env`:
 ```bash
 set -a && . ./.env && set +a
 echo "Brain: https://${BRAIN_PUBLIC_HOST}/health"
-echo "n8n:   https://${N8N_HOST}/"
 ```
 
 ## Alerts and first response
@@ -159,7 +150,7 @@ one message, not a stream.
 | `/ready` returns `not_ready` or no answer | `deploy/brain_watchdog.sh` → Telegram | high | Read `checks` in the payload — it names the failing dependency (below). `curl $API/ready` then check `docker compose ps` + `logs` for that service. |
 | Repository freshness `stale`/`source_missing`/`behind` | `deploy/brain_watchdog.sh` → Telegram | medium | `/app` or `.` reporting `unverifiable` is the app indexing itself — expected on first boot. Otherwise re-index: `POST /jobs/reindex` for the listed repo. |
 | Maintenance / deep-context / self-diagnosis insights | `brain/alerts/telegram.py` (`deliver_maintenance_alert`, `deliver_deep_context_alert`, `deliver_diagnosis_alert`) | low-medium | Insights are informational digests of failed checks found during scheduled jobs. Open the linked report; treat repeated identical fingerprints as an unresolved incident. |
-| n8n watchdog | `deploy/brain_n8n_watchdog.sh` | medium | n8n container down or `/healthz` failing — restart per §Restart. |
+| Scheduled job overdue (`/health` → `degraded`, `scheduler.stale`) | `brain/workers/scheduler.py` via `/health`; optional `DEADMAN_URL_*` pings | medium | Is a worker running with `SCHEDULER_ENABLED=true`? Read worker logs for `Scheduler fired`; run it now from Settings → Scheduler or `POST /jobs/*`. Final failures enqueue `self_diagnosis` (`trigger.source=job_failure`). |
 
 ### `/ready` check names → where to look
 
@@ -206,7 +197,6 @@ Rate limiting itself is *not* applied when uvicorn is exposed directly
 cd /opt/project-brain
 docker compose -f docker-compose.prod.yml logs -f api
 docker compose -f docker-compose.prod.yml logs -f worker
-docker compose -f docker-compose.prod.yml logs -f n8n
 docker compose -f docker-compose.prod.yml logs -f postgres
 docker compose -f docker-compose.prod.yml logs -f neo4j
 ```
@@ -216,13 +206,12 @@ docker compose -f docker-compose.prod.yml logs -f neo4j
 ```bash
 cd /opt/project-brain
 docker compose -f docker-compose.prod.yml restart api worker
-docker compose -f docker-compose.prod.yml restart n8n
 bash deploy/server_up.sh
 ```
 
 ## nginx and TLS
 
-Install or refresh vhosts after changing `BRAIN_PUBLIC_HOST` or `N8N_HOST`:
+Install or refresh the vhost after changing `BRAIN_PUBLIC_HOST`:
 
 ```bash
 cd /opt/project-brain
@@ -235,10 +224,6 @@ sudo cp deploy/nginx/brain.conf /etc/nginx/sites-available/brain.conf
 sudo sed -i "s/brain.example.com/${BRAIN_PUBLIC_HOST}/g" /etc/nginx/sites-available/brain.conf
 sudo ln -sf /etc/nginx/sites-available/brain.conf /etc/nginx/sites-enabled/brain.conf
 
-sudo cp deploy/nginx/brain-n8n.conf /etc/nginx/sites-available/brain-n8n.conf
-sudo sed -i "s/n8n.brain.example.com/${N8N_HOST}/g" /etc/nginx/sites-available/brain-n8n.conf
-sudo ln -sf /etc/nginx/sites-available/brain-n8n.conf /etc/nginx/sites-enabled/brain-n8n.conf
-
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -247,15 +232,6 @@ Issue or renew certificates:
 
 ```bash
 sudo certbot --nginx -d "$BRAIN_PUBLIC_HOST" --redirect
-sudo certbot --nginx -d "$N8N_HOST" --redirect
-```
-
-n8n editor Basic Auth:
-
-```bash
-sudo htpasswd -c /etc/nginx/.htpasswd-brain brain
-sudo nginx -t
-sudo systemctl reload nginx
 ```
 
 ## Smoke Tests
@@ -284,33 +260,36 @@ Check the self-hosted API's `/health` and `/api/version`, and confirm
 Root Directory must be `apps/web`. A successful deployment must match the
 release commit; an older READY deployment is insufficient.
 
-## Import n8n Workflows
+## Scheduler
 
-After n8n first-run setup is complete:
+Recurring jobs are fired by the worker itself (`brain/workers/scheduler.py`,
+[ADR 013](../docs/adr/013-worker-scheduler.md)); there is no n8n and no watchdog.
+
+| Job | Cron (UTC) | Pool |
+|---|---|---|
+| `nightly_maintenance` | `30 0 * * *` | deep |
+| `health_check` | `0 2 * * *` | fast |
+| `self_diagnosis` | `30 3 * * *` | fast |
+| `benchmark` | `0 6 * * 1` | maintenance |
+
+- Exactly once per slot: a Redis `SET NX` lock per job type + slot time, so any
+  number of workers or restarts never double-run a slot.
+- A slot missed while no worker ran fires once on the next tick if it is at most
+  `SCHEDULER_CATCHUP_WINDOW_S` (default 6h) old.
+- Retries: `SCHEDULER_JOB_MAX_ATTEMPTS` (default 3), backoff
+  `WORKER_RETRY_BASE_DELAY_S`·2^(n-1) capped at `WORKER_RETRY_MAX_DELAY_S`.
+  A final failure records `last_failure_at`/`last_error` and enqueues `self_diagnosis`.
+- `/health` is `degraded` when a job's last success is older than its interval +
+  `SCHEDULER_STALE_GRACE_S` (default 2h). `GET /scheduler/jobs` has the details.
+- Optional dead-man switch: `DEADMAN_URL_<JOB_TYPE>` is GET-pinged after each success.
+- `SCHEDULER_ENABLED=false` turns it off (manual `POST /jobs/*` keeps working).
+
+Verify it is firing:
 
 ```bash
-cd /opt/project-brain
-set -a && . ./.env && set +a
-python3 scripts/import_n8n_workflows.py
+docker compose -f docker-compose.prod.yml logs worker | grep -E "Scheduler (started|fired)"
+curl -fsS -H "X-API-Key: $PROJECT_BRAIN_API_KEY" http://127.0.0.1:${BRAIN_API_PORT:-8010}/scheduler/jobs
 ```
-
-Workflow exports live in `n8n/workflows/`.
-
-## n8n Watchdog
-
-Docker healthchecks mark unhealthy containers but do not restart them by
-themselves. Install the watchdog timer:
-
-```bash
-sudo cp /opt/project-brain/deploy/systemd/brain-n8n-watchdog.service /etc/systemd/system/
-sudo cp /opt/project-brain/deploy/systemd/brain-n8n-watchdog.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now brain-n8n-watchdog.timer
-systemctl list-timers brain-n8n-watchdog.timer
-```
-
-If Project Brain is deployed outside `/opt/project-brain`, edit
-`deploy/systemd/brain-n8n-watchdog.service` before copying it.
 
 ## Index a Repository
 
@@ -352,8 +331,7 @@ curl -fsS -X POST "http://127.0.0.1:${BRAIN_API_PORT:-8010}/jobs/proactive-insig
   -d '{}'
 ```
 
-The `nightly-proactive-insights.json` workflow can enqueue the same job on a
-schedule after n8n workflows are imported and activated. LLM synthesis is
+The scheduler enqueues `self_diagnosis` nightly at 03:30 UTC. LLM synthesis is
 controlled by `PROACTIVE_INSIGHTS_LLM_ENABLED`; deterministic checks run without
 the LLM stage.
 
@@ -362,7 +340,7 @@ the LLM stage.
 Back up:
 
 - `.env`
-- Docker named volumes for Postgres, Redis, Neo4j, and n8n
+- Docker named volumes for Postgres, Redis, and Neo4j
 - `reports/`
 - `context_packs/`
 
@@ -424,8 +402,8 @@ docker images --filter reference='brain-api:*'
 - `.mcp.json` is tracked and must stay secret-free: `BRAIN_API_URL` and
   `BRAIN_API_KEY` are `${VAR}` references resolved from the environment. Never
   paste a literal key into it; `tests/test_mcp_project_config.py` fails the build.
-- Never paste `PROJECT_BRAIN_API_KEY`, `WEB_BASIC_AUTH`, n8n Basic Auth
-  password, `NVIDIA_API_KEY`, or `N8N_ENCRYPTION_KEY` into chat, docs, issues,
+- Never paste `PROJECT_BRAIN_API_KEY`, `PROJECT_BRAIN_WEBHOOK_TOKEN`, `WEB_BASIC_AUTH`,
+  or `NVIDIA_API_KEY` into chat, docs, issues,
   screenshots, or reports.
 - The web UI is read-only. Its server attaches the API key; browser bundles
   must never contain `BRAIN_API_KEY` or `PROJECT_BRAIN_API_KEY`.

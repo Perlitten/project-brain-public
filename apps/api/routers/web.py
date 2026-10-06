@@ -19,10 +19,8 @@ from sqlalchemy import func, select
 
 from apps.api.auth import require_api_key, require_scope
 from apps.api.helpers import (
-    check_n8n_health,
     get_db_counts,
     get_embedding_retrieval_health,
-    get_n8n_workflows,
     get_recent_brain_jobs,
     get_reports_list,
     get_self_diagnosis_status,
@@ -602,7 +600,6 @@ async def web_overview(
     from brain.embeddings.config import get_embedding_config
 
     services = await check_health()
-    services["n8n"] = await check_n8n_health()
 
     try:
         repository = await _resolve_repository(repository_id)
@@ -657,19 +654,20 @@ async def web_overview(
 
 @router.get("/health")
 async def web_health() -> dict[str, Any]:
+    from brain.database.session import redis_client
+    from brain.workers.scheduler import scheduler_status
+
     services = await check_health()
-    services["n8n"] = await check_n8n_health()
-    workflow_data = await get_n8n_workflows()
+    try:
+        scheduler: dict[str, Any] = await scheduler_status(redis_client)
+    except Exception as exc:  # noqa: BLE001 — Redis down is reported in services
+        scheduler = {"error": f"{type(exc).__name__}: {exc}", "jobs": [], "stale": []}
     job_data = await get_recent_brain_jobs(limit=10)
     diagnostics = await get_self_diagnosis_status()
     return {
         "services": services,
         "orchestration": {
-            "workflows": workflow_data.get("workflows") or [],
-            "workflow_source": workflow_data.get("source"),
-            "workflow_api_status": workflow_data.get("api_status"),
-            "workflow_api_error": workflow_data.get("api_error"),
-            "active_workflows_count": workflow_data.get("active_workflows_count", 0),
+            "scheduler": scheduler,
             "recent_jobs": [shape_job(job) for job in job_data.get("jobs") or []],
             "redis_error": job_data.get("error"),
             "diagnostics": diagnostics,

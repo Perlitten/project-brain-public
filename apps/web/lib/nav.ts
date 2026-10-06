@@ -48,7 +48,7 @@ export const navGroups: { label: string; hint: string; items: NavItem[] }[] = [
       { key: "runs", href: "/runs", label: "Agent runs", icon: "automation", hint: "What AI agents did with Brain’s help" },
       { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "The tools agents call, and how they perform" },
       { key: "admin", href: "/admin", label: "Access", icon: "key", hint: "Who and what can access Brain" },
-      { key: "settings", href: "/settings", label: "Settings", icon: "gear", hint: "Telegram alerts, n8n, automation, search and indexing" },
+      { key: "settings", href: "/settings", label: "Settings", icon: "gear", hint: "Telegram alerts, scheduled jobs, automation, search and indexing" },
     ],
   },
 ];

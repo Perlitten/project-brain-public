@@ -1,3 +1,5 @@
+> **Superseded (2026-10-06):** n8n was removed; see [ADR 013](adr/013-worker-scheduler.md). Kept for history.
+
 # Phase 9: n8n Operations Orchestration
 
 n8n is the **external control plane** around Project Brain. It schedules workflows, reacts to Git events, and delivers notifications. It does **not** implement retrieval, indexing, embeddings, or MCP logic.

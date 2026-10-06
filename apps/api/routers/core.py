@@ -307,9 +307,26 @@ router = APIRouter()
 
 @router.get("/health")
 async def health_check():
+    from brain.workers.scheduler import scheduler_status
+
     details = await check_health()
     is_healthy = all(svc.get("status") == "healthy" for svc in details.values())
-    return {"status": "ok" if is_healthy else "error", "version": __version__, "details": details}
+    try:
+        scheduler: dict[str, Any] = await scheduler_status(redis_client)
+    except Exception as exc:  # noqa: BLE001 — Redis down is already reported in details
+        scheduler = {"error": f"{type(exc).__name__}: {exc}", "stale": [], "jobs": []}
+    status = "error" if not is_healthy else "degraded" if scheduler.get("stale") else "ok"
+    return {
+        "status": status,
+        "version": __version__,
+        "details": details,
+        "scheduler": {
+            "enabled": scheduler.get("enabled"),
+            "stale": scheduler.get("stale", []),
+            "jobs": {j["job_type"]: j["status"] for j in scheduler.get("jobs", [])},
+            **({"error": scheduler["error"]} if "error" in scheduler else {}),
+        },
+    }
 
 
 @router.get("/ready")

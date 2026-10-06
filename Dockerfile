@@ -9,7 +9,6 @@ COPY pyproject.toml README.md ./
 COPY brain ./brain
 COPY apps ./apps
 COPY rules ./rules
-COPY n8n ./n8n
 COPY eval ./eval
 COPY scripts/write_source_manifest.py ./scripts/write_source_manifest.py
 COPY scripts/validate_lfm_release_gate.py ./scripts/validate_lfm_release_gate.py
@@ -64,7 +63,6 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY brain ./brain
 COPY apps ./apps
 COPY rules ./rules
-COPY n8n ./n8n
 COPY eval ./eval
 COPY scripts/write_source_manifest.py ./scripts/write_source_manifest.py
 COPY scripts/validate_lfm_release_gate.py ./scripts/validate_lfm_release_gate.py

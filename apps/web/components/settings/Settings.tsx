@@ -1,7 +1,7 @@
 "use client";
 // Settings, made of controls: each section edits its slice of the server's
-// .env (only what changed is sent), Telegram and n8n show their live status
-// next to their fields with a one-click test. Help lives in "?" tips.
+// .env (only what changed is sent), Telegram shows its live status next to
+// its fields with a one-click test, and the scheduler lists its jobs. Help lives in "?" tips.
 
 import Link from "next/link";
 import "./settings.css";
@@ -10,8 +10,9 @@ import { LockNote, RunButton, useAction } from "@/components/act";
 import { Icon } from "@/components/Icon";
 import { Tip } from "@/components/Tip";
 import { Chip, Panel } from "@/components/ui";
-import { saveSettings, testN8n, testTelegram } from "@/lib/actions/settings";
-import type { N8nStatus, SettingField, SettingsSection, SettingsView, TelegramStatus } from "@/lib/settings-view";
+import { saveSettings, testTelegram } from "@/lib/actions/settings";
+import type { SettingField, SettingsSection, SettingsView, TelegramStatus } from "@/lib/settings-view";
+import { SchedulerLine, SchedulerTable } from "./Scheduler";
 import type { Tone } from "@/lib/types";
 
 type Draft = Record<string, string | boolean>;
@@ -21,15 +22,14 @@ const initial = (f: SettingField): string | boolean => (f.kind === "bool" ? f.va
 export function Settings({ view }: { view: SettingsView }) {
   const live = view.mode === "live" || view.mode === "demo";
   const section = (id: string) => view.sections.find((s) => s.id === id);
-  const publicN8n = section("n8n")?.fields.find((f) => f.key === "N8N_PUBLIC_URL")?.value;
 
   return (
     <div className="settings">
       <nav className="settings__toc" aria-label="Sections">
         {[
           ["telegram", "Telegram"],
-          ["n8n", "n8n"],
-          ...view.sections.filter((s) => s.id !== "telegram" && s.id !== "n8n").map((s) => [s.id, s.title]),
+          ["scheduler", "Scheduler"],
+          ...view.sections.filter((s) => s.id !== "telegram").map((s) => [s.id, s.title]),
           ["models", "Models"],
         ].map(([id, label]) => (
           <a key={id} href={`#${id}`}>
@@ -47,26 +47,15 @@ export function Settings({ view }: { view: SettingsView }) {
         {live ? <SectionForm section={section("telegram")} /> : <EnvHint keys={["TELEGRAM_ALERTS_ENABLED", "TELEGRAM_ALERT_BOT_TOKEN", "TELEGRAM_ALERT_CHAT_ID"]} />}
       </Panel>
 
-      <Panel
-        id="n8n"
-        title="n8n automation"
-        actions={
-          <div className="btn-row">
-            {typeof publicN8n === "string" && publicN8n && (
-              <a className="btn btn--neutral btn--sm" href={publicN8n} target="_blank" rel="noreferrer">
-                Open n8n <Icon name="arrow" size={13} />
-              </a>
-            )}
-            {live && <RunButton action={testN8n} label="Test" icon="refresh" small title="n8n" />}
-          </div>
-        }
-      >
-        <N8nLine n={view.n8n} />
-        {live ? <SectionForm section={section("n8n")} /> : <EnvHint keys={["N8N_BASE_URL", "N8N_API_KEY"]} />}
+      <Panel id="scheduler" title="Scheduled jobs" flush>
+        <div className="settings__pad">
+          <SchedulerLine s={view.scheduler} />
+        </div>
+        {view.scheduler && <SchedulerTable s={view.scheduler} />}
       </Panel>
 
       {view.sections
-        .filter((s) => s.id !== "telegram" && s.id !== "n8n")
+        .filter((s) => s.id !== "telegram")
         .map((s) => (
           <Panel key={s.id} id={s.id} title={s.title}>
             {s.id === "automation" && view.llmError && (
@@ -120,48 +109,6 @@ function TelegramLine({ t }: { t: TelegramStatus | null }) {
         api.telegram.org/bot&lt;token&gt;/getUpdates — the chat id is in the reply.
       </Tip>
     </div>
-  );
-}
-
-const API_LABEL: Record<string, [Tone, string]> = {
-  available: ["ok", "API key works"],
-  missing_key: ["warn", "No API key"],
-  auth_failed: ["bad", "API key rejected"],
-  unreachable: ["bad", "API unreachable"],
-};
-
-function N8nLine({ n }: { n: N8nStatus | null }) {
-  if (!n) return null;
-  const up = n.health === "healthy";
-  const [apiTone, apiLabel] = API_LABEL[n.apiStatus] ?? (["idle", n.apiStatus] as [Tone, string]);
-  const active = n.workflows.filter((w) => w.active).length;
-  return (
-    <>
-      <div className="status-line">
-        <Chip tone={up ? "ok" : n.health === "unknown" ? "idle" : "bad"}>{up ? "Reachable" : n.health}</Chip>
-        <Chip tone={apiTone}>{apiLabel}</Chip>
-        {n.url && <code>{n.url}</code>}
-        {n.apiStatus === "missing_key" && (
-          <Tip end>Without a key Brain can’t tell which workflows are switched on. In n8n: Settings → n8n API → Create an API key, then paste it below.</Tip>
-        )}
-      </div>
-      {n.workflows.length > 0 && (
-        <details className="wf">
-          <summary>
-            {n.workflows.length} workflow{n.workflows.length === 1 ? "" : "s"}
-            {n.apiStatus === "available" ? ` · ${active} active` : n.source === "repo" ? " in the repo · state unknown" : ""}
-          </summary>
-          <ul>
-            {n.workflows.map((w) => (
-              <li key={w.name}>
-                <span className="dot" style={{ ["--tone" as string]: w.active ? "var(--ok-fg)" : "var(--text-3)" }} aria-hidden="true" />
-                {w.name}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </>
   );
 }
 
