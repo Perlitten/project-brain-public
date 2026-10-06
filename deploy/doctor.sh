@@ -345,6 +345,25 @@ check_containers() {
     fi
 }
 
+check_repo_path_roots() {
+    # Every repository path the stack is expected to serve must pass
+    # validate_secure_repo_path inside the container — otherwise indexing it
+    # fails at request time with a generic 400.
+    local api_id out
+    api_id="$($COMPOSE ps --status running -q api 2>/dev/null || true)"
+    if [[ -z "$api_id" ]]; then
+        warn "api container not running; skipping repo path sandbox check"
+        return
+    fi
+    if out="$($COMPOSE exec -T api python -m brain.config.repo_root_check 2>&1)"; then
+        pass "repository paths pass validate_secure_repo_path"
+        printf '%s\n' "$out" | grep -E "^(ALLOWED_ROOTS|WARN)" || true
+    else
+        fail "repository paths fail validate_secure_repo_path:"
+        printf '%s\n' "$out" | grep -E "^(FAIL|WARN)" >&2 || true
+    fi
+}
+
 check_public() {
     local brain_host
     brain_host="$(env_value BRAIN_PUBLIC_HOST)"
@@ -387,6 +406,7 @@ case "$MODE" in
         check_compose_config
         check_containers
         check_local_health
+        check_repo_path_roots
         ;;
     public)
         check_env_present

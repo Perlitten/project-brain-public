@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from loguru import logger
 
+from brain.config.paths import allowed_repo_roots
 from brain.config.settings import settings
 from brain.database.session import close_database_connections, init_db, redis_client
 from brain.late_interaction.client import (
@@ -315,6 +316,10 @@ async def _heartbeat_loop(queue: JobQueue, stop: asyncio.Event) -> None:
 
 
 async def run_worker() -> None:
+    logger.warning(
+        "Repo path sandbox roots: {}",
+        ", ".join(str(base) for base in allowed_repo_roots()),
+    )
     try:
         await init_db()
     except Exception as exc:
