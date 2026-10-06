@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     # 0 disables the application-level cap.
     API_MAX_REQUEST_BODY_BYTES: int = 25 * 1024 * 1024
     WORKER_REDIS_PREFIX: str = "brain:worker"
+    # Minimum seconds between automatic reindexes of one repo triggered by stale_blocked context.
+    AUTO_REINDEX_MIN_INTERVAL_S: int = 3600
     WORKER_POOL_NAME: str = "maintenance"
     WORKER_JOB_LEASE_SECONDS: int = 60
     WORKER_JOB_TIMEOUT_SECONDS: int = 60 * 60
