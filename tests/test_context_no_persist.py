@@ -11,8 +11,8 @@ async def test_context_persist_false_never_calls_durable_legacy_builder_when_v2_
     runtime = AsyncMock(return_value={"status": "ok", "slices": []})
     legacy = AsyncMock()
     with (
-        patch("apps.api.routers.core.RuntimeContextBuilder") as runtime_builder,
-        patch("apps.api.routers.core.ContextPackBuilder") as legacy_builder,
+        patch("apps.api.routers.core_retrieval.RuntimeContextBuilder") as runtime_builder,
+        patch("apps.api.routers.core_retrieval.ContextPackBuilder") as legacy_builder,
         patch("apps.api.routers.core.settings.BRAIN_AGENT_CONTEXT_V2_MODE", "off"),
     ):
         runtime_builder.return_value.build = runtime

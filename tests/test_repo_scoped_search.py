@@ -115,7 +115,7 @@ def test_search_endpoint_forwards_repo_path_to_hybrid_search(api_key_env):
     }
     search_mock = AsyncMock(return_value=search_result)
 
-    with patch("apps.api.routers.core.hybrid_search_code", search_mock):
+    with patch("apps.api.routers.core_retrieval.hybrid_search_code", search_mock):
         response = client.post(
             "/search",
             json={"query": "telegram digest", "limit": 7, "repo_path": "/indexed/forex-bot"},

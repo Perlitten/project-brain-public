@@ -294,8 +294,8 @@ def test_staleness_flips_health_to_degraded(monkeypatch, age, health_status, sta
     monkeypatch.setattr(settings, "SCHEDULER_ENABLED", True)
     monkeypatch.setattr(settings, "SCHEDULER_STALE_GRACE_S", 2 * 3600)
     with (
-        patch("apps.api.routers.core.check_health", AsyncMock(return_value=dict(_HEALTHY))),
-        patch("apps.api.routers.core.redis_client", _redis_with_successes(age)),
+        patch("apps.api.routers.core_lifecycle.check_health", AsyncMock(return_value=dict(_HEALTHY))),
+        patch("apps.api.routers.core_lifecycle.redis_client", _redis_with_successes(age)),
     ):
         body = client.get("/health").json()
     assert body["status"] == health_status
@@ -306,8 +306,8 @@ def test_staleness_flips_health_to_degraded(monkeypatch, age, health_status, sta
 def test_datastore_failure_outranks_scheduler_staleness(monkeypatch):
     unhealthy = {**_HEALTHY, "redis": {"status": "unhealthy"}}
     with (
-        patch("apps.api.routers.core.check_health", AsyncMock(return_value=unhealthy)),
-        patch("apps.api.routers.core.redis_client", _redis_with_successes(timedelta(days=3))),
+        patch("apps.api.routers.core_lifecycle.check_health", AsyncMock(return_value=unhealthy)),
+        patch("apps.api.routers.core_lifecycle.redis_client", _redis_with_successes(timedelta(days=3))),
     ):
         assert client.get("/health").json()["status"] == "error"
 
