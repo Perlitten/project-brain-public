@@ -53,4 +53,3 @@
 .sched-scroll { overflow-x: auto; max-width: 100%; }
 .sched-scroll .table { min-width: 980px; }
 .sched-scroll .table-wrap { overflow: visible; }
-.settings > * { min-width: 0; }
