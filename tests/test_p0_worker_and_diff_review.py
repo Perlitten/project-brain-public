@@ -118,3 +118,31 @@ async def test_remote_mcp_get_diff_review_polls_the_job():
         result = await remote_server.get_diff_review("job-1")
     assert result == {"status": "completed", "result": {}}
     get_mock.assert_awaited_once_with("/diff-review/job-1")
+
+
+@pytest.mark.asyncio
+async def test_remote_mcp_get_diff_review_url_quotes_job_id():
+    from apps.mcp_server import remote_server
+
+    get_mock = AsyncMock(return_value={})
+    with patch.object(remote_server, "_get", get_mock):
+        await remote_server.get_diff_review("../jobs/x?y=1")
+    get_mock.assert_awaited_once_with("/diff-review/..%2Fjobs%2Fx%3Fy%3D1")
+
+
+@pytest.mark.asyncio
+async def test_execute_job_dispatches_reindex_and_diff_review_to_their_handlers():
+    reindex = AsyncMock(return_value={"handler": "reindex"})
+    diff_review = AsyncMock(return_value={"handler": "diff_review"})
+    with patch.object(tasks, "run_reindex", reindex), patch.object(tasks, "run_diff_review", diff_review):
+        assert await tasks.execute_job("reindex", {"repo_path": "a"}) == {"handler": "reindex"}
+        assert await tasks.execute_job("diff_review", {"repo_path": "b"}) == {"handler": "diff_review"}
+    reindex.assert_awaited_once_with({"repo_path": "a"})
+    diff_review.assert_awaited_once_with({"repo_path": "b"})
+
+
+def test_diff_review_runs_in_the_deep_pool():
+    from brain.workers.queue import worker_pool_for_job
+
+    assert worker_pool_for_job("diff_review") == "deep"
+    assert worker_pool_for_job("reindex") == "maintenance"
