@@ -32,13 +32,24 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from brain.context.budget import estimated_tokens, utf8_bytes
 from brain.context.context_cache import clear_context_cache, get_cached_context, put_cached_context
 from brain.llm.observability import audit_and_bound_llm_input, HARD_MAX_INPUT_TOKENS, TARGET_INPUT_TOKENS
 from brain.operations.incidents import IncidentStateMachine, IncidentSeverity
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REPORTS_DIR = PROJECT_ROOT / "reports"
+
+_TOK_ENCODER = None
+
+
+def count_tokens(text: str) -> int:
+    """Real token count (cl100k_base), not a chars/4 estimate."""
+    global _TOK_ENCODER
+    if _TOK_ENCODER is None:
+        import tiktoken
+
+        _TOK_ENCODER = tiktoken.get_encoding("cl100k_base")
+    return len(_TOK_ENCODER.encode(text))
 
 # 10 Frozen Engineering Benchmark Tasks
 FROZEN_TASKS = [
@@ -372,7 +383,7 @@ async def _simulate_no_brain_direct(task: dict[str, Any], local_root: Path) -> T
 
     prompt = f"Task: {q}\n\nComplete Source Files:\n{raw_content}"
     sys_inst = "You are a software engineer. Answer directly."
-    input_tokens = estimated_tokens(utf8_bytes(prompt + sys_inst))
+    input_tokens = count_tokens(prompt + sys_inst)
     output_tokens = 450
     latency_ms = round((time.perf_counter() - started) * 1000, 2)
 
@@ -446,7 +457,7 @@ async def _simulate_current_brain(
 
     prompt = f"Question: {q}\n\nRetrieved Context:\n{raw_content}"
     sys_inst = "You are Project Brain. Answer densely with evidence."
-    input_tokens = estimated_tokens(utf8_bytes(prompt + sys_inst))
+    input_tokens = count_tokens(prompt + sys_inst)
     output_tokens = 380
     latency_ms = round((time.perf_counter() - started) * 1000, 2)
 
@@ -561,7 +572,7 @@ def run_retrieval_flood_test() -> dict[str, Any]:
     logger_state = IncidentStateMachine()
 
     raw_flood_prompt = "Query: Retrieval Flood Stress Test\n\nCandidates:\n" + ("FileChunk: " + "def test_flood(): return 'noise'\n" * 3000)
-    raw_tokens = estimated_tokens(utf8_bytes(raw_flood_prompt))
+    raw_tokens = count_tokens(raw_flood_prompt)
 
     bounded_prompt, bounded_sys, audit = audit_and_bound_llm_input(
         raw_flood_prompt,
@@ -604,7 +615,8 @@ def run_retrieval_flood_test() -> dict[str, Any]:
 
 
 def run_repeated_query_cache_test() -> dict[str, Any]:
-    """Execute repeated query caching test to verify >= 70% input token savings."""
+    """Verify a repeated query hits the context cache and serves the identical
+    payload; reports the measured token count the second call avoids."""
     clear_context_cache()
     task = FROZEN_TASKS[0]
 
@@ -617,18 +629,19 @@ def run_repeated_query_cache_test() -> dict[str, Any]:
     cached_payload_2 = get_cached_context("project-brain", task["question"], "6e9aba9f1624")
     assert cached_payload_2 is not None
 
-    first_call_input_tokens = 4000
-    second_call_input_tokens = 0
-    token_savings_pct = round(((first_call_input_tokens - second_call_input_tokens) / first_call_input_tokens) * 100.0, 2)
-
-    passed = token_savings_pct >= 70.0
+    # Measure what the second call actually avoids: the real token count of
+    # the cached context payload it no longer has to rebuild. The old version
+    # hardcoded 4000->0, so the savings claim was fabricated.
+    avoided_tokens = count_tokens(json.dumps(cached_payload_2))
+    payload_identical = cached_payload_2 == fake_built
 
     return {
-        "passed": passed,
-        "first_call_input_tokens": first_call_input_tokens,
-        "second_call_input_tokens": second_call_input_tokens,
-        "token_savings_pct": token_savings_pct,
-        "target_savings_pct": 70.0,
+        "passed": payload_identical,
+        "cache_hit": True,
+        "payload_identical": payload_identical,
+        "rebuild_avoided_tokens": avoided_tokens,
+        "note": "a cache hit avoids paying the payload's tokens again; "
+                "token count is measured, not asserted",
     }
 
 
@@ -750,8 +763,8 @@ def evaluate_acceptance_criteria(
             },
             "criterion_6_context_caching": {
                 "status": "PASS" if c6_pass else "FAIL",
-                "repeated_query_token_savings_pct": cache_result["token_savings_pct"],
-                "target_savings_pct": 70.0,
+                "cache_hit_returns_identical_payload": cache_result["payload_identical"],
+                "rebuild_avoided_tokens": cache_result["rebuild_avoided_tokens"],
             },
             "criterion_7_retrieval_flood_repair": {
                 "status": "PASS" if c7_pass else "FAIL",
@@ -819,7 +832,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
 
     print("\n--- Running Repeated Query Cache Test ---")
     cache_result = run_repeated_query_cache_test()
-    print(f"Context Cache Test: passed={cache_result['passed']}, savings={cache_result['token_savings_pct']}%")
+    print(f"Context Cache Test: passed={cache_result['passed']}, avoided_tokens={cache_result['rebuild_avoided_tokens']}")
 
     print("\n--- Evaluating Acceptance Criteria ---")
     evaluation = evaluate_acceptance_criteria(results_by_mode, flood_result, cache_result)
@@ -868,7 +881,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
 | **C3. Hard Token Bounds** | >=95% <=8,000 / 100% <=16,000 | **{evaluation['criteria']['criterion_3_token_bounds']['calls_under_8k_pct']}%** <=8k / **{evaluation['criteria']['criterion_3_token_bounds']['calls_under_16k_pct']}%** <=16k | **{evaluation['criteria']['criterion_3_token_bounds']['status']}** |
 | **C4. Quality & Safety** | Task success drop <=2%, 0 safety regression | **{evaluation['criteria']['criterion_4_task_quality']['task_success_drop_pct']}%** drop / **0** safety regressions | **{evaluation['criteria']['criterion_4_task_quality']['status']}** |
 | **C5. Evidence Quality** | Recall >=95%, Duplicates <5%, Irrelevant <20% | **{evaluation['criteria']['criterion_5_evidence_quality']['average_recall_pct']}%** recall / **{evaluation['criteria']['criterion_5_evidence_quality']['average_duplicate_context_pct']}%** dups / **{evaluation['criteria']['criterion_5_evidence_quality']['average_irrelevant_context_pct']}%** irrel | **{evaluation['criteria']['criterion_5_evidence_quality']['status']}** |
-| **C6. Context Caching** | >=70% input token savings on repeat queries | **{evaluation['criteria']['criterion_6_context_caching']['repeated_query_token_savings_pct']}%** savings | **{evaluation['criteria']['criterion_6_context_caching']['status']}** |
+| **C6. Context Caching** | cache hit returns the identical payload (repeat call pays 0 rebuild tokens) | **{evaluation['criteria']['criterion_6_context_caching']['cache_hit_returns_identical_payload']}** identical / **{evaluation['criteria']['criterion_6_context_caching']['rebuild_avoided_tokens']}** tokens avoided | **{evaluation['criteria']['criterion_6_context_caching']['status']}** |
 | **C7. Retrieval Flood Repair** | Self-repairs <=16k, <=1 incident emitted | **{flood_result['passed']}** repaired / **{flood_result['actionable_incidents_emitted']}** incident | **{evaluation['criteria']['criterion_7_retrieval_flood_repair']['status']}** |
 | **C8. Compatibility** | 100% compatible APIs & archives | **100%** compatible | **{evaluation['criteria']['criterion_8_backwards_compatibility']['status']}** |
 
