@@ -385,7 +385,7 @@ Project Brain ships with a Model Context Protocol (MCP) server exposing **10 too
 | `record_rule` | Create or update a global or repo-scoped normative rule |
 | `search_code` | Hybrid file/symbol/chunk search |
 | `find_related_files` | Neo4j graph neighborhood lookup |
-| `review_diff` | Review git diff for rule violations |
+| `review_diff` | Review git diff for rule violations (remote server: queues a job, poll with `get_diff_review`) |
 
 `search_code` and `ask_project` accept an optional `repo_path` argument. Use it when
 multiple repositories are indexed, for example `/indexed/forex-bot`, so retrieval

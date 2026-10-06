@@ -81,6 +81,17 @@ dev-mode-dirs = ["."]
 python_version = "3.12"
 warn_return_any = false
 warn_unused_ignores = false
-ignore_missing_imports = true
+ignore_missing_imports = false
 # SQLAlchemy 2.x models type natively via Mapped[...]; the old
 # sqlalchemy.ext.mypy.plugin was removed upstream and breaks mypy startup.
+
+# Missing stubs are tolerated only for these third-party packages. Internal
+# modules (brain.*, apps.*) are NOT covered, so a typo'd internal import fails.
+[[tool.mypy.overrides]]
+module = ["yaml", "yaml.*", "torch", "torch.*", "pylate", "pylate.*"]
+ignore_missing_imports = true
+
+# scripts/v050_release_candidate.py imports its sibling script via sys.path.
+[[tool.mypy.overrides]]
+module = ["v050_engineering_lab_verification"]
+ignore_missing_imports = true

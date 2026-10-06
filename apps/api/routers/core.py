@@ -648,20 +648,17 @@ async def review_git_diff(body: DiffReviewRequest):
     """
     try:
         from brain.database.session import redis_client
-        from brain.workers.queue import JobQueue
-        import uuid
+        from brain.workers.queue import queue_for_job
 
-        job_id = str(uuid.uuid4())
-        queue = JobQueue(redis_client, prefix=settings.WORKER_REDIS_PREFIX)
-        await queue.enqueue(
+        queue = queue_for_job(
+            redis_client,
+            settings.WORKER_REDIS_PREFIX,
             "diff_review",
-            {
-                "repo_path": body.repo_path,
-                "base": body.base,
-                "head": body.head,
-                "job_id": job_id,
-            },
-            idempotency_key=f"diff-review:{job_id}",
+            pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED,
+        )
+        job_id = await queue.enqueue(
+            "diff_review",
+            {"repo_path": body.repo_path, "base": body.base, "head": body.head},
         )
         return {
             "status": "processing",
@@ -678,11 +675,16 @@ async def get_diff_review_result(job_id: str):
     """Get the result of an async diff review."""
     try:
         from brain.database.session import redis_client
-        from brain.workers.queue import JobQueue
+        from brain.workers.queue import queue_for_job
 
-        queue = JobQueue(redis_client, prefix=settings.WORKER_REDIS_PREFIX)
+        queue = queue_for_job(
+            redis_client,
+            settings.WORKER_REDIS_PREFIX,
+            "diff_review",
+            pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED,
+        )
         job = await queue.get_job(job_id)
-        if not job:
+        if not job or job.get("type") != "diff_review":
             raise HTTPException(status_code=404, detail="Review job not found")
         status = job.get("status", "unknown")
         if status == "completed":
