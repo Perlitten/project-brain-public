@@ -368,7 +368,7 @@ def webhook_env(monkeypatch, fake_queue):
 
 
 def test_git_merge_webhook_enqueues_reindex_on_a_valid_github_signature(webhook_env):
-    response = _signed_post({"ref": "refs/heads/master", "sha": "abc123"})
+    response = _signed_post({"ref": "refs/heads/main", "sha": "abc123"})
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "queued"
     args, kwargs = webhook_env.enqueue.await_args
@@ -380,7 +380,7 @@ def test_git_merge_webhook_enqueues_reindex_on_a_valid_github_signature(webhook_
 def test_git_merge_webhook_accepts_the_api_key(webhook_env, api_key_env):
     response = client.post(
         "/webhooks/git-merge",
-        json={"ref": "refs/heads/master", "sha": "abc123"},
+        json={"ref": "refs/heads/main", "sha": "abc123"},
         headers={"X-API-Key": "test-secret-key"},
     )
     assert response.status_code == 200, response.text
@@ -388,7 +388,7 @@ def test_git_merge_webhook_accepts_the_api_key(webhook_env, api_key_env):
 
 
 def test_git_merge_webhook_rejects_everything_unauthenticated(webhook_env):
-    payload = {"ref": "refs/heads/master", "sha": "abc"}
+    payload = {"ref": "refs/heads/main", "sha": "abc"}
     assert _signed_post(payload, secret="wrong-secret").status_code == 401
     bad = client.post(
         "/webhooks/git-merge",
@@ -413,7 +413,22 @@ def test_git_merge_webhook_rejects_everything_unauthenticated(webhook_env):
 def test_git_merge_webhook_ignores_other_refs(webhook_env):
     response = _signed_post({"ref": "refs/heads/feature", "sha": "abc"})
     assert response.status_code == 200
+    assert response.json()["status"] == "ignored"
     webhook_env.enqueue.assert_not_awaited()
+
+
+def test_git_merge_webhook_ref_is_configurable(webhook_env, monkeypatch):
+    """PROJECT_BRAIN_WEBHOOK_REF picks the accepted ref; the default matches
+    the branch project-brain-reindex.yml triggers on."""
+    monkeypatch.setattr(settings, "PROJECT_BRAIN_WEBHOOK_REF", "refs/heads/staging")
+
+    queued = _signed_post({"ref": "refs/heads/staging", "sha": "abc"})
+    assert queued.status_code == 200 and queued.json()["status"] == "queued"
+    assert webhook_env.enqueue.await_count == 1
+
+    ignored = _signed_post({"ref": "refs/heads/main", "sha": "def"})
+    assert ignored.status_code == 200 and ignored.json()["status"] == "ignored"
+    assert webhook_env.enqueue.await_count == 1
 
 
 def test_git_merge_webhook_fails_closed_without_any_configured_credential(monkeypatch):
@@ -421,7 +436,7 @@ def test_git_merge_webhook_fails_closed_without_any_configured_credential(monkey
     monkeypatch.setattr(settings, "PROJECT_BRAIN_API_KEY", None)
     response = client.post(
         "/webhooks/git-merge",
-        content=_raw({"ref": "refs/heads/master"}),
+        content=_raw({"ref": "refs/heads/main"}),
         headers={"Content-Type": "application/json", "X-Hub-Signature-256": "sha256=bad"},
     )
     assert response.status_code == 503
@@ -449,7 +464,7 @@ def test_redelivered_merge_webhook_does_not_enqueue_a_second_reindex(monkeypatch
     queue = _DedupQueue()
     monkeypatch.setattr("apps.api.routers.scheduler.queue_for_job", lambda *a, **k: queue)
 
-    responses = [_signed_post({"ref": "refs/heads/master", "sha": "deadbeef"}) for _ in range(2)]
+    responses = [_signed_post({"ref": "refs/heads/main", "sha": "deadbeef"}) for _ in range(2)]
 
     assert all(r.status_code == 200 for r in responses)
     assert [call[0] for call in queue.calls] == ["reindex"]

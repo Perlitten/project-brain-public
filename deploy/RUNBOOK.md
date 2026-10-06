@@ -70,6 +70,9 @@ Named volumes:
   `X-Hub-Signature-256: sha256=<hmac>` over the raw body (HMAC secret
   `PROJECT_BRAIN_WEBHOOK_TOKEN`) or a valid `X-API-Key`, and rejects everything
   else. It fails closed (503) when neither credential is configured.
+  Only payloads for `PROJECT_BRAIN_WEBHOOK_REF` (default `refs/heads/main`,
+  matching the `project-brain-reindex.yml` trigger branch) enqueue a reindex;
+  other refs return `ignored`.
 - `deploy/server_up.sh` generates blank secrets in `.env`.
 - `NVIDIA_API_KEY` is required in production and must be supplied by the deployer.
 - Change-lab validation commands run inside an OS sandbox (`LAB_SANDBOX_MODE`,

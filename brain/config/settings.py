@@ -355,6 +355,11 @@ class Settings(BaseSettings):
     DEADMAN_URL_BENCHMARK: Optional[str] = None
     # Post-merge reindex webhook (POST /webhooks/git-merge, called by GitHub Actions).
     PROJECT_BRAIN_WEBHOOK_TOKEN: Optional[str] = None
+    # Only merges onto this ref enqueue a reindex. Default matches the branch
+    # project-brain-reindex.yml triggers on; the workflow posts $GITHUB_REF, so
+    # changing the trigger branch alone is enough unless the workflow is
+    # pinned to a different ref.
+    PROJECT_BRAIN_WEBHOOK_REF: str = "refs/heads/main"
     PROJECT_BRAIN_GIT_REPO_PATH: str = "/app"
 
     @field_validator("POSTGRES_POOL_SIZE")
