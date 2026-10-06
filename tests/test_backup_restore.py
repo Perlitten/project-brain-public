@@ -98,29 +98,28 @@ class TestBackupRunner:
     def test_successful_backup_records_real_artifacts(self, tmp_path, monkeypatch):
         _fake_pg_dump(monkeypatch, tmp_path)
         _fake_neo4j_export(monkeypatch, tmp_path)
-        n8n_src = tmp_path / "n8n_src.sqlite"
-        _make_sqlite(n8n_src)
         out = tmp_path / "backup"
 
-        manifest = run_backup(output_dir=str(out), n8n_source=str(n8n_src))
+        manifest = run_backup(output_dir=str(out))
 
         assert manifest["status"] == "ok"
-        assert manifest["backup_version"] == "2.0.0"
+        assert manifest["backup_version"] == "2.1.0"
         by_name = {a["name"]: a for a in manifest["artifacts"]}
+        assert set(by_name) == {"postgres", "neo4j"}
         assert by_name["postgres"]["status"] == "ok" and by_name["postgres"]["sha256"]
         assert by_name["neo4j"]["status"] == "ok" and by_name["neo4j"]["record_counts"]["nodes"] == 1
-        assert by_name["n8n"]["status"] == "ok"
 
-    def test_absent_n8n_is_recorded_not_faked(self, tmp_path, monkeypatch):
+    def test_backup_records_only_postgres_and_neo4j(self, tmp_path, monkeypatch):
         _fake_pg_dump(monkeypatch, tmp_path)
         _fake_neo4j_export(monkeypatch, tmp_path)
 
-        manifest = run_backup(output_dir=str(tmp_path / "backup"), n8n_source=str(tmp_path / "nope.sqlite"))
+        manifest = run_backup(output_dir=str(tmp_path / "backup"))
 
-        n8n = next(a for a in manifest["artifacts"] if a["name"] == "n8n")
-        assert n8n["status"] == "absent_source"
+        # n8n is gone as an artifact type (orchestration layer removed);
+        # a backup produced today contains exactly the two real stores.
+        assert [a["name"] for a in manifest["artifacts"]] == ["postgres", "neo4j"]
         assert not (tmp_path / "backup" / "n8n_database.sqlite").exists()
-        assert manifest["status"] == "ok"  # optional store — absence doesn't fail the backup
+        assert manifest["status"] == "ok"
 
     def test_unknown_allow_missing_rejected(self, tmp_path):
         with pytest.raises(ValueError):
@@ -173,29 +172,28 @@ class TestRestoreDrill:
         report = verify_restore_drill(backup_dir=str(tmp_path))
         assert report["restore_drill_status"] == "failed"
 
-    def test_empty_sqlite_fails(self, tmp_path):
-        n8n = tmp_path / "n8n_database.sqlite"
-        _make_sqlite(n8n, tables=0)
-        self._write_manifest(tmp_path, [
-            self._artifact(tmp_path, "postgres", REAL_DUMP.encode()),
-            self._artifact(tmp_path, "n8n", n8n.read_bytes()),
-        ])
-        report = verify_restore_drill(backup_dir=str(tmp_path))
-        assert report["restore_drill_status"] == "failed"
-        assert any("zero tables" in f for f in report["failures"])
-
-    def test_real_artifacts_validate_without_live_target(self, tmp_path):
+    def test_legacy_n8n_artifact_verified_by_checksum_only(self, tmp_path):
+        # Backups written before n8n removal still verify: the artifact is
+        # checksum-checked like any other but gets no n8n-specific inspection.
         n8n = tmp_path / "seed.sqlite"
         _make_sqlite(n8n, tables=2)
         self._write_manifest(tmp_path, [
             self._artifact(tmp_path, "postgres", REAL_DUMP.encode()),
-            self._artifact(tmp_path, "neo4j", NEO4J_JSONL.encode()),
             self._artifact(tmp_path, "n8n", n8n.read_bytes()),
         ])
         report = verify_restore_drill(backup_dir=str(tmp_path))
         assert report["restore_drill_status"] == "artifacts_validated"
+        assert "n8n" not in report["checks"]
+        assert report["failures"] == []
+
+    def test_real_artifacts_validate_without_live_target(self, tmp_path):
+        self._write_manifest(tmp_path, [
+            self._artifact(tmp_path, "postgres", REAL_DUMP.encode()),
+            self._artifact(tmp_path, "neo4j", NEO4J_JSONL.encode()),
+        ])
+        report = verify_restore_drill(backup_dir=str(tmp_path))
+        assert report["restore_drill_status"] == "artifacts_validated"
         assert report["checksum_status"] == "ALL_MATCHED"
-        assert report["checks"]["n8n"]["sqlite_tables"] == 2
         assert report["checks"]["neo4j"]["record_counts"]["nodes"] == 1
         assert report["failures"] == []
 
