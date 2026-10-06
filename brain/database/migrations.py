@@ -676,6 +676,8 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
     except Exception as exc:
         logger.warning(f"Could not apply memory_episodes table migration: {exc}")
 
+    await _ensure_memory_episode_ledger(conn)
+
     # L4 procedural memory: skills registry (industry-standard 4-tier).
     try:
         await conn.execute(
@@ -711,3 +713,46 @@ async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:
         )
     except Exception as exc:
         logger.warning(f"Could not apply memory_skills table migration: {exc}")
+
+
+async def _ensure_memory_episode_ledger(conn: AsyncConnection) -> None:
+    """Gate-outcome columns on memory_episodes + the L1 consumption ledger.
+
+    Additive only; reversed by ``downgrade_memory_episode_ledger``.
+    """
+    try:
+        await conn.execute(
+            text(
+                "ALTER TABLE memory_episodes ADD COLUMN IF NOT EXISTS duplicate_of_learning_id BIGINT "
+                "REFERENCES memory_learnings(id) ON DELETE SET NULL"
+            )
+        )
+        await conn.execute(
+            text("ALTER TABLE memory_episodes ADD COLUMN IF NOT EXISTS gate_reasons JSONB NOT NULL DEFAULT '[]'")
+        )
+        await conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS memory_episode_events (
+                    event_id BIGINT PRIMARY KEY,
+                    episode_id BIGINT NOT NULL REFERENCES memory_episodes(id) ON DELETE CASCADE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_memory_episode_events_episode_id "
+                "ON memory_episode_events (episode_id)"
+            )
+        )
+    except Exception as exc:
+        logger.warning(f"Could not apply memory_episode ledger migration: {exc}")
+
+
+async def downgrade_memory_episode_ledger(conn: AsyncConnection) -> None:
+    """Reverse ``_ensure_memory_episode_ledger`` (manual rollback; data in these objects is lost)."""
+    await conn.execute(text("DROP TABLE IF EXISTS memory_episode_events"))
+    await conn.execute(text("ALTER TABLE memory_episodes DROP COLUMN IF EXISTS gate_reasons"))
+    await conn.execute(text("ALTER TABLE memory_episodes DROP COLUMN IF EXISTS duplicate_of_learning_id"))

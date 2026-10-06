@@ -23,6 +23,9 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("context_packs", "repo_commit"),
     ("context_packs", "repository_id"),
     ("context_packs", "repo_commit"),
+    ("memory_episodes", "duplicate_of_learning_id"),
+    ("memory_episodes", "gate_reasons"),
+    ("memory_episode_events", "episode_id"),
 ]
 
 

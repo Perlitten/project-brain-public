@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     # 0 disables the application-level cap.
     API_MAX_REQUEST_BODY_BYTES: int = 25 * 1024 * 1024
     WORKER_REDIS_PREFIX: str = "brain:worker"
+    # Minimum seconds between automatic reindexes of one repo triggered by stale_blocked context.
+    AUTO_REINDEX_MIN_INTERVAL_S: int = 3600
     WORKER_POOL_NAME: str = "maintenance"
     WORKER_JOB_LEASE_SECONDS: int = 60
     WORKER_JOB_TIMEOUT_SECONDS: int = 60 * 60
@@ -315,7 +317,7 @@ class Settings(BaseSettings):
     PROACTIVE_INSIGHTS_LLM_ENABLED: bool = False
     PROACTIVE_INSIGHTS_MAX_SNAPSHOT_CHARS: int = 16000
     PROACTIVE_INSIGHTS_TIMEOUT_S: float = 75.0
-    # Memory consolidation loop (L1 episodic → L2 pipeline → L3 learnings).
+    # Memory consolidation loop (L1 working events → L2 episodes → L3 learnings; L4 skills separate).
     # Manual run via worker job "memory_consolidation" stays available; this
     # gate is for scheduled automation.
     MEMORY_CONSOLIDATION_ENABLED: bool = False

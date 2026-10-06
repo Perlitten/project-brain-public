@@ -17,6 +17,38 @@ from brain.memory.relevance import select_relevant_normative_memory
 from brain.retrieval.service import RetrievalResult, RetrievalService
 
 
+async def _queue_auto_reindex(repo_path: str) -> bool:
+    """Queue a reindex in its worker pool, throttled per repo by a Redis SET NX EX lock."""
+    from loguru import logger
+
+    from brain.database.session import redis_client
+    from brain.workers.queue import queue_for_job
+
+    digest = hashlib.sha256(repo_path.encode("utf-8")).hexdigest()
+    throttle_key = f"{settings.WORKER_REDIS_PREFIX}:auto-reindex:{digest}"
+    try:
+        acquired = await redis_client.set(
+            throttle_key, "1", nx=True, ex=max(1, int(settings.AUTO_REINDEX_MIN_INTERVAL_S))
+        )
+        if not acquired:
+            return False
+        queue = queue_for_job(
+            redis_client,
+            settings.WORKER_REDIS_PREFIX,
+            "reindex",
+            pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED,
+        )
+        await queue.enqueue("reindex", {"repo_path": repo_path})
+        return True
+    except Exception as exc:
+        logger.warning(f"Auto-reindex enqueue failed for {repo_path}: {type(exc).__name__}: {exc}")
+        try:
+            await redis_client.delete(throttle_key)
+        except Exception:
+            pass
+        return False
+
+
 class RuntimeContextBuilder:
     """Create an in-memory v2 context without writing a pack, file or DB row."""
 
@@ -56,27 +88,13 @@ class RuntimeContextBuilder:
         metadata: dict[str, Any] = {"status": "ok", "repo": repo, "missing": list(result.degraded)}
         # A code-changing task cannot use an unprovably current index as edit
         # context. This is fail-closed, not a cosmetic warning.
-        # BUT: kick off a background reindex so the next request is fresh.
-        # The nightly auto-heal is too slow for active development (multiple
-        # commits per day).
+        # A background reindex is queued (at most once per repo per
+        # AUTO_REINDEX_MIN_INTERVAL_S) so a later request can be fresh.
         if freshness != "current":
             metadata["status"] = "stale_blocked"
             metadata["missing"].append("current_source_required_for_code_change")
-            # Fire-and-forget: enqueue reindex so next call succeeds.
-            try:
-                from brain.database.session import redis_client
-                from brain.workers.queue import JobQueue
-                queue = JobQueue(redis_client, prefix=settings.WORKER_REDIS_PREFIX)
-                # Idempotency: one reindex per repo per hour max (enforced by
-                # the queue's idempotency key TTL).
-                await queue.enqueue(
-                    "reindex",
-                    {"repo_path": str(repo_path)},
-                    idempotency_key=f"auto-reindex:{repo_path}",
-                )
+            if await _queue_auto_reindex(str(repo_path)):
                 metadata["missing"].append("auto_reindex_queued")
-            except Exception:
-                pass  # Best effort; stale_blocked is still honest.
             return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
 
         # A current index with no retrieval evidence is not a usable context.

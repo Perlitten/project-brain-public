@@ -1,6 +1,22 @@
 # Memory Consolidation Layer — Design Proposal
 
-**Status:** proposal · **Date:** 2026-10-05 · **Author:** Muse (for Andrey)
+**Status:** implemented (taxonomy updated 2026-10-06) · **Date:** 2026-10-05 · **Author:** Muse (for Andrey)
+
+> **Memory tiers (canonical, used everywhere in code and docs):**
+>
+> | Tier | Name | Storage | Written by |
+> |---|---|---|---|
+> | L1 | working | `agent_task_events` (`classification in ('learning','failure_lesson')`) | task runtime |
+> | L2 | episodic | `memory_episodes` + `memory_episode_events` (L1 consumption ledger) | consolidation job |
+> | L3 | semantic | `memory_learnings` (`LearningStore`) | consolidation (auto/approved) or `POST /learnings` |
+> | L4 | procedural | `memory_skills` | `POST /skills` |
+>
+> Consolidation is the *process* between L1 and L3, not a tier. Earlier drafts
+> below called L1 "episodic" and L2 "consolidation"; read those as L1 working /
+> L2 episodic. Each L1 event is consumed by at most one L2 episode (primary key
+> on `memory_episode_events.event_id`), so re-runs are idempotent. Episode
+> status: `pending` (G4, awaiting `POST /episodes/{id}/approve|reject`),
+> `promoted`, `rejected`, `duplicate` (G1, `duplicate_of_learning_id` set).
 
 ## 1. The gap
 
@@ -26,12 +42,12 @@ codebase already has.
 
 ```
 ┌─────────────────────┐
-│  L1 · EPISODIC (raw) │  agent_task_events, MemoryHandoff   (exists, extend)
+│  L1 · WORKING (raw)  │  agent_task_events, MemoryHandoff   (exists, extend)
 └─────────┬───────────┘
           │  capture learnings with classification='learning'
           ▼
 ┌─────────────────────┐
-│ L2 · CONSOLIDATION  │  NEW: brain/memory/consolidation.py
+│ L2 · EPISODIC       │  memory_episodes, via brain/memory/consolidation.py
 │  (periodic job)     │  distill → dedup → gate → promote
 └─────────┬───────────┘
           │  promotion gates (lexicographic, cf. improvement/promotion.py)
@@ -44,7 +60,7 @@ codebase already has.
           ▼  retrieval: context_pack_builder + relevance.py (extend)
 ```
 
-### L1 — Episodic (extend, don't rebuild)
+### L1 — Working (extend, don't rebuild)
 
 - `agent_task_events.classification` already exists (`observation` default).
   Add a convention: agents log `classification='learning'` for durable-worthy
@@ -55,7 +71,7 @@ codebase already has.
 - No schema change required for the MVP; a classification convention +
   documentation is enough.
 
-### L2 — Consolidation (new)
+### L2 — Episodic, written by consolidation (new)
 
 New module `brain/memory/consolidation.py`, driven by the existing worker
 `scheduler` pattern (`brain/workers/tasks.py`, `params["scheduled"]`).

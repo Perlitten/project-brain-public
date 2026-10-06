@@ -54,6 +54,32 @@ class LearningCreate(BaseModel):
     valid_until: Optional[str] = None
 
 
+class EpisodeSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    limit: int = Field(10, ge=1, le=50)
+    status: Optional[Literal["pending", "promoted", "rejected", "duplicate", "merged"]] = None
+
+
+class EpisodeDecisionRequest(BaseModel):
+    reason: Optional[str] = Field(None, max_length=2000)
+
+
+class SkillCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+    description: str = Field(..., min_length=1)
+    triggers: List[str] = Field(default_factory=list)
+    workflow: List[Dict[str, Any]] = Field(default_factory=list)
+    source_episode_ids: List[int] = Field(default_factory=list)
+    source_learning_ids: List[int] = Field(default_factory=list)
+    confidence: float = Field(0.5, ge=0.0, le=1.0)
+    repo_scope: Optional[str] = None
+
+
+class SkillMatchRequest(BaseModel):
+    query: str = Field(..., min_length=1)
+    limit: int = Field(5, ge=1, le=20)
+
+
 class DecisionCreate(BaseModel):
     title: str
     repo_path: Optional[str] = None
