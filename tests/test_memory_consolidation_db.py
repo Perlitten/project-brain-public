@@ -5,6 +5,7 @@ Skipped locally without Postgres; required under GITHUB_ACTIONS (same contract a
 
 import json
 import os
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -95,7 +96,16 @@ async def memory_db(monkeypatch):
         async with sessions() as session:
             return (await session.execute(select(func.count()).select_from(model))).scalar_one()
 
-    yield SimpleNamespace(sessions=sessions, add_events=add_events, count=count)
+    # L1 events are never truncated (harness tables are shared): earlier test
+    # runs leave unconsumed events behind. Collect only events created after
+    # this fixture's setup — no skew buffer: the previous test's events land
+    # inside even a one-second window.
+    since = datetime.now(timezone.utc)
+
+    async def run(**kwargs):
+        return await consolidation._run_consolidation_unlocked(since=since, **kwargs)
+
+    yield SimpleNamespace(sessions=sessions, add_events=add_events, count=count, run=run)
 
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {_MEMORY_TABLES} RESTART IDENTITY CASCADE"))
@@ -107,8 +117,8 @@ async def memory_db(monkeypatch):
 async def test_consolidation_twice_creates_no_duplicate_episodes(memory_db):
     event_ids = await memory_db.add_events(2)
 
-    first = await consolidation._run_consolidation_unlocked()
-    second = await consolidation._run_consolidation_unlocked()
+    first = await memory_db.run()
+    second = await memory_db.run()
 
     assert first["l1_events"] == 2 and first["episodes_created"] == 1 and len(first["promoted"]) == 1
     assert second["l1_events"] == 0 and second["episodes_created"] == 0
@@ -124,7 +134,7 @@ async def test_consolidation_twice_creates_no_duplicate_episodes(memory_db):
 
     # A new L1 event is still picked up; already-consumed ones are not.
     await memory_db.add_events(1)
-    third = await consolidation._run_consolidation_unlocked()
+    third = await memory_db.run()
     assert third["l1_events"] == 1
     assert await memory_db.count(MemoryEpisode) == 2
 
@@ -134,14 +144,14 @@ async def test_failed_l2_write_rolls_back_and_events_are_retried(memory_db):
     await memory_db.add_events(2)
 
     with patch.object(LearningStore, "add_learning", AsyncMock(side_effect=RuntimeError("db hiccup"))):
-        failed = await consolidation._run_consolidation_unlocked()
+        failed = await memory_db.run()
 
     assert failed["episodes_created"] == 0
     assert failed["errors"] and "db hiccup" in failed["errors"][0]["error"]
     assert await memory_db.count(MemoryEpisode) == 0
     assert await memory_db.count(MemoryEpisodeEvent) == 0
 
-    retried = await consolidation._run_consolidation_unlocked()
+    retried = await memory_db.run()
     assert retried["l1_events"] == 2 and retried["episodes_created"] == 1
     async with memory_db.sessions() as session:
         episode = (await session.execute(select(MemoryEpisode))).scalar_one()
@@ -153,7 +163,7 @@ async def test_duplicate_episode_keeps_duplicate_of(memory_db):
     existing_id = await LearningStore.add_learning(statement=STATEMENT, category="infra", confidence=0.9)
     await memory_db.add_events(2)
 
-    report = await consolidation._run_consolidation_unlocked()
+    report = await memory_db.run()
 
     assert report["rejected"][0]["duplicate_of"] == existing_id
     async with memory_db.sessions() as session:
@@ -166,7 +176,7 @@ async def test_duplicate_episode_keeps_duplicate_of(memory_db):
 @pytest.mark.asyncio
 async def test_pending_episode_approve_and_reject_flow(memory_db):
     await memory_db.add_events(2)
-    report = await consolidation._run_consolidation_unlocked(require_approval=True)
+    report = await memory_db.run(require_approval=True)
     assert len(report["needs_approval"]) == 1
     episode_id = report["needs_approval"][0]["episode_id"]
     assert await memory_db.count(Learning) == 0
@@ -182,10 +192,139 @@ async def test_pending_episode_approve_and_reject_flow(memory_db):
         await approve_episode(999_999)
 
     await memory_db.add_events(2)
-    second = await consolidation._run_consolidation_unlocked(require_approval=True)
+    second = await memory_db.run(require_approval=True)
     # G1 now sees the approved learning, so this cluster is a duplicate, not pending.
     assert second["needs_approval"] == []
     async with memory_db.sessions() as session:
         promoted = await session.get(MemoryEpisode, episode_id)
     assert promoted.promoted_to_learning_id == decided["learning_id"]
     assert promoted.gate_reasons[-1] == "approved by human: checked against the NIM docs"
+
+
+async def _add_task_events(sessions, repo_path, n):
+    """Create an AgentTask for a repo and n L1 events on it; return event ids."""
+    async with sessions() as session:
+        task = AgentTask(title=f"task-{repo_path}", goal="test", repo_path=repo_path)
+        session.add(task)
+        await session.commit()
+        task_id = task.id
+        events = [
+            AgentTaskEvent(
+                task_id=task_id,
+                event_type="note",
+                actor="test",
+                classification="learning",
+                payload_json={"summary": f"note from {repo_path}"},
+            )
+            for _ in range(n)
+        ]
+        session.add_all(events)
+        await session.commit()
+        return task_id, [e.id for e in events]
+
+
+@pytest.mark.asyncio
+async def test_episode_and_learning_inherit_task_repo_scope(memory_db):
+    await memory_db.add_events(2)
+    await memory_db.run()
+    async with memory_db.sessions() as session:
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+        learning = (await session.execute(select(Learning))).scalar_one()
+    # Scope comes from the L1 events' agent_tasks.repo_path, normalized.
+    assert episode.repo_scope == "/tmp/consolidation-test"
+    assert learning.repo_scope == "/tmp/consolidation-test"
+
+
+@pytest.mark.asyncio
+async def test_rejected_episode_events_reopen_on_new_event_same_repo(memory_db):
+    await memory_db.add_events(2)
+    await memory_db.run(require_approval=True)
+    async with memory_db.sessions() as session:
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+    await reject_episode(episode.id, "not durable")
+    assert await memory_db.count(MemoryEpisodeEvent) == 2
+
+    await memory_db.add_events(1)
+    await memory_db.run()
+
+    # The rejected episode's ledger rows were released: all 3 events re-clustered
+    # into one new episode and only the new episode holds ledger rows.
+    async with memory_db.sessions() as session:
+        episodes = (await session.execute(select(MemoryEpisode).order_by(MemoryEpisode.id))).scalars().all()
+        ledger = (await session.execute(select(MemoryEpisodeEvent))).scalars().all()
+    assert len(episodes) == 2
+    assert episodes[0].status == "rejected"
+    assert episodes[1].status == "promoted"
+    assert len(episodes[1].source_event_ids) == 3
+    assert {row.episode_id for row in ledger} == {episodes[1].id}
+
+
+@pytest.mark.asyncio
+async def test_rejected_episode_not_reopened_by_other_repo(memory_db):
+    task_b, _events_b = await _add_task_events(memory_db.sessions, "/tmp/other-repo", 2)
+    await memory_db.run(require_approval=True)
+    async with memory_db.sessions() as session:
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+    await reject_episode(episode.id, "repo-B only")
+
+    # A fresh event in a *different* repository does not re-open it.
+    await memory_db.add_events(1)
+    await memory_db.run()
+
+    async with memory_db.sessions() as session:
+        episodes = (await session.execute(select(MemoryEpisode).order_by(MemoryEpisode.id))).scalars().all()
+        ledger = (await session.execute(select(MemoryEpisodeEvent))).scalars().all()
+    assert len(episodes) == 2
+    # The rejected episode kept its 2 events; the fresh event formed its own episode.
+    assert len(episodes[1].source_event_ids) == 1
+    episode_event_ids = {row.event_id for row in ledger if row.episode_id == episodes[0].id}
+    assert len(episode_event_ids) == 2
+
+
+@pytest.mark.asyncio
+async def test_rejected_episode_stays_consumed_outside_reopen_window(memory_db):
+    await memory_db.add_events(2)
+    await memory_db.run(require_approval=True)
+    async with memory_db.sessions() as session:
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+    await reject_episode(episode.id, "not durable")
+
+    # Push the rejection outside MEMORY_EPISODE_REOPEN_DAYS.
+    async with memory_db.sessions() as session:
+        await session.execute(
+            text(
+                "UPDATE memory_episodes SET updated_at = now() - interval '60 days' "
+                "WHERE id = :id"
+            ),
+            {"id": episode.id},
+        )
+        await session.commit()
+
+    await memory_db.add_events(1)
+    await memory_db.run()
+
+    async with memory_db.sessions() as session:
+        episodes = (await session.execute(select(MemoryEpisode).order_by(MemoryEpisode.id))).scalars().all()
+        ledger = (await session.execute(select(MemoryEpisodeEvent))).scalars().all()
+    assert len(episodes) == 2
+    assert len(episodes[1].source_event_ids) == 1
+    episode_event_ids = {row.event_id for row in ledger if row.episode_id == episodes[0].id}
+    assert len(episode_event_ids) == 2
+
+
+@pytest.mark.asyncio
+async def test_reopen_disabled_keeps_events_consumed(memory_db, monkeypatch):
+    monkeypatch.setattr(settings, "MEMORY_EPISODE_REOPEN_DAYS", 0)
+    await memory_db.add_events(2)
+    await memory_db.run(require_approval=True)
+    async with memory_db.sessions() as session:
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+    await reject_episode(episode.id, "not durable")
+
+    await memory_db.add_events(1)
+    await memory_db.run()
+
+    async with memory_db.sessions() as session:
+        ledger = (await session.execute(select(MemoryEpisodeEvent))).scalars().all()
+    episode_event_ids = {row.event_id for row in ledger if row.episode_id == episode.id}
+    assert len(episode_event_ids) == 2
