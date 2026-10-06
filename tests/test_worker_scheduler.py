@@ -3,6 +3,10 @@
 No Postgres or Redis: a small in-memory Redis with a controllable clock stands in.
 """
 
+import asyncio
+import hashlib
+import hmac
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -130,6 +134,21 @@ async def test_catch_up_fires_a_missed_slot_once_within_the_window(fake_queue, m
     assert again == []
     # Monday 06:00 benchmark is ~21h old: outside the window, not replayed.
     assert "benchmark" not in _fired_types(fake_queue)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_replicas_fire_each_slot_once(fake_queue, monkeypatch):
+    """Several worker replicas ticking at once enqueue each due slot at most once
+    (the SET NX slot lock decides the winner; everyone else skips it)."""
+    monkeypatch.setattr(settings, "SCHEDULER_CATCHUP_WINDOW_S", 60)
+    redis = _ClockRedis()
+    now = datetime(2026, 10, 6, 2, 0, 10, tzinfo=UTC)
+
+    batches = await asyncio.gather(*(scheduler.tick(redis, now) for _ in range(4)))
+
+    fired = [entry for batch in batches for entry in batch]
+    assert [f["job_type"] for f in fired] == ["health_check"]
+    assert _fired_types(fake_queue) == ["health_check"]
 
 
 @pytest.mark.asyncio
@@ -326,6 +345,21 @@ def test_scheduler_jobs_requires_api_key(api_key_env):
 # --------------------------------------------------------------------------- webhook
 
 
+def _raw(payload: dict) -> bytes:
+    return json.dumps(payload).encode()
+
+
+def _github_sig(secret: str, raw: bytes) -> str:
+    return "sha256=" + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+
+
+def _signed_post(payload: dict, secret: str = "s3cret", headers: dict | None = None):
+    raw = _raw(payload)
+    all_headers = {"Content-Type": "application/json", "X-Hub-Signature-256": _github_sig(secret, raw)}
+    all_headers.update(headers or {})
+    return client.post("/webhooks/git-merge", content=raw, headers=all_headers)
+
+
 @pytest.fixture
 def webhook_env(monkeypatch, fake_queue):
     monkeypatch.setattr(settings, "PROJECT_BRAIN_WEBHOOK_TOKEN", "s3cret")
@@ -333,12 +367,8 @@ def webhook_env(monkeypatch, fake_queue):
     return fake_queue
 
 
-def test_git_merge_webhook_enqueues_reindex(webhook_env):
-    response = client.post(
-        "/webhooks/git-merge",
-        json={"ref": "refs/heads/master", "sha": "abc123"},
-        headers={"X-Project-Brain-Token": "s3cret"},
-    )
+def test_git_merge_webhook_enqueues_reindex_on_a_valid_github_signature(webhook_env):
+    response = _signed_post({"ref": "refs/heads/master", "sha": "abc123"})
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "queued"
     args, kwargs = webhook_env.enqueue.await_args
@@ -347,18 +377,82 @@ def test_git_merge_webhook_enqueues_reindex(webhook_env):
     assert kwargs["idempotency_key"] == "git-reindex:abc123"
 
 
-@pytest.mark.parametrize(
-    ("token", "ref", "status"),
-    [(None, "refs/heads/master", 401), ("wrong", "refs/heads/master", 401), ("s3cret", "refs/heads/feature", 200)],
-)
-def test_git_merge_webhook_rejects_bad_token_and_ignores_other_refs(webhook_env, token, ref, status):
-    headers = {"X-Project-Brain-Token": token} if token else {}
-    response = client.post("/webhooks/git-merge", json={"ref": ref, "sha": "abc"}, headers=headers)
-    assert response.status_code == status
+def test_git_merge_webhook_accepts_the_api_key(webhook_env, api_key_env):
+    response = client.post(
+        "/webhooks/git-merge",
+        json={"ref": "refs/heads/master", "sha": "abc123"},
+        headers={"X-API-Key": "test-secret-key"},
+    )
+    assert response.status_code == 200, response.text
+    assert webhook_env.enqueue.await_args.args[0] == "reindex"
+
+
+def test_git_merge_webhook_rejects_everything_unauthenticated(webhook_env):
+    payload = {"ref": "refs/heads/master", "sha": "abc"}
+    assert _signed_post(payload, secret="wrong-secret").status_code == 401
+    bad = client.post(
+        "/webhooks/git-merge",
+        content=_raw(payload),
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": "sha256=" + "0" * 64},
+    )
+    assert bad.status_code == 401
+    no_auth = client.post(
+        "/webhooks/git-merge", content=_raw(payload), headers={"Content-Type": "application/json"}
+    )
+    assert no_auth.status_code == 401
+    # The retired shared-header scheme no longer authenticates on its own.
+    legacy = client.post(
+        "/webhooks/git-merge",
+        content=_raw(payload),
+        headers={"Content-Type": "application/json", "X-Project-Brain-Token": "s3cret"},
+    )
+    assert legacy.status_code == 401
     webhook_env.enqueue.assert_not_awaited()
 
 
-def test_git_merge_webhook_fails_closed_without_configured_token(monkeypatch):
+def test_git_merge_webhook_ignores_other_refs(webhook_env):
+    response = _signed_post({"ref": "refs/heads/feature", "sha": "abc"})
+    assert response.status_code == 200
+    webhook_env.enqueue.assert_not_awaited()
+
+
+def test_git_merge_webhook_fails_closed_without_any_configured_credential(monkeypatch):
     monkeypatch.setattr(settings, "PROJECT_BRAIN_WEBHOOK_TOKEN", None)
-    response = client.post("/webhooks/git-merge", json={"ref": "refs/heads/master"}, headers={"X-Project-Brain-Token": "x"})
+    monkeypatch.setattr(settings, "PROJECT_BRAIN_API_KEY", None)
+    response = client.post(
+        "/webhooks/git-merge",
+        content=_raw({"ref": "refs/heads/master"}),
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": "sha256=bad"},
+    )
     assert response.status_code == 503
+
+
+class _DedupQueue:
+    """Honors ``JobQueue.enqueue``'s idempotency_key contract: same key -> same job id."""
+
+    def __init__(self):
+        self.claims: dict[str, str] = {}
+        self.calls: list[tuple] = []
+
+    async def enqueue(self, job_type, params=None, *, idempotency_key=None, **_kwargs):
+        if idempotency_key and idempotency_key in self.claims:
+            return self.claims[idempotency_key]
+        job_id = f"job-{len(self.calls)}"
+        if idempotency_key:
+            self.claims[idempotency_key] = job_id
+        self.calls.append((job_type, params, idempotency_key))
+        return job_id
+
+
+def test_redelivered_merge_webhook_does_not_enqueue_a_second_reindex(monkeypatch):
+    monkeypatch.setattr(settings, "PROJECT_BRAIN_WEBHOOK_TOKEN", "s3cret")
+    queue = _DedupQueue()
+    monkeypatch.setattr("apps.api.routers.scheduler.queue_for_job", lambda *a, **k: queue)
+
+    responses = [_signed_post({"ref": "refs/heads/master", "sha": "deadbeef"}) for _ in range(2)]
+
+    assert all(r.status_code == 200 for r in responses)
+    assert [call[0] for call in queue.calls] == ["reindex"]
+    assert responses[0].json()["job_id"] == responses[1].json()["job_id"]
+    # The durable dedup lives in JobQueue.enqueue's SET NX claim keyed by
+    # git-reindex:{sha}; tests/test_worker_queue.py covers that contract.

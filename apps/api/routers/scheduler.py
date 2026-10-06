@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
-from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-from apps.api.auth import require_api_key, require_scope
+from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.schemas import GitMergeWebhook, SchedulerJobsResponse
 from brain.config.settings import settings
 from brain.database.session import redis_client
@@ -37,18 +37,48 @@ async def get_scheduler_jobs() -> SchedulerJobsResponse:
     return SchedulerJobsResponse.model_validate(state)
 
 
+def _github_signature_valid(raw_body: bytes, signature: str) -> bool:
+    """GitHub-style ``X-Hub-Signature-256: sha256=<hmac>`` over the raw body.
+
+    The shared secret is ``PROJECT_BRAIN_WEBHOOK_TOKEN``, the same env value the
+    caller (GitHub Actions or a native GitHub webhook) signs with.
+    """
+    secret = (settings.PROJECT_BRAIN_WEBHOOK_TOKEN or "").strip()
+    if not secret or not signature.strip().lower().startswith("sha256="):
+        return False
+    expected = "sha256=" + hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature.strip())
+
+
+async def _api_key_valid(request: Request) -> bool:
+    """True when the presented ``X-API-Key`` resolves like on any other route."""
+    api_key = request.headers.get("x-api-key")
+    if not api_key:
+        return False
+    try:
+        await require_principal(request, api_key)
+    except Exception:
+        # A bad key (401/503) or an unreachable credential store fails closed.
+        return False
+    return True
+
+
 @router.post("/webhooks/git-merge")
-async def git_merge_webhook(
-    body: GitMergeWebhook,
-    x_project_brain_token: Optional[str] = Header(default=None),
-):
-    """Post-merge reindex trigger for .github/workflows/project-brain-reindex.yml."""
-    expected = (settings.PROJECT_BRAIN_WEBHOOK_TOKEN or "").strip()
-    supplied = (x_project_brain_token or "").strip()
-    if not expected:
-        raise HTTPException(status_code=503, detail="PROJECT_BRAIN_WEBHOOK_TOKEN is not configured")
-    if not supplied or not hmac.compare_digest(supplied, expected):
-        raise HTTPException(status_code=401, detail="Invalid webhook token")
+async def git_merge_webhook(request: Request, body: GitMergeWebhook):
+    """Post-merge reindex trigger for .github/workflows/project-brain-reindex.yml.
+
+    Accepts a GitHub ``X-Hub-Signature-256`` HMAC over the raw body (secret
+    ``PROJECT_BRAIN_WEBHOOK_TOKEN``) or the standard ``X-API-Key``; everything
+    else is rejected.
+    """
+    raw_body = await request.body()
+    signature = request.headers.get("x-hub-signature-256", "")
+    if not _github_signature_valid(raw_body, signature) and not await _api_key_valid(request):
+        if not (settings.PROJECT_BRAIN_WEBHOOK_TOKEN or "").strip() and not (
+            settings.PROJECT_BRAIN_API_KEY or ""
+        ).strip():
+            raise HTTPException(status_code=503, detail="No webhook credential is configured")
+        raise HTTPException(status_code=401, detail="Invalid webhook credentials")
     if body.ref != "refs/heads/master":
         return {"status": "ignored", "reason": f"ref {body.ref} is not refs/heads/master"}
     revision = body.sha or body.after or ""
