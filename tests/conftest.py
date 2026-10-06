@@ -41,6 +41,8 @@ _NEUTRAL_ENV = {
     "EMBEDDING_SEND_INPUT_TYPE": "",
     "DEFAULT_LLM_PROVIDER": "mock",
     "DEFAULT_EMBEDDING_PROVIDER": "mock",
+    # The suite's fixture world lives under tmp_path; production keeps this off.
+    "ALLOW_SCRATCH_REPO_ROOTS": "true",
 }
 
 for _key, _value in _NEUTRAL_ENV.items():

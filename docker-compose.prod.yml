@@ -106,6 +106,9 @@ services:
       REPO_ROOT: /app
       CONTEXT_PACK_OUTPUT_DIR: /app/context_packs
       REPORT_OUTPUT_DIR: /app/reports
+      # Read-only repo mounts below; validate_secure_repo_path must list their
+      # roots or indexing them fails (cwd/tmp are not trusted in production).
+      ALLOWED_REPO_ROOTS: ${ALLOWED_REPO_ROOTS:-/indexed,/repos,/repo}
       # The image's brain user has no home directory; keep setup verification
       # state on the persisted reports volume instead of ~/.project_brain.
       BRAIN_SETUP_STATE_DIR: /app/reports/.setup
@@ -169,6 +172,9 @@ services:
       REPO_ROOT: /app
       CONTEXT_PACK_OUTPUT_DIR: /app/context_packs
       REPORT_OUTPUT_DIR: /app/reports
+      # Read-only repo mounts below; validate_secure_repo_path must list their
+      # roots or indexing them fails (cwd/tmp are not trusted in production).
+      ALLOWED_REPO_ROOTS: ${ALLOWED_REPO_ROOTS:-/indexed,/repos,/repo}
       # The image's brain user has no home directory; keep setup verification
       # state on the persisted reports volume instead of ~/.project_brain.
       BRAIN_SETUP_STATE_DIR: /app/reports/.setup
