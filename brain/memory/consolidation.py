@@ -1,6 +1,10 @@
-"""L2 memory consolidation: distill episodic traces into durable learnings.
+"""Memory consolidation: turn L1 working events into L2 episodes and L3 learnings.
 
-Pipeline: collect (L1 episodic) → cluster → distill (LLM) → gate (G1–G4) → promote (L3).
+Memory tiers: L1 working (``agent_task_events``), L2 episodic (``memory_episodes``),
+L3 semantic (``memory_learnings``), L4 procedural (``memory_skills``).
+
+Pipeline: collect unconsumed L1 events → cluster → distill (LLM) → gate (G1–G4)
+→ persist one L2 episode per cluster (+ L3 learning when promoted), atomically.
 
 Promotion gates are lexicographic, mirroring brain/improvement/promotion.py:
 a candidate must pass every gate in order; the first failure decides the outcome.
@@ -19,13 +23,14 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select
 
 from brain.database.harness_models import AgentTaskEvent
+from brain.database.models import MemoryEpisode, MemoryEpisodeEvent
 from brain.database.session import async_session_factory
 from brain.llm import get_embedding_provider, get_summarizer_provider
 from brain.memory.learning_store import LearningStore
 
 logger = logging.getLogger(__name__)
 
-# Episodic classifications that feed consolidation (L1 → L2).
+# L1 event classifications that feed consolidation (L1 → L2).
 LEARNING_CLASSIFICATIONS = ("learning", "failure_lesson")
 
 # G1: cosine similarity at or above this means "already known".
@@ -37,7 +42,7 @@ DEDUP_SIMILARITY_THRESHOLD = 0.85
 # Postgres advisory lock id serializing consolidation runs across processes.
 CONSOLIDATION_LOCK_ID = 0x4D454D01  # "MEM\x01"
 
-# G2: minimum independent episodes for auto-promotion (1 episode needs human confirm).
+# G2: minimum independent L1 events for auto-promotion (1 event needs human confirm).
 MIN_EPISODES_AUTO = 2
 
 
@@ -73,7 +78,7 @@ def _cosine(a: List[float], b: List[float]) -> float:
     return sum(x * y for x, y in zip(a, b)) / denom
 
 
-def _episode_text(event: AgentTaskEvent) -> str:
+def _l1_event_text(event: AgentTaskEvent) -> str:
     payload = event.payload_json or {}
     parts = [event.event_type, event.classification]
     for key in ("summary", "statement", "lesson", "text", "detail"):
@@ -82,27 +87,29 @@ def _episode_text(event: AgentTaskEvent) -> str:
     return " | ".join(p for p in parts if p)
 
 
-async def collect_episodic(since: Optional[datetime] = None) -> List[AgentTaskEvent]:
-    """Collect unprocessed L1 episodic records eligible for consolidation."""
+async def collect_l1_events(since: Optional[datetime] = None) -> List[AgentTaskEvent]:
+    """Collect L1 events eligible for consolidation that no L2 episode has consumed yet."""
     async with async_session_factory() as session:
+        consumed = select(MemoryEpisodeEvent.event_id)
         query = select(AgentTaskEvent).where(
-            AgentTaskEvent.classification.in_(LEARNING_CLASSIFICATIONS)
+            AgentTaskEvent.classification.in_(LEARNING_CLASSIFICATIONS),
+            AgentTaskEvent.id.not_in(consumed),
         )
         if since:
             query = query.where(AgentTaskEvent.created_at >= since)
-        query = query.order_by(AgentTaskEvent.created_at)
+        query = query.order_by(AgentTaskEvent.created_at, AgentTaskEvent.id)
         result = await session.execute(query)
         return list(result.scalars().all())
 
 
-async def cluster_episodes(
-    episodes: List[AgentTaskEvent],
+async def cluster_l1_events(
+    events: List[AgentTaskEvent],
 ) -> List[List[AgentTaskEvent]]:
-    """Greedy clustering of episodes by embedding similarity."""
-    if not episodes:
+    """Greedy clustering of L1 events by embedding similarity."""
+    if not events:
         return []
     embedder = get_embedding_provider()
-    texts = [_episode_text(e) for e in episodes]
+    texts = [_l1_event_text(e) for e in events]
     vectors = await embedder.embed_batch(texts)
     clusters: List[List[int]] = []
     centroids: List[List[float]] = []
@@ -121,7 +128,7 @@ async def cluster_episodes(
         if not placed:
             clusters.append([idx])
             centroids.append(vec)
-    return [[episodes[i] for i in cluster] for cluster in clusters]
+    return [[events[i] for i in cluster] for cluster in clusters]
 
 
 _DISTILL_PROMPT = """Distill the following episodic observations from an AI coding harness
@@ -137,10 +144,10 @@ Severity is "high" only if acting on a wrong statement would cause damage."""
 
 
 async def distill_candidate(cluster: List[AgentTaskEvent]) -> ConsolidationCandidate:
-    """LLM-distill one cluster of episodes into a candidate learning."""
-    episodes_text = "\n".join(f"- {_episode_text(e)}" for e in cluster)
+    """LLM-distill one cluster of L1 events into a candidate learning."""
+    events_text = "\n".join(f"- {_l1_event_text(e)}" for e in cluster)
     summarizer = get_summarizer_provider()
-    raw = await summarizer.summarize(_DISTILL_PROMPT.format(episodes=episodes_text))
+    raw = await summarizer.summarize(_DISTILL_PROMPT.format(episodes=events_text))
     try:
         data = json.loads(raw[raw.index("{"): raw.rindex("}") + 1])
     except (ValueError, json.JSONDecodeError):
@@ -150,7 +157,7 @@ async def distill_candidate(cluster: List[AgentTaskEvent]) -> ConsolidationCandi
         for e in cluster
     ]
     return ConsolidationCandidate(
-        statement=str(data.get("statement", episodes_text[:500])).strip(),
+        statement=str(data.get("statement", events_text[:500])).strip(),
         category=data.get("category"),
         confidence=float(data.get("confidence", 0.5) or 0.5),
         evidence=evidence,
@@ -211,13 +218,13 @@ async def evaluate_gates(
     reasons.append("G1 pass: no duplicate")
 
     # G2 — Evidence threshold.
-    episode_count = len(candidate.evidence)
-    if episode_count < MIN_EPISODES_AUTO and not require_approval:
+    event_count = len(candidate.evidence)
+    if event_count < MIN_EPISODES_AUTO and not require_approval:
         return GateResult(
             outcome=GateOutcome.REJECT_EVIDENCE,
-            reasons=reasons + [f"G2: only {episode_count} episode(s), need {MIN_EPISODES_AUTO}"],
+            reasons=reasons + [f"G2: only {event_count} L1 event(s), need {MIN_EPISODES_AUTO}"],
         )
-    reasons.append(f"G2 pass: {episode_count} episode(s)")
+    reasons.append(f"G2 pass: {event_count} L1 event(s)")
 
     # G3 — Non-contradiction with active memory.
     if active:
@@ -296,8 +303,10 @@ async def run_consolidation(
                 "run_id": None,
                 "status": "skipped",
                 "reason": "advisory lock held by concurrent consolidation",
-                "episodes": 0,
+                "l1_events": 0,
                 "candidates": 0,
+                "episodes_created": 0,
+                "errors": [],
                 "promoted": [],
                 "rejected": [],
                 "needs_approval": [],
@@ -316,6 +325,74 @@ async def run_consolidation(
                 logger.warning(f"Consolidation lock release failed: {exc}")
 
 
+_EPISODE_STATUS = {
+    GateOutcome.PROMOTE: "promoted",
+    GateOutcome.NEEDS_APPROVAL: "pending",
+    GateOutcome.LINK_DUPLICATE: "duplicate",
+    GateOutcome.REJECT_EVIDENCE: "rejected",
+    GateOutcome.REJECT_CONTRADICTION: "rejected",
+}
+
+
+class EpisodeStateError(ValueError):
+    """The episode is not in a state that allows the requested transition."""
+
+
+async def _episode_embedding(statement: str) -> Optional[List[float]]:
+    from brain.embeddings.constants import EMBEDDING_DIMENSION
+    from brain.embeddings.pgvector_sql import pgvector_index_dimension, truncate_vector_for_index
+
+    try:
+        vec = await get_embedding_provider().embed(statement)
+    except Exception as exc:
+        logger.warning("L2 episode embedding failed, storing NULL: %s", exc)
+        return None
+    if not vec:
+        return None
+    if len(vec) < pgvector_index_dimension(EMBEDDING_DIMENSION):
+        logger.warning("L2 episode embedding has %d dims, storing NULL", len(vec))
+        return None
+    return truncate_vector_for_index(list(vec), EMBEDDING_DIMENSION)
+
+
+async def _persist_cluster(
+    cluster: List[AgentTaskEvent],
+    candidate: ConsolidationCandidate,
+    gate: GateResult,
+    run_id: str,
+) -> Dict[str, Any]:
+    """Write one L2 episode, its L1 ledger rows and (if promoted) its L3 learning in one transaction."""
+    embedding = await _episode_embedding(candidate.statement)
+    async with async_session_factory() as session:
+        async with session.begin():
+            episode = MemoryEpisode(
+                source_event_ids=[e.id for e in cluster],
+                distilled_summary=candidate.statement,
+                topic=candidate.category,
+                status=_EPISODE_STATUS[gate.outcome],
+                confidence=candidate.confidence,
+                gate_reasons=list(gate.reasons),
+                duplicate_of_learning_id=gate.duplicate_of,
+                embedding=embedding,
+            )
+            session.add(episode)
+            await session.flush()
+            session.add_all(MemoryEpisodeEvent(event_id=e.id, episode_id=episode.id) for e in cluster)
+            learning_id = None
+            if gate.outcome == GateOutcome.PROMOTE:
+                learning_id = await LearningStore.add_learning(
+                    statement=candidate.statement,
+                    category=candidate.category,
+                    confidence=candidate.confidence,
+                    evidence=candidate.evidence,
+                    promoted_from=run_id,
+                    session=session,
+                )
+                episode.promoted_to_learning_id = learning_id
+            await session.flush()
+            return {"episode_id": episode.id, "learning_id": learning_id}
+
+
 async def _run_consolidation_unlocked(
     since: Optional[datetime] = None,
     *,
@@ -324,106 +401,92 @@ async def _run_consolidation_unlocked(
 ) -> Dict[str, Any]:
     """Run one consolidation pass. Returns a summary report."""
     run_id = f"consolidation-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
-    episodes = await collect_episodic(since)
+    events = await collect_l1_events(since)
     report: Dict[str, Any] = {
         "run_id": run_id,
-        "episodes": len(episodes),
+        "l1_events": len(events),
         "candidates": 0,
+        "episodes_created": 0,
         "promoted": [],
         "rejected": [],
         "needs_approval": [],
+        "errors": [],
+        "dry_run": dry_run,
     }
-    if not episodes:
+    if not events:
         return report
-    clusters = await cluster_episodes(episodes)
-    for cluster in clusters:
-        # L2: persist the cluster as an episodic memory before distillation.
-        # This makes L2 a queryable dynamic layer, not just a transient process.
-        episode_id = None
-        if not dry_run:
-            try:
-                from brain.database.models import MemoryEpisode
-                from brain.database.session import async_session_factory
-                async with async_session_factory() as session:
-                    ep = MemoryEpisode(
-                        source_event_ids=[e.id for e in cluster if hasattr(e, "id")],
-                        distilled_summary="",  # filled after distillation
-                        topic=None,
-                        status="pending",
-                        confidence=0.5,
-                    )
-                    session.add(ep)
-                    await session.commit()
-                    episode_id = ep.id
-            except Exception as exc:
-                logger.warning(f"L2 episode persist failed: {exc}")
+    for cluster in await cluster_l1_events(events):
         candidate = await distill_candidate(cluster)
         report["candidates"] += 1
-        # L2: update with distilled summary + embedding for semantic search.
-        if episode_id and not dry_run:
-            try:
-                from brain.database.models import MemoryEpisode
-                from brain.database.session import async_session_factory
-                from brain.llm import get_embedding_provider
-                async with async_session_factory() as session:
-                    stored = await session.get(MemoryEpisode, episode_id)
-                    if stored:
-                        stored.distilled_summary = candidate.statement
-                        stored.topic = candidate.category
-                        stored.confidence = candidate.confidence
-                        # Generate embedding for L2 semantic retrieval.
-                        try:
-                            embedder = get_embedding_provider()
-                            vec = await embedder.embed(candidate.statement)
-                            stored.embedding = list(vec) if vec else None
-                        except Exception as emb_exc:
-                            logger.warning(f"L2 episode embedding failed: {emb_exc}")
-                        await session.commit()
-            except Exception as exc:
-                logger.warning(f"L2 episode update failed: {exc}")
         gate = await evaluate_gates(candidate, require_approval=require_approval)
         entry: Dict[str, Any] = {"statement": candidate.statement, "reasons": gate.reasons}
-        if episode_id:
-            entry["episode_id"] = episode_id
+        if gate.duplicate_of is not None:
+            entry["duplicate_of"] = gate.duplicate_of
+        if dry_run:
+            entry["dry_run"] = True
+        else:
+            try:
+                entry.update(await _persist_cluster(cluster, candidate, gate, run_id))
+            except Exception as exc:
+                # The transaction rolled back as a whole: no episode, no ledger rows, no
+                # learning. The L1 events stay unconsumed and are retried on the next run.
+                logger.error("L2 episode write failed for events %s: %s", [e.id for e in cluster], exc)
+                report["errors"].append(
+                    {"event_ids": [e.id for e in cluster], "error": f"{type(exc).__name__}: {exc}"}
+                )
+                continue
+            report["episodes_created"] += 1
         if gate.outcome == GateOutcome.PROMOTE:
-            if dry_run:
-                entry["dry_run"] = True
-                report["promoted"].append(entry)
-            else:
-                learning_id = await promote_candidate(candidate, gate, run_id)
-                entry["learning_id"] = learning_id
-                report["promoted"].append(entry)
-                # L2: mark as promoted with link to L3.
-                if episode_id and learning_id:
-                    try:
-                        from brain.database.models import MemoryEpisode
-                        from brain.database.session import async_session_factory
-                        async with async_session_factory() as session:
-                            stored = await session.get(MemoryEpisode, episode_id)
-                            if stored:
-                                stored.status = "promoted"
-                                stored.promoted_to_learning_id = learning_id
-                                await session.commit()
-                    except Exception as exc:
-                        logger.warning(f"L2 episode promote-mark failed: {exc}")
+            report["promoted"].append(entry)
         elif gate.outcome == GateOutcome.NEEDS_APPROVAL:
             report["needs_approval"].append(entry)
         else:
             report["rejected"].append(entry)
-            # L2: mark rejected episodes.
-            if episode_id and not dry_run:
-                try:
-                    from brain.database.models import MemoryEpisode
-                    from brain.database.session import async_session_factory
-                    async with async_session_factory() as session:
-                        stored = await session.get(MemoryEpisode, episode_id)
-                        if stored:
-                            stored.status = "rejected"
-                            await session.commit()
-                except Exception:
-                    pass
     logger.info(
-        "Consolidation %s: %d episodes → %d candidates, %d promoted",
-        run_id, len(episodes), report["candidates"], len(report["promoted"]),
+        "Consolidation %s: %d L1 events → %d candidates, %d episodes, %d promoted, %d errors",
+        run_id, len(events), report["candidates"], report["episodes_created"],
+        len(report["promoted"]), len(report["errors"]),
     )
     return report
+
+
+async def _decide_pending_episode(episode_id: int, *, approve: bool, reason: Optional[str]) -> Dict[str, Any]:
+    async with async_session_factory() as session:
+        async with session.begin():
+            episode = (
+                await session.execute(
+                    select(MemoryEpisode).where(MemoryEpisode.id == episode_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if episode is None:
+                raise LookupError(f"Episode {episode_id} not found")
+            if episode.status != "pending":
+                raise EpisodeStateError(f"Episode {episode_id} is {episode.status}, not pending")
+            note = f"{'approved' if approve else 'rejected'} by human" + (f": {reason}" if reason else "")
+            episode.gate_reasons = [*(episode.gate_reasons or []), note]
+            learning_id = None
+            if approve:
+                learning_id = await LearningStore.add_learning(
+                    statement=episode.distilled_summary,
+                    category=episode.topic,
+                    confidence=episode.confidence,
+                    evidence=[{"event_id": event_id} for event_id in episode.source_event_ids or []],
+                    repo_scope=episode.repo_scope,
+                    promoted_from=f"approval:episode-{episode.id}",
+                    session=session,
+                )
+                episode.status = "promoted"
+                episode.promoted_to_learning_id = learning_id
+            else:
+                episode.status = "rejected"
+            return {"episode_id": episode.id, "status": episode.status, "learning_id": learning_id}
+
+
+async def approve_episode(episode_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
+    """Promote a pending (G4 needs_approval) L2 episode to an L3 learning."""
+    return await _decide_pending_episode(episode_id, approve=True, reason=reason)
+
+
+async def reject_episode(episode_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
+    """Reject a pending L2 episode; its L1 events stay consumed."""
+    return await _decide_pending_episode(episode_id, approve=False, reason=reason)

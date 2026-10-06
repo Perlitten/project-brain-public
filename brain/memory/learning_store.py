@@ -1,4 +1,4 @@
-"""Store for L3 semantic memory: durable learnings distilled from episodic traces.
+"""Store for L3 semantic memory: durable learnings promoted from L2 episodes.
 
 Mirrors the shape of brain.memory.rule_store: a thin classmethod wrapper
 around async_session_factory, no ORM sessions leak past this module.
@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.database.models import Learning
 from brain.database.session import async_session_factory
@@ -37,8 +38,12 @@ class LearningStore:
         repo_scope: Optional[str] = None,
         valid_until: Optional[datetime] = None,
         promoted_from: Optional[str] = None,
+        session: Optional[AsyncSession] = None,
     ) -> int:
         """Save a new learning and return its id.
+
+        With ``session`` the row is only flushed, so the caller's transaction
+        decides whether it commits (used by consolidation for atomic L2→L3 writes).
 
         Computes the statement embedding once at write time so query-ranked
         retrieval and G1 dedup never pay per-query embedding costs. If the
@@ -60,22 +65,26 @@ class LearningStore:
             )
         except Exception as exc:
             logger.warning(f"Learning embedding failed, storing NULL: {exc}")
-        async with async_session_factory() as session:
-            learning = Learning(
-                statement=statement,
-                category=category,
-                confidence=max(0.0, min(1.0, confidence)),
-                evidence=evidence or [],
-                status="active",
-                repo_scope=normalize_repo_scope(repo_scope),
-                valid_until=valid_until,
-                promoted_from=promoted_from,
-                embedding=embedding,
-                embedding_model=embedding_model,
-            )
+        learning = Learning(
+            statement=statement,
+            category=category,
+            confidence=max(0.0, min(1.0, confidence)),
+            evidence=evidence or [],
+            status="active",
+            repo_scope=normalize_repo_scope(repo_scope),
+            valid_until=valid_until,
+            promoted_from=promoted_from,
+            embedding=embedding,
+            embedding_model=embedding_model,
+        )
+        if session is not None:
             session.add(learning)
-            await session.commit()
-            await session.refresh(learning)
+            await session.flush()
+            return learning.id
+        async with async_session_factory() as own_session:
+            own_session.add(learning)
+            await own_session.commit()
+            await own_session.refresh(learning)
             return learning.id
 
     @classmethod

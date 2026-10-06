@@ -3,9 +3,9 @@ import hashlib
 import json
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from loguru import logger
@@ -27,6 +27,10 @@ from apps.api.helpers import (
     get_top_connected_nodes,
 )
 from apps.api.schemas import (
+    EpisodeDecisionRequest,
+    EpisodeSearchRequest,
+    SkillCreate,
+    SkillMatchRequest,
     AskRequest,
     ContextRequest,
     DecisionCreate,
@@ -84,6 +88,7 @@ ASK_DECISION_FIELD_CHARS = 280
 # answer once the prompt context is large. Thinking blocks are stripped
 # separately (see _strip_thinking_blocks) so these tokens go to the answer.
 ASK_MAX_ANSWER_TOKENS = 2500
+EPISODES_MAX_LIMIT = 200
 
 
 def _strip_thinking_blocks(text: str) -> str:
@@ -882,21 +887,14 @@ async def get_learnings(repo_path: Optional[str] = None):
 
 @router.get("/episodes", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
 async def get_episodes(
-    status: Optional[str] = None,
+    status: Optional[Literal["pending", "promoted", "rejected", "duplicate", "merged"]] = None,
     topic: Optional[str] = None,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=EPISODES_MAX_LIMIT),
 ):
-    """L2 episodic memory: list clustered episodes.
-
-    Query params:
-    - status: pending | promoted | rejected | merged (optional filter)
-    - topic: category filter (optional)
-    - limit: max results (default 50)
-    """
+    """L2 episodic memory: list episodes, newest first."""
     try:
         from brain.database.models import MemoryEpisode
-        from brain.database.session import async_session_factory
-        from sqlalchemy import select, desc
+        from sqlalchemy import desc
 
         async with async_session_factory() as session:
             q = select(MemoryEpisode).order_by(desc(MemoryEpisode.created_at)).limit(limit)
@@ -904,8 +902,7 @@ async def get_episodes(
                 q = q.where(MemoryEpisode.status == status)
             if topic:
                 q = q.where(MemoryEpisode.topic == topic)
-            result = await session.execute(q)
-            episodes = result.scalars().all()
+            episodes = (await session.execute(q)).scalars().all()
             return [
                 {
                     "id": ep.id,
@@ -915,6 +912,8 @@ async def get_episodes(
                     "confidence": ep.confidence,
                     "source_event_ids": ep.source_event_ids,
                     "promoted_to_learning_id": ep.promoted_to_learning_id,
+                    "duplicate_of_learning_id": ep.duplicate_of_learning_id,
+                    "gate_reasons": ep.gate_reasons,
                     "created_at": ep.created_at.isoformat() if ep.created_at else None,
                 }
                 for ep in episodes
@@ -925,38 +924,25 @@ async def get_episodes(
 
 
 @router.post("/episodes/search", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def search_episodes(body: dict):
-    """L2 episodic memory: semantic search over episode summaries.
-
-    Body: {"query": "...", "limit": 10, "status": "pending" (optional)}
-    """
+async def search_episodes(body: EpisodeSearchRequest):
+    """L2 episodic memory: semantic search over episode summaries."""
     try:
         from brain.database.models import MemoryEpisode
-        from brain.database.session import async_session_factory
+        from brain.embeddings.constants import EMBEDDING_DIMENSION
+        from brain.embeddings.pgvector_sql import truncate_vector_for_index
         from brain.llm import get_embedding_provider
-        from sqlalchemy import select
 
-        query = body.get("query", "")
-        limit = min(int(body.get("limit", 10)), 50)
-        status_filter = body.get("status")
-
-        if not query:
-            raise HTTPException(status_code=400, detail="query is required")
-
-        embedder = get_embedding_provider()
-        query_vec = await embedder.embed(query)
+        query_vec = await get_embedding_provider().embed(body.query)
         if not query_vec:
             raise HTTPException(status_code=500, detail="Embedding failed")
+        query_vec = truncate_vector_for_index(list(query_vec), EMBEDDING_DIMENSION)
 
         async with async_session_factory() as session:
-            # pgvector cosine similarity search
             q = select(MemoryEpisode).where(MemoryEpisode.embedding.isnot(None))
-            if status_filter:
-                q = q.where(MemoryEpisode.status == status_filter)
-            # Order by cosine distance (closest first)
-            q = q.order_by(MemoryEpisode.embedding.cosine_distance(query_vec)).limit(limit)
-            result = await session.execute(q)
-            episodes = result.scalars().all()
+            if body.status:
+                q = q.where(MemoryEpisode.status == body.status)
+            q = q.order_by(MemoryEpisode.embedding.cosine_distance(query_vec)).limit(body.limit)
+            episodes = (await session.execute(q)).scalars().all()
             return [
                 {
                     "id": ep.id,
@@ -975,6 +961,41 @@ async def search_episodes(body: dict):
         raise HTTPException(status_code=500, detail="Episode search failed") from exc
 
 
+async def _decide_episode(episode_id: int, body: Optional[EpisodeDecisionRequest], *, approve: bool) -> dict:
+    from brain.memory.consolidation import EpisodeStateError, approve_episode, reject_episode
+
+    reason = body.reason if body else None
+    try:
+        if approve:
+            return await approve_episode(episode_id, reason)
+        return await reject_episode(episode_id, reason)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except EpisodeStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Episode decision failed for {episode_id}: {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Episode decision failed") from exc
+
+
+@router.post(
+    "/episodes/{episode_id}/approve",
+    dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))],
+)
+async def approve_pending_episode(episode_id: int, body: Optional[EpisodeDecisionRequest] = None):
+    """Promote a pending (needs_approval) L2 episode into an L3 learning."""
+    return await _decide_episode(episode_id, body, approve=True)
+
+
+@router.post(
+    "/episodes/{episode_id}/reject",
+    dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))],
+)
+async def reject_pending_episode(episode_id: int, body: Optional[EpisodeDecisionRequest] = None):
+    """Reject a pending L2 episode."""
+    return await _decide_episode(episode_id, body, approve=False)
+
+
 # === L4 Procedural Memory: Skills Registry ===
 
 @router.get("/skills", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
@@ -982,15 +1003,13 @@ async def get_skills(status: Optional[str] = "active", limit: int = 50):
     """L4 procedural memory: list learned skills and workflows."""
     try:
         from brain.database.models import MemorySkill
-        from brain.database.session import async_session_factory
-        from sqlalchemy import select, desc
+        from sqlalchemy import desc
 
         async with async_session_factory() as session:
             q = select(MemorySkill).order_by(desc(MemorySkill.confidence)).limit(limit)
             if status:
                 q = q.where(MemorySkill.status == status)
-            result = await session.execute(q)
-            skills = result.scalars().all()
+            skills = (await session.execute(q)).scalars().all()
             return [
                 {
                     "id": s.id,
@@ -1012,48 +1031,39 @@ async def get_skills(status: Optional[str] = "active", limit: int = 50):
 
 
 @router.post("/skills", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def create_skill(body: dict):
-    """L4 procedural memory: register a new skill/workflow.
-
-    Body: {"name": "...", "description": "...", "triggers": [...],
-           "workflow": [...], "confidence": 0.5}
-    """
+async def create_skill(body: SkillCreate):
+    """L4 procedural memory: register a new skill/workflow."""
     try:
         from brain.database.models import MemorySkill
-        from brain.database.session import async_session_factory
         from brain.llm import get_embedding_provider
 
-        name = body.get("name", "").strip()
-        description = body.get("description", "").strip()
+        name = body.name.strip()
+        description = body.description.strip()
         if not name or not description:
             raise HTTPException(status_code=400, detail="name and description are required")
 
         async with async_session_factory() as session:
-            # Check for duplicate name
-            from sqlalchemy import select
             existing = await session.execute(select(MemorySkill).where(MemorySkill.name == name))
             if existing.scalar_one_or_none():
                 raise HTTPException(status_code=409, detail=f"Skill '{name}' already exists")
 
-            # Generate embedding for semantic skill matching
             embedding = None
             try:
-                embedder = get_embedding_provider()
-                vec = await embedder.embed(f"{name}: {description}")
+                vec = await get_embedding_provider().embed(f"{name}: {description}")
                 embedding = list(vec) if vec else None
-            except Exception:
-                pass
+            except Exception as emb_exc:
+                logger.warning(f"Skill embedding failed, storing NULL: {emb_exc}")
 
             skill = MemorySkill(
                 name=name,
                 description=description,
-                triggers=body.get("triggers", []),
-                workflow=body.get("workflow", []),
-                source_episode_ids=body.get("source_episode_ids", []),
-                source_learning_ids=body.get("source_learning_ids", []),
-                confidence=float(body.get("confidence", 0.5)),
+                triggers=body.triggers,
+                workflow=body.workflow,
+                source_episode_ids=body.source_episode_ids,
+                source_learning_ids=body.source_learning_ids,
+                confidence=body.confidence,
                 embedding=embedding,
-                repo_scope=body.get("repo_scope"),
+                repo_scope=body.repo_scope,
             )
             session.add(skill)
             await session.commit()
@@ -1066,25 +1076,13 @@ async def create_skill(body: dict):
 
 
 @router.post("/skills/match", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def match_skills(body: dict):
-    """L4 procedural memory: find skills relevant to a task description.
-
-    Body: {"query": "...", "limit": 5}
-    Uses embedding similarity + trigger keyword matching.
-    """
+async def match_skills(body: SkillMatchRequest):
+    """L4 procedural memory: find skills relevant to a task (embedding order, trigger re-rank)."""
     try:
         from brain.database.models import MemorySkill
-        from brain.database.session import async_session_factory
         from brain.llm import get_embedding_provider
-        from sqlalchemy import select
 
-        query = body.get("query", "")
-        limit = min(int(body.get("limit", 5)), 20)
-        if not query:
-            raise HTTPException(status_code=400, detail="query is required")
-
-        embedder = get_embedding_provider()
-        query_vec = await embedder.embed(query)
+        query_vec = await get_embedding_provider().embed(body.query)
 
         async with async_session_factory() as session:
             q = select(MemorySkill).where(
@@ -1093,19 +1091,16 @@ async def match_skills(body: dict):
             )
             if query_vec:
                 q = q.order_by(MemorySkill.embedding.cosine_distance(query_vec))
-            q = q.limit(limit * 2)  # over-fetch for trigger re-ranking
-            result = await session.execute(q)
-            skills = result.scalars().all()
+            q = q.limit(body.limit * 2)  # over-fetch for trigger re-ranking
+            skills = (await session.execute(q)).scalars().all()
 
-            # Re-rank: boost skills whose triggers match query keywords
-            query_lower = query.lower()
+            query_lower = body.query.lower()
             scored = []
             for s in skills:
                 score = 0.0
                 for trigger in (s.triggers or []):
                     if trigger.lower() in query_lower:
                         score += 1.0
-                # Success rate bonus
                 if s.times_used > 0:
                     score += (s.times_successful / s.times_used) * 0.5
                 scored.append((score, s))
@@ -1120,7 +1115,7 @@ async def match_skills(body: dict):
                     "confidence": s.confidence,
                     "trigger_score": score,
                 }
-                for score, s in scored[:limit]
+                for score, s in scored[: body.limit]
             ]
     except HTTPException:
         raise
