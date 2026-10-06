@@ -99,3 +99,44 @@ def test_episode_decision_maps_errors(error, status):
 
 def test_episode_decision_requires_write_scope_key():
     assert client.post("/episodes/5/approve").status_code == 401
+
+
+def test_get_skills_caps_limit():
+    with patch("brain.memory.skill_store.list_skills", new=AsyncMock(return_value=[])):
+        assert client.get("/skills?limit=200", headers=HEADERS).status_code == 200
+        assert client.get("/skills?limit=201", headers=HEADERS).status_code == 422
+        assert client.get("/skills?limit=0", headers=HEADERS).status_code == 422
+
+
+def test_skills_match_forwards_repo_path():
+    match = AsyncMock(return_value=[])
+    with patch("brain.memory.skill_store.match_skills", new=match):
+        response = client.post(
+            "/skills/match",
+            json={"query": "deploy", "repo_path": "/repos/x", "limit": 7},
+            headers=HEADERS,
+        )
+    assert response.status_code == 200
+    match.assert_awaited_once_with("deploy", repo_scope="/repos/x", limit=7)
+
+
+def test_skills_match_rejects_oversized_repo_path():
+    response = client.post(
+        "/skills/match",
+        json={"query": "deploy", "repo_path": "x" * 1025},
+        headers=HEADERS,
+    )
+    assert response.status_code == 422
+
+
+def test_skills_conflict_maps_to_409():
+    from brain.memory.skill_store import SkillConflictError
+
+    create = AsyncMock(side_effect=SkillConflictError("Skill 'dup' already exists"))
+    with patch("brain.memory.skill_store.create_skill", new=create):
+        response = client.post(
+            "/skills",
+            json={"name": "dup", "description": "d"},
+            headers=HEADERS,
+        )
+    assert response.status_code == 409
