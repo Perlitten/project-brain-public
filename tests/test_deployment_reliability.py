@@ -492,7 +492,6 @@ def test_image_manifest_digest_matches_canonical_build_input_digest(tmp_path):
         "brain",
         "apps",
         "rules",
-        "n8n",
         "eval",
         "scripts/write_source_manifest.py",
         "scripts/validate_lfm_release_gate.py",
@@ -652,7 +651,7 @@ def test_release_image_retention_runs_after_health_and_preserves_the_rollback_wi
 
     prune_at = script.index("prune_old_release_images \\\n")
     assert prune_at > script.index("==> HEALTH OK")
-    assert prune_at > script.index("==> N8N HEALTH OK")
+    assert prune_at > script.index("==> Scheduler state")
     # Fail-safe: the call sits in an `||` context so `set -e` cannot turn a
     # cleanup error into a failed deploy.
     assert "prune_old_release_images \\\n    || echo" in script

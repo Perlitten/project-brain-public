@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     AGENT_IMPACT_DEADLINE_S: float = 10.0
     REPORT_OUTPUT_DIR: Optional[str] = None
 
-    # Orchestration API (n8n / external triggers)
+    # Orchestration API (scheduler, GitHub Actions, external triggers)
     PROJECT_BRAIN_API_KEY: Optional[str] = None
     # Mirrors nginx `client_max_body_size 25m` for deployments that expose
     # uvicorn directly (docker compose publishes 8000 without the proxy).
@@ -338,10 +338,29 @@ class Settings(BaseSettings):
     TELEGRAM_ALERT_TIMEOUT_S: float = 20.0
     BRAIN_TELEGRAM_DEFAULT_REPO: Optional[str] = None
 
-    # n8n Orchestration
-    N8N_BASE_URL: str = "http://localhost:5678"
-    N8N_PUBLIC_URL: str = "http://localhost:5678"
-    N8N_API_KEY: Optional[str] = None
+    # In-process scheduler (brain/workers/scheduler.py), runs inside every worker.
+    SCHEDULER_ENABLED: bool = True
+    SCHEDULER_TICK_SECONDS: int = 30
+    # A slot missed while no worker ran still fires once if it is at most this old.
+    SCHEDULER_CATCHUP_WINDOW_S: int = 6 * 60 * 60
+    # /health turns degraded when a job's last success is older than its interval + this.
+    SCHEDULER_STALE_GRACE_S: int = 2 * 60 * 60
+    SCHEDULER_JOB_MAX_ATTEMPTS: int = 3
+    WORKER_RETRY_BASE_DELAY_S: int = 5
+    WORKER_RETRY_MAX_DELAY_S: int = 300
+    # Optional dead-man switch per scheduled job (e.g. healthchecks.io), hit on success.
+    DEADMAN_URL_NIGHTLY_MAINTENANCE: Optional[str] = None
+    DEADMAN_URL_HEALTH_CHECK: Optional[str] = None
+    DEADMAN_URL_SELF_DIAGNOSIS: Optional[str] = None
+    DEADMAN_URL_BENCHMARK: Optional[str] = None
+    # Post-merge reindex webhook (POST /webhooks/git-merge, called by GitHub Actions).
+    PROJECT_BRAIN_WEBHOOK_TOKEN: Optional[str] = None
+    # Only merges onto this ref enqueue a reindex. Default matches the branch
+    # project-brain-reindex.yml triggers on; the workflow posts $GITHUB_REF, so
+    # changing the trigger branch alone is enough unless the workflow is
+    # pinned to a different ref.
+    PROJECT_BRAIN_WEBHOOK_REF: str = "refs/heads/main"
+    PROJECT_BRAIN_GIT_REPO_PATH: str = "/app"
 
     @field_validator("POSTGRES_POOL_SIZE")
     @classmethod

@@ -1,9 +1,0 @@
-[Unit]
-Description=Project Brain n8n watchdog
-Wants=docker.service
-After=docker.service
-
-[Service]
-Type=oneshot
-WorkingDirectory=/opt/project-brain
-ExecStart=/opt/project-brain/deploy/brain_n8n_watchdog.sh

@@ -12,8 +12,8 @@ The production stack runs:
 - FastAPI app (`brain-api`) on loopback port `8010`
 - background worker (`brain-worker`)
 - Postgres + pgvector, Redis, Neo4j on an internal Docker network
-- n8n (`brain-n8n`) on loopback port `5680`
-- nginx + TLS in front of the API and n8n editor
+- the job scheduler inside `brain-worker` (no separate service)
+- nginx + TLS in front of the API
 
 ## 0. What Your Friend Needs
 
@@ -31,7 +31,6 @@ For a server IP `203.0.113.10`, nip.io hostnames can be:
 
 ```text
 brain.203.0.113.10.nip.io
-n8n.brain.203.0.113.10.nip.io
 ```
 
 ## 1. Server Bootstrap
@@ -150,12 +149,9 @@ Leave these values blank; `deploy/server_up.sh` generates strong secrets:
 POSTGRES_PASSWORD=
 NEO4J_PASSWORD=
 PROJECT_BRAIN_API_KEY=
-N8N_ENCRYPTION_KEY=
+PROJECT_BRAIN_WEBHOOK_TOKEN=
 ```
 
-`N8N_API_KEY` is optional. It only enables live n8n workflow introspection in the
-Brain web UI. Project Brain works without it and shows repo workflow
-definitions instead.
 
 ### Release gate
 
@@ -192,8 +188,7 @@ Expected:
 - `brain-redis` healthy
 - `brain-neo4j` healthy
 - `brain-api` healthy
-- `brain-worker` running
-- `brain-n8n` healthy
+- `brain-worker` running (logs show `Scheduler started`)
 
 Useful checks:
 
@@ -211,7 +206,6 @@ Read hostnames from `.env`:
 cd /opt/project-brain
 set -a && . ./.env && set +a
 echo "$BRAIN_PUBLIC_HOST"
-echo "$N8N_HOST"
 ```
 
 Install the Brain API vhost:
@@ -222,40 +216,16 @@ sudo sed -i "s/brain.example.com/${BRAIN_PUBLIC_HOST}/g" /etc/nginx/sites-availa
 sudo ln -sf /etc/nginx/sites-available/brain.conf /etc/nginx/sites-enabled/brain.conf
 ```
 
-Install the n8n editor vhost:
-
-```bash
-sudo cp deploy/nginx/brain-n8n.conf /etc/nginx/sites-available/brain-n8n.conf
-sudo sed -i "s/n8n.brain.example.com/${N8N_HOST}/g" /etc/nginx/sites-available/brain-n8n.conf
-sudo ln -sf /etc/nginx/sites-available/brain-n8n.conf /etc/nginx/sites-enabled/brain-n8n.conf
-```
-
-Protect the n8n editor with Basic Auth. This is separate from the Project Brain
-API key:
-
-```bash
-sudo htpasswd -c /etc/nginx/.htpasswd-brain brain
-```
-
-Validate and reload nginx:
-
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
 Issue TLS certificates:
 
 ```bash
 sudo certbot --nginx -d "$BRAIN_PUBLIC_HOST" --redirect
-sudo certbot --nginx -d "$N8N_HOST" --redirect
 ```
 
 Open:
 
 ```text
 https://<BRAIN_PUBLIC_HOST>/health
-https://<N8N_HOST>/
 ```
 
 The API host serves JSON only. The web UI is the separate Next.js app in
@@ -263,43 +233,22 @@ The API host serves JSON only. The web UI is the separate Next.js app in
 `/` advertises it and `/dashboard*` redirects there. Add the UI origin to
 `CORS_ALLOWED_ORIGINS`.
 
-## 5. Import n8n Workflows
+## 5. Scheduler (no setup needed)
 
-The repo contains workflow exports in `n8n/workflows/`:
-
-- `git-merge-reindex.json`
-- `nightly-health.json`
-- `nightly-proactive-insights.json`
-- `weekly-benchmark.json`
-- `indexing-error-notify.json`
-
-After the n8n editor opens over HTTPS, import them:
+Recurring jobs (nightly maintenance 00:30, health 02:00, self-diagnosis 03:30,
+weekly benchmark Mon 06:00, all UTC) are fired by the worker itself — see
+[ADR 013](docs/adr/013-worker-scheduler.md). Check it after the stack is up:
 
 ```bash
-cd /opt/project-brain
-set -a && . ./.env && set +a
-python3 scripts/import_n8n_workflows.py
+docker compose -f docker-compose.prod.yml logs worker | grep -E "Scheduler (started|fired)"
+curl -fsS -H "X-API-Key: $PROJECT_BRAIN_API_KEY" "http://127.0.0.1:${BRAIN_API_PORT:-8010}/scheduler/jobs"
 ```
 
-If n8n asks for first-run setup, complete the local owner setup in the editor,
-then rerun the import script. Workflow HTTP nodes call the internal Brain API at
-`http://api:8000` with `PROJECT_BRAIN_API_KEY` from the n8n container env.
+Post-merge reindex: set the GitHub repo variable `PROJECT_BRAIN_WEBHOOK_URL` to
+`https://<BRAIN_PUBLIC_HOST>/webhooks/git-merge` and the secret
+`PROJECT_BRAIN_WEBHOOK_TOKEN` to the value in `.env`.
 
-## 6. Install n8n Watchdog
-
-Docker healthchecks report unhealthy containers but do not restart them by
-themselves. Install the watchdog timer:
-
-```bash
-sudo cp deploy/systemd/brain-n8n-watchdog.service /etc/systemd/system/
-sudo cp deploy/systemd/brain-n8n-watchdog.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now brain-n8n-watchdog.timer
-systemctl list-timers brain-n8n-watchdog.timer
-```
-
-If you deployed somewhere other than `/opt/project-brain`, edit
-`deploy/systemd/brain-n8n-watchdog.service` before copying it.
+## 6. (removed) n8n watchdog — no longer needed
 
 ## 7. Index the Target Repo
 
@@ -434,7 +383,7 @@ explicitly only after taking backups.
 At minimum, back up:
 
 - `.env`
-- Docker named volumes: Postgres, Redis, Neo4j, n8n
+- Docker named volumes: Postgres, Redis, Neo4j
 - `reports/`
 - `context_packs/`
 
@@ -449,10 +398,9 @@ docker compose -f docker-compose.prod.yml exec postgres \
 
 - Never commit `.env`, `.secrets/`, `reports/`, or `context_packs/`. `.mcp.json`
   is tracked and must keep `${VAR}` references instead of a literal key.
-- Never put `PROJECT_BRAIN_API_KEY`, n8n Basic Auth password,
-  NVIDIA key, or n8n encryption key into docs/chat/issues.
+- Never put `PROJECT_BRAIN_API_KEY`, `PROJECT_BRAIN_WEBHOOK_TOKEN`,
+  or the NVIDIA key into docs/chat/issues.
 - The API host serves JSON only and authenticates with `X-API-Key`; the web UI
   is the separate `apps/web/` app. `/dashboard*` only redirects to `BRAIN_WEB_URL`.
-- n8n `/webhook/` and `/webhook-test/` are intentionally public at nginx level.
-  The workflows must authenticate calls into Brain with `PROJECT_BRAIN_API_KEY`
-  or their own trigger secret.
+- `POST /webhooks/git-merge` is reachable without an API key by design; it
+  requires `X-Project-Brain-Token` and fails closed when the token is unset.

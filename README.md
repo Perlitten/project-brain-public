@@ -56,7 +56,6 @@ The step-by-step guide with measured timings and troubleshooting is
 | Worker (background jobs) | your venv, or the `worker` container | — |
 | MCP server (stdio) | started by your AI client | — |
 | Web UI (Next.js, optional) | `apps/web`, Node 20+ | 3100 |
-| n8n (optional scheduling) | Docker | 5678 |
 
 ### Prerequisites
 
@@ -107,7 +106,7 @@ API auth is on by default: every call needs `X-API-Key` equal to
 anywhere.
 
 **Everything in Docker instead.** `docker compose up -d --build` also builds and
-starts the `api`, `worker` and `n8n` containers. The containers see only the
+starts the `api` and `worker` containers (the worker also runs the job scheduler). The containers see only the
 Project Brain checkout (`/app`); to index another repository from inside them,
 mount it into the `api` and `worker` services first.
 
@@ -252,7 +251,7 @@ Time-bound audit snapshots, archived design sources, and repository Task
 Contracts receive the same non-current authority treatment automatically; the
 live harness injects its exact active contract separately.
 
-**Brain Insights** is a proactive inbox backed by the worker queue and the `insights` database table, shown in the web UI. Manual scans enqueue `proactive_insights`; scheduled scans can be imported through n8n.
+**Brain Insights** is a proactive inbox backed by the worker queue and the `insights` database table, shown in the web UI. Manual scans enqueue `proactive_insights`; recurring jobs (nightly maintenance, health, self-diagnosis, weekly benchmark) are fired by the scheduler inside the worker — see Settings → Scheduler and [ADR 013](docs/adr/013-worker-scheduler.md).
 
 ---
 
@@ -330,7 +329,7 @@ Use, Cursor UI, Puppeteer vs Playwright) are documented in [`docs/tooling-gaps.m
 ## 8. Production Deployment
 
 Use [`DEPLOYMENT.md`](DEPLOYMENT.md) for the full git-safe self-host guide. It
-covers a fresh Ubuntu VPS, Docker Compose, nginx/TLS, n8n, repository mounts,
+covers a fresh Ubuntu VPS, Docker Compose, nginx/TLS, the worker scheduler, repository mounts,
 indexing, smoke tests, MCP client setup, backups, and safety rules. Day-2
 operations (release layout, upgrades, rollback) are in
 [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) and
@@ -342,7 +341,7 @@ If an AI coding agent will do the deployment, start with
 guide and includes command gates, failure playbooks, and a final report template.
 
 The production compose file is [`docker-compose.prod.yml`](docker-compose.prod.yml).
-It keeps Postgres, Redis, and Neo4j private to Docker, exposes the API and n8n on
+It keeps Postgres, Redis, and Neo4j private to Docker, exposes the API on
 loopback only, and expects nginx to terminate public HTTPS.
 
 Minimal server flow:
@@ -355,7 +354,7 @@ cd /opt/project-brain
 
 cp deploy/.env.prod.example .env
 chmod 600 .env
-# Fill BRAIN_PUBLIC_HOST, N8N_HOST, N8N_PUBLIC_URL, NVIDIA_API_KEY (or your provider key),
+# Fill BRAIN_PUBLIC_HOST, NVIDIA_API_KEY (or your provider key),
 # BRAIN_TARGET_REPO_DIR, and BRAIN_INDEXED_PROJECTS_DIR.
 
 bash deploy/server_up.sh

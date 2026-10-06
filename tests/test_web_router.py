@@ -239,10 +239,8 @@ def test_health_endpoint_shape():
     services = {"postgres": {"status": "healthy"}}
     with (
         patch.object(web, "check_health", AsyncMock(return_value=dict(services))),
-        patch.object(web, "check_n8n_health", AsyncMock(return_value={"status": "healthy"})),
-        patch.object(web, "get_n8n_workflows", AsyncMock(return_value={
-            "workflows": [{"name": "nightly"}], "source": "repo", "api_status": "disabled",
-            "api_error": None, "active_workflows_count": 1,
+        patch("brain.workers.scheduler.scheduler_status", AsyncMock(return_value={
+            "enabled": True, "stale": [], "jobs": [{"job_type": "health_check", "status": "ok"}],
         })),
         patch.object(web, "get_recent_brain_jobs", AsyncMock(return_value={
             "jobs": [{"id": "j", "type": "reindex", "status": "failed", "error": "boom"}], "error": None,
@@ -252,10 +250,10 @@ def test_health_endpoint_shape():
         response = client.get("/api/web/health")
     assert response.status_code == 200
     body = response.json()
-    assert set(body["services"]) == {"postgres", "n8n"}
+    assert set(body["services"]) == {"postgres"}
     orchestration = body["orchestration"]
-    assert orchestration["workflow_source"] == "repo"
-    assert orchestration["active_workflows_count"] == 1
+    assert "workflows" not in orchestration
+    assert orchestration["scheduler"]["jobs"][0]["job_type"] == "health_check"
     assert orchestration["recent_jobs"][0]["detail"] == "boom"
     assert orchestration["diagnostics"] == {"status": "ok"}
 

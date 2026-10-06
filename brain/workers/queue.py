@@ -114,7 +114,7 @@ def _json_serializer(obj: Any) -> str:
 
 
 class JobQueue:
-    """Thin Redis queue — separate prefix from n8n's own Redis usage."""
+    """Thin Redis queue over the worker prefix."""
 
     def __init__(self, redis: Redis, prefix: str = "brain:worker") -> None:
         self.redis = redis

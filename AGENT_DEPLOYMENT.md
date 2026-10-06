@@ -12,8 +12,7 @@ Success means:
 
 - Project Brain runs from `/opt/project-brain`.
 - API answers at `https://$BRAIN_PUBLIC_HOST/health`.
-- n8n editor opens at `https://$N8N_HOST/`.
-- Postgres, Redis, Neo4j, API, worker, and n8n are healthy.
+- Postgres, Redis, Neo4j, API, and worker are healthy; the worker logs `Scheduler started`.
 - Target repository is indexed and embeddings verify cleanly.
 - API smoke passes (health, authenticated read, 401 without a key).
 - MCP config can be generated for the owner's AI client.
@@ -32,8 +31,6 @@ VPS_SSH_USER=
 PROJECT_BRAIN_GIT_REMOTE=
 SERVER_IP_OR_DOMAIN=
 BRAIN_PUBLIC_HOST=
-N8N_HOST=
-N8N_PUBLIC_URL=
 CERTBOT_EMAIL=
 NVIDIA_API_KEY=
 TARGET_REPO_GIT_REMOTE=
@@ -45,8 +42,6 @@ Use nip.io if there is no DNS:
 
 ```text
 BRAIN_PUBLIC_HOST=brain.<server-ip>.nip.io
-N8N_HOST=n8n.brain.<server-ip>.nip.io
-N8N_PUBLIC_URL=https://n8n.brain.<server-ip>.nip.io/
 ```
 
 ## Hard Rules
@@ -57,9 +52,6 @@ N8N_PUBLIC_URL=https://n8n.brain.<server-ip>.nip.io/
 - Do not use stale hostnames, usernames, IPs, or local paths from another owner.
 - Do not expose Postgres, Redis, or Neo4j to the public internet.
 - Do not add nginx Basic Auth to the API vhost; the API authenticates with `X-API-Key`.
-- Keep n8n editor Basic Auth on the n8n vhost only.
-- Keep n8n `/webhook/` and `/webhook-test/` reachable at nginx level.
-- Do not set `N8N_API_KEY` unless the owner has generated one in n8n.
 - Do not claim production success until every gate below has passed.
 - If a command fails, stop and diagnose. Do not continue by assumption.
 
@@ -91,7 +83,7 @@ Run from the Project Brain repo before publishing or handing to another agent:
 ```bash
 python -m compileall apps brain scripts
 python -m brain.version
-python -m pytest -q tests/test_web_router.py tests/test_jobs_api.py tests/test_n8n_workflows.py
+python -m pytest -q tests/test_web_router.py tests/test_jobs_api.py tests/test_worker_scheduler.py
 ```
 
 Run the stale-project scan. It must print `DOCTOR OK`:
@@ -104,7 +96,7 @@ Run the secret-shape scan. Placeholder/test hits are acceptable only in
 `.env.example` and tests:
 
 ```bash
-rg -n "(nvapi-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}|BRAIN_DASHBOARD_PASSWORD=\\S{8,}|N8N_ENCRYPTION_KEY=\\S{8,}|NEO4J_PASSWORD=\\S{8,}|POSTGRES_PASSWORD=\\S{8,}|PROJECT_BRAIN_API_KEY=\\S{8,})" \
+rg -n "(nvapi-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}|BRAIN_DASHBOARD_PASSWORD=\\S{8,}|PROJECT_BRAIN_WEBHOOK_TOKEN=\\S{8,}|NEO4J_PASSWORD=\\S{8,}|POSTGRES_PASSWORD=\\S{8,}|PROJECT_BRAIN_API_KEY=\\S{8,})" \
   README.md AGENT_DEPLOYMENT.md DEPLOYMENT.md deploy .env.example .mcp.json.example \
   docker-compose.prod.yml apps brain scripts tests pyproject.toml
 ```
@@ -147,8 +139,6 @@ Replace placeholders:
 
 ```bash
 sed -i "s|^BRAIN_PUBLIC_HOST=.*|BRAIN_PUBLIC_HOST=${BRAIN_PUBLIC_HOST}|" .env
-sed -i "s|^N8N_HOST=.*|N8N_HOST=${N8N_HOST}|" .env
-sed -i "s|^N8N_PUBLIC_URL=.*|N8N_PUBLIC_URL=${N8N_PUBLIC_URL}|" .env
 sed -i "s|^BRAIN_TARGET_REPO_DIR=.*|BRAIN_TARGET_REPO_DIR=${TARGET_REPO_HOST_PATH}|" .env
 sed -i "s|^BRAIN_INDEXED_PROJECTS_DIR=.*|BRAIN_INDEXED_PROJECTS_DIR=${INDEXED_PROJECTS_HOST_PATH}|" .env
 ```
@@ -197,7 +187,6 @@ Gate:
 
 - compose config passes
 - `brain-api` local health passes
-- `brain-n8n` local health passes
 - containers are running or healthy
 
 ## Phase 4: nginx and TLS
@@ -211,10 +200,6 @@ sudo cp deploy/nginx/brain.conf /etc/nginx/sites-available/brain.conf
 sudo sed -i "s/brain.example.com/${BRAIN_PUBLIC_HOST}/g" /etc/nginx/sites-available/brain.conf
 sudo ln -sf /etc/nginx/sites-available/brain.conf /etc/nginx/sites-enabled/brain.conf
 
-sudo cp deploy/nginx/brain-n8n.conf /etc/nginx/sites-available/brain-n8n.conf
-sudo sed -i "s/n8n.brain.example.com/${N8N_HOST}/g" /etc/nginx/sites-available/brain-n8n.conf
-sudo ln -sf /etc/nginx/sites-available/brain-n8n.conf /etc/nginx/sites-enabled/brain-n8n.conf
-
 sudo htpasswd -c /etc/nginx/.htpasswd-brain brain
 sudo nginx -t
 sudo systemctl reload nginx
@@ -224,7 +209,6 @@ Issue TLS:
 
 ```bash
 sudo certbot --nginx -d "$BRAIN_PUBLIC_HOST" --redirect --agree-tos -m "$CERTBOT_EMAIL"
-sudo certbot --nginx -d "$N8N_HOST" --redirect --agree-tos -m "$CERTBOT_EMAIL"
 ```
 
 Run public checks:
@@ -235,23 +219,13 @@ bash deploy/doctor.sh public
 
 Gate: public check must print `DOCTOR OK`.
 
-## Phase 5: n8n Workflows
+## Phase 5: Scheduler and post-merge webhook
 
-Open `https://$N8N_HOST/`, complete first-run setup if n8n asks, then:
-
-```bash
-set -a && . ./.env && set +a
-python3 scripts/import_n8n_workflows.py
-```
-
-Do not configure `N8N_API_KEY` unless the owner creates it in the n8n UI.
-
-For the repository-owned reindex workflow, configure the public webhook URL as
-a GitHub Actions repository variable rather than committing a server identity:
+No setup: the worker runs the scheduler. Point the reindex workflow at the API:
 
 ```bash
 gh variable set PROJECT_BRAIN_WEBHOOK_URL \
-  --body "https://${N8N_HOST}/webhook/git-merge"
+  --body "https://${BRAIN_PUBLIC_HOST}/webhooks/git-merge"
 ```
 
 Keep `PROJECT_BRAIN_WEBHOOK_TOKEN` in GitHub Actions secrets. Both values are
@@ -350,16 +324,14 @@ API health fails:
 - Check Postgres, Redis, and Neo4j container health.
 - Do not expose database ports to debug.
 
-n8n health fails:
+Scheduled jobs overdue (`/health` → `degraded`):
 
-- Run `docker compose -f docker-compose.prod.yml logs --tail 100 n8n`.
-- Check `N8N_HOST`, `N8N_PUBLIC_URL`, and `N8N_ENCRYPTION_KEY`.
-- Keep n8n behind loopback and nginx.
+- Run `docker compose -f docker-compose.prod.yml logs --tail 100 worker | grep Scheduler`.
+- Check `SCHEDULER_ENABLED` and `GET /scheduler/jobs` for `last_error`.
 
 Raw nginx 401 appears on the API host:
 
 - Remove Basic Auth from the Brain API vhost.
-- Keep Basic Auth only on the n8n vhost.
 - Run `sudo nginx -t && sudo systemctl reload nginx`.
 
 Certbot fails:
@@ -383,7 +355,6 @@ Deployment status: PASS|FAIL
 Project Brain version: 0.2.0
 Server path: /opt/project-brain
 Brain URL: https://...
-n8n URL: https://...
 Target repo mounted as: /repo
 
 Checks:
@@ -392,9 +363,8 @@ Checks:
 - deploy/doctor.sh post-start: PASS|FAIL
 - nginx -t: PASS|FAIL
 - certbot Brain host: PASS|FAIL
-- certbot n8n host: PASS|FAIL
 - deploy/doctor.sh public: PASS|FAIL
-- workflow import: PASS|FAIL|SKIPPED
+- scheduler firing (worker log + /scheduler/jobs): PASS|FAIL
 - index /repo: PASS|FAIL
 - embeddings verify /repo: PASS|FAIL
 - proactive insight smoke: PASS|FAIL

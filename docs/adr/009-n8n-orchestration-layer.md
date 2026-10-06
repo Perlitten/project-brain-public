@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted — Phase 9 foundation
+Superseded by [ADR 013](013-worker-scheduler.md) (2026-10-06) — n8n removed; scheduling runs inside the worker.
+
+Previously: Accepted — Phase 9 foundation
 
 ## Context
 

@@ -3527,33 +3527,52 @@
     },
     {
       "id": "q047",
-      "question": "Which checked-in n8n workflows trigger nightly health, proactive insights, git reindex, and the weekly benchmark?",
+      "question": "Where are the nightly and weekly maintenance jobs scheduled now that n8n is gone, and which API route reports their status and receives the git-merge reindex trigger?",
       "expect_files": [
-        "n8n/workflows/nightly-health.json",
-        "n8n/workflows/nightly-proactive-insights.json",
-        "n8n/workflows/git-merge-reindex.json",
-        "n8n/workflows/weekly-benchmark.json"
+        "brain/workers/scheduler.py",
+        "apps/api/routers/scheduler.py"
       ],
       "expect_symbols": [
-        "nightly-health"
+        "SCHEDULES",
+        "Cron",
+        "tick",
+        "get_scheduler_jobs",
+        "git_merge_webhook"
       ],
       "expect_ranges": [
         [
-          "n8n/workflows/nightly-health.json",
-          1,
-          30
+          "brain/workers/scheduler.py",
+          39,
+          64
+        ],
+        [
+          "brain/workers/scheduler.py",
+          184,
+          221
+        ],
+        [
+          "apps/api/routers/scheduler.py",
+          28,
+          37
+        ],
+        [
+          "apps/api/routers/scheduler.py",
+          66,
+          100
         ]
       ],
       "required_assertions": [
-        "name",
-        "nodes",
-        "connections"
+        "30 0 * * *",
+        "0 6 * * 1",
+        "/scheduler/jobs",
+        "/webhooks/git-merge",
+        "SCHEDULER_CATCHUP_WINDOW_S"
       ],
       "category": "known_symbol",
       "language": "en",
       "provenance": {
         "kind": "curated",
-        "source": "Enriched from n8n orchestration ADR",
+        "source": "Repointed to the in-process scheduler that replaced n8n",
         "production_real": false,
         "original_provenance": {
           "kind": "curated_synthetic",
@@ -3561,7 +3580,7 @@
           "production_real": false
         },
         "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
-        "corpus_revision": "web-migration-2026-10-02"
+        "corpus_revision": "n8n-removal-2026-10-06"
       }
     },
     {
@@ -3778,8 +3797,8 @@
   ],
   "repository": {
     "name": "Perlitten/Brain",
-    "pinned_commit": "92a4cd3a3a61415fee7e1077558cb6a959eeae1b",
-    "pinned_ref": "reviewed web-migration source"
+    "pinned_commit": "8a71f8d62a73d3e112280a90d42d76c29fab747a",
+    "pinned_ref": "n8n-removal source"
   },
   "category_split": {
     "unknown_location": 15,

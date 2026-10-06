@@ -2,7 +2,9 @@ name: Project Brain Reindex
 
 on:
   push:
-    branches: [master]
+    # Merges land on `main`; the posted ref is the real pushed ref
+    # ($GITHUB_REF), so it can never drift from this trigger again.
+    branches: [main]
 
 permissions:
   contents: read
@@ -23,9 +25,11 @@ jobs:
         run: |
           test -n "$PROJECT_BRAIN_WEBHOOK_TOKEN"
           test -n "$PROJECT_BRAIN_WEBHOOK_URL"
+          body="{\"ref\":\"${GITHUB_REF}\",\"sha\":\"${GITHUB_SHA}\"}"
+          signature="sha256=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$PROJECT_BRAIN_WEBHOOK_TOKEN" -r | awk '{print $1}')"
           curl --fail-with-body --silent --show-error \
             --retry 3 --retry-all-errors --max-time 45 \
             -H "Content-Type: application/json" \
-            -H "X-Project-Brain-Token: $PROJECT_BRAIN_WEBHOOK_TOKEN" \
-            --data "{\"ref\":\"refs/heads/master\",\"sha\":\"${GITHUB_SHA}\"}" \
+            -H "X-Hub-Signature-256: $signature" \
+            --data "$body" \
             "$PROJECT_BRAIN_WEBHOOK_URL"

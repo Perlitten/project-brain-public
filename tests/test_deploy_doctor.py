@@ -78,7 +78,7 @@ def test_stale_scan_ignores_local_secret_files_but_not_tracked_content(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="deployment doctor runs on Linux hosts")
-def test_public_check_accepts_the_required_n8n_basic_auth_boundary(
+def test_public_check_needs_no_n8n_host(
     tmp_path: Path,
 ) -> None:
     source = Path(__file__).resolve().parents[1] / "deploy" / "doctor.sh"
@@ -87,7 +87,7 @@ def test_public_check_accepts_the_required_n8n_basic_auth_boundary(
     doctor = deploy_dir / "doctor.sh"
     shutil.copy2(source, doctor)
     (tmp_path / ".env").write_text(
-        "BRAIN_PUBLIC_HOST=brain.example.test\nN8N_HOST=n8n.example.test\n",
+        "BRAIN_PUBLIC_HOST=brain.example.test\n",
         encoding="utf-8",
     )
 
@@ -98,7 +98,7 @@ def test_public_check_accepts_the_required_n8n_basic_auth_boundary(
     fake_getent.chmod(0o755)
     fake_curl = bin_dir / "curl"
     fake_curl.write_text(
-        "#!/usr/bin/env bash\ncase \"$*\" in\n  *n8n.example.test*) printf '401' ;;\n  *) exit 0 ;;\nesac\n",
+        "#!/usr/bin/env bash\nexit 0\n",
         encoding="utf-8",
     )
     fake_curl.chmod(0o755)
@@ -112,4 +112,5 @@ def test_public_check_accepts_the_required_n8n_basic_auth_boundary(
         env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
     )
     assert result.returncode == 0, result.stderr
-    assert "public n8n host reachable and auth-protected" in result.stdout
+    assert "public API reachable" in result.stdout
+    assert "n8n" not in result.stdout.lower()

@@ -65,8 +65,6 @@ jobs:
       DEFAULT_LLM_PROVIDER: mock
       DEFAULT_EMBEDDING_PROVIDER: mock
       EMBEDDING_DIMENSION: 1536
-      N8N_BASE_URL: http://127.0.0.1:1
-      N8N_PUBLIC_URL: http://127.0.0.1:1
       TARGET_REPO_PATH: .
       REPO_ROOT: .
 

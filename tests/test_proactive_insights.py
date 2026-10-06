@@ -26,7 +26,6 @@ def test_deterministic_insights_detect_embedding_gap():
             "postgres": {"status": "healthy"},
             "redis": {"status": "healthy"},
             "neo4j": {"status": "healthy"},
-            "n8n": {"status": "healthy"},
         },
         "counts": {"files": 12, "chunks": 40, "rules": 2, "decisions": 1},
         "embeddings": {
@@ -102,7 +101,6 @@ async def test_evaluator_report_is_parseable_and_does_not_trigger_missing_qualit
             "postgres": {"status": "healthy"},
             "redis": {"status": "healthy"},
             "neo4j": {"status": "healthy"},
-            "n8n": {"status": "healthy"},
         },
         "evaluation": metrics,
     }
@@ -119,7 +117,6 @@ async def test_generate_proactive_insights_uses_deterministic_fallback_without_l
             "postgres": {"status": "healthy"},
             "redis": {"status": "healthy"},
             "neo4j": {"status": "healthy"},
-            "n8n": {"status": "healthy"},
         },
         "counts": {"files": 1, "chunks": 1, "rules": 1, "decisions": 1},
         "embeddings": {
@@ -148,7 +145,6 @@ async def test_generate_proactive_insights_can_use_mock_llm():
             "postgres": {"status": "healthy"},
             "redis": {"status": "healthy"},
             "neo4j": {"status": "healthy"},
-            "n8n": {"status": "healthy"},
         },
         "counts": {"files": 1, "chunks": 1, "rules": 1, "decisions": 1},
         "embeddings": {
@@ -227,7 +223,7 @@ async def test_trigger_context_is_visible_to_deterministic_and_llm_stages():
         "reports": [{"name": "audit.md"}],
     }
     trigger = {
-        "source": "n8n_error",
+        "source": "job_failure",
         "summary": "Weekly benchmark failed.",
         "reference": "weekly:42",
     }
@@ -266,7 +262,7 @@ async def test_scheduled_trigger_does_not_claim_an_automation_failure():
         "reports": [{"name": "audit.md"}],
     }
     trigger = {
-        "source": "n8n_schedule",
+        "source": "scheduler",
         "summary": "Nightly diagnostic scan.",
         "reference": "nightly:42",
     }
