@@ -1,5 +1,6 @@
 """Tests for the L2 consolidation pipeline gates (G1–G4)."""
 
+import hashlib
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -31,8 +32,10 @@ def _orthogonal_embedder():
     """Embedder returning near-orthogonal vectors for distinct texts."""
 
     async def embed(text, **kwargs):
-        # Deterministic pseudo-vector from text hash: similar texts collide.
-        h = abs(hash(text)) % 1000
+        # Deterministic pseudo-vector from a stable digest: blake2b is the
+        # same in every process, unlike hash() which varies with
+        # PYTHONHASHSEED and made this test fail on ~1/8 of CI runs.
+        h = int.from_bytes(hashlib.blake2b(text.encode("utf-8"), digest_size=8).digest(), "big") % 1000
         return [1.0 if i == h % 16 else 0.0 for i in range(16)]
 
     async def embed_batch(texts, **kwargs):

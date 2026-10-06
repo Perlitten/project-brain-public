@@ -22,6 +22,7 @@ The API must be running. Review tasks need a clean worktree and create
 """
 
 import argparse
+import asyncio
 import json
 import os
 import subprocess
@@ -31,6 +32,47 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from metrics import detection, hit_rate, mean, mrr, noise_ratio, percentile  # noqa: E402
+
+_ENC = None
+
+
+def count_tokens(text: str) -> int:
+    """Real token count (cl100k_base), not a chars/4 estimate."""
+    global _ENC
+    if _ENC is None:
+        import tiktoken
+
+        _ENC = tiktoken.get_encoding("cl100k_base")
+    return len(_ENC.encode(text))
+
+
+def _env_value(repo, key):
+    value = os.environ.get(key)
+    if value:
+        return value.strip()
+    env_path = os.path.join(repo, ".env")
+    if os.path.exists(env_path):
+        for line in open(env_path):
+            if line.startswith(f"{key}="):
+                return line.split("=", 1)[1].strip()
+    return None
+
+
+async def _db_connect(repo):
+    """Direct Postgres connection to the database behind the API under test.
+
+    The benchmark runs on the same host as the API, so it can verify and
+    clean up the rows the API serves — L2 episodes have no write/delete API.
+    """
+    import asyncpg
+
+    return await asyncpg.connect(
+        host=_env_value(repo, "POSTGRES_HOST") or "localhost",
+        port=int(_env_value(repo, "POSTGRES_PORT") or "5433"),
+        user=_env_value(repo, "POSTGRES_USER") or "postgres",
+        password=_env_value(repo, "POSTGRES_PASSWORD") or "postgres_password",
+        database=_env_value(repo, "POSTGRES_DB") or "brain_db",
+    )
 
 # Harsh benchmark: hard latency SLA per endpoint (seconds).
 # A task FAILS if it exceeds its SLA, regardless of quality metrics.
@@ -110,21 +152,20 @@ def run_context(api_url, api_key, repo, task):
     # Token economy: compare harness response size vs naive full-file reads.
     # Naive baseline: agent reads all must_have + nice_to_have files fully.
     # Harness: curated candidates with summaries (the actual API response).
-    # Savings = 1 - harness_tokens / naive_tokens.
+    # Savings = 1 - harness_tokens / naive_tokens, counted with a real
+    # tokenizer (cl100k_base) — not a bytes/4 estimate.
     try:
-        naive_chars = 0
+        naive_tokens = 0
         for f in set(must) | set(nice):
             fp = os.path.join(repo, f)
             if os.path.isfile(fp):
-                naive_chars += os.path.getsize(fp)
-        harness_chars = len(json.dumps(data))
-        # Rough: 4 chars per token.
-        naive_tokens = naive_chars / 4
-        harness_tokens = harness_chars / 4
+                with open(fp, encoding="utf-8", errors="ignore") as fh:
+                    naive_tokens += count_tokens(fh.read())
+        harness_tokens = count_tokens(json.dumps(data))
         if naive_tokens > 0:
             metrics["token_savings_ratio"] = round(1 - harness_tokens / naive_tokens, 3)
-            metrics["naive_tokens_est"] = int(naive_tokens)
-            metrics["harness_tokens_est"] = int(harness_tokens)
+            metrics["naive_tokens"] = naive_tokens
+            metrics["harness_tokens"] = harness_tokens
     except Exception:
         pass
     # Adversarial: query with no good answer (e.g. Kubernetes for a Python
@@ -169,60 +210,232 @@ def run_impact(api_url, api_key, repo, task):
     }
 
 
-def run_episodic(api_url, api_key, repo, task):
-    """Test L2 episodic memory: persistence, retrieval, lifecycle."""
-    import urllib.request
+BENCH_EPISODE_TOPIC = "bench-episode"
 
+
+async def _embed_for_api(text):
+    """Embed with the same provider + column shape the API uses.
+
+    The benchmark runner shares the repo's .env with the API it tests, so
+    get_embedding_provider() resolves to the same backend.
+    """
+    from brain.embeddings.constants import EMBEDDING_DIMENSION
+    from brain.embeddings.pgvector_sql import truncate_vector_for_index
+    from brain.llm import get_embedding_provider
+
+    vec = await get_embedding_provider().embed(text)
+    if not vec:
+        raise RuntimeError("embedding provider returned no vector")
+    return truncate_vector_for_index(list(vec), EMBEDDING_DIMENSION)
+
+
+def _pgvector_literal(vec) -> str:
+    return "[" + ",".join(repr(float(v)) for v in vec) + "]"
+
+
+async def _l2_lifecycle(api_url, api_key, repo):
+    """l2-001: plant an episode via direct DB insert, verify the full
+    status lifecycle through GET /episodes, then remove it."""
+    marker = f"bench-l2-{int(time.time())}-{os.getpid()}"
+    summary = f"Benchmark L2 probe {marker}: lifecycle persistence check."
+    conn = await _db_connect(repo)
+    episode_id = None
+    checks = {}
+    try:
+        episode_id = await conn.fetchval(
+            "INSERT INTO memory_episodes "
+            "(source_event_ids, distilled_summary, topic, status, confidence, repo_scope) "
+            "VALUES ('[]'::jsonb, $1, $2, 'pending', 0.7, $3) RETURNING id",
+            summary,
+            BENCH_EPISODE_TOPIC,
+            repo,
+        )
+        listed = api_get(api_url, api_key, "/episodes?limit=200")
+        mine = next((e for e in listed if e.get("id") == episode_id), None)
+        checks["listed"] = mine is not None
+        checks["fields_correct"] = bool(
+            mine
+            and mine.get("status") == "pending"
+            and mine.get("distilled_summary") == summary
+            and mine.get("topic") == BENCH_EPISODE_TOPIC
+        )
+        pending_only = api_get(api_url, api_key, "/episodes?status=pending&limit=200")
+        checks["pending_filter_includes"] = any(e.get("id") == episode_id for e in pending_only)
+
+        # Lifecycle: pending -> promoted via direct update (no API for this).
+        await conn.execute(
+            "UPDATE memory_episodes SET status = 'promoted' WHERE id = $1", episode_id
+        )
+        promoted = api_get(api_url, api_key, "/episodes?status=promoted&limit=200")
+        pending_after = api_get(api_url, api_key, "/episodes?status=pending&limit=200")
+        checks["promoted_filter_includes"] = any(e.get("id") == episode_id for e in promoted)
+        checks["pending_filter_excludes"] = all(e.get("id") != episode_id for e in pending_after)
+    finally:
+        if episode_id is not None:
+            await conn.execute("DELETE FROM memory_episodes WHERE id = $1", episode_id)
+        await conn.close()
+    return checks
+
+
+async def _l2_semantic_search(api_url, api_key, repo, task):
+    """l2-002: plant episodes with real embeddings and distinct topics,
+    verify /episodes/search ranks the matching one first and can return
+    nothing for an unrelated control query."""
+    marker = int(time.time())
+    # Target is inserted LAST: a search that returned insertion order would
+    # rank it last, so `target_ranked_first` only passes on real similarity.
+    probes = [
+        (f"bench-l2s-backup-{marker}",
+         "Nightly pg_dump archives are written to the workspace backups directory."),
+        (f"bench-l2s-graph-{marker}",
+         "The Neo4j graph is rebuilt by the reindex job after data loss."),
+        (f"bench-l2s-restart-{marker}",
+         "Operators restart the Brain API with the brain-env.sh wrapper script."),
+    ]
+    conn = await _db_connect(repo)
+    ids = []
+    checks = {}
+    try:
+        for name, summary in probes:
+            vec = await _embed_for_api(summary)
+            row = await conn.fetchval(
+                "INSERT INTO memory_episodes "
+                "(source_event_ids, distilled_summary, topic, status, confidence, embedding, repo_scope) "
+                "VALUES ('[]'::jsonb, $1, $2, 'promoted', 0.7, $3::vector, $4) RETURNING id",
+                summary,
+                BENCH_EPISODE_TOPIC,
+                _pgvector_literal(vec),
+                repo,
+            )
+            ids.append((row, name, summary))
+
+        query = task.get("query", "")
+        results = api_post(api_url, api_key, "/episodes/search", {"query": query, "limit": 10})
+        ranked_ids = [r.get("id") for r in results]
+        target_id = ids[2][0]  # restart probe, inserted last
+        checks["target_ranked_first"] = bool(ranked_ids) and ranked_ids[0] == target_id
+        checks["distractor_not_first"] = ranked_ids[:1] != [ids[0][0]] and ranked_ids[:1] != [ids[1][0]]
+
+        # Control: an unrelated query must not surface the restart probe on top
+        # (guards against "return everything in INSERT order").
+        control = api_post(
+            api_url, api_key, "/episodes/search",
+            {"query": "zebra migration patterns in the Serengeti", "limit": 10},
+        )
+        checks["control_does_not_rank_target_first"] = not (
+            control and control[0].get("id") == target_id
+        )
+        checks["results_returned"] = len(ranked_ids)
+    finally:
+        if ids:
+            await conn.execute(
+                "DELETE FROM memory_episodes WHERE id = ANY($1::bigint[])", [r[0] for r in ids]
+            )
+        await conn.close()
+    return checks
+
+
+def run_episodic(api_url, api_key, repo, task):
+    """Test L2 episodic memory with real rows: plant via DB, verify via API,
+    delete. A task only passes when the API reflects the planted content."""
     task_id = task["id"]
-    if task_id == "l2-001":
-        # Test episode persistence via direct DB insert + API retrieval.
-        # We use the API to verify the storage layer works end-to-end.
-        try:
-            # GET /episodes should work (even if empty)
-            data = api_get(api_url, api_key, "/episodes?limit=5")
-            episodes = data if isinstance(data, list) else []
-            # The API works if we get a list back
-            passed = isinstance(episodes, list)
+    try:
+        if task_id == "l2-001":
+            checks = asyncio.run(_l2_lifecycle(api_url, api_key, repo))
+            passed = all(checks.values())
             return {
                 "passed": passed,
-                "metrics": {
-                    "l2_persistence": 1.0 if passed else 0.0,
-                    "episodes_found": len(episodes),
-                },
+                "metrics": {"l2_persistence": 1.0 if passed else 0.0},
+                "checks": checks,
             }
-        except Exception as e:
-            return {"error": f"{type(e).__name__}: {e}", "metrics": {"l2_persistence": 0.0}}
-    elif task_id == "l2-002":
-        # Test semantic search over episodes.
-        try:
-            data = api_post(api_url, api_key, "/episodes/search", {
-                "query": task.get("query", "test"),
-                "limit": 5,
-            })
-            results = data if isinstance(data, list) else []
-            passed = isinstance(results, list)
+        elif task_id == "l2-002":
+            checks = asyncio.run(_l2_semantic_search(api_url, api_key, repo, task))
+            ranked_ok = checks.get("target_ranked_first") and checks.get("distractor_not_first")
+            passed = bool(ranked_ok and checks.get("control_does_not_rank_target_first"))
             return {
                 "passed": passed,
-                "metrics": {
-                    "l2_search": 1.0 if passed else 0.0,
-                    "results_found": len(results),
-                },
+                "metrics": {"l2_search": 1.0 if passed else 0.0},
+                "checks": checks,
             }
-        except Exception as e:
-            return {"error": f"{type(e).__name__}: {e}", "metrics": {"l2_search": 0.0}}
+    except Exception as e:
+        metric = "l2_persistence" if task_id == "l2-001" else "l2_search"
+        return {"error": f"{type(e).__name__}: {e}", "metrics": {metric: 0.0}}
     return {"skipped": f"unknown episodic task {task_id}"}
 
 
+# Fixture corpus for l4-002, seeded once per benchmark run by
+# seed_l4_fixtures() (before the procedural tasks run) and deleted by
+# cleanup_l4_fixtures() — the task itself must not seed the skill it
+# checks for, so a pass measures matching, not the seeding write.
+L4_FIXTURE_SKILLS = [
+    {
+        "name": "bench-restart-brain-api",
+        "description": "Restart the Brain API using the brain-env.sh wrapper script",
+        "triggers": ["restart", "brain api", "service restart"],
+    },
+    {
+        "name": "bench-backup-database",
+        "description": "Run database backup via backup_runner.py",
+        "triggers": ["backup", "database", "pg_dump"],
+    },
+    {
+        "name": "bench-photo-watermark",
+        "description": "Batch-add a watermark to product photos with ImageMagick",
+        "triggers": ["watermark", "photos", "imagemagick"],
+    },
+]
+L4_FIXTURE_NAMES = [s["name"] for s in L4_FIXTURE_SKILLS]
+
+
+def seed_l4_fixtures(api_url, api_key) -> list[str]:
+    """Register the fixture skills l4-002 ranks; returns names now present."""
+    existing = {s.get("name") for s in api_get(api_url, api_key, "/skills?limit=200")}
+    seeded = []
+    for skill in L4_FIXTURE_SKILLS:
+        if skill["name"] in existing:
+            seeded.append(skill["name"])
+            continue
+        api_post(api_url, api_key, "/skills", {
+            "name": skill["name"],
+            "description": skill["description"],
+            "triggers": skill["triggers"],
+        })
+        seeded.append(skill["name"])
+    return seeded
+
+
+async def _delete_rows(repo, sql, *params):
+    conn = await _db_connect(repo)
+    try:
+        await conn.execute(sql, *params)
+    finally:
+        await conn.close()
+
+
+def cleanup_l4_fixtures(repo) -> None:
+    """Hard-delete fixture skill rows so no benchmark data stays in L4."""
+    try:
+        asyncio.run(_delete_rows(
+            repo, "DELETE FROM memory_skills WHERE name = ANY($1::text[])", L4_FIXTURE_NAMES
+        ))
+    except Exception as exc:  # noqa: BLE001 - best effort, reported by residue check
+        print(f"[cleanup] fixture skill delete failed: {type(exc).__name__}: {exc}")
+
+
 def run_procedural(api_url, api_key, repo, task):
-    """Test L4 procedural memory: skill registration, matching."""
+    """Test L4 procedural memory: registration round-trip + matching.
+
+    l4-002 does not create the skill it checks: it ranks fixture skills
+    seeded once by the benchmark run (seed_l4_fixtures) and asserts on the
+    ranking, not on a write the test just performed.
+    """
     task_id = task["id"]
-    created_skill_id = None
     try:
         if task_id == "l4-001":
             skill_def = task.get("skill_definition", {})
-            # Use a unique name to avoid conflicts
-            import time
-            unique_name = f"{skill_def.get('name', 'test-skill')}-{int(time.time())}"
+            unique_name = f"{skill_def.get('name', 'test-skill')}-{int(time.time())}-{os.getpid()}"
+            checks = {}
+            skill_name = None
             try:
                 result = api_post(api_url, api_key, "/skills", {
                     "name": unique_name,
@@ -230,42 +443,75 @@ def run_procedural(api_url, api_key, repo, task):
                     "triggers": skill_def.get("triggers", []),
                     "workflow": skill_def.get("workflow", []),
                 })
-                created_skill_id = result.get("id")
-                passed = created_skill_id is not None
-            except Exception as e:
-                # 409 conflict is also a pass (skill exists)
-                passed = "409" in str(e) or "already exists" in str(e).lower()
+                skill_name = unique_name
+                checks["created"] = result.get("id") is not None
+                # Read-back: the skill must be retrievable with its fields.
+                skills = api_get(api_url, api_key, "/skills?limit=200")
+                mine = next((s for s in skills if s.get("name") == unique_name), None)
+                checks["retrievable"] = mine is not None
+                checks["fields_preserved"] = bool(
+                    mine
+                    and mine.get("description") == skill_def.get("description")
+                    and mine.get("triggers") == skill_def.get("triggers")
+                )
+                # Duplicate name must be refused.
+                try:
+                    api_post(api_url, api_key, "/skills", {
+                        "name": unique_name,
+                        "description": "duplicate",
+                    })
+                    checks["duplicate_rejected"] = False
+                except Exception as e:  # noqa: BLE001 - expect HTTP 409
+                    checks["duplicate_rejected"] = "409" in str(e) or "already exists" in str(e)
+            finally:
+                if skill_name:
+                    try:
+                        asyncio.run(_delete_rows(
+                            repo, "DELETE FROM memory_skills WHERE name = $1", skill_name
+                        ))
+                    except Exception:
+                        pass
+            passed = bool(
+                checks.get("created") and checks.get("retrievable")
+                and checks.get("fields_preserved") and checks.get("duplicate_rejected")
+            )
             return {
                 "passed": passed,
                 "metrics": {"l4_registration": 1.0 if passed else 0.0},
+                "checks": checks,
             }
         elif task_id == "l4-002":
-            # Create test skills, then match
-            import time
-            suffix = str(int(time.time()))
-            for s in task.get("skills_to_create", []):
-                try:
-                    api_post(api_url, api_key, "/skills", {
-                        "name": f"{s['name']}-{suffix}",
-                        "description": s["description"],
-                        "triggers": s.get("triggers", []),
-                    })
-                except Exception:
-                    pass  # May already exist
-            # Now match
+            skills = {s.get("name") for s in api_get(api_url, api_key, "/skills?limit=200")}
+            missing = [n for n in L4_FIXTURE_NAMES if n not in skills]
+            if missing:
+                return {
+                    "passed": False,
+                    "metrics": {"l4_matching": 0.0},
+                    "details": {"fixture_skills_missing": missing},
+                }
+            checks = {}
+            restart, backup, watermark = L4_FIXTURE_NAMES
             result = api_post(api_url, api_key, "/skills/match", {
                 "query": task.get("query", ""),
                 "limit": 5,
             })
             matches = result if isinstance(result, list) else []
-            # Check if the restart skill ranks first
-            passed = len(matches) > 0 and "restart" in matches[0].get("name", "").lower()
+            top = matches[0].get("name") if matches else None
+            checks["target_first"] = top == restart
+            checks["distractor_not_first"] = top != backup
+            # Control: an unrelated query must not rank the restart skill first
+            # (it would if match only replayed insertion order).
+            control = api_post(api_url, api_key, "/skills/match", {
+                "query": "resize and watermark product photos for the catalog",
+                "limit": 5,
+            })
+            checks["control_ranks_other"] = bool(control) and control[0].get("name") != restart
+            passed = all(checks.values())
             return {
                 "passed": passed,
-                "metrics": {
-                    "l4_matching": 1.0 if passed else 0.0,
-                    "top_match": matches[0].get("name") if matches else None,
-                },
+                "metrics": {"l4_matching": 1.0 if passed else 0.0},
+                "checks": checks,
+                "top_match": top,
             }
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}", "metrics": {"l4_test": 0.0}}
@@ -371,6 +617,16 @@ def run_memory(api_url, api_key, repo, task):
         }
     finally:
         for lid in learning_ids:
+            # Hard-delete via DB first so no benchmark row stays behind;
+            # the API only soft-rejects (status='rejected'), which is the
+            # fallback when the DB is unreachable.
+            try:
+                asyncio.run(_delete_rows(
+                    repo, "DELETE FROM memory_learnings WHERE id = $1", lid
+                ))
+                continue
+            except Exception:
+                pass
             try:
                 req = urllib.request.Request(
                     api_url.rstrip("/") + f"/learnings/{lid}",
@@ -442,21 +698,7 @@ def run_review(api_url, api_key, repo, task):
     return result
 
 
-def main():
-    ap = argparse.ArgumentParser(description="Harness effectiveness benchmark")
-    ap.add_argument("--api-url", default="http://127.0.0.1:8000")
-    ap.add_argument("--api-key", default=None)
-    ap.add_argument("--repo", default=REPO_ROOT)
-    ap.add_argument("--tasks-dir", default=TASKS_DIR)
-    ap.add_argument("--output", default=None)
-    ap.add_argument("--only", default=None, help="run only this task id")
-    ap.add_argument("--skip-review", action="store_true")
-    args = ap.parse_args()
-
-    repo = os.path.abspath(args.repo)
-    api_key = args.api_key or load_api_key(repo)
-    task_files = sorted(f for f in os.listdir(args.tasks_dir) if f.endswith(".json"))
-
+def _run_tasks(args, api_key, repo, task_files):
     results = []
     for fname in task_files:
         task = json.load(open(os.path.join(args.tasks_dir, fname)))
@@ -500,11 +742,77 @@ def main():
         outcome["duration_s"] = round(time.time() - started, 1)
         results.append(outcome)
         print(f"  -> {json.dumps(outcome.get('metrics', outcome.get('skipped', outcome.get('error', 'ok'))))}")
+    return results
+
+
+def _check_residue(repo) -> dict:
+    """Count leftover benchmark rows in the API's database. Every task deletes
+    what it plants; nonzero counts mean a cleanup path failed."""
+    counts = {}
+    try:
+        counts = asyncio.run(_count_residue(repo))
+    except Exception:
+        return {}  # no DB access from this host — nothing to verify here
+    return {k: v for k, v in counts.items() if v}
+
+
+async def _count_residue(repo) -> dict:
+    conn = await _db_connect(repo)
+    try:
+        episodes = await conn.fetchval(
+            "SELECT count(*) FROM memory_episodes WHERE topic = $1", BENCH_EPISODE_TOPIC
+        )
+        skills = await conn.fetchval(
+            "SELECT count(*) FROM memory_skills WHERE name LIKE 'bench-%'"
+        )
+        learnings = await conn.fetchval(
+            "SELECT count(*) FROM memory_learnings WHERE category IN ('benchmark', 'membench')"
+        )
+        return {"bench_episodes": episodes, "bench_skills": skills, "bench_learnings": learnings}
+    finally:
+        await conn.close()
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Harness effectiveness benchmark")
+    ap.add_argument("--api-url", default="http://127.0.0.1:8000")
+    ap.add_argument("--api-key", default=None)
+    ap.add_argument("--repo", default=REPO_ROOT)
+    ap.add_argument("--tasks-dir", default=TASKS_DIR)
+    ap.add_argument("--output", default=None)
+    ap.add_argument("--only", default=None, help="run only this task id")
+    ap.add_argument("--skip-review", action="store_true")
+    args = ap.parse_args()
+
+    repo = os.path.abspath(args.repo)
+    api_key = args.api_key or load_api_key(repo)
+    task_files = sorted(f for f in os.listdir(args.tasks_dir) if f.endswith(".json"))
+
+    tasks_by_id = {
+        json.load(open(os.path.join(args.tasks_dir, f)))["id"]:
+        json.load(open(os.path.join(args.tasks_dir, f))) for f in task_files
+    }
+    selected = [t for t in tasks_by_id.values() if not args.only or t["id"] == args.only]
+    runs_procedural = any(t["type"] == "procedural" for t in selected)
+    if runs_procedural:
+        try:
+            seeded = seed_l4_fixtures(args.api_url, api_key)
+            print(f"[l4] fixture skills present: {seeded}")
+        except Exception as exc:  # noqa: BLE001 - l4 tasks will fail honestly
+            print(f"[l4] fixture seeding failed: {type(exc).__name__}: {exc}")
+    try:
+        results = _run_tasks(args, api_key, repo, task_files)
+    finally:
+        if runs_procedural:
+            cleanup_l4_fixtures(repo)
+        residue = _check_residue(repo)
+        if residue:
+            print(f"[cleanup] WARNING: benchmark rows left behind: {residue}")
 
     summary = summarize(results)
     print("\n" + summary["markdown"])
 
-    payload = {"results": results, "summary": summary["scores"]}
+    payload = {"results": results, "summary": summary["scores"], "residue": residue}
     if args.output:
         with open(args.output, "w") as f:
             json.dump(payload, f, indent=2)

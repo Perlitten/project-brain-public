@@ -15,9 +15,16 @@ learnings) actually helps, with real numbers:
 
 Usage:
   python eval/memory_benchmark/run.py [--scenario retrieval] [--agents 10]
+                                      [--shared-db]
 
 Writes results to eval/memory_benchmark/results/memory_bench_<stamp>.json.
-All planted learnings use category "membench" and are rejected afterwards.
+
+Isolation: by default every scenario runs against a scratch Postgres
+database (created from the real migrations, dropped afterwards), so planted
+learnings can never leak into the production L3 that /ask reads.
+``--shared-db`` restores the old behavior (write to the configured DB and
+reject planted learnings afterwards) for environments where CREATE
+DATABASE is unavailable — a crash can then leave benchmark rows behind.
 """
 from __future__ import annotations
 
@@ -32,7 +39,9 @@ from datetime import datetime, timezone
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, REPO)
+sys.path.insert(0, os.path.join(REPO, "eval"))
 
+from bench_db import isolated_bench_db  # noqa: E402
 from brain.context.context_pack_builder import _load_active_learnings  # noqa: E402
 from brain.memory.consolidation import (  # noqa: E402
     ConsolidationCandidate,
@@ -131,7 +140,7 @@ async def scenario_retrieval() -> dict:
             }
             ranked = await _load_active_learnings(None, query=question, limit=10)
             # restrict to our planted ids for a fair measurement
-            ranked_ids = [l.id for l in ranked if l.id in set(ids)]
+            ranked_ids = [row.id for row in ranked if row.id in set(ids)]
             r5 = recall_at_k(relevant, ranked_ids, 5)
             rr = reciprocal_rank(relevant, ranked_ids)
             recalls.append(r5)
@@ -224,7 +233,7 @@ async def scenario_concurrency(n_agents: int = 10) -> dict:
     total_errors = sum(len(r["errors"]) for r in results)
     # verify no residue: all membench learnings should be rejected
     remaining = await LearningStore.list_active_learnings()
-    residue = [l for l in remaining if (l.category or "").startswith(BENCH_CATEGORY)]
+    residue = [row for row in remaining if (row.category or "").startswith(BENCH_CATEGORY)]
     return {
         "n_agents": n_agents,
         "writes_per_agent": 5,
@@ -278,14 +287,17 @@ async def scenario_overhead() -> dict:
         many = await _load_active_learnings(None, query="probe", limit=10)
         many_ms = (time.time() - t0) * 1000
 
-        # token estimate: ~4 chars per token for the learnings block
-        block = "\n".join(f"- {l.statement}" for l in many[:10])
-        est_tokens = len(block) // 4
+        # Real token count (cl100k_base) for the learnings block — not a
+        # chars/4 estimate, which systematically overstates text blocks.
+        block = "\n".join(f"- {row.statement}" for row in many[:10])
+        import tiktoken
+
+        tokens = len(tiktoken.get_encoding("cl100k_base").encode(block))
         return {
             "baseline_learnings": len(base),
             "learnings_ms_baseline": round(base_ms, 1),
             "learnings_ms_100": round(many_ms, 1),
-            "est_tokens_per_ask": est_tokens,
+            "tokens_per_ask": tokens,
         }
     finally:
         await cleanup(ids)
@@ -302,14 +314,7 @@ SCENARIOS = {
 }
 
 
-async def amain() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--scenario", default=None, choices=list(SCENARIOS),
-                    help="run one scenario (default: all)")
-    ap.add_argument("--agents", type=int, default=10)
-    ap.add_argument("--output", default=None)
-    args = ap.parse_args()
-
+async def _run_scenarios(args) -> dict:
     chosen = [args.scenario] if args.scenario else list(SCENARIOS)
     results: dict = {}
     for name in chosen:
@@ -326,12 +331,35 @@ async def amain() -> None:
         out["duration_s"] = round(time.time() - t0, 1)
         results[name] = out
         print(f"  -> {json.dumps(out)[:220]}", flush=True)
+    return results
+
+
+async def amain() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--scenario", default=None, choices=list(SCENARIOS),
+                    help="run one scenario (default: all)")
+    ap.add_argument("--agents", type=int, default=10)
+    ap.add_argument("--output", default=None)
+    ap.add_argument("--shared-db", action="store_true",
+                    help="write to the configured database instead of a scratch "
+                         "one (old behavior; a crash can leak benchmark learnings)")
+    args = ap.parse_args()
+
+    if args.shared_db:
+        print("[isolation] --shared-db: writing to the configured database")
+        results = await _run_scenarios(args)
+        isolation = "shared"
+    else:
+        async with isolated_bench_db() as bench:
+            print(f"[isolation] scratch database: {bench.db_name}")
+            results = await _run_scenarios(args)
+        isolation = "scratch-db (dropped)"
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out_path = args.output or os.path.join(HERE, "results", f"memory_bench_{stamp}.json")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:
-        json.dump({"results": results}, f, indent=2)
+        json.dump({"isolation": isolation, "results": results}, f, indent=2)
     print(f"\nWrote {out_path}")
 
 
