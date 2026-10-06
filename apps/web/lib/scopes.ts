@@ -82,7 +82,7 @@ export interface ScopePreset {
 export const SCOPE_PRESETS: ScopePreset[] = [
   { id: "agent", label: "AI agent", note: "code memory + job status", scopes: ["core:write", "jobs:read"] },
   { id: "read", label: "Read-only", note: "search and read code memory", scopes: ["core:read"] },
-  { id: "integration", label: "Integration (n8n/CI)", note: "read memory, start jobs", scopes: ["core:read", "jobs:write"] },
+  { id: "integration", label: "Integration (CI)", note: "read memory, start jobs", scopes: ["core:read", "jobs:write"] },
   { id: "admin", label: "Admin", note: "manage keys and setup", scopes: ["principals:read", "principals:write", "setup:read", "setup:write"] },
 ];
 

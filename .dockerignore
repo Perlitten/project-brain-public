@@ -15,8 +15,6 @@
 **/.next/
 !rules/
 !rules/**
-!n8n/
-!n8n/**
 !eval/
 !eval/**
 !scripts/

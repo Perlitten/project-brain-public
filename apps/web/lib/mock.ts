@@ -136,7 +136,7 @@ export const events: LedgerEvent[] = [
   { at: "12:58:03", tone: "ok", source: "memory", text: "Decision recorded: “Dashboard shell split per feature module”", ref: "ADR-0011" },
   { at: "12:31:40", tone: "warn", source: "agent", text: "cursor run ended without a context pack — answered from cold search", ref: "r-2289" },
   { at: "11:02:15", tone: "ok", source: "backup", text: "Nightly restore drill passed — 18,903 chunks restored and verified" },
-  { at: "10:40:00", tone: "info", source: "auth", text: "Scoped credential issued to principal “n8n-bridge” (core:read)" },
+  { at: "10:40:00", tone: "info", source: "auth", text: "Scoped credential issued to principal “ci-bridge” (core:read)" },
   { at: "09:12:33", tone: "ok", source: "indexer", text: "Index run 411 complete — 1,284 files, 0 errors", ref: "run 411" },
   { at: "03:00:02", tone: "info", source: "maintenance", text: "Nightly maintenance: 4 repositories checked, 1 reindexed" },
 ];
@@ -216,7 +216,7 @@ export const principals: Principal[] = [
   { id: "p-1", name: "andrei", kind: "human", scopes: ["*"], lastSeen: "now", credentials: 1 },
   { id: "p-2", name: "claude-code", kind: "agent", scopes: ["core:read", "memory:write"], lastSeen: "13:41", credentials: 2 },
   { id: "p-3", name: "codex", kind: "agent", scopes: ["core:read"], lastSeen: "12:58", credentials: 1 },
-  { id: "p-4", name: "n8n-bridge", kind: "service", scopes: ["core:read"], lastSeen: "10:40", credentials: 1 },
+  { id: "p-4", name: "ci-bridge", kind: "service", scopes: ["core:read"], lastSeen: "10:40", credentials: 1 },
   { id: "p-5", name: "telegram-bridge", kind: "service", scopes: ["core:read", "jobs:write"], lastSeen: "Sep 29", credentials: 1 },
 ];
 
@@ -242,7 +242,7 @@ export const identities: Identity[] = [
     ],
   },
   {
-    id: 4, name: "n8n-bridge", kind: "service", disabled: false, createdAt: "Sep 26", activeKeys: 1, scopes: ["core:read", "jobs:write"], lastSeen: "10:40",
+    id: 4, name: "ci-bridge", kind: "service", disabled: false, createdAt: "Sep 26", activeKeys: 1, scopes: ["core:read", "jobs:write"], lastSeen: "10:40",
     keys: [
       { id: 5, scopes: ["core:read", "jobs:write"], status: "active", created: "Sep 26 · 10:02", expires: "Sep 26, 2027 · in 359d", lastUsed: "10:40", expiringSoon: false, neverUsed: false },
     ],

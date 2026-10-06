@@ -1,10 +1,11 @@
 // Everything /settings shows: the editable server settings (when the server
-// has /api/settings), plus live Telegram and n8n status from the health feed —
-// so the status is right even on an older server. Secrets never appear here,
+// has /api/settings), live Telegram status from the health feed, and the
+// scheduled jobs from /scheduler/jobs. Secrets never appear here,
 // only whether one is set.
 import "server-only";
 import { connection } from "next/server";
 import { apiConfigured, brainFetch } from "./api";
+import { demoScheduler, getSchedulerJobs, type SchedulerView } from "./scheduler-view";
 
 type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : {});
@@ -46,16 +47,6 @@ export interface TelegramStatus {
   last?: { status: string; at?: string; findings?: number };
 }
 
-export interface N8nStatus {
-  health: string;
-  url?: string;
-  message?: string;
-  apiStatus: string;
-  apiError?: string;
-  source: string;
-  workflows: { name: string; active: boolean }[];
-}
-
 export interface SettingsView {
   /** live: editable · legacy: server too old to edit here · demo · down */
   mode: "live" | "legacy" | "demo" | "down";
@@ -63,7 +54,7 @@ export interface SettingsView {
   models: Record<string, string | number | null> | null;
   repoPath?: string;
   telegram: TelegramStatus | null;
-  n8n: N8nStatus | null;
+  scheduler: SchedulerView | null;
   /** Self-diagnosis LLM stage, when it failed. */
   llmError?: string;
   version?: string;
@@ -89,16 +80,16 @@ function toField(raw: unknown): SettingField {
 export async function getSettingsView(): Promise<SettingsView> {
   if (!apiConfigured) return demo();
   await connection();
-  const [settings, health] = await Promise.all([
+  const [settings, health, scheduler] = await Promise.all([
     brainFetch<Json>("/api/settings", { fresh: true }),
     brainFetch<Json>("/api/web/health", { fresh: true }),
+    getSchedulerJobs(),
   ]);
-  if (!settings && !health) return { mode: "down", sections: [], models: null, telegram: null, n8n: null };
+  if (!settings && !health) return { mode: "down", sections: [], models: null, telegram: null, scheduler: null };
 
   const orch = obj(health?.orchestration);
   const diag = obj(orch.diagnostics);
   const delivery = obj(diag.last_delivery);
-  const svc = obj(obj(health?.services).n8n);
   const llm = obj(obj(diag.last_result).llm);
 
   const telegram: TelegramStatus | null = health
@@ -110,18 +101,6 @@ export async function getSettingsView(): Promise<SettingsView> {
           : undefined,
       }
     : null;
-  const n8n: N8nStatus | null = health
-    ? {
-        health: str(svc.status) || "unknown",
-        url: str(svc.url) || undefined,
-        message: str(svc.message || svc.error) || undefined,
-        apiStatus: str(orch.workflow_api_status) || "unknown",
-        apiError: str(orch.workflow_api_error) || undefined,
-        source: str(orch.workflow_source) || "none",
-        workflows: (Array.isArray(orch.workflows) ? orch.workflows : []).map((w) => ({ name: str(obj(w).name), active: Boolean(obj(w).active) })),
-      }
-    : null;
-
   return {
     mode: settings ? "live" : "legacy",
     sections: (Array.isArray(settings?.sections) ? settings.sections : []).map((s) => ({
@@ -132,7 +111,7 @@ export async function getSettingsView(): Promise<SettingsView> {
     models: settings ? (obj(settings.models) as Record<string, string | number | null>) : null,
     repoPath: str(settings?.repo_path) || undefined,
     telegram,
-    n8n,
+    scheduler,
     llmError: str(llm.status) === "failed" ? str(llm.error).split(" For more information")[0] : undefined,
     version: str(obj(diag.build).version) || undefined,
   };
@@ -162,19 +141,10 @@ function demo(): SettingsView {
           f("TELEGRAM_ALERT_COOLDOWN_SECONDS", "Repeat cooldown, s", "int", 21600, "", { min: 60, max: 604800 }),
         ],
       },
-      {
-        id: "n8n",
-        title: "n8n automation",
-        fields: [
-          f("N8N_BASE_URL", "n8n URL (from the Brain server)", "url", "http://n8n:5678"),
-          f("N8N_PUBLIC_URL", "n8n URL (in your browser)", "url", "http://localhost:5678"),
-          f("N8N_API_KEY", "n8n API key", "secret", null, "", { set: false }),
-        ],
-      },
     ],
     models: { llm_provider: "openai", llm_model: "gpt-4.1-mini", embedding_provider: "openai", embedding_model: "text-embedding-3-small", embedding_dimension: 1536 },
     repoPath: "/home/you/code/project-brain",
     telegram: { enabled: true, credentials: true, last: { status: "sent", at: when("2026-10-02T03:30:04Z"), findings: 4 } },
-    n8n: { health: "healthy", url: "http://n8n:5678", apiStatus: "missing_key", source: "repo", workflows: [{ name: "Nightly health", active: false }] },
+    scheduler: demoScheduler(),
   };
 }

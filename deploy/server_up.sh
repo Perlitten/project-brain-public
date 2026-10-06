@@ -78,10 +78,6 @@ ensure_secret POSTGRES_PASSWORD "$(openssl rand -hex 24)"
 ensure_secret NEO4J_PASSWORD "$(openssl rand -hex 24)"
 ensure_secret PROJECT_BRAIN_API_KEY "$(openssl rand -hex 32)"
 ensure_secret PROJECT_BRAIN_WEBHOOK_TOKEN "$(openssl rand -hex 32)"
-# Required by docker-compose.prod.yml (uses ${N8N_ENCRYPTION_KEY:?...}); compose
-# aborts the whole stack if this is empty, so it must be generated here too.
-ensure_secret N8N_ENCRYPTION_KEY "$(openssl rand -hex 32)"
-ensure_secret N8N_OWNER_PASSWORD "$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-32)"
 chmod 600 "$ENV_FILE"
 
 env_value() {
@@ -262,7 +258,6 @@ python3 scripts/write_source_manifest.py . \
     --include brain \
     --include apps \
     --include rules \
-    --include n8n \
     --include eval \
     --include scripts/write_source_manifest.py \
     --include scripts/validate_lfm_release_gate.py \
@@ -361,7 +356,7 @@ fi
 # --- preflight: placeholders must be customized before deployment ---
 if grep -q 'REPLACE_WITH' "$ENV_FILE"; then
     echo "ERROR: replace all REPLACE_WITH... placeholders in .env before deploy." >&2
-    echo "       Example: brain.203.0.113.10.nip.io and n8n.brain.203.0.113.10.nip.io" >&2
+    echo "       Example: brain.203.0.113.10.nip.io" >&2
     exit 1
 fi
 
@@ -465,13 +460,6 @@ for _ in $(seq 1 36); do
     if curl -fsS "http://127.0.0.1:${port}/ready" >/dev/null 2>&1; then ok=1; break; fi
     sleep 5
 done
-n8n_port="$(grep -E '^BRAIN_N8N_PORT=' "$ENV_FILE" | cut -d= -f2-)"; n8n_port="${n8n_port:-5680}"
-n8n_ok=0
-echo "==> Waiting for n8n /healthz (up to ~2 min)"
-for _ in $(seq 1 24); do
-    if curl -fsS "http://127.0.0.1:${n8n_port}/healthz" >/dev/null 2>&1; then n8n_ok=1; break; fi
-    sleep 5
-done
 echo "==> Container status:"; $COMPOSE ps
 if [[ "$ok" == "1" ]]; then
     echo "==> HEALTH OK"
@@ -493,15 +481,8 @@ else
     $COMPOSE logs --tail 60 api >&2 || true
     exit 1
 fi
-if [[ "$n8n_ok" == "1" ]]; then
-    echo "==> Importing and publishing canonical n8n workflows"
-    N8N_BASE_URL="http://127.0.0.1:${n8n_port}" python3 scripts/import_n8n_workflows.py
-    echo "==> N8N HEALTH OK"
-else
-    echo "==> N8N HEALTH NOT READY - recent n8n logs:" >&2
-    $COMPOSE logs --tail 80 n8n >&2 || true
-    exit 1
-fi
+echo "==> Scheduler state (from /health; jobs fire inside the worker):"
+curl -fsS "http://127.0.0.1:${port}/health" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin).get("scheduler"), indent=2))' || true
 
 # --- release image retention -------------------------------------------------
 # Every deploy leaves behind a brain-api:<sha> image, and on this host they grew

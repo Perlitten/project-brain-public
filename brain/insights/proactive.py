@@ -267,13 +267,14 @@ async def collect_proactive_snapshot(repo_path: str | Path | None = None) -> dic
     }
 
     services = await check_health()
-    try:
-        from apps.api.helpers import check_n8n_health
-
-        services["n8n"] = await check_n8n_health()
-    except Exception as exc:
-        services["n8n"] = {"status": "unknown", "error": str(exc)}
     snapshot["services"] = _redact_service_errors(services)
+    try:
+        from brain.database.session import redis_client
+        from brain.workers.scheduler import scheduler_status
+
+        snapshot["scheduler"] = {"stale": (await scheduler_status(redis_client)).get("stale", [])}
+    except Exception as exc:
+        snapshot["scheduler"] = {"stale": [], "error": type(exc).__name__}
 
     try:
         record = await get_repository_by_path(target_repo)
@@ -545,7 +546,6 @@ def deterministic_insights(snapshot: dict[str, Any]) -> list[InsightCandidate]:
     else:
         source = ""
     is_failure_trigger = source in {
-        "n8n_error",
         "workflow_error",
         "worker_error",
         "worker_failure",
@@ -566,7 +566,7 @@ def deterministic_insights(snapshot: dict[str, Any]) -> list[InsightCandidate]:
                     {"label": "source", "value": source},
                     {"label": "reference", "value": reference or "unavailable"},
                 ],
-                recommended_action="Correlate the trigger reference with n8n and worker execution logs, then verify the failed workflow after remediation.",
+                recommended_action="Correlate the trigger reference with the worker logs and GET /jobs/<id>, then re-run the job after remediation.",
                 confidence="high",
                 dedupe_key=f"automation_trigger:{source}:{reference or 'unknown'}",
             )
@@ -592,21 +592,18 @@ def deterministic_insights(snapshot: dict[str, Any]) -> list[InsightCandidate]:
             )
         )
 
-    n8n_status = (services.get("n8n") or {}).get("status")
-    if n8n_status and n8n_status != "healthy":
+    stale_jobs = list((snapshot.get("scheduler") or {}).get("stale") or [])
+    if stale_jobs:
         insights.append(
             InsightCandidate(
                 insight_type="automation_health",
                 severity="warning",
-                title="Automation service is not healthy",
-                summary="n8n is degraded or unreachable, so scheduled Project Brain workflows may not run.",
-                evidence=[
-                    {"label": "n8n_status", "value": n8n_status},
-                    {"label": "n8n_error", "value": (services.get("n8n") or {}).get("error") or "not healthy"},
-                ],
-                recommended_action="Check the n8n container and keep manual /jobs endpoints available until automation recovers.",
+                title="Scheduled jobs are overdue",
+                summary=f"No successful run within the expected interval for: {', '.join(stale_jobs)}.",
+                evidence=[{"label": "stale_jobs", "value": ", ".join(stale_jobs)}],
+                recommended_action="Check that a worker is running (SCHEDULER_ENABLED=true) and its logs; use Run now on Settings → Scheduler or POST /jobs/* meanwhile.",
                 confidence="high",
-                dedupe_key="automation_health:n8n_not_healthy",
+                dedupe_key="automation_health:scheduler_stale",
             )
         )
 
@@ -1516,8 +1513,8 @@ async def generate_proactive_insights(
         cacheable = (snapshot.get("trigger") or {}).get("source") in {
             None,
             "",
-            "n8n_schedule",
-            "n8n_error",
+            "scheduler",
+            "job_failure",
         }
         cached = await _load_llm_cache(fingerprint) if cacheable else None
         if cached:

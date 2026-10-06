@@ -71,7 +71,7 @@
 ## Команды
 
 ```bash
-docker compose up -d                        # postgres, redis, neo4j, api, worker, n8n
+docker compose up -d                        # postgres, redis, neo4j, api, worker (+scheduler)
 py -3 -m pytest tests/ -q                   # полный прогон ~9 мин — запускать детачем
 py -3 -m pytest tests/test_health.py -q     # обычный цикл: один файл
 py -3 -m ruff check .                       # line-length 120, select E,F,W
