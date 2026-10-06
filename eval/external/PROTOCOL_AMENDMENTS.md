@@ -66,3 +66,16 @@ Per-instance repos are not indexed (8000 distinct repos, infeasible);
 arms = bm25, dense (same embedder), and brain-rerank (Brain's
 deterministic feature scorer on candidate snippets). Query = `code` +
 `import_statement`. Metric: Acc@k (gold snippet in top-k).
+
+## A5 — SWE-bench single-snapshot index per repo (budget-driven)
+
+Per-instance incremental re-indexing re-embedded 30-60% of files per
+base_commit (measure: sympy instance 1 full index = 68 min; instance 2
+re-index ~as long → 60 instances infeasible). Amended: each repo is
+indexed ONCE at its earliest base_commit in the sampled set; all
+instance queries for that repo run against that snapshot (and grep runs
+on the same checkout). Bias: a gold file may not exist at the snapshot
+commit — counted per row as `gold_at_snapshot` and reported; content
+drift between commits is a small, disclosed approximation used by
+comparable retrieval papers. `snapshot_commit`/`gold_at_snapshot` are
+recorded in every row.
