@@ -56,9 +56,27 @@ class RuntimeContextBuilder:
         metadata: dict[str, Any] = {"status": "ok", "repo": repo, "missing": list(result.degraded)}
         # A code-changing task cannot use an unprovably current index as edit
         # context. This is fail-closed, not a cosmetic warning.
+        # BUT: kick off a background reindex so the next request is fresh.
+        # The nightly auto-heal is too slow for active development (multiple
+        # commits per day).
         if freshness != "current":
             metadata["status"] = "stale_blocked"
             metadata["missing"].append("current_source_required_for_code_change")
+            # Fire-and-forget: enqueue reindex so next call succeeds.
+            try:
+                from brain.database.session import redis_client
+                from brain.workers.queue import JobQueue
+                queue = JobQueue(redis_client, prefix=settings.WORKER_REDIS_PREFIX)
+                # Idempotency: one reindex per repo per hour max (enforced by
+                # the queue's idempotency key TTL).
+                await queue.enqueue(
+                    "reindex",
+                    {"repo_path": str(repo_path)},
+                    idempotency_key=f"auto-reindex:{repo_path}",
+                )
+                metadata["missing"].append("auto_reindex_queued")
+            except Exception:
+                pass  # Best effort; stale_blocked is still honest.
             return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
 
         # A current index with no retrieval evidence is not a usable context.

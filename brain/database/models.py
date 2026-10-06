@@ -512,3 +512,85 @@ class AuditEvent(Base):
     status_code: Mapped[int] = mapped_column(Integer, nullable=False)
     outcome: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # allowed | denied | error
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
+
+class MemoryEpisode(Base):
+    """L2 episodic memory: clustered, distilled episodes awaiting promotion.
+
+    Industry-standard 4-tier architecture:
+    - L1 (Working): in-memory context window, current task
+    - L2 (Episodic): THIS TABLE — clustered episodes, dynamic, queryable
+    - L3 (Semantic): memory_learnings — immutable wiki, supersede-never-delete
+    - L4 (Procedural): skills registry (future)
+
+    L2 bridges raw L1 events and L3 learnings: episodes are clustered,
+    distilled by LLM, then gated (G1-G4) for promotion to L3.
+    Unlike L3, L2 episodes are mutable — they can be updated, merged,
+    or discarded before promotion.
+    """
+
+    __tablename__ = "memory_episodes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    # Cluster of L1 event IDs that form this episode
+    source_event_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    # LLM-distilled summary of the episode
+    distilled_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    # Topic/category for retrieval
+    topic: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # L2 lifecycle: pending → promoted | rejected | merged
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    # If promoted, link to the L3 learning
+    promoted_to_learning_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
+    )
+    # If merged, link to the surviving episode
+    merged_into_episode_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("memory_episodes.id", ondelete="SET NULL"), nullable=True
+    )
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    embedding: Mapped[list[float] | None] = mapped_column(
+        pgvector_column_type(EMBEDDING_DIMENSION), nullable=True
+    )
+    repo_scope: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class MemorySkill(Base):
+    """L4 procedural memory: learned skills and workflows.
+
+    Industry-standard 4-tier architecture:
+    - L4 answers "How do I perform this task?"
+    - Skills are distilled from successful L2 episodes / L3 learnings
+    - Each skill has triggers (when to use), workflow steps, and success tracking
+    """
+
+    __tablename__ = "memory_skills"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    # When to use this skill (keywords, patterns)
+    triggers: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # Workflow steps as JSON: [{"step": 1, "action": "...", "tool": "..."}]
+    workflow: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    # Source: which L2 episodes or L3 learnings informed this skill
+    source_episode_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    source_learning_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    # Success tracking
+    times_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    times_successful: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # active | deprecated
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", index=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    embedding: Mapped[list[float] | None] = mapped_column(
+        pgvector_column_type(EMBEDDING_DIMENSION), nullable=True
+    )
+    repo_scope: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

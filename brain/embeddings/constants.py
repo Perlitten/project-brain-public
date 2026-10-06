@@ -53,6 +53,7 @@ def resolve_embedding_dimension(provider_name: Optional[str] = None, *, strict: 
                 f"'{endpoint.model or '<unset>'}'. Set EMBEDDING_DIMENSION to the model's "
                 "output width (changing it rebuilds the vector column; re-index afterwards)."
             )
+        # Historical default: kept for backwards compatibility with pre-2.0 indexes.
         return 1536
     if strict:
         raise EmbeddingDimensionUnknownError(f"Unknown embedding provider '{name}'.")

@@ -23,6 +23,54 @@ def _safe_git_ref(ref: str) -> bool:
     return bool(ref) and not ref.startswith("-") and bool(_GIT_REF_RE.match(ref))
 
 
+# Comparison operator inversion pairs: (old, new) that flip logic.
+_INVERSION_PAIRS = {
+    (">=", "<"), ("<=", ">"), (">", "<="), ("<", ">="),
+    ("==", "!="), ("!=", "=="),
+}
+
+# Regex to find comparison operators in diff lines.
+_COMPARISON_RE = re.compile(r"(>=|<=|==|!=|>|<)")
+
+
+def _detect_comparison_inversions(diff_text: str) -> list[str]:
+    """Deterministic check for flipped comparison operators in diffs.
+
+    Parses unified diff hunks, pairs removed (-) and added (+) lines,
+    and flags cases where a comparison operator was inverted
+    (e.g. `if x >= 0.8:` became `if x < 0.8:`).
+
+    LLM reviewers reliably miss these single-character logic flips;
+    this check catches them deterministically.
+    """
+    inversions = []
+    # Parse diff into hunks: collect -/+ line pairs
+    lines = diff_text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("-") and not line.startswith("---"):
+            removed = line[1:].strip()
+            # Look ahead for the corresponding added line
+            if i + 1 < len(lines) and lines[i + 1].startswith("+") and not lines[i + 1].startswith("+++"):
+                added = lines[i + 1][1:].strip()
+                # Extract comparison operators from both
+                removed_ops = _COMPARISON_RE.findall(removed)
+                added_ops = _COMPARISON_RE.findall(added)
+                # Check for inversions: same position, flipped operator
+                if len(removed_ops) == len(added_ops) and removed_ops:
+                    for ro, ao in zip(removed_ops, added_ops):
+                        if ro != ao and (ro, ao) in _INVERSION_PAIRS:
+                            inversions.append(
+                                f"Logic inversion detected: `{ro}` → `{ao}` "
+                                f"in `{removed[:60]}` → `{added[:60]}`"
+                            )
+                i += 2
+                continue
+        i += 1
+    return inversions
+
+
 # Matches a backslash that does NOT start a valid JSON escape sequence.
 # LLMs frequently emit raw backslashes (Windows paths, regexes) inside the
 # JSON they are asked to produce, which makes json.loads fail with
@@ -189,6 +237,11 @@ class DiffAnalyzer:
         rule_scope = self.repo_path.resolve().as_posix()
         active_rules = await RuleStore.list_active_rules(rule_scope)
 
+        # 3b. Deterministic AST check: comparison operator inversions.
+        # LLM reviewers reliably miss single-character logic flips (>= to <,
+        # == to !=). This check is deterministic and catches them.
+        logic_inversions = _detect_comparison_inversions(diff_text)
+
         # 4. Use LLM to check rule violations, flag suspicious changes and provide general feedback
         # Truncate diff_text if it is too long to fit comfortably in context
         truncated_diff = diff_text
@@ -204,7 +257,14 @@ class DiffAnalyzer:
             f"Perform the following checks:\n"
             f"1. Identify any rule violations (specifically reference the rule ID).\n"
             f"2. Identify any suspicious or unrelated changes (e.g. debug statements like print/todo left behind, unexpected config changes, code changes out of scope).\n"
-            f"3. Provide overall review feedback and code quality notes.\n\n"
+            f"3. Check for subtle logic inversions: flipped comparison operators\n"
+            f"   (>= to <, == to !=), inverted boolean conditions, negated\n"
+            f"   if/else branches, swapped function arguments. These are critical\n"
+            f"   bugs — a single character change can invert behavior.\n"
+            f"4. For subprocess/shell usage: flag ONLY when user input flows into\n"
+            f"   the command. Hardcoded argument lists (e.g. [\"git\", \"--version\"])\n"
+            f"   with no variables are SAFE — do not flag them.\n"
+            f"5. Provide overall review feedback and code quality notes.\n\n"
             f"Respond ONLY with a JSON object containing keys:\n"
             f"- 'rule_violations': a list of objects with keys 'rule_id' and 'details' (or empty list)\n"
             f"- 'suspicious_changes': a list of strings (or empty list)\n"
@@ -225,17 +285,25 @@ class DiffAnalyzer:
             review_data = _parse_llm_json_response(response)
             rule_violations = review_data.get("rule_violations", [])
             suspicious_changes = review_data.get("suspicious_changes", [])
+            # Merge deterministic AST findings: LLM misses single-char inversions.
+            for inv in logic_inversions:
+                if inv not in suspicious_changes:
+                    suspicious_changes.append(inv)
             feedback = review_data.get("feedback", feedback)
             llm_review_status = "completed"
         except Exception as e:
             logger.warning(f"Failed to run LLM diff review: {e}. Marking automated review as failed.")
             # Fallback: be explicit that the automated checks did NOT run, so an
             # empty findings list must never be read as "the diff is clean".
+            # BUT: deterministic AST checks still ran — include those findings.
+            suspicious_changes = list(logic_inversions)
             feedback = (
                 "Automatic LLM review could not be completed, so rule-violation and "
                 "suspicious-change checks were NOT performed. Treat this report as "
                 "incomplete and review the diff manually."
             )
+            if logic_inversions:
+                feedback += f" Deterministic checks found {len(logic_inversions)} logic inversion(s)."
 
         # 5. Format Markdown Report
         if llm_review_status == "completed":

@@ -40,7 +40,6 @@ from apps.api.schemas import (
     SearchRequest,
 )
 from brain import __version__
-from brain.analyzers.diff_analyzer import DiffAnalyzer
 from brain.analyzers.impact_analyzer import ImpactAnalyzer
 from brain.config.paths import get_repo_root, resolve_repo_path
 from brain.config.settings import settings
@@ -84,7 +83,7 @@ ASK_DECISION_FIELD_CHARS = 280
 # concern (MCP proxy timeout) is real, but 700 tokens is too low for a useful
 # answer once the prompt context is large. Thinking blocks are stripped
 # separately (see _strip_thinking_blocks) so these tokens go to the answer.
-ASK_MAX_ANSWER_TOKENS = 1500
+ASK_MAX_ANSWER_TOKENS = 2500
 
 
 def _strip_thinking_blocks(text: str) -> str:
@@ -116,12 +115,12 @@ def _strip_thinking_blocks(text: str) -> str:
         text,
         flags=re.DOTALL | re.IGNORECASE,
     )
-    # Numbered chain-of-thought: "1. **Analyze User Query**: ..." — a leading
+    # Numbered chain-of-thought: "1. **Analyze User Query:** ..." — a leading
     # sequence of numbered bold-headed steps is reasoning, not the answer.
     # Only strip if the numbered block is at the very start. Steps may be
-    # separated by blank lines.
+    # separated by blank lines. Handles both "**: ..." and ":**" formats.
     text = re.sub(
-        r"\A(\d+\.\s+\*\*[^*\n]+\*\*:.*?(?:\n\n|\n(?!\d+\.\s)|\Z))+",
+        r"\A(\d+\.\s+\*\*[^*\n]+?\*\*:?.*?(?:\n\n|\n(?!\d+\.\s)|\Z))+",
         "",
         text,
         flags=re.DOTALL,
@@ -232,7 +231,8 @@ async def _ask_v2(body: AskRequest) -> dict:
     prompt_context = truncate_utf8(context_json, settings.AGENT_ASK_INPUT_MAX_BYTES)
     prompt = (
         "You are the technical assistant for Project Brain. Answer in the same language as the question. "
-        "Use only the supplied evidence; cite paths/ranges, and state when evidence is insufficient.\n\n"
+        "Use only the supplied evidence; cite paths/ranges, and state when evidence is insufficient. "
+        "Keep the answer concise but complete — aim for a focused response, not an exhaustive dump.\n\n"
         f"Question:\n{body.query}\n\nEvidence:\n{prompt_context}"
     )
     remaining = settings.AGENT_ASK_DEADLINE_S - (time.perf_counter() - started)
@@ -255,8 +255,8 @@ async def _ask_v2(body: AskRequest) -> dict:
             .llm(TaskKind.SYNTHESIS)
             .generate(
                 prompt=prompt,
-                system_instruction="Be concise, evidence-grounded, and do not invent code facts.",
-                max_tokens=min(500, ASK_MAX_ANSWER_TOKENS),
+                system_instruction="Be concise, evidence-grounded, and do not invent code facts. Keep the answer focused and complete — do not cut off mid-sentence.",
+                max_tokens=min(2000, ASK_MAX_ANSWER_TOKENS),
                 cache_hit=bool(runtime.get("_cache_hit")),
             ),
             timeout=min(15.0, remaining),
@@ -641,12 +641,70 @@ async def analyze_change_impact(body: ImpactRequest):
 
 @router.post("/diff-review", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def review_git_diff(body: DiffReviewRequest):
+    """Start an async diff review. Returns immediately with a job ID.
+
+    The review runs in the background (LLM calls can take minutes with retries).
+    Poll GET /diff-review/{job_id} for the result.
+    """
     try:
-        analyzer = DiffAnalyzer(resolve_repo_path(body.repo_path))
-        return await analyzer.review_diff(base=body.base, head=body.head)
+        from brain.database.session import redis_client
+        from brain.workers.queue import JobQueue
+        import uuid
+
+        job_id = str(uuid.uuid4())
+        queue = JobQueue(redis_client, prefix=settings.WORKER_REDIS_PREFIX)
+        await queue.enqueue(
+            "diff_review",
+            {
+                "repo_path": body.repo_path,
+                "base": body.base,
+                "head": body.head,
+                "job_id": job_id,
+            },
+            idempotency_key=f"diff-review:{job_id}",
+        )
+        return {
+            "status": "processing",
+            "job_id": job_id,
+            "message": "Diff review queued. Poll GET /diff-review/{job_id} for results.",
+        }
     except Exception as exc:
-        logger.error(f"Diff review failed for {body.repo_path}: {type(exc).__name__}: {exc}")
-        raise HTTPException(status_code=500, detail="Diff review failed due to an internal error") from exc
+        logger.error(f"Failed to queue diff review for {body.repo_path}: {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to queue diff review") from exc
+
+
+@router.get("/diff-review/{job_id}", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+async def get_diff_review_result(job_id: str):
+    """Get the result of an async diff review."""
+    try:
+        from brain.database.session import redis_client
+        from brain.workers.queue import JobQueue
+
+        queue = JobQueue(redis_client, prefix=settings.WORKER_REDIS_PREFIX)
+        job = await queue.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Review job not found")
+        status = job.get("status", "unknown")
+        if status == "completed":
+            return {
+                "status": "completed",
+                "result": job.get("result", {}),
+            }
+        elif status == "failed":
+            return {
+                "status": "failed",
+                "error": job.get("error", "Unknown error"),
+            }
+        else:
+            return {
+                "status": status,  # queued, running, etc.
+                "message": "Review still in progress.",
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Failed to get review result {job_id}: {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to get review result") from exc
 
 
 # Cap the second-hop graph fan-out: one Neo4j round-trip per direct neighbour,
@@ -818,6 +876,255 @@ async def get_learnings(repo_path: Optional[str] = None):
     except Exception as exc:
         logger.error(f"Failed to fetch learnings: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch learnings") from exc
+
+
+@router.get("/episodes", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+async def get_episodes(
+    status: Optional[str] = None,
+    topic: Optional[str] = None,
+    limit: int = 50,
+):
+    """L2 episodic memory: list clustered episodes.
+
+    Query params:
+    - status: pending | promoted | rejected | merged (optional filter)
+    - topic: category filter (optional)
+    - limit: max results (default 50)
+    """
+    try:
+        from brain.database.models import MemoryEpisode
+        from brain.database.session import async_session_factory
+        from sqlalchemy import select, desc
+
+        async with async_session_factory() as session:
+            q = select(MemoryEpisode).order_by(desc(MemoryEpisode.created_at)).limit(limit)
+            if status:
+                q = q.where(MemoryEpisode.status == status)
+            if topic:
+                q = q.where(MemoryEpisode.topic == topic)
+            result = await session.execute(q)
+            episodes = result.scalars().all()
+            return [
+                {
+                    "id": ep.id,
+                    "distilled_summary": ep.distilled_summary,
+                    "topic": ep.topic,
+                    "status": ep.status,
+                    "confidence": ep.confidence,
+                    "source_event_ids": ep.source_event_ids,
+                    "promoted_to_learning_id": ep.promoted_to_learning_id,
+                    "created_at": ep.created_at.isoformat() if ep.created_at else None,
+                }
+                for ep in episodes
+            ]
+    except Exception as exc:
+        logger.error(f"Failed to fetch episodes: {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to fetch episodes") from exc
+
+
+@router.post("/episodes/search", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+async def search_episodes(body: dict):
+    """L2 episodic memory: semantic search over episode summaries.
+
+    Body: {"query": "...", "limit": 10, "status": "pending" (optional)}
+    """
+    try:
+        from brain.database.models import MemoryEpisode
+        from brain.database.session import async_session_factory
+        from brain.llm import get_embedding_provider
+        from sqlalchemy import select
+
+        query = body.get("query", "")
+        limit = min(int(body.get("limit", 10)), 50)
+        status_filter = body.get("status")
+
+        if not query:
+            raise HTTPException(status_code=400, detail="query is required")
+
+        embedder = get_embedding_provider()
+        query_vec = await embedder.embed(query)
+        if not query_vec:
+            raise HTTPException(status_code=500, detail="Embedding failed")
+
+        async with async_session_factory() as session:
+            # pgvector cosine similarity search
+            q = select(MemoryEpisode).where(MemoryEpisode.embedding.isnot(None))
+            if status_filter:
+                q = q.where(MemoryEpisode.status == status_filter)
+            # Order by cosine distance (closest first)
+            q = q.order_by(MemoryEpisode.embedding.cosine_distance(query_vec)).limit(limit)
+            result = await session.execute(q)
+            episodes = result.scalars().all()
+            return [
+                {
+                    "id": ep.id,
+                    "distilled_summary": ep.distilled_summary,
+                    "topic": ep.topic,
+                    "status": ep.status,
+                    "confidence": ep.confidence,
+                    "created_at": ep.created_at.isoformat() if ep.created_at else None,
+                }
+                for ep in episodes
+            ]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Episode search failed: {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Episode search failed") from exc
+
+
+# === L4 Procedural Memory: Skills Registry ===
+
+@router.get("/skills", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+async def get_skills(status: Optional[str] = "active", limit: int = 50):
+    """L4 procedural memory: list learned skills and workflows."""
+    try:
+        from brain.database.models import MemorySkill
+        from brain.database.session import async_session_factory
+        from sqlalchemy import select, desc
+
+        async with async_session_factory() as session:
+            q = select(MemorySkill).order_by(desc(MemorySkill.confidence)).limit(limit)
+            if status:
+                q = q.where(MemorySkill.status == status)
+            result = await session.execute(q)
+            skills = result.scalars().all()
+            return [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "description": s.description,
+                    "triggers": s.triggers,
+                    "workflow": s.workflow,
+                    "times_used": s.times_used,
+                    "times_successful": s.times_successful,
+                    "success_rate": round(s.times_successful / s.times_used, 3) if s.times_used > 0 else None,
+                    "status": s.status,
+                    "confidence": s.confidence,
+                }
+                for s in skills
+            ]
+    except Exception as exc:
+        logger.error(f"Failed to fetch skills: {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to fetch skills") from exc
+
+
+@router.post("/skills", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
+async def create_skill(body: dict):
+    """L4 procedural memory: register a new skill/workflow.
+
+    Body: {"name": "...", "description": "...", "triggers": [...],
+           "workflow": [...], "confidence": 0.5}
+    """
+    try:
+        from brain.database.models import MemorySkill
+        from brain.database.session import async_session_factory
+        from brain.llm import get_embedding_provider
+
+        name = body.get("name", "").strip()
+        description = body.get("description", "").strip()
+        if not name or not description:
+            raise HTTPException(status_code=400, detail="name and description are required")
+
+        async with async_session_factory() as session:
+            # Check for duplicate name
+            from sqlalchemy import select
+            existing = await session.execute(select(MemorySkill).where(MemorySkill.name == name))
+            if existing.scalar_one_or_none():
+                raise HTTPException(status_code=409, detail=f"Skill '{name}' already exists")
+
+            # Generate embedding for semantic skill matching
+            embedding = None
+            try:
+                embedder = get_embedding_provider()
+                vec = await embedder.embed(f"{name}: {description}")
+                embedding = list(vec) if vec else None
+            except Exception:
+                pass
+
+            skill = MemorySkill(
+                name=name,
+                description=description,
+                triggers=body.get("triggers", []),
+                workflow=body.get("workflow", []),
+                source_episode_ids=body.get("source_episode_ids", []),
+                source_learning_ids=body.get("source_learning_ids", []),
+                confidence=float(body.get("confidence", 0.5)),
+                embedding=embedding,
+                repo_scope=body.get("repo_scope"),
+            )
+            session.add(skill)
+            await session.commit()
+            return {"id": skill.id, "name": skill.name, "status": "created"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Failed to create skill: {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to create skill") from exc
+
+
+@router.post("/skills/match", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+async def match_skills(body: dict):
+    """L4 procedural memory: find skills relevant to a task description.
+
+    Body: {"query": "...", "limit": 5}
+    Uses embedding similarity + trigger keyword matching.
+    """
+    try:
+        from brain.database.models import MemorySkill
+        from brain.database.session import async_session_factory
+        from brain.llm import get_embedding_provider
+        from sqlalchemy import select
+
+        query = body.get("query", "")
+        limit = min(int(body.get("limit", 5)), 20)
+        if not query:
+            raise HTTPException(status_code=400, detail="query is required")
+
+        embedder = get_embedding_provider()
+        query_vec = await embedder.embed(query)
+
+        async with async_session_factory() as session:
+            q = select(MemorySkill).where(
+                MemorySkill.status == "active",
+                MemorySkill.embedding.isnot(None),
+            )
+            if query_vec:
+                q = q.order_by(MemorySkill.embedding.cosine_distance(query_vec))
+            q = q.limit(limit * 2)  # over-fetch for trigger re-ranking
+            result = await session.execute(q)
+            skills = result.scalars().all()
+
+            # Re-rank: boost skills whose triggers match query keywords
+            query_lower = query.lower()
+            scored = []
+            for s in skills:
+                score = 0.0
+                for trigger in (s.triggers or []):
+                    if trigger.lower() in query_lower:
+                        score += 1.0
+                # Success rate bonus
+                if s.times_used > 0:
+                    score += (s.times_successful / s.times_used) * 0.5
+                scored.append((score, s))
+            scored.sort(key=lambda x: x[0], reverse=True)
+
+            return [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "description": s.description,
+                    "workflow": s.workflow,
+                    "confidence": s.confidence,
+                    "trigger_score": score,
+                }
+                for score, s in scored[:limit]
+            ]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Skill matching failed: {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Skill matching failed") from exc
 
 
 @router.post("/learnings", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])

@@ -181,8 +181,8 @@ class Settings(BaseSettings):
     # Retry budget for LLM/embedding API calls: total attempts per request and
     # base delay (seconds) for exponential backoff. Covers transient 429/5xx
     # and network blips from providers like NVIDIA.
-    LLM_MAX_RETRIES: int = 3
-    LLM_RETRY_BASE_DELAY_S: float = 1.0
+    LLM_MAX_RETRIES: int = 5
+    LLM_RETRY_BASE_DELAY_S: float = 2.0
     EMBEDDING_BATCH_SIZE: int = 0
     # Send the asymmetric-retrieval ``input_type`` field (NVIDIA-style).
     # Unset = preset behaviour (nvidia: yes, others: no).
