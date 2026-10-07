@@ -782,7 +782,10 @@ class HybridRetrievalPipeline:
         timing.symbol_ms = timing.lexical_ms * 0.3
 
         for rank, f in enumerate(lexical_files, 1):
-            candidates_by_channel["lexical"].append(ChannelCandidate("lexical", f.path, 1.0 / rank, rank=rank))
+            candidates_by_channel["lexical"].append(
+                ChannelCandidate("lexical", f.path, 1.0 / rank, rank=rank,
+                                 metadata={"summary": f.summary or ""})
+            )
         for rank, sym in enumerate(lexical_symbols, 1):
             sym_file_path = symbol_paths.get(sym.id)
             if not sym_file_path:
