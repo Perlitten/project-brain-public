@@ -46,6 +46,41 @@ def test_pack_freshness_facets_and_search_cover_all_pages():
     engine.dispose()
 
 
+def test_index_history_search_facets_respect_query_and_repository():
+    engine = create_engine("sqlite://")
+    for model in (Repository, IndexingRun):
+        model.__table__.create(engine)
+    with Session(engine) as session:
+        session.add_all([Repository(id=3, name="Brain", path="/app"), Repository(id=4, name="Other", path="/other")])
+        session.add_all([
+            IndexingRun(id=1, repository_id=3, commit_hash="current", status="completed"),
+            IndexingRun(id=2, repository_id=3, commit_hash="old", status="failed"),
+            IndexingRun(id=3, repository_id=4, commit_hash="current", status="completed"),
+        ])
+        session.commit()
+
+        class AsyncSession:
+            async def execute(self, statement):
+                return session.execute(statement)
+
+            async def get(self, model, key):
+                return session.get(model, key)
+
+        @asynccontextmanager
+        async def factory():
+            yield AsyncSession()
+
+        with patch.object(web, "async_session_factory", factory):
+            result = asyncio.run(web.web_index_runs(repository_id=3, page=1, page_size=20, q="current", status="failed"))
+            assert result["total"] == 0 and result["runs"] == []
+            assert result["facets"] == {"completed": 1}
+            by_id = asyncio.run(web.web_index_runs(repository_id=3, page=1, page_size=20, q="2", status=None))
+            assert by_id["total"] == 1
+            assert by_id["runs"][0]["id"] == 2
+            assert by_id["facets"] == {"failed": 1}
+    engine.dispose()
+
+
 def test_memory_filters_normalize_legacy_statuses_before_filtering():
     from brain.database.models import Decision, Rule
 

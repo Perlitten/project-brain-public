@@ -671,14 +671,16 @@ async def web_index_runs(
         size = page_size or limit
         where = [IndexingRun.repository_id == repository.id]
         if q:
-            where.append(IndexingRun.commit_hash.ilike(f"%{q.strip()}%"))
+            needle = f"%{q.strip()}%"
+            where.append(IndexingRun.commit_hash.ilike(needle) | cast(IndexingRun.id, String).ilike(needle))
+        facet_where = list(where)
         if status:
             where.append(func.lower(IndexingRun.status) == status.lower())
         total = int((await session.execute(select(func.count()).select_from(IndexingRun).where(*where))).scalar() or 0)
         facet_rows = (
             await session.execute(
                 select(IndexingRun.status, func.count())
-                .where(IndexingRun.repository_id == repository.id)
+                .where(*facet_where)
                 .group_by(IndexingRun.status)
             )
         ).all()
