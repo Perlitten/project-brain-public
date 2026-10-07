@@ -125,7 +125,7 @@ class HarnessStore:
         async with async_session_factory() as session:
             stmt = select(AgentTask).order_by(AgentTask.created_at.desc()).offset(max(0, offset)).limit(limit)
             if status:
-                stmt = stmt.where(AgentTask.status == status)
+                stmt = stmt.where(AgentTask.status.in_(("running", "claimed", "validating")) if status == "__running__" else AgentTask.status == status)
             if repo_path:
                 stmt = stmt.where(AgentTask.repo_path == repo_path)
             if query:
@@ -143,7 +143,7 @@ class HarnessStore:
         async with async_session_factory() as session:
             stmt = select(func.count()).select_from(AgentTask)
             if status:
-                stmt = stmt.where(AgentTask.status == status)
+                stmt = stmt.where(AgentTask.status.in_(("running", "claimed", "validating")) if status == "__running__" else AgentTask.status == status)
             if repo_path:
                 stmt = stmt.where(AgentTask.repo_path == repo_path)
             if query:
