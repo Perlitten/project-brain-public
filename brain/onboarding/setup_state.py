@@ -69,11 +69,11 @@ def _state_lock(path: Path):
             if os.fstat(fd).st_size == 0:
                 os.write(fd, b"\0")
             os.lseek(fd, 0, os.SEEK_SET)
-            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            getattr(msvcrt, "locking")(fd, getattr(msvcrt, "LK_LOCK"), 1)
         else:
             import fcntl
 
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            getattr(fcntl, "flock")(fd, getattr(fcntl, "LOCK_EX"))
         yield
     finally:
         os.close(fd)
