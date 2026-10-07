@@ -122,6 +122,8 @@ async def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--limit", type=int)
     ap.add_argument("--queries-config", default="queries")
+    ap.add_argument("--v7", action="store_true",
+                    help="add brain_v7 arm at the STEP-3 frozen v2 config")
     args = ap.parse_args()
 
     out_path = Path(args.out)
@@ -151,7 +153,10 @@ async def main() -> None:
         qtext = qmap[qid]
         row = {"id": qid, "dataset": args.dataset, "qrels": rel[qid], "arms": {}}
         try:
-            arms = await swe.brain_arms(qtext, repo_id, f"coir-{args.dataset.split('/')[-1]}", builder)
+            # v1_ablations=False: frozen #15 rows already carry v6/novector/nolex;
+            # the v2 question needs brain_v7 (+packed dense/lex) only.
+            arms = await swe.brain_arms(qtext, repo_id, f"coir-{args.dataset.split('/')[-1]}", builder,
+                                        add_v7=args.v7, v1_ablations=not args.v7)
         except Exception as exc:
             arms = {"brain_v5": {"paths": [], "error": str(exc)}}
         try:

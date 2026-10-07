@@ -236,6 +236,35 @@ class Settings(BaseSettings):
     RETRIEVAL_PACK_LIMIT: int = 10
     # Minimum candidates each routed surface keeps in the recall pool before global fill.
     RETRIEVAL_SURFACE_MIN_QUOTA: int = 3
+    # Retrieval v2 (external-eval driven): dense-primary fusion, gated reranker,
+    # empty-channel BM25 fallback, identifier query extraction, vector chunk->file
+    # aggregation mode. All legacy defaults — pipeline is byte-identical to v5
+    # unless RETRIEVAL_V2_ENABLED is set.
+    RETRIEVAL_V2_ENABLED: bool = False
+    # Fusion formula: "rrf" (prod), "wrrf" (weighted RRF, vector weight amplified),
+    # "linear" (score-normalized weighted sum; empty channels contribute 0).
+    # Frozen on dev150 (A7): linear — wrrf still dilutes the vector channel.
+    RETRIEVAL_V2_FUSION: str = "linear"
+    # Deterministic rerank stage + hard-coded path bonuses; off = select from fusion.
+    # Frozen on dev150 (A7): off — removing it was +.159 R@10 excl-0 under wrrf.
+    RETRIEVAL_V2_RERANK_ENABLED: bool = False
+    # When lexical/symbol/hints/graph/memory all return nothing, compute a
+    # content-BM25 channel over chunk text and fuse it (the anonymous-corpus case).
+    RETRIEVAL_V2_BM25_FALLBACK: bool = True
+    # Extract code identifiers / file paths / stack frames / error strings from
+    # the task text and feed them to the lexical/symbol/hints channels.
+    RETRIEVAL_V2_ID_QUERY: bool = True
+    # Chunk->file aggregation for the vector channel: "max" | "sum" | "topk".
+    RETRIEVAL_V2_VEC_AGG: str = "max"
+    # wrrf: multiplies the vector channel's RRF weight.
+    RETRIEVAL_V2_WRRF_VEC_WEIGHT: float = 2.0
+    # linear fusion channel weights (normalized-score weighted sum).
+    RETRIEVAL_V2_LIN_W_VEC: float = 1.0
+    RETRIEVAL_V2_LIN_W_LEX: float = 0.35
+    RETRIEVAL_V2_LIN_W_SYM: float = 0.35
+    RETRIEVAL_V2_LIN_W_HINT: float = 0.45
+    RETRIEVAL_V2_LIN_W_GRAPH: float = 0.3
+    RETRIEVAL_V2_LIN_W_BM25: float = 0.6
     # Skip LLM plan/checklist synthesis (faster context packs; retrieval-only mode)
     CONTEXT_PACK_SKIP_PLAN_LLM: bool = False
     # Per-dependency timeouts (seconds) for retrieval pipeline
