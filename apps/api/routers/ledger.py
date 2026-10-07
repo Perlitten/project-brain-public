@@ -28,6 +28,7 @@ def _ledger() -> EvidenceLedger:
 async def list_events(
     event_type: str = Query("", max_length=64),
     repository_id: str = Query("", max_length=128),
+    repository_path: str = Query("", max_length=4096),
     entity_type: str = Query("", max_length=64),
     entity_id: str = Query("", max_length=256),
     actor_identity: str = Query("", max_length=256),
@@ -38,6 +39,9 @@ async def list_events(
     offset: int = Query(0, ge=0),
 ):
     """Bounded, paginated query over the chain."""
+    if repository_path and not repository_id:
+        from brain.workspace.models import _generate_repository_id
+        repository_id = _generate_repository_id(repository_path)
     return _ledger().query(
         event_type=event_type,
         repository_id=repository_id,

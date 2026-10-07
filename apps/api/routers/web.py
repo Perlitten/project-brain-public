@@ -30,6 +30,7 @@ from brain.config.settings import settings
 from brain.context.budget import estimated_tokens
 from brain.database.models import ContextPack, Decision, Embedding, File, FileChunk, IndexingRun, Repository, Rule
 from brain.database.session import async_session_factory, check_health
+from brain.memory.repo_scope import repository_scope_clause
 
 WEB_READ_SCOPE = "core:read"
 
@@ -488,7 +489,7 @@ async def web_rules(
             repository = await session.get(Repository, repository_id)
             if repository is None:
                 raise HTTPException(status_code=404, detail="Repository not found")
-            stmt = stmt.where(Rule.repo_path == repository.path)
+            stmt = stmt.where(repository_scope_clause(Rule, repository.path))
         rows = list((await session.execute(stmt)).scalars().all())
     rows = [r for r in rows if str(r.status or "").lower() not in {"inactive", "disabled", "deprecated"}]
     if status:

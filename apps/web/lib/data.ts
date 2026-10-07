@@ -140,6 +140,11 @@ function jobStatus(v: unknown): JobStatus {
   return "degraded";
 }
 
+function rawTaskStatus(v: string): string {
+  if (v === "completed") return "passed";
+  return v;
+}
+
 function severityTone(v: unknown): Tone {
   const s = str(v).toLowerCase();
   if (["critical", "high", "error", "bad", "block", "blocker"].includes(s)) return "bad";
@@ -494,8 +499,8 @@ function toEvent(e: Json): LedgerEvent {
   };
 }
 
-async function loadEvents(limit = 50, repositoryId?: number): Promise<LedgerEvent[] | null> {
-  const scope = repositoryId ? `&repository_id=${repositoryId}` : "";
+async function loadEvents(limit = 50, repositoryPath?: string): Promise<LedgerEvent[] | null> {
+  const scope = repositoryPath ? `&repository_path=${encodeURIComponent(repositoryPath)}` : "";
   const head = await brainFetch<Json>(`/ledger/events?limit=1${scope}`, { fresh: true });
   if (!head) return null;
   const total = int(head.total);
@@ -597,7 +602,7 @@ export const getEvents = async (limit = 50, slug?: string | null): Promise<Ledge
   return live<LedgerEvent[]>([], async () => {
     const repo = pickRepo(await fetchRepos(), slug);
     if (slug && !repo) return [];
-    return loadEvents(limit, repo?.id);
+    return loadEvents(limit, repo?.path);
   });
 };
 
@@ -609,12 +614,15 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
     const params = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
     if (repo?.path) params.set("repo_path", repo.path);
     if (q.q) params.set("q", q.q);
-    if (q.status) params.set("status", q.status);
+    if (q.status) params.set("status", rawTaskStatus(q.status));
     const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
-    return data ? pageResult(data, "tasks", q, (t) => {
+    if (!data) return null;
+    const result = pageResult(data, "tasks", q, (t) => {
       const status = jobStatus(t.status), finished = !["running", "queued", "retrying"].includes(status);
       return { id: str(t.id), agent: str(t.target_agent) || str(t.owner_agent) || "agent", task: str(t.title) || str(t.goal) || "Untitled task", status, tokens: num(t.tokens), packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined, startedAt: fmtShort(t.created_at), duration: finished ? between(t.created_at, t.updated_at) : "—" };
-    }) : null;
+    });
+    result.paging.facets = Object.fromEntries(Object.entries(result.paging.facets).map(([key, value]) => [jobStatus(key), value]));
+    return result;
   });
 };
 
@@ -624,7 +632,7 @@ export const getPagedEvents = async (slug: string | null | undefined, input: Par
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
     if (slug && !repo) return null;
     const base = new URLSearchParams({ limit: String(q.size), offset: String((q.page - 1) * q.size), descending: "true" });
-    if (repo) base.set("repository_id", String(repo.id));
+    if (repo?.path) base.set("repository_path", repo.path);
     if (q.q) base.set("q", q.q);
     const data = await brainFetch<Json>(`/ledger/events?${base}`, { fresh: true });
     return data ? { items: list(data, "events").map(toEvent), paging: pagingFrom(data, q) } : null;

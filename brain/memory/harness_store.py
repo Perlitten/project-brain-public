@@ -11,7 +11,7 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.exc import IntegrityError
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -131,7 +131,7 @@ class HarnessStore:
             if query:
                 from sqlalchemy import or_
                 needle = f"%{query}%"
-                stmt = stmt.where(or_(AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
+                stmt = stmt.where(or_(cast(AgentTask.id, String).ilike(needle), AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
                                       AgentTask.target_agent.ilike(needle), AgentTask.owner_agent.ilike(needle)))
             result = await session.execute(stmt)
             return list(result.scalars().all())
@@ -148,7 +148,7 @@ class HarnessStore:
                 stmt = stmt.where(AgentTask.repo_path == repo_path)
             if query:
                 needle = f"%{query}%"
-                stmt = stmt.where(or_(AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
+                stmt = stmt.where(or_(cast(AgentTask.id, String).ilike(needle), AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
                                       AgentTask.target_agent.ilike(needle), AgentTask.owner_agent.ilike(needle)))
             return int((await session.execute(stmt)).scalar() or 0)
 
