@@ -23,11 +23,10 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import common  # noqa: E402  (sets env before brain imports)
+import common  # noqa: E402,F401  (sets env before brain imports)
 
 from common import (  # noqa: E402
     DEV_FOLD,
-    EVAL_DIR,
     REPOS_DIR,
     SEED,
     JsonlWriter,
