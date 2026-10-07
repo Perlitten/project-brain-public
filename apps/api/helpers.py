@@ -698,7 +698,12 @@ async def get_recent_brain_jobs(
     jobs: List[Dict[str, Any]] = []
     try:
         queue = JobQueue(redis_client, prefix=settings.WORKER_REDIS_PREFIX)
-        job_ids = await queue.recent_job_ids(limit=max(limit, 100))
+        # Repository filtering happens after loading job payloads, so fetch the
+        # largest indexed window before applying the requested result limit.
+        # Otherwise unrelated repositories can hide matching jobs among the
+        # first 100 global entries.
+        lookup_limit = 1000 if (repository_id is not None or repository_path) else max(limit, 100)
+        job_ids = await queue.recent_job_ids(limit=lookup_limit)
         # Upgrade fallback: jobs created before the ZSET index was introduced.
         if not job_ids:
             cursor = 0
