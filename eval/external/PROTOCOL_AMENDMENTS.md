@@ -79,3 +79,22 @@ commit — counted per row as `gold_at_snapshot` and reported; content
 drift between commits is a small, disclosed approximation used by
 comparable retrieval papers. `snapshot_commit`/`gold_at_snapshot` are
 recorded in every row.
+
+## A6 — dev tuning split (frozen 2026-10-07 before any tuning)
+
+- Pool: `princeton-nlp/SWE-bench` test (2294) minus ALL `SWE-bench_Lite` (300) and
+  `SWE-bench_Verified` (500) ids → 1587 candidates.
+- Sample: stratified by repo (`max(2, round(150*n/N))` per repo, seed 20261006,
+  same procedure as stratified60), n=150. Frozen id list: `splits/dev150_ids.txt`.
+- Distribution: django 51, sympy 24, sklearn 17, mpl 13, sphinx 12, pytest 8,
+  xarray 8, astropy 7, pylint 3, requests 3, seaborn 2, flask 2.
+- Indexes: reuse the same per-repo snapshot indexes as the Lite runs (A5).
+  9/150 rows have ≥1 gold file absent at snapshot (`gold_at_snapshot` flagged,
+  unbiased across index-based arms; grep arm excluded from tuned comparisons
+  anyway).
+- Rule: ALL v2 tuning decisions (fusion weights, reranker gate, fallback,
+  query-formulation, aggregation mode) are made on dev150 only. The Lite n=297
+  test set is touched exactly once, after the config is frozen.
+- Dev arms run: bm25, dense, brain_v5 (as shipped baseline), plus each candidate
+  v2 variant; cheap-loser arms (grep, lex_only, novector) are skipped on dev to
+  halve runtime — they are frozen losers on test.
