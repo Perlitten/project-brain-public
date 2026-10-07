@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import String, case, cast, func, select
+from sqlalchemy import String, case, cast, func, literal, select
 
 from apps.api.auth import require_api_key, require_scope
 from apps.api.helpers import (
@@ -432,7 +432,8 @@ async def web_decisions(page: int = Query(1, ge=1), page_size: int = Query(50, g
             base = base.where(repository_scope_clause(Decision, repository.path))
         if q:
             needle = f"%{q.strip()}%"
-            base = base.where(cast(Decision.id, String).ilike(needle) | Decision.title.ilike(needle) | Decision.description.ilike(needle))
+            text = cast(Decision.id, String) + literal(" ") + func.coalesce(Decision.title, "") + literal(" ") + func.coalesce(Decision.description, "")
+            base = base.where(text.ilike(needle))
         status_expr = case((func.lower(Decision.status).in_(("active", "accepted")), "accepted"),
                            (func.lower(Decision.status).in_(("proposed", "draft", "pending")), "proposed"),
                            (func.lower(Decision.status).in_(("deprecated", "superseded", "historical", "replaced", "inactive", "rejected")), "superseded"),
@@ -459,7 +460,7 @@ async def web_rules(page: int = Query(1, ge=1, le=1000000), page_size: int = Que
                     q: str | None = Query(None, max_length=500), status: str | None = Query(None, max_length=50),
                     severity: str | None = Query(None, max_length=50), repository_id: int | None = None) -> dict[str, Any]:
     async with async_session_factory() as session:
-        base = select(Rule).where(func.lower(Rule.status).not_in(("inactive", "disabled", "deprecated")))
+        base = select(Rule).where(func.coalesce(func.lower(Rule.status), "").not_in(("inactive", "disabled", "deprecated")))
         if repository_id is not None:
             repository = await session.get(Repository, repository_id)
             if repository is None:
@@ -467,7 +468,8 @@ async def web_rules(page: int = Query(1, ge=1, le=1000000), page_size: int = Que
             base = base.where(repository_scope_clause(Rule, repository.path))
         if q:
             needle = f"%{q.strip()}%"
-            base = base.where(cast(Rule.id, String).ilike(needle) | Rule.name.ilike(needle) | Rule.description.ilike(needle))
+            text = cast(Rule.id, String) + literal(" ") + func.coalesce(Rule.name, "") + literal(" ") + func.coalesce(Rule.description, "")
+            base = base.where(text.ilike(needle))
         if status:
             base = base.where(func.lower(Rule.status) == status.lower())
         severity_expr = case((func.lower(Rule.severity).in_(("high", "error", "critical", "block", "blocker")), "block"),

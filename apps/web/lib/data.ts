@@ -616,7 +616,7 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
     const params = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
     if (repo?.path) params.set("repo_path", repo.path);
     if (q.q) params.set("q", q.q);
-    if (q.status) params.set("status", rawTaskStatus(q.status));
+    if (q.status) params.set("display_status", q.status);
     const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
     if (!data) return null;
     const result = pageResult(data, "tasks", q, (t) => {

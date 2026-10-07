@@ -125,7 +125,7 @@ class HarnessStore:
         async with async_session_factory() as session:
             stmt = select(AgentTask).order_by(AgentTask.created_at.desc()).offset(max(0, offset)).limit(limit)
             if status:
-                stmt = stmt.where(AgentTask.status.in_(("running", "claimed", "validating")) if status == "__running__" else AgentTask.status == status)
+                stmt = stmt.where(AgentTask.status.in_(("running", "in_progress", "started", "indexing", "processing", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending")) if status == "__running__" else AgentTask.status == status)
             if repo_path:
                 stmt = stmt.where(AgentTask.repo_path == repo_path)
             if query:
@@ -163,7 +163,7 @@ class HarnessStore:
                 stmt = stmt.where(AgentTask.repo_path == repo_path)
             if query:
                 needle = f"%{query}%"
-                stmt = stmt.where(or_(AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
+                stmt = stmt.where(or_(cast(AgentTask.id, String).ilike(needle), AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
                                       AgentTask.target_agent.ilike(needle), AgentTask.owner_agent.ilike(needle)))
             rows = (await session.execute(stmt)).all()
             return {str(status): int(count) for status, count in rows}
