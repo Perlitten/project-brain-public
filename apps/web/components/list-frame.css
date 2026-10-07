@@ -19,12 +19,12 @@
 .lf__range { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--fs-12); color: var(--text-3); white-space: nowrap; }
 .lf__clear { padding: 0; border: 0; background: none; color: var(--teal-fg); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
-/* Tables inside a frame never scroll sideways on a desktop: long words wrap,
-   the head sticks under the filter bar. Phones keep the sideways scroll. */
+/* Table headers stick to their own scroll container. Page masthead and filter
+   offsets would push a short table's header over its first row. */
 @media (min-width: 721px) {
   .lf__table { overflow: auto; }
   .lf__table thead th {
-    position: sticky; top: calc(var(--plate-h) + var(--lf-bar)); z-index: 5;
+    position: sticky; top: 0; z-index: 5;
     background: var(--surface-module);
   }
 }
@@ -43,8 +43,7 @@
 
 .lf__empty { display: grid; justify-items: start; gap: var(--s-3); padding: var(--s-6) var(--s-5); color: var(--text-2); }
 
-/* The pager is the list's footer: it sticks to the bottom of the viewport
-   while the list is on screen, so paging never needs a scroll to the end. */
+/* The pager follows the list without covering its final rows. */
 .lf__pager {
   position: relative; z-index: 6;
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2) var(--s-3);
