@@ -32,22 +32,19 @@ Goal: beat dense baseline on file localization, keep economy edge, no test-set o
   - harness: --v2 flag, 10 brain_v7_* ablation arms, --ids-file — commit 0df2bb5
   - paired significance tool: harness/paired.py (bootstrap CI on per-instance diff + sign test)
 
-### In flight
-- dev150 ablation run: /home/ubuntu/eval_external/dev150_v2.log → results/dev150_v2.jsonl
-  ETA ~1.7h (11 pipeline calls per instance; graph timeouts on dependency routes inflate some).
-  Command:
-  cd eval/external/harness && set -a && source env.sh && set +a &&
-  .venv/bin/python run_swebench.py --dataset princeton-nlp/SWE-bench \
-      --ids-file ../splits/dev150_ids.txt --index-once --v2 \
-      --out /home/ubuntu/eval_external/results/dev150_v2.jsonl
-  (resumable — already-done instance_ids are skipped via done_ids)
+### In flight (STEP 3 test — single run, frozen config)
+- dev150 ablation DONE (3 rounds, 23 cells, n=150): linear fusion won; frozen config
+  = RETRIEVAL_V2_FUSION=linear + RERANK_ENABLED=False, rest defaults (A7, commit 8824b31).
+- Lite n=297 --v7 run, 3 disjoint repo shards → results/test_lite_v7_{a,b,c}.jsonl
+- CoIR --v7 ×3 datasets → results/coir_v7_{dl,cosqa,soqa}.jsonl
+- RepoBench 2 splits w/ built-in brain_v7 arm → results/repobench_v7_{cff,cfr}.jsonl
+All resumable via done_ids; same commands as dev runs but --v7 / --subset all.
 
 ### Next
-1. Score dev150_v2.jsonl (score.py) + paired.py vs brain_v5 and dense; pick per-fix winners.
-2. STEP 3: freeze chosen config → ONE Lite n=297 run (same harness, --index-once, no --v2
-   but v7 arm only) + CoIR + RepoBench vs frozen numbers; paired CIs + sign test vs dense;
-   eff regression ≤ 10%.
-3. Set flag defaults per outcome; REPORT.md 'v2 retrieval' section + 5-line verdict; PR.
+1. Merge brain_v7 arms into frozen rows (per-instance arms dict update), score.py,
+   paired.py vs dense AND vs brain_fused; eff regression vs .0153 must be ≤10%.
+2. Set RETRIEVAL_V2_ENABLED default per outcome (on only if beats dense, CI excl 0).
+3. REPORT.md 'v2 retrieval' section + 5-line verdict; open PR.
 
 ### Services needed (VM)
 embed_server.py on :18099 (source env.sh FIRST — else it defaults to jina-768),
