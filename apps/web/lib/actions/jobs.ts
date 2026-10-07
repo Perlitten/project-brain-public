@@ -37,6 +37,9 @@ export async function getJob(id: string): Promise<JobSnapshot | null> {
 }
 
 export async function startReindex(opts: { repoPath?: string; clean?: boolean } = {}): Promise<ActionResult> {
+  if (Object.prototype.hasOwnProperty.call(opts, "repoPath") && !opts.repoPath?.trim()) {
+    return { ok: false, message: "Choose a repository before starting a re-index." };
+  }
   return mutate("/jobs/reindex", {
     body: { repo_path: opts.repoPath || undefined, clean: Boolean(opts.clean), verify_after: true },
     success: opts.clean ? "Full re-index queued — Brain will re-read every file." : "Re-index queued — Brain will read what changed.",

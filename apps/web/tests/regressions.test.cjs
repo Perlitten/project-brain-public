@@ -41,6 +41,30 @@ function withEnv(values, run) {
 }
 
 const basic = value => `Basic ${Buffer.from(value).toString('base64')}`;
+
+test('reindex refuses an explicitly empty repository path but permits a scoped path', async () => {
+  const calls = [];
+  const jobs = load('lib/actions/jobs.ts', {
+    '../api': {},
+    './gate': {
+      guard: () => null,
+      mutate: async (path, options) => { calls.push({ path, options }); return { ok: true, message: 'queued' }; },
+    },
+  });
+  for (const repoPath of ['', '   ']) {
+    const result = await jobs.startReindex({ repoPath });
+    assert.equal(result.ok, false);
+    assert.equal(result.message, 'Choose a repository before starting a re-index.');
+  }
+  assert.equal(calls.length, 0);
+  assert.deepEqual(await jobs.startReindex({ repoPath: 'D:/projects/brain' }), { ok: true, message: 'queued' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].path, '/jobs/reindex');
+  assert.equal(calls[0].options.body.repo_path, 'D:/projects/brain');
+  assert.equal((await jobs.startReindex()).ok, true);
+  assert.equal(calls[1].options.body.repo_path, undefined);
+});
+
 test('live credentials require a valid configured gate; demo can remain public', () => {
   const { authorizeWebRequest: authorize } = load('lib/web-auth.ts');
   withEnv({}, () => assert.equal(authorize(null), 200));

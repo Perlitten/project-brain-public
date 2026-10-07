@@ -434,21 +434,16 @@ async def web_decisions(
                 raise HTTPException(status_code=404, detail="Repository not found")
             stmt = stmt.where(Decision.repo_path == repository.path)
         rows = list((await session.execute(stmt)).scalars().all())
-    normalized = [{"row": r, "status": _decision_status(r.status)} for r in rows]
     if q:
         needle = q.casefold()
-        normalized = [
-            item
-            for item in normalized
-            if needle in f"{item['row'].id} {item['row'].title} {item['row'].description or ''}".casefold()
-        ]
-    facets = defaultdict(int)
-    for item in normalized:
-        facets[item["status"]] += 1
+        rows = [r for r in rows if needle in f"{r.id} {r.title} {r.description or ''}".casefold()]
+    facets: dict[str, int] = defaultdict(int)
+    for row in rows:
+        facets[_decision_status(row.status)] += 1
     if status:
         wanted = _decision_status(status)
-        normalized = [item for item in normalized if item["status"] == wanted]
-    total = len(normalized)
+        rows = [row for row in rows if _decision_status(row.status) == wanted]
+    total = len(rows)
     start = (page - 1) * page_size
     result = {
         "total": total,
@@ -472,8 +467,7 @@ async def web_decisions(
             "affected_modules": r.affected_modules,
             "affected_files": r.affected_files,
         }
-        for item in normalized[start : start + page_size]
-        for r in [item["row"]]
+        for r in rows[start : start + page_size]
     ]
     result["scope"] = "repository" if repository_id is not None else "global"
     return result
@@ -497,22 +491,17 @@ async def web_rules(
             stmt = stmt.where(Rule.repo_path == repository.path)
         rows = list((await session.execute(stmt)).scalars().all())
     rows = [r for r in rows if str(r.status or "").lower() not in {"inactive", "disabled", "deprecated"}]
-    normalized = [{"row": r, "severity": _rule_severity(r.severity)} for r in rows]
     if status:
-        normalized = [item for item in normalized if str(item["row"].status).lower() == status.lower()]
+        rows = [r for r in rows if str(r.status).lower() == status.lower()]
     if q:
         needle = q.casefold()
-        normalized = [
-            item
-            for item in normalized
-            if needle in f"{item['row'].id} {item['row'].name} {item['row'].description or ''}".casefold()
-        ]
-    facets = defaultdict(int)
-    for item in normalized:
-        facets[item["severity"]] += 1
+        rows = [r for r in rows if needle in f"{r.id} {r.name} {r.description or ''}".casefold()]
+    facets: dict[str, int] = defaultdict(int)
+    for row in rows:
+        facets[_rule_severity(row.severity)] += 1
     if severity:
-        normalized = [item for item in normalized if item["severity"] == _rule_severity(severity)]
-    total = len(normalized)
+        rows = [r for r in rows if _rule_severity(r.severity) == _rule_severity(severity)]
+    total = len(rows)
     start = (page - 1) * page_size
     result = {
         "total": total,
@@ -533,8 +522,7 @@ async def web_rules(
             "applies_to": r.applies_to,
             "repo_path": r.repo_path,
         }
-        for item in normalized[start : start + page_size]
-        for r in [item["row"]]
+        for r in rows[start : start + page_size]
     ]
     result["scope"] = "repository" if repository_id is not None else "global"
     return result

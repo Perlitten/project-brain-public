@@ -720,7 +720,8 @@ async def get_recent_brain_jobs(
             wanted = str(Path(repository_path).resolve()) if repository_path else None
             scoped = []
             for job in jobs:
-                params = job.get("params") if isinstance(job.get("params"), dict) else {}
+                raw_params = job.get("params")
+                params = raw_params if isinstance(raw_params, dict) else {}
                 job_repo_id = params.get("repository_id")
                 job_repo_path = params.get("repo_path") or params.get("repository_path")
                 if repository_id is not None and str(job_repo_id) == str(repository_id):
