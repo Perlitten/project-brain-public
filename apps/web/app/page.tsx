@@ -23,9 +23,9 @@ export default async function Overview({ searchParams }: Props) {
     getCondition(slug),
     getCorpus(slug),
     getCodeModules(slug),
-    getJobs(),
-    getEvents(),
-    getAgentRuns(),
+    getJobs(slug),
+    getEvents(50, slug),
+    getAgentRuns(slug),
   ]);
   const scanning = (repo.behind ?? 0) > 0 && jobs.some((j) => j.status === "running" && j.kind.startsWith("index"));
   const withRepo = (href: string) => (slug ? `${href}?repo=${slug}` : href);
@@ -36,7 +36,7 @@ export default async function Overview({ searchParams }: Props) {
         condition={condition}
         action={
           condition.action ? (
-            <RunButton action={startReindex} label={condition.action.label} icon="refresh" variant="primary" title="Re-index" />
+            <RunButton action={startReindex.bind(null, { repoPath: repo.path })} label={condition.action.label} icon="refresh" variant="primary" title="Re-index" />
           ) : undefined
         }
       />

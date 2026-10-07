@@ -7,6 +7,7 @@ import { connection } from "next/server";
 import { cache } from "react";
 import { apiConfigured, brainFetch } from "./api";
 import * as mock from "./mock";
+import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./list-query";
 import type {
   AccessKey,
   AccessView,
@@ -192,7 +193,19 @@ function toRepository(r: RawRepo): Repository {
 const noRepository: Repository = { id: 0, slug: "", name: "No repository", path: "", branch: "", head: "", behind: null, freshness: "unindexed" };
 
 const pickRepo = (repos: RawRepo[] | null, slug?: string | null) =>
-  repos?.find((r) => String(r.id) === slug) ?? repos?.[0] ?? null;
+  slug ? repos?.find((r) => String(r.id) === slug) ?? null : repos?.[0] ?? null;
+
+export type Paged<T> = { items: T[]; paging: ListPaging };
+const queryString = (q: ListQuery) => {
+  const p = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
+  if (q.q) p.set("q", q.q);
+  if (q.status) p.set("status", q.status);
+  return p.toString();
+};
+const pageResult = <T>(data: Json, key: string, q: ListQuery, map: (v: Json) => T): Paged<T> => ({
+  items: list(data, key).map(map),
+  paging: pagingFrom(data, q),
+});
 
 // ---------------------------------------------------------------------------
 // Overview (new /api/web router; may be missing on older APIs)
@@ -481,13 +494,14 @@ function toEvent(e: Json): LedgerEvent {
   };
 }
 
-async function loadEvents(limit = 50): Promise<LedgerEvent[] | null> {
-  const head = await brainFetch<Json>("/ledger/events?limit=1", { fresh: true });
+async function loadEvents(limit = 50, repositoryId?: number): Promise<LedgerEvent[] | null> {
+  const scope = repositoryId ? `&repository_id=${repositoryId}` : "";
+  const head = await brainFetch<Json>(`/ledger/events?limit=1${scope}`, { fresh: true });
   if (!head) return null;
   const total = int(head.total);
   if (total <= 1) return list(head, "events").map(toEvent);
   const offset = Math.max(0, total - limit);
-  const page = await brainFetch<Json>(`/ledger/events?limit=${limit}&offset=${offset}`, { fresh: true });
+  const page = await brainFetch<Json>(`/ledger/events?limit=${limit}&offset=${offset}${scope}`, { fresh: true });
   if (!page) return null;
   return list(page, "events").reverse().map(toEvent);
 }
@@ -515,7 +529,7 @@ export const getCondition = async (slug?: string | null): Promise<Condition> => 
     const repo = pickRepo(repos, slug);
     const [jobs, insights] = await Promise.all([
       repo ? loadJobs(repo.id, str(repo.name)) : Promise.resolve(null),
-      loadInsights(),
+      Promise.resolve(null),
     ]);
     return deriveCondition(repo, repos !== null, jobs, insights);
   });
@@ -527,6 +541,7 @@ export const getCorpus = async (slug?: string | null): Promise<Corpus> => {
   return live(empty, async () => {
     const repo = pickRepo(await fetchRepos(), slug);
     const overview = repo ? await fetchOverview(repo.id) : null;
+    if (!repo) return null;
     let counts = obj(overview?.counts);
     if (!Object.keys(counts).length) {
       // Older APIs: global counts only, no coverage meters.
@@ -542,18 +557,23 @@ export const getCorpus = async (slug?: string | null): Promise<Corpus> => {
   });
 };
 
-export const getJobs = async (): Promise<Job[]> => {
+export const getJobs = async (slug?: string | null): Promise<Job[]> => {
   if (!apiConfigured) return mock.jobs;
   return live<Job[]>([], async () => {
-    const repo = pickRepo(await fetchRepos());
+    const repo = pickRepo(await fetchRepos(), slug);
+    if (slug && !repo) return [];
     return loadJobs(repo?.id, str(repo?.name));
   });
 };
 
-export const getAgentRuns = async (): Promise<AgentRun[]> => {
+export const getAgentRuns = async (slug?: string | null): Promise<AgentRun[]> => {
   if (!apiConfigured) return mock.agentRuns;
   return live<AgentRun[]>([], async () => {
-    const data = await brainFetch<Json>("/harness/tasks?limit=100", { fresh: true });
+    const repo = pickRepo(await fetchRepos(), slug);
+    if (slug && !repo) return [];
+    const params = new URLSearchParams({ page: "1", page_size: "100" });
+    if (repo?.path) params.set("repo_path", repo.path);
+    const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
     if (!data) return null;
     return list(data, "tasks").map((t) => {
       const status = jobStatus(t.status);
@@ -572,9 +592,43 @@ export const getAgentRuns = async (): Promise<AgentRun[]> => {
   });
 };
 
-export const getEvents = async (limit = 50): Promise<LedgerEvent[]> => {
+export const getEvents = async (limit = 50, slug?: string | null): Promise<LedgerEvent[]> => {
   if (!apiConfigured) return mock.events;
-  return live<LedgerEvent[]>([], () => loadEvents(limit));
+  return live<LedgerEvent[]>([], async () => {
+    const repo = pickRepo(await fetchRepos(), slug);
+    if (slug && !repo) return [];
+    return loadEvents(limit, repo?.id);
+  });
+};
+
+export const getPagedAgentRuns = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<AgentRun>> => {
+  const q = getListQuery(input);
+  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+    const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
+    if (slug && !repo) return null;
+    const params = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
+    if (repo?.path) params.set("repo_path", repo.path);
+    if (q.q) params.set("q", q.q);
+    if (q.status) params.set("status", q.status);
+    const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
+    return data ? pageResult(data, "tasks", q, (t) => {
+      const status = jobStatus(t.status), finished = !["running", "queued", "retrying"].includes(status);
+      return { id: str(t.id), agent: str(t.target_agent) || str(t.owner_agent) || "agent", task: str(t.title) || str(t.goal) || "Untitled task", status, tokens: num(t.tokens), packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined, startedAt: fmtShort(t.created_at), duration: finished ? between(t.created_at, t.updated_at) : "—" };
+    }) : null;
+  });
+};
+
+export const getPagedEvents = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<LedgerEvent>> => {
+  const q = getListQuery(input);
+  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+    const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
+    if (slug && !repo) return null;
+    const base = new URLSearchParams({ limit: String(q.size), offset: String((q.page - 1) * q.size), descending: "true" });
+    if (repo) base.set("repository_id", String(repo.id));
+    if (q.q) base.set("q", q.q);
+    const data = await brainFetch<Json>(`/ledger/events?${base}`, { fresh: true });
+    return data ? { items: list(data, "events").map(toEvent), paging: pagingFrom(data, q) } : null;
+  });
 };
 
 const triggers: IndexRun["trigger"][] = ["push", "schedule", "manual", "auto-heal"];
@@ -648,7 +702,7 @@ export const getContextPacks = async (): Promise<ContextPack[]> => {
 function decisionStatus(v: unknown): Decision["status"] {
   const s = str(v).toLowerCase();
   if (["proposed", "draft", "pending"].includes(s)) return "proposed";
-  if (["superseded", "deprecated", "replaced", "inactive", "rejected"].includes(s)) return "superseded";
+  if (["superseded", "deprecated", "historical", "replaced", "inactive", "rejected"].includes(s)) return "superseded";
   return "accepted";
 }
 
@@ -766,6 +820,74 @@ export const getReports = async (): Promise<Report[]> => {
       createdAt: fmtWhen(r.created_at),
       size: fmtBytes(num(r.size_bytes)),
     }));
+  });
+};
+
+/** Server-paged collections used by the history screens. The legacy getters above
+ * remain available for compact dashboard widgets. */
+export const getPagedIndexRuns = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<IndexRun>> => {
+  const q = getListQuery(input);
+  if (!apiConfigured) return { items: mock.indexRuns.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: mock.indexRuns.length, facets: {} } };
+  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+    const repo = pickRepo(await fetchRepos(), slug);
+    if (!repo) return null;
+    const data = await brainFetch<Json>(`/api/web/index-runs?repository_id=${repo.id}&${queryString(q)}`, { fresh: true });
+    return data ? pageResult(data, "runs", q, (r) => {
+      const status = jobStatus(r.status), rev = str(r.revision);
+      return { id: int(r.id), revision: rev.startsWith("snapshot:") ? rev.slice(9, 16) : rev.slice(0, 7), trigger: indexTrigger(r.trigger), status, completeness: completeness(r.completeness, status), files: int(r.files), changed: int(r.changed), chunks: int(r.chunks), startedAt: fmtWhen(r.started_at), duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration) };
+    }) : null;
+  });
+};
+
+export const getPagedContextPacks = async (input: Partial<ListQuery> = {}, slug?: string | null): Promise<Paged<ContextPack>> => {
+  const q = getListQuery(input);
+  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+    const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
+    if (slug && !repo) return null;
+    const data = await brainFetch<Json>(`/api/web/context-packs?${queryString(q)}${repo ? `&repository_id=${repo.id}` : ""}`);
+    return data ? pageResult(data, "packs", q, (p) => { const budget = str(p.budget).toLowerCase(); return { id: str(p.id), task: str(p.task) || "Untitled task", budget: budget === "small" || budget === "large" ? budget : "medium", tokens: int(p.tokens), files: int(p.files), createdAt: fmtShort(p.created_at), stale: typeof p.stale === "boolean" ? p.stale : null, consumer: str(p.consumer) || "an agent" }; }) : null;
+  });
+};
+
+export const getPagedReports = async (input: Partial<ListQuery> = {}): Promise<Paged<Report>> => {
+  const q = getListQuery(input);
+  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+    const data = await brainFetch<Json>(`/api/web/reports?${queryString(q)}`);
+    return data ? pageResult(data, "reports", q, (r) => ({ id: str(r.id), title: str(r.title) || str(r.id) || "Untitled report", kind: str(r.kind) || "report", createdAt: fmtWhen(r.created_at), size: fmtBytes(num(r.size_bytes)) })) : null;
+  });
+};
+
+export const getPagedInsights = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<Insight>> => {
+  const q = getListQuery(input);
+  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+    const params = new URLSearchParams(queryString({ ...q, status: "" }));
+    if (q.status) params.set("severity", q.status);
+    const data = await brainFetch<Json>(`/insights?${params}`);
+    return data ? pageResult(data, "insights", q, (i) => {
+      const evidence = arr(i.evidence), first = obj(evidence[0]);
+      return { id: str(i.id), tone: severityTone(i.severity), kind: insightKind(str(i.insight_type)), title: str(i.title, "Untitled finding"), evidence: evidenceText(evidence[0]) || str(i.summary), module: str(first.module) || str(first.file) || str(first.path) || str(i.source) || "—", detectedAt: fmtShort(i.last_seen_at ?? i.created_at) };
+    }) : null;
+  });
+};
+
+export const getPagedDecisions = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<Decision>> => {
+  const q = getListQuery(input);
+  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+    const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
+    const scope = repo ? `&repository_id=${repo.id}` : "";
+    const data = await brainFetch<Json>(`/api/web/decisions?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${q.status ? `&status=${q.status}` : ""}${scope}`);
+    return data ? pageResult(data, "decisions", q, (d) => ({ id: `D-${str(d.id)}`, title: str(d.title) || "Untitled decision", status: decisionStatus(d.status), scope: str(d.repo_path).split(/[\\/]/).filter(Boolean).pop() || "whole project", recordedAt: fmtShort(d.date ?? d.created_at), summary: str(d.description) || str(d.reason) || "" })) : null;
+  });
+};
+
+export const getPagedRules = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<Rule>> => {
+  const q = getListQuery(input);
+  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+    const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
+    const scope = repo ? `&repository_id=${repo.id}` : "";
+    const severity = q.status && ["block", "warn", "advise"].includes(q.status) ? `&severity=${q.status}` : "";
+    const data = await brainFetch<Json>(`/api/web/rules?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${scope}${severity}`);
+    return data ? pageResult(data, "rules", q, (r) => ({ id: str(r.id), rule: str(r.description) || str(r.name) || str(r.id), severity: ruleSeverity(r.severity), scope: ruleScope(r.applies_to, str(r.type)), hits30d: num(r.hits_30d) })) : null;
   });
 };
 

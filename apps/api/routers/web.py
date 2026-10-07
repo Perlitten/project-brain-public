@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import String, case, cast, func, select
 
 from apps.api.auth import require_api_key, require_scope
 from apps.api.helpers import (
@@ -25,10 +25,10 @@ from apps.api.helpers import (
     get_reports_list,
     get_self_diagnosis_status,
 )
-from brain.config.paths import context_packs_dir, get_repo_root
+from brain.config.paths import context_packs_dir, get_repo_root, reports_dir
 from brain.config.settings import settings
 from brain.context.budget import estimated_tokens
-from brain.database.models import ContextPack, Embedding, File, FileChunk, IndexingRun, Repository
+from brain.database.models import ContextPack, Decision, Embedding, File, FileChunk, IndexingRun, Repository, Rule
 from brain.database.session import async_session_factory, check_health
 
 WEB_READ_SCOPE = "core:read"
@@ -123,9 +123,7 @@ async def _resolve_repository(repository_id: int | None) -> Repository | None:
         if record is not None:
             return record
     async with async_session_factory() as session:
-        return (
-            await session.execute(select(Repository).order_by(Repository.id.asc()).limit(1))
-        ).scalar_one_or_none()
+        return (await session.execute(select(Repository).order_by(Repository.id.asc()).limit(1))).scalar_one_or_none()
 
 
 # --------------------------------------------------------------------------- context packs
@@ -240,33 +238,306 @@ def shape_context_pack(pack: Any, resolved: Path | None, index_commit: str | Non
 
 
 @router.get("/context-packs")
-async def web_context_packs(limit: int = Query(50, ge=1, le=500)) -> dict[str, Any]:
+async def web_context_packs(
+    limit: int = Query(50, ge=1, le=500),
+    page: int = Query(1, ge=1),
+    page_size: int | None = Query(None, ge=1, le=500),
+    q: str | None = Query(None, max_length=500),
+    repository_id: int | None = None,
+    status: str | None = Query(None, max_length=50),
+) -> dict[str, Any]:
+    # Direct callers in the unit suite invoke the coroutine without FastAPI's
+    # dependency conversion, so Query defaults may still be present.
+    page_value = page if isinstance(page, int) else 1
+    size = (page_size if isinstance(page_size, int) else None) or limit
+    if not isinstance(size, int):
+        size = 50
+    query = q.strip() if isinstance(q, str) else ""
     async with async_session_factory() as session:
+        base = select(ContextPack)
+        if repository_id is not None:
+            base = base.where(ContextPack.repository_id == repository_id)
+        if query:
+            needle = f"%{query}%"
+            base = base.where(
+                (ContextPack.task_description.ilike(needle)) | (cast(ContextPack.id, String).ilike(needle))
+            )
+        latest_commit = (
+            select(IndexingRun.commit_hash)
+            .where(
+                IndexingRun.repository_id == ContextPack.repository_id, func.lower(IndexingRun.status) == "completed"
+            )
+            .order_by(IndexingRun.id.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        freshness = case(
+            (ContextPack.repository_id.is_(None), "unknown"),
+            (ContextPack.repo_commit.is_(None), "unknown"),
+            (ContextPack.repo_commit == "", "unknown"),
+            (latest_commit.is_(None), "unknown"),
+            (ContextPack.repo_commit == latest_commit, "fresh"),
+            else_="outdated",
+        ).label("freshness")
+        facet_base = base
+        if isinstance(status, str) and status:
+            normalized_status = status.lower()
+            if normalized_status not in {"fresh", "outdated", "unknown"}:
+                raise HTTPException(status_code=400, detail="Unknown context pack freshness status")
+            base = base.where(freshness == normalized_status)
+        count_base = base.subquery()
+        total = int((await session.execute(select(func.count()).select_from(count_base))).scalar() or 0)
+        facet_stmt = select(freshness, func.count()).select_from(ContextPack)
+        if facet_base.whereclause is not None:
+            facet_stmt = facet_stmt.where(facet_base.whereclause)
+        facet_rows = (await session.execute(facet_stmt.group_by(freshness))).all()
         packs = (
-            await session.execute(select(ContextPack).order_by(ContextPack.created_at.desc()).limit(limit))
-        ).scalars().all()
+            (
+                await session.execute(
+                    base.order_by(ContextPack.created_at.desc()).offset((page_value - 1) * size).limit(size)
+                )
+            )
+            .scalars()
+            .all()
+        )
         repo_ids = {pack.repository_id for pack in packs if pack.repository_id is not None}
         latest_commits: dict[int | None, str | None] = {}
         if repo_ids:
             ranked = (
-                select(IndexingRun.repository_id, IndexingRun.commit_hash,
-                       func.row_number().over(partition_by=IndexingRun.repository_id,
-                                              order_by=IndexingRun.id.desc()).label("rank"))
+                select(
+                    IndexingRun.repository_id,
+                    IndexingRun.commit_hash,
+                    func.row_number()
+                    .over(partition_by=IndexingRun.repository_id, order_by=IndexingRun.id.desc())
+                    .label("rank"),
+                )
                 .where(IndexingRun.repository_id.in_(repo_ids), func.lower(IndexingRun.status) == "completed")
                 .subquery()
             )
-            rows = (await session.execute(
-                select(ranked.c.repository_id, ranked.c.commit_hash).where(ranked.c.rank == 1)
-            )).all()
+            rows = (
+                await session.execute(select(ranked.c.repository_id, ranked.c.commit_hash).where(ranked.c.rank == 1))
+            ).all()
             latest_commits = {repo_id: commit for repo_id, commit in rows}
+    shaped = [
+        shape_context_pack(
+            pack,
+            resolve_context_pack_file(pack.path),
+            latest_commits.get(pack.repository_id) if pack.repository_id is not None else None,
+        )
+        for pack in packs
+    ]
+    facets = {"freshness": {str(key): int(value) for key, value in facet_rows}}
+    for key in ("fresh", "outdated", "unknown"):
+        facets["freshness"].setdefault(key, 0)
     return {
-        "packs": [shape_context_pack(pack, resolve_context_pack_file(pack.path),
-                                     latest_commits.get(pack.repository_id) if pack.repository_id is not None else None)
-                  for pack in packs]
+        "packs": shaped,
+        "total": total,
+        "page": page_value,
+        "page_size": size,
+        "total_pages": max(1, (total + size - 1) // size),
+        "facets": facets,
     }
 
 
+@router.get("/context-packs/{pack_id}")
+async def web_context_pack_detail(pack_id: int) -> dict[str, Any]:
+    async with async_session_factory() as session:
+        pack = await session.get(ContextPack, pack_id)
+        if pack is None:
+            raise HTTPException(status_code=404, detail="Context pack not found")
+        resolved = resolve_context_pack_file(pack.path)
+        if resolved is None:
+            raise HTTPException(status_code=404, detail="Context pack content is unavailable")
+        latest = None
+        if pack.repository_id is not None:
+            latest = (
+                await session.execute(
+                    select(IndexingRun.commit_hash)
+                    .where(
+                        IndexingRun.repository_id == pack.repository_id,
+                        func.lower(IndexingRun.status) == "completed",
+                    )
+                    .order_by(IndexingRun.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+    try:
+        content = resolved.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Context pack content could not be read") from exc
+    return {"pack": shape_context_pack(pack, resolved, latest), "content": content}
+
+
 # --------------------------------------------------------------------------- reports
+
+
+def _paged_records(rows: list[Any], page: int, size: int, query: str | None) -> dict[str, Any]:
+    if query:
+        needle = query.casefold()
+        rows = [
+            r
+            for r in rows
+            if needle in str(getattr(r, "title", getattr(r, "name", ""))).casefold()
+            or needle in str(getattr(r, "description", "")).casefold()
+        ]
+    total = len(rows)
+    statuses: dict[str, int] = defaultdict(int)
+    for row in rows:
+        status = getattr(row, "status", None) or "unknown"
+        statuses[str(status)] += 1
+    start = (page - 1) * size
+    return {
+        "items": rows[start : start + size],
+        "total": total,
+        "page": page,
+        "page_size": size,
+        "total_pages": max(1, (total + size - 1) // size),
+        "facets": {"status": dict(statuses)},
+    }
+
+
+def _decision_status(value: Any) -> str:
+    raw = str(value or "").lower()
+    if raw in {"active", "accepted"}:
+        return "accepted"
+    if raw in {"proposed", "draft", "pending"}:
+        return "proposed"
+    return (
+        "superseded"
+        if raw in {"deprecated", "superseded", "historical", "replaced", "inactive", "rejected"}
+        else (raw or "unknown")
+    )
+
+
+def _rule_severity(value: Any) -> str:
+    raw = str(value or "").lower()
+    if raw in {"high", "error", "critical", "block", "blocker"}:
+        return "block"
+    if raw in {"medium", "warn", "warning"}:
+        return "warn"
+    return "advise"
+
+
+@router.get("/decisions")
+async def web_decisions(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    q: str | None = Query(None, max_length=500),
+    status: str | None = Query(None, max_length=50),
+    repository_id: int | None = None,
+) -> dict[str, Any]:
+    async with async_session_factory() as session:
+        stmt = select(Decision).order_by(Decision.id)
+        if repository_id is not None:
+            repository = await session.get(Repository, repository_id)
+            if repository is None:
+                raise HTTPException(status_code=404, detail="Repository not found")
+            stmt = stmt.where(Decision.repo_path == repository.path)
+        rows = list((await session.execute(stmt)).scalars().all())
+    normalized = [{"row": r, "status": _decision_status(r.status)} for r in rows]
+    if q:
+        needle = q.casefold()
+        normalized = [
+            item
+            for item in normalized
+            if needle in f"{item['row'].id} {item['row'].title} {item['row'].description or ''}".casefold()
+        ]
+    facets = defaultdict(int)
+    for item in normalized:
+        facets[item["status"]] += 1
+    if status:
+        wanted = _decision_status(status)
+        normalized = [item for item in normalized if item["status"] == wanted]
+    total = len(normalized)
+    start = (page - 1) * page_size
+    result = {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+        "facets": {"status": dict(facets)},
+    }
+    result["decisions"] = [
+        {
+            "id": r.id,
+            "title": r.title,
+            "description": r.description,
+            "status": _decision_status(r.status),
+            "raw_status": r.status,
+            "repo_path": r.repo_path,
+            "date": r.date.isoformat() if r.date else None,
+            "reason": r.reason,
+            "consequences": r.consequences,
+            "affected_features": r.affected_features,
+            "affected_modules": r.affected_modules,
+            "affected_files": r.affected_files,
+        }
+        for item in normalized[start : start + page_size]
+        for r in [item["row"]]
+    ]
+    result["scope"] = "repository" if repository_id is not None else "global"
+    return result
+
+
+@router.get("/rules")
+async def web_rules(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    q: str | None = Query(None, max_length=500),
+    status: str | None = Query(None, max_length=50),
+    severity: str | None = Query(None, max_length=50),
+    repository_id: int | None = None,
+) -> dict[str, Any]:
+    async with async_session_factory() as session:
+        stmt = select(Rule).order_by(Rule.id)
+        if repository_id is not None:
+            repository = await session.get(Repository, repository_id)
+            if repository is None:
+                raise HTTPException(status_code=404, detail="Repository not found")
+            stmt = stmt.where(Rule.repo_path == repository.path)
+        rows = list((await session.execute(stmt)).scalars().all())
+    rows = [r for r in rows if str(r.status or "").lower() not in {"inactive", "disabled", "deprecated"}]
+    normalized = [{"row": r, "severity": _rule_severity(r.severity)} for r in rows]
+    if status:
+        normalized = [item for item in normalized if str(item["row"].status).lower() == status.lower()]
+    if q:
+        needle = q.casefold()
+        normalized = [
+            item
+            for item in normalized
+            if needle in f"{item['row'].id} {item['row'].name} {item['row'].description or ''}".casefold()
+        ]
+    facets = defaultdict(int)
+    for item in normalized:
+        facets[item["severity"]] += 1
+    if severity:
+        normalized = [item for item in normalized if item["severity"] == _rule_severity(severity)]
+    total = len(normalized)
+    start = (page - 1) * page_size
+    result = {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+        "facets": {"severity": dict(facets)},
+    }
+    result["rules"] = [
+        {
+            "id": r.id,
+            "name": r.name,
+            "description": r.description,
+            "status": r.status,
+            "severity": _rule_severity(r.severity),
+            "raw_severity": r.severity,
+            "type": r.type,
+            "applies_to": r.applies_to,
+            "repo_path": r.repo_path,
+        }
+        for item in normalized[start : start + page_size]
+        for r in [item["row"]]
+    ]
+    result["scope"] = "repository" if repository_id is not None else "global"
+    return result
 
 
 def report_kind(name: str) -> str:
@@ -300,12 +571,50 @@ def shape_report(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/reports")
-async def web_reports(limit: int = Query(50, ge=1, le=500)) -> dict[str, Any]:
+async def web_reports(
+    limit: int = Query(50, ge=1, le=500),
+    page: int = Query(1, ge=1),
+    page_size: int | None = Query(None, ge=1, le=500),
+    q: str | None = Query(None, max_length=500),
+) -> dict[str, Any]:
     try:
         raw_reports = get_reports_list()
     except OSError as exc:
         raise HTTPException(status_code=503, detail="Reports folder could not be read") from exc
-    return {"reports": [shape_report(raw) for raw in raw_reports[:limit]]}
+    size = page_size or limit
+    if q and q.strip():
+        needle = q.strip().casefold()
+        raw_reports = [raw for raw in raw_reports if needle in str(raw.get("name", "")).casefold()]
+    total = len(raw_reports)
+    start = (page - 1) * size
+    return {
+        "reports": [shape_report(raw) for raw in raw_reports[start : start + size]],
+        "total": total,
+        "page": page,
+        "page_size": size,
+        "total_pages": max(1, (total + size - 1) // size),
+        "scope": "global",
+    }
+
+
+@router.get("/reports/{report_name}")
+async def web_report_detail(report_name: str) -> dict[str, Any]:
+    if Path(report_name).name != report_name or report_name in {"", ".", ".."}:
+        raise HTTPException(status_code=400, detail="Invalid report name")
+    allowed = reports_dir().resolve()
+    candidate = _resolve_inside(allowed / report_name, [allowed])
+    if candidate is None or candidate.suffix.lower() != ".md":
+        raise HTTPException(status_code=404, detail="Report not found")
+    raw = {
+        "name": candidate.name,
+        "created_at": datetime.fromtimestamp(candidate.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+        "size": candidate.stat().st_size,
+    }
+    try:
+        content = candidate.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Report could not be read") from exc
+    return {"report": shape_report(raw), "content": content}
 
 
 # --------------------------------------------------------------------------- index runs
@@ -362,20 +671,51 @@ def shape_index_run(run: Any) -> dict[str, Any]:
 async def web_index_runs(
     repository_id: int | None = None,
     limit: int = Query(20, ge=1, le=200),
+    page: int = Query(1, ge=1),
+    page_size: int | None = Query(None, ge=1, le=200),
+    q: str | None = Query(None, max_length=500),
+    status: str | None = Query(None, max_length=50),
 ) -> dict[str, Any]:
     repository = await _resolve_repository(repository_id)
     if repository is None:
         return {"repository": None, "runs": []}
     async with async_session_factory() as session:
-        runs = (
+        size = page_size or limit
+        where = [IndexingRun.repository_id == repository.id]
+        if q:
+            where.append(IndexingRun.commit_hash.ilike(f"%{q.strip()}%"))
+        if status:
+            where.append(func.lower(IndexingRun.status) == status.lower())
+        total = int((await session.execute(select(func.count()).select_from(IndexingRun).where(*where))).scalar() or 0)
+        facet_rows = (
             await session.execute(
-                select(IndexingRun)
+                select(IndexingRun.status, func.count())
                 .where(IndexingRun.repository_id == repository.id)
-                .order_by(IndexingRun.id.desc())
-                .limit(limit)
+                .group_by(IndexingRun.status)
             )
-        ).scalars().all()
-    return {"repository": _repository_dict(repository), "runs": [shape_index_run(run) for run in runs]}
+        ).all()
+        runs = (
+            (
+                await session.execute(
+                    select(IndexingRun)
+                    .where(*where)
+                    .order_by(IndexingRun.id.desc())
+                    .offset((page - 1) * size)
+                    .limit(size)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return {
+        "repository": _repository_dict(repository),
+        "runs": [shape_index_run(run) for run in runs],
+        "total": total,
+        "page": page,
+        "page_size": size,
+        "facets": {str(k): int(v) for k, v in facet_rows},
+        "total_pages": max(1, (total + size - 1) // size),
+    }
 
 
 # --------------------------------------------------------------------------- module graph
@@ -466,7 +806,8 @@ def _add_module_row(row: tuple[Any, ...], modules: dict[str, dict[str, Any]], co
     path, emb_id, dim, provider, model = row
     name = module_of(path)
     bucket = modules.setdefault(
-        name, {"name": name, "chunks": 0, "current": 0, "outdated": 0, "missing": 0, "excluded": 0},
+        name,
+        {"name": name, "chunks": 0, "current": 0, "outdated": 0, "missing": 0, "excluded": 0},
     )
     bucket["chunks"] += 1
     if should_exclude_from_retrieval(path):
@@ -495,12 +836,12 @@ async def web_modules(repository_id: int | None = None) -> dict[str, Any]:
     modules: dict[str, dict[str, Any]] = {}
     async with async_session_factory() as session:
         rows = await session.stream(
-                select(File.path, Embedding.id, Embedding.dimension, Embedding.provider, Embedding.model)
-                .select_from(FileChunk)
-                .join(File, FileChunk.file_id == File.id)
-                .outerjoin(Embedding, FileChunk.embedding_id == Embedding.id)
-                .where(File.repository_id == repository.id)
-                .execution_options(yield_per=1000)
+            select(File.path, Embedding.id, Embedding.dimension, Embedding.provider, Embedding.model)
+            .select_from(FileChunk)
+            .join(File, FileChunk.file_id == File.id)
+            .outerjoin(Embedding, FileChunk.embedding_id == Embedding.id)
+            .where(File.repository_id == repository.id)
+            .execution_options(yield_per=1000)
         )
         async for row in rows:
             _add_module_row(tuple(row), modules, config)
@@ -636,7 +977,11 @@ async def web_overview(
         )
 
     config = get_embedding_config()
-    job_data = await get_recent_brain_jobs(limit=jobs_limit)
+    job_data = await get_recent_brain_jobs(
+        limit=jobs_limit,
+        repository_id=repository.id if repository else None,
+        repository_path=repository.path if repository else None,
+    )
     return {
         "repository": _repository_dict(repository),
         "services": services,

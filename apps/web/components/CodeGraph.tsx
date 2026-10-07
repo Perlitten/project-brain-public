@@ -94,7 +94,7 @@ export function CodeGraph({ edges }: { edges: ModuleEdge[] }) {
       className={`graph${hot ? " graph--focus" : ""}`}
       viewBox={`0 0 ${W} ${H}`}
       style={{ minWidth: Math.round(W * 0.66) }}
-      role="img"
+      role="group"
       aria-label="Module dependency map"
     >
       <defs>
@@ -165,6 +165,16 @@ export function CodeGraph({ edges }: { edges: ModuleEdge[] }) {
             style={{ "--i": Math.min(i, 24) } as CSSProperties}
             onPointerEnter={() => setHot(name)}
             onPointerLeave={() => setHot((h) => (h === name ? null : h))}
+            role="button"
+            tabIndex={0}
+            aria-label={`Highlight connections for ${name}${sub ? `, ${sub}` : ""}`}
+            aria-pressed={hot === name}
+            onFocus={() => setHot(name)}
+            onBlur={() => setHot((h) => h === name ? null : h)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setHot((h) => h === name ? null : name); }
+              if (e.key === "Escape") setHot(null);
+            }}
           >
             <title>{name}</title>
             <rect x={p.x} y={p.y} width={NW} height={NH} rx={4} />

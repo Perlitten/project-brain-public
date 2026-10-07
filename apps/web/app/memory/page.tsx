@@ -2,7 +2,8 @@ import type { CSSProperties } from "react";
 import { ListFrame } from "@/components/ListFrame";
 import { PageTabs, pickTab } from "@/components/PageTabs";
 import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
-import { getDecisions, getRules } from "@/lib/data";
+import { getPagedDecisions, getPagedRules } from "@/lib/data";
+import { getListQuery } from "@/lib/list-query";
 import type { Decision, Rule, Tone } from "@/lib/types";
 
 export const metadata = { title: "Decisions & rules" };
@@ -17,10 +18,19 @@ const severity: Record<Rule["severity"], [Tone, string]> = {
 
 const VIEWS = ["decisions", "rules"] as const;
 
-export default async function Memory({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
-  const { view } = await searchParams;
+export default async function Memory({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = await searchParams;
+  const view = typeof params.view === "string" ? params.view : undefined;
   const tab = pickTab(VIEWS, view);
-  const [decisions, rules] = await Promise.all([getDecisions(), getRules()]);
+  const query = getListQuery(params);
+  const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
+  const repo = typeof params.repo === "string" ? params.repo : undefined;
+  const [decisionsResult, rulesResult] = await Promise.all([
+    getPagedDecisions(repo, tab === "decisions" ? query : {}),
+    getPagedRules(repo, tab === "rules" ? query : {}),
+  ]);
+  const decisions = decisionsResult.items;
+  const rules = rulesResult.items;
   const hitsTracked = rules.some((r) => r.hits30d !== undefined);
   const blocking = rules.filter((r) => r.severity === "block").length;
   return (
@@ -28,20 +38,21 @@ export default async function Memory({ searchParams }: { searchParams: Promise<{
       <PageHead
         eyebrow="Decisions & rules"
         title="What your team decided, so agents remember it too"
-        lede="Decisions explain why the code is the way it is. Rules are checks an agent’s change must pass before it is accepted."
+        lede={repo ? "Decisions and rules for the selected repository." : "Decisions and rules across all connected repositories."}
       />
-      <PageTabs
+        <PageTabs
         label="Decisions or rules"
         path="/memory"
-        current={tab}
+          current={tab}
+          params={{ repo }}
         tabs={[
-          { id: "decisions", label: "Decisions", badge: decisions.length },
-          { id: "rules", label: "Rules", badge: blocking ? `${rules.length} · ${blocking} blocking` : rules.length },
+          { id: "decisions", label: "Decisions", badge: decisionsResult.paging.total },
+          { id: "rules", label: "Rules", badge: blocking ? `${rulesResult.paging.total} · ${blocking} blocking on this page` : rulesResult.paging.total },
         ]}
       />
       {tab === "decisions" ? (
         <section aria-label="Decisions">
-          {decisions.length === 0 ? (
+          {decisions.length === 0 && !hasQuery ? (
             <EmptyState title="No decisions recorded" body="Nobody has recorded a decision yet. Agents and people can record one through Brain." />
           ) : (
           <ListFrame
@@ -51,6 +62,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<{
             meta={decisions.map((d) => ({ q: `${d.title} ${d.summary} ${d.scope} ${d.id}`.toLowerCase(), f: d.status }))}
             facet={{ label: "Status", values: (["accepted", "proposed", "superseded"] as const).map((v) => ({ value: v, label: statusWords[v] })) }}
             pageSize={20}
+            paging={decisionsResult.paging}
             rows={decisions.map((d, i) => (
             <article key={d.id} className={`card tone-${statusTone[d.status]}`} style={{ "--i": Math.min(i, 12) } as CSSProperties}>
               <div className="card__top">
@@ -72,12 +84,13 @@ export default async function Memory({ searchParams }: { searchParams: Promise<{
         <Panel id="rules" title="Rules agents must follow" desc={hitsTracked ? "“Caught” counts problems each rule stopped in the last 30 days." : "Brain doesn’t count how often each rule fires yet."}
           flush
         >
-          {rules.length === 0 ? (
+          {rules.length === 0 && !hasQuery ? (
             <EmptyState title="No rules yet" body="No active rules are recorded. Add one so agents’ changes are checked against it." />
           ) : (
           <Table
             caption="Rules"
             rows={rules}
+            paging={rulesResult.paging}
             rowKey={(r) => r.id}
             filter={{
               search: (r) => `${r.rule} ${r.id} ${r.scope}`,

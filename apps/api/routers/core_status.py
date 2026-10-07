@@ -3,8 +3,8 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import case, func, select
 
 from apps.api.auth import require_api_key, require_scope
 from apps.api.helpers import (
@@ -57,19 +57,95 @@ async def diagnostics_status():
 
 
 @router.get("/insights", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def list_insights(status: str | None = None, limit: int = 20):
-    safe_limit = max(1, min(int(limit or 20), 100))
+async def list_insights(
+    status: str | None = Query(None, max_length=50),
+    limit: int = Query(20, ge=1, le=500),
+    page: int = Query(1, ge=1),
+    page_size: int | None = Query(None, ge=1, le=500),
+    q: str | None = Query(None, max_length=500),
+    severity: str | None = Query(None, max_length=20),
+    repository_id: int | None = Query(None),
+):
+    # Direct unit callers bypass FastAPI's Query coercion.
+    if not isinstance(status, str):
+        status = None
+    if not isinstance(q, str):
+        q = None
+    if not isinstance(severity, str):
+        severity = None
+    if not isinstance(repository_id, int):
+        repository_id = None
+    size_value = page_size if isinstance(page_size, int) else limit if isinstance(limit, int) else 20
+    safe_limit = max(1, min(size_value, 500))
+    safe_page = max(1, page if isinstance(page, int) else 1)
+
+    def tone(value: str | None) -> str:
+        raw = (value or "").lower()
+        if raw in {"high", "critical", "error", "bad"}:
+            return "bad"
+        if raw in {"medium", "warning", "warn"}:
+            return "warn"
+        return "info"
+
     async with async_session_factory() as session:
-        stmt = select(BrainInsight).order_by(BrainInsight.last_seen_at.desc(), BrainInsight.id.desc()).limit(safe_limit)
+        # BrainInsight currently has no repository ownership column. An
+        # explicit repository request therefore fails closed instead of
+        # presenting global findings as repository-specific.
+        if repository_id is not None:
+            return {
+                "insights": [],
+                "total": 0,
+                "page": safe_page,
+                "page_size": safe_limit,
+                "total_pages": 1,
+                "facets": {"status": {}},
+                "scope": "repository",
+            }
+        stmt = select(BrainInsight).order_by(BrainInsight.last_seen_at.desc(), BrainInsight.id.desc())
         if status:
             stmt = stmt.where(BrainInsight.status == status)
-        rows = (await session.execute(stmt)).scalars().all()
+        else:
+            stmt = stmt.where(BrainInsight.status.not_in(("resolved", "dismissed", "closed", "archived")))
+        if q:
+            needle = f"%{q.strip()}%"
+            stmt = stmt.where(BrainInsight.title.ilike(needle) | BrainInsight.summary.ilike(needle))
+        severity_expr = case(
+            (func.lower(BrainInsight.severity).in_(("high", "critical", "error", "bad")), "bad"),
+            (func.lower(BrainInsight.severity).in_(("medium", "warning", "warn")), "warn"),
+            else_="info",
+        ).label("severity_tone")
+        facets = dict(
+            (str(k), int(v))
+            for k, v in (
+                await session.execute(
+                    select(severity_expr, func.count())
+                    .select_from(BrainInsight)
+                    .where(stmt.whereclause)
+                    .group_by(severity_expr)
+                )
+            ).all()
+        )
+        if severity:
+            if severity not in {"bad", "warn", "info"}:
+                return {
+                    "insights": [],
+                    "total": 0,
+                    "page": safe_page,
+                    "page_size": safe_limit,
+                    "total_pages": 1,
+                    "facets": {"severity": facets},
+                    "scope": "global",
+                }
+            stmt = stmt.where(severity_expr == severity)
+        total = int((await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0)
+        rows = (await session.execute(stmt.offset((safe_page - 1) * safe_limit).limit(safe_limit))).scalars().all()
         return {
             "insights": [
                 {
                     "id": row.id,
                     "insight_type": row.insight_type,
-                    "severity": row.severity,
+                    "severity": tone(row.severity),
+                    "raw_severity": row.severity,
                     "title": row.title,
                     "summary": row.summary,
                     "evidence": row.evidence or [],
@@ -84,7 +160,13 @@ async def list_insights(status: str | None = None, limit: int = 20):
                     "last_seen_at": format_datetime_utc(row.last_seen_at),
                 }
                 for row in rows
-            ]
+            ],
+            "total": total,
+            "page": safe_page,
+            "page_size": safe_limit,
+            "total_pages": max(1, (total + safe_limit - 1) // safe_limit),
+            "facets": {"severity": facets},
+            "scope": "global",
         }
 
 

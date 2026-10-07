@@ -193,6 +193,7 @@ function SectionForm({ section }: { section?: SettingsSection }) {
   const bad = fields.some((f) => problem(f, d[f.key] ?? initial(f)));
 
   const submit = async () => {
+    if (pending || mode !== "on" || !dirty || bad) return;
     const res = await run(values, clears);
     if (res.ok) {
       setD((x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, fields.find((f) => f.key === k)?.kind === "secret" ? "" : v])));
@@ -269,11 +270,11 @@ function SectionForm({ section }: { section?: SettingsSection }) {
 function Hints({ f }: { f: SettingField }) {
   return (
     <>
-      {f.help && <Tip end>{f.help}</Tip>}
+      {f.help && <Tip label={`Help for ${f.label}`} end>{f.help}</Tip>}
       {f.fromEnv && (
         <span className="env-badge">
           env
-          <Tip end>Also set in the server’s process environment (e.g. docker compose). That value wins after a restart — change it there too.</Tip>
+          <Tip label={`Environment override for ${f.label}`} end>Also set in the server’s process environment (e.g. docker compose). That value wins after a restart — change it there too.</Tip>
         </span>
       )}
     </>
@@ -286,17 +287,19 @@ function Input({ f, v, cleared, onChange, onClear }: { f: SettingField; v: strin
   const num = f.kind === "int" || f.kind === "float";
   return (
     <div className="field">
-      <label className="field__label" htmlFor={`set-${f.key}`}>
-        {f.label}
+      <div className="field__label">
+        <label htmlFor={`set-${f.key}`}>{f.label}</label>
         {num && f.min != null && f.max != null && (
           <em>
             {f.min}–{f.max}
           </em>
         )}
         <Hints f={f} />
-      </label>
+      </div>
       <input
         id={`set-${f.key}`}
+        aria-invalid={Boolean(err)}
+        aria-describedby={err ? `set-${f.key}-error` : undefined}
         className={`input${secret || f.kind === "url" || num ? " input--mono" : ""}`}
         type={secret ? "password" : "text"}
         inputMode={num ? "numeric" : undefined}
@@ -306,10 +309,10 @@ function Input({ f, v, cleared, onChange, onClear }: { f: SettingField; v: strin
         autoComplete={secret ? "new-password" : "off"}
         spellCheck={false}
       />
-      {err && <span className="field__hint field__hint--bad">{err}</span>}
+      {err && <span id={`set-${f.key}-error`} className="field__hint field__hint--bad" role="status">{err}</span>}
       {secret && f.set && (
         <label className="check check--sm">
-          <input type="checkbox" checked={cleared} onChange={(e) => onClear(e.target.checked)} />
+          <input type="checkbox" checked={cleared} aria-label={`Remove ${f.label}`} onChange={(e) => onClear(e.target.checked)} />
           Remove
         </label>
       )}

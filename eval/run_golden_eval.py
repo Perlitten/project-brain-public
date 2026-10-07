@@ -92,10 +92,38 @@ def _evaluate_question(question: dict, response: dict, limit: int) -> dict:
     person optimising the wrong half of the system.
     """
     expected = [_normalize_path(path) for path in question.get("expect_files", []) if isinstance(path, str)]
-    files = response.get("files", [])
-    file_paths = [_normalize_path(item.get("path", "")) for item in files if isinstance(item, dict)]
-    chunks = response.get("chunks", [])
-    chunk_paths = [_normalize_path(item.get("file_path", "")) for item in chunks if isinstance(item, dict)]
+
+    # The current compact /search contract is ``results[].path``.  Keep the
+    # pre-unification files/chunks channels readable for historical captures,
+    # but reject arbitrary payloads instead of silently scoring an empty list.
+    if not isinstance(response, dict):
+        raise ValueError("search response must be an object")
+
+    def _paths(key: str, path_key: str) -> list[str]:
+        values = response.get(key)
+        if values is None:
+            return []
+        if not isinstance(values, list) or any(not isinstance(item, dict) for item in values):
+            raise ValueError(f"search response field {key!r} must be a list of objects")
+        paths = []
+        for item in values:
+            value = item.get(path_key)
+            if not isinstance(value, str):
+                raise ValueError(f"search response {key} item missing string {path_key!r}")
+            paths.append(_normalize_path(value))
+        return paths
+
+    has_unified = "results" in response
+    has_legacy = "files" in response or "chunks" in response
+    if not has_unified and not has_legacy:
+        raise ValueError("unknown search response shape: expected results or files/chunks")
+    result_paths = _paths("results", "path") if has_unified else []
+    file_paths = _paths("files", "path") if "files" in response else []
+    chunk_paths = _paths("chunks", "file_path") if "chunks" in response else []
+    if has_unified:
+        # Unified results are the canonical ranking.  Do not double-count a
+        # compatibility channel if a server includes both representations.
+        file_paths = result_paths
 
     def _matches(candidate: str) -> bool:
         return any(
@@ -122,10 +150,12 @@ def _evaluate_question(question: dict, response: dict, limit: int) -> dict:
     rank_chunks = _rank(chunk_paths)
     rank_any = min([r for r in (rank, rank_chunks) if r] or [0])
 
-    hit1 = _hit(rank, 1)
-    hit3 = _hit(rank, min(3, limit))
-    hit5 = _hit(rank, min(5, limit))
-    mrr = 1.0 / rank if rank else 0.0
+    # For the unified contract there is one ranked list.  For legacy captures
+    # retain the useful any-channel score because /ask exposes both channels.
+    hit1 = _hit(rank_any, 1)
+    hit3 = _hit(rank_any, min(3, limit))
+    hit5 = _hit(rank_any, min(5, limit))
+    mrr = 1.0 / rank_any if rank_any else 0.0
     status = "PASS" if hit3 else "FAIL"
 
     return {

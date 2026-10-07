@@ -3,6 +3,7 @@
 // what it remembers and which models it thinks with. Read-only, so it runs in
 // every mode except demo.
 import { apiConfigured, brainFetch } from "../api";
+import { getRepository } from "../data";
 
 export interface Pulse {
   at: number;
@@ -24,7 +25,7 @@ type Json = Record<string, unknown>;
 const o = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : {});
 const s = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 
-export async function getPulse(): Promise<Pulse | null> {
+export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
   if (!apiConfigured) return null;
   // All four at once: the rail shows "Checking…" until the slowest answers,
   // and waiting for /health first only added a round trip.
@@ -33,7 +34,7 @@ export async function getPulse(): Promise<Pulse | null> {
   const [health, version, indexing, setup] = await Promise.all([
     brainFetch<Json>("/health", { fresh: true }).then((h) => ((latencyMs = Math.round(performance.now() - t0)), h)),
     brainFetch<Json>("/api/version", { revalidate: 300 }),
-    brainFetch<Json>("/api/status/indexing", { fresh: true }),
+    repoSlug === "" ? Promise.resolve(null) : getRepository(repoSlug).then(repo => repo.id ? brainFetch<Json>(`/api/web/index-runs?repository_id=${repo.id}&page_size=1`, { fresh: true }) : null),
     brainFetch<Json>("/api/setup/status", { fresh: true }),
   ]);
   if (!health) return { at: Date.now(), reachable: false, down: [] };
@@ -41,7 +42,7 @@ export async function getPulse(): Promise<Pulse | null> {
   const down = Object.entries(details)
     .filter(([, v]) => o(v).status !== "healthy")
     .map(([k]) => k);
-  const run = o((Array.isArray(indexing?.recent_runs) ? indexing.recent_runs : [])[0]);
+  const run = o((Array.isArray(indexing?.runs) ? indexing.runs : [])[0]);
   const steps = (Array.isArray(setup?.steps) ? setup.steps : []).map(o);
   const provider = o(steps.find((st) => st.id === "provider"));
   const sha = s(o(version).build_sha);

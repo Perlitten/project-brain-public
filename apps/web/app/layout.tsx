@@ -39,6 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const repos: ShellRepo[] = (await getRepositories()).map((r) => ({
     slug: r.slug,
     name: r.name,
+    path: r.path,
     ...repositoryStatus(r),
   }));
   const live = dataSource !== "demo";

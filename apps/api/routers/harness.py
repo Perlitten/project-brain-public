@@ -7,7 +7,7 @@ that calls these endpoints.
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_scope
 from apps.api.harness_schemas import (
@@ -172,10 +172,19 @@ async def create_task(body: TaskCreateRequest):
 
 
 @router.get("/tasks", dependencies=[Depends(require_scope("harness:read"))])
-async def list_tasks(status: str | None = None, limit: int = 100):
-    safe_limit = max(1, min(int(limit or 100), 500))
-    tasks = await HarnessStore.list_tasks(status=status, limit=safe_limit)
-    return {"tasks": [_task_dict(t) for t in tasks]}
+async def list_tasks(status: str | None = None, repo_path: str | None = None,
+                     q: str | None = Query(None, max_length=500),
+                     page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=500)):
+    safe_limit = page_size if isinstance(page_size, int) else 100
+    safe_page = page if isinstance(page, int) else 1
+    q = q if isinstance(q, str) else None
+    tasks = await HarnessStore.list_tasks(status=status, repo_path=repo_path, query=q,
+                                          offset=(safe_page - 1) * safe_limit, limit=safe_limit)
+    total = await HarnessStore.count_tasks(status=status, repo_path=repo_path, query=q)
+    facets = await HarnessStore.task_status_counts(repo_path=repo_path, query=q)
+    return {"tasks": [_task_dict(t) for t in tasks], "page": safe_page, "page_size": safe_limit,
+            "total": total, "total_pages": max(1, (total + safe_limit - 1) // safe_limit),
+            "facets": {"status": facets}, "scope": "repository" if repo_path else "global_or_unscoped"}
 
 
 @router.get("/tasks/{task_id}", dependencies=[Depends(require_scope("harness:read"))])

@@ -1,6 +1,7 @@
 import { Term } from "@/components/Term";
 import { Chip, EmptyState, JobChip, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
-import { getIndexRuns } from "@/lib/data";
+import { getCorpus, getPagedIndexRuns } from "@/lib/data";
+import { getListQuery } from "@/lib/list-query";
 import type { IndexRun } from "@/lib/types";
 
 export const metadata = { title: "Indexing" };
@@ -13,9 +14,12 @@ const triggerWords: Record<IndexRun["trigger"], string> = {
   unknown: "trigger not recorded",
 };
 
-export default async function Indexing({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
-  const { repo } = await searchParams;
-  const runs = await getIndexRuns(repo);
+export default async function Indexing({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = await searchParams;
+  const repo = typeof params.repo === "string" ? params.repo : undefined;
+  const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
+  const [result, corpus] = await Promise.all([getPagedIndexRuns(repo, getListQuery(params)), getCorpus(repo)]);
+  const runs = result.items;
   const last = runs.find((r) => r.status === "completed");
   const troubled = runs.filter((r) => r.status === "failed" || r.status === "degraded").length;
   return (
@@ -31,19 +35,20 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
         }
       />
       <div className="stats">
-        <Stat label="Files in the last read" value={last ? fmt(last.files) : "0"} note={last ? `took ${last.duration}` : "no complete read yet"} />
-        <Stat label="Pieces stored" value={last ? fmt(last.chunks) : "0"} note="searchable slices of code" />
+        <Stat label="Files in last completed read on this page" value={last ? fmt(last.files) : "—"} note={last ? `took ${last.duration}` : "no completed run on this page"} />
+        <Stat label="Pieces stored" value={fmt(corpus.chunks)} note="searchable slices across the repository" />
         <div className={troubled ? "tone-warn" : "tone-ok"}>
-          <Stat label="Runs with problems" value={String(troubled)} note={`out of the last ${runs.length}`} />
+        <Stat label="Runs with problems" value={String(troubled)} note={`on this page · ${result.paging.total.toLocaleString("en-US")} total`} />
         </div>
       </div>
       <Panel id="runs" title="Index runs" desc="A partial run only re-reads the files that changed." flush>
-        {runs.length === 0 ? (
+        {runs.length === 0 && !hasQuery ? (
           <EmptyState title="No index runs yet" body="Brain hasn’t reported any runs. Index a repository to see them here." />
         ) : (
         <Table
           caption="Index runs"
           rows={runs}
+          paging={result.paging}
           rowKey={(r) => String(r.id)}
           filter={{ search: (r) => `#${r.id} ${r.revision} ${r.startedAt} ${r.trigger}`, facet: { label: "Result", of: (r) => r.status }, noun: ["run", "runs"] }}
           columns={[

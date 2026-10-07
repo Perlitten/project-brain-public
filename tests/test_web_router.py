@@ -5,6 +5,7 @@ through TestClient with every DB/graph/Redis loader patched at the router.
 """
 
 import asyncio
+import pytest
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -60,6 +61,77 @@ def test_parse_context_pack_markdown_reads_budget_and_files():
     )
     assert web.parse_context_pack_markdown(text) == {"budget": "balanced", "files": 2}
     assert web.parse_context_pack_markdown("") == {"budget": None, "files": 0}
+
+
+def test_report_detail_rejects_path_traversal():
+    with pytest.raises(web.HTTPException) as exc:
+        asyncio.run(web.web_report_detail("../secret.md"))
+    assert exc.value.status_code == 400
+
+
+def test_report_detail_returns_markdown_content_and_preserves_md_id(tmp_path):
+    report = tmp_path / "eval-report.md"
+    report.write_text("# Evaluation\n\nscore: 0.8\n", encoding="utf-8")
+    with patch.object(web, "reports_dir", return_value=tmp_path):
+        result = asyncio.run(web.web_report_detail("eval-report.md"))
+    assert result["report"]["id"] == "eval-report.md"
+    assert result["content"].startswith("# Evaluation")
+
+
+def test_repository_scoped_pack_filter_does_not_fallback_for_unknown_id():
+    pack_result = MagicMock()
+    pack_result.scalars.return_value.all.return_value = []
+    count_result = MagicMock()
+    count_result.scalar.return_value = 0
+    session = AsyncMock()
+    facet_result = MagicMock()
+    facet_result.all.return_value = []
+    session.execute.side_effect = [count_result, facet_result, pack_result]
+
+    @asynccontextmanager
+    async def factory():
+        yield session
+
+    with patch.object(web, "async_session_factory", factory):
+        result = asyncio.run(web.web_context_packs(limit=50, repository_id=999))
+    assert result["packs"] == []
+    assert result["total"] == 0
+
+
+def test_context_packs_reports_exact_total_and_page_for_more_than_200_rows():
+    packs = [
+        SimpleNamespace(
+            id=i,
+            repository_id=None,
+            repo_commit=None,
+            created_at=datetime(2026, 9, 1),
+            task_description=f"task {i}",
+            path="missing",
+        )
+        for i in range(250)
+    ]
+    pack_result = MagicMock()
+    pack_result.scalars.return_value.all.return_value = packs[200:225]
+    count_result = MagicMock()
+    count_result.scalar.return_value = 250
+    facet_result = MagicMock()
+    facet_result.all.return_value = [("unknown", 25)]
+    session = AsyncMock()
+    session.execute.side_effect = [count_result, facet_result, pack_result]
+
+    @asynccontextmanager
+    async def factory():
+        yield session
+
+    with (
+        patch.object(web, "async_session_factory", factory),
+        patch.object(web, "resolve_context_pack_file", return_value=None),
+    ):
+        result = asyncio.run(web.web_context_packs(page=9, page_size=25))
+    assert result["total"] == 250
+    assert result["page"] == 9
+    assert result["total_pages"] == 10
+    assert [p["id"] for p in result["packs"]] == list(range(200, 225))
 
 
 def test_shape_context_pack_marks_stale_against_latest_index(tmp_path):
@@ -121,7 +193,12 @@ def test_aggregate_modules_classifies_chunks():
     ]
     modules = {m["name"]: m for m in web.aggregate_modules(rows, CONFIG)}
     assert modules["brain/search"] == {
-        "name": "brain/search", "chunks": 4, "current": 1, "outdated": 2, "missing": 1, "excluded": 0,
+        "name": "brain/search",
+        "chunks": 4,
+        "current": 1,
+        "outdated": 2,
+        "missing": 1,
+        "excluded": 0,
     }
     assert modules["reports/out"]["excluded"] == 1
     assert modules["reports/out"]["current"] == 0
@@ -130,11 +207,15 @@ def test_aggregate_modules_classifies_chunks():
 def test_shape_index_run_derives_completeness_and_duration():
     started = datetime(2026, 9, 1, 10, 0, tzinfo=timezone.utc)
     run = SimpleNamespace(
-        id=9, repository_id=3, commit_hash="abc123", status="COMPLETED",
+        id=9,
+        repository_id=3,
+        commit_hash="abc123",
+        status="COMPLETED",
         file_counts={"discovered": 110, "excluded": 10, "indexed": 40, "failed": 5},
         progress={"chunks": {"processed": 900}},
         verification={},
-        started_at=started, completed_at=started + timedelta(seconds=90),
+        started_at=started,
+        completed_at=started + timedelta(seconds=90),
     )
     shaped = web.shape_index_run(run)
     assert shaped["status"] == "completed"
@@ -148,20 +229,30 @@ def test_shape_index_run_derives_completeness_and_duration():
 
 
 def test_shape_job_duration_and_detail():
-    done = web.shape_job({
-        "id": "j1", "type": "reindex", "status": "completed",
-        "created_at": "2026-09-01T10:00:00+00:00", "updated_at": "2026-09-01T10:00:30+00:00",
-        "result": {"message": "ok"},
-    })
+    done = web.shape_job(
+        {
+            "id": "j1",
+            "type": "reindex",
+            "status": "completed",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "updated_at": "2026-09-01T10:00:30+00:00",
+            "result": {"message": "ok"},
+        }
+    )
     assert done["kind"] == "reindex"
     assert done["duration"] == 30.0
     assert done["detail"] == "ok"
 
-    running = web.shape_job({
-        "id": "j2", "type": "benchmark", "status": "processing",
-        "created_at": "2026-09-01T10:00:00+00:00", "updated_at": "2026-09-01T10:00:30+00:00",
-        "error": "x" * 400,
-    })
+    running = web.shape_job(
+        {
+            "id": "j2",
+            "type": "benchmark",
+            "status": "processing",
+            "created_at": "2026-09-01T10:00:00+00:00",
+            "updated_at": "2026-09-01T10:00:30+00:00",
+            "error": "x" * 400,
+        }
+    )
     assert running["duration"] is None
     assert len(running["detail"]) == 300
 
@@ -173,8 +264,11 @@ def test_report_kind_and_shape():
     assert web.report_kind("weekly.md") == "report"
     shaped = web.shape_report({"name": "impact-brain.md", "created_at": "2026-09-01 10:00:00", "size": 512})
     assert shaped == {
-        "id": "impact-brain.md", "title": "impact-brain", "kind": "impact",
-        "created_at": "2026-09-01T10:00:00", "size_bytes": 512,
+        "id": "impact-brain.md",
+        "title": "impact-brain",
+        "kind": "impact",
+        "created_at": "2026-09-01T10:00:00",
+        "size_bytes": 512,
     }
 
 
@@ -183,38 +277,79 @@ def test_report_kind_and_shape():
 
 def test_context_pack_freshness_uses_each_repository_commit():
     packs = [
-        SimpleNamespace(id=1, repository_id=3, repo_commit="a", created_at=datetime(2026, 8, 1), task_description="A", path="missing-a"),
-        SimpleNamespace(id=2, repository_id=7, repo_commit="b", created_at=datetime(2026, 9, 1), task_description="B", path="missing-b"),
-        SimpleNamespace(id=3, repository_id=None, repo_commit=None, created_at=datetime(2026, 9, 1), task_description="unknown", path="missing-c"),
+        SimpleNamespace(
+            id=1,
+            repository_id=3,
+            repo_commit="a",
+            created_at=datetime(2026, 8, 1),
+            task_description="A",
+            path="missing-a",
+        ),
+        SimpleNamespace(
+            id=2,
+            repository_id=7,
+            repo_commit="b",
+            created_at=datetime(2026, 9, 1),
+            task_description="B",
+            path="missing-b",
+        ),
+        SimpleNamespace(
+            id=3,
+            repository_id=None,
+            repo_commit=None,
+            created_at=datetime(2026, 9, 1),
+            task_description="unknown",
+            path="missing-c",
+        ),
     ]
     pack_result = MagicMock()
     pack_result.scalars.return_value.all.return_value = packs
     commit_result = MagicMock()
     commit_result.all.return_value = [(3, "a"), (7, "b")]
     session = AsyncMock()
-    session.execute.side_effect = [pack_result, commit_result]
+    count_result = MagicMock()
+    count_result.scalar.return_value = 3
+    facet_result = MagicMock()
+    facet_result.all.return_value = [("unknown", 3)]
+    session.execute.side_effect = [count_result, facet_result, pack_result, commit_result]
+
     @asynccontextmanager
     async def factory():
         yield session
-    with patch.object(web, "async_session_factory", factory), patch.object(web, "resolve_context_pack_file", return_value=None):
+
+    with (
+        patch.object(web, "async_session_factory", factory),
+        patch.object(web, "resolve_context_pack_file", return_value=None),
+    ):
         result = asyncio.run(web.web_context_packs(limit=50))
     assert [pack["stale"] for pack in result["packs"]] == [False, False, None]
 
 
 def test_modules_streams_chunk_rows_without_materializing_query_results():
     async def stream():
-        for row in [("brain/search/a.py", 1, 1024, "nvidia", "m-1"),
-                    ("brain/search/a.py", None, None, None, None),
-                    ("brain/search/b.py", 2, 512, "nvidia", "m-1")]:
+        for row in [
+            ("brain/search/a.py", 1, 1024, "nvidia", "m-1"),
+            ("brain/search/a.py", None, None, None, None),
+            ("brain/search/b.py", 2, 512, "nvidia", "m-1"),
+        ]:
             yield row
+
     session = AsyncMock()
     session.stream.return_value = stream()
+
     @asynccontextmanager
     async def factory():
         yield session
-    with patch.object(web, "async_session_factory", factory), patch.object(web, "_resolve_repository", AsyncMock(return_value=REPO)), patch("brain.embeddings.config.get_embedding_config", return_value=CONFIG):
+
+    with (
+        patch.object(web, "async_session_factory", factory),
+        patch.object(web, "_resolve_repository", AsyncMock(return_value=REPO)),
+        patch("brain.embeddings.config.get_embedding_config", return_value=CONFIG),
+    ):
         result = asyncio.run(web.web_modules(repository_id=REPO.id))
-    assert result["modules"] == [{"name": "brain/search", "chunks": 3, "current": 1, "outdated": 1, "missing": 1, "excluded": 0}]
+    assert result["modules"] == [
+        {"name": "brain/search", "chunks": 3, "current": 1, "outdated": 1, "missing": 1, "excluded": 0}
+    ]
     session.execute.assert_not_awaited()
     assert session.stream.call_args.args[0].get_execution_options()["yield_per"] == 1000
 
@@ -239,12 +374,26 @@ def test_health_endpoint_shape():
     services = {"postgres": {"status": "healthy"}}
     with (
         patch.object(web, "check_health", AsyncMock(return_value=dict(services))),
-        patch("brain.workers.scheduler.scheduler_status", AsyncMock(return_value={
-            "enabled": True, "stale": [], "jobs": [{"job_type": "health_check", "status": "ok"}],
-        })),
-        patch.object(web, "get_recent_brain_jobs", AsyncMock(return_value={
-            "jobs": [{"id": "j", "type": "reindex", "status": "failed", "error": "boom"}], "error": None,
-        })),
+        patch(
+            "brain.workers.scheduler.scheduler_status",
+            AsyncMock(
+                return_value={
+                    "enabled": True,
+                    "stale": [],
+                    "jobs": [{"job_type": "health_check", "status": "ok"}],
+                }
+            ),
+        ),
+        patch.object(
+            web,
+            "get_recent_brain_jobs",
+            AsyncMock(
+                return_value={
+                    "jobs": [{"id": "j", "type": "reindex", "status": "failed", "error": "boom"}],
+                    "error": None,
+                }
+            ),
+        ),
         patch.object(web, "get_self_diagnosis_status", AsyncMock(return_value={"status": "ok"})),
     ):
         response = client.get("/api/web/health")
@@ -261,9 +410,15 @@ def test_health_endpoint_shape():
 def test_module_graph_endpoint():
     with (
         patch.object(web, "_resolve_repository", AsyncMock(return_value=REPO)),
-        patch.object(web, "load_file_import_edges", AsyncMock(return_value=[
-            ("apps/api/a.py", "brain/search/x.py"),
-        ])),
+        patch.object(
+            web,
+            "load_file_import_edges",
+            AsyncMock(
+                return_value=[
+                    ("apps/api/a.py", "brain/search/x.py"),
+                ]
+            ),
+        ),
     ):
         response = client.get("/api/web/module-graph")
     assert response.status_code == 200
@@ -287,7 +442,9 @@ def test_repo_scoped_endpoints_without_repository_return_empty():
         assert client.get("/api/web/index-runs").json() == {"repository": None, "runs": []}
         assert client.get("/api/web/modules").json() == {"repository": None, "modules": []}
         assert client.get("/api/web/module-graph").json() == {
-            "repository": None, "edges": [], "truncated": False,
+            "repository": None,
+            "edges": [],
+            "truncated": False,
         }
 
 

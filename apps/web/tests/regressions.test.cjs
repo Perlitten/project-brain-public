@@ -20,7 +20,7 @@ function load(file, overrides = {}) {
     return require(name);
   };
   vm.runInNewContext(output, { module, exports: module.exports, require: requireModule,
-    process, Buffer, Response, URL, AbortSignal, console, fetch: global.fetch }, { filename });
+    process, Buffer, Response, URL, URLSearchParams, AbortSignal, console, fetch: global.fetch }, { filename });
   return module.exports;
 }
 
@@ -150,4 +150,65 @@ test('every advertised navigation destination has a page', () => {
   for (const item of allNavItems) {
     assert.ok(fs.existsSync(path.join(root, 'app', item.href, 'page.tsx')), `${item.label}: ${item.href}`);
   }
+});
+
+test('saved content downloads authenticate before reading and preserve complete Markdown', async () => {
+  let reads = 0;
+  const auth = load('lib/web-auth.ts');
+  const { downloadArtifact } = load('lib/artifact-download.ts', {
+    './web-auth': auth,
+    './artifacts': { getArtifact: async () => { reads++; return { filename: 'evaluation.md', content: '# Result\n\nComplete evidence\n' }; } },
+  });
+  await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture', WEB_BASIC_AUTH: 'user:password' }, async () => {
+    const denied = await downloadArtifact({ headers: new Headers() }, 'reports', 'evaluation.md');
+    assert.equal(denied.status, 401);
+    assert.equal(reads, 0);
+    const response = await downloadArtifact({ headers: new Headers({ authorization: basic('user:password') }) }, 'reports', 'evaluation.md');
+    assert.equal(await response.text(), '# Result\n\nComplete evidence\n');
+    assert.match(response.headers.get('content-disposition'), /evaluation\.md/);
+    assert.match(response.headers.get('cache-control'), /no-store/);
+    assert.equal(reads, 1);
+  });
+});
+
+test('saved content rejects path escapes and external return destinations', () => {
+  const artifacts = load('lib/artifacts.ts', { './api': {} });
+  for (const value of ['../secret.md', 'folder/secret.md', 'folder\\secret.md', 'report.md\r\nX-Secret: yes', 'report.txt']) {
+    assert.equal(artifacts.validArtifactId('reports', value), false);
+  }
+  assert.equal(artifacts.validArtifactId('reports', 'evaluation.md'), true);
+  assert.equal(artifacts.artifactBack('reports', '/reports?q=eval&page=2'), '/reports?q=eval&page=2');
+  for (const value of ['https://other.example/reports', '//other.example/reports', 'javascript:alert(1)', '/settings']) {
+    assert.equal(artifacts.artifactBack('reports', value), '/reports');
+  }
+});
+
+test('unknown repository never inherits another repository corpus or background activity', async () => {
+  const calls = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, 'react': { cache: fn => fn }, './mock': {},
+    './api': { apiConfigured: true, brainFetch: async endpoint => {
+      calls.push(endpoint);
+      if (endpoint === '/repositories') return { repositories: [{ id: 3, path: '/app', name: 'Brain' }] };
+      throw new Error(`Unexpected request for unknown repository: ${endpoint}`);
+    } },
+  });
+  assert.equal((await data.getCorpus('999')).chunks, 0);
+  assert.equal((await data.getJobs('999')).length, 0);
+  assert.equal((await data.getAgentRuns('999')).length, 0);
+  assert.equal((await data.getEvents(50, '999')).length, 0);
+  assert.ok(calls.every(endpoint => endpoint === '/repositories'));
+});
+
+test('list URLs preserve punctuation and validate paging before reaching the API', () => {
+  const lists = load('lib/list-query.ts');
+  const parsed = lists.getListQuery(new URLSearchParams('q=alpha%2Cbeta&page=11&page_size=50&status=fresh'));
+  assert.equal(parsed.q, 'alpha,beta');
+  assert.equal(parsed.page, 11);
+  assert.equal(parsed.size, 50);
+  const roundTrip = lists.getListQuery(new URLSearchParams(lists.listQueryParams(parsed)));
+  assert.equal(JSON.stringify(roundTrip), JSON.stringify(parsed));
+  for (const page of ['2x', '-1', '0', '9007199254740992']) assert.equal(lists.getListQuery({ page }).page, 1);
+  assert.equal(lists.getListQuery({ size: 50 }).size, 50);
+  assert.equal(lists.getListQuery({ page_size: '200' }).size, 20);
 });

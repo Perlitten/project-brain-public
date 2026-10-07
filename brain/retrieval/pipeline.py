@@ -594,6 +594,50 @@ def _v2_fused_scores(
     return out
 
 
+def _should_abstain(
+    *,
+    selected: list[str],
+    reranked: list[ChannelCandidate],
+    candidates_by_channel: dict[str, list[ChannelCandidate]],
+    task_type: str,
+    keywords: list[str] | None = None,
+) -> bool:
+    """Return true when retrieval has no grounded evidence for a locator pack.
+
+    Dense similarity always returns a nearest neighbour, even for an unrelated
+    query.  An empty result is safer than presenting that neighbour as context
+    when every lexical/symbol/path/graph channel is empty and the top score is
+    below a conservative heuristic confidence floor. Explicitly routed tasks retain the
+    historical fail-open behavior because their surface constraints provide
+    independent evidence.
+    """
+    if not selected or task_type in {"deletion_rename", "database", "api_contract", "bugfix"}:
+        return False
+    if not reranked:
+        return False
+    grounded = any(candidates_by_channel.get(name) for name in ("symbol", "hints", "graph", "memory"))
+    if grounded:
+        return False
+    if float(reranked[0].reranker_score) >= 0.5:
+        return False
+    lexical = candidates_by_channel.get("lexical", [])
+    if lexical:
+        # Generic words such as app/configure/deployment create incidental
+        # lexical hits.  Require at least one distinctive query term to occur
+        # in a candidate path before treating that channel as evidence.
+        distinctive = {token.lower() for token in (keywords or []) if len(token) >= 7}
+        path_text = " ".join(candidate.item_id.lower() for candidate in lexical)
+        if distinctive and any(token in path_text for token in distinctive):
+            return False
+        if not distinctive:
+            return False
+        # A lexical-only hit with no distinctive query term is incidental
+        # evidence (for example generic app/configure words), regardless of
+        # the dense nearest-neighbour score.
+        return True
+    return float(reranked[0].reranker_score) < 0.15
+
+
 class HybridRetrievalPipeline:
     """Orchestrates multi-channel candidate generation, fusion, and reranking."""
 
@@ -1335,6 +1379,16 @@ class HybridRetrievalPipeline:
                 v5_top = counterfactual_state["v5_top"]
                 v5_debug_result = counterfactual_state["v5_result"]
 
+        abstained = _should_abstain(
+            selected=selected,
+            reranked=reranked,
+            candidates_by_channel=candidates_by_channel,
+            task_type=task_type,
+            keywords=keywords_lower,
+        )
+        if abstained:
+            selected = []
+
         seen_selected = set(selected)
         fallback_reason = "hybrid_rrf_v5_rerank"
         for cand in reranked:
@@ -1360,6 +1414,7 @@ class HybridRetrievalPipeline:
                 "fallback_reason": v5_debug_result.fallback_reason,
                 "stage": v5_debug_result.stage,
                 "reranker_version": v5_debug_result.reranker_version,
+                "abstained": abstained,
                 "latency_ms": round(v5_debug_result.latency_ms, 2),
                 "estimated_cost_usd": v5_debug_result.estimated_cost_usd,
                 "position_changes": v5_debug_result.position_changes,

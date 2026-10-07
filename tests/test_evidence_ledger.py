@@ -272,6 +272,18 @@ def test_query_limit_is_clamped_to_the_maximum(store):
     assert store.query(limit=0)["limit"] > 0
 
 
+def test_descending_pages_are_newest_first_without_gaps_and_searches_all_history(store):
+    _seed(store, count=225)
+    first = store.query(limit=20, descending=True)
+    second = store.query(limit=20, offset=20, descending=True)
+    assert first["total"] == second["total"] == 225
+    assert [event["sequence"] for event in first["events"]] == list(range(225, 205, -1))
+    assert [event["sequence"] for event in second["events"]] == list(range(205, 185, -1))
+    match = store.query(query='find-209', descending=True)
+    assert match["total"] == 1
+    assert match["events"][0]["entity_id"] == "find-209"
+
+
 def test_query_filters_by_type_repository_and_actor(store):
     store.append(_event(repository_id="repo-a", actor_identity="alice"))
     store.append(_event(repository_id="repo-b", actor_identity="bob"))

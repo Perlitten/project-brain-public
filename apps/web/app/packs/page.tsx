@@ -1,13 +1,23 @@
+import Link from "next/link";
 import { Term } from "@/components/Term";
 import { Chip, EmptyState, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
-import { getContextPacks } from "@/lib/data";
+import { getPagedContextPacks } from "@/lib/data";
+import { getListQuery, listQueryParams } from "@/lib/list-query";
 
 export const metadata = { title: "Context packs" };
 
-export default async function Packs() {
-  const packs = await getContextPacks();
-  const stale = packs.filter((p) => p.stale === true).length;
-  const unknown = packs.filter((p) => p.stale === null).length;
+export default async function Packs({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = await searchParams;
+  const query = getListQuery(params);
+  const repo = typeof params.repo === "string" ? params.repo : undefined;
+  const result = await getPagedContextPacks(query, repo);
+  const listParams = new URLSearchParams(listQueryParams(query));
+  if (repo) listParams.set("repo", repo);
+  const back = `/packs${listParams.size ? `?${listParams}` : ""}`;
+  const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
+  const packs = result.items;
+  const stale = result.paging.facets.outdated ?? 0;
+  const unknown = result.paging.facets.unknown ?? 0;
   const state = (p: (typeof packs)[number]) => (p.stale === null ? "unknown" : p.stale ? "outdated" : "fresh");
   const avg = packs.length ? Math.round(packs.reduce((s, p) => s + p.tokens, 0) / packs.length) : 0;
   return (
@@ -18,28 +28,29 @@ export default async function Packs() {
         lede={
           <>
             Before an agent starts a task, Brain hands it a <Term k="pack">context pack</Term>: only the files, decisions and
-            rules that matter. Agents read less and make fewer mistakes.
+            rules that matter. {repo ? "Briefings for the selected repository." : "Briefings across all repositories."}
           </>
         }
       />
       <div className="stats">
-        <Stat label="Briefings" value={String(packs.length)} note="prepared recently" />
-        <Stat label="Average size" value={fmt(avg)} note="tokens, about ¾ of a word each" />
-        {unknown === packs.length && packs.length > 0 ? (
+        <Stat label="Briefings" value={String(result.paging.total)} note="matching briefings" />
+        <Stat label="Average size on this page" value={packs.length ? fmt(avg) : "—"} note="tokens, about ¾ of a word each" />
+        {unknown > 0 && stale === 0 && !result.paging.facets.fresh ? (
           <Stat label="Outdated" value="—" note="unknown: these packs don’t record the commit they were built from" />
         ) : (
           <div className={stale ? "tone-warn" : "tone-ok"}>
-            <Stat label="Outdated" value={String(stale)} note={unknown ? `the code changed after they were built · ${unknown} unknown` : "the code changed after they were built"} />
+            <Stat label="Outdated" value={String(stale)} note={unknown ? `matching search · ${unknown} unknown` : "matching search, before the state filter"} />
           </div>
         )}
       </div>
       <Panel id="packs" title="Recent briefings" flush>
-        {packs.length === 0 ? (
+        {packs.length === 0 && !hasQuery ? (
           <EmptyState title="No briefings yet" body="Brain hasn’t prepared a context pack for any agent recently." />
         ) : (
         <Table
           caption="Context packs"
           rows={packs}
+          paging={result.paging}
           rowKey={(p) => p.id}
           filter={{
             search: (p) => `${p.task} ${p.id} ${p.consumer}`,
@@ -51,7 +62,7 @@ export default async function Packs() {
               head: "Task",
               cell: (p) => (
                 <>
-                  <span>{p.task}</span>
+                  <Link className="link" href={`/packs/${encodeURIComponent(p.id)}?back=${encodeURIComponent(back)}`}>{p.task}</Link>
                   <span className="sub mono">
                     {p.id} · for {p.consumer}
                   </span>
