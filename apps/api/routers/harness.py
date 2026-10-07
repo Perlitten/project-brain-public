@@ -175,12 +175,12 @@ async def create_task(body: TaskCreateRequest):
 async def list_tasks(status: str | None = None, repo_path: str | None = None,
                      q: str | None = Query(None, max_length=500),
                      page: int = Query(1, ge=1), page_size: int | None = Query(None, ge=1, le=500),
-                     limit: int | None = Query(None, ge=1, le=500)):
+                     limit: int | None = Query(None, ge=1, le=500), display_status: str | None = Query(None, max_length=50)):
     safe_limit = page_size if isinstance(page_size, int) else limit if isinstance(limit, int) else 100
     safe_page = page if isinstance(page, int) else 1
     q = q if isinstance(q, str) else None
     status_filter = status
-    if status == "running":
+    if display_status == "running":
         status_filter = "__running__"
     tasks = await HarnessStore.list_tasks(status=status_filter, repo_path=repo_path, query=q,
                                           offset=(safe_page - 1) * safe_limit, limit=safe_limit)
