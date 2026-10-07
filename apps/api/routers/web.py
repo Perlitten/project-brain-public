@@ -435,8 +435,12 @@ async def web_decisions(page: int = Query(1, ge=1), page_size: int = Query(50, g
             base = base.where(cast(Decision.id, String).ilike(needle) | Decision.title.ilike(needle) | Decision.description.ilike(needle))
         status_expr = case((func.lower(Decision.status).in_(("active", "accepted")), "accepted"),
                            (func.lower(Decision.status).in_(("proposed", "draft", "pending")), "proposed"),
-                           else_="superseded").label("status")
-        facet_rows = (await session.execute(select(status_expr, func.count()).select_from(Decision).where(*base.whereclause).group_by(status_expr))).all()
+                           (func.lower(Decision.status).in_(("deprecated", "superseded", "historical", "replaced", "inactive", "rejected")), "superseded"),
+                           else_=func.coalesce(func.nullif(func.lower(Decision.status), ""), "unknown")).label("status")
+        facet_stmt = select(status_expr, func.count()).select_from(Decision)
+        if base.whereclause is not None:
+            facet_stmt = facet_stmt.where(base.whereclause)
+        facet_rows = (await session.execute(facet_stmt.group_by(status_expr))).all()
         filtered = base
         if status:
             filtered = filtered.where(status_expr == _decision_status(status))
@@ -468,7 +472,10 @@ async def web_rules(page: int = Query(1, ge=1, le=1000000), page_size: int = Que
             base = base.where(func.lower(Rule.status) == status.lower())
         severity_expr = case((func.lower(Rule.severity).in_(("high", "error", "critical", "block", "blocker")), "block"),
                              (func.lower(Rule.severity).in_(("medium", "warn", "warning")), "warn"), else_="advise").label("severity")
-        facet_rows = (await session.execute(select(severity_expr, func.count()).select_from(Rule).where(*base.whereclause).group_by(severity_expr))).all()
+        facet_stmt = select(severity_expr, func.count()).select_from(Rule)
+        if base.whereclause is not None:
+            facet_stmt = facet_stmt.where(base.whereclause)
+        facet_rows = (await session.execute(facet_stmt.group_by(severity_expr))).all()
         filtered = base.where(severity_expr == _rule_severity(severity)) if severity else base
         total = int((await session.execute(select(func.count()).select_from(filtered.subquery()))).scalar() or 0)
         rows = (await session.execute(filtered.order_by(Rule.id).offset((page - 1) * page_size).limit(page_size))).scalars().all()

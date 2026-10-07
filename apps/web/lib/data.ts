@@ -142,6 +142,8 @@ function jobStatus(v: unknown): JobStatus {
 
 function rawTaskStatus(v: string): string {
   if (v === "completed") return "passed";
+  if (v === "running") return "running";
+  if (v === "queued") return "queued";
   return v;
 }
 
@@ -621,7 +623,11 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
       const status = jobStatus(t.status), finished = !["running", "queued", "retrying"].includes(status);
       return { id: str(t.id), agent: str(t.target_agent) || str(t.owner_agent) || "agent", task: str(t.title) || str(t.goal) || "Untitled task", status, tokens: num(t.tokens), packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined, startedAt: fmtShort(t.created_at), duration: finished ? between(t.created_at, t.updated_at) : "—" };
     });
-    result.paging.facets = Object.fromEntries(Object.entries(result.paging.facets).map(([key, value]) => [jobStatus(key), value]));
+    result.paging.facets = Object.entries(result.paging.facets).reduce<Record<string, number>>((acc, [key, value]) => {
+      const normalized = jobStatus(key);
+      acc[normalized] = (acc[normalized] || 0) + Number(value);
+      return acc;
+    }, {});
     return result;
   });
 };
