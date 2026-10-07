@@ -5,12 +5,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from brain.context.context_pack_builder import (
     ContextPackBuilder,
+    _selected_retrieval_paths,
     _decision_scope_clause,
     _load_active_normative_memory,
     _rule_scope_clause,
 )
 from brain.analyzers.impact_analyzer import ImpactAnalyzer
 from brain.analyzers.diff_analyzer import DiffAnalyzer
+
+
+def test_context_builder_preserves_retrieval_abstention():
+    abstained = SimpleNamespace(selected_paths=[], reranked=[SimpleNamespace(item_id="noise.py", included=False)], debug={"abstained": True})
+    assert _selected_retrieval_paths(abstained, 5) == []
+
+
+def test_context_builder_keeps_legacy_empty_selection_fallback():
+    legacy = SimpleNamespace(selected_paths=[], reranked=[SimpleNamespace(item_id="fallback.py", included=False)], debug={})
+    assert _selected_retrieval_paths(legacy, 5) == ["fallback.py"]
 
 
 def test_decision_scope_clause_includes_global_and_matching_repo():
@@ -91,10 +102,11 @@ async def test_context_pack_builder_success(tmp_path):
         vector_status="ok",
         candidates_by_channel={},
         selected_paths=[],
-        reranked=[],
-        v5_top_paths=[],
+        reranked=[SimpleNamespace(item_id="noise.py", included=False, reranker_score=0.01, metadata={})],
+        v5_top_paths=["noise.py"],
         v5_rerank_debug={},
         recall_debug={},
+        debug={"abstained": True},
     )
     mock_pipeline = MagicMock()
     mock_pipeline.run = AsyncMock(return_value=stub_retrieval)
@@ -102,8 +114,9 @@ async def test_context_pack_builder_success(tmp_path):
     # Repo lookup + CAG cache also touch the DB via their own session refs.
     mock_cache = MagicMock()
     mock_cache.initialize = AsyncMock()
-    mock_cache.initialized = False
-    mock_cache.files = []
+    mock_cache.initialized = True
+    mock_cache.files = [SimpleNamespace(path="noise.py", summary="irrelevant", id=7)]
+    mock_cache.symbols = []
 
     source_repo = tmp_path / "indexed-repo"
     source_repo.mkdir()
@@ -126,6 +139,7 @@ async def test_context_pack_builder_success(tmp_path):
         assert "auth" in result["keywords"]
         assert Path(result["path"]).exists()
         assert Path(result["path"]).parent == output_dir
+        assert result["retrieved_files"] == []
         assert not (source_repo / "context_packs").exists()
 
 
