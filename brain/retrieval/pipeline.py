@@ -768,13 +768,23 @@ class HybridRetrievalPipeline:
                 async with async_session_factory() as session:
                     for f in (await session.execute(select(File).where(File.id.in_(list(file_ids))))).scalars():
                         chunk_files[f.id] = f
-        seen_vec_paths: Dict[str, float] = {}
+        seen_vec_sims: Dict[str, List[float]] = {}
         for rank, (sim, _chunk, file_obj) in enumerate(vector_result.matches, 1):
             if not file_obj:
                 continue
-            prev = seen_vec_paths.get(file_obj.path, 0.0)
-            if sim > prev:
-                seen_vec_paths[file_obj.path] = sim
+            seen_vec_sims.setdefault(file_obj.path, []).append(sim)
+        # v2 (e): chunk->file aggregation is a tunable ("max" | "sum" | "topk");
+        # v5 keeps hardcoded max.
+        vec_agg = settings.RETRIEVAL_V2_VEC_AGG if v2_enabled else "max"
+        seen_vec_paths: Dict[str, float] = {}
+        for path, sims in seen_vec_sims.items():
+            if vec_agg == "sum":
+                seen_vec_paths[path] = sum(sims)
+            elif vec_agg == "topk":
+                top = sorted(sims, reverse=True)[:3]
+                seen_vec_paths[path] = sum(top) / len(top)
+            else:
+                seen_vec_paths[path] = max(sims)
         for rank, (path, sim) in enumerate(sorted(seen_vec_paths.items(), key=lambda x: x[1], reverse=True), 1):
             candidates_by_channel["vector"].append(ChannelCandidate("vector", path, sim, rank=rank))
 
