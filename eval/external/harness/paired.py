@@ -87,7 +87,7 @@ def main() -> None:
     ap.add_argument("--k", type=int, default=10)
     ap.add_argument("--json", default="")
     args = ap.parse_args()
-    rows = [json.loads(l) for l in Path(args.input).read_text().splitlines() if l.strip()]
+    rows = [json.loads(ln) for ln in Path(args.input).read_text().splitlines() if ln.strip()]
     res = paired_diff(rows, args.arm_a, args.arm_b, args.k)
     res["n_rows"] = len(rows)
     print(json.dumps(res, indent=2))

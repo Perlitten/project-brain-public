@@ -23,11 +23,10 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import common  # noqa: E402
+import common  # noqa: E402,F401  (side effect: os.environ eval defaults)
 from common import JsonlWriter, done_ids, tokenize, perf_ms  # noqa: E402
 
 import numpy as np  # noqa: E402
-from datasets.utils.logging import disable_progress_bar  # noqa: E402
 from huggingface_hub import hf_hub_download  # noqa: E402
 from rank_bm25 import BM25Okapi  # noqa: E402
 
