@@ -450,6 +450,46 @@ def _select_final_paths(
 
 # ---------- v2 helpers (all inert unless settings.RETRIEVAL_V2_ENABLED) ----------
 
+_IDENT_RE = re.compile(
+    r"\b(?:[a-z][a-z0-9]*_[a-z0-9_]{2,}|[a-z]+[A-Z][a-zA-Z0-9]*|[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)+)\b"
+)
+_FILE_PATH_RE = re.compile(r"[\w./-]+/[\w./-]+\.(?:py|pyi|js|ts|tsx|jsx|java|go|rs|c|h|hpp|cpp|rb|md|rst|txt|html|css|toml|yaml|yml|json)\b")
+_ERROR_NAME_RE = re.compile(r"\b[A-Z][a-zA-Z0-9]*(?:Error|Exception|Warning|Fault|Timeout|NotFound)\b")
+_STACK_FRAME_RE = re.compile(r'File "([^"]+)", line \d+')
+
+_ID_QUERY_STOPWORDS = frozenset({
+    "__init__", "__main__", "__name__", "self.args", "self.assert", "self.assertEqual",
+    "None.None", "True.False",
+})
+
+
+def extract_code_query_terms(text: str, limit: int = 24) -> List[str]:
+    """Mine a task description for code-shaped terms: file paths, stack frames,
+    CamelCase/snake_case/dotted identifiers, and *Error/*Exception names.
+    Feeds the lexical/symbol/hints channels so issue text becomes a code query."""
+    import keyword
+
+    terms: List[str] = []
+    terms.extend(_FILE_PATH_RE.findall(text))
+    terms.extend(_STACK_FRAME_RE.findall(text))
+    terms.extend(_ERROR_NAME_RE.findall(text))
+    terms.extend(_IDENT_RE.findall(text))
+    seen: set = set()
+    out: List[str] = []
+    for term in terms:
+        norm = term.strip().lower()
+        if len(norm) < 4 or norm in seen or norm in _ID_QUERY_STOPWORDS:
+            continue
+        head = norm.split(".")[-1]
+        if keyword.iskeyword(head) or keyword.iskeyword(norm):
+            continue
+        seen.add(norm)
+        out.append(term.strip())
+        if len(out) >= limit:
+            break
+    return out
+
+
 _TOKEN_RE = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 
 
@@ -580,6 +620,13 @@ class HybridRetrievalPipeline:
         intent = derive_task_intent(task_description, task_type=task_type)
         keywords_lower = expand_keywords(keywords, task_description)
         v2_enabled = bool(settings.RETRIEVAL_V2_ENABLED)
+        # v2 (d): mine issue text for code-shaped terms (paths, stack frames,
+        # identifiers, error names) and feed the lexical/symbol/hints channels.
+        if v2_enabled and settings.RETRIEVAL_V2_ID_QUERY:
+            for term in extract_code_query_terms(task_description):
+                tl = term.lower()
+                if tl not in keywords_lower:
+                    keywords_lower.append(tl)
         # v6 (P0): surface-aware recall + top-100 pool. Gated to deep budgets so
         # small-budget packs keep the frozen v5 path byte-for-byte.
         v6_enabled = bool(settings.RETRIEVAL_V6_ENABLED) and file_limit >= 10
