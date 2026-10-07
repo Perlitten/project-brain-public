@@ -25,18 +25,23 @@ BOOT_B = 10_000
 
 
 def per_row_recall(row: dict, arm: str, k: int) -> float:
-    gold = set(row.get("gold_files", []))
     a = row.get("arms", {}).get(arm, {})
-    if not isinstance(a, dict) or "paths" not in a or a.get("error"):
+    if not isinstance(a, dict) or a.get("error"):
         return float("nan")
-    return recall_at(a["paths"], gold, k)
+    # SWE-bench rows: gold_files + arms.<name>.paths; CoIR rows: qrels + arms.<name>.ids
+    if "gold_files" in row and "paths" in a:
+        return recall_at(a["paths"], set(row["gold_files"]), k)
+    if "qrels" in row and "ids" in a:
+        gold = {cid for cid, s in row["qrels"].items() if s > 0}
+        return recall_at(a["ids"], gold, k)
+    return float("nan")
 
 
 def paired_diff(rows: list[dict], arm_a: str, arm_b: str, k: int = 10) -> dict:
     diffs: list[float] = []
     wins = ties = losses = 0
     for row in rows:
-        if row.get("error") or not row.get("gold_files"):
+        if row.get("error") or not (row.get("gold_files") or row.get("qrels")):
             continue
         va = per_row_recall(row, arm_a, k)
         vb = per_row_recall(row, arm_b, k)
