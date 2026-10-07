@@ -28,6 +28,13 @@ public benchmarks and cheap baselines. Protocol frozen before any scoring:
   ahead of BM25 at file level, behind a plain single-embedding dense index,
   far behind BM25 on snippet pools. Not top-tier.
 
+- **v2 update (see "v2 retrieval" below):** a tuned retrieval stack
+  (linear fusion, reranker off, BM25 fallback, identifier query) was
+  frozen on a disjoint dev150 split and run once on Lite. Result:
+  **dead tie with dense (.5152 = .5152)** — not a win — and it regresses
+  the token-economy edge by 41% (cap was 10%). `RETRIEVAL_V2_ENABLED`
+  therefore ships **default-off**.
+
 ## Setup (all frozen in PROTOCOL.md before runs)
 
 - Branch `devin/1791322327-external-retrieval-eval`; everything under `eval/external/`
@@ -188,6 +195,72 @@ deterministic rerank.
 5. **Cache/latency hardening** — v5 p50 5.9s is not competitive for agent
    inner loops; most of it is serial channel waits + embed queue, since
    pgvector is 4ms. Concurrency fix + warm embedding path. Est. latency only.
+
+## v2 retrieval (STEP 1–3, amendments A6–A7)
+
+Question: can Brain's ranking beat the dense baseline on file localization
+while keeping the token-economy edge — **without tuning on test data**?
+
+**Method.** dev150 (A6): 150 SWE-bench-test instances disjoint from Lite and
+Verified, stratified by repo (django 51, sympy 24, sklearn 17, mpl 13, sphinx
+12, pytest 8, xarray 8, astropy 7, pylint 3, requests 3, seaborn 2, flask 2),
+frozen before any tuning. Five fixes, each its own commit behind
+`RETRIEVAL_V2_*` flags, ablated on dev150 only (23 variant arms × n=150):
+
+- (a) score-normalized **linear fusion** (replaces flat RRF / weighted RRF)
+- (b) reranker gate — **off** (it was +.159 R@10 excl-0 to REMOVE it under
+  wrrf; neutral under linear)
+- (c) empty-channel content-**BM25 fallback** (anonymous-corpus case)
+- (d) identifier/path/stack-frame/error **query extraction**
+- (e) chunk→file vector aggregation: **max** (sum −.098 excl-0; topk −.017)
+
+Dev150 headline: linear fusion `.565–.573` vs dense `.566` — tie; beats the
+v5 fused stack +.163 [.082,.243] excl-0 and every wrrf/rrf variant by ≥.16.
+Frozen config (A7): `linear` + rerank off + bm25-fallback + idq + max-agg.
+
+**Test — one run, Lite n=297, same harness as the frozen numbers:**
+
+| arm | R@10 [95% CI] | MRR | tok@10 | recall/1k tok |
+|---|---|---|---|---|
+| dense (frozen) | .5152 [.458,.572] | .324 | 84 945 | .0086 |
+| **brain_v7 (frozen v2)** | **.5152 [.458,.572]** | .322 | **81 930** | **.0090** |
+| brain_mcp | .5051 [.448,.562] | .291 | 65 271 | .0112 |
+| brain_fused | .4579 [.401,.515] | .264 | 46 634 | .0153 |
+| bm25 | .4108 [.353,.468] | .251 | 88 754 | .0062 |
+| brain_v6 | .3030 [.253,.357] | .111 | 50 377 | .0083 |
+| brain_v5 | .2593 [.209,.310] | .089 | 42 557 | .0080 |
+
+Paired vs dense: diff **0.000** [−.017,+.017] — 3 wins / 3 losses / 291 ties.
+Paired vs brain_fused: +.0572 [−.0034,+.1178] (directional, not significant).
+Paired vs bm25: +.1044 [.037,.172] excl-0. Paired vs mcp: +.010 (noise).
+
+**Token economy.** v7 returns ~82k tokens top-10 (dense 85k, fused 47k):
+eff .0090 vs fused's .0153 = **−41% regression**, over the 10% cap — the
+fused arm's edge came precisely from returning about half the tokens.
+
+**CoIR snippet corpora (n=1180, same queries as the frozen run):**
+bm25 .5008 > **brain_v7 .4008** > brain_v5 .2373 = brain_fused .2364 = dense
+.2364. Paired: v7 +.164 [.142,.186] excl-0 over v5/fused/dense — the
+BM25-fallback + identifier query fixes are real and large on anonymous
+corpora — but still −.100 [−.129,−.070] excl-0 **below plain bm25**.
+
+**RepoBench-R (n=3000):** bm25 .1263, brain_rrf .1240, brain_v7 .1163,
+dense .1133 (Acc@1) — all CIs overlap; v2 ≈ dense, unchanged picture.
+
+**5-line verdict:**
+1. On the single frozen test run, brain_v7 ties dense **exactly**
+   (.5152 = .5152, paired diff 0.0) — Brain does **not** beat dense.
+2. vs its own stack: +.057 over fused (CI crosses 0) and +.104 over bm25
+   (excl-0) — the repairs help, just not enough to win.
+3. The token-economy edge regresses 41% vs fused's recall/1k-tok —
+   violating the ≤10% cap.
+4. On snippet corpora v2 is a genuine fix (+.164 excl-0 over v5) but still
+   loses to plain bm25 (−.100 excl-0).
+5. `RETRIEVAL_V2_ENABLED` ships **default-off** per protocol. What the
+   evidence actually says: "dense channel + light lexical backup ≈ dense" —
+   the multi-channel machinery contributes ~nothing measurable on real
+   issues (channels flipped the outcome on only 6 of 297 instances,
+   3 each way) and still loses where it was meant to matter most.
 
 ## Known biases / limitations (all disclosed in PROTOCOL_AMENDMENTS)
 
