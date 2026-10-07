@@ -488,10 +488,21 @@ curl -fsS "http://127.0.0.1:${port}/health" | python3 -c 'import json,sys; print
 # ALLOWED_REPO_ROOTS mounts must pass validate_secure_repo_path inside the
 # container, or indexing that path fails at request time. A misconfig here
 # must not fail a deploy that already passed its health gates, so this runs
-# in an || context and reports FAIL lines instead.
+# in an || context — the count is repeated in the deploy summary at the end.
 echo "==> Repo path sandbox check (validate_secure_repo_path)"
-$COMPOSE exec -T api python -m brain.config.repo_root_check \
-    || echo "    FAIL: repository path sandbox check failed (see FAIL lines above)" >&2
+if sandbox_out="$($COMPOSE exec -T api python -m brain.config.repo_root_check 2>&1)"; then
+    sandbox_rc=0
+else
+    sandbox_rc=$?
+fi
+printf '%s\n' "$sandbox_out"
+SANDBOX_FAILS="$(printf '%s\n' "$sandbox_out" | grep -c '^FAIL ' || true)"
+if [[ "$sandbox_rc" -ne 0 && "$SANDBOX_FAILS" -eq 0 ]]; then
+    echo "    WARNING: repo path sandbox check could not run (docker compose exec failed)" >&2
+    SANDBOX_FAILS="error"
+elif [[ "$SANDBOX_FAILS" -gt 0 ]]; then
+    echo "    FAIL: ${SANDBOX_FAILS} repository path(s) rejected by validate_secure_repo_path (FAIL lines above)" >&2
+fi
 
 # --- release image retention -------------------------------------------------
 # Every deploy leaves behind a brain-api:<sha> image, and on this host they grew
@@ -553,3 +564,13 @@ echo "==> Pruning old release images"
 # passed its health gates.
 prune_old_release_images \
     || echo "    WARNING: image retention failed; the deploy itself is unaffected" >&2
+
+echo "==> Deploy summary"
+if [[ "${SANDBOX_FAILS:-0}" == "error" ]]; then
+    echo "    WARNING: repo path sandbox check did not run (see above)" >&2
+elif [[ "${SANDBOX_FAILS:-0}" -gt 0 ]]; then
+    echo "    FAIL: repo path sandbox — ${SANDBOX_FAILS} repository path(s) rejected by validate_secure_repo_path" >&2
+    echo "          fix ALLOWED_REPO_ROOTS or the mounts before indexing (see FAIL lines above)" >&2
+else
+    echo "    repo path sandbox: all known paths OK"
+fi
