@@ -702,7 +702,8 @@ async def get_recent_brain_jobs(
         # largest indexed window before applying the requested result limit.
         # Otherwise unrelated repositories can hide matching jobs among the
         # first 100 global entries.
-        lookup_limit = 1000 if (repository_id is not None or repository_path) else max(limit, 100)
+        scoped_request = repository_id is not None or repository_path
+        lookup_limit = 1000 if scoped_request else max(limit, 100)
         job_ids = await queue.recent_job_ids(limit=lookup_limit)
         # Upgrade fallback: jobs created before the ZSET index was introduced.
         if not job_ids:
@@ -714,14 +715,20 @@ async def get_recent_brain_jobs(
                 if cursor == 0 or len(keys) >= 5000:
                     break
             job_ids = [key.rsplit(":", 1)[-1] for key in keys]
-        for job_id in job_ids:
-            job = await queue.get_job(job_id)
-            if not job:
-                continue
-            if not job.get("id"):
-                job["id"] = job_id
-            jobs.append(job)
-        if repository_id is not None or repository_path:
+        offset = 0
+        while True:
+            for job_id in job_ids:
+                job = await queue.get_job(job_id)
+                if not job:
+                    continue
+                if not job.get("id"):
+                    job["id"] = job_id
+                jobs.append(job)
+            if not scoped_request or len(job_ids) < lookup_limit:
+                break
+            offset += lookup_limit
+            job_ids = await queue.recent_job_ids(limit=lookup_limit, offset=offset)
+        if scoped_request:
             wanted = str(Path(repository_path).resolve()) if repository_path else None
             scoped = []
             for job in jobs:
@@ -738,7 +745,7 @@ async def get_recent_brain_jobs(
                             scoped.append(job)
                     except (OSError, RuntimeError):
                         continue
-            jobs = scoped
+            jobs = scoped[:limit]
         jobs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return {"jobs": jobs[:limit], "error": None}
     except Exception as exc:
