@@ -29,6 +29,11 @@ from brain.database.harness_models import (
 from brain.database.session import async_session_factory
 from brain.workers.db_fencing import assert_current_db_fence
 
+RUNNING_TASK_STATUSES = ("running", "in_progress", "started", "indexing", "processing", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending")
+
+def _task_status_filter(status: Optional[str]):
+    return AgentTask.status.in_(RUNNING_TASK_STATUSES) if status == "__running__" else AgentTask.status == status
+
 
 class InvalidTransition(ValueError):
     """Raised when a status update doesn't follow the task state machine."""
@@ -125,7 +130,7 @@ class HarnessStore:
         async with async_session_factory() as session:
             stmt = select(AgentTask).order_by(AgentTask.created_at.desc()).offset(max(0, offset)).limit(limit)
             if status:
-                stmt = stmt.where(AgentTask.status.in_(("running", "in_progress", "started", "indexing", "processing", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending")) if status == "__running__" else AgentTask.status == status)
+                stmt = stmt.where(_task_status_filter(status))
             if repo_path:
                 stmt = stmt.where(AgentTask.repo_path == repo_path)
             if query:
@@ -143,7 +148,7 @@ class HarnessStore:
         async with async_session_factory() as session:
             stmt = select(func.count()).select_from(AgentTask)
             if status:
-                stmt = stmt.where(AgentTask.status.in_(("running", "claimed", "validating")) if status == "__running__" else AgentTask.status == status)
+                stmt = stmt.where(_task_status_filter(status))
             if repo_path:
                 stmt = stmt.where(AgentTask.repo_path == repo_path)
             if query:
