@@ -98,3 +98,46 @@ recorded in every row.
 - Dev arms run: bm25, dense, brain_v5 (as shipped baseline), plus each candidate
   v2 variant; cheap-loser arms (grep, lex_only, novector) are skipped on dev to
   halve runtime — they are frozen losers on test.
+
+## A7 — v2 tuning results on dev150 and frozen v2 config (pre-test freeze)
+
+Tuned ONLY on dev150 (A6), three ablation rounds, n=150 each, arm-per-instance within one
+row so paired tests are valid (results: results/score_dev150_v2.json, score_dev150_r23.json;
+per-instance: results/dev150_all_arms.jsonl; paired stats: results/dev150_paired.json).
+Test sets (Lite/Verified) untouched; the Lite run below is the first and only v2 test run.
+
+Dev150 R@10 (95% CI):
+
+| variant | R@10 | vs dense (paired diff [CI]) |
+|---|---|---|
+| dense (frozen baseline) | .5663 [.515,.616] | — |
+| brain_v7_lin (linear, rerank on, all fixes) | .5654 [.494,.635] | −.0009 [−.035,+.034] |
+| **brain_v7_lin_norank (frozen pick)** | .5680 [.498,.637] | +.0017 [−.018,+.021] |
+| brain_v7_lin_chan0 (vec+bm25 only) | .5728 [.504,.643] | +.0065 [−.024,+.039] |
+| brain_v7_lin_nobm25 | .5677 [.498,.637] | +.0013 [−.033,+.036] |
+| brain_v7_lin_noidq | .5665 [.497,.635] | — |
+| brain_v7_lin_hilex (lex/sym/hint w=0.6) | .5588 [.488,.629] | — |
+| brain_v7_lin_topk | .5489 [.480,.618] | — |
+| brain_v7_lin_sum | .4670 [.396,.538] | — |
+| brain_v7_full (wrrf, all fixes) | .2259 [.175,.282] | −.3396 [−.405,−.274] |
+| brain_v7_norank (wrrf, no rerank) | .3859 [.327,.445] | — |
+| brain_fused (v5 full) | .4047 [.355,.455] | — |
+| brain_v5 | .2356 [.193,.282] | — |
+
+Paired decisions on dev150:
+- (a) fusion: linear over wrrf/rrf. lin_norank beats v5 +.332 [.249,.415] and brain_fused
+  +.163 [.082,.243], both CI excl. 0. wrrf collapses (−.34 vs dense): rank-level fusion still
+  dilutes the vector channel; score-level fusion does not.
+- (b) reranker OFF: removing it gains +.159 [.075,.241] excl-0 under wrrf and is neutral
+  under linear (+.0025). It never helped once.
+- (c) bm25 fallback ON: dev-neutral (empty channels almost never occur on real repos);
+  it exists for the CoIR snippet case. nobm25 vs lin: +.0022 [0,+.007].
+- (d) idq ON: dev-neutral (+.0011 [0,+.003]).
+- (e) vec agg = max: sum is −.098 [−.163,−.036] excl-0; topk is −.017 mean.
+- Channel weights kept at defaults: hilex −.0067 and chan0 +.0074 vs lin are both noise.
+
+FROZEN v2 config for the single test run (set as flag defaults in brain/config/settings.py):
+RETRIEVAL_V2_FUSION=linear, RETRIEVAL_V2_RERANK_ENABLED=False,
+RETRIEVAL_V2_BM25_FALLBACK=True, RETRIEVAL_V2_ID_QUERY=True, RETRIEVAL_V2_VEC_AGG=max,
+linear weights w_vec=1.0 w_lex=0.35 w_sym=0.35 w_hint=0.45 w_graph=0.3 w_bm25=0.6.
+RETRIEVAL_V2_ENABLED stays default-False until the test run decides per the protocol rule.

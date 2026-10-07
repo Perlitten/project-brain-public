@@ -243,9 +243,11 @@ class Settings(BaseSettings):
     RETRIEVAL_V2_ENABLED: bool = False
     # Fusion formula: "rrf" (prod), "wrrf" (weighted RRF, vector weight amplified),
     # "linear" (score-normalized weighted sum; empty channels contribute 0).
-    RETRIEVAL_V2_FUSION: str = "wrrf"
+    # Frozen on dev150 (A7): linear — wrrf still dilutes the vector channel.
+    RETRIEVAL_V2_FUSION: str = "linear"
     # Deterministic rerank stage + hard-coded path bonuses; off = select from fusion.
-    RETRIEVAL_V2_RERANK_ENABLED: bool = True
+    # Frozen on dev150 (A7): off — removing it was +.159 R@10 excl-0 under wrrf.
+    RETRIEVAL_V2_RERANK_ENABLED: bool = False
     # When lexical/symbol/hints/graph/memory all return nothing, compute a
     # content-BM25 channel over chunk text and fuse it (the anonymous-corpus case).
     RETRIEVAL_V2_BM25_FALLBACK: bool = True
