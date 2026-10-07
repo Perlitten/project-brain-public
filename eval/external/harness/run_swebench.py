@@ -76,6 +76,11 @@ V2_VARIANTS: dict[str, dict] = {
     "brain_v7_wrrf4": {"RETRIEVAL_V2_WRRF_VEC_WEIGHT": 4.0},
 }
 
+# STEP 3 frozen config — filled in AFTER dev150 ablation picks winners.
+# {} = committed settings defaults; entries here are the dev-chosen overrides
+# applied on top of RETRIEVAL_V2_ENABLED=True for the single test-set run.
+V2_FROZEN: dict = {}
+
 
 async def run_pipeline(issue: str, repo_id: int, repo_name: str, task_type: str, keywords: list[str]):
     t0 = time.perf_counter()
@@ -97,7 +102,7 @@ def channel_rank(cands) -> list[str]:
 
 
 async def brain_arms(issue: str, repo_id: int, repo_name: str, builder: ContextPackBuilder,
-                     v2: bool = False) -> dict:
+                     v2: bool = False, add_v7: bool = False, v1_ablations: bool = True) -> dict:
     out: dict[str, dict] = {}
     task_type, keywords, _risks, _feats = await builder._classify_task(issue)
     meta = {"task_type": task_type, "n_keywords": len(keywords), "keywords": keywords[:60]}
@@ -129,7 +134,7 @@ async def brain_arms(issue: str, repo_id: int, repo_name: str, builder: ContextP
     except Exception as exc:
         out["brain_v5"] = {"paths": [], "ms": 0.0, "error": f"{type(exc).__name__}: {exc}"}
 
-    if not v2:
+    if not v2 and v1_ablations:
         # brain-v6 (shipped feature flag on)
         try:
             settings.RETRIEVAL_V6_ENABLED = True
@@ -156,7 +161,7 @@ async def brain_arms(issue: str, repo_id: int, repo_name: str, builder: ContextP
             out["brain_novector"] = {"paths": [], "ms": 0.0, "error": f"{type(exc).__name__}: {exc}"}
 
     # brain-nolex: no lexical/symbol/hints signal at all
-    if not v2:
+    if not v2 and v1_ablations:
         try:
             with mock.patch.object(pipeline_mod, "expand_keywords", new=lambda *a, **k: []), \
                  mock.patch.object(pipeline_mod, "derive_path_hints", new=lambda *a, **k: []):
@@ -189,6 +194,29 @@ async def brain_arms(issue: str, repo_id: int, repo_name: str, builder: ContextP
                 settings.RETRIEVAL_V2_ENABLED = False
                 for k, val in saved.items():
                     setattr(settings, k, val)
+
+    # brain_v7: single arm at the STEP-3 frozen v2 config (test-set run)
+    if add_v7:
+        saved = {}
+        try:
+            settings.RETRIEVAL_V2_ENABLED = True
+            for k, val in V2_FROZEN.items():
+                saved[k] = getattr(settings, k)
+                setattr(settings, k, val)
+            res, ms = await run_pipeline(issue, repo_id, repo_name, task_type, keywords)
+            packed = await _pack(res, ms)
+            out["brain_v7"] = {
+                "paths": packed["paths"],
+                "fused": packed["fused"],
+                "ms": ms,
+                "channel_counts": packed["channel_counts"],
+            }
+        except Exception as exc:
+            out["brain_v7"] = {"paths": [], "ms": 0.0, "error": f"{type(exc).__name__}: {exc}"}
+        finally:
+            settings.RETRIEVAL_V2_ENABLED = False
+            for k, val in saved.items():
+                setattr(settings, k, val)
 
     out["query_meta"] = meta
     return out
@@ -311,6 +339,8 @@ async def main() -> None:
     ap.add_argument("--v2", action="store_true",
                     help="dev tuning run: brain_v5 + brain_v7_* variant arms only "
                          "(skips v6/novector/nolex/mcp/bm25/grep)")
+    ap.add_argument("--v7", action="store_true",
+                    help="final run: all v1 arms + brain_v7 at V2_FROZEN config")
     ap.add_argument("--repos", nargs="*", default=None, help="restrict to these repos (sharding)")
     ap.add_argument("--dataset", default="princeton-nlp/SWE-bench_Lite")
     ap.add_argument("--out", default=None)
@@ -416,7 +446,8 @@ async def main() -> None:
             repo_id = idx["repo_id"]
 
             try:
-                arms = await brain_arms(issue, repo_id, idx["repo_name"], builder, v2=args.v2)
+                arms = await brain_arms(issue, repo_id, idx["repo_name"], builder,
+                                        v2=args.v2, add_v7=args.v7)
             except Exception as exc:
                 arms = {"fatal": f"{type(exc).__name__}: {exc}", "trace": traceback.format_exc()[-2000:]}
             pool = arms.pop("_pool", [])
