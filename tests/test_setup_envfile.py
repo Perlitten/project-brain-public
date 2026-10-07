@@ -1,4 +1,5 @@
 """Real dotenv round trips and failure preservation for setup writes."""
+import os
 import stat
 
 import pytest
@@ -59,7 +60,8 @@ def test_setup_atomic_replace_failure_preserves_existing_config(tmp_path, monkey
     assert list(tmp_path.iterdir()) == [path]
 
 
-def test_setup_config_permissions_and_final_unterminated_line(tmp_path):
+@pytest.mark.skipif(os.name == "nt", reason="Windows chmod does not expose POSIX permission bits")
+def test_setup_config_posix_permissions(tmp_path):
     path = tmp_path / ".env"
     envfile.update_env_file(path, {"TARGET_REPO_PATH": "/new"})
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
@@ -67,5 +69,13 @@ def test_setup_config_permissions_and_final_unterminated_line(tmp_path):
     path.chmod(0o640)
     envfile.update_env_file(path, {"TARGET_REPO_PATH": "/new"})
     assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    assert dotenv_values(path)["OPENAI_API_KEY"] == "keep"
+    assert dotenv_values(path)["TARGET_REPO_PATH"] == "/new"
+
+
+def test_setup_preserves_final_unterminated_line(tmp_path):
+    path = tmp_path / ".env"
+    path.write_text("OPENAI_API_KEY=keep")
+    envfile.update_env_file(path, {"TARGET_REPO_PATH": "/new"})
     assert dotenv_values(path)["OPENAI_API_KEY"] == "keep"
     assert dotenv_values(path)["TARGET_REPO_PATH"] == "/new"
