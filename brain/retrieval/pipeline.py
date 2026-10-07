@@ -24,7 +24,7 @@ from brain.late_interaction.application import (
     late_interaction_canary_selected,
     late_interaction_requested,
 )
-from brain.retrieval.reranker import RerankCandidate, rerank_top_k
+from brain.retrieval.reranker import RerankCandidate, RerankResult, rerank_top_k
 from brain.retrieval.types import (
     ChannelCandidate,
     QueryRoute,
@@ -855,58 +855,67 @@ class HybridRetrievalPipeline:
         hint_tokens = set(derive_path_hints(task_description))
         pinned_set_preview = set(probe_list)
         reranked: List[ChannelCandidate] = []
-        for cand in fused_ranking:
-            bonus = 0.0
-            norm_path = cand.item_id.replace("\\", "/").lower()
-            lex_score = _path_keyword_hits(cand.item_id, keywords_lower, task_description)
-            bonus += min(lex_score * 0.05, 0.45)
-            if cand.item_id in pinned_set_preview:
-                bonus += 0.55
-            if is_root_config_path(cand.item_id) and intent.wants_root_config:
-                bonus += 0.42
-            if any(h in cand.item_id.lower() for h in hint_tokens if len(h) >= 4):
-                bonus += 0.18
-            if task_type == "bugfix" and "/test_" in norm_path:
-                bonus += 0.28
-            if norm_path.endswith("test_audit_fixes.py") and any(
-                t in task_description.lower() for t in ("pillz", "audit", "recommendation")
-            ):
-                bonus += 0.35
-            if norm_path.endswith("test_e2e_stability.py") and "wire" in task_description.lower():
-                bonus += 0.32
-            if cand.item_id in lexical_top:
-                bonus += 0.14
-            if cand.item_id in symbol_top:
-                bonus += 0.22
-            if cand.item_id in vector_top and route == QueryRoute.CONCEPTUAL:
-                bonus += vector_top[cand.item_id] * 0.15
-            elif cand.item_id in vector_top and cand.item_id not in lexical_top and cand.item_id not in symbol_top:
-                if vector_top[cand.item_id] < 0.22:
-                    bonus -= 0.18
-            if cand.item_id in graph_counts and route == QueryRoute.DEPENDENCY:
-                bonus += 0.12
-            if is_extension_tab_path(cand.item_id) and intent.wants_server_router:
-                if "battletab.tsx" not in norm_path:
-                    bonus -= 0.25
-            bonus += retrieval_tab_core_boost(cand.item_id, [c.item_id for c in fused_ranking[:15]], task_description)
-            if is_extension_noise_path(cand.item_id) and not intent.wants_extension:
-                bonus -= 0.4
-            if norm_path.startswith("scripts/") and not intent.wants_scripts:
-                if "backfill_market" in norm_path and intent.is_deletion:
-                    bonus += 0.3
-                elif norm_path.endswith(".md") or "selfplay_harness" in norm_path:
-                    bonus -= 0.3
-            if norm_path.startswith("src/server/routers/") and intent.wants_server_router:
-                bonus += 0.2
-            file_rec = path_to_file.get(cand.item_id)
-            authority_weight = knowledge_authority_weight(
-                file_rec.summary if file_rec else None,
-                task_description,
-            )
-            cand.reranker_score = (cand.normalized_score + bonus) * authority_weight
-            reranked.append(cand)
-        reranked.sort(key=lambda c: c.reranker_score, reverse=True)
-        timing.rerank_ms = (time.perf_counter() - t_rerank) * 1000
+        # v2 (b): the heuristic bonus stage is gated — when off, fusion order is
+        # the ranking and selection falls back to fused top-k below.
+        v2_rerank_off = v2_enabled and not settings.RETRIEVAL_V2_RERANK_ENABLED
+        if v2_rerank_off:
+            for cand in fused_ranking:
+                cand.reranker_score = cand.normalized_score
+            reranked = list(fused_ranking)
+            timing.rerank_ms = (time.perf_counter() - t_rerank) * 1000
+        else:
+            for cand in fused_ranking:
+                bonus = 0.0
+                norm_path = cand.item_id.replace("\\", "/").lower()
+                lex_score = _path_keyword_hits(cand.item_id, keywords_lower, task_description)
+                bonus += min(lex_score * 0.05, 0.45)
+                if cand.item_id in pinned_set_preview:
+                    bonus += 0.55
+                if is_root_config_path(cand.item_id) and intent.wants_root_config:
+                    bonus += 0.42
+                if any(h in cand.item_id.lower() for h in hint_tokens if len(h) >= 4):
+                    bonus += 0.18
+                if task_type == "bugfix" and "/test_" in norm_path:
+                    bonus += 0.28
+                if norm_path.endswith("test_audit_fixes.py") and any(
+                    t in task_description.lower() for t in ("pillz", "audit", "recommendation")
+                ):
+                    bonus += 0.35
+                if norm_path.endswith("test_e2e_stability.py") and "wire" in task_description.lower():
+                    bonus += 0.32
+                if cand.item_id in lexical_top:
+                    bonus += 0.14
+                if cand.item_id in symbol_top:
+                    bonus += 0.22
+                if cand.item_id in vector_top and route == QueryRoute.CONCEPTUAL:
+                    bonus += vector_top[cand.item_id] * 0.15
+                elif cand.item_id in vector_top and cand.item_id not in lexical_top and cand.item_id not in symbol_top:
+                    if vector_top[cand.item_id] < 0.22:
+                        bonus -= 0.18
+                if cand.item_id in graph_counts and route == QueryRoute.DEPENDENCY:
+                    bonus += 0.12
+                if is_extension_tab_path(cand.item_id) and intent.wants_server_router:
+                    if "battletab.tsx" not in norm_path:
+                        bonus -= 0.25
+                bonus += retrieval_tab_core_boost(cand.item_id, [c.item_id for c in fused_ranking[:15]], task_description)
+                if is_extension_noise_path(cand.item_id) and not intent.wants_extension:
+                    bonus -= 0.4
+                if norm_path.startswith("scripts/") and not intent.wants_scripts:
+                    if "backfill_market" in norm_path and intent.is_deletion:
+                        bonus += 0.3
+                    elif norm_path.endswith(".md") or "selfplay_harness" in norm_path:
+                        bonus -= 0.3
+                if norm_path.startswith("src/server/routers/") and intent.wants_server_router:
+                    bonus += 0.2
+                file_rec = path_to_file.get(cand.item_id)
+                authority_weight = knowledge_authority_weight(
+                    file_rec.summary if file_rec else None,
+                    task_description,
+                )
+                cand.reranker_score = (cand.normalized_score + bonus) * authority_weight
+                reranked.append(cand)
+            reranked.sort(key=lambda c: c.reranker_score, reverse=True)
+            timing.rerank_ms = (time.perf_counter() - t_rerank) * 1000
 
         # Recall stage (v6) → deterministic rerank → precision top-10.
         # v5 path: simple top-30 fused slice. v6 path: surface-balanced top-100
@@ -1013,16 +1022,24 @@ class HybridRetrievalPipeline:
                     await session.execute(select(Repository.last_indexed_commit).where(Repository.id == repository_id))
                 ).scalar_one_or_none()
                 commit_hash = repo_row or ""
-        v5_result = await rerank_top_k(
-            rerank_pool,
-            task_description=task_description,
-            task_type=task_type,
-            repo_hash=repository_name,
-            top_k=precision_k,
-            expected_surface=expected_surface,
-            two_stage=v6_enabled and bool(settings.RETRIEVAL_V6_SEMANTIC_RERANK),
-            commit_hash=commit_hash,
-        )
+        if v2_rerank_off:
+            v5_result = RerankResult(
+                top_paths=[c.item_id for c in reranked[:precision_k]],
+                candidates=[],
+                stage="v2_no_rerank",
+                fallback_reason="rerank gated off (RETRIEVAL_V2_RERANK_ENABLED=false)",
+            )
+        else:
+            v5_result = await rerank_top_k(
+                rerank_pool,
+                task_description=task_description,
+                task_type=task_type,
+                repo_hash=repository_name,
+                top_k=precision_k,
+                expected_surface=expected_surface,
+                two_stage=v6_enabled and bool(settings.RETRIEVAL_V6_SEMANTIC_RERANK),
+                commit_hash=commit_hash,
+            )
         baseline_v5_top = v5_result.top_paths
         available = {c.item_id for c in reranked} | set(recall.pool_paths)
         baseline_v5_top = expand_protected_pairs(baseline_v5_top, available)[:precision_k]
@@ -1031,7 +1048,7 @@ class HybridRetrievalPipeline:
         # Budget selection — v5 top-10 is authoritative for precision; fill to file_limit from pool
         t_budget = time.perf_counter()
         pinned: List[str] = []
-        if probe_list:
+        if probe_list and not v2_rerank_off:
             async with async_session_factory() as session:
                 stmt_probe = select(File).where(File.path.in_(probe_list))
                 if repository_id is not None:
@@ -1041,17 +1058,21 @@ class HybridRetrievalPipeline:
                         pinned.append(f.path)
                         path_to_file.setdefault(f.path, f)
 
-        baseline_selected = _select_final_paths(
-            reranked=reranked,
-            v5_top=baseline_v5_top,
-            file_limit=file_limit,
-            precision_k=precision_k,
-            candidates_by_channel=candidates_by_channel,
-            keywords_lower=keywords_lower,
-            task_type=task_type,
-            task_description=task_description,
-            pinned=pinned,
-        )
+        if v2_rerank_off:
+            # Fusion order IS the selection: no probe pins, no channel promotions.
+            baseline_selected = [c.item_id for c in reranked[:file_limit]]
+        else:
+            baseline_selected = _select_final_paths(
+                reranked=reranked,
+                v5_top=baseline_v5_top,
+                file_limit=file_limit,
+                precision_k=precision_k,
+                candidates_by_channel=candidates_by_channel,
+                keywords_lower=keywords_lower,
+                task_type=task_type,
+                task_description=task_description,
+                pinned=pinned,
+            )
         timing.budget_selection_ms = (time.perf_counter() - t_budget) * 1000
 
         late_debug: dict = {
