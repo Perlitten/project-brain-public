@@ -74,6 +74,23 @@ V2_VARIANTS: dict[str, dict] = {
     "brain_v7_nobm25": {"RETRIEVAL_V2_BM25_FALLBACK": False},
     "brain_v7_wrrf1": {"RETRIEVAL_V2_WRRF_VEC_WEIGHT": 1.0},
     "brain_v7_wrrf4": {"RETRIEVAL_V2_WRRF_VEC_WEIGHT": 4.0},
+    # second-round dev cells added after first grid showed linear >> wrrf:
+    "brain_v7_lin_norank": {"RETRIEVAL_V2_FUSION": "linear", "RETRIEVAL_V2_RERANK_ENABLED": False},
+    "brain_v7_lin_sum": {"RETRIEVAL_V2_FUSION": "linear", "RETRIEVAL_V2_VEC_AGG": "sum"},
+    "brain_v7_lin_topk": {"RETRIEVAL_V2_FUSION": "linear", "RETRIEVAL_V2_VEC_AGG": "topk"},
+    "brain_v7_lin_noidq": {"RETRIEVAL_V2_FUSION": "linear", "RETRIEVAL_V2_ID_QUERY": False},
+    "brain_v7_lin_nobm25": {"RETRIEVAL_V2_FUSION": "linear", "RETRIEVAL_V2_BM25_FALLBACK": False},
+    # round-3 cells: is linear just dense in disguise, or do channels help?
+    "brain_v7_lin_chan0": {
+        "RETRIEVAL_V2_FUSION": "linear",
+        "RETRIEVAL_V2_LIN_W_LEX": 0.0, "RETRIEVAL_V2_LIN_W_SYM": 0.0,
+        "RETRIEVAL_V2_LIN_W_HINT": 0.0, "RETRIEVAL_V2_LIN_W_GRAPH": 0.0,
+    },
+    "brain_v7_lin_hilex": {
+        "RETRIEVAL_V2_FUSION": "linear",
+        "RETRIEVAL_V2_LIN_W_LEX": 0.6, "RETRIEVAL_V2_LIN_W_SYM": 0.6,
+        "RETRIEVAL_V2_LIN_W_HINT": 0.6,
+    },
 }
 
 # STEP 3 frozen config — filled in AFTER dev150 ablation picks winners.
@@ -173,7 +190,9 @@ async def brain_arms(issue: str, repo_id: int, repo_name: str, builder: ContextP
 
     # brain-v7 variants (v2 ablation grid, dev split only)
     if v2:
-        for vname, overrides in V2_VARIANTS.items():
+        wanted = v2 if isinstance(v2, (list, tuple, set)) else V2_VARIANTS.keys()
+        for vname in wanted:
+            overrides = V2_VARIANTS[vname]
             saved: dict[str, object] = {}
             try:
                 settings.RETRIEVAL_V2_ENABLED = True
@@ -339,6 +358,8 @@ async def main() -> None:
     ap.add_argument("--v2", action="store_true",
                     help="dev tuning run: brain_v5 + brain_v7_* variant arms only "
                          "(skips v6/novector/nolex/mcp/bm25/grep)")
+    ap.add_argument("--variants", nargs="*", default=None,
+                    help="subset of V2_VARIANTS names to run (implies --v2)")
     ap.add_argument("--v7", action="store_true",
                     help="final run: all v1 arms + brain_v7 at V2_FROZEN config")
     ap.add_argument("--repos", nargs="*", default=None, help="restrict to these repos (sharding)")
@@ -446,15 +467,16 @@ async def main() -> None:
             repo_id = idx["repo_id"]
 
             try:
+                v2_arg = args.variants if args.variants else args.v2
                 arms = await brain_arms(issue, repo_id, idx["repo_name"], builder,
-                                        v2=args.v2, add_v7=args.v7)
+                                        v2=v2_arg, add_v7=args.v7)
             except Exception as exc:
                 arms = {"fatal": f"{type(exc).__name__}: {exc}", "trace": traceback.format_exc()[-2000:]}
             pool = arms.pop("_pool", [])
             row["arms"] = arms
             row["brain_v5_pool"] = pool
 
-            if not args.v2:
+            if not (args.v2 or args.variants):
                 row["arms"]["brain_mcp"] = await mcp_arm(issue, str(repo_dir))
                 row["arms"]["bm25"] = await bm25_arm(issue, repo_id)
                 t0 = time.perf_counter()
