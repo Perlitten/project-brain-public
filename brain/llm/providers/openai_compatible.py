@@ -94,7 +94,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
     def from_preset(cls, name: str, *, model: Optional[str] = None, cfg: Any = None) -> "OpenAICompatibleLLMProvider":
         return cls.from_endpoint(resolve_llm_endpoint(name, model=model, cfg=cfg))
 
-    def _check_config(self) -> None:
+    def _check_config(self) -> str:
         if not self.api_url:
             raise ValueError(
                 f"{self.label} base URL is not configured. Set LLM_BASE_URL "
@@ -104,9 +104,10 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             raise ValueError(f"{self.label} model is not configured. Set LLM_MODEL.")
         if self.require_key and not self.api_key:
             raise ValueError(_missing_key_message(self.label, self.key_source))
+        return self.api_url
 
     async def generate(self, prompt: str, system_instruction: Optional[str] = None, **kwargs) -> str:
-        self._check_config()
+        api_url = self._check_config()
 
         from brain.llm.observability import audit_and_bound_llm_input
 
@@ -129,7 +130,7 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         for attempt in range(retries):
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.post(self.api_url, headers=headers, json=payload, timeout=self.timeout)
+                    response = await client.post(api_url, headers=headers, json=payload, timeout=self.timeout)
                     response.raise_for_status()
                     res_json = response.json()
                     choices = res_json.get("choices") or []
@@ -230,7 +231,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
     def max_input_chars(self) -> int:
         return int(self.MAX_INPUT_CHARS or 0)
 
-    def _check_config(self) -> None:
+    def _check_config(self) -> str:
         if not self.api_url:
             raise ValueError(
                 f"{self.label} embedding base URL is not configured. Set EMBEDDING_BASE_URL "
@@ -245,13 +246,14 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
             )
         if self.require_key and not self.api_key:
             raise ValueError(_missing_key_message(self.label, self.key_source))
+        return self.api_url
 
     async def embed(self, text: str, **kwargs) -> List[float]:
         res = await self.embed_batch([text], **kwargs)
         return res[0]
 
     async def embed_batch(self, texts: List[str], **kwargs) -> List[List[float]]:
-        self._check_config()
+        api_url = self._check_config()
         if not texts:
             return []
 
@@ -278,16 +280,18 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
         for start in range(0, len(texts), batch_size):
             chunk = texts[start:start + batch_size]
             payload = {"model": self.model, "input": chunk, **payload_kwargs}
-            vectors.extend(await self._post(headers, payload, len(chunk)))
+            vectors.extend(await self._post(api_url, headers, payload, len(chunk)))
         return vectors
 
-    async def _post(self, headers: Dict[str, str], payload: Dict[str, Any], expected: int) -> List[List[float]]:
+    async def _post(
+        self, api_url: str, headers: Dict[str, str], payload: Dict[str, Any], expected: int
+    ) -> List[List[float]]:
         max_retries = max(1, settings.LLM_MAX_RETRIES)
         base_delay = max(0.1, settings.LLM_RETRY_BASE_DELAY_S)
         for attempt in range(max_retries):
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.post(self.api_url, headers=headers, json=payload, timeout=self.timeout)
+                    response = await client.post(api_url, headers=headers, json=payload, timeout=self.timeout)
                     response.raise_for_status()
                     data = sorted(response.json()["data"], key=lambda item: item["index"])
                     if [item["index"] for item in data] != list(range(expected)):
