@@ -784,7 +784,9 @@ class HybridRetrievalPipeline:
                 top = sorted(sims, reverse=True)[:3]
                 seen_vec_paths[path] = sum(top) / len(top)
             else:
-                seen_vec_paths[path] = max(sims)
+                # Legacy aggregation starts at zero, so negative-only matches
+                # must keep that floor when the experiment is disabled.
+                seen_vec_paths[path] = max(sims) if v2_enabled else max(0.0, max(sims))
         for rank, (path, sim) in enumerate(sorted(seen_vec_paths.items(), key=lambda x: x[1], reverse=True), 1):
             candidates_by_channel["vector"].append(ChannelCandidate("vector", path, sim, rank=rank))
 
