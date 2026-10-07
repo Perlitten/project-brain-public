@@ -4,7 +4,11 @@ Each item: query = code + import_statement; rank `context` candidates;
 gold = golden_snippet_index. Per-instance repos cannot be indexed, so
 arms are bm25 / dense (same embedder) / brain-rrf (Brain's own RRF
 fusion w/(60+rank) with lexical=1.25, vector=1.0 from
-brain/search/filters.py:RRF_PIPELINE_WEIGHTS).
+brain/search/filters.py:RRF_PIPELINE_WEIGHTS) and, for v2,
+brain_v7 = the frozen v2 linear fusion mirrored outside the pipeline:
+1.0*norm(dense) + 0.6*norm(bm25) (RETRIEVAL_V2_LIN_W_VEC/LIN_W_BM25,
+min-max normalized scores; the v2 feature-flag fixes that depend on
+repo indexes do not apply to RepoBench items).
 
 Metric: Acc@k — fraction of items whose gold snippet lands in top-k.
 """
@@ -19,11 +23,10 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import common  # noqa: E402
+import common  # noqa: E402,F401  (side effect: os.environ eval defaults)
 from common import JsonlWriter, done_ids, tokenize, perf_ms  # noqa: E402
 
 import numpy as np  # noqa: E402
-from datasets.utils.logging import disable_progress_bar  # noqa: E402
 from huggingface_hub import hf_hub_download  # noqa: E402
 from rank_bm25 import BM25Okapi  # noqa: E402
 
@@ -117,6 +120,14 @@ def main() -> None:
 
         row["arms"]["brain_rrf"] = {"order": rrf_fuse(
             row["arms"]["bm25"]["order"], row["arms"]["dense"]["order"], RRF_LEX_W, RRF_VEC_W)}
+
+        def _norm(sc):
+            sc = np.asarray(sc, dtype=float)
+            lo, hi = sc.min(), sc.max()
+            return (sc - lo) / (hi - lo) if hi > lo else np.zeros_like(sc)
+
+        lin = 1.0 * _norm(d_scores) + 0.6 * _norm(bm_scores)
+        row["arms"]["brain_v7"] = {"order": rank(list(lin))}
         writer.write(row)
         if n % 200 == 0:
             print(f"[repobench] {n}/{len(items)}", flush=True)
