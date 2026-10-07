@@ -2,11 +2,8 @@
 
 import { useEffect } from "react";
 
-// One pointer listener for the whole app. It feeds two CSS effects:
-// --cx/--cy on <html> move the lens that lights up the blueprint grid behind
-// the page, and --mx/--my on the surface under the pointer place its border
-// spotlight. Writes are batched into one frame; touch input is ignored.
-const LIT = ".panel, .verdict, .map, .card, .step, .palette__box";
+// Only the document lens is mutated. Writing inline styles onto streamed
+// server-rendered surfaces before they hydrate causes attribute mismatches.
 
 export function Ambient() {
   useEffect(() => {
@@ -19,12 +16,6 @@ export function Ambient() {
       if (!e) return;
       root.style.setProperty("--cx", `${e.clientX}px`);
       root.style.setProperty("--cy", `${e.clientY}px`);
-      const el = (e.target as Element | null)?.closest?.<HTMLElement>(LIT);
-      if (el) {
-        const r = el.getBoundingClientRect();
-        el.style.setProperty("--mx", `${e.clientX - r.left}px`);
-        el.style.setProperty("--my", `${e.clientY - r.top}px`);
-      }
     };
     const onMove = (e: PointerEvent) => {
       if (e.pointerType === "touch") return;

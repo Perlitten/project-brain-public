@@ -132,10 +132,39 @@ def test_update_status_success(api_key_env):
 
 
 def test_list_tasks(api_key_env):
-    with patch("apps.api.routers.harness.HarnessStore.list_tasks", AsyncMock(return_value=[_sample_task()])):
+    with (
+        patch("apps.api.routers.harness.HarnessStore.list_tasks", AsyncMock(return_value=[_sample_task()])),
+        patch("apps.api.routers.harness.HarnessStore.count_tasks", AsyncMock(return_value=1)),
+        patch("apps.api.routers.harness.HarnessStore.task_status_counts", AsyncMock(return_value={"created": 1})),
+    ):
         response = client.get("/harness/tasks", headers=AUTH)
     assert response.status_code == 200
     assert len(response.json()["tasks"]) == 1
+
+
+def test_tasks_search_pagination_and_scope_preserve_full_history_totals(api_key_env):
+    with (
+        patch("apps.api.routers.harness.HarnessStore.list_tasks", AsyncMock(return_value=[_sample_task()])) as rows,
+        patch("apps.api.routers.harness.HarnessStore.count_tasks", AsyncMock(return_value=250)) as count,
+        patch("apps.api.routers.harness.HarnessStore.task_status_counts", AsyncMock(return_value={"created": 200, "completed": 50})) as facets,
+    ):
+        response = client.get("/harness/tasks?repo_path=%2Fapp&q=old%20task&status=created&page=11&page_size=20", headers=AUTH)
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["total"], body["total_pages"], body["page"]) == (250, 13, 11)
+    assert body["facets"]["status"] == {"created": 200, "completed": 50}
+    rows.assert_awaited_once_with(status="created", repo_path="/app", query="old task", offset=200, limit=20)
+    count.assert_awaited_once_with(status="created", repo_path="/app", query="old task")
+    facets.assert_awaited_once_with(repo_path="/app", query="old task")
+
+
+def test_tasks_count_failure_does_not_fabricate_page_length_as_total(api_key_env):
+    with (
+        patch("apps.api.routers.harness.HarnessStore.list_tasks", AsyncMock(return_value=[_sample_task()])),
+        patch("apps.api.routers.harness.HarnessStore.count_tasks", AsyncMock(side_effect=RuntimeError("count unavailable"))),
+    ):
+        response = client.get("/harness/tasks", headers=AUTH)
+    assert response.status_code == 500
 
 
 def test_list_validations(api_key_env):

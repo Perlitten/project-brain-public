@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Condition, JobStatus, LedgerEvent, Meter as MeterData, Tone } from "@/lib/types";
 import { Decode } from "./Decode";
-import { ListFrame, type FacetSpec } from "./ListFrame";
+import { ListFrame, type FacetSpec, type ListPaging } from "./ListFrame";
 import { Odometer, Rise } from "./motion";
 
 export const fmt = (n: number) => n.toLocaleString("en-US");
@@ -224,7 +224,7 @@ export function Meter({ meter, slots = 20 }: { meter: MeterData; slots?: number 
 const TONE_WORD: Record<string, string> = { bad: "Failed", warn: "Worth checking", ok: "Fine", info: "Info", idle: "Idle" };
 
 /** `paged` adds search, a filter by outcome and a pager for the full log. */
-export function Ledger({ events, limit, compact, paged }: { events: LedgerEvent[]; limit?: number; compact?: boolean; paged?: boolean }) {
+export function Ledger({ events, limit, compact, paged, paging }: { events: LedgerEvent[]; limit?: number; compact?: boolean; paged?: boolean; paging?: ListPaging }) {
   const rows = limit ? events.slice(0, limit) : events;
   const items = rows.map((e, i) => (
     <li className="ledger__row" key={`${e.at}-${i}`} style={{ "--i": Math.min(i, 12) } as CSSProperties}>
@@ -236,13 +236,14 @@ export function Ledger({ events, limit, compact, paged }: { events: LedgerEvent[
     </li>
   ));
   const cls = compact ? "ledger ledger--compact" : "ledger";
-  if (paged) {
+  if (paged || paging) {
     return (
       <ListFrame
+        paging={paging}
         rows={items}
         listClass={cls}
         meta={rows.map((e) => ({ q: `${e.source} ${e.text} ${e.ref ?? ""} ${e.at}`.toLowerCase(), f: e.tone }))}
-        facet={{ label: "Outcome", values: ["bad", "warn", "ok", "info", "idle"].map((v) => ({ value: v, label: TONE_WORD[v] })) }}
+        facet={paging ? undefined : { label: "Outcome", values: ["bad", "warn", "ok", "info", "idle"].map((v) => ({ value: v, label: TONE_WORD[v] })) }}
         noun={["event", "events"]}
         pageSize={50}
       />
@@ -298,12 +299,14 @@ export function Table<T>({
   rowKey,
   caption,
   filter,
+  paging,
 }: {
   rows: T[];
   columns: Column<T>[];
   rowKey: (row: T) => string;
   caption: string;
   filter?: TableFilter<T>;
+  paging?: ListPaging;
 }) {
   const head = (
     <tr>
@@ -323,9 +326,10 @@ export function Table<T>({
       ))}
     </tr>
   ));
-  if (filter || rows.length > 20) {
+  if (filter || paging || rows.length > 20) {
     return (
       <ListFrame
+        paging={paging}
         rows={body}
         head={head}
         caption={caption}

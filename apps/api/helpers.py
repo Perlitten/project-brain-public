@@ -685,7 +685,12 @@ async def get_embedding_retrieval_health(
         }
 
 
-async def get_recent_brain_jobs(limit: int = 10) -> Dict[str, Any]:
+async def get_recent_brain_jobs(
+    limit: int = 10,
+    *,
+    repository_id: int | None = None,
+    repository_path: str | None = None,
+) -> Dict[str, Any]:
     """List recent worker jobs stored in Redis (Phase 9 queue)."""
     from brain.database.session import redis_client
     from brain.workers.queue import JobQueue
@@ -711,6 +716,23 @@ async def get_recent_brain_jobs(limit: int = 10) -> Dict[str, Any]:
             if not job.get("id"):
                 job["id"] = job_id
             jobs.append(job)
+        if repository_id is not None or repository_path:
+            wanted = str(Path(repository_path).resolve()) if repository_path else None
+            scoped = []
+            for job in jobs:
+                params = job.get("params") if isinstance(job.get("params"), dict) else {}
+                job_repo_id = params.get("repository_id")
+                job_repo_path = params.get("repo_path") or params.get("repository_path")
+                if repository_id is not None and str(job_repo_id) == str(repository_id):
+                    scoped.append(job)
+                    continue
+                if wanted and isinstance(job_repo_path, str):
+                    try:
+                        if str(Path(job_repo_path).resolve()) == wanted:
+                            scoped.append(job)
+                    except (OSError, RuntimeError):
+                        continue
+            jobs = scoped
         jobs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return {"jobs": jobs[:limit], "error": None}
     except Exception as exc:

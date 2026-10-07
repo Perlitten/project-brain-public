@@ -1,15 +1,23 @@
+import Link from "next/link";
 import { EmptyState, PageHead, Panel, Table } from "@/components/ui";
-import { getReports } from "@/lib/data";
+import { getPagedReports } from "@/lib/data";
+import { getListQuery, listQueryParams } from "@/lib/list-query";
 
 export const metadata = { title: "Reports" };
 
-export default async function Reports() {
-  const reports = await getReports();
+export default async function Reports({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = await searchParams;
+  const query = getListQuery(params);
+  const result = await getPagedReports(query);
+  const listParams = listQueryParams(query);
+  const back = `/reports${listParams ? `?${listParams}` : ""}`;
+  const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
+  const reports = result.items;
   return <>
-    <PageHead eyebrow="Reports" title="Saved reports" lede="Evaluations and checks recorded by Brain." />
+    <PageHead eyebrow="Reports" title="Saved reports" lede="Evaluations and checks recorded across the Brain service." />
     <Panel id="reports" title="Reports" flush>
-      {reports.length ? <Table caption="Reports" rows={reports} rowKey={r => r.id} columns={[
-        { head: "Report", cell: r => r.title }, { head: "Kind", cell: r => r.kind },
+      {reports.length || hasQuery ? <Table paging={result.paging} filter={{search: r => `${r.title} ${r.id}`, noun: ["report", "reports"]}} caption="Reports" rows={reports} rowKey={r => r.id} columns={[
+        { head: "Report", cell: r => <Link className="link" href={`/reports/${encodeURIComponent(r.id)}?back=${encodeURIComponent(back)}`}>{r.title}</Link> }, { head: "Kind", cell: r => r.kind },
         { head: "Created", cell: r => r.createdAt }, { head: "Size", cell: r => r.size, align: "right" },
       ]} /> : <EmptyState title="No reports yet" body="Brain has not reported any saved evaluations or checks." />}
     </Panel>

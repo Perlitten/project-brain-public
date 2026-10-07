@@ -1,16 +1,8 @@
 import type { ReactNode } from "react";
+import { Tooltip } from "./Tooltip";
 
 // A small "?" that explains the thing next to it on hover, focus or tap —
-// help that stays out of the way until asked for. Same pure-CSS tooltip as Term.
+// help that stays out of the way until asked for. Shared portalled tooltip with Term.
 export function Tip({ children, label = "What is this?", end }: { children: ReactNode; label?: string; /** Opens leftward, for tips at a right edge. */ end?: boolean }) {
-  return (
-    <span className={`term tip${end ? " tip--end" : ""}`}>
-      <button type="button" className="term__word tip__btn" aria-label={label}>
-        ?
-      </button>
-      <span className="term__tip" role="tooltip">
-        {children}
-      </span>
-    </span>
-  );
+  return <Tooltip content={children} label={label} end={end} tip>?</Tooltip>;
 }

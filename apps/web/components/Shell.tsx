@@ -16,6 +16,7 @@ import { RailPulse } from "./RailPulse";
 export interface ShellRepo {
   slug: string;
   name: string;
+  path: string;
   tone: Tone;
   status: string;
 }
@@ -25,8 +26,9 @@ const isActive = (href: string, path: string) => (href === "/" ? path === "/" : 
 export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; demo: boolean; mode: ActionsMode; children: ReactNode }) {
   const path = usePathname();
   const params = useSearchParams();
-  const repoSlug = params.get("repo") ?? repos[0]?.slug;
-  const repo = repos.find((r) => r.slug === repoSlug) ?? repos[0];
+  const allowsAllRepos = ["packs", "memory", "runs", "logs"].includes(locate(path)?.item.key ?? "");
+  const repoSlug = params.get("repo") ?? (allowsAllRepos ? undefined : repos[0]?.slug);
+  const repo = repos.find((r) => r.slug === repoSlug);
   const [drawer, setDrawer] = useState(false);
   // Icons-only rail, remembered per browser. Medium screens get it from CSS.
   const [slim, setSlim] = useState(false);
@@ -44,9 +46,47 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
     });
   const [palette, setPalette] = useState(false);
   const [repoMenu, setRepoMenu] = useState(false);
+  const [mobile, setMobile] = useState(false);
+  const rail = useRef<HTMLElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const paletteOpener = useRef<HTMLElement | null>(null);
+  const openPalette = useCallback(() => {
+    paletteOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setPalette(true);
+  }, []);
+  const closePalette = useCallback(() => {
+    setPalette(false);
+    requestAnimationFrame(() => paletteOpener.current?.isConnected && paletteOpener.current.focus());
+  }, []);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 560px)");
+    const update = () => { setMobile(mq.matches); if (!mq.matches) setDrawer(false); };
+    update(); mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!drawer || !mobile) return;
+    const el = rail.current;
+    const focusable = () => Array.from(el?.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex="0"]') ?? [])
+      .filter((node) => node.getClientRects().length && getComputedStyle(node).visibility !== "hidden");
+    focusable()[0]?.focus();
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const nodes = focusable(); const first = nodes[0]; const last = nodes.at(-1);
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    };
+    el?.addEventListener("keydown", trap);
+    return () => { el?.removeEventListener("keydown", trap); menuButton.current?.focus(); };
+  }, [drawer, mobile]);
 
   const withRepo = useCallback(
-    (href: string, slug = repo?.slug) => (slug && slug !== repos[0]?.slug ? `${href}?repo=${slug}` : href),
+    (href: string, slug = repo?.slug) => {
+      const [pathname, query = ""] = href.split("?");
+      const params = new URLSearchParams(query);
+      if (slug && locate(pathname)?.item.repoScoped) params.set("repo", slug); else params.delete("repo");
+      return `${pathname}${params.size ? `?${params}` : ""}`;
+    },
     [repo?.slug, repos],
   );
 
@@ -59,16 +99,16 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setPalette((p) => !p);
+        if (palette) closePalette(); else openPalette();
       } else if (e.key === "Escape") {
-        setPalette(false);
+        if (palette) closePalette();
         setDrawer(false);
         setRepoMenu(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [palette, openPalette, closePalette]);
 
   const where = locate(path);
   const current = where?.item;
@@ -81,7 +121,7 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
       <a className="skip" href="#main">
         Skip to content
       </a>
-      <aside className="rail" aria-label="Main navigation">
+      <aside ref={rail} className="rail" aria-label="Main navigation" inert={mobile && !drawer} aria-hidden={mobile && !drawer ? true : undefined}>
         <Link className="rail__brand" href={withRepo("/")} title="Project Brain — overview">
           <BrandMark size={30} />
           <span className="rail__word">
@@ -90,6 +130,7 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
           </span>
         </Link>
         <RailNav path={path} withRepo={withRepo} slim={slim} />
+        {mobile && drawer && <button type="button" className="btn btn--neutral rail__close" onClick={() => setDrawer(false)}>Close menu</button>}
         <div className="rail__foot">
           {demo ? (
             <p className="rail__note">
@@ -100,7 +141,7 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
               Numbers are examples until the API is connected.
             </p>
           ) : (
-            <RailPulse withRepo={withRepo} />
+            <RailPulse withRepo={withRepo} repoSlug={allowsAllRepos && !repoSlug ? "" : repoSlug} />
           )}
           <button
             type="button"
@@ -114,10 +155,10 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
           </button>
         </div>
       </aside>
-      <button className="scrim" type="button" aria-label="Close menu" tabIndex={drawer ? 0 : -1} onClick={() => setDrawer(false)} />
+      <button className="scrim" type="button" aria-label="Close menu" aria-hidden={!drawer} tabIndex={-1} onClick={() => setDrawer(false)} />
 
-      <header className="mast">
-        <button className="mast__menu btn btn--neutral btn--sm" type="button" onClick={() => setDrawer(true)}>
+      <header className="mast" inert={mobile && drawer}>
+        <button ref={menuButton} className="mast__menu btn btn--neutral btn--sm" type="button" aria-expanded={drawer} onClick={() => setDrawer(true)}>
           <Icon name="menu" size={16} />
           Menu
         </button>
@@ -145,12 +186,13 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
               <span className={`dot tone-${repo?.tone}`} aria-hidden="true" />
               <span className="repo__label">
                 <small>Repository</small>
-                {repo?.name}
+                {repo?.name ?? (allowsAllRepos && !repoSlug ? "All repositories" : "Repository not found")}
               </span>
               <Icon name="arrow" size={14} className="repo__caret" />
             </button>
             {repoMenu && (
               <ul className="repo__menu pop" role="listbox" aria-label="Switch repository">
+                {allowsAllRepos && <li role="option" aria-selected={!repoSlug}><Link href={withRepo(path, "")} className={!repoSlug ? "is-on" : ""}>All repositories</Link></li>}
                 {repos.map((r, i) => (
                   <li key={r.slug} role="option" aria-selected={r.slug === repo?.slug} style={{ "--i": i } as CSSProperties}>
                     <Link href={withRepo(path, r.slug)} className={r.slug === repo?.slug ? "is-on" : ""}>
@@ -164,7 +206,7 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
             )}
           </div>
           )}
-          <button type="button" className="search-btn" onClick={() => setPalette(true)}>
+          <button type="button" className="search-btn" aria-label="Go to a screen or run a command" onClick={openPalette}>
             <Icon name="search" size={16} />
             <span className="search-btn__text">Go or run…</span>
             <kbd>Ctrl K</kbd>
@@ -172,18 +214,19 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
         </div>
       </header>
 
-      <main id="main" className="main">
+      <main id="main" className="main" inert={mobile && drawer}>
         {children}
       </main>
 
       {palette && (
         <Palette
-          onClose={() => setPalette(false)}
+          onClose={closePalette}
           repos={repos}
           withRepo={withRepo}
           path={path}
           mode={mode}
           scoped={scoped}
+          repoPath={repo?.path}
         />
       )}
       <Toaster />
@@ -272,6 +315,7 @@ function Palette({
   path,
   mode,
   scoped,
+  repoPath,
 }: {
   onClose: () => void;
   repos: ShellRepo[];
@@ -279,11 +323,18 @@ function Palette({
   path: string;
   mode: ActionsMode;
   scoped: boolean;
+  repoPath?: string;
 }) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useLayoutEffect(() => {
+    const d = dialog.current;
+    if (d && !d.open) d.showModal();
+    return () => { if (d?.open) d.close(); };
+  }, []);
 
   const entries = useMemo<Entry[]>(() => {
     const pages: Entry[] = allNavItems.map((i) => ({
@@ -294,7 +345,10 @@ function Palette({
       icon: i.icon,
       group: "Go to",
     }));
-    const commands: Entry[] = COMMANDS.map((c) => ({ ...c, id: `run-${c.id}`, group: "Run" }));
+    const commands: Entry[] = COMMANDS.map((c) => ({ ...c,
+      run: c.id === "reindex" ? () => repoPath ? startReindex({ repoPath }) : Promise.resolve({ ok: false, message: "Select an existing repository before re-indexing." }) : c.run,
+      hint: c.id === "reindex" ? `Read changes in ${repoPath ?? "a repository — select one first"}` : `${c.hint} · Brain service / default repository`,
+      id: `run-${c.id}`, group: "Run" }));
     const repoEntries: Entry[] = repos.map((r) => ({
       id: `repo-${r.slug}`,
       label: `Switch to ${r.name}`,
@@ -307,7 +361,7 @@ function Palette({
     return [...pages, ...commands, ...repoEntries].filter(
       (e) => !needle || e.label.toLowerCase().includes(needle) || e.hint.toLowerCase().includes(needle),
     );
-  }, [q, repos, withRepo, path, scoped]);
+  }, [q, repos, withRepo, path, scoped, repoPath]);
 
   useEffect(() => setSel(0), [q]);
   useEffect(() => {
@@ -333,7 +387,15 @@ function Palette({
   };
 
   return (
-    <div className="palette" role="dialog" aria-modal="true" aria-label="Jump to a screen">
+    <dialog ref={dialog} className="palette" aria-label="Jump to a screen" onCancel={(e) => { e.preventDefault(); onClose(); }}
+      onKeyDown={(e) => {
+        if (e.key !== "Tab") return;
+        const nodes = Array.from(dialog.current?.querySelectorAll<HTMLElement>('input, button:not([disabled]):not([tabindex="-1"]), a[href]') ?? []);
+        const first = nodes[0]; const last = nodes.at(-1);
+        if (!nodes.length) { e.preventDefault(); dialog.current?.focus(); }
+        else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }}>
       <button className="palette__scrim" type="button" aria-label="Close" onClick={onClose} tabIndex={-1} />
       <div className="palette__box">
         <div className="palette__field">
@@ -349,7 +411,7 @@ function Palette({
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
-                setSel((s) => Math.min(s + 1, entries.length - 1));
+                setSel((s) => Math.max(0, Math.min(s + 1, entries.length - 1)));
               } else if (e.key === "ArrowUp") {
                 e.preventDefault();
                 setSel((s) => Math.max(s - 1, 0));
@@ -397,6 +459,6 @@ function Palette({
           </span>
         </p>
       </div>
-    </div>
+    </dialog>
   );
 }

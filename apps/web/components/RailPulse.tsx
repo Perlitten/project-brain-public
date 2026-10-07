@@ -25,24 +25,26 @@ function ago(iso?: string): string {
   return `${Math.round(h / 24)} days ago`;
 }
 
-export function RailPulse({ withRepo }: { withRepo: (href: string) => string }) {
+export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => string; repoSlug?: string }) {
   const [pulse, setPulse] = useState<Pulse | null>(null);
 
   useEffect(() => {
+    setPulse(null);
+    const memoKey = `${MEMO}:${repoSlug ?? "default"}`;
     let stop = false;
     let h: ReturnType<typeof setTimeout>;
     try {
-      const memo = JSON.parse(sessionStorage.getItem(MEMO) ?? "null") as Pulse | null;
+      const memo = JSON.parse(sessionStorage.getItem(memoKey) ?? "null") as Pulse | null;
       if (memo && Date.now() - memo.at < MEMO_MAX_AGE) setPulse(memo);
     } catch {}
     const tick = async () => {
       if (document.visibilityState === "visible") {
-        const p = await getPulse().catch(() => null);
+        const p = await getPulse(repoSlug).catch(() => null);
         if (stop) return;
         if (p) {
           setPulse(p);
           try {
-            sessionStorage.setItem(MEMO, JSON.stringify(p));
+            sessionStorage.setItem(memoKey, JSON.stringify(p));
           } catch {}
         }
       }
@@ -56,7 +58,7 @@ export function RailPulse({ withRepo }: { withRepo: (href: string) => string }) 
       clearTimeout(h);
       document.removeEventListener("visibilitychange", wake);
     };
-  }, []);
+  }, [repoSlug]);
 
   if (!pulse) {
     return (
@@ -92,7 +94,7 @@ export function RailPulse({ withRepo }: { withRepo: (href: string) => string }) 
         <span className="vitals__text">{headline}</span>
         {pulse.reachable && pulse.latencyMs !== undefined && <span className="vitals__ms num">{pulse.latencyMs} ms</span>}
       </Link>
-      {pulse.reachable && (
+      {pulse.reachable && repoSlug !== "" && (
         <Link href={withRepo("/indexing")} className="vitals__line" title="Indexing history">
           <span className="vitals__text">{memory}</span>
         </Link>

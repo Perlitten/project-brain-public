@@ -15,6 +15,15 @@ def derive_path_hints(task_description: str) -> List[str]:
     if any(token in lower for token in ("retrieval", "search", "hybrid", "context pack")):
         hints.extend(["code_search", "context_pack_builder", "context_pack", "search/"])
 
+    # UI behavior questions span the named component and its style companion.
+    # Derive hints from the query instead of baking in one benchmark's
+    # component names or repository layout.  The lexical/path matcher can
+    # then resolve these stems against the indexed repository.
+    if any(token in lower for token in ("tooltip", "tooltips", "style", "stylesheet", "css", "clipping", "overflow")):
+        hints.extend([".css", "globals.css", "styles/"])
+        for component in re.findall(r"\b[A-Z][A-Za-z0-9_]{1,}\b", task_description):
+            hints.append(component.lower())
+
     if any(token in lower for token in ("dto", "response", "schema", "status endpoint")):
         hints.extend(["brain/database/models", "models.py", "schemas.py", "apps/api/main"])
 

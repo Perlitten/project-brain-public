@@ -230,6 +230,8 @@ class LedgerStore:
         entity_type: str = "",
         entity_id: str = "",
         actor_identity: str = "",
+        query: str = "",
+        descending: bool = False,
         since_sequence: int = 0,
         limit: int = DEFAULT_PAGE_SIZE,
         offset: int = 0,
@@ -253,6 +255,9 @@ class LedgerStore:
         if since_sequence:
             where.append("sequence > ?")
             params.append(int(since_sequence))
+        if query:
+            where.append("payload LIKE ?")
+            params.append(f"%{query}%")
         clause = (" WHERE " + " AND ".join(where)) if where else ""
 
         conn = self._connect()
@@ -264,7 +269,7 @@ class LedgerStore:
             )
             rows = conn.execute(
                 f"SELECT payload FROM ledger_events{clause} "
-                "ORDER BY sequence ASC LIMIT ? OFFSET ?",
+                f"ORDER BY sequence {'DESC' if descending else 'ASC'} LIMIT ? OFFSET ?",
                 (*params, page_size, offset),
             ).fetchall()
         finally:

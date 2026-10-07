@@ -118,13 +118,55 @@ class HarnessStore:
             return result.scalar_one_or_none()
 
     @classmethod
-    async def list_tasks(cls, status: Optional[str] = None, limit: int = 100) -> List[AgentTask]:
+    async def list_tasks(
+        cls, status: Optional[str] = None, limit: int = 100,
+        *, repo_path: Optional[str] = None, offset: int = 0, query: Optional[str] = None,
+    ) -> List[AgentTask]:
         async with async_session_factory() as session:
-            stmt = select(AgentTask).order_by(AgentTask.created_at.desc()).limit(limit)
+            stmt = select(AgentTask).order_by(AgentTask.created_at.desc()).offset(max(0, offset)).limit(limit)
             if status:
                 stmt = stmt.where(AgentTask.status == status)
+            if repo_path:
+                stmt = stmt.where(AgentTask.repo_path == repo_path)
+            if query:
+                from sqlalchemy import or_
+                needle = f"%{query}%"
+                stmt = stmt.where(or_(AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
+                                      AgentTask.target_agent.ilike(needle), AgentTask.owner_agent.ilike(needle)))
             result = await session.execute(stmt)
             return list(result.scalars().all())
+
+    @classmethod
+    async def count_tasks(cls, status: Optional[str] = None, *, repo_path: Optional[str] = None,
+                          query: Optional[str] = None) -> int:
+        from sqlalchemy import func, or_
+        async with async_session_factory() as session:
+            stmt = select(func.count()).select_from(AgentTask)
+            if status:
+                stmt = stmt.where(AgentTask.status == status)
+            if repo_path:
+                stmt = stmt.where(AgentTask.repo_path == repo_path)
+            if query:
+                needle = f"%{query}%"
+                stmt = stmt.where(or_(AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
+                                      AgentTask.target_agent.ilike(needle), AgentTask.owner_agent.ilike(needle)))
+            return int((await session.execute(stmt)).scalar() or 0)
+
+    @classmethod
+    async def task_status_counts(cls, *, repo_path: Optional[str] = None,
+                                 query: Optional[str] = None) -> dict[str, int]:
+        """Full status facets in one query, before a requested status filter."""
+        from sqlalchemy import or_
+        async with async_session_factory() as session:
+            stmt = select(AgentTask.status, func.count()).group_by(AgentTask.status)
+            if repo_path:
+                stmt = stmt.where(AgentTask.repo_path == repo_path)
+            if query:
+                needle = f"%{query}%"
+                stmt = stmt.where(or_(AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
+                                      AgentTask.target_agent.ilike(needle), AgentTask.owner_agent.ilike(needle)))
+            rows = (await session.execute(stmt)).all()
+            return {str(status): int(count) for status, count in rows}
 
     @classmethod
     async def reconcile_stale_tasks(

@@ -22,13 +22,15 @@
 /* Tables inside a frame never scroll sideways on a desktop: long words wrap,
    the head sticks under the filter bar. Phones keep the sideways scroll. */
 @media (min-width: 721px) {
-  .lf__table { overflow: visible; }
+  .lf__table { overflow: auto; }
   .lf__table thead th {
     position: sticky; top: calc(var(--plate-h) + var(--lf-bar)); z-index: 5;
     background: var(--surface-module);
   }
 }
-.table td { overflow-wrap: anywhere; }
+.table { min-width: 680px; }
+.table td { overflow-wrap: normal; min-width: 6rem; }
+.table td:first-child { min-width: 12rem; max-width: 32rem; overflow-wrap: break-word; }
 .table td .chip, .table td.num, .table td.r { overflow-wrap: normal; }
 /* Hints in a table head open downward and right-aligned so they are never
    cut off and never widen the table (a hidden tip still counts as overflow,
@@ -44,7 +46,7 @@
 /* The pager is the list's footer: it sticks to the bottom of the viewport
    while the list is on screen, so paging never needs a scroll to the end. */
 .lf__pager {
-  position: sticky; bottom: 0; z-index: 6;
+  position: relative; z-index: 6;
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2) var(--s-3);
   padding: var(--s-3) var(--s-5); border-top: 1px solid var(--border-subtle);
   background: var(--surface-module);

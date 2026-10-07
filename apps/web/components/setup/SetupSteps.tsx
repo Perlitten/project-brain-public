@@ -191,12 +191,12 @@ function Repo({ step, repoPath }: { step: StepView; repoPath?: string }) {
         run(path);
       }}
     >
-      <label className="field">
+      <label className="field" htmlFor="setup-repo-path">
         <span className="field__label">
           Repository folder
           <Tip>A path on the Brain server. Brain reads the checkout in place — nothing is copied. Saved to the server’s .env.</Tip>
         </span>
-        <input className="input input--mono" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/home/you/code/my-project" spellCheck={false} autoComplete="off" />
+        <input id="setup-repo-path" className="input input--mono" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/home/you/code/my-project" spellCheck={false} autoComplete="off" />
       </label>
       <div className="btn-row">
         <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !path.trim() || (!changed && step.done)}>
@@ -413,12 +413,13 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
             )}
           </div>
 
-          <label className="field">
+          <div className="field">
             <span className="field__label">
-              API key
+              <label htmlFor={`provider-${slot}-key`}>API key</label>
               <Tip>Write-only: stored in the server’s .env and never shown again. {needsKey ? "Without a key this provider fails verification." : "This provider works without one."}</Tip>
             </span>
             <input
+              id={`provider-${slot}-key`}
               className="input input--mono"
               type="password"
               value={d.apiKey}
@@ -433,7 +434,7 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
                 Remove the saved key
               </label>
             )}
-          </label>
+          </div>
 
           <div className="btn-row">
             <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || badUrl || badDim || (!preset?.baseUrl && !d.baseUrl.trim())}>
@@ -471,11 +472,11 @@ function Index({ step, repoPath }: { step: StepView; repoPath?: string }) {
           <dt>Last run</dt>
           <dd>
             #{str(run.run_id)} · {str(run.status)}
-            {run.commit ? ` · commit ${str(run.commit)}` : ""}
+            {run.commit ? ` · commit ${str(run.commit).replace(/^snapshot:/, "").slice(0, 7)}` : ""}
           </dd>
           <dt>Files</dt>
           <dd>
-            {n("processed")} read · {n("skipped")} unchanged · {n("failed")} failed
+            {n(typeof files.indexed === "number" ? "indexed" : "processed")} read · {n(typeof files.unchanged === "number" ? "unchanged" : "skipped")} unchanged · {n("failed")} failed
           </dd>
         </dl>
       )}
@@ -578,12 +579,13 @@ function FirstTask({ step, repoPath }: { step: StepView; repoPath?: string }) {
         if (res.ok) setBuilt(res.data ?? {});
       }}
     >
-      <label className="field">
+      <label className="field" htmlFor="setup-task">
         <span className="field__label">
           A real task for an agent
           <Tip>Brain picks the files, rules and decisions an agent needs for it — the same briefing your agent will get.</Tip>
         </span>
         <textarea
+          id="setup-task"
           className="textarea"
           rows={3}
           value={task}
