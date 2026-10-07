@@ -628,7 +628,10 @@ def _should_abstain(
         # in a candidate path before treating that channel as evidence.
         distinctive = {token.lower() for token in (keywords or []) if len(token) >= 7}
         path_text = " ".join(candidate.item_id.lower() for candidate in lexical)
-        if distinctive and any(token in path_text for token in distinctive):
+        summary_text = " ".join(
+            str(candidate.metadata.get("summary", "")).lower() for candidate in lexical
+        )
+        if distinctive and any(token in f"{path_text} {summary_text}" for token in distinctive):
             return False
         if not distinctive:
             return False
