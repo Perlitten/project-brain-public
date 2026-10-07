@@ -33,6 +33,20 @@ def _learning_scope_clause(repo_scope: Optional[str]):
     )
 
 
+def _selected_retrieval_paths(retrieval_result: Any, file_limit: int) -> List[str]:
+    """Honor an explicit retrieval abstention instead of resurrecting noise.
+
+    An empty selection normally means the legacy pipeline needs its historical
+    reranked fallback.  v2/abstention marks the empty selection in debug, which
+    must remain empty all the way to the context pack.
+    """
+    debug = getattr(retrieval_result, "debug", {}) or {}
+    if debug.get("abstained"):
+        return []
+    selected = retrieval_result.selected_paths or [c.item_id for c in retrieval_result.reranked if c.included]
+    return selected or [c.item_id for c in retrieval_result.reranked[:file_limit]]
+
+
 async def _load_active_learnings(
     repo_scope: Optional[str],
     query: Optional[str] = None,
@@ -524,15 +538,14 @@ class ContextPackBuilder:
                     stmt_hints = stmt_hints.where(File.repository_id == repository_id)
                 hint_files = list((await session.execute(stmt_hints)).scalars().all())
 
+        abstained = bool((getattr(retrieval_result, "debug", {}) or {}).get("abstained"))
         scored_files: List[Tuple[float, str, Dict[str, Any]]] = []
         available_paths = set(retrieval_result.selected_paths or [])
         available_paths.update(c.item_id for c in retrieval_result.reranked)
-        v5_top = retrieval_result.v5_top_paths or retrieval_result.selected_paths[:10]
+        v5_top = [] if abstained else (retrieval_result.v5_top_paths or retrieval_result.selected_paths[:10])
         v5_top = expand_protected_pairs(v5_top, available_paths)[:10]
         protected_paths = set(v5_top[:10])
-        selected_paths = retrieval_result.selected_paths or [c.item_id for c in retrieval_result.reranked if c.included]
-        if not selected_paths:
-            selected_paths = [c.item_id for c in retrieval_result.reranked[:file_limit]]
+        selected_paths = _selected_retrieval_paths(retrieval_result, file_limit)
 
         score_by_path = {c.item_id: c.reranker_score for c in retrieval_result.reranked}
         v5_explanations = (retrieval_result.v5_rerank_debug or {}).get("explanations", {})
@@ -612,7 +625,7 @@ class ContextPackBuilder:
             top_files_data.append((score_by_path.get(path, trace.get("final_score", 1.0)), path, trace))
         top_files_data = top_files_data[:file_limit]
         promoted_paths = {path for _, path, _ in top_files_data}
-        for hint_file in hint_files[:2]:
+        for hint_file in ([] if abstained else hint_files[:2]):
             if hint_file.path in promoted_paths:
                 continue
             if len(top_files_data) >= file_limit:
@@ -633,7 +646,7 @@ class ContextPackBuilder:
             promoted_paths.add(hint_file.path)
 
         scored_symbols: List[Tuple[float, str, Dict[str, Any]]] = []
-        for cand in channels.get("symbol", [])[:file_limit]:
+        for cand in ([] if abstained else channels.get("symbol", [])[:file_limit]):
             scored_symbols.append(
                 (
                     cand.normalized_score,
