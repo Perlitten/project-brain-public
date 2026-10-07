@@ -611,6 +611,7 @@ def _should_abstain(
     historical fail-open behavior because their surface constraints provide
     independent evidence.
     """
+    v2_enabled = bool(settings.RETRIEVAL_V2_ENABLED)
     if not selected or task_type in {"deletion_rename", "database", "api_contract", "bugfix"}:
         return False
     if not reranked:
@@ -618,7 +619,7 @@ def _should_abstain(
     grounded = any(candidates_by_channel.get(name) for name in ("symbol", "hints", "graph", "memory"))
     if grounded:
         return False
-    if float(reranked[0].reranker_score) >= 0.5:
+    if v2_enabled and float(reranked[0].reranker_score) >= 0.5:
         return False
     lexical = candidates_by_channel.get("lexical", [])
     if lexical:
@@ -631,11 +632,14 @@ def _should_abstain(
             return False
         if not distinctive:
             return False
-        # A lexical-only hit with no distinctive query term is incidental
-        # evidence (for example generic app/configure words), regardless of
-        # the dense nearest-neighbour score.
-        return True
-    return float(reranked[0].reranker_score) < 0.15
+        # Legacy scores are RRF-scaled, so use query/path evidence rather than
+        # a numeric threshold. Two or more distinctive terms absent from every
+        # lexical path indicate an unsupported domain (generic words created
+        # the lexical hit), while one-term semantic queries remain fail-open.
+        if not v2_enabled and len(distinctive) >= 2:
+            return True
+        return v2_enabled
+    return v2_enabled and float(reranked[0].reranker_score) < 0.15
 
 
 class HybridRetrievalPipeline:

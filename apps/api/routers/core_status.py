@@ -114,14 +114,15 @@ async def list_insights(
             (func.lower(BrainInsight.severity).in_(("medium", "warning", "warn")), "warn"),
             else_="info",
         ).label("severity_tone")
+        facet_where = stmt.whereclause
+        facet_stmt = select(severity_expr, func.count()).select_from(BrainInsight)
+        if facet_where is not None:
+            facet_stmt = facet_stmt.where(facet_where)
         facets = dict(
             (str(k), int(v))
             for k, v in (
                 await session.execute(
-                    select(severity_expr, func.count())
-                    .select_from(BrainInsight)
-                    .where(stmt.whereclause)
-                    .group_by(severity_expr)
+                    facet_stmt.group_by(severity_expr)
                 )
             ).all()
         )

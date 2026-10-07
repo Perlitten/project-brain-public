@@ -3,6 +3,7 @@ import pytest
 from brain.search.path_hints import derive_path_hints
 from brain.retrieval.pipeline import _should_abstain
 from brain.retrieval.types import ChannelCandidate
+from brain.config.settings import settings
 from eval.run_golden_eval import _evaluate_question
 
 
@@ -43,7 +44,8 @@ def test_golden_eval_rejects_unknown_response_shape():
         )
 
 
-def test_unrelated_dense_only_query_abstains_below_confidence_floor():
+def test_unrelated_dense_only_query_abstains_below_confidence_floor(monkeypatch):
+    monkeypatch.setattr(settings, "RETRIEVAL_V2_ENABLED", True)
     candidate = ChannelCandidate(channel="vector", item_id="brain/unrelated.py", raw_score=0.1, normalized_score=0.1)
     assert _should_abstain(
         selected=[candidate.item_id],
@@ -53,7 +55,8 @@ def test_unrelated_dense_only_query_abstains_below_confidence_floor():
     )
 
 
-def test_grounded_lexical_query_does_not_abstain():
+def test_grounded_lexical_query_does_not_abstain(monkeypatch):
+    monkeypatch.setattr(settings, "RETRIEVAL_V2_ENABLED", True)
     candidate = ChannelCandidate(channel="vector", item_id="brain/target.py", raw_score=0.1, normalized_score=0.1)
     lexical = ChannelCandidate(channel="lexical", item_id="brain/target.py", raw_score=1.0, normalized_score=1.0)
     assert not _should_abstain(
@@ -64,7 +67,8 @@ def test_grounded_lexical_query_does_not_abstain():
     )
 
 
-def test_strong_vector_evidence_survives_weak_incidental_lexical_hit():
+def test_strong_vector_evidence_survives_weak_incidental_lexical_hit(monkeypatch):
+    monkeypatch.setattr(settings, "RETRIEVAL_V2_ENABLED", True)
     vector = ChannelCandidate(channel="vector", item_id="brain/indexers/file_indexer.py", raw_score=0.8, normalized_score=0.8, reranker_score=0.8)
     lexical = ChannelCandidate(channel="lexical", item_id="apps/api/main.py", raw_score=0.2, normalized_score=0.2)
     assert not _should_abstain(
@@ -76,9 +80,23 @@ def test_strong_vector_evidence_survives_weak_incidental_lexical_hit():
     )
 
 
-def test_weak_incidental_lexical_hit_abstains_for_unrepresented_domain():
+def test_weak_incidental_lexical_hit_abstains_for_unrepresented_domain(monkeypatch):
+    monkeypatch.setattr(settings, "RETRIEVAL_V2_ENABLED", True)
     vector = ChannelCandidate(channel="vector", item_id="apps/api/main.py", raw_score=0.1, normalized_score=0.1, reranker_score=0.1)
     lexical = ChannelCandidate(channel="lexical", item_id="apps/api/main.py", raw_score=0.2, normalized_score=0.2)
+    assert _should_abstain(
+        selected=[vector.item_id],
+        reranked=[vector],
+        candidates_by_channel={"vector": [vector], "lexical": [lexical]},
+        task_type="feature",
+        keywords=["kubernetes", "mobile", "configure"],
+    )
+
+
+def test_legacy_unsupported_domain_uses_terms_not_score(monkeypatch):
+    monkeypatch.setattr(settings, "RETRIEVAL_V2_ENABLED", False)
+    vector = ChannelCandidate(channel="vector", item_id="apps/api/main.py", raw_score=0.9, normalized_score=0.9, reranker_score=0.04)
+    lexical = ChannelCandidate(channel="lexical", item_id="apps/api/main.py", raw_score=1.0, normalized_score=1.0)
     assert _should_abstain(
         selected=[vector.item_id],
         reranked=[vector],
