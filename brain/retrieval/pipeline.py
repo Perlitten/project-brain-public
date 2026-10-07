@@ -448,6 +448,52 @@ def _select_final_paths(
     return head + [path for path in selected if path not in head]
 
 
+# ---------- v2 helpers (all inert unless settings.RETRIEVAL_V2_ENABLED) ----------
+
+_LIN_CHANNEL_WEIGHTS_ATTRS: Dict[str, str] = {
+    "vector": "RETRIEVAL_V2_LIN_W_VEC",
+    "lexical": "RETRIEVAL_V2_LIN_W_LEX",
+    "symbol": "RETRIEVAL_V2_LIN_W_SYM",
+    "hints": "RETRIEVAL_V2_LIN_W_HINT",
+    "graph": "RETRIEVAL_V2_LIN_W_GRAPH",
+    "bm25": "RETRIEVAL_V2_LIN_W_BM25",
+    "memory": "RETRIEVAL_V2_LIN_W_GRAPH",
+    "card": "RETRIEVAL_V2_LIN_W_GRAPH",
+}
+
+
+def _v2_fused_scores(
+    file_ranks: Dict[str, Dict[str, int]],
+    candidates_by_channel: Dict[str, List[ChannelCandidate]],
+    route: QueryRoute,
+) -> Dict[str, float]:
+    """Dense-primary fusion. Channels only contribute when they fired for that
+    path — empty channels neither dilute nor boost."""
+    mode = getattr(settings, "RETRIEVAL_V2_FUSION", "wrrf")
+    out: Dict[str, float] = {}
+    norm_by_channel: Dict[str, Dict[str, float]] = {}
+    if mode == "linear":
+        for ch, cands in candidates_by_channel.items():
+            norm_by_channel[ch] = {c.item_id: c.normalized_score for c in cands}
+    k_rrf = 60.0
+    for path, ranks in file_ranks.items():
+        score = 0.0
+        for channel, rank in ranks.items():
+            if mode == "linear":
+                w = float(getattr(settings, _LIN_CHANNEL_WEIGHTS_ATTRS.get(channel, ""), 0.25))
+                score += w * norm_by_channel.get(channel, {}).get(path, 0.0)
+            elif mode == "wrrf":
+                w = _channel_weight(route, channel)
+                if channel == "vector":
+                    w *= float(getattr(settings, "RETRIEVAL_V2_WRRF_VEC_WEIGHT", 2.0))
+                score += w / (k_rrf + rank)
+            else:  # rrf — legacy formula
+                w = _channel_weight(route, channel)
+                score += w / (k_rrf + rank)
+        out[path] = score
+    return out
+
+
 class HybridRetrievalPipeline:
     """Orchestrates multi-channel candidate generation, fusion, and reranking."""
 
@@ -473,6 +519,7 @@ class HybridRetrievalPipeline:
         route = classify_query_route(task_type, keywords, task_description)
         intent = derive_task_intent(task_description, task_type=task_type)
         keywords_lower = expand_keywords(keywords, task_description)
+        v2_enabled = bool(settings.RETRIEVAL_V2_ENABLED)
         # v6 (P0): surface-aware recall + top-100 pool. Gated to deep budgets so
         # small-budget packs keep the frozen v5 path byte-for-byte.
         v6_enabled = bool(settings.RETRIEVAL_V6_ENABLED) and file_limit >= 10
@@ -737,26 +784,37 @@ class HybridRetrievalPipeline:
                 for file_record in (await session.execute(stmt_ranked)).scalars().all():
                     path_to_file.setdefault(file_record.path, file_record)
 
+        # v2 (a): dense-primary fusion — pure channel combination; the v5
+        # post-RRF heuristics (contextual weight, content match, path-keyword
+        # bonus, surface weight) are skipped so channels only boost what fired.
+        v2_scores = (
+            _v2_fused_scores(file_ranks, candidates_by_channel, route)
+            if v2_enabled
+            else {}
+        )
         for path, ranks in file_ranks.items():
             if should_exclude_from_retrieval(path):
                 continue
-            score = 0.0
-            for channel, rank in ranks.items():
-                w = _channel_weight(route, channel)
-                contrib = w / (k_rrf + rank)
-                score += contrib
             file_rec = path_to_file.get(path)
             summary = file_rec.summary if file_rec else None
-            score *= get_contextual_retrieval_weight(
-                path,
-                file_rec.file_type if file_rec else None,
-                task_type,
-                task_description,
-            )
-            score += _content_match_bonus(path, summary, keywords_lower)
-            score += _path_keyword_hits(path, keywords_lower, task_description) * 0.005
-            if v6_enabled and expected_surface:
-                score *= surface_fusion_weight(classify_surface(path), expected_surface)
+            if v2_enabled:
+                score = v2_scores.get(path, 0.0)
+            else:
+                score = 0.0
+                for channel, rank in ranks.items():
+                    w = _channel_weight(route, channel)
+                    contrib = w / (k_rrf + rank)
+                    score += contrib
+                score *= get_contextual_retrieval_weight(
+                    path,
+                    file_rec.file_type if file_rec else None,
+                    task_type,
+                    task_description,
+                )
+                score += _content_match_bonus(path, summary, keywords_lower)
+                score += _path_keyword_hits(path, keywords_lower, task_description) * 0.005
+                if v6_enabled and expected_surface:
+                    score *= surface_fusion_weight(classify_surface(path), expected_surface)
             fused = ChannelCandidate(
                 channel="fused",
                 item_id=path,
