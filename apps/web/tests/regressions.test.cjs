@@ -57,10 +57,10 @@ test('reindex refuses an explicitly empty repository path but permits a scoped p
     assert.equal(result.message, 'Choose a repository before starting a re-index.');
   }
   assert.equal(calls.length, 0);
-  assert.deepEqual(await jobs.startReindex({ repoPath: 'D:/projects/brain' }), { ok: true, message: 'queued' });
+  assert.deepEqual(await jobs.startReindex({ repoPath: '/repos/example' }), { ok: true, message: 'queued' });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].path, '/jobs/reindex');
-  assert.equal(calls[0].options.body.repo_path, 'D:/projects/brain');
+  assert.equal(calls[0].options.body.repo_path, '/repos/example');
   assert.equal((await jobs.startReindex()).ok, true);
   assert.equal(calls[1].options.body.repo_path, undefined);
 });
