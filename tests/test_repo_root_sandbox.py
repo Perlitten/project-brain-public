@@ -143,3 +143,22 @@ async def test_repo_root_check_reports_symlink_escape(tmp_path, monkeypatch, cap
     assert f"FAIL {indexed / 'repo-link'}" in out
     assert "outside allowed repository roots" in out
     assert "ALLOWED_ROOTS=" in out
+
+
+@pytest.mark.asyncio
+async def test_repo_root_check_warns_on_missing_allowed_root(tmp_path, monkeypatch, capsys):
+    # A configured-but-absent allowed root (missing mount / typo) must surface
+    # as a WARN so the misconfig is visible instead of silently passing.
+    from brain.config import repo_root_check
+
+    configured = tmp_path / "configured"
+    configured.mkdir()
+    missing = tmp_path / "missing-root"  # deliberately not created
+    monkeypatch.setattr(paths, "get_repo_root", lambda: configured)
+    monkeypatch.setattr(settings, "TARGET_REPO_PATH", str(configured))
+    monkeypatch.setattr(settings, "ALLOWED_REPO_ROOTS", str(missing))
+    monkeypatch.setattr(settings, "ALLOW_SCRATCH_REPO_ROOTS", False)
+
+    await repo_root_check._main()
+    out = capsys.readouterr().out
+    assert f"WARN: allowed root does not exist in this container: {missing}" in out

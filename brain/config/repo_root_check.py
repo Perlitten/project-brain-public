@@ -44,7 +44,13 @@ async def _candidate_paths() -> list[str]:
 
 
 async def _main() -> int:
-    print("ALLOWED_ROOTS=" + ",".join(str(base) for base in allowed_repo_roots()))
+    roots = allowed_repo_roots()
+    print("ALLOWED_ROOTS=" + ",".join(str(base) for base in roots))
+    # A configured-but-absent root means a mount is missing or
+    # ALLOWED_REPO_ROOTS names a path the container does not have.
+    for base in roots:
+        if not base.is_dir():
+            print(f"WARN: allowed root does not exist in this container: {base}")
     bad: list[tuple[str, str]] = []
     for candidate in await _candidate_paths():
         try:
