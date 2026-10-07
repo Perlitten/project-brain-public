@@ -49,3 +49,11 @@ curl -s http://127.0.0.1:18099/health || nohup .venv/bin/python eval/external/ha
 /home/ubuntu/eval_external/neo4j/bin/neo4j status || /home/ubuntu/eval_external/neo4j/bin/neo4j start
 # rerun any shard command above; it resumes from --out JSONL
 ```
+
+## Session 3 progress (2026-10-07)
+
+- All snapshot indexes now complete: django 4721 files (17455e92), astropy 1797 (d16bfe05), sympy 1388, matplotlib 1806 (29a86636). Partial-index bias fixed: 13 django + 2 astropy biased rows deleted; django/astropy/matplotlib indexes completed at earliest-sampled-commit before resuming.
+- stratified60 status: django 21/21 DONE, sympy 15/15 DONE, rest shard running (~7/24). Early n=36 (django+sympy): brain_mcp r10=.611 > dense .500 > brain_fused .472 > bm25 .417 > brain_v5 .361 > grep .167. Token metric added to scorer (cl100k via git show at snapshot_commit): brain arms return ~40k tok top-10 vs bm25 105k.
+- CoIR: codetrans-dl DONE 195 rows, cosqa DONE 500, soqa running ~240/500. RepoBench DONE (3027 rows, score_repobench.json).
+- Resume: cd /home/ubuntu/repos/project-brain-public && source eval/external/harness/env.sh && .venv/bin/python eval/external/harness/run_swebench.py --subset stratified60 --repos <space-separated repos> --index-once --out /home/ubuntu/eval_external/results/swebench60_rest.jsonl
+- Next: finish rest shard (24), soqa (260 left), score all, Phase 4 tokens (done in scorer), Phase 5 = SKIP no LLM key, REPORT.md, PR.

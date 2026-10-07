@@ -19,6 +19,48 @@ SEED = 20261006
 BOOT_B = 10_000
 KS = (1, 5, 10, 30)
 
+REPOS_DIR = Path("/home/ubuntu/eval_external/repos")
+
+
+def _repo_dir(repo: str) -> Path:
+    return REPOS_DIR / repo.replace("/", "_")
+
+
+_enc = None
+
+
+def _encoder():
+    global _enc
+    if _enc is None:
+        import tiktoken
+        _enc = tiktoken.get_encoding("cl100k_base")
+    return _enc
+
+
+_tok_cache: dict[tuple, int] = {}
+
+
+def file_tokens(repo: str, commit: str, path: str) -> int:
+    """Token count of file content at commit; -1 if unreadable."""
+    key = (repo, commit, path)
+    if key in _tok_cache:
+        return _tok_cache[key]
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(_repo_dir(repo)), "show", f"{commit}:{path}"],
+            capture_output=True, timeout=30)
+        n = len(_encoder().encode(out.stdout.decode("utf-8", "replace"), disallowed_special=())) if out.returncode == 0 else -1
+    except Exception:
+        n = -1
+    _tok_cache[key] = n
+    return n
+
+
+def arm_tokens(repo: str, commit: str, rank: list[str], k: int = 10) -> float:
+    """Total tokens of top-k returned files (missing files count 0)."""
+    return float(sum(max(0, file_tokens(repo, commit, p)) for p in rank[:k]))
+
 
 def recall_at(rank: list[str], gold: set[str], k: int) -> float:
     if not gold:
@@ -132,12 +174,15 @@ def score_rows(rows: list[dict]) -> dict:
         if row.get("error") or not gold:
             skipped += 1
             continue
+        repo = row.get("repo", "")
+        commit = row.get("snapshot_commit") or row.get("base_commit", "")
         for arm_name, arm in row.get("arms", {}).items():
             if not isinstance(arm, dict) or "paths" not in arm:
                 continue
             rank = arm["paths"]
             m = per_arm.setdefault(arm_name, {k: [] for k in (
-                "r1", "r5", "r10", "r30", "mrr10", "ndcg10", "symr10", "ms")})
+                "r1", "r5", "r10", "r30", "mrr10", "ndcg10", "symr10", "ms",
+                "tok10", "eff")})
             m["r1"].append(recall_at(rank, gold, 1))
             m["r5"].append(recall_at(rank, gold, 5))
             m["r10"].append(recall_at(rank, gold, 10))
@@ -146,6 +191,9 @@ def score_rows(rows: list[dict]) -> dict:
             m["ndcg10"].append(ndcg(rank, gold, 10))
             m["symr10"].append(symbol_recall(rank, gold_syms, 10))
             m["ms"].append(float(arm.get("ms", 0.0)))
+            toks = arm_tokens(repo, commit, rank, 10)
+            m["tok10"].append(toks)
+            m["eff"].append(recall_at(rank, gold, 10) * 1000.0 / toks if toks > 0 else 0.0)
     out: dict[str, dict] = {}
     for arm, metrics in sorted(per_arm.items()):
         out[arm] = {}
