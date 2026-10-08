@@ -54,7 +54,7 @@ from brain.search.filters import (
     query_requests_historical_context,
     trim_ranked_files,
 )
-from brain.search.path_hints import derive_path_hints, expand_keywords
+from brain.search.path_hints import derive_path_hints, expand_keywords, path_hint_bonus
 from brain.search.lexical_ranking import score_path_for_keywords, probe_paths_for_keywords
 from brain.search.surfaces import (
     IMPORT_TARGET_KIND,
@@ -1066,8 +1066,7 @@ class HybridRetrievalPipeline:
                     bonus += 0.55
                 if is_root_config_path(cand.item_id) and intent.wants_root_config:
                     bonus += 0.42
-                if any(h in cand.item_id.lower() for h in hint_tokens if len(h) >= 4):
-                    bonus += 0.18
+                bonus += path_hint_bonus(cand.item_id, hint_tokens)
                 if task_type == "bugfix" and "/test_" in norm_path:
                     bonus += 0.28
                 if norm_path.endswith("test_audit_fixes.py") and any(
@@ -1186,7 +1185,9 @@ class HybridRetrievalPipeline:
                 surface_counts=surface_counts,
             )
         else:
-            pool_limit = max(file_limit, 30) if file_limit >= 10 else file_limit
+            # Output slots are a budget, not a recall budget. A five-file pack
+            # still needs tail candidates for test co-ranking/noise replacement.
+            pool_limit = max(file_limit, 30)
             pool_candidates = reranked[:pool_limit]
             recall.pool_paths = [c.item_id for c in pool_candidates]
             recall.pool_limit = pool_limit

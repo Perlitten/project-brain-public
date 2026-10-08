@@ -68,3 +68,18 @@ def test_position_changes_recorded():
         top_k=10,
     )
     assert any(c.rank_delta != 0 for c in result.candidates) or len(result.position_changes) >= 0
+
+
+def test_small_output_budget_can_replace_noise_with_a_tail_paired_test():
+    pool = [
+        _cand("src/engine/calculate.py", 1.0),
+        _cand("scripts/audit_a.py", 0.9),
+        _cand("scripts/audit_b.py", 0.8),
+        _cand("scripts/audit_c.py", 0.7),
+        _cand("src/engine/unrelated.py", 0.6),
+        _cand("tests/test_calculate.py", 0.5),
+    ]
+    result = deterministic_rerank(pool, "Fix calculation bug", "bugfix", top_k=5)
+    assert len(result.top_paths) == 5
+    assert "tests/test_calculate.py" in result.top_paths
+    assert "src/engine/calculate.py" in result.top_paths

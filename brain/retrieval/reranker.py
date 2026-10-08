@@ -29,7 +29,7 @@ from brain.search.task_intent import derive_task_intent
 
 
 # Bump when scoring/selection logic changes so cached results are invalidated.
-RERANKER_VERSION = "v6.p2.1"
+RERANKER_VERSION = "v6.p2.2"
 
 
 @dataclass
