@@ -80,11 +80,13 @@ async def test_pgvector_candidate_pool_is_reranked_by_knowledge_authority():
 
 
 @pytest.mark.asyncio
-async def test_empty_ann_retries_same_repository_with_exact_canonical_query():
+@pytest.mark.parametrize("initial_count", [0, 1])
+async def test_underfilled_ann_retries_same_repository_with_exact_canonical_query(initial_count):
     empty = MagicMock()
-    empty.mappings.return_value.all.return_value = []
+    row = {"chunk_id": 1, "similarity": 0.8, "file_id": 11}
+    empty.mappings.return_value.all.return_value = [row] if initial_count else []
     rows = MagicMock()
-    rows.mappings.return_value.all.return_value = [{"chunk_id": 1, "similarity": 0.8, "file_id": 11}]
+    rows.mappings.return_value.all.return_value = [row]
     chunks = MagicMock()
     chunks.scalars.return_value.all.return_value = [SimpleNamespace(id=1, file_id=11)]
     files = MagicMock()

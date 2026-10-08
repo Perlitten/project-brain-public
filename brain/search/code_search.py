@@ -195,9 +195,9 @@ async def _pgvector_chunk_search(
         params["repository_id"] = repository_id
 
     rows = (await session.execute(sql, params)).mappings().all()
-    if not rows and repository_id is not None:
+    if len(rows) < top_k * 3 and repository_id is not None:
         # ANN filtering can exhaust its global candidate window before finding
-        # a small repository. Retry the same scoped, canonical query with an
+        # enough rows for a small repository. Retry the same canonical query with an
         # exact distance sort; adding zero prevents the ANN ordering shortcut.
         exact_sql = text(str(sql).replace(
             f"ORDER BY e.embedding <=> CAST(:query_vector AS {cast_type})",
