@@ -20,7 +20,6 @@ from brain.memory.harness_store import (
     TaskNotFound,
     VersionConflict,
 )
-from brain.memory.harness_store import RUNNING_TASK_STATUSES, QUEUED_TASK_STATUSES
 
 TEST_ACCEPTANCE_PRIVATE = Ed25519PrivateKey.from_private_bytes(
     hashlib.sha256(b"test-only-acceptance-key-32-bytes!!").digest()
@@ -36,7 +35,10 @@ TEST_ACCEPTANCE_PUBLIC_HEX = (
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("display_status, expected", [("__running__", RUNNING_TASK_STATUSES), ("__queued__", QUEUED_TASK_STATUSES)])
+@pytest.mark.parametrize("display_status, expected", [
+    ("__running__", ("running", "in_progress", "started", "indexing", "processing", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending")),
+    ("__queued__", ("queued", "pending", "created", "routed", "scheduled", "waiting")),
+])
 async def test_list_and_count_task_status_predicates_stay_in_parity(display_status, expected):
     session = AsyncMock()
     rows = MagicMock()
@@ -54,12 +56,23 @@ async def test_list_and_count_task_status_predicates_stay_in_parity(display_stat
         await HarnessStore.list_tasks(status=display_status, repo_path="/repo", query="needle", offset=4, limit=3)
         await HarnessStore.count_tasks(status=display_status, repo_path="/repo", query="needle")
 
-    statements = [call.args[0].compile(compile_kwargs={"literal_binds": True}) for call in session.execute.await_args_list]
-    sql = "\n".join(str(statement) for statement in statements)
-    for status in expected:
-        assert status in sql
-    assert sql.count("repo_path") >= 2
-    assert sql.count("needle") >= 2
+    statements = [call.args[0] for call in session.execute.await_args_list]
+    assert len(statements) == 2
+    # Check each query independently: joining their SQL hid the old count-only bug.
+    for statement in statements:
+        predicates = statement.whereclause
+        assert predicates is not None
+        compiled = str(predicates.compile(compile_kwargs={"literal_binds": True}))
+        for status in expected:
+            assert f"'{status}'" in compiled
+        assert "agent_tasks.repo_path = '/repo'" in compiled
+        assert "needle" in compiled
+    list_query, count_query = statements
+    assert list_query._limit_clause.value == 3
+    assert list_query._offset_clause.value == 4
+    assert count_query._limit_clause is None
+    assert count_query._offset_clause is None
+
 
 
 @pytest.fixture(autouse=True)
