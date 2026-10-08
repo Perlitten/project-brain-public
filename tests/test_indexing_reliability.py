@@ -207,7 +207,7 @@ async def test_unchanged_file_refreshes_role_without_reembedding(indexing_db, tm
         file = (await session.execute(select(File).where(File.path == "eval/profile.py"))).scalar_one()
         file.file_type = "source_code"  # Metadata from an older classifier.
         chunks = (await session.execute(select(FileChunk).where(FileChunk.file_id == file.id))).scalars().all()
-        previous = [(c.id, c.content, c.embedding) for c in chunks]
+        previous = [(c.id, c.content, c.embedding_id) for c in chunks]
     replay = FileIndexer()
     provider = MockEmbeddingProvider()
     provider.embed_batch = AsyncMock(side_effect=AssertionError("unchanged content was reembedded"))
@@ -222,8 +222,7 @@ async def test_unchanged_file_refreshes_role_without_reembedding(indexing_db, tm
         chunks = (await session.execute(select(FileChunk).where(FileChunk.file_id == file.id))).scalars().all()
         assert [c.id for c in chunks] == [c[0] for c in previous]
         assert [c.content for c in chunks] == [c[1] for c in previous]
-        for chunk, (_, _, embedding) in zip(chunks, previous):
-            assert list(chunk.embedding) == list(embedding)
+        assert [c.embedding_id for c in chunks] == [c[2] for c in previous]
     provider.embed_batch.assert_not_awaited()
     provider.embed.assert_not_awaited()
 
