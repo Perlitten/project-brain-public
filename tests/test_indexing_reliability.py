@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from brain.config.settings import settings
 from brain.database.models import Base, File, FileChunk, IndexingRun, Repository
-from brain.indexers.file_indexer import FileIndexer
+from brain.indexers.file_indexer import FileIndexer, MAX_CHUNK_CHARS
 from brain.indexers.reliability import bounded_map, embed_chunks, repository_index_lock, git_source_is_clean
 from brain.llm.providers.mock_provider import MockEmbeddingProvider
 from brain.llm.providers.nvidia_provider import NvidiaEmbeddingProvider
@@ -155,6 +155,35 @@ async def indexing_db(monkeypatch, tmp_path):
     async with sessions.begin() as session:
         await session.execute(delete(Repository).where(Repository.path == tmp_path.as_posix()))
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_unchanged_file_with_legacy_oversized_chunk_is_rebuilt(indexing_db, tmp_path):
+    sessions, _, _ = indexing_db
+    content = "x" * (MAX_CHUNK_CHARS + 17)
+    (tmp_path / "data.jsonl").write_text(content, encoding="utf-8")
+    await FileIndexer().index_repository(tmp_path)
+    async with sessions.begin() as session:
+        file = (await session.execute(select(File).where(File.path == "data.jsonl"))).scalar_one()
+        original_hash = file.hash
+        chunks = (await session.execute(select(FileChunk).where(FileChunk.file_id == file.id)
+                                        .order_by(FileChunk.chunk_index))).scalars().all()
+        # Reproduce a pre-fix stored window without changing the source hash.
+        chunks[0].content = content
+
+    replay = FileIndexer()
+    await replay.index_repository(tmp_path)
+    assert replay.progress["files"]["processed"] == 1
+    async with sessions() as session:
+        file = (await session.execute(select(File).where(File.path == "data.jsonl"))).scalar_one()
+        assert file.hash == original_hash
+        chunks = (await session.execute(select(FileChunk).where(FileChunk.file_id == file.id)
+                                        .order_by(FileChunk.chunk_index))).scalars().all()
+        assert "".join(c.content for c in chunks) == content
+        assert all(len(c.content) <= MAX_CHUNK_CHARS for c in chunks)
+    await replay.index_repository(tmp_path)
+    assert replay.progress["files"]["skipped"] == 1
+    assert replay.progress["files"]["processed"] == 0
 
 
 @pytest.mark.asyncio

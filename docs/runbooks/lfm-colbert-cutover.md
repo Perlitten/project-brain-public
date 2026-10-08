@@ -170,6 +170,14 @@ stays at two seconds for retrieval. Never send a 64-document mutation to this
 CPU backend: the CPU service enforces a one-document limit and rejects larger
 batches before encoding.
 
+Indexing additionally caps each stored source chunk at64,000 characters.
+Symbol and overlapping line windows below this limit keep their boundaries;
+oversized windows, including single-line JSONL/minified input, are subdivided
+without truncating content. A normal incremental reindex repairs legacy
+oversized chunks even when the file content hash is unchanged. Reconcile the
+sidecar after that reindex; do not increase service limits or claim an exact
+inventory while a413 failure remains.
+
 `LATE_INTERACTION_REMOTE_SOURCE_PAGE_SIZE=256` keeps the Postgres scan paged
 independently from that mutation limit. Resumed sync first loads the remote
 identity manifest and skips exact `chunk_id/path/content_hash` matches before

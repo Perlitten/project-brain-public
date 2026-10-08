@@ -26,6 +26,12 @@ def test_production_image_is_immutable_and_ui_is_baked_into_it():
     assert "./apps/api/static:/app/apps/api/static" not in compose
     assert "./eval:/app/eval" not in compose
     assert "COPY eval ./eval" in dockerfile
+    # Indexing the deployed repository must expose the same test sources that
+    # context queries and the frozen health benchmark require.
+    assert dockerfile.count("COPY tests ./tests") == 2
+    assert "!tests/" in dockerignore
+    assert "!tests/**" in dockerignore
+    assert "./tests:/app/tests" not in compose
     assert "!eval/" in dockerignore
     assert "!eval/**" in dockerignore
     assert "**/__pycache__/**" in dockerignore
@@ -45,6 +51,7 @@ def test_release_script_refuses_dirty_git_and_uses_sha_image_tag():
         "BRAIN_DEPLOY_DIGEST BRAIN_IMAGE_TAG"
     ) in script
     assert "--include eval" in script
+    assert "--include tests" in script
     assert "--include deploy/server_up.sh" in script
 
 

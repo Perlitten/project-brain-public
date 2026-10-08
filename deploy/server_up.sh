@@ -259,6 +259,7 @@ python3 scripts/write_source_manifest.py . \
     --include apps \
     --include rules \
     --include eval \
+    --include tests \
     --include scripts/write_source_manifest.py \
     --include scripts/validate_lfm_release_gate.py \
     >/dev/null
