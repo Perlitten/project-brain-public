@@ -20,6 +20,7 @@ from brain.memory.harness_store import (
     TaskNotFound,
     VersionConflict,
 )
+from brain.memory.harness_store import RUNNING_TASK_STATUSES, QUEUED_TASK_STATUSES
 
 TEST_ACCEPTANCE_PRIVATE = Ed25519PrivateKey.from_private_bytes(
     hashlib.sha256(b"test-only-acceptance-key-32-bytes!!").digest()
@@ -32,6 +33,33 @@ TEST_ACCEPTANCE_PUBLIC_HEX = (
     )
     .hex()
 )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("display_status, expected", [("__running__", RUNNING_TASK_STATUSES), ("__queued__", QUEUED_TASK_STATUSES)])
+async def test_list_and_count_task_status_predicates_stay_in_parity(display_status, expected):
+    session = AsyncMock()
+    rows = MagicMock()
+    rows.scalars.return_value.all.return_value = []
+    rows.scalar.return_value = 0
+    session.execute.return_value = rows
+
+    class Factory:
+        async def __aenter__(self):
+            return session
+        async def __aexit__(self, *_args):
+            return None
+
+    with patch("brain.memory.harness_store.async_session_factory", return_value=Factory()):
+        await HarnessStore.list_tasks(status=display_status, repo_path="/repo", query="needle", offset=4, limit=3)
+        await HarnessStore.count_tasks(status=display_status, repo_path="/repo", query="needle")
+
+    statements = [call.args[0].compile(compile_kwargs={"literal_binds": True}) for call in session.execute.await_args_list]
+    sql = "\n".join(str(statement) for statement in statements)
+    for status in expected:
+        assert status in sql
+    assert sql.count("repo_path") >= 2
+    assert sql.count("needle") >= 2
 
 
 @pytest.fixture(autouse=True)
