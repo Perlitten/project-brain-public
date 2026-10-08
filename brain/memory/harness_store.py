@@ -30,9 +30,14 @@ from brain.database.session import async_session_factory
 from brain.workers.db_fencing import assert_current_db_fence
 
 RUNNING_TASK_STATUSES = ("running", "in_progress", "started", "indexing", "processing", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending")
+QUEUED_TASK_STATUSES = ("queued", "pending", "created", "routed", "scheduled", "waiting")
 
 def _task_status_filter(status: Optional[str]):
-    return AgentTask.status.in_(RUNNING_TASK_STATUSES) if status == "__running__" else AgentTask.status == status
+    if status == "__running__":
+        return AgentTask.status.in_(RUNNING_TASK_STATUSES)
+    if status == "__queued__":
+        return AgentTask.status.in_(QUEUED_TASK_STATUSES)
+    return AgentTask.status == status
 
 
 class InvalidTransition(ValueError):
