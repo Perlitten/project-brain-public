@@ -47,6 +47,21 @@ def _selected_retrieval_paths(retrieval_result: Any, file_limit: int) -> List[st
     return selected or [c.item_id for c in retrieval_result.reranked[:file_limit]]
 
 
+def _protected_retrieval_paths(retrieval_result: Any, file_limit: int, available: set[str]) -> List[str]:
+    """Protect final pipeline selection; keep pair expansion for legacy fallback.
+
+    Final selection already applies recall promotion and precision policy.
+    Re-expanding intermediate reranker paths can undo that selection within a
+    small pack budget and replace a chosen source with an unselected test.
+    """
+    if (getattr(retrieval_result, "debug", {}) or {}).get("abstained"):
+        return []
+    if retrieval_result.selected_paths:
+        return list(dict.fromkeys(retrieval_result.selected_paths))[:file_limit]
+    fallback = retrieval_result.v5_top_paths or _selected_retrieval_paths(retrieval_result, file_limit)[:10]
+    return expand_protected_pairs(fallback, available)[:10]
+
+
 async def _load_active_learnings(
     repo_scope: Optional[str],
     query: Optional[str] = None,
@@ -542,9 +557,8 @@ class ContextPackBuilder:
         scored_files: List[Tuple[float, str, Dict[str, Any]]] = []
         available_paths = set(retrieval_result.selected_paths or [])
         available_paths.update(c.item_id for c in retrieval_result.reranked)
-        v5_top = [] if abstained else (retrieval_result.v5_top_paths or retrieval_result.selected_paths[:10])
-        v5_top = expand_protected_pairs(v5_top, available_paths)[:10]
-        protected_paths = set(v5_top[:10])
+        pipeline_top = _protected_retrieval_paths(retrieval_result, file_limit, available_paths)
+        protected_paths = set(pipeline_top)
         selected_paths = _selected_retrieval_paths(retrieval_result, file_limit)
 
         score_by_path = {c.item_id: c.reranker_score for c in retrieval_result.reranked}
@@ -569,9 +583,9 @@ class ContextPackBuilder:
 
         scored_files.sort(key=lambda item: item[0], reverse=True)
 
-        # Pack policy: v5 top-10 paths MUST appear unless explicit budget exclusion
+        # Preserve final pipeline choices inside the requested pack budget.
         v5_ordered = []
-        for p in v5_top:
+        for p in pipeline_top:
             for entry in scored_files:
                 if entry[1] == p:
                     v5_ordered.append(entry)
@@ -597,8 +611,8 @@ class ContextPackBuilder:
             aggressive=budget != "deep",
         )
         ordered_paths = [path for _, path, _ in top_files_data]
-        # Ensure protected v5 top-10 occupy first slots (pack inclusion policy)
-        head = [p for p in v5_top if p in ordered_paths or p in protected_paths]
+        # Ensure final pipeline paths occupy the protected pack slots.
+        head = [p for p in pipeline_top if p in ordered_paths or p in protected_paths]
         for p in protected_paths:
             if p not in head:
                 head.append(p)
@@ -609,9 +623,9 @@ class ContextPackBuilder:
             task_type,
             task_description,
             k=min(10, file_limit),
-            priority_paths=list(v5_top),
+            priority_paths=list(pipeline_top),
         )
-        head = [p for p in v5_top if p in ordered_paths]
+        head = [p for p in pipeline_top if p in ordered_paths]
         tail = [p for p in ordered_paths if p not in head]
         ordered_paths = (head + tail)[:file_limit]
         trace_by_path = {path: trace for _, path, trace in (capped_files or scored_files)}
