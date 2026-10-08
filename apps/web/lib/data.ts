@@ -202,7 +202,7 @@ const noRepository: Repository = { id: 0, slug: "", name: "No repository", path:
 const pickRepo = (repos: RawRepo[] | null, slug?: string | null) =>
   slug ? repos?.find((r) => String(r.id) === slug) ?? null : repos?.[0] ?? null;
 
-export type Paged<T> = { items: T[]; paging: ListPaging };
+export type Paged<T> = { items: T[]; paging: ListPaging; available?: boolean };
 const queryString = (q: ListQuery) => {
   const p = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
   if (q.q) p.set("q", q.q);
@@ -543,23 +543,24 @@ export const getCondition = async (slug?: string | null): Promise<Condition> => 
 };
 
 export const getCorpus = async (slug?: string | null): Promise<Corpus> => {
-  if (!apiConfigured) return mock.corpus(mock.findRepository(slug));
-  const empty: Corpus = { files: 0, chunks: 0, symbols: 0, embeddings: 0, meters: [] };
+  if (!apiConfigured) return { ...mock.corpus(mock.findRepository(slug)), available: true };
+  const empty: Corpus = { files: 0, chunks: 0, symbols: 0, embeddings: 0, meters: [], available: false };
   return live(empty, async () => {
     const repo = pickRepo(await fetchRepos(), slug);
     const overview = repo ? await fetchOverview(repo.id) : null;
     if (!repo) return null;
-    let counts = obj(overview?.counts);
-    if (!Object.keys(counts).length) {
-      // Older APIs: global counts only, no coverage meters.
-      counts = obj((await brainFetch<Json>("/api/status/indexing"))?.counts);
-    }
+    if (!overview) return null;
+    // The default repository is scoped too. Missing scoped counts must never
+    // expand into global totals, including during an API timeout.
+    const counts = obj(overview.counts);
+    if (!Object.keys(counts).length) return null;
     return {
       files: int(counts.files),
       chunks: int(counts.chunks),
       symbols: int(counts.symbols),
       embeddings: int(counts.embeddings),
       meters: overview ? coverageMeters(overview) : [],
+      available: true,
     };
   });
 };
@@ -841,15 +842,15 @@ export const getReports = async (): Promise<Report[]> => {
  * remain available for compact dashboard widgets. */
 export const getPagedIndexRuns = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<IndexRun>> => {
   const q = getListQuery(input);
-  if (!apiConfigured) return { items: mock.indexRuns.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: mock.indexRuns.length, facets: {} } };
-  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+  if (!apiConfigured) return { items: mock.indexRuns.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: mock.indexRuns.length, facets: {} }, available: true };
+  return live<Paged<IndexRun>>({ items: [], paging: { ...q, total: 0, facets: {} }, available: false }, async () => {
     const repo = pickRepo(await fetchRepos(), slug);
     if (!repo) return null;
     const data = await brainFetch<Json>(`/api/web/index-runs?repository_id=${repo.id}&${queryString(q)}`, { fresh: true });
-    return data ? pageResult(data, "runs", q, (r) => {
+    return data ? { ...pageResult(data, "runs", q, (r) => {
       const status = jobStatus(r.status), rev = str(r.revision);
       return { id: int(r.id), revision: rev.startsWith("snapshot:") ? rev.slice(9, 16) : rev.slice(0, 7), trigger: indexTrigger(r.trigger), status, completeness: completeness(r.completeness, status), files: int(r.files), changed: int(r.changed), chunks: int(r.chunks), startedAt: fmtWhen(r.started_at), duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration) };
-    }) : null;
+    }), available: true } : null;
   });
 };
 

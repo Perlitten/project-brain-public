@@ -35,14 +35,16 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
         }
       />
       <div className="stats">
-        <Stat label="Files in last completed read on this page" value={last ? fmt(last.files) : "—"} note={last ? `took ${last.duration}` : "no completed run on this page"} />
-        <Stat label="Pieces stored" value={fmt(corpus.chunks)} note="searchable slices across the repository" />
-        <div className={troubled ? "tone-warn" : "tone-ok"}>
-        <Stat label="Runs with problems" value={String(troubled)} note={`on this page · ${result.paging.total.toLocaleString("en-US")} total`} />
+        <Stat label="Files in last completed read on this page" value={last ? fmt(last.files) : "—"} note={result.available === false ? "index history unavailable" : last ? `took ${last.duration}` : "no completed run on this page"} />
+        <Stat label="Pieces stored" value={corpus.available === false ? "—" : fmt(corpus.chunks)} note={corpus.available === false ? "indexing totals unavailable" : "searchable slices across the repository"} />
+        <div className={result.available === false || troubled ? "tone-warn" : "tone-ok"}>
+        <Stat label="Runs with problems" value={result.available === false ? "—" : String(troubled)} note={result.available === false ? "index history unavailable" : `on this page · ${result.paging.total.toLocaleString("en-US")} total`} />
         </div>
       </div>
       <Panel id="runs" title="Index runs" desc="A partial run only re-reads the files that changed." flush>
-        {runs.length === 0 && !hasQuery ? (
+        {result.available === false ? (
+          <EmptyState title="Index history unavailable" body="Brain did not return scoped index history. Try again when the indexing service is reachable." />
+        ) : runs.length === 0 && !hasQuery ? (
           <EmptyState title="No index runs yet" body="Brain hasn’t reported any runs. Index a repository to see them here." />
         ) : (
         <Table
