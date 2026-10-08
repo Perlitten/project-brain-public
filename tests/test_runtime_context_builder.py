@@ -122,6 +122,35 @@ async def test_style_companion_prefers_named_stylesheet_then_directory(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_small_successful_context_does_not_replace_full_budget_cache(monkeypatch):
+    from brain.context.context_cache import clear_context_cache
+
+    result = RetrievalResult(query="find invoice route", intent="runtime_context",
+                             repository={"repository_path": "/indexed/budget-cache-fixture",
+                                         "freshness": {"status": "current", "source_head_commit": "r1"}},
+                             candidates=[RetrievalCandidate(path="src/invoice.py")])
+    builder = RuntimeContextBuilder(_Retrieval(result))
+
+    async def slices(_result, max_bytes):
+        return [{"path": "src/invoice.py", "range": [1, 10],
+                 "content": "x" * min(5000, max_bytes // 2)}]
+
+    builder._load_slices = AsyncMock(side_effect=slices)
+    monkeypatch.setattr("brain.context.runtime_context_builder.select_relevant_normative_memory", AsyncMock(return_value=[]))
+    clear_context_cache()
+    try:
+        full = await builder.build(result.query, "/indexed/budget-cache-fixture")
+        small = await builder.build(result.query, "/indexed/budget-cache-fixture", max_tokens=500)
+        assert full["status"] == small["status"] == "ok"
+        assert len(full["slices"][0]["content"]) > len(small["slices"][0]["content"])
+        repeat = await builder.build(result.query, "/indexed/budget-cache-fixture")
+        assert repeat["_cache_hit"] and repeat["slices"] == full["slices"]
+        assert builder._load_slices.await_count == 2
+    finally:
+        clear_context_cache()
+
+
+@pytest.mark.asyncio
 async def test_runtime_cache_uses_verified_revision_and_respects_smaller_budget(monkeypatch):
     from brain.context.context_cache import clear_context_cache
 
