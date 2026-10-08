@@ -52,6 +52,40 @@ from brain.search.filters import (
 # migrate on their own; a full re-index makes it uniform).
 chunk_size = int(os.environ.get("BRAIN_CHUNK_SIZE_LINES", "50"))
 chunk_overlap = int(os.environ.get("BRAIN_CHUNK_OVERLAP_LINES", "10"))
+# A line count is not a payload bound: minified code and JSONL can contain
+# megabytes on a single line. Keep ordinary symbol/line windows unchanged,
+# but subdivide oversized windows before storage and provider calls.
+MAX_CHUNK_CHARS = 64_000
+
+
+def _bound_chunk_content(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    bounded: List[Dict[str, Any]] = []
+    for chunk in chunks:
+        text = chunk["content"]
+        if len(text) <= MAX_CHUNK_CHARS:
+            bounded.append({**chunk, "chunk_index": len(bounded)})
+            continue
+        offset = 0
+        source_line = chunk["start_line"]
+        while offset < len(text):
+            end = min(offset + MAX_CHUNK_CHARS, len(text))
+            if end < len(text):
+                # Prefer a nearby line boundary without producing tiny pieces.
+                newline = text.rfind("\n", offset + MAX_CHUNK_CHARS // 2, end)
+                if newline >= 0:
+                    end = newline + 1
+            piece = text[offset:end]
+            newlines = piece.count("\n")
+            bounded.append({
+                **chunk,
+                "chunk_index": len(bounded),
+                "content": piece,
+                "start_line": source_line,
+                "end_line": source_line + newlines - int(piece.endswith("\n")),
+            })
+            source_line += newlines
+            offset = end
+    return bounded
 
 
 def _normalize_chunk_params(max_chunk_lines: int, overlap_lines: int) -> Tuple[int, int]:
@@ -314,7 +348,7 @@ def chunk_file_content(
                     "end_line": chunk_end,
                 }
             )
-        return chunks
+        return _bound_chunk_content(chunks)
 
     # Otherwise, chunk based on symbol boundaries; split any long symbol segments with overlap.
     current_line = 1
@@ -389,7 +423,7 @@ def chunk_file_content(
                     }
                 )
 
-    return chunks
+    return _bound_chunk_content(chunks)
 
 
 def _read_text_file(path, errors: str = "ignore") -> str:
@@ -1044,10 +1078,18 @@ class FileIndexer:
                 existing_file = res.scalars().first()
 
                 existing_chunks = 0
+                largest_existing_chunk = 0
                 if existing_file:
                     existing_chunks = (await session.execute(select(func.count(FileChunk.id))
                                        .where(FileChunk.file_id == existing_file.id))).scalar() or 0
-                if existing_file and existing_file.hash == file_hash and (existing_chunks or not content.strip()):
+                    if existing_file.hash == file_hash and existing_chunks:
+                        largest_existing_chunk = (await session.execute(
+                            select(func.max(func.length(FileChunk.content)))
+                            .where(FileChunk.file_id == existing_file.id)
+                        )).scalar() or 0
+                if (existing_file and existing_file.hash == file_hash
+                        and (existing_chunks or not content.strip())
+                        and largest_existing_chunk <= MAX_CHUNK_CHARS):
                     # File has not changed, skip indexing
                     self.progress["chunks"]["discovered"] += existing_chunks
                     self.progress["chunks"]["skipped"] += existing_chunks

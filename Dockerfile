@@ -10,6 +10,7 @@ COPY brain ./brain
 COPY apps ./apps
 COPY rules ./rules
 COPY eval ./eval
+COPY tests ./tests
 COPY scripts/write_source_manifest.py ./scripts/write_source_manifest.py
 COPY scripts/validate_lfm_release_gate.py ./scripts/validate_lfm_release_gate.py
 COPY Dockerfile docker-compose.prod.yml /release-inputs/
@@ -64,6 +65,7 @@ COPY brain ./brain
 COPY apps ./apps
 COPY rules ./rules
 COPY eval ./eval
+COPY tests ./tests
 COPY scripts/write_source_manifest.py ./scripts/write_source_manifest.py
 COPY scripts/validate_lfm_release_gate.py ./scripts/validate_lfm_release_gate.py
 

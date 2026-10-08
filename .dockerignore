@@ -17,6 +17,8 @@
 !rules/**
 !eval/
 !eval/**
+!tests/
+!tests/**
 !scripts/
 !scripts/write_source_manifest.py
 !scripts/validate_lfm_release_gate.py
