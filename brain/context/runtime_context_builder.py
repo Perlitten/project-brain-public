@@ -17,6 +17,47 @@ from brain.memory.relevance import select_relevant_normative_memory
 from brain.retrieval.service import RetrievalResult, RetrievalService
 
 
+def _unsupported_domain_query(
+    query: str,
+    result: RetrievalResult,
+    slices: list[dict[str, Any]] | None = None,
+) -> bool:
+    """Detect weak nearest-neighbour context for an unrepresented domain.
+
+    Runtime retrieval has no shared pipeline debug flag, so use evidence that
+    is stable across legacy and v2 score scales: distinctive query terms must
+    occur in candidate paths, matched symbols, or bounded loaded slice content.
+    Queries with at least two distinctive terms abstain only when none is
+    supported by that evidence; one-term semantic queries remain fail-open.
+    """
+    query_stopwords = {
+        "how", "does", "the", "for", "when", "why", "are", "has", "get", "with",
+        "through", "app", "and", "what", "where", "which", "this", "that", "into",
+        "from", "doesnt", "doesn't", "can", "you", "use", "used", "each", "before",
+    }
+    generic_terms = {
+        "configure", "configuration", "explain", "implement", "implementation",
+        "describe", "description", "identify", "provide", "support", "handle",
+        "behaviour", "behavior", "deployment", "request", "response", "system",
+        "project", "application", "service", "module", "feature", "function",
+        "after", "client", "clients", "requests",
+        "fallback", "active", "current",
+    }
+    terms = {
+        token.lower()
+        for token in re.findall(r"\b[A-Za-z][A-Za-z0-9_-]{2,}\b", query)
+        if token.lower() not in query_stopwords and token.lower() not in generic_terms
+    }
+    if len(terms) < 2 or not result.candidates:
+        return False
+    evidence = " ".join(
+        [candidate.path for candidate in result.candidates]
+        + [symbol for candidate in result.candidates for symbol in candidate.symbols]
+        + [str(item.get("content", "")) for item in (slices or [])]
+    ).lower()
+    return not any(term in evidence for term in terms)
+
+
 async def _queue_auto_reindex(repo_path: str) -> bool:
     """Queue a reindex in its worker pool, throttled per repo by a Redis SET NX EX lock."""
     from loguru import logger
@@ -111,6 +152,11 @@ class RuntimeContextBuilder:
         if not slices:
             metadata["status"] = "partial"
             metadata["missing"].append("no_code_slices")
+            return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
+
+        if _unsupported_domain_query(task_description, result, slices):
+            metadata["status"] = "partial"
+            metadata["missing"].append("no_relevant_candidates")
             return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
 
         memory = await select_relevant_normative_memory(
