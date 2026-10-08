@@ -197,6 +197,38 @@ async def test_repository_lock_excludes_duplicate_runs_and_releases(indexing_db,
 
 
 @pytest.mark.asyncio
+async def test_unchanged_file_refreshes_role_without_reembedding(indexing_db, tmp_path):
+    sessions, _, _ = indexing_db
+    directory = tmp_path / "eval"
+    directory.mkdir()
+    (directory / "profile.py").write_text("value = 1\n")
+    await FileIndexer().index_repository(tmp_path)
+    async with sessions.begin() as session:
+        file = (await session.execute(select(File).where(File.path == "eval/profile.py"))).scalar_one()
+        file.file_type = "source_code"  # Metadata from an older classifier.
+        chunks = (await session.execute(select(FileChunk).where(FileChunk.file_id == file.id))).scalars().all()
+        previous = [(c.id, c.content, c.embedding) for c in chunks]
+    replay = FileIndexer()
+    provider = MockEmbeddingProvider()
+    provider.embed_batch = AsyncMock(side_effect=AssertionError("unchanged content was reembedded"))
+    provider.embed = AsyncMock(side_effect=AssertionError("unchanged content was reembedded"))
+    replay.router = SimpleNamespace(embedding=lambda _: provider)
+    await replay.index_repository(tmp_path)
+    assert replay.progress["files"]["processed"] == 0
+    assert replay.progress["files"]["skipped"] == 1
+    async with sessions() as session:
+        file = (await session.execute(select(File).where(File.path == "eval/profile.py"))).scalar_one()
+        assert file.file_type == "script"
+        chunks = (await session.execute(select(FileChunk).where(FileChunk.file_id == file.id))).scalars().all()
+        assert [c.id for c in chunks] == [c[0] for c in previous]
+        assert [c.content for c in chunks] == [c[1] for c in previous]
+        for chunk, (_, _, embedding) in zip(chunks, previous):
+            assert list(chunk.embedding) == list(embedding)
+    provider.embed_batch.assert_not_awaited()
+    provider.embed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_cancelled_changed_file_keeps_old_projection_then_replays(indexing_db, tmp_path):
     sessions, _, _ = indexing_db
     path = tmp_path / "service.py"

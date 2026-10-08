@@ -19,6 +19,16 @@ def test_classify_file():
     assert classify_file(Path("/mock/repo/docs/readme.md"), repo_path) == "documentation"
     assert classify_file(Path("/mock/repo/openapi.yaml"), repo_path) == "api_spec"
 
+
+def test_evaluation_tools_keep_a_distinct_search_role():
+    repo_path = Path("/mock/repo")
+    for directory in ("eval", "benchmarks", "scripts", "bin"):
+        assert classify_file(repo_path / directory / "profile.py", repo_path) == "script"
+        assert classify_file(repo_path / directory / "settings.yaml", repo_path) == "config"
+        assert classify_file(repo_path / directory / "README.md", repo_path) == "documentation"
+        assert classify_file(repo_path / directory / "test_profile.py", repo_path) == "test"
+    assert classify_file(repo_path / "src" / "evaluator.py", repo_path) == "source_code"
+
 def test_get_git_commit_hash_trusts_only_resolved_repo(tmp_path):
     repo_dir = tmp_path / "snapshot"
     repo_dir.mkdir()

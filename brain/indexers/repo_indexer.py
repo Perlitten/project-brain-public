@@ -129,7 +129,8 @@ def classify_file(path: Path, repo_path: Path) -> str:
 
     # 7. Script
     script_exts = {".sh", ".bash", ".ps1", ".bat", ".cmd"}
-    if ext in script_exts or ("scripts" in rel_parts or "bin" in rel_parts):
+    tooling_dirs = {"scripts", "bin", "eval", "benchmarks"}
+    if ext in script_exts or tooling_dirs.intersection(rel_parts[:-1]):
         if ext in {".py", ".js", ".ts", ".sh", ".bash", ".ps1", ".bat", ".cmd"}:
             return "script"
 

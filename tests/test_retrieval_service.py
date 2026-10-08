@@ -1,6 +1,7 @@
 import pytest
 
 from brain.retrieval.service import RetrievalService
+from brain.embeddings.constants import VectorSearchStatus
 
 
 def test_retrieval_service_normalizes_files_symbols_and_chunk_ranges():
@@ -35,3 +36,24 @@ async def test_retrieval_service_returns_typed_deadline_degradation(monkeypatch)
     result = await service.retrieve("unknown location", None, deadline_s=0.001)
     assert result.candidates == []
     assert result.degraded == ["deadline_exceeded"]
+
+
+@pytest.mark.parametrize("status", [None, VectorSearchStatus.OK, "ok", " OK ",
+                                    VectorSearchStatus.DEGRADED,
+                                    VectorSearchStatus.DIMENSION_MISMATCH,
+                                    VectorSearchStatus.PGVECTOR_UNAVAILABLE])
+@pytest.mark.asyncio
+async def test_vector_health_does_not_report_success_as_missing(monkeypatch, status):
+    service = RetrievalService()
+
+    async def no_symbol(*_args, **_kwargs):
+        return []
+
+    async def search(*_args, **_kwargs):
+        return {"vector_status": status, "files": [], "symbols": [], "chunks": []}
+
+    monkeypatch.setattr(service, "_known_symbol_route", no_symbol)
+    monkeypatch.setattr("brain.retrieval.service.search_code", search)
+    result = await service.retrieve("unknown location", None)
+    expected = [] if status is None or str(status).strip().casefold() == "ok" else [f"vector:{status}"]
+    assert result.degraded == expected

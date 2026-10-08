@@ -1090,7 +1090,9 @@ class FileIndexer:
                 if (existing_file and existing_file.hash == file_hash
                         and (existing_chunks or not content.strip())
                         and largest_existing_chunk <= MAX_CHUNK_CHARS):
-                    # File has not changed, skip indexing
+                    # Classification may change independently of content. Refresh
+                    # ranking metadata without regenerating chunks or embeddings.
+                    existing_file.file_type = file_type
                     self.progress["chunks"]["discovered"] += existing_chunks
                     self.progress["chunks"]["skipped"] += existing_chunks
                     return "unchanged"

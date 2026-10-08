@@ -659,7 +659,10 @@ async def rerank_top_k(
     if expected_surface:
         cache_key = f"{cache_key}_{expected_surface}"
     if commit_hash:
-        cache_key = f"{commit_hash[:8]}_{cache_key}"
+        # Snapshot revisions share the literal prefix "snapshot:". Bind the
+        # entire source identity, including its digest, in every rerank mode.
+        revision_key = hashlib.sha256(commit_hash.encode("utf-8")).hexdigest()[:16]
+        cache_key = f"{revision_key}_{cache_key}"
 
     if use_cache:
         cached = _load_cache(cache_key)

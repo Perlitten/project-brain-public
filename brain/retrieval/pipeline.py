@@ -1210,7 +1210,7 @@ class HybridRetrievalPipeline:
         )
         precision_k = min(10, file_limit) if file_limit >= 10 else file_limit
         commit_hash = ""
-        if v6_enabled and repository_id is not None:
+        if repository_id is not None:
             async with async_session_factory() as session:
                 repo_row = (
                     await session.execute(select(Repository.last_indexed_commit).where(Repository.id == repository_id))
