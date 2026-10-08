@@ -35,6 +35,7 @@ from brain.search.filters import (
     should_exclude_from_retrieval,
 )
 from brain.search.similarity import cosine_similarity
+from brain.search.symbol_ranking import symbol_relevance_order
 from brain.embeddings.pgvector_sql import (
     format_pgvector_literal,
     pgvector_cast_type,
@@ -175,7 +176,7 @@ async def _pgvector_chunk_search(
             f.path AS file_path,
             f.file_type AS file_type
         FROM embeddings e
-        JOIN file_chunks fc ON fc.id = e.entity_id
+        JOIN file_chunks fc ON fc.id = e.entity_id AND e.id = fc.embedding_id
         JOIN files f ON f.id = fc.file_id
         WHERE e.entity_type = 'file_chunk'
           AND e.embedding IS NOT NULL
@@ -237,8 +238,9 @@ async def _python_vector_chunk_search(
 ) -> List[Tuple[float, FileChunk, Optional[File]]]:
     """Explicit dev-only O(n) cosine scan over JSON embeddings."""
     config = get_embedding_config()
-    stmt_embeddings = select(Embedding).where(
+    stmt_embeddings = select(Embedding).join(FileChunk, FileChunk.embedding_id == Embedding.id).where(
         Embedding.entity_type == "file_chunk",
+        Embedding.entity_id == FileChunk.id,
         Embedding.dimension == config.dimension,
     )
     embeddings = (await session.execute(stmt_embeddings)).scalars().all()
@@ -588,7 +590,7 @@ async def search_code(
             stmt_symbols = select(Symbol, File.path).join(File, Symbol.file_id == File.id)
             stmt_symbols = stmt_symbols.where(
                 or_(*sym_clauses) if sym_clauses else false()
-            ).limit(limit * 2)
+            ).order_by(*symbol_relevance_order(keywords)).limit(limit * 2)
             if repository_id is not None:
                 stmt_symbols = stmt_symbols.where(File.repository_id == repository_id)
             res_symbols = await session.execute(stmt_symbols)

@@ -15,6 +15,7 @@ from brain.database.repository_utils import get_repository_by_path
 from brain.database.session import async_session_factory
 from brain.memory.repo_freshness import assess_repository_freshness
 from brain.search.code_search import search_code
+from brain.search.symbol_ranking import symbol_relevance_order
 
 
 RetrievalIntent = Literal["locator", "runtime_context", "ask", "impact", "deep"]
@@ -79,6 +80,9 @@ class RetrievalService:
         if candidate_budget < 1:
             raise ValueError("candidate_budget must be positive")
         started = time.perf_counter()
+        # The response budget is applied after merging channels. Keep the
+        # supported ten-candidate window so small locators retain recall.
+        recall_budget = max(candidate_budget, 10)
         repo_value = str(repo_path) if repo_path is not None else None
         repository: dict[str, Any] = {"requested_path": repo_value, "found": False}
         repo_record = None
@@ -97,13 +101,13 @@ class RetrievalService:
         # Symbol route runs in parallel with vector search; results are merged
         # below. Early return only if vector search fails entirely.
         symbol_task = asyncio.create_task(
-            self._known_symbol_route(query, repo_record, candidate_budget)
+            self._known_symbol_route(query, repo_record, recall_budget)
         )
 
         degraded: list[str] = []
         try:
             raw = await asyncio.wait_for(
-                search_code(query, limit=max(1, min(candidate_budget, 10)), repo_path=repo_value),
+                search_code(query, limit=min(recall_budget, 10), repo_path=repo_value),
                 timeout=max(0.05, deadline_s),
             )
         except asyncio.TimeoutError:
@@ -126,7 +130,7 @@ class RetrievalService:
                     query=query,
                     intent=intent,
                     repository=repository_fast,
-                    candidates=fast_candidates,
+                    candidates=fast_candidates[:candidate_budget],
                     degraded=["deadline_exceeded"],
                     timings_ms={
                         "symbol": round((time.perf_counter() - started) * 1000, 2),
@@ -160,7 +164,7 @@ class RetrievalService:
                     query=query,
                     intent=intent,
                     repository=repository_fast,
-                    candidates=fast_candidates,
+                    candidates=fast_candidates[:candidate_budget],
                     degraded=[f"search_error:{type(exc).__name__}"],
                     timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)},
                 )
@@ -184,7 +188,7 @@ class RetrievalService:
         vector_status = raw.get("vector_status")
         if vector_status is not None and str(vector_status).strip().casefold() != "ok":
             degraded.append(f"vector:{vector_status}")
-        vector_candidates = self._normalize(raw, candidate_budget)
+        vector_candidates = self._normalize(raw, recall_budget)
         # Extract query identifiers for file-name bonus in merge.
         _STOP = {
             "the", "and", "for", "with", "from", "that", "this", "what", "why",
@@ -321,7 +325,9 @@ class RetrievalService:
             )
             if repository is not None:
                 stmt = stmt.where(File.repository_id == repository.id)
-            rows = list((await session.execute(stmt.limit(candidate_budget * 8))).all())
+            rows = list((await session.execute(
+                stmt.order_by(*symbol_relevance_order(identifiers)).limit(candidate_budget * 8)
+            )).all())
             # Pass 2: substring match for concept words (only if pass 1 was sparse)
             if len(rows) < candidate_budget:
                 # Also try singular forms (strip trailing 's') so that
@@ -345,7 +351,7 @@ class RetrievalService:
                     )
                     if repository is not None:
                         stmt2 = stmt2.where(File.repository_id == repository.id)
-                    stmt2 = stmt2.limit(candidate_budget * 10)
+                    stmt2 = stmt2.order_by(*symbol_relevance_order(identifiers)).limit(candidate_budget * 10)
                     rows2 = list((await session.execute(stmt2)).all())
                     # Merge, avoiding duplicates; prefer symbols whose name
                     # matches multiple query terms (higher signal).

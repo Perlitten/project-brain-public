@@ -14,7 +14,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from brain.config.settings import settings
-from brain.database.models import Base, File, FileChunk, IndexingRun, Repository
+from brain.database.models import Base, Embedding, File, FileChunk, IndexingRun, Repository, Symbol
 from brain.indexers.file_indexer import FileIndexer, MAX_CHUNK_CHARS
 from brain.indexers.reliability import bounded_map, embed_chunks, repository_index_lock, git_source_is_clean
 from brain.llm.providers.mock_provider import MockEmbeddingProvider
@@ -225,6 +225,70 @@ async def test_unchanged_file_refreshes_role_without_reembedding(indexing_db, tm
         assert [c.embedding_id for c in chunks] == [c[2] for c in previous]
     provider.embed_batch.assert_not_awaited()
     provider.embed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_vector_search_uses_only_the_chunk_referenced_embedding(indexing_db, tmp_path):
+    from brain.search.code_search import _pgvector_chunk_search, _python_vector_chunk_search
+    from brain.embeddings.config import get_embedding_config
+
+    sessions, _, _ = indexing_db
+    (tmp_path / "older.py").write_text("value = 1\n")
+    (tmp_path / "current.py").write_text("value = 2\n")
+    repo = await FileIndexer().index_repository(tmp_path)
+    config = get_embedding_config()
+    query = [1.0] + [0.0] * (config.dimension - 1)
+    async with sessions.begin() as session:
+        rows = (await session.execute(select(FileChunk, File.path).join(File)
+                                      .where(File.repository_id == repo.id))).all()
+        for chunk, path in rows:
+            active = (await session.execute(select(Embedding).where(Embedding.id == chunk.embedding_id))).scalar_one()
+            vector = ([0.6, 0.8] if path == "older.py" else [0.8, 0.6]) + [0.0] * (config.dimension - 2)
+            active.vector_data = vector
+            active.embedding = vector
+            if path == "older.py":
+                historical = Embedding(entity_type="file_chunk", entity_id=chunk.id,
+                                       vector_data=query, embedding=query, dimension=config.dimension,
+                                       provider=config.provider, model=config.model)
+                session.add(historical)
+                await session.flush()
+                historical_id = historical.id
+    try:
+        async with sessions() as session:
+            for search in (_pgvector_chunk_search, _python_vector_chunk_search):
+                matches = await search(session, "value", query, top_k=5, repository_id=repo.id)
+                assert len(matches) == 2
+                assert [f.path for _, _, f in matches] == ["current.py", "older.py"]
+                assert len({c.id for _, c, _ in matches}) == 2
+                assert [score for score, _, _ in matches] == pytest.approx([0.8, 0.6], abs=0.001)
+    finally:
+        async with sessions.begin() as session:
+            await session.execute(delete(Embedding).where(Embedding.id == historical_id))
+
+
+@pytest.mark.asyncio
+async def test_symbol_sql_limit_prefers_named_implementation_over_summary_noise(indexing_db, tmp_path):
+    from brain.search.symbol_ranking import symbol_relevance_order
+
+    sessions, _, _ = indexing_db
+    repo = await FileIndexer().index_repository(tmp_path)
+    async with sessions.begin() as session:
+        # Insert tooling/noise first to ensure physical row order cannot decide.
+        for path, role, name, summary in [
+            ("eval/audit.py", "script", "resolve_invoice", "invoice resolution"),
+            ("src/aaa.py", "source_code", "misc", "resolve invoices and payments"),
+            ("src/payments.py", "source_code", "resolve_invoice", "invoice resolution"),
+        ]:
+            file = File(repository_id=repo.id, path=path, file_type=role, hash="test")
+            session.add(file)
+            await session.flush()
+            session.add(Symbol(file_id=file.id, name=name, summary=summary))
+    async with sessions() as session:
+        result = (await session.execute(select(Symbol, File.path).join(File)
+                                        .where(File.repository_id == repo.id)
+                                        .order_by(*symbol_relevance_order(["resolve", "invoices"]))
+                                        .limit(1))).one()
+        assert result[1] == "src/payments.py"
 
 
 @pytest.mark.asyncio
