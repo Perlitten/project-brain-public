@@ -1,7 +1,9 @@
 import pytest
 
 from brain.retrieval.service import RetrievalService
+from brain.retrieval.service import RetrievalCandidate
 from brain.embeddings.constants import VectorSearchStatus
+from unittest.mock import AsyncMock
 
 
 def test_retrieval_service_normalizes_files_symbols_and_chunk_ranges():
@@ -57,3 +59,36 @@ async def test_vector_health_does_not_report_success_as_missing(monkeypatch, sta
     result = await service.retrieve("unknown location", None)
     expected = [] if status is None or str(status).strip().casefold() == "ok" else [f"vector:{status}"]
     assert result.degraded == expected
+
+
+@pytest.mark.parametrize("budget", [1, 5])
+@pytest.mark.asyncio
+async def test_small_locator_merges_recall_pool_before_response_budget(monkeypatch, budget):
+    service = RetrievalService()
+    paths = [f"src/filler_{i}.py" for i in range(5)] + ["src/invoice.py"]
+    raw = {"vector_status": "OK", "chunks": [
+        {"file_path": path, "similarity": 0.95 - rank * 0.01} for rank, path in enumerate(paths)
+    ]}
+    search = AsyncMock(return_value=raw)
+    symbols = AsyncMock(return_value=[RetrievalCandidate(path="src/invoice.py", score=0.6,
+                                                        channel_scores={"symbol": 0.6})])
+    monkeypatch.setattr("brain.retrieval.service.search_code", search)
+    monkeypatch.setattr(service, "_known_symbol_route", symbols)
+    result = await service.retrieve("invoice", None, candidate_budget=budget)
+    assert len(result.candidates) == budget
+    assert result.candidates[0].path == "src/invoice.py"
+    search.assert_awaited_once_with("invoice", limit=10, repo_path=None)
+    assert symbols.await_args.args[2] == 10
+
+
+@pytest.mark.parametrize("error", [TimeoutError(), RuntimeError("offline")])
+@pytest.mark.asyncio
+async def test_symbol_fallback_respects_response_budget(monkeypatch, error):
+    service = RetrievalService()
+    symbols = [RetrievalCandidate(path=f"src/item_{i}.py", score=1.0) for i in range(10)]
+    monkeypatch.setattr("brain.retrieval.service.search_code", AsyncMock(side_effect=error))
+    monkeypatch.setattr(service, "_known_symbol_route", AsyncMock(return_value=symbols))
+    result = await service.retrieve("invoice", None, candidate_budget=3)
+    assert len(result.candidates) == 3
+    assert result.candidates == symbols[:3]
+    assert result.degraded
