@@ -500,6 +500,7 @@ def test_image_manifest_digest_matches_canonical_build_input_digest(tmp_path):
         "apps",
         "rules",
         "eval",
+        "tests",
         "scripts/write_source_manifest.py",
         "scripts/validate_lfm_release_gate.py",
     ]
