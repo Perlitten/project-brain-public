@@ -65,6 +65,76 @@ test('reindex refuses an explicitly empty repository path but permits a scoped p
   assert.equal(calls[1].options.body.repo_path, undefined);
 });
 
+test('scoped corpus timeout is unavailable and never falls back to global indexing counts', async () => {
+  const calls = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async path => {
+        calls.push(path);
+        if (path === '/repositories') return { repositories: [{ id: 3, name: 'repo', path: '/repo' }] };
+        if (path.includes('/api/web/overview')) return null;
+        if (path === '/api/status/indexing') return { counts: { chunks: 54104 } };
+        return null;
+      },
+    },
+  });
+  const corpus = await data.getCorpus('3');
+  assert.equal(corpus.available, false);
+  assert.equal(calls.includes('/api/status/indexing'), false);
+});
+
+test('index history distinguishes API timeout from a valid empty result', async () => {
+  const fixture = (runs, calls) => load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async path => {
+        calls.push(path);
+        if (path === '/repositories') return { repositories: [{ id: 3, name: 'repo', path: '/repo' }] };
+        if (path.includes('/api/web/index-runs')) return runs;
+        return null;
+      },
+    },
+  });
+  const timeoutCalls = [];
+  const unavailable = await fixture(null, timeoutCalls).getPagedIndexRuns('3');
+  assert.equal(unavailable.available, false);
+  assert.equal(unavailable.items.length, 0);
+
+  const emptyCalls = [];
+  const available = await fixture({ runs: [], total: 0, page: 1, page_size: 20, facets: {} }, emptyCalls).getPagedIndexRuns('3');
+  assert.equal(available.available, true);
+  assert.deepEqual(available.items, []);
+});
+
+test('explicit and default repository corpus with missing counts never expands to global totals', async () => {
+  const calls = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async path => {
+        calls.push(path);
+        if (path === '/repositories') return { repositories: [{ id: 3, name: 'repo', path: '/repo' }] };
+        if (path.includes('/api/web/overview')) return { counts: {} };
+        if (path === '/api/status/indexing') return { counts: { chunks: 54104 } };
+        return null;
+      },
+    },
+  });
+  for (const slug of ['3', undefined]) {
+    const corpus = await data.getCorpus(slug);
+    assert.equal(corpus.available, false);
+    assert.equal(corpus.chunks, 0);
+  }
+  assert.equal(calls.includes('/api/status/indexing'), false);
+});
+
 test('live credentials require a valid configured gate; demo can remain public', () => {
   const { authorizeWebRequest: authorize } = load('lib/web-auth.ts');
   withEnv({}, () => assert.equal(authorize(null), 200));
