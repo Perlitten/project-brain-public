@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import String, case, cast, func, select
+from sqlalchemy import String, case, cast, func, literal, select
 
 from apps.api.auth import require_api_key, require_scope
 from apps.api.helpers import (
@@ -30,6 +30,7 @@ from brain.config.settings import settings
 from brain.context.budget import estimated_tokens
 from brain.database.models import ContextPack, Decision, Embedding, File, FileChunk, IndexingRun, Repository, Rule
 from brain.database.session import async_session_factory, check_health
+from brain.memory.repo_scope import repository_scope_clause
 
 WEB_READ_SCOPE = "core:read"
 
@@ -419,114 +420,71 @@ def _rule_severity(value: Any) -> str:
 
 
 @router.get("/decisions")
-async def web_decisions(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
-    q: str | None = Query(None, max_length=500),
-    status: str | None = Query(None, max_length=50),
-    repository_id: int | None = None,
-) -> dict[str, Any]:
+async def web_decisions(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500),
+                        q: str | None = Query(None, max_length=500), status: str | None = Query(None, max_length=50),
+                        repository_id: int | None = None) -> dict[str, Any]:
     async with async_session_factory() as session:
-        stmt = select(Decision).order_by(Decision.id)
+        base = select(Decision)
         if repository_id is not None:
             repository = await session.get(Repository, repository_id)
             if repository is None:
                 raise HTTPException(status_code=404, detail="Repository not found")
-            stmt = stmt.where(Decision.repo_path == repository.path)
-        rows = list((await session.execute(stmt)).scalars().all())
-    if q:
-        needle = q.casefold()
-        rows = [r for r in rows if needle in f"{r.id} {r.title} {r.description or ''}".casefold()]
-    facets: dict[str, int] = defaultdict(int)
-    for row in rows:
-        facets[_decision_status(row.status)] += 1
-    if status:
-        wanted = _decision_status(status)
-        rows = [row for row in rows if _decision_status(row.status) == wanted]
-    total = len(rows)
-    start = (page - 1) * page_size
-    result = {
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": max(1, (total + page_size - 1) // page_size),
-        "facets": {"status": dict(facets)},
-    }
-    result["decisions"] = [
-        {
-            "id": r.id,
-            "title": r.title,
-            "description": r.description,
-            "status": _decision_status(r.status),
-            "raw_status": r.status,
-            "repo_path": r.repo_path,
-            "date": r.date.isoformat() if r.date else None,
-            "reason": r.reason,
-            "consequences": r.consequences,
-            "affected_features": r.affected_features,
-            "affected_modules": r.affected_modules,
-            "affected_files": r.affected_files,
-        }
-        for r in rows[start : start + page_size]
-    ]
-    result["scope"] = "repository" if repository_id is not None else "global"
-    return result
+            base = base.where(repository_scope_clause(Decision, repository.path))
+        if q:
+            needle = f"%{q.strip()}%"
+            text = cast(Decision.id, String) + literal(" ") + func.coalesce(Decision.title, "") + literal(" ") + func.coalesce(Decision.description, "")
+            base = base.where(text.ilike(needle))
+        status_expr = case((func.lower(Decision.status).in_(("active", "accepted")), "accepted"),
+                           (func.lower(Decision.status).in_(("proposed", "draft", "pending")), "proposed"),
+                           (func.lower(Decision.status).in_(("deprecated", "superseded", "historical", "replaced", "inactive", "rejected")), "superseded"),
+                           else_=func.coalesce(func.nullif(func.lower(Decision.status), ""), "unknown")).label("status")
+        facet_stmt = select(status_expr, func.count()).select_from(Decision)
+        if base.whereclause is not None:
+            facet_stmt = facet_stmt.where(base.whereclause)
+        facet_rows = (await session.execute(facet_stmt.group_by(status_expr))).all()
+        filtered = base
+        if status:
+            filtered = filtered.where(status_expr == _decision_status(status))
+        total = int((await session.execute(select(func.count()).select_from(filtered.subquery()))).scalar() or 0)
+        rows = (await session.execute(filtered.order_by(Decision.id).offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    return {"total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),
+            "facets": {"status": {str(k): int(v) for k, v in facet_rows}}, "scope": "repository" if repository_id is not None else "global",
+            "decisions": [{"id": r.id, "title": r.title, "description": r.description, "status": _decision_status(r.status), "raw_status": r.status,
+                           "repo_path": r.repo_path, "date": r.date.isoformat() if r.date else None, "reason": r.reason,
+                           "consequences": r.consequences, "affected_features": r.affected_features, "affected_modules": r.affected_modules,
+                           "affected_files": r.affected_files} for r in rows]}
 
 
 @router.get("/rules")
-async def web_rules(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=500),
-    q: str | None = Query(None, max_length=500),
-    status: str | None = Query(None, max_length=50),
-    severity: str | None = Query(None, max_length=50),
-    repository_id: int | None = None,
-) -> dict[str, Any]:
+async def web_rules(page: int = Query(1, ge=1, le=1000000), page_size: int = Query(50, ge=1, le=500),
+                    q: str | None = Query(None, max_length=500), status: str | None = Query(None, max_length=50),
+                    severity: str | None = Query(None, max_length=50), repository_id: int | None = None) -> dict[str, Any]:
     async with async_session_factory() as session:
-        stmt = select(Rule).order_by(Rule.id)
+        base = select(Rule).where(func.coalesce(func.lower(Rule.status), "").not_in(("inactive", "disabled", "deprecated")))
         if repository_id is not None:
             repository = await session.get(Repository, repository_id)
             if repository is None:
                 raise HTTPException(status_code=404, detail="Repository not found")
-            stmt = stmt.where(Rule.repo_path == repository.path)
-        rows = list((await session.execute(stmt)).scalars().all())
-    rows = [r for r in rows if str(r.status or "").lower() not in {"inactive", "disabled", "deprecated"}]
-    if status:
-        rows = [r for r in rows if str(r.status).lower() == status.lower()]
-    if q:
-        needle = q.casefold()
-        rows = [r for r in rows if needle in f"{r.id} {r.name} {r.description or ''}".casefold()]
-    facets: dict[str, int] = defaultdict(int)
-    for row in rows:
-        facets[_rule_severity(row.severity)] += 1
-    if severity:
-        rows = [r for r in rows if _rule_severity(r.severity) == _rule_severity(severity)]
-    total = len(rows)
-    start = (page - 1) * page_size
-    result = {
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": max(1, (total + page_size - 1) // page_size),
-        "facets": {"severity": dict(facets)},
-    }
-    result["rules"] = [
-        {
-            "id": r.id,
-            "name": r.name,
-            "description": r.description,
-            "status": r.status,
-            "severity": _rule_severity(r.severity),
-            "raw_severity": r.severity,
-            "type": r.type,
-            "applies_to": r.applies_to,
-            "repo_path": r.repo_path,
-        }
-        for r in rows[start : start + page_size]
-    ]
-    result["scope"] = "repository" if repository_id is not None else "global"
-    return result
-
+            base = base.where(repository_scope_clause(Rule, repository.path))
+        if q:
+            needle = f"%{q.strip()}%"
+            text = cast(Rule.id, String) + literal(" ") + func.coalesce(Rule.name, "") + literal(" ") + func.coalesce(Rule.description, "")
+            base = base.where(text.ilike(needle))
+        if status:
+            base = base.where(func.lower(Rule.status) == status.lower())
+        severity_expr = case((func.lower(Rule.severity).in_(("high", "error", "critical", "block", "blocker")), "block"),
+                             (func.lower(Rule.severity).in_(("medium", "warn", "warning")), "warn"), else_="advise").label("severity")
+        facet_stmt = select(severity_expr, func.count()).select_from(Rule)
+        if base.whereclause is not None:
+            facet_stmt = facet_stmt.where(base.whereclause)
+        facet_rows = (await session.execute(facet_stmt.group_by(severity_expr))).all()
+        filtered = base.where(severity_expr == _rule_severity(severity)) if severity else base
+        total = int((await session.execute(select(func.count()).select_from(filtered.subquery()))).scalar() or 0)
+        rows = (await session.execute(filtered.order_by(Rule.id).offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    return {"total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),
+            "facets": {"severity": {str(k): int(v) for k, v in facet_rows}}, "scope": "repository" if repository_id is not None else "global",
+            "rules": [{"id": r.id, "name": r.name, "description": r.description, "status": r.status, "severity": _rule_severity(r.severity),
+                       "raw_severity": r.severity, "type": r.type, "applies_to": r.applies_to, "repo_path": r.repo_path} for r in rows]}
 
 def report_kind(name: str) -> str:
     lowered = name.lower()

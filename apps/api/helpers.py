@@ -698,7 +698,13 @@ async def get_recent_brain_jobs(
     jobs: List[Dict[str, Any]] = []
     try:
         queue = JobQueue(redis_client, prefix=settings.WORKER_REDIS_PREFIX)
-        job_ids = await queue.recent_job_ids(limit=max(limit, 100))
+        # Repository filtering happens after loading job payloads, so fetch the
+        # largest indexed window before applying the requested result limit.
+        # Otherwise unrelated repositories can hide matching jobs among the
+        # first 100 global entries.
+        scoped_request = repository_id is not None or repository_path
+        lookup_limit = 1000 if scoped_request else max(limit, 100)
+        job_ids = await queue.recent_job_ids(limit=lookup_limit)
         # Upgrade fallback: jobs created before the ZSET index was introduced.
         if not job_ids:
             cursor = 0
@@ -709,31 +715,43 @@ async def get_recent_brain_jobs(
                 if cursor == 0 or len(keys) >= 5000:
                     break
             job_ids = [key.rsplit(":", 1)[-1] for key in keys]
-        for job_id in job_ids:
-            job = await queue.get_job(job_id)
-            if not job:
-                continue
-            if not job.get("id"):
-                job["id"] = job_id
-            jobs.append(job)
-        if repository_id is not None or repository_path:
-            wanted = str(Path(repository_path).resolve()) if repository_path else None
+        wanted = str(Path(repository_path).resolve()) if repository_path else None
+
+        def belongs_to_scope(job: Dict[str, Any]) -> bool:
+            raw_params = job.get("params")
+            params = raw_params if isinstance(raw_params, dict) else {}
+            job_repo_id = params.get("repository_id")
+            job_repo_path = params.get("repo_path") or params.get("repository_path")
+            if repository_id is not None and str(job_repo_id) == str(repository_id):
+                return True
+            if wanted and isinstance(job_repo_path, str):
+                try:
+                    return str(Path(job_repo_path).resolve()) == wanted
+                except (OSError, RuntimeError):
+                    return False
+            return False
+
+        offset = 0
+        while True:
+            for job_id in job_ids:
+                job = await queue.get_job(job_id)
+                if not job:
+                    continue
+                if not job.get("id"):
+                    job["id"] = job_id
+                jobs.append(job)
+            if not scoped_request or len(job_ids) < lookup_limit:
+                break
+            if sum(belongs_to_scope(job) for job in jobs) >= limit:
+                break
+            offset += lookup_limit
+            job_ids = await queue.recent_job_ids(limit=lookup_limit, offset=offset)
+        if scoped_request:
             scoped = []
             for job in jobs:
-                raw_params = job.get("params")
-                params = raw_params if isinstance(raw_params, dict) else {}
-                job_repo_id = params.get("repository_id")
-                job_repo_path = params.get("repo_path") or params.get("repository_path")
-                if repository_id is not None and str(job_repo_id) == str(repository_id):
+                if belongs_to_scope(job):
                     scoped.append(job)
-                    continue
-                if wanted and isinstance(job_repo_path, str):
-                    try:
-                        if str(Path(job_repo_path).resolve()) == wanted:
-                            scoped.append(job)
-                    except (OSError, RuntimeError):
-                        continue
-            jobs = scoped
+            jobs = scoped[:limit]
         jobs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
         return {"jobs": jobs[:limit], "error": None}
     except Exception as exc:

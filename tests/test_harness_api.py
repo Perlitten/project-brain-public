@@ -391,3 +391,17 @@ def test_acquire_lease_conflict_returns_409(api_key_env):
             headers=AUTH,
         )
     assert response.status_code == 409
+
+
+@pytest.mark.parametrize("display_status", ["completed", "running", "queued", "failed", "error", "timed_out", "cancelled", "retrying", "skipped", "degraded"])
+def test_display_status_is_forwarded_to_both_queries_without_rewriting_raw_status(api_key_env, display_status):
+    with (
+        patch("apps.api.routers.harness.HarnessStore.list_tasks", AsyncMock(return_value=[_sample_task("passed")])) as rows,
+        patch("apps.api.routers.harness.HarnessStore.count_tasks", AsyncMock(return_value=1)) as count,
+        patch("apps.api.routers.harness.HarnessStore.task_status_counts", AsyncMock(return_value={"passed": 1})),
+    ):
+        response = client.get(f"/harness/tasks?display_status={display_status}", headers=AUTH)
+    assert response.status_code == 200
+    assert response.json()["tasks"][0]["status"] == "passed"
+    assert rows.await_args.kwargs["status"] == f"__display__:{display_status}"
+    assert count.await_args.kwargs["status"] == f"__display__:{display_status}"
