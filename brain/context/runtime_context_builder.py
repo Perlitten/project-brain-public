@@ -3,18 +3,20 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from brain.config.settings import settings
 from brain.context.budget import BudgetedPayloadBuilder, truncate_utf8
 from brain.database.models import File, FileChunk, Symbol
 from brain.database.session import async_session_factory
 from brain.memory.relevance import select_relevant_normative_memory
-from brain.retrieval.service import RetrievalResult, RetrievalService
+from brain.retrieval.service import RetrievalCandidate, RetrievalResult, RetrievalService
+from brain.search.path_hints import derive_path_hints, path_hint_bonus
 
 
 def _unsupported_domain_query(
@@ -107,12 +109,6 @@ class RuntimeContextBuilder:
         from brain.context.context_cache import get_cached_context, put_cached_context
 
         repo_str = str(repo_path)
-        cached = get_cached_context(repo_str, task_description)
-        if cached is not None:
-            res_cached = dict(cached)
-            res_cached["_cache_hit"] = True
-            return res_cached
-
         max_bytes = min(settings.AGENT_RUNTIME_CONTEXT_MAX_BYTES, max(1, max_tokens) * 4)
         result = await asyncio.wait_for(
             self.retrieval.retrieve(
@@ -146,6 +142,15 @@ class RuntimeContextBuilder:
             metadata["missing"].append("no_retrieval_candidates")
             return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
 
+        # Bind cache reads to the same revision used for writes, after the
+        # current-source/evidence guards. Cache must fit this request's budget.
+        cached = get_cached_context(repo_str, task_description, repo.get("source_revision"))
+        if cached is not None and not include_debug and not result.degraded and "debug" not in cached:
+            res_cached = {**cached, "_cache_hit": True}
+            if len(json.dumps(res_cached, ensure_ascii=False, separators=(",", ":")).encode()) <= max_bytes:
+                return res_cached
+
+        await self._include_style_companion(result)
         slices = await self._load_slices(result, max_bytes)
         import logging as _lg
         _lg.getLogger(__name__).warning("SLICES_LOADED: count=%d max_bytes=%d", len(slices), max_bytes)
@@ -204,6 +209,65 @@ class RuntimeContextBuilder:
         if freshness == "current":
             put_cached_context(repo_str, task_description, built, source_revision=repo.get("source_revision"))
         return built
+
+    @staticmethod
+    def _named_style_components(result: RetrievalResult) -> list[str]:
+        if not re.search(r"\b(?:css|scss|stylesheets?|styles?|styling|overflow|clipp\w*|tooltips?)\b",
+                         result.query, re.IGNORECASE):
+            return []
+        words = {word.casefold() for word in re.findall(r"\b[A-Za-z][A-Za-z0-9_]*\b", result.query)}
+        words |= {word[:-1] for word in words if len(word) > 4 and word.endswith("s")}
+        return [candidate.path for candidate in result.candidates
+                if Path(candidate.path).suffix.lower() in {".tsx", ".jsx", ".vue", ".html"}
+                and Path(candidate.path).stem.split(".")[0].casefold() in words]
+
+    async def _include_style_companion(self, result: RetrievalResult) -> None:
+        """Keep stylesheet evidence for an explicitly named UI styling task.
+
+        Stylesheets have no callable symbols and can disappear from semantic
+        results. Resolve an indexed companion in this repository, preferring
+        a named stylesheet then the component/app directory, inside the budget.
+        """
+        components = self._named_style_components(result)
+        repository_id = result.repository.get("repository_id")
+        if not components or not isinstance(repository_id, int):
+            return
+        async with async_session_factory() as session:
+            paths = list((await session.execute(
+                select(File.path).where(File.repository_id == repository_id,
+                                        or_(*(File.path.ilike(f"%{extension}")
+                                              for extension in (".css", ".scss", ".sass", ".less"))))
+                .order_by(File.path).limit(128)
+            )).scalars().all())
+        if not paths:
+            return
+        # A named stylesheet hint is stronger than folder proximity. Generic
+        # extension/directory hints must not favour CSS over SCSS/LESS.
+        hints = [hint for hint in derive_path_hints(result.query)
+                 if not hint.startswith(".") and not hint.endswith("/")]
+
+        def proximity(path: str) -> int:
+            parts = Path(path).parts[:-1]
+            best = 0
+            for component in components:
+                common = 0
+                for a, b in zip(parts, Path(component).parts[:-1]):
+                    if a.casefold() != b.casefold():
+                        break
+                    common += 1
+                best = max(best, common)
+            return best
+
+        path = min(paths, key=lambda p: (-path_hint_bonus(p, hints), -proximity(p), p))
+        existing = next((c for c in result.candidates if c.path == path), None)
+        if existing is not None and result.candidates.index(existing) <= 1:
+            return
+        companion = existing or RetrievalCandidate(
+            path=path, channel_scores={"stylesheet": path_hint_bonus(path, hints)},
+            score=path_hint_bonus(path, hints),
+        )
+        result.candidates = ([result.candidates[0], companion]
+                             + [c for c in result.candidates[1:] if c.path != path])[:12]
 
     @staticmethod
     def _repo_projection(result: RetrievalResult) -> dict[str, Any]:
