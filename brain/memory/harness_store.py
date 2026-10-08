@@ -45,7 +45,7 @@ DISPLAY_TASK_STATUS_GROUPS = {
 
 
 def _task_status_filter(status: Optional[str]):
-    group = {"__running__": "running", "__queued__": "queued"}.get(status)
+    group = {"__running__": "running", "__queued__": "queued"}.get(status or "")
     if status and status.startswith("__display__:"):
         group = status.removeprefix("__display__:")
     if group == "degraded":
@@ -946,3 +946,4 @@ class HarnessStore:
                 return raced
             await session.refresh(lease)
             return lease
+
