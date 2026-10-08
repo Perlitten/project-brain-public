@@ -645,6 +645,12 @@ def _should_abstain(
     return v2_enabled and float(reranked[0].reranker_score) < 0.15
 
 
+def _lexical_file_candidate(file_obj: File, rank: int) -> ChannelCandidate:
+    """Build the lexical candidate with the file metadata used by abstention."""
+    return ChannelCandidate("lexical", file_obj.path, 1.0 / rank, rank=rank,
+                            metadata={"summary": file_obj.summary or ""})
+
+
 class HybridRetrievalPipeline:
     """Orchestrates multi-channel candidate generation, fusion, and reranking."""
 
@@ -782,10 +788,7 @@ class HybridRetrievalPipeline:
         timing.symbol_ms = timing.lexical_ms * 0.3
 
         for rank, f in enumerate(lexical_files, 1):
-            candidates_by_channel["lexical"].append(
-                ChannelCandidate("lexical", f.path, 1.0 / rank, rank=rank,
-                                 metadata={"summary": f.summary or ""})
-            )
+            candidates_by_channel["lexical"].append(_lexical_file_candidate(f, rank))
         for rank, sym in enumerate(lexical_symbols, 1):
             sym_file_path = symbol_paths.get(sym.id)
             if not sym_file_path:
