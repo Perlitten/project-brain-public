@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from brain.context.runtime_context_builder import RuntimeContextBuilder
+from brain.context.runtime_context_builder import RuntimeContextBuilder, _unsupported_domain_query
 from brain.retrieval.service import RetrievalCandidate, RetrievalResult
 
 
@@ -14,6 +14,47 @@ class _Retrieval:
 
     async def retrieve(self, *_args, **_kwargs):
         return self.result
+
+
+@pytest.mark.asyncio
+async def test_runtime_context_build_abstains_and_drops_irrelevant_candidates(monkeypatch):
+    result = RetrievalResult(
+        query="How do I configure the Kubernetes deployment for the mobile app?",
+        intent="runtime_context",
+        repository={"repository_path": "/app", "freshness": {"status": "current"}},
+        candidates=[RetrievalCandidate(path=f"apps/api/generic_{idx}.py") for idx in range(12)],
+    )
+    builder = RuntimeContextBuilder(_Retrieval(result))
+    builder._load_slices = AsyncMock(return_value=[{
+        "path": "apps/api/generic_0.py", "range": [1, 10], "content": "generic API request handler",
+    }])
+    monkeypatch.setattr("brain.context.context_cache.get_cached_context", lambda *_: None)
+    payload = await builder.build(result.query, "/app")
+    assert payload["status"] == "partial"
+    assert "no_relevant_candidates" in payload["missing"]
+    assert "candidates" not in payload
+    assert "slices" not in payload
+
+
+@pytest.mark.asyncio
+async def test_runtime_context_build_preserves_content_only_evidence(monkeypatch):
+    result = RetrievalResult(
+        query="How does soft deletion cascade through the generic store?",
+        intent="runtime_context",
+        repository={"repository_path": "/app", "freshness": {"status": "current"}, "repository_id": 1},
+        candidates=[RetrievalCandidate(path="brain/database/generic_store.py")],
+    )
+    builder = RuntimeContextBuilder(_Retrieval(result))
+    builder._load_slices = AsyncMock(return_value=[{
+        "path": "brain/database/generic_store.py", "range": [1, 10],
+        "content": "The soft deletion cascade marks child records deleted.",
+    }])
+    monkeypatch.setattr("brain.context.context_cache.get_cached_context", lambda *_: None)
+    monkeypatch.setattr("brain.context.runtime_context_builder.select_relevant_normative_memory", AsyncMock(return_value=[]))
+    monkeypatch.setattr("brain.context.context_cache.put_cached_context", lambda *args, **kwargs: None)
+    payload = await builder.build(result.query, "/app")
+    assert payload["status"] == "ok"
+    assert payload["slices"][0]["content"].startswith("The soft deletion")
 
 
 @pytest.mark.asyncio
@@ -81,7 +122,7 @@ async def test_runtime_context_marks_empty_slices_as_insufficient_evidence(monke
 @pytest.mark.asyncio
 async def test_runtime_context_does_not_report_success_when_budget_excludes_all_code(monkeypatch):
     result = RetrievalResult(
-        query="budget gap",
+        query="find the core route",
         intent="runtime_context",
         repository={"repository_path": "/app", "freshness": {"status": "current"}},
         candidates=[RetrievalCandidate(path="apps/api/routers/core.py")],
@@ -97,7 +138,7 @@ async def test_runtime_context_does_not_report_success_when_budget_excludes_all_
     cache_write = AsyncMock()
     monkeypatch.setattr("brain.context.context_cache.put_cached_context", cache_write)
 
-    payload = await builder.build("budget gap", "/app", max_tokens=500)
+    payload = await builder.build("find the core route", "/app", max_tokens=500)
 
     assert payload["status"] == "partial"
     assert "code_slices_excluded_by_budget" in payload["missing"]
@@ -255,3 +296,63 @@ async def test_failed_auto_reindex_enqueue_releases_the_throttle(auto_reindex_en
 
     assert "auto_reindex_queued" not in first["missing"]
     assert "auto_reindex_queued" in second["missing"]
+def test_runtime_context_rejects_unrepresented_multi_term_domain():
+    result = RetrievalResult(
+        query="How do I configure the Kubernetes deployment for the mobile app?",
+        intent="runtime_context",
+        repository={},
+        candidates=[RetrievalCandidate(path="apps/api/main.py")],
+    )
+    assert _unsupported_domain_query(result.query, result)
+
+
+def test_runtime_context_keeps_supported_path_and_symbol_evidence():
+    result = RetrievalResult(
+        query="How does embedding backfill work?",
+        intent="runtime_context",
+        repository={},
+        candidates=[RetrievalCandidate(path="brain/embeddings/backfill.py")],
+    )
+    assert not _unsupported_domain_query(result.query, result)
+
+
+def test_runtime_context_ignores_generic_query_verbs():
+    result = RetrievalResult(
+        query="Explain how API auth handles each request",
+        intent="runtime_context",
+        repository={},
+        candidates=[RetrievalCandidate(path="apps/api/auth.py")],
+    )
+    assert not _unsupported_domain_query(result.query, result)
+
+
+def test_runtime_context_keeps_concept_found_only_in_slice_content():
+    result = RetrievalResult(
+        query="How does soft deletion cascade through the generic store?",
+        intent="runtime_context",
+        repository={},
+        candidates=[RetrievalCandidate(path="brain/database/generic_store.py")],
+    )
+    slices = [{"path": "brain/database/generic_store.py", "content": "The soft deletion cascade marks child records deleted."}]
+    assert not _unsupported_domain_query(result.query, result, slices)
+
+
+def test_runtime_context_keeps_short_meaningful_provider_terms_in_slice():
+    result = RetrievalResult(
+        query="How does the LLM provider implement backoff headers?",
+        intent="runtime_context",
+        repository={},
+        candidates=[RetrievalCandidate(path="brain/llm/providers/openai_compatible.py")],
+    )
+    slices = [{"path": "brain/llm/providers/openai_compatible.py", "content": "LLM provider retries with exponential backoff headers."}]
+    assert not _unsupported_domain_query(result.query, result, slices)
+
+
+def test_runtime_context_ignores_grammatical_stopwords_for_unsupported_query():
+    result = RetrievalResult(
+        query="Why does the Kubernetes mobile app exist?",
+        intent="runtime_context",
+        repository={},
+        candidates=[RetrievalCandidate(path="apps/api/main.py")],
+    )
+    assert _unsupported_domain_query(result.query, result, [])
