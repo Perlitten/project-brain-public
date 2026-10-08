@@ -4,6 +4,29 @@ import re
 from typing import List
 
 
+def path_hint_bonus(path: str, hints) -> float:
+    """Prefer a concrete file hint over a broad directory substring.
+
+    Qualified file paths are stronger evidence than bare filenames/stems;
+    a directory token still supplies the historical modest broad boost.
+    """
+    normalized = path.replace("\\", "/").lower()
+    directory, _, filename = normalized.rpartition("/")
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    stem_path = f"{directory}/{stem}" if directory else stem
+    bonus = 0.0
+    for hint in hints:
+        token = hint.replace("\\", "/").lower().rstrip("/")
+        if len(token) < 4 or token not in normalized:
+            continue
+        bonus = max(bonus, 0.18)
+        if token in {normalized, stem_path}:
+            bonus = max(bonus, 0.55 if "/" in token else 0.32)
+        elif token in {filename, stem}:
+            bonus = max(bonus, 0.32)
+    return bonus
+
+
 def derive_path_hints(task_description: str) -> List[str]:
     """Return lowercase path tokens to boost lexical retrieval for common task shapes."""
     lower = task_description.lower()
