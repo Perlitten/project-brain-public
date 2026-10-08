@@ -1,18 +1,20 @@
 import { Term } from "@/components/Term";
+import { SectionNav } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, Stat, fmt } from "@/components/ui";
 import { getReranker } from "@/lib/data";
 
-export const metadata = { title: "Search quality" };
+export const metadata = { title: "Reranker diagnostics" };
 
-export default async function Reranker() {
-  const r = await getReranker();
+export default async function Reranker({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
+  const { repo } = await searchParams;
+  const r = await getReranker(repo);
   const measured = r.queries24h > 0;
   const off = r.stateText === "Turned off";
   const later = off ? "shown once it is on" : undefined;
   return (
     <>
       <PageHead
-        eyebrow="Search quality"
+        eyebrow="Reranker diagnostics"
         title={off ? "The second search pass is turned off" : "How well Brain puts the right code first"}
         lede={
           <>
@@ -27,6 +29,7 @@ export default async function Reranker() {
           </>
         }
       />
+      <SectionNav label="Quality views" items={[{ href: "/quality", label: "Quality" }, { href: "/reports", label: "Reports" }, { href: "/reranker", label: "Reranker diagnostics", active: true }]} />
       {r.available === false ? (
         <EmptyState
           title="No reranker status"

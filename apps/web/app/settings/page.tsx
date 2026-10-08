@@ -1,6 +1,7 @@
 import { Settings } from "@/components/settings/Settings";
 import { Tip } from "@/components/Tip";
 import { PageHead } from "@/components/ui";
+import { SectionNav } from "@/components/SectionNav";
 import { getSettingsView } from "@/lib/settings-view";
 
 export const metadata = { title: "Settings" };
@@ -9,6 +10,7 @@ export default async function SettingsPage() {
   const view = await getSettingsView();
   return (
     <>
+      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings", active: true }, { href: "/admin", label: "Access" }, { href: "/mcp", label: "Agent tools" }]} />
       <PageHead
         eyebrow="Settings"
         title="Settings"

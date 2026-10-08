@@ -515,6 +515,22 @@ class AuditEvent(Base):
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
+class BrainRequestTelemetry(Base):
+    """Durable, payload-free telemetry for search/context requests."""
+    __tablename__ = "brain_request_telemetry"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    operation: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    surface: Mapped[str] = mapped_column(String(16), nullable=False, default="http", server_default="http")
+    repository_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    repository_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    principal_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
+
+
 class MemoryEpisode(Base):
     """L2 episodic memory: one distilled cluster of L1 events and its gate outcome.
 

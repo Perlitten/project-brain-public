@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { SectionNav } from "@/components/SectionNav";
 import { ListFrame } from "@/components/ListFrame";
 import { PageTabs, pickTab } from "@/components/PageTabs";
 import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
@@ -8,8 +9,8 @@ import type { Decision, Rule, Tone } from "@/lib/types";
 
 export const metadata = { title: "Decisions & rules" };
 
-const statusTone: Record<Decision["status"], Tone> = { accepted: "ok", proposed: "info", superseded: "idle" };
-const statusWords: Record<Decision["status"], string> = { accepted: "agreed", proposed: "proposed", superseded: "replaced" };
+const statusTone: Record<Decision["status"], Tone> = { accepted: "ok", proposed: "info", superseded: "idle", validated_unmerged: "info" };
+const statusWords: Record<Decision["status"], string> = { accepted: "agreed", proposed: "proposed", superseded: "replaced", validated_unmerged: "checked, not merged" };
 const severity: Record<Rule["severity"], [Tone, string]> = {
   block: ["bad", "blocks the change"],
   warn: ["warn", "warns"],
@@ -40,6 +41,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
         title="What your team decided, so agents remember it too"
         lede={repo ? "Decisions and rules for the selected repository." : "Decisions and rules across all connected repositories."}
       />
+      <SectionNav label="Memory views" items={[{ href: "/memory", label: "Decisions & rules", active: true }, { href: "/packs", label: "Context packs" }]} />
         <PageTabs
         label="Decisions or rules"
         path="/memory"
@@ -47,7 +49,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           params={{ repo }}
         tabs={[
           { id: "decisions", label: "Decisions", badge: decisionsResult.paging.total },
-          { id: "rules", label: "Rules", badge: blocking ? `${rulesResult.paging.total} · ${blocking} blocking on this page` : rulesResult.paging.total },
+          { id: "rules", label: "Rules", badge: rulesResult.paging.total },
         ]}
       />
       {tab === "decisions" ? (
@@ -60,7 +62,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
             listClass="cards cards--grid"
             noun={["decision", "decisions"]}
             meta={decisions.map((d) => ({ q: `${d.title} ${d.summary} ${d.scope} ${d.id}`.toLowerCase(), f: d.status }))}
-            facet={{ label: "Status", values: (["accepted", "proposed", "superseded"] as const).map((v) => ({ value: v, label: statusWords[v] })) }}
+            facet={{ label: "Status", values: (["accepted", "proposed", "superseded", "validated_unmerged"] as const).map((v) => ({ value: v, label: statusWords[v] })) }}
             pageSize={20}
             paging={decisionsResult.paging}
             rows={decisions.map((d, i) => (
@@ -81,7 +83,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           )}
         </section>
       ) : (
-        <Panel id="rules" title="Rules agents must follow" desc={hitsTracked ? "“Caught” counts problems each rule stopped in the last 30 days." : "Brain doesn’t count how often each rule fires yet."}
+        <Panel id="rules" title="Rules agents must follow" desc={`${blocking} blocking rule${blocking === 1 ? "" : "s"} on this page. ${hitsTracked ? "“Caught” counts problems each rule stopped in the last 30 days." : "Brain doesn’t count how often each rule fires yet."}`}
           flush
         >
           {rules.length === 0 && !hasQuery ? (

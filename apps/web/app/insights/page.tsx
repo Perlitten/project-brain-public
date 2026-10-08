@@ -5,6 +5,7 @@ import { Chip, EmptyState, PageHead } from "@/components/ui";
 import { getPagedInsights } from "@/lib/data";
 import { getListQuery } from "@/lib/list-query";
 import type { Insight } from "@/lib/types";
+import { SectionNav } from "@/components/SectionNav";
 
 export const metadata = { title: "Findings" };
 
@@ -29,6 +30,7 @@ export default async function Insights({ searchParams }: { searchParams: Promise
         title="Findings across the Brain service"
         lede="Brain watches all connected repositories and points out places that are getting harder to work with. These findings are global because the service does not attach ownership to them."
       />
+      <SectionNav label="Project views" items={[{ href: "/projects", label: "Projects" }, { href: "/insights", label: "Findings across Brain", active: true }]} />
       {insights.length === 0 && !hasQuery && (
         <EmptyState title="No findings yet" body="Brain hasn’t flagged anything in this code. Findings appear here as Brain notices risky changes." />
       )}

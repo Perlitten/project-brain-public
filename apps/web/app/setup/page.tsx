@@ -1,4 +1,5 @@
-import { CopyCommand } from "@/components/CopyCommand";
+import { AgentConfigurations } from "@/components/setup/AgentConfigurations";
+import { SectionNav } from "@/components/SectionNav";
 import { Term } from "@/components/Term";
 import { Tip } from "@/components/Tip";
 import { SetupSteps } from "@/components/setup/SetupSteps";
@@ -8,13 +9,15 @@ import { getSetupView } from "@/lib/setup-view";
 
 export const metadata = { title: "Get started" };
 
-export default async function Setup() {
+export default async function Setup({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
+  const { repo } = await searchParams;
   const [view, clients] = await Promise.all([getSetupView(), getClientConfigs()]);
   const steps = view.steps;
   const done = steps.filter((s) => s.done).length;
   const next = steps.find((s) => s.id === view.nextStep) ?? steps.find((s) => !s.done);
   return (
     <>
+      <SectionNav label="Project views" items={[{ href: `/projects${repo ? `?repo=${repo}` : ""}`, label: "Projects" }, { href: `/indexing${repo ? `?repo=${repo}` : ""}`, label: "Indexing" }, { href: `/graph${repo ? `?repo=${repo}` : ""}`, label: "Code map" }, { href: `/setup${repo ? `?repo=${repo}` : ""}`, label: "Connection", active: true }]} />
       <PageHead
         eyebrow="Get started"
         title={steps.length === 0 ? "Setup status unavailable" : next ? `${done} of ${steps.length} done` : "Brain is fully set up"}
@@ -44,13 +47,8 @@ export default async function Setup() {
           <SetupSteps view={view} />
         </>
       )}
-      {clients.length > 0 && <Panel id="client-configs" title="Agent configurations">
-        {clients.map(client => <section key={client.name}>
-          <h3>{client.name}</h3>
-          <p>{client.where}</p>
-          <CopyCommand command={client.config} />
-          {client.cli && <CopyCommand command={client.cli} />}
-        </section>)}
+      {clients.length > 0 && <Panel id="client-configs" title="Connect your agent" desc="Choose your client, then add Brain to its configuration.">
+        <AgentConfigurations clients={clients} />
       </Panel>}
     </>
   );

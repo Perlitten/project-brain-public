@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "historical": true,
+  "generated_at": "2026-10-08T01:15:44Z",
+  "source": {
+    "artifact": "owner-benchmark-20261008",
+    "provenance": [
+      {"artifact": "final-summary.json", "sha256": "7d47cd14032fbed5675266db7d4dcfe60ce8767bfbe4a1cea5e3ffccc58ed7cf", "measured_build_sha": "e00fc52c3f89675259e4b1e5f2f730ff7d928971"},
+      {"artifact": "retrieval-1c56.json", "sha256": "ade500a32d7941bd4fd3b661b5b045f8d863a55f6fe59459c778db4cacc1dfd3", "measured_build_sha": "1c56e75b6d6b423e0cd3e840bf70b487c6980e97"},
+      {"artifact": "runtime-context-evidence-final.json", "sha256": "2efceed568c1c8a9c7001b2a1d2f57ae518653dbe9417d70f9875d957b376d0f", "measured_build_sha": "e00fc52c3f89675259e4b1e5f2f730ff7d928971"}
+    ],
+    "build_sha": "e00fc52c3f89675259e4b1e5f2f730ff7d928971",
+    "source_digest": "bee53639d52e34b49bf1574660ba7262dc71bad43357c2fb66b199789a53784f",
+    "corpus_sha256": "2fda310fabf6e30f1216fb0fb9be0a34fc3c3358f6e0e539bfbfef05642715ef",
+    "search_sample_count": 20,
+    "context_fixture_count": 7
+  },
+  "search": {"errors": 0, "hit1_any_pct": 35.0, "hit3_any_pct": 45.0, "hit5_any_pct": 70.0, "mrr_any": 0.4491666667, "latency_p50_ms": 1059.7, "latency_p95_ms": 1199.27, "latency_max_ms": 1490.6},
+  "context": {"normal_count": 6, "mean_recall": 1.0, "mean_mrr": 0.75, "mean_fixture_noise_ratio": 0.7222222222, "adversarial_status": "partial", "adversarial_candidate_count": 0, "latency_p50_ms": 1147.62, "latency_p95_ms": 1252.42},
+  "acceptance": "passed",
+  "acceptance_scope": ["source identity", "runtime context regression cases", "golden Hit@5 non-regression", "HTTP route responses"],
+  "quality_limits": {"native_tasks_passed": 2, "native_task_count": 5, "native_precision": 0.16, "native_recall": 0.47, "optional_nightly_lfm": "failed http_413; exact reconciliation not proven"}
+}

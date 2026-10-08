@@ -5,7 +5,8 @@ import asyncio
 import hashlib
 import json
 import time
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -485,32 +486,43 @@ async def ask_project(body: AskRequest, request: Request):
 
 
 @router.post("/context", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def build_task_context(body: ContextRequest):
-    # `persist=false` is a public no-write contract, independent of rollout
-    # mode. The legacy pack builder always creates both a Markdown artifact and
-    # a ContextPack row, so it must only be reachable via explicit persistence.
-    if not body.persist:
-        try:
-            return await RuntimeContextBuilder().build(
-                body.task_description,
-                _agent_repo_path(body.repo_path),
-                max_tokens=body.max_tokens,
-                include_debug=body.include_debug,
-            )
-        except Exception as exc:
-            logger.warning("/context v2 degraded: {}", type(exc).__name__)
-            return BudgetedPayloadBuilder(
-                min(settings.AGENT_RUNTIME_CONTEXT_MAX_BYTES, body.max_tokens * 4),
-                metadata={"status": "partial", "missing": [f"context_error:{type(exc).__name__}"]},
-            ).build()
+async def build_task_context(body: ContextRequest, request: Request = cast(Request, None)):
+    from apps.api.request_observation import classify_result, observe_http_request
+    started = time.perf_counter()
+    outcome = "error"
+    result = None
+    repo_path = _agent_repo_path(body.repo_path)
     try:
-        builder = ContextPackBuilder()
-        repo_path = resolve_repo_path(body.repo_path)
-        result = await builder.build_context_pack(body.task_description, repo_path)
+        # persist=false never creates a durable context pack. Payload-free request
+        # measurements are independent of that artifact persistence contract.
+        if not body.persist:
+            try:
+                result = await RuntimeContextBuilder().build(
+                    body.task_description, repo_path,
+                    max_tokens=body.max_tokens, include_debug=body.include_debug,
+                )
+                outcome = classify_result(result, "context")
+                return result
+            except Exception as exc:
+                logger.warning("/context v2 degraded: {}", type(exc).__name__)
+                return BudgetedPayloadBuilder(
+                    min(settings.AGENT_RUNTIME_CONTEXT_MAX_BYTES, body.max_tokens * 4),
+                    metadata={"status": "partial", "missing": [f"context_error:{type(exc).__name__}"]},
+                ).build()
+        repo_path = str(resolve_repo_path(body.repo_path))
+        result = await ContextPackBuilder().build_context_pack(body.task_description, Path(repo_path))
+        outcome = classify_result(result, "context")
         return result
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
     except Exception as exc:
-        logger.error(f"Context pack failed for {body.repo_path}: {type(exc).__name__}: {exc}")
+        logger.error("Context pack failed: {}", type(exc).__name__)
         raise HTTPException(status_code=500, detail="Context pack compilation failed due to an internal error") from exc
+    finally:
+        if request is not None:
+            await observe_http_request(request, operation="context", result=result, repo_path=repo_path,
+                                       outcome=outcome, started=started)
 
 
 @router.post("/impact", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
@@ -608,23 +620,39 @@ _MAX_RELATED_FANOUT = 50
 @router.post("/search", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def search_code_endpoint(body: SearchRequest, request: Request):
     """Hybrid file/symbol/chunk search — the HTTP form of the MCP `search_code` tool."""
-    mode = _agent_v2_mode()
-    if mode == "on" and body.response_mode == "locator":
-        return await _compact_locator(body)
-    if mode == "shadow" and body.response_mode == "locator":
-        try:
-            _record_shadow_metric("search", await _compact_locator(body))
-        except Exception as exc:
-            logger.warning("/search v2 shadow failed open: {}", type(exc).__name__)
+    from apps.api.request_observation import classify_result, observe_http_request
+    started = time.perf_counter()
+    outcome = "error"
+    result = None
     try:
+        mode = _agent_v2_mode()
+        if mode == "on" and body.response_mode == "locator":
+            result = await _compact_locator(body)
+            outcome = classify_result(result, "search")
+            return result
+        if mode == "shadow" and body.response_mode == "locator":
+            try:
+                _record_shadow_metric("search", await _compact_locator(body))
+            except Exception as exc:
+                logger.warning("/search v2 shadow failed open: {}", type(exc).__name__)
         search_kwargs: dict[str, Any] = {"limit": body.limit, "repo_path": body.repo_path}
         request_id = _late_interaction_request_id(request)
         if request_id:
             search_kwargs["request_id"] = request_id
-        return await hybrid_search_code(body.query, **search_kwargs)
+        result = await hybrid_search_code(body.query, **search_kwargs)
+        outcome = classify_result(result, "search")
+        return result
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
     except Exception as exc:
+        outcome = "error"
         logger.error(f"Search failed: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Search failed due to an internal error") from exc
+    finally:
+        await observe_http_request(request, operation="search", result=result,
+                                   repo_path=_agent_repo_path(body.repo_path) if _agent_v2_mode() == "on" and body.response_mode == "locator" else body.repo_path,
+                                   outcome=outcome, started=started)
 
 
 @router.get("/repositories", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SectionNav } from "@/components/SectionNav";
 import { Term } from "@/components/Term";
 import { Chip, EmptyState, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
 import { getPagedContextPacks } from "@/lib/data";
@@ -32,6 +33,7 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
           </>
         }
       />
+      <SectionNav label="Memory views" items={[{ href: "/memory", label: "Decisions & rules" }, { href: "/packs", label: "Context packs", active: true }]} />
       <div className="stats">
         <Stat label="Briefings" value={String(result.paging.total)} note="matching briefings" />
         <Stat label="Average size on this page" value={packs.length ? fmt(avg) : "—"} note="tokens, about ¾ of a word each" />
@@ -62,7 +64,7 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
               head: "Task",
               cell: (p) => (
                 <>
-                  <Link className="link" href={`/packs/${encodeURIComponent(p.id)}?back=${encodeURIComponent(back)}`}>{p.task}</Link>
+                  <Link className="link" href={`/packs/${encodeURIComponent(p.id)}?${repo ? `repo=${encodeURIComponent(repo)}&` : ""}back=${encodeURIComponent(back)}`}>{p.task}</Link>
                   <span className="sub mono">
                     {p.id} · for {p.consumer}
                   </span>
