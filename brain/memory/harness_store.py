@@ -31,12 +31,28 @@ from brain.workers.db_fencing import assert_current_db_fence
 
 RUNNING_TASK_STATUSES = ("running", "in_progress", "started", "indexing", "processing", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending")
 QUEUED_TASK_STATUSES = ("queued", "pending", "created", "routed", "scheduled", "waiting")
+DISPLAY_TASK_STATUS_GROUPS = {
+    "completed": ("completed", "complete", "success", "succeeded", "passed", "done", "ok"),
+    "failed": ("failed", "failure", "fail"),
+    "error": ("error", "errored"),
+    "timed_out": ("timed_out", "timeout", "expired"),
+    "running": RUNNING_TASK_STATUSES,
+    "queued": QUEUED_TASK_STATUSES,
+    "cancelled": ("cancelled", "canceled", "aborted"),
+    "retrying": ("retrying", "retry"),
+    "skipped": ("skipped",),
+}
+
 
 def _task_status_filter(status: Optional[str]):
-    if status == "__running__":
-        return AgentTask.status.in_(RUNNING_TASK_STATUSES)
-    if status == "__queued__":
-        return AgentTask.status.in_(QUEUED_TASK_STATUSES)
+    group = {"__running__": "running", "__queued__": "queued"}.get(status)
+    if status and status.startswith("__display__:"):
+        group = status.removeprefix("__display__:")
+    if group == "degraded":
+        known = tuple(value for values in DISPLAY_TASK_STATUS_GROUPS.values() for value in values)
+        return func.coalesce(func.lower(AgentTask.status), "").not_in(known)
+    if group in DISPLAY_TASK_STATUS_GROUPS:
+        return func.lower(AgentTask.status).in_(DISPLAY_TASK_STATUS_GROUPS[group])
     return AgentTask.status == status
 
 

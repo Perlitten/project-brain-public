@@ -38,6 +38,13 @@ TEST_ACCEPTANCE_PUBLIC_HEX = (
 @pytest.mark.parametrize("display_status, expected", [
     ("__running__", ("running", "in_progress", "started", "indexing", "processing", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending")),
     ("__queued__", ("queued", "pending", "created", "routed", "scheduled", "waiting")),
+    ("__display__:completed", ("completed", "complete", "success", "succeeded", "passed", "done", "ok")),
+    ("__display__:failed", ("failed", "failure", "fail")),
+    ("__display__:error", ("error", "errored")),
+    ("__display__:timed_out", ("timed_out", "timeout", "expired")),
+    ("__display__:cancelled", ("cancelled", "canceled", "aborted")),
+    ("__display__:retrying", ("retrying", "retry")),
+    ("__display__:skipped", ("skipped",)),
 ])
 async def test_list_and_count_task_status_predicates_stay_in_parity(display_status, expected):
     session = AsyncMock()

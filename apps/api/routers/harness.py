@@ -180,10 +180,8 @@ async def list_tasks(status: str | None = None, repo_path: str | None = None,
     safe_page = page if isinstance(page, int) else 1
     q = q if isinstance(q, str) else None
     status_filter = status
-    if display_status == "running":
-        status_filter = "__running__"
-    elif display_status == "queued":
-        status_filter = "__queued__"
+    if isinstance(display_status, str):
+        status_filter = f"__display__:{display_status}"
     tasks = await HarnessStore.list_tasks(status=status_filter, repo_path=repo_path, query=q,
                                           offset=(safe_page - 1) * safe_limit, limit=safe_limit)
     total = await HarnessStore.count_tasks(status=status_filter, repo_path=repo_path, query=q)
