@@ -628,7 +628,10 @@ def _should_abstain(
         # in a candidate path before treating that channel as evidence.
         distinctive = {token.lower() for token in (keywords or []) if len(token) >= 7}
         path_text = " ".join(candidate.item_id.lower() for candidate in lexical)
-        if distinctive and any(token in path_text for token in distinctive):
+        summary_text = " ".join(
+            str(candidate.metadata.get("summary", "")).lower() for candidate in lexical
+        )
+        if distinctive and any(token in f"{path_text} {summary_text}" for token in distinctive):
             return False
         if not distinctive:
             return False
@@ -640,6 +643,12 @@ def _should_abstain(
             return True
         return v2_enabled
     return v2_enabled and float(reranked[0].reranker_score) < 0.15
+
+
+def _lexical_file_candidate(file_obj: File, rank: int) -> ChannelCandidate:
+    """Build the lexical candidate with the file metadata used by abstention."""
+    return ChannelCandidate("lexical", file_obj.path, 1.0 / rank, rank=rank,
+                            metadata={"summary": file_obj.summary or ""})
 
 
 class HybridRetrievalPipeline:
@@ -779,7 +788,7 @@ class HybridRetrievalPipeline:
         timing.symbol_ms = timing.lexical_ms * 0.3
 
         for rank, f in enumerate(lexical_files, 1):
-            candidates_by_channel["lexical"].append(ChannelCandidate("lexical", f.path, 1.0 / rank, rank=rank))
+            candidates_by_channel["lexical"].append(_lexical_file_candidate(f, rank))
         for rank, sym in enumerate(lexical_symbols, 1):
             sym_file_path = symbol_paths.get(sym.id)
             if not sym_file_path:

@@ -587,11 +587,13 @@ class JobQueue:
             "oldest_processing_age_seconds": oldest_processing_age_seconds,
         }
 
-    async def recent_job_ids(self, limit: int = 100) -> list[str]:
+    async def recent_job_ids(self, limit: int = 100, *, offset: int = 0) -> list[str]:
+        batch_size = max(1, min(int(limit), 1000))
+        start = max(0, int(offset))
         values = await self.redis.zrevrange(
             self.index_key,
-            0,
-            max(1, min(int(limit), 1000)) - 1,
+            start,
+            start + batch_size - 1,
         )
         return [value.decode() if isinstance(value, bytes) else str(value) for value in values]
 

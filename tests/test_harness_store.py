@@ -34,6 +34,54 @@ TEST_ACCEPTANCE_PUBLIC_HEX = (
 )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("display_status, expected", [
+    ("__running__", ("running", "in_progress", "started", "indexing", "processing", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending")),
+    ("__queued__", ("queued", "pending", "created", "routed", "scheduled", "waiting")),
+    ("__display__:completed", ("completed", "complete", "success", "succeeded", "passed", "done", "ok")),
+    ("__display__:failed", ("failed", "failure", "fail")),
+    ("__display__:error", ("error", "errored")),
+    ("__display__:timed_out", ("timed_out", "timeout", "expired")),
+    ("__display__:cancelled", ("cancelled", "canceled", "aborted")),
+    ("__display__:retrying", ("retrying", "retry")),
+    ("__display__:skipped", ("skipped",)),
+])
+async def test_list_and_count_task_status_predicates_stay_in_parity(display_status, expected):
+    session = AsyncMock()
+    rows = MagicMock()
+    rows.scalars.return_value.all.return_value = []
+    rows.scalar.return_value = 0
+    session.execute.return_value = rows
+
+    class Factory:
+        async def __aenter__(self):
+            return session
+        async def __aexit__(self, *_args):
+            return None
+
+    with patch("brain.memory.harness_store.async_session_factory", return_value=Factory()):
+        await HarnessStore.list_tasks(status=display_status, repo_path="/repo", query="needle", offset=4, limit=3)
+        await HarnessStore.count_tasks(status=display_status, repo_path="/repo", query="needle")
+
+    statements = [call.args[0] for call in session.execute.await_args_list]
+    assert len(statements) == 2
+    # Check each query independently: joining their SQL hid the old count-only bug.
+    for statement in statements:
+        predicates = statement.whereclause
+        assert predicates is not None
+        compiled = str(predicates.compile(compile_kwargs={"literal_binds": True}))
+        for status in expected:
+            assert f"'{status}'" in compiled
+        assert "agent_tasks.repo_path = '/repo'" in compiled
+        assert "needle" in compiled
+    list_query, count_query = statements
+    assert list_query._limit_clause.value == 3
+    assert list_query._offset_clause.value == 4
+    assert count_query._limit_clause is None
+    assert count_query._offset_clause is None
+
+
+
 @pytest.fixture(autouse=True)
 def _configured_acceptance_public_key(monkeypatch):
     monkeypatch.setenv(

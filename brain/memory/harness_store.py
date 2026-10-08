@@ -11,7 +11,7 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.exc import IntegrityError
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -28,6 +28,32 @@ from brain.database.harness_models import (
 )
 from brain.database.session import async_session_factory
 from brain.workers.db_fencing import assert_current_db_fence
+
+RUNNING_TASK_STATUSES = ("running", "in_progress", "started", "indexing", "processing", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending")
+QUEUED_TASK_STATUSES = ("queued", "pending", "created", "routed", "scheduled", "waiting")
+DISPLAY_TASK_STATUS_GROUPS = {
+    "completed": ("completed", "complete", "success", "succeeded", "passed", "done", "ok"),
+    "failed": ("failed", "failure", "fail"),
+    "error": ("error", "errored"),
+    "timed_out": ("timed_out", "timeout", "expired"),
+    "running": RUNNING_TASK_STATUSES,
+    "queued": QUEUED_TASK_STATUSES,
+    "cancelled": ("cancelled", "canceled", "aborted"),
+    "retrying": ("retrying", "retry"),
+    "skipped": ("skipped",),
+}
+
+
+def _task_status_filter(status: Optional[str]):
+    group = {"__running__": "running", "__queued__": "queued"}.get(status or "")
+    if status and status.startswith("__display__:"):
+        group = status.removeprefix("__display__:")
+    if group == "degraded":
+        known = tuple(value for values in DISPLAY_TASK_STATUS_GROUPS.values() for value in values)
+        return func.coalesce(func.lower(AgentTask.status), "").not_in(known)
+    if group in DISPLAY_TASK_STATUS_GROUPS:
+        return func.lower(AgentTask.status).in_(DISPLAY_TASK_STATUS_GROUPS[group])
+    return AgentTask.status == status
 
 
 class InvalidTransition(ValueError):
@@ -125,13 +151,13 @@ class HarnessStore:
         async with async_session_factory() as session:
             stmt = select(AgentTask).order_by(AgentTask.created_at.desc()).offset(max(0, offset)).limit(limit)
             if status:
-                stmt = stmt.where(AgentTask.status == status)
+                stmt = stmt.where(_task_status_filter(status))
             if repo_path:
                 stmt = stmt.where(AgentTask.repo_path == repo_path)
             if query:
                 from sqlalchemy import or_
                 needle = f"%{query}%"
-                stmt = stmt.where(or_(AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
+                stmt = stmt.where(or_(cast(AgentTask.id, String).ilike(needle), AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
                                       AgentTask.target_agent.ilike(needle), AgentTask.owner_agent.ilike(needle)))
             result = await session.execute(stmt)
             return list(result.scalars().all())
@@ -143,12 +169,12 @@ class HarnessStore:
         async with async_session_factory() as session:
             stmt = select(func.count()).select_from(AgentTask)
             if status:
-                stmt = stmt.where(AgentTask.status == status)
+                stmt = stmt.where(_task_status_filter(status))
             if repo_path:
                 stmt = stmt.where(AgentTask.repo_path == repo_path)
             if query:
                 needle = f"%{query}%"
-                stmt = stmt.where(or_(AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
+                stmt = stmt.where(or_(cast(AgentTask.id, String).ilike(needle), AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
                                       AgentTask.target_agent.ilike(needle), AgentTask.owner_agent.ilike(needle)))
             return int((await session.execute(stmt)).scalar() or 0)
 
@@ -163,7 +189,7 @@ class HarnessStore:
                 stmt = stmt.where(AgentTask.repo_path == repo_path)
             if query:
                 needle = f"%{query}%"
-                stmt = stmt.where(or_(AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
+                stmt = stmt.where(or_(cast(AgentTask.id, String).ilike(needle), AgentTask.title.ilike(needle), AgentTask.goal.ilike(needle),
                                       AgentTask.target_agent.ilike(needle), AgentTask.owner_agent.ilike(needle)))
             rows = (await session.execute(stmt)).all()
             return {str(status): int(count) for status, count in rows}
@@ -920,3 +946,4 @@ class HarnessStore:
                 return raced
             await session.refresh(lease)
             return lease
+
