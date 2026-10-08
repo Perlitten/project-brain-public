@@ -1,6 +1,7 @@
 """Tests for Retrieval v6 P2 two-stage semantic rerank."""
 
 import asyncio
+import pytest
 
 from brain.retrieval.reranker import (
     RERANKER_VERSION,
@@ -76,3 +77,25 @@ def test_cache_key_namespaced_by_version_and_stage():
     r2 = asyncio.run(rerank_top_k(pool, "t", "feature", repo_hash="r", two_stage=False, use_cache=False))
     assert r1.cache_key != r2.cache_key
     assert RERANKER_VERSION in r1.cache_key
+
+
+@pytest.mark.parametrize("two_stage", [False, True])
+def test_snapshot_cache_binds_full_source_revision(monkeypatch, two_stage):
+    cached = {}
+    monkeypatch.setattr("brain.retrieval.reranker._load_cache", cached.get)
+    monkeypatch.setattr("brain.retrieval.reranker._save_cache", lambda key, result: cached.__setitem__(key, result))
+    revisions = ["snapshot:" + "a" * 40 + ":" + "b" * 64,
+                 "snapshot:" + "c" * 40 + ":" + "b" * 64,
+                 "snapshot:" + "c" * 40 + ":" + "d" * 64]
+    pool = [_c("src/first.py", 0.9), _c("src/second.py", 0.8)]
+    keys = []
+    for revision in revisions:
+        result = asyncio.run(rerank_top_k(pool, "task", "feature", repo_hash="r",
+                                         commit_hash=revision, two_stage=two_stage))
+        assert not result.cache_hit
+        keys.append(result.cache_key)
+    assert len(set(keys)) == len(revisions)
+    repeat = asyncio.run(rerank_top_k(pool, "task", "feature", repo_hash="r",
+                                     commit_hash=revisions[-1], two_stage=two_stage))
+    assert repeat.cache_hit
+    assert repeat.cache_key == keys[-1]

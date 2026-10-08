@@ -181,8 +181,9 @@ class RetrievalService:
         repository = dict(raw.get("repository_scope") or repository)
         if symbol_candidates:
             repository["fast_route"] = "symbol"
-        if raw.get("vector_status") not in {None, "ok"}:
-            degraded.append(f"vector:{raw['vector_status']}")
+        vector_status = raw.get("vector_status")
+        if vector_status is not None and str(vector_status).strip().casefold() != "ok":
+            degraded.append(f"vector:{vector_status}")
         vector_candidates = self._normalize(raw, candidate_budget)
         # Extract query identifiers for file-name bonus in merge.
         _STOP = {
