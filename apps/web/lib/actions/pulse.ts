@@ -13,6 +13,8 @@ export interface Pulse {
   healthy?: boolean;
   /** Services that aren't healthy, by name. */
   down: string[];
+  /** Scheduled jobs reported overdue by Brain, distinct from a service outage. */
+  warnings?: string[];
   version?: string;
   build?: string;
   llm?: string;
@@ -42,6 +44,7 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
   const down = Object.entries(details)
     .filter(([, v]) => o(v).status !== "healthy")
     .map(([k]) => k);
+  const stale = o(health.scheduler).stale;
   const run = o((Array.isArray(indexing?.runs) ? indexing.runs : [])[0]);
   const steps = (Array.isArray(setup?.steps) ? setup.steps : []).map(o);
   const provider = o(steps.find((st) => st.id === "provider"));
@@ -52,6 +55,7 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
     latencyMs,
     healthy: health.status === "ok",
     down,
+    warnings: Array.isArray(stale) ? stale.filter((job): job is string => typeof job === "string") : [],
     version: s(o(version).version) ?? s(health.version),
     build: sha && sha !== "unknown" ? sha.slice(0, 7) : undefined,
     llm: s(o(provider.llm).provider),

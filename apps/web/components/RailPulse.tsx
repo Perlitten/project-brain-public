@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getPulse, type Pulse } from "@/lib/actions/pulse";
+import { pulseHeadline } from "@/lib/pulse-presentation";
 
 const POLL_MS = 20_000;
 // The last reading, so a reload shows it at once instead of "Checking…"
@@ -72,7 +73,8 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
   }
 
   const tone = !pulse.reachable ? "bad" : pulse.healthy ? "ok" : "warn";
-  const headline = !pulse.reachable ? "Not answering" : pulse.healthy ? "Healthy" : `${pulse.down.join(", ")} down`;
+  const headline = pulseHeadline(pulse);
+  const warningOnly = pulse.reachable && !pulse.healthy && pulse.down.length === 0;
   const memory = !pulse.index
     ? "Never indexed"
     : pulse.index.status === "completed"
@@ -83,13 +85,14 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
     pulse.version ? `Brain v${pulse.version}${pulse.build ? ` (${pulse.build})` : ""}` : "",
     pulse.llm || pulse.embedding ? `Models: ${pulse.llm ?? "—"} / ${pulse.embedding ?? "—"}` : "",
     !pulse.reachable ? "Retrying every 20 s" : "",
+    pulse.warnings?.length ? `Overdue jobs: ${pulse.warnings.join(", ")}` : warningOnly ? "Brain reported a warning; review scheduled jobs" : "",
   ]
     .filter(Boolean)
     .join(" · ");
 
   return (
     <div className={`vitals tone-${tone}`}>
-      <Link href={withRepo("/")} className="vitals__line vitals__line--head" title={tip || undefined}>
+      <Link href={withRepo(warningOnly ? "/settings" : "/")} className="vitals__line vitals__line--head" title={tip || undefined}>
         <span className="vitals__beat" aria-hidden="true" />
         <span className="vitals__text">{headline}</span>
         {pulse.reachable && pulse.latencyMs !== undefined && <span className="vitals__ms num">{pulse.latencyMs} ms</span>}
