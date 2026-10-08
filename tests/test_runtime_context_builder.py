@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -55,6 +56,104 @@ async def test_runtime_context_build_preserves_content_only_evidence(monkeypatch
     payload = await builder.build(result.query, "/app")
     assert payload["status"] == "ok"
     assert payload["slices"][0]["content"].startswith("The soft deletion")
+
+
+@pytest.mark.asyncio
+async def test_named_ui_style_context_preserves_nearby_scoped_stylesheet(monkeypatch):
+    result = RetrievalResult(query="Fix Bubble CSS clipping", intent="runtime_context",
+                             repository={"repository_id": 42, "repository_path": "/app",
+                                         "freshness": {"status": "current"}},
+                             candidates=[RetrievalCandidate(path="ui/cards/Bubble.tsx")]
+                             + [RetrievalCandidate(path=f"src/noise{i}.py") for i in range(11)])
+    session = AsyncMock()
+    response = MagicMock()
+    response.scalars.return_value.all.return_value = ["backend/wrong.css", "ui/theme.scss", "ui/cards/Bubble.css"]
+    session.execute.return_value = response
+    factory = MagicMock()
+    factory.return_value.__aenter__.return_value = session
+    monkeypatch.setattr("brain.context.runtime_context_builder.async_session_factory", factory)
+    builder = RuntimeContextBuilder(_Retrieval(result))
+    builder._load_slices = AsyncMock(return_value=[
+        {"path": "ui/cards/Bubble.tsx", "content": "Bubble component", "range": [1, 10]},
+        {"path": "ui/cards/Bubble.css", "content": "overflow: visible;", "range": [1, 10]},
+    ])
+    monkeypatch.setattr("brain.context.context_cache.get_cached_context", lambda *_: None)
+    monkeypatch.setattr("brain.context.context_cache.put_cached_context", lambda *a, **k: None)
+    monkeypatch.setattr("brain.context.runtime_context_builder.select_relevant_normative_memory", AsyncMock(return_value=[]))
+    payload = await builder.build(result.query, "/app")
+    assert payload["status"] == "ok"
+    assert [c["path"] for c in payload["candidates"]][:2] == ["ui/cards/Bubble.tsx", "ui/cards/Bubble.css"]
+    assert len(result.candidates) == 12 and len(payload["candidates"]) == 6
+    statement = session.execute.await_args.args[0]
+    assert "files.repository_id = 42" in str(statement.compile(compile_kwargs={"literal_binds": True}))
+
+
+@pytest.mark.parametrize("query", ["Fix Bubble API serialization", "Fix Missing CSS clipping"])
+@pytest.mark.asyncio
+async def test_style_companion_requires_style_intent_and_a_named_component(monkeypatch, query):
+    result = RetrievalResult(query=query, intent="runtime_context", repository={"repository_id": 42},
+                             candidates=[RetrievalCandidate(path="ui/Bubble.tsx")])
+    factory = MagicMock()
+    monkeypatch.setattr("brain.context.runtime_context_builder.async_session_factory", factory)
+    await RuntimeContextBuilder()._include_style_companion(result)
+    factory.assert_not_called()
+    assert len(result.candidates) == 1
+
+
+@pytest.mark.parametrize("query,paths,expected", [
+    ("Fix Bubble global CSS clipping",
+     ["ui/cards/access.css", "ui/globals.css"], "ui/globals.css"),
+    ("Fix Bubble CSS clipping",
+     ["backend/wrong.css", "ui/theme.scss"], "ui/theme.scss"),
+])
+@pytest.mark.asyncio
+async def test_style_companion_prefers_named_stylesheet_then_directory(monkeypatch, query, paths, expected):
+    result = RetrievalResult(query=query, intent="runtime_context", repository={"repository_id": 42},
+                             candidates=[RetrievalCandidate(path="ui/cards/Bubble.tsx")])
+    session = AsyncMock()
+    response = MagicMock()
+    response.scalars.return_value.all.return_value = paths
+    session.execute.return_value = response
+    factory = MagicMock()
+    factory.return_value.__aenter__.return_value = session
+    monkeypatch.setattr("brain.context.runtime_context_builder.async_session_factory", factory)
+    await RuntimeContextBuilder()._include_style_companion(result)
+    assert result.candidates[1].path == expected
+
+
+@pytest.mark.asyncio
+async def test_runtime_cache_uses_verified_revision_and_respects_smaller_budget(monkeypatch):
+    from brain.context.context_cache import clear_context_cache
+
+    clear_context_cache()
+    result = RetrievalResult(query="find invoice route", intent="runtime_context",
+                             repository={"repository_path": "/indexed/cache-fixture",
+                                         "freshness": {"status": "current", "source_head_commit": "r1"}},
+                             candidates=[RetrievalCandidate(path="src/invoice.py")])
+    builder = RuntimeContextBuilder(_Retrieval(result))
+    builder._load_slices = AsyncMock(return_value=[
+        {"path": "src/invoice.py", "range": [1, 10], "content": "invoice route " + "x" * 1000},
+    ])
+    monkeypatch.setattr("brain.context.runtime_context_builder.select_relevant_normative_memory", AsyncMock(return_value=[]))
+    try:
+        first = await builder.build(result.query, "/indexed/cache-fixture")
+        assert first["status"] == "ok"
+        repeat = await builder.build(result.query, "/indexed/cache-fixture")
+        assert repeat["_cache_hit"]
+        assert builder._load_slices.await_count == 1
+        small = await builder.build(result.query, "/indexed/cache-fixture", max_tokens=100)
+        assert not small.get("_cache_hit")
+        assert len(json.dumps(small, ensure_ascii=False, separators=(",", ":")).encode()) <= 400
+        result.repository["freshness"]["source_head_commit"] = "r2"
+        changed = await builder.build(result.query, "/indexed/cache-fixture")
+        assert not changed.get("_cache_hit")
+        assert builder._load_slices.await_count == 3
+        result.repository["freshness"]["status"] = "stale"
+        monkeypatch.setattr("brain.context.runtime_context_builder._queue_auto_reindex", AsyncMock(return_value=False))
+        stale = await builder.build(result.query, "/indexed/cache-fixture")
+        assert stale["status"] == "stale_blocked" and not stale.get("_cache_hit")
+    finally:
+        clear_context_cache()
 
 
 @pytest.mark.asyncio
