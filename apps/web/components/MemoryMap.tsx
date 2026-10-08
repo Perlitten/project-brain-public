@@ -355,7 +355,7 @@ export function MemoryMap({
     [modules],
   );
   const relevant = totals.current + totals.outdated + totals.missing;
-  const pct = relevant ? (totals.current / relevant) * 100 : 0;
+  const pct = relevant ? totals.current === relevant ? 100 : Math.min(99.9, Math.floor(totals.current / relevant * 1000) / 10) : 0;
   const focus = active === null ? null : modules[active];
   const focusRelevant = focus ? focus.current + focus.outdated + focus.missing : 0;
 
@@ -369,12 +369,12 @@ export function MemoryMap({
               <span className="mono">{focus.name}</span>
             </h2>
             <p className="map__hero num">
-              <Odometer value={String(focusRelevant ? Math.round((focus.current / focusRelevant) * 100) : 100)} />
+              <Odometer value={focusRelevant ? String(focus.current === focusRelevant ? 100 : Math.min(99.9, Math.floor(focus.current / focusRelevant * 1000) / 10)) : "—"} />
               <span className="map__hero-unit">%</span>
             </p>
             <p className="map__lede">
               {focus.outdated + focus.missing === 0
-                ? "Brain knows this part of the code completely."
+                ? "All indexed pieces in this module are current."
                 : `${fmt(focus.outdated + focus.missing)} of ${fmt(focusRelevant)} pieces here need a refresh.`}
             </p>
           </>
@@ -388,8 +388,7 @@ export function MemoryMap({
               <span className="map__hero-unit">%</span>
             </p>
             <p className="map__lede">
-              Each square is a slice of your code. Flashes are Brain recalling what it remembers. Point at any square to
-              see which part of the code it is.
+              Each square represents indexed code. Point at a square or select a module to inspect its coverage.
             </p>
           </>
         )}

@@ -1,4 +1,5 @@
 import { Term } from "@/components/Term";
+import { SectionNav } from "@/components/SectionNav";
 import { Chip, EmptyState, JobChip, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
 import { getPagedAgentRuns } from "@/lib/data";
 import { getListQuery } from "@/lib/list-query";
@@ -28,6 +29,7 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
           </>
         }
       />
+      <SectionNav label="Activity views" items={[{ href: "/logs", label: "Activity" }, { href: "/runs", label: "Agent runs", active: true }]} />
       <div className="stats">
         <Stat label="Tasks" value={String(result.paging.total)} note="matching the current filters" />
         <div className="tone-ok">

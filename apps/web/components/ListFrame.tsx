@@ -63,6 +63,13 @@ function ListBody({
   const pathname = usePathname();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  // A debounced search can fire after another filter has already committed.
+  const committedParams = useRef(params.toString());
+  const pendingParams = useRef<string | null>(null);
+  useEffect(() => {
+    committedParams.current = params.toString();
+    if (!pending) pendingParams.current = null;
+  }, [pending, params]);
   const paramQ = params.get("q") ?? "";
   const [q, setQ] = useState(paramQ);
   const draftQuery = useRef<string | null>(null);
@@ -81,11 +88,12 @@ function ListBody({
     }
   }, [paramQ]);
   const navigate = (changes: Record<string, string | null>, push = false) => {
-    const next = new URLSearchParams(params.toString());
+    const next = new URLSearchParams(pendingParams.current ?? committedParams.current);
     for (const [key, value] of Object.entries(changes)) {
       if (value === null || value === "") next.delete(key); else next.set(key, value);
     }
     const href = `${pathname}${next.size ? `?${next}` : ""}`;
+    pendingParams.current = next.toString();
     setTouched(true);
     if (paging) startTransition(() => push ? router.push(href, { scroll: false }) : router.replace(href, { scroll: false }));
     else if (push) window.history.pushState(null, "", href);
@@ -156,7 +164,7 @@ function ListBody({
     <div className="lf__empty">
       <p>
         No {noun[1]} match{needle ? ` “${q.trim()}”` : ""}
-        {f ? ` with ${facet?.label.toLowerCase() ?? "filter"} “${facets.find((x) => x.value === f)?.label ?? f}”` : ""}.
+        {f ? ` with ${facet?.label.toLowerCase() ?? "filter"} “${facets.find((x) => x.value === f)?.label ?? facet?.values?.find((x) => x.value === f)?.label ?? f}”` : ""}.
       </p>
       <button type="button" className="btn btn--neutral btn--sm" onClick={clear}>
         Clear filters

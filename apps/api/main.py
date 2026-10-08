@@ -13,7 +13,7 @@ from starlette.responses import Response
 from apps.api.audit_middleware import AuditLogMiddleware
 from apps.api.request_id_middleware import RequestIdMiddleware
 from apps.api.request_size_middleware import RequestSizeLimitMiddleware
-from apps.api.routers import telegram_bridge, core, harness, jobs, scheduler, setup, drift, graph_v2, coupling, impact, remediation, workspace, portfolio, freshness, lab, experiments, ledger, control, execution, routing, shadow, operations, improvement, autonomy, audit, admin, web, app_settings
+from apps.api.routers import telegram_bridge, core, harness, jobs, scheduler, setup, drift, graph_v2, coupling, impact, remediation, workspace, portfolio, freshness, lab, experiments, ledger, control, execution, routing, shadow, operations, improvement, autonomy, audit, admin, web, quality, app_settings
 from brain.config.paths import allowed_repo_roots
 from brain.config.settings import settings
 from brain.database.session import close_database_connections, init_db
@@ -179,6 +179,7 @@ app.include_router(jobs.router)
 app.include_router(scheduler.router)
 # JSON read API for the web UI (apps/web).
 app.include_router(web.router)
+app.include_router(quality.router)
 app.include_router(harness.router)
 app.include_router(telegram_bridge.router)
 app.include_router(drift.router)

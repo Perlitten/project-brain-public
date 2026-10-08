@@ -42,6 +42,65 @@ function withEnv(values, run) {
 
 const basic = value => `Basic ${Buffer.from(value).toString('base64')}`;
 
+test('owner navigation has six destinations and nested deep links activate their parent', () => {
+  const nav = load('lib/nav.ts');
+  assert.equal(nav.primaryNavItems.length, 6);
+  assert.equal(nav.activeSection('/indexing'), 'projects');
+  assert.equal(nav.activeSection('/packs/1504'), 'memory');
+  assert.equal(nav.activeSection('/reranker'), 'quality');
+  assert.equal(nav.activeSection('/admin'), 'settings');
+  assert.equal(nav.locate('/memory-other'), null);
+  assert.ok(nav.allNavItems.some(item => item.href === '/setup'));
+  assert.equal(nav.withProject('/quality', '3'), '/quality?repo=3');
+  assert.equal(nav.withProject('/packs?view=fresh', '3'), '/packs?view=fresh&repo=3');
+  assert.equal(nav.withProject('/?repo=3&period=30d', ''), '/?period=30d');
+});
+
+test('dashboard request scope fails closed and distinguishes unavailable measurements from zero', async () => {
+  const calls = [];
+  let unavailable = false;
+  const dashboard = load('lib/dashboard.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: true, brainFetch: async path => {
+      calls.push(path);
+      return unavailable ? { unavailable: true, total: null } : { total: 0 };
+    } },
+  });
+  assert.equal(await dashboard.getRequestTelemetry('7d', 0), null);
+  assert.equal(calls.length, 0);
+  assert.equal((await dashboard.getRequestTelemetry('24h', 3)).total, 0);
+  assert.equal(calls[0], '/api/web/dashboard?period=24h&repository_id=3');
+  await dashboard.getRequestTelemetry('30d');
+  assert.equal(calls[1], '/api/web/dashboard?period=30d');
+  unavailable = true;
+  assert.equal(await dashboard.getRequestTelemetry('7d'), null);
+  assert.equal(dashboard.measuredNumber(0), '0');
+  assert.equal(dashboard.measuredNumber(null), '—');
+  assert.equal(dashboard.dashboardPeriod('unsupported'), '7d');
+});
+
+test('checked but unmerged decisions are not shown as agreed', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async request => request.startsWith('/api/web/decisions') ? {
+        decisions: [
+          { id: 1, title: 'Pending merge', status: 'validated_unmerged' },
+          { id: 2, title: 'Approved', status: 'accepted' },
+        ],
+        total: 2, page: 1, page_size: 20,
+        facets: { status: { validated_unmerged: 1, accepted: 1 } },
+      } : null,
+    },
+  });
+  const result = await data.getPagedDecisions(undefined);
+  assert.equal(result.items[0].status, 'validated_unmerged');
+  assert.equal(result.items[1].status, 'accepted');
+  assert.equal(result.paging.facets.validated_unmerged, 1);
+});
+
 test('reindex refuses an explicitly empty repository path but permits a scoped path', async () => {
   const calls = [];
   const jobs = load('lib/actions/jobs.ts', {

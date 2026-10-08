@@ -1,0 +1,10 @@
+.quality-evidence { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.quality-evidence__scope { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-2); }
+.quality-evidence__metrics { display: flex; gap: 20px; flex-wrap: wrap; }
+.quality-evidence__metrics > div { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 6px; }
+.quality-evidence__metrics span { color: var(--text-2); }
+.quality-evidence__metrics strong { font-size: 28px; font-weight: 500; color: var(--info-fg); }
+.quality-evidence__metrics small, .quality-evidence__meta { font-size: 12px; line-height: 1.6; color: var(--text-3); }
+.quality-evidence__meta code { overflow-wrap: anywhere; }
+.quality-evidence__details { display: flex; flex-direction: column; gap: 8px; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.quality-evidence__limit { padding: 12px; border-left: 2px solid var(--warn-line); color: var(--text-2); font-size: 12px; line-height: 1.6; background: var(--surface-rail); }

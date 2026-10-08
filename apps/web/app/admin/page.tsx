@@ -1,6 +1,7 @@
 import { IdentityList, NewIdentityForm } from "@/components/access/Access";
 import { Term } from "@/components/Term";
 import { EmptyState, PageHead, Panel, Stat, fmt } from "@/components/ui";
+import { SectionNav } from "@/components/SectionNav";
 import { getAccessView } from "@/lib/data";
 import { getAgentTarget } from "@/lib/setup-view";
 
@@ -12,6 +13,7 @@ export default async function Admin() {
   const target = { apiUrl: agent.publicApiUrl, repoPath: agent.repoPath };
   return (
     <>
+      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings" }, { href: "/admin", label: "Access", active: true }, { href: "/mcp", label: "Agent tools" }]} />
       <PageHead
         eyebrow="Access"
         title="Who and what can use Brain"

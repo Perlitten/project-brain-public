@@ -115,7 +115,7 @@ export interface ContextPack {
 export interface Decision {
   id: string;
   title: string;
-  status: "accepted" | "proposed" | "superseded";
+  status: "accepted" | "proposed" | "superseded" | "validated_unmerged";
   scope: string;
   recordedAt: string;
   summary: string;

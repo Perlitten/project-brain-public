@@ -40,6 +40,45 @@ router = APIRouter(
     dependencies=[Depends(require_api_key), Depends(require_scope(WEB_READ_SCOPE))],
 )
 
+
+@router.get("/dashboard")
+async def web_dashboard(period: str = Query("24h"), repository_id: int | None = Query(None, ge=1)) -> dict[str, Any]:
+    from apps.api.telemetry import dashboard_metrics
+    days = {"24h": 1, "7d": 7, "30d": 30}.get(period)
+    if days is None:
+        raise HTTPException(status_code=400, detail="period must be one of 24h, 7d, 30d")
+    if repository_id is not None:
+        await _resolve_repository(repository_id)
+    try:
+        result = await dashboard_metrics(period_days=days, repository_id=repository_id)
+    except Exception:
+        # Dashboard observability must distinguish unavailable telemetry from an empty measured period.
+        result = {
+            "collection": {"collection_started_at": None, "until": None, "sample_count": None, "status": "unavailable"},
+            "requests": {"total": None, "successes": None, "failures": None, "success_rate": None, "latency_ms": {"p50": None, "p95": None}, "clients": None, "by_operation": {}},
+            "search": {"total": None, "successes": None, "failures": None, "sample_count": None, "latency_ms": {"p50": None, "p95": None}},
+            "context": {"total": None, "successes": None, "failures": None, "sample_count": None, "latency_ms": {"p50": None, "p95": None}},
+            "series": [],
+        }
+        unavailable = True
+    else:
+        unavailable = False
+    result["scope"] = {"repository_id": repository_id, "mode": "repository" if repository_id is not None else "all"}
+    result["collection_started_at"] = result["collection"]["collection_started_at"]
+    result["observed_at"] = result["collection"]["until"]
+    result["period"] = period
+    result["partial"] = bool(result["collection"].get("partial", True))
+    result["unavailable"] = unavailable
+    result["total"] = result["requests"]["total"]
+    result["failed"] = result["requests"]["failures"]
+    result["clients"] = result["requests"]["clients"]
+    result["context_total"] = result["context"]["total"]
+    result["context_success"] = result["context"]["successes"]
+    result["latency"] = {op: {"samples": data["sample_count"], "p50_ms": data["latency_ms"]["p50"], "p95_ms": data["latency_ms"]["p95"]} for op, data in (("search", result["search"]), ("context", result["context"]))}
+    result["buckets"] = [{"at": item["bucket"], "total": item["requests"], "failed": item["failures"], "p95_ms": item.get("p95_ms"), "partial": item["partial"]} for item in result["series"]]
+    result["recent_requests"] = result.get("recent_requests", [])
+    return result
+
 MODULE_GRAPH_EDGE_LIMIT = 50_000
 ROOT_MODULE = "(root)"
 

@@ -7,7 +7,7 @@ import type { Tone } from "@/lib/types";
 import type { ActionResult, ActionsMode } from "@/lib/actions/types";
 import { startBenchmark, startHealthCheck, startInsights, startReindex, startSelfDiagnosis } from "@/lib/actions/jobs";
 import { verifyProviders } from "@/lib/actions/setup";
-import { allNavItems, locate, navGroups } from "@/lib/nav";
+import { activeSection, allNavItems, locate, navGroups, withProject } from "@/lib/nav";
 import { ActionsProvider, LOCK_REASON, Toaster, dismissToast, report, toast } from "./act";
 import { Ambient } from "./Ambient";
 import { BrandMark, Icon, type IconName } from "./Icon";
@@ -26,8 +26,9 @@ const isActive = (href: string, path: string) => (href === "/" ? path === "/" : 
 export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; demo: boolean; mode: ActionsMode; children: ReactNode }) {
   const path = usePathname();
   const params = useSearchParams();
-  const allowsAllRepos = ["packs", "memory", "runs", "logs"].includes(locate(path)?.item.key ?? "");
-  const repoSlug = params.get("repo") ?? (allowsAllRepos ? undefined : repos[0]?.slug);
+  const page = locate(path)?.item;
+  const allowsAllRepos = ["command", "projects", "packs", "memory", "runs", "logs"].includes(page?.key ?? "");
+  const repoSlug = params.get("repo") ?? (page?.repoScoped && !allowsAllRepos ? repos[0]?.slug : undefined);
   const repo = repos.find((r) => r.slug === repoSlug);
   const [drawer, setDrawer] = useState(false);
   // Icons-only rail, remembered per browser. Medium screens get it from CSS.
@@ -82,10 +83,7 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
 
   const withRepo = useCallback(
     (href: string, slug = repo?.slug) => {
-      const [pathname, query = ""] = href.split("?");
-      const params = new URLSearchParams(query);
-      if (slug && locate(pathname)?.item.repoScoped) params.set("repo", slug); else params.delete("repo");
-      return `${pathname}${params.size ? `?${params}` : ""}`;
+      return withProject(href, slug);
     },
     [repo?.slug, repos],
   );
@@ -122,7 +120,7 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
         Skip to content
       </a>
       <aside ref={rail} className="rail" aria-label="Main navigation" inert={mobile && !drawer} aria-hidden={mobile && !drawer ? true : undefined}>
-        <Link className="rail__brand" href={withRepo("/")} title="Project Brain — overview">
+        <Link className="rail__brand" href={withRepo("/")} title="Project Brain — dashboard">
           <BrandMark size={30} />
           <span className="rail__word">
             Project <b>Brain</b>
@@ -192,10 +190,10 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
             </button>
             {repoMenu && (
               <ul className="repo__menu pop" role="listbox" aria-label="Switch repository">
-                {allowsAllRepos && <li role="option" aria-selected={!repoSlug}><Link href={withRepo(path, "")} className={!repoSlug ? "is-on" : ""}>All repositories</Link></li>}
+                {allowsAllRepos && <li role="option" aria-selected={!repoSlug}><Link href={withRepo(`${path}${params.get("period") ? `?period=${params.get("period")}` : ""}`, "")} className={!repoSlug ? "is-on" : ""}>All projects</Link></li>}
                 {repos.map((r, i) => (
                   <li key={r.slug} role="option" aria-selected={r.slug === repo?.slug} style={{ "--i": i } as CSSProperties}>
-                    <Link href={withRepo(path, r.slug)} className={r.slug === repo?.slug ? "is-on" : ""}>
+                    <Link href={withRepo(`${path}${params.get("period") ? `?period=${params.get("period")}` : ""}`, r.slug)} className={r.slug === repo?.slug ? "is-on" : ""}>
                       <span className={`dot tone-${r.tone}`} aria-hidden="true" />
                       <span className="repo__name">{r.name}</span>
                       <span className="repo__status">{r.status}</span>
@@ -265,7 +263,7 @@ function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: stri
         <div className="nav__group" key={g.label}>
           <p className="nav__label">{g.label}</p>
           {g.items.map((item) => {
-            const on = isActive(item.href, path);
+            const on = activeSection(path) === item.key;
             return (
               <Link
                 key={item.key}
@@ -330,9 +328,11 @@ function Palette({
   const [sel, setSel] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => {
     const d = dialog.current;
     if (d && !d.open) d.showModal();
+    searchInput.current?.focus();
     return () => { if (d?.open) d.close(); };
   }, []);
 
@@ -401,6 +401,7 @@ function Palette({
         <div className="palette__field">
           <Icon name="search" size={18} />
           <input
+            ref={searchInput}
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}

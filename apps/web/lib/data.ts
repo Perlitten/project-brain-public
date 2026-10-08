@@ -284,7 +284,7 @@ function coverageMeters(o: Json): Meter[] {
     const have = Math.max(0, eligible - missing);
     meters.push({
       label: "Searchable",
-      value: `${((have / eligible) * 100).toFixed(1)}%`,
+      value: `${(have === eligible ? 100 : Math.min(99.9, Math.floor(have / eligible * 1000) / 10)).toFixed(1)}%`,
       parts: [
         { tone: "filled", count: have, text: `${fmtN(have)} searchable` },
         { tone: "missing", count: missing, text: `${fmtN(missing)} not yet` },
@@ -716,6 +716,7 @@ export const getContextPacks = async (): Promise<ContextPack[]> => {
 
 function decisionStatus(v: unknown): Decision["status"] {
   const s = str(v).toLowerCase();
+  if (s === "validated_unmerged") return "validated_unmerged";
   if (["proposed", "draft", "pending"].includes(s)) return "proposed";
   if (["superseded", "deprecated", "historical", "replaced", "inactive", "rejected"].includes(s)) return "superseded";
   return "accepted";
@@ -1039,7 +1040,7 @@ export const getSetupSteps = async (): Promise<SetupStep[]> => {
   });
 };
 
-export const getReranker = async (): Promise<RerankerStatus> => {
+export const getReranker = async (slug?: string | null): Promise<RerankerStatus> => {
   if (!apiConfigured) return mock.reranker;
   const empty: RerankerStatus = {
     model: "—",
@@ -1053,7 +1054,7 @@ export const getReranker = async (): Promise<RerankerStatus> => {
     available: false,
   };
   return live(empty, async () => {
-    const repo = pickRepo(await fetchRepos());
+    const repo = pickRepo(await fetchRepos(), slug);
     if (!repo?.path) return null;
     const data = await brainFetch<Json>(`/late-interaction/status?repo_path=${encodeURIComponent(repo.path)}`);
     if (!data) return null;

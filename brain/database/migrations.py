@@ -46,6 +46,8 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_context_pack_repo_scope(conn)
     await _ensure_repository_and_symbol_indexes(conn)
     await _ensure_audit_request_id_column(conn)
+    await _ensure_request_telemetry_table(conn)
+    await _ensure_telemetry_state_table(conn)
     await _ensure_memory_learnings_table(conn)
     await _backfill_memory_repo_scope(conn)
     pgvector_ready = await _ensure_pgvector_extension(conn)
@@ -606,6 +608,40 @@ async def _ensure_audit_request_id_column(conn: AsyncConnection) -> None:
             await conn.execute(text(ddl))
         except Exception as exc:
             logger.warning(f"Could not apply audit request_id migration ({ddl}): {exc}")
+
+
+async def _ensure_request_telemetry_table(conn: AsyncConnection) -> None:
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS brain_request_telemetry (
+            id BIGSERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            operation VARCHAR(32) NOT NULL,
+            surface VARCHAR(16) NOT NULL DEFAULT 'http',
+            repository_id INTEGER NULL,
+            repository_path VARCHAR(1024) NULL,
+            principal_name VARCHAR(128) NOT NULL,
+            request_id VARCHAR(64) NULL,
+            outcome VARCHAR(32) NOT NULL,
+            latency_ms DOUBLE PRECISION NOT NULL
+        )
+    """))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brain_request_telemetry_created_at ON brain_request_telemetry (created_at)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brain_request_telemetry_operation ON brain_request_telemetry (operation)"))
+    await conn.execute(text("ALTER TABLE brain_request_telemetry ADD COLUMN IF NOT EXISTS surface VARCHAR(16) NOT NULL DEFAULT 'http'"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brain_request_telemetry_repo_time ON brain_request_telemetry (repository_id, created_at)"))
+
+
+async def _ensure_telemetry_state_table(conn: AsyncConnection) -> None:
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS brain_telemetry_state (
+            id SMALLINT PRIMARY KEY,
+            started_at TIMESTAMPTZ NOT NULL
+        )
+    """))
+    await conn.execute(text("""
+        INSERT INTO brain_telemetry_state (id, started_at)
+        VALUES (1, now()) ON CONFLICT (id) DO NOTHING
+    """))
 
 
 async def _ensure_memory_learnings_table(conn: AsyncConnection) -> None:

@@ -1,4 +1,5 @@
 import { Term } from "@/components/Term";
+import { SectionNav } from "@/components/SectionNav";
 import { Chip, EmptyState, JobChip, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
 import { getCorpus, getPagedIndexRuns } from "@/lib/data";
 import { getListQuery } from "@/lib/list-query";
@@ -34,6 +35,7 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
           </>
         }
       />
+      <SectionNav label="Project views" items={[{ href: "/projects", label: "Projects" }, { href: "/indexing", label: "Indexing", active: true }, { href: "/graph", label: "Code map" }, { href: "/setup", label: "Connection" }]} />
       <div className="stats">
         <Stat label="Files in last completed read on this page" value={last ? fmt(last.files) : "—"} note={result.available === false ? "index history unavailable" : last ? `took ${last.duration}` : "no completed run on this page"} />
         <Stat label="Pieces stored" value={corpus.available === false ? "—" : fmt(corpus.chunks)} note={corpus.available === false ? "indexing totals unavailable" : "searchable slices across the repository"} />

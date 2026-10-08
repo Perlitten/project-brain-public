@@ -1,6 +1,11 @@
 import sys
+import asyncio
 from pathlib import Path
 from typing import List, Optional
+from functools import wraps
+from inspect import signature
+from time import perf_counter
+from uuid import uuid4
 from loguru import logger
 
 import mcp.types as _mcp_types
@@ -31,6 +36,67 @@ if str(PROJECT_ROOT) not in sys.path:
 ASK_RETRIEVAL_LIMIT = 10
 
 mcp = FastMCP("project-brain-mcp-server")
+
+
+def _mcp_outcome(result: object, operation: str) -> str:
+    from apps.api.request_observation import classify_result
+    return classify_result(result, operation)
+
+
+def _repository_path_from_result(result: object, requested: object, operation: str = "context") -> str | None:
+    if isinstance(result, dict):
+        scope = result.get("repo") or result.get("repository_scope")
+        if isinstance(scope, dict) and isinstance(scope.get("path"), str):
+            return scope["path"]
+        if isinstance(scope, dict) and isinstance(scope.get("repository_path"), str):
+            return scope["repository_path"]
+        repository = result.get("repository")
+        if isinstance(repository, dict):
+            for key in ("repository_path", "requested_path", "path"):
+                if isinstance(repository.get(key), str) and repository[key]:
+                    return repository[key]
+    return str(requested) if requested else str(PROJECT_ROOT) if operation == "context" else None
+
+
+def _mcp_telemetry(operation: str):
+    """Record direct MCP attempts without changing tool signatures or failures."""
+    def decorate(function):
+        original_signature = signature(function)
+
+        @wraps(function)
+        async def wrapped(*args, **kwargs):
+            bound = original_signature.bind_partial(*args, **kwargs)
+            requested = bound.arguments.get("repo_path")
+            request_id = str(uuid4())
+            started = perf_counter()
+            result = None
+            outcome = "failed"
+            try:
+                result = await function(*args, **kwargs)
+                outcome = _mcp_outcome(result, operation)
+                return result
+            except BaseException:
+                outcome = "failed"
+                raise
+            finally:
+                latency_ms = (perf_counter() - started) * 1000
+                try:
+                    from apps.api.telemetry import record_request, repository_id_for_path
+
+                    repository_path = _repository_path_from_result(result, requested, operation)
+                    async def persist():
+                        repository_id = await repository_id_for_path(repository_path)
+                        await record_request(operation=operation, surface="mcp", repository_id=repository_id,
+                                             repository_path=repository_path,
+                                             principal_name="mcp:unattributed", request_id=request_id,
+                                             outcome=outcome, latency_ms=latency_ms)
+                    await asyncio.wait_for(persist(), timeout=0.5)
+                except BaseException:
+                    # Observability must never break an MCP tool or mask its error.
+                    pass
+
+        return wrapped
+    return decorate
 
 
 def _record_external_client(client_info: Optional[_mcp_types.Implementation]) -> None:
@@ -139,6 +205,7 @@ async def ask_project(query: str, repo_path: Optional[str] = None) -> str:
 
 
 @mcp.tool()
+@_mcp_telemetry("context")
 async def prepare_task_context(task_description: str, repo_path: Optional[str] = None) -> dict:
     """Returns bounded runtime slices; durable packs are an explicit deep job."""
     if settings.BRAIN_AGENT_CONTEXT_V2_MODE == "on":
@@ -288,6 +355,7 @@ async def record_rule(
 
 
 @mcp.tool()
+@_mcp_telemetry("search")
 async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
     """Compact paths/symbols/ranges locator; known files can be read locally."""
     try:

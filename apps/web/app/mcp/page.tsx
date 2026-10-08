@@ -1,5 +1,6 @@
 import { Term } from "@/components/Term";
 import { Chip, EmptyState, PageHead, Panel, Table, fmt } from "@/components/ui";
+import { SectionNav } from "@/components/SectionNav";
 import { getMcpTools } from "@/lib/data";
 
 export const metadata = { title: "Agent tools" };
@@ -12,6 +13,7 @@ export default async function Mcp() {
   const troubled = tools.filter((t) => t.status === "warn" || t.status === "bad").length;
   return (
     <>
+      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings" }, { href: "/admin", label: "Access" }, { href: "/mcp", label: "Agent tools", active: true }]} />
       <PageHead
         eyebrow="Agent tools"
         title={
@@ -25,8 +27,9 @@ export default async function Mcp() {
         }
         lede={
           <>
-            Agents talk to Brain through tools over <Term k="mcp">MCP</Term>. Here you can see which tools they use most, how
-            fast they answer and how often they fail.
+            Agents talk to Brain through tools over <Term k="mcp">MCP</Term>. {tracked
+              ? "This screen shows recorded calls, response times and errors."
+              : "These tools are available. Usage, response times and errors are not measured yet."}
           </>
         }
       />
