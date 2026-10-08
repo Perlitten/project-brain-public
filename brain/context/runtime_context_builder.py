@@ -144,7 +144,7 @@ class RuntimeContextBuilder:
 
         # Bind cache reads to the same revision used for writes, after the
         # current-source/evidence guards. Cache must fit this request's budget.
-        cached = get_cached_context(repo_str, task_description, repo.get("source_revision"))
+        cached = get_cached_context(repo_str, task_description, repo.get("source_revision"), max_bytes)
         if cached is not None and not include_debug and not result.degraded and "debug" not in cached:
             res_cached = {**cached, "_cache_hit": True}
             if len(json.dumps(res_cached, ensure_ascii=False, separators=(",", ":")).encode()) <= max_bytes:
@@ -207,7 +207,8 @@ class RuntimeContextBuilder:
                 .build()
             )
         if freshness == "current":
-            put_cached_context(repo_str, task_description, built, source_revision=repo.get("source_revision"))
+            put_cached_context(repo_str, task_description, built, source_revision=repo.get("source_revision"),
+                               max_bytes=max_bytes)
         return built
 
     @staticmethod

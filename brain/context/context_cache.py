@@ -11,17 +11,21 @@ _MAX_CACHE_ENTRIES = 500
 _CACHE_TTL_SECONDS = 3600  # 1 hour
 
 
-def _make_key(repo_scope: str, task_description: str, source_revision: Optional[str] = None) -> str:
+def _make_key(repo_scope: str, task_description: str, source_revision: Optional[str] = None,
+              max_bytes: Optional[int] = None) -> str:
     norm_repo = (repo_scope or "").strip().lower()
     norm_task = " ".join((task_description or "").strip().lower().split())
     norm_rev = (source_revision or "").strip().lower()
     raw = f"{norm_repo}:{norm_rev}:{norm_task}"
+    if max_bytes is not None:
+        raw += f":max_bytes={max_bytes}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def get_cached_context(repo_scope: str, task_description: str, source_revision: Optional[str] = None) -> Optional[dict[str, Any]]:
+def get_cached_context(repo_scope: str, task_description: str, source_revision: Optional[str] = None,
+                       max_bytes: Optional[int] = None) -> Optional[dict[str, Any]]:
     """Retrieve cached context payload if unexpired and revision matches."""
-    key = _make_key(repo_scope, task_description, source_revision)
+    key = _make_key(repo_scope, task_description, source_revision, max_bytes)
     entry = _CONTEXT_CACHE.get(key)
     if not entry:
         return None
@@ -36,9 +40,10 @@ def get_cached_context(repo_scope: str, task_description: str, source_revision: 
     return payload
 
 
-def put_cached_context(repo_scope: str, task_description: str, payload: dict[str, Any], source_revision: Optional[str] = None) -> None:
+def put_cached_context(repo_scope: str, task_description: str, payload: dict[str, Any], source_revision: Optional[str] = None,
+                       max_bytes: Optional[int] = None) -> None:
     """Store context payload in LRU cache."""
-    key = _make_key(repo_scope, task_description, source_revision)
+    key = _make_key(repo_scope, task_description, source_revision, max_bytes)
     if len(_CONTEXT_CACHE) >= _MAX_CACHE_ENTRIES:
         # Evict oldest entry
         oldest_key = min(_CONTEXT_CACHE.keys(), key=lambda k: _CONTEXT_CACHE[k][0])
