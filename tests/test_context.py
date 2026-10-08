@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from brain.context.context_pack_builder import (
     ContextPackBuilder,
+    _protected_retrieval_paths,
     _selected_retrieval_paths,
     _decision_scope_clause,
     _load_active_normative_memory,
@@ -22,6 +23,28 @@ def test_context_builder_preserves_retrieval_abstention():
 def test_context_builder_keeps_legacy_empty_selection_fallback():
     legacy = SimpleNamespace(selected_paths=[], reranked=[SimpleNamespace(item_id="fallback.py", included=False)], debug={})
     assert _selected_retrieval_paths(legacy, 5) == ["fallback.py"]
+
+
+def test_context_pack_protects_final_selection_instead_of_intermediate_ranking():
+    result = SimpleNamespace(
+        selected_paths=["engine/widget.py", "engine/routes.py"],
+        v5_top_paths=["engine/widget.py", "tests/test_widget.py"],
+        reranked=[], debug={},
+    )
+    available = {"engine/widget.py", "engine/routes.py", "tests/test_widget.py"}
+    assert _protected_retrieval_paths(result, 2, available) == result.selected_paths
+
+
+def test_context_pack_retains_legacy_pair_expansion_when_no_final_selection():
+    result = SimpleNamespace(selected_paths=[], v5_top_paths=["engine/widget.py"], reranked=[], debug={})
+    assert _protected_retrieval_paths(result, 2, {"engine/widget.py", "tests/test_widget.py"}) == [
+        "engine/widget.py", "tests/test_widget.py",
+    ]
+
+
+def test_context_pack_protection_respects_abstention():
+    result = SimpleNamespace(selected_paths=[], v5_top_paths=["noise.py"], reranked=[], debug={"abstained": True})
+    assert _protected_retrieval_paths(result, 2, {"noise.py"}) == []
 
 
 def test_decision_scope_clause_includes_global_and_matching_repo():
