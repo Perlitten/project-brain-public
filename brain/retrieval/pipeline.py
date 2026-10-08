@@ -383,6 +383,20 @@ async def _rerank_late_counterfactual(
     )
 
 
+def _pin_qualified_path_hints(
+    candidates: list[ChannelCandidate], hints: list[str], pinned: list[str], limit: int,
+) -> list[str]:
+    """Retain indexed qualified file hints during keyword-based promotion.
+
+    Basename/directory hints remain ranking signals. Only the existing strongest
+    qualified-file match becomes a protected choice inside the output budget.
+    """
+    anchors = [candidate.item_id for candidate in sorted(
+        candidates, key=lambda c: (-path_hint_bonus(c.item_id, hints), c.rank, c.item_id),
+    ) if path_hint_bonus(candidate.item_id, hints) >= 0.55]
+    return list(dict.fromkeys(anchors + pinned))[:limit]
+
+
 def _select_final_paths(
     *,
     reranked: list[ChannelCandidate],
@@ -1239,7 +1253,7 @@ class HybridRetrievalPipeline:
         baseline_v5_top = expand_protected_pairs(baseline_v5_top, available)[:precision_k]
         timing.v5_rerank_ms = (time.perf_counter() - t_v5) * 1000
 
-        # Budget selection — v5 top-10 is authoritative for precision; fill to file_limit from pool
+        # Final selection retains qualified hints while promoting recall paths.
         t_budget = time.perf_counter()
         pinned: List[str] = []
         if probe_list and not v2_rerank_off:
@@ -1251,6 +1265,11 @@ class HybridRetrievalPipeline:
                     if not should_exclude_from_retrieval(f.path):
                         pinned.append(f.path)
                         path_to_file.setdefault(f.path, f)
+
+        if not v2_rerank_off:
+            pinned = _pin_qualified_path_hints(
+                candidates_by_channel["hints"], list(hint_tokens), pinned, file_limit,
+            )
 
         if v2_rerank_off:
             # Fusion order IS the selection: no probe pins, no channel promotions.
