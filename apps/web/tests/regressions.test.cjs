@@ -42,6 +42,14 @@ function withEnv(values, run) {
 
 const basic = value => `Basic ${Buffer.from(value).toString('base64')}`;
 
+test('scheduler degradation is a warning rather than an empty service outage', () => {
+  const { pulseHeadline } = load('lib/pulse-presentation.ts');
+  assert.equal(pulseHeadline({ reachable: true, healthy: false, down: [] }), 'Needs attention');
+  assert.equal(pulseHeadline({ reachable: true, healthy: false, down: ['postgres'] }), 'postgres down');
+  assert.equal(pulseHeadline({ reachable: false, down: [] }), 'Not answering');
+  assert.equal(pulseHeadline({ reachable: true, healthy: true, down: [] }), 'Healthy');
+});
+
 test('owner navigation has six destinations and nested deep links activate their parent', () => {
   const nav = load('lib/nav.ts');
   assert.equal(nav.primaryNavItems.length, 6);
