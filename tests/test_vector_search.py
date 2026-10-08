@@ -77,3 +77,30 @@ async def test_pgvector_candidate_pool_is_reranked_by_knowledge_authority():
 
     assert len(matches) == 1
     assert matches[0][1] is current_chunk
+
+
+@pytest.mark.asyncio
+async def test_empty_ann_retries_same_repository_with_exact_canonical_query():
+    empty = MagicMock()
+    empty.mappings.return_value.all.return_value = []
+    rows = MagicMock()
+    rows.mappings.return_value.all.return_value = [{"chunk_id": 1, "similarity": 0.8, "file_id": 11}]
+    chunks = MagicMock()
+    chunks.scalars.return_value.all.return_value = [SimpleNamespace(id=1, file_id=11)]
+    files = MagicMock()
+    files.scalars.return_value.all.return_value = [SimpleNamespace(
+        id=11, path="src/payments.py", file_type="source_code", summary=None,
+    )]
+    session = AsyncMock()
+    session.execute.side_effect = [empty, rows, chunks, files]
+    with patch("brain.search.code_search.get_embedding_config", return_value=SimpleNamespace(dimension=1536)), \
+            patch("brain.search.code_search._format_pgvector", return_value="[0.1]"):
+        result = await _pgvector_chunk_search(session, "payment", [0.1], top_k=5, repository_id=7)
+    assert len(result) == 1
+    assert result[0][2].path == "src/payments.py"
+    first, retry = session.execute.await_args_list[:2]
+    assert ") + 0" not in str(first.args[0])
+    assert ") + 0" in str(retry.args[0])
+    assert "e.id = fc.embedding_id" in str(retry.args[0])
+    assert "f.repository_id = :repository_id" in str(retry.args[0])
+    assert first.args[1] == retry.args[1]

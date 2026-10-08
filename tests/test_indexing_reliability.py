@@ -255,9 +255,6 @@ async def test_vector_search_uses_only_the_chunk_referenced_embedding(indexing_d
                 historical_id = historical.id
     try:
         async with sessions() as session:
-            # This regression checks canonical joins, not ANN recall in the
-            # shared suite corpus. Use an exact PG scan for deterministic data.
-            await session.execute(text("SET LOCAL enable_indexscan = off"))
             for search in (_pgvector_chunk_search, _python_vector_chunk_search):
                 matches = await search(session, "value", query, top_k=5, repository_id=repo.id)
                 assert len(matches) == 2, search.__name__
