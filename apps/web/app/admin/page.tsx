@@ -13,10 +13,8 @@ export default async function Admin() {
   const target = { apiUrl: agent.publicApiUrl, repoPath: agent.repoPath };
   return (
     <>
-      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings" }, { href: "/admin", label: "Access", active: true }, { href: "/mcp", label: "Agent tools" }]} />
       <PageHead
-        eyebrow="Access"
-        title="Who and what can use Brain"
+        title="Access"
         lede={
           <>
             Every person, agent and integration has its own <Term k="principal">identity</Term> with keys you can revoke. Each
@@ -24,6 +22,7 @@ export default async function Admin() {
           </>
         }
       />
+      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings" }, { href: "/admin", label: "Access", active: true }, { href: "/mcp", label: "Agent tools" }]} />
 
       {view.readable && (
         <div className="stats">

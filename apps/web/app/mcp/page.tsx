@@ -13,17 +13,16 @@ export default async function Mcp() {
   const troubled = tools.filter((t) => t.status === "warn" || t.status === "bad").length;
   return (
     <>
-      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings" }, { href: "/admin", label: "Access" }, { href: "/mcp", label: "Agent tools", active: true }]} />
       <PageHead
-        eyebrow="Agent tools"
-        title={
+        title="Agent tools"
+        status={
           tools.length === 0
-            ? "No agent tools reported"
+            ? { tone: "idle", text: "No agent tools reported" }
             : troubled
-              ? `${troubled} tool${troubled > 1 ? "s are" : " is"} slow or failing`
+              ? { tone: "warn", text: `${troubled} tool${troubled > 1 ? "s are" : " is"} slow or failing` }
               : tracked
-                ? "All agent tools are healthy"
-                : `${tools.length} agent tools available — their calls aren’t measured yet`
+                ? { tone: "ok", text: "All agent tools are healthy" }
+                : { tone: "info", text: <>{tools.length} agent tools available<small>Their calls are not measured yet.</small></> }
         }
         lede={
           <>
@@ -33,6 +32,7 @@ export default async function Mcp() {
           </>
         }
       />
+      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings" }, { href: "/admin", label: "Access" }, { href: "/mcp", label: "Agent tools", active: true }]} />
       <Panel id="tools" title="Tools" desc={tracked ? "Last 24 hours. An error rate above 5% is shown in red." : "Brain lists its tools but does not count their calls yet."} flush>
         {tools.length === 0 ? (
           <EmptyState title="No tools to show" body="Brain didn’t report any agent tools. Check that its MCP server is running." />

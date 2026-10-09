@@ -20,12 +20,10 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
   return (
     <>
       <PageHead
-        eyebrow="Agent runs"
-        title="What AI agents did with Brain’s help"
+        title="Agent runs"
         lede={
           <>
-            Every task an <Term k="agent">agent</Term> ran while connected to Brain. Agents that got a briefing first usually
-            finish faster and fail less.
+            Every task an <Term k="agent">agent</Term> ran while connected to Brain, with the briefing it received.
           </>
         }
       />

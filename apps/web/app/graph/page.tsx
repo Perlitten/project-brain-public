@@ -26,8 +26,7 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
   return (
     <>
       <PageHead
-        eyebrow="Code map"
-        title="Which parts of the code depend on which"
+        title="Code map"
         lede={
           <>
             Each box is a part of your project; each line means one part uses another. Thicker lines mean more

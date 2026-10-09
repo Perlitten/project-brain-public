@@ -17,10 +17,9 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   const next = steps.find((s) => s.id === view.nextStep) ?? steps.find((s) => !s.done);
   return (
     <>
-      <SectionNav label="Project views" items={[{ href: `/projects${repo ? `?repo=${repo}` : ""}`, label: "Projects" }, { href: `/indexing${repo ? `?repo=${repo}` : ""}`, label: "Indexing" }, { href: `/graph${repo ? `?repo=${repo}` : ""}`, label: "Code map" }, { href: `/setup${repo ? `?repo=${repo}` : ""}`, label: "Connection", active: true }]} />
       <PageHead
-        eyebrow="Get started"
-        title={steps.length === 0 ? "Setup status unavailable" : next ? `${done} of ${steps.length} done` : "Brain is fully set up"}
+        title="Connect a project"
+        status={steps.length === 0 ? { tone: "idle", text: "Setup status unavailable" } : next ? { tone: "info", text: <>{done} of {steps.length} steps done<small>Next: {next.title}</small></> } : { tone: "ok", text: "Brain is fully set up" }}
         lede={
           <>
             Connect Brain to your code and your <Term k="agent">agents</Term>.
@@ -28,6 +27,7 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
           </>
         }
       />
+      <SectionNav label="Project views" items={[{ href: `/projects${repo ? `?repo=${repo}` : ""}`, label: "Projects" }, { href: `/indexing${repo ? `?repo=${repo}` : ""}`, label: "Indexing" }, { href: `/graph${repo ? `?repo=${repo}` : ""}`, label: "Code map" }, { href: `/setup${repo ? `?repo=${repo}` : ""}`, label: "Connection", active: true }]} />
       {view.mode === "down" ? (
         <div className="callout tone-warn">
           <b>Brain isn’t answering.</b>
