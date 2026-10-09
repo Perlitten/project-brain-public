@@ -24,7 +24,7 @@ const nested: NavItem[] = [
   { key: "insights", href: "/insights", label: "Findings", icon: "trend", hint: "Recorded observations about code structure", section: "projects" },
   { key: "packs", href: "/packs", label: "Context packs", icon: "layers", hint: "Saved briefings prepared for AI agents", repoScoped: true, section: "memory" },
   { key: "reports", href: "/reports", label: "Reports", icon: "file", hint: "Saved evaluations and checks", section: "quality" },
-  { key: "reranker", href: "/reranker", label: "Reranker diagnostics", icon: "vectors", hint: "The optional second pass of retrieval", repoScoped: true, section: "quality" },
+  { key: "reranker", href: "/reranker", label: "Reranker", icon: "vectors", hint: "The optional second pass of retrieval", repoScoped: true, section: "quality" },
   { key: "runs", href: "/runs", label: "Agent runs", icon: "automation", hint: "Recorded agent task history", repoScoped: true, section: "logs" },
   { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "Available agent integrations and tools", section: "settings" },
   { key: "admin", href: "/admin", label: "Access", icon: "key", hint: "Identities, credentials and permissions", section: "settings" },

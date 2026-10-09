@@ -13,8 +13,8 @@ export default async function Quality() {
   const [reports, evidence] = await Promise.all([getReports(), getQualityEvidence()]);
   return (
     <>
-      <PageHead eyebrow="Quality" title="Evidence about retrieval quality" lede="Saved evaluations answer what was measured, when, and on which report. They do not represent live request success, relevance, or task completion." actions={<RunButton action={startBenchmark} label="Run benchmark" icon="play" title="Run search benchmark" />} />
-      <SectionNav label="Quality views" items={[{ href: "/quality", label: "Quality", active: true }, { href: "/reports", label: "Reports" }, { href: "/reranker", label: "Reranker diagnostics" }]} />
+      <PageHead title="Quality" lede="How well Brain finds the right code, measured by saved benchmarks. Live request success is on Activity." actions={<RunButton action={startBenchmark} label="Run benchmark" icon="play" title="Run search benchmark" />} />
+      <SectionNav label="Quality views" items={[{ href: "/quality", label: "Quality", active: true }, { href: "/reports", label: "Reports" }, { href: "/reranker", label: "Reranker" }]} />
       <Panel id="benchmark" title="Retrieval benchmark" desc="Expected evidence on a fixed question set. Saved results are tied to their measured release, independently of live request traffic."><QualityEvidence evidence={evidence} /></Panel>
       <Panel id="evaluations" title="Saved evaluations" desc={`${reports.length} saved report${reports.length === 1 ? "" : "s"} currently available. Open a report for its measured sample and metrics.`} flush>
         {reports.length === 0 ? <EmptyState title="No saved evaluations" body="Run an evaluation or save a report before reviewing retrieval quality evidence." /> : (

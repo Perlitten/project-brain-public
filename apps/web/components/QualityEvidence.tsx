@@ -4,7 +4,7 @@ import { Chip, EmptyState } from "./ui";
 import "./quality-evidence.css";
 
 export function QualityEvidence({ evidence, compact = false }: { evidence: Evidence | null; compact?: boolean }) {
-  if (!evidence) return <EmptyState title="Benchmark measurements unavailable" body="Brain did not return the saved benchmark snapshot. Open a saved report below to inspect its evidence." />;
+  if (!evidence) return <EmptyState title="Benchmark measurements unavailable" body="Brain did not return the saved benchmark snapshot. Earlier results stay available in saved reports." />;
   const { source, search, context, quality_limits: limits } = evidence;
   const searchRelease = source.provenance.find((p) => p.artifact.startsWith("retrieval-"))?.measured_build_sha ?? source.build_sha;
   return <div className="quality-evidence">

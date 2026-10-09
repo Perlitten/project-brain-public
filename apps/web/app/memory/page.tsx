@@ -37,9 +37,8 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
   return (
     <>
       <PageHead
-        eyebrow="Decisions & rules"
-        title="What your team decided, so agents remember it too"
-        lede={repo ? "Decisions and rules for the selected repository." : "Decisions and rules across all connected repositories."}
+        title="Memory"
+        lede={`Decisions and rules your team recorded${repo ? " for this project" : " across all projects"}. Agents get the relevant ones with their context.`}
       />
       <SectionNav label="Memory views" items={[{ href: "/memory", label: "Decisions & rules", active: true }, { href: "/packs", label: "Context packs" }]} />
         <PageTabs

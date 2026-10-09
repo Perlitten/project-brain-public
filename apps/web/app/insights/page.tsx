@@ -26,9 +26,8 @@ export default async function Insights({ searchParams }: { searchParams: Promise
   return (
     <>
       <PageHead
-        eyebrow="Findings"
-        title="Findings across the Brain service"
-        lede="Brain watches all connected repositories and points out places that are getting harder to work with. These findings are global because the service does not attach ownership to them."
+        title="Findings"
+        lede="Places in connected repositories that are getting harder to change. Findings cover the whole service and are not tied to one project."
       />
       <SectionNav label="Project views" items={[{ href: "/projects", label: "Projects" }, { href: "/insights", label: "Findings across Brain", active: true }]} />
       {insights.length === 0 && !hasQuery && (

@@ -253,11 +253,25 @@ code, .mono { font-family: var(--mono); }
 .odo__drum > span { height: 1.2em; }
 
 /* ---------- page head ---------- */
-.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s-6); flex-wrap: wrap; }
+.page-head { display: grid; gap: var(--s-5); }
+.page-head__row { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s-6); flex-wrap: wrap; }
 .page-head .eyebrow { margin-bottom: var(--s-2); }
 .page-head__title { font-size: var(--fs-28); line-height: var(--lh-head); font-weight: 600; letter-spacing: -0.01em; }
 .page-head__lede { margin-top: var(--s-2); max-width: 68ch; color: var(--text-2); font-size: var(--fs-16); line-height: var(--lh-prose); }
 .page-head__actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+/* Status line: the screen's verdict in one 20px sentence on a 3px tone spine. */
+.status-line {
+  position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); flex-wrap: wrap;
+  padding: var(--s-3) var(--s-4) var(--s-3) calc(var(--s-4) + 3px);
+  background: var(--surface-rail); border: 1px solid var(--border-subtle); border-radius: var(--r-sm);
+}
+.status-line::before {
+  content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 3px; border-radius: var(--r-sm) 0 0 var(--r-sm);
+  background: var(--tone); transform-origin: top; animation: spine-draw 700ms var(--ease-expo) 200ms backwards;
+}
+.status-line__text { font-size: var(--fs-20); line-height: var(--lh-head); font-weight: 500; max-width: 72ch; }
+.status-line__text small { display: block; margin-top: var(--s-1); font-size: var(--fs-14); font-weight: 400; color: var(--text-2); line-height: var(--lh-ui); }
+.status-line__action { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 
 /* Page tabs: one page split into full screens (Code map, Decisions & rules). */
 .page-tabs { display: flex; gap: var(--s-1); border-bottom: 1px solid var(--border-subtle); overflow-x: auto; scrollbar-width: none; }
@@ -377,6 +391,9 @@ code, .mono { font-family: var(--mono); }
 .meter__key { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); font-size: var(--fs-12); color: var(--text-2); }
 .meter__key li { display: inline-flex; align-items: center; gap: 6px; }
 .meter__swatch { width: 10px; height: 10px; flex: none; animation: none; }
+.meter--compact { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); }
+.meter--compact .meter__cells { height: 12px; gap: 2px; }
+.meter--compact .meter__value { font-size: var(--fs-12); color: var(--text-2); min-width: 8ch; text-align: right; }
 
 /* ---------- ledger ---------- */
 .ledger__row {
@@ -780,7 +797,8 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
   .shell--drawer .scrim { opacity: 1; pointer-events: auto; }
   .mast__menu { display: inline-grid; }
   .search-btn__text, .search-btn kbd, .repo__label small { display: none; }
-  .page-head__title, .verdict__headline { font-size: 24px; }
+  .page-head__title, .verdict__headline { font-size: var(--fs-20); }
+  .status-line__text { font-size: var(--fs-16); }
   .map__hero { font-size: 56px; }
   .ledger__row { grid-template-columns: 56px 10px minmax(0, 1fr); }
   .ledger__source, .ledger__ref { display: none; }
@@ -827,3 +845,13 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 .nf__link:hover { background: var(--surface-inset); }
 .nf__link:hover svg { color: var(--teal-fg); }
 .nf__hint { display: block; font-size: var(--fs-12); color: var(--text-3); line-height: var(--lh-ui); }
+
+/* Period switch: a segmented control that scopes one panel to a time window. */
+.segmented { display: flex; padding: 2px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-rail); }
+.segmented a { padding: var(--s-1) var(--s-2); border-radius: 2px; font: 500 var(--fs-12) / 1.35 var(--mono); color: var(--text-3); transition: color var(--dur-control), background-color var(--dur-control); }
+.segmented a:hover { color: var(--text-1); }
+.segmented a[aria-current] { background: var(--surface-raise); color: var(--text-1); }
+
+/* Project detail: stats, coverage meters, then the caveat, each with breathing room. */
+.project-detail { display: grid; gap: var(--s-6); }
+.project-detail__note { margin: 0; font-size: var(--fs-12); }
