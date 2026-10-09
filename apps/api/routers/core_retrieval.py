@@ -541,7 +541,12 @@ async def ask_project(body: AskRequest, request: Request):
         capped_answer = truncate_utf8(answer, settings.AGENT_ASK_OUTPUT_MAX_BYTES // 2)
         output_capped = capped_answer != answer
         answer = capped_answer
-        incomplete_thinking = "<think>" in raw_response.lower() and "</think>" not in raw_response.lower()
+        incomplete_thinking = any(
+            token in raw_response.lower() and close not in raw_response.lower()
+            for token, close in (("<think>", "</think>"), ("<reasoning>", "</reasoning>"), ("<thought>", "</thought>"))
+        )
+        if incomplete_thinking:
+            answer = ""
         truncated = finish_reason in {"length", "max_tokens", "token_limit"}
         if not answer or incomplete_thinking or truncated or output_capped:
             degraded = ["incomplete_generation"]

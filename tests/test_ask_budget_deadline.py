@@ -65,3 +65,28 @@ async def test_ask_v2_preserves_metadata_and_marks_unsafe_generation(monkeypatch
         assert payload["usage"] == metadata["usage"]
     if marker == "open_thinking_block":
         assert "private reasoning" not in payload["answer"]
+
+
+@pytest.mark.asyncio
+async def test_no_evidence_message_is_not_a_freshness_claim(monkeypatch):
+    builder = SimpleNamespace(build=AsyncMock(return_value={"status": "partial", "missing": ["no_relevant_candidates"]}))
+    monkeypatch.setattr("apps.api.routers.core_retrieval.RuntimeContextBuilder", lambda: builder)
+    result = await _ask_v2(AskRequest(query="unsupported feature", repo_path="/app"))
+    assert result["status"] == "partial"
+    assert "fresh" not in result["answer"].lower()
+
+
+@pytest.mark.asyncio
+async def test_v2_output_cap_is_partial_and_thinking_option_is_ask_only(monkeypatch):
+    builder = SimpleNamespace(build=AsyncMock(return_value={"status": "ok", "candidates": []}))
+    generate = AsyncMock(return_value={"text": "x" * 1000, "finish_reason": "stop"})
+    provider = SimpleNamespace(generate_with_metadata=generate, provider="nvidia", model="nvidia/nemotron-3-ultra-550b-a55b")
+    router = SimpleNamespace(llm=lambda task: provider)
+    monkeypatch.setattr(settings, "LLM_TASK_ASK_ENABLE_THINKING", False)
+    monkeypatch.setattr(settings, "AGENT_ASK_OUTPUT_MAX_BYTES", 600)
+    monkeypatch.setattr("apps.api.routers.core_retrieval.RuntimeContextBuilder", lambda: builder)
+    monkeypatch.setattr("apps.api.routers.core_retrieval.get_model_router", lambda: router)
+    result = await _ask_v2(AskRequest(query="supported feature", repo_path="/app"))
+    assert result["status"] == "partial" and "answer_output_cap" in result["degraded"]
+    assert _size(result) <= 600
+    assert generate.await_args.kwargs["chat_template_kwargs"] == {"enable_thinking": False}

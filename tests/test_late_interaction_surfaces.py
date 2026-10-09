@@ -749,7 +749,7 @@ async def test_api_ask_and_search_share_integrated_code_search(monkeypatch):
     from apps.api.schemas import AskRequest, SearchRequest
 
     payload = {
-        "files": [],
+        "files": [{"path": "brain/parsers/python.py", "summary": "parser implementation"}],
         "symbols": [],
         "chunks": [],
         "vector_status": VectorSearchStatus.OK,
