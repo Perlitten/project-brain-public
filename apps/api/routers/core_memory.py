@@ -4,6 +4,7 @@
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from loguru import logger
 
@@ -25,6 +26,34 @@ from brain.memory.rule_store import RuleStore
 EPISODES_MAX_LIMIT = 200
 
 router = APIRouter()
+
+
+class SkillOutcomeEvidence(BaseModel):
+    artifact_ids: list[int] = Field(min_length=1, max_length=32)
+    source_refs: list[str] = Field(min_length=1, max_length=16)
+
+
+class SkillOutcomeRequest(BaseModel):
+    task_id: str = Field(min_length=1, max_length=64)
+    validation_id: int = Field(gt=0)
+    outcome: Literal["success", "failure"]
+    evidence: SkillOutcomeEvidence
+
+
+@router.post("/skills/{skill_id}/outcomes", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
+async def record_skill_outcome_endpoint(skill_id: int, body: SkillOutcomeRequest):
+    from brain.memory.skill_outcomes import SkillOutcomeConflict, record_skill_outcome
+    try:
+        return await record_skill_outcome(skill_id=skill_id, task_id=body.task_id, validation_id=body.validation_id,
+                                          outcome=body.outcome, evidence=body.evidence.model_dump())
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except SkillOutcomeConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/decisions", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])

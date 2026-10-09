@@ -156,6 +156,11 @@ class Settings(BaseSettings):
     LLM_TASK_CLASSIFICATION_MODEL: Optional[str] = None
     LLM_TASK_SUMMARIZATION_MODEL: Optional[str] = None
     LLM_TASK_SYNTHESIS_MODEL: Optional[str] = None
+    # Explicit bounded /ask route; unset preserves the synthesis model.
+    LLM_TASK_ASK_MODEL: Optional[str] = None
+    # Provider-specific ask-only option, opt in for Nemotron models supporting
+    # chat_template_kwargs. None leaves their default reasoning mode untouched.
+    LLM_TASK_ASK_ENABLE_THINKING: Optional[bool] = None
     LLM_TASK_INSIGHT_MODEL: Optional[str] = None
     # mock | anthropic | google | any OpenAI-compatible preset: openai, nvidia,
     # openrouter, groq, together, deepseek, mistral, ollama, lmstudio,
@@ -492,6 +497,13 @@ class Settings(BaseSettings):
         if not 0.0 <= value <= 100.0:
             raise ValueError("LATE_INTERACTION_CANARY_PERCENT must be between 0 and 100")
         return value
+
+    @field_validator(
+        "LLM_TASK_ASK_ENABLE_THINKING", mode="before",
+    )
+    @classmethod
+    def normalize_blank_ask_thinking(cls, value):
+        return None if isinstance(value, str) and not value.strip() else value
 
     @field_validator(
         "EMBEDDING_DIMENSION",

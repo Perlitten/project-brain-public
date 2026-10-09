@@ -5,7 +5,6 @@ Skipped locally without Postgres; required under GITHUB_ACTIONS (same contract a
 
 import json
 import os
-from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -100,7 +99,10 @@ async def memory_db(monkeypatch):
     # runs leave unconsumed events behind. Collect only events created after
     # this fixture's setup — no skew buffer: the previous test's events land
     # inside even a one-second window.
-    since = datetime.now(timezone.utc)
+    # Compare DB timestamps with the DB clock, not the Windows/host clock.
+    # A Docker VM can lag its client by a fraction of a second.
+    async with sessions() as session:
+        since = (await session.execute(select(func.clock_timestamp()))).scalar_one()
 
     async def run(**kwargs):
         return await consolidation._run_consolidation_unlocked(since=since, **kwargs)

@@ -54,6 +54,33 @@ _MISSING_CONFIG = (
 mcp = FastMCP("project-brain-remote")
 
 
+@mcp.tool()
+async def record_task_lesson(task_id: str, statement: str, category: str, validation_id: int,
+                             artifact_ids: list[int], source_refs: list[str], idempotency_key: str) -> dict:
+    """Capture a lesson from an existing task's reported check and artifacts.
+
+    Requires harness:write; creates L1 evidence only. Consolidation leaves an
+    L2 candidate for human approval, never silently makes this claim L3 truth.
+    """
+    return await _post(f"/harness/tasks/{quote(task_id, safe='')}/lessons", {
+        "statement": statement, "category": category, "validation_id": validation_id,
+        "artifact_ids": artifact_ids, "source_refs": source_refs, "idempotency_key": idempotency_key,
+    })
+
+
+@mcp.tool()
+async def record_procedure_outcome(skill_id: int, task_id: str, validation_id: int,
+                                    outcome: str, artifact_ids: list[int], source_refs: list[str]) -> dict:
+    """Record success/failure after applying a skill; one durable result per task.
+
+    Reported receipts must belong to the task. Reading/matching skills is not
+    usage and never updates these counters.
+    """
+    return await _post(f"/skills/{skill_id}/outcomes", {"task_id": task_id,
+        "validation_id": validation_id, "outcome": outcome,
+        "evidence": {"artifact_ids": artifact_ids, "source_refs": source_refs}})
+
+
 def _is_safe_base_url(url: str) -> bool:
     """Allow https anywhere, or plain http only to loopback. Prevents sending the
     API key in cleartext to a remote host via a mis-set BRAIN_API_URL."""
@@ -120,7 +147,7 @@ async def _get(path: str, timeout: float = 30.0) -> Any:
 @mcp.tool()
 async def ask_project(query: str, repo_path: Optional[str] = None) -> str:
     """Grounded answer; use search_code first when only location is unknown."""
-    res = await _post("/ask", {"query": query, "repo_path": repo_path or DEFAULT_REPO}, timeout=24.0)
+    res = await _post("/ask", {"query": query, "repo_path": repo_path or DEFAULT_REPO}, timeout=30.0)
     if isinstance(res, dict) and "answer" in res:
         return res["answer"]
     return str(res)

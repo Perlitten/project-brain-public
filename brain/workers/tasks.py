@@ -447,6 +447,8 @@ async def run_memory_consolidation(params: Dict[str, Any]) -> Dict[str, Any]:
     require_approval = params.get(
         "require_approval", settings.MEMORY_CONSOLIDATION_REQUIRE_APPROVAL
     )
+    if require_approval is None:
+        require_approval = settings.MEMORY_CONSOLIDATION_REQUIRE_APPROVAL
     report = await run_consolidation(
         require_approval=require_approval,
         dry_run=params.get("dry_run", False),

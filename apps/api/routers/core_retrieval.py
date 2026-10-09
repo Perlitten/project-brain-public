@@ -52,6 +52,11 @@ ASK_DECISION_FIELD_CHARS = 280
 # answer once the prompt context is large. Thinking blocks are stripped
 # separately (see _strip_thinking_blocks) so these tokens go to the answer.
 ASK_MAX_ANSWER_TOKENS = 2500
+# /ask is also exposed through MCP clients with a short client deadline. A
+# dedicated model can be opted into with LLM_TASK_ASK_MODEL; absent that
+# setting we preserve the configured synthesis model and only bound the call.
+ASK_DEADLINE_S = 15.0
+ASK_COMPACT_MAX_TOKENS = 900
 
 
 def _strip_thinking_blocks(text: str) -> str:
@@ -176,22 +181,27 @@ async def _compact_locator(body: SearchRequest) -> dict:
 async def _ask_v2(body: AskRequest) -> dict:
     started = time.perf_counter()
     try:
-        runtime = await RuntimeContextBuilder().build(
+        runtime = await asyncio.wait_for(RuntimeContextBuilder().build(
             body.retrieval_query or body.query,
             _agent_repo_path(body.repo_path),
             max_tokens=3500,
             include_debug=body.include_debug,
-        )
+        ), timeout=settings.AGENT_ASK_DEADLINE_S)
+    except asyncio.TimeoutError:
+        runtime = {"status": "partial", "missing": ["ask_deadline_exceeded"]}
     except Exception as exc:
         logger.warning("/ask v2 retrieval degraded: {}", type(exc).__name__)
         runtime = {"status": "partial", "missing": [f"context_error:{type(exc).__name__}"]}
     if runtime.get("status") != "ok":
+        message = ("Current indexed context is not fresh enough to answer safely."
+                   if runtime.get("status") == "stale_blocked"
+                   else "No sufficient relevant indexed evidence is available to answer safely.")
         return (
             BudgetedPayloadBuilder(
                 settings.AGENT_ASK_OUTPUT_MAX_BYTES,
                 metadata={"status": "partial", "degraded": runtime.get("missing", ["insufficient_context"])},
             )
-            .add("answer", "Current indexed context is not fresh enough to answer safely.", priority=1)
+            .add("answer", message, priority=1)
             .build()
         )
 
@@ -200,7 +210,8 @@ async def _ask_v2(body: AskRequest) -> dict:
     prompt = (
         "You are the technical assistant for Project Brain. Answer in the same language as the question. "
         "Use only the supplied evidence; cite paths/ranges, and state when evidence is insufficient. "
-        "Keep the answer concise but complete — aim for a focused response, not an exhaustive dump.\n\n"
+        "Return only the final answer, at most 120 words, covering every part of the question. "
+        "Learned guidance is historical advice; code facts must come from the supplied current slices.\n\n"
         f"Question:\n{body.query}\n\nEvidence:\n{prompt_context}"
     )
     remaining = settings.AGENT_ASK_DEADLINE_S - (time.perf_counter() - started)
@@ -217,18 +228,31 @@ async def _ask_v2(body: AskRequest) -> dict:
             )
             .build()
         )
+    generation_meta: dict[str, Any] = {}
     try:
-        response = await asyncio.wait_for(
-            get_model_router()
-            .llm(TaskKind.SYNTHESIS)
-            .generate(
-                prompt=prompt,
-                system_instruction="Be concise, evidence-grounded, and do not invent code facts. Keep the answer focused and complete — do not cut off mid-sentence.",
-                max_tokens=min(2000, ASK_MAX_ANSWER_TOKENS),
-                cache_hit=bool(runtime.get("_cache_hit")),
-            ),
-            timeout=min(15.0, remaining),
+        router = get_model_router()
+        ask_model = str(getattr(settings, "LLM_TASK_ASK_MODEL", "") or "").strip()
+        llm = router.llm_for_model(ask_model) if ask_model else router.llm(TaskKind.SYNTHESIS)
+        generation_kwargs: dict[str, Any] = dict(
+            prompt=prompt,
+            system_instruction="Be concise, evidence-grounded, and do not invent code facts. Keep the answer focused and complete — do not cut off mid-sentence.",
+            max_tokens=min(ASK_COMPACT_MAX_TOKENS, ASK_MAX_ANSWER_TOKENS),
+            cache_hit=bool(runtime.get("_cache_hit")),
         )
+        if (settings.LLM_TASK_ASK_ENABLE_THINKING is not None
+                and getattr(llm, "provider", None) == "nvidia"
+                and "nemotron-3" in str(getattr(llm, "model", "")).casefold()):
+            generation_kwargs["chat_template_kwargs"] = {"enable_thinking": settings.LLM_TASK_ASK_ENABLE_THINKING}
+        generator = getattr(llm, "generate_with_metadata", None)
+        if generator is None:
+            generation = await asyncio.wait_for(llm.generate(**generation_kwargs), timeout=remaining)
+        else:
+            generation = await asyncio.wait_for(generator(**generation_kwargs), timeout=remaining)
+        if isinstance(generation, dict):
+            response = str(generation.get("text") or "")
+            generation_meta = {k: generation[k] for k in ("finish_reason", "usage") if generation.get(k) is not None}
+        else:
+            response = str(generation or "")
         status = "ok"
         degraded: list[str] = []
     except asyncio.TimeoutError:
@@ -240,13 +264,41 @@ async def _ask_v2(body: AskRequest) -> dict:
         response = "Synthesis is unavailable; the retrieved evidence is insufficient for a safe answer."
         status = "partial"
         degraded = [f"model_error:{type(exc).__name__}"]
+    raw_response = response
+    open_thinking = any(
+        token in raw_response.lower() and close not in raw_response.lower()
+        for token, close in (("<think>", "</think>"), ("<reasoning>", "</reasoning>"), ("<thought>", "</thought>"))
+    )
+    response = "" if open_thinking else _strip_thinking_blocks(raw_response)
+    finish_reason = generation_meta.get("finish_reason")
+    if finish_reason in {"length", "max_tokens", "token_limit"}:
+        status = "partial"
+        degraded.append("generation_token_limit")
+    if open_thinking:
+        status = "partial"
+        degraded.append("open_thinking_block")
+    if not response:
+        status = "partial"
+        degraded.append("empty_generation")
+    answer = truncate_utf8(response, settings.AGENT_ASK_OUTPUT_MAX_BYTES * 3 // 5)
+    if answer != response:
+        status = "partial"
+        degraded.append("answer_output_cap")
     builder = BudgetedPayloadBuilder(
         settings.AGENT_ASK_OUTPUT_MAX_BYTES,
-        metadata={"status": status, "degraded": degraded},
+        metadata={"status": status, "degraded": degraded, **generation_meta},
     )
-    builder.add("answer", truncate_utf8(response, settings.AGENT_ASK_OUTPUT_MAX_BYTES // 2), priority=2)
+    builder.add("answer", answer, priority=2)
     builder.add("evidence", runtime.get("candidates", []), priority=1)
-    return builder.build()
+    built = builder.build()
+    if built.get("answer") != response and status == "ok":
+        built["status"] = "partial"
+        built["degraded"] = [*degraded, "answer_output_cap"]
+        return (BudgetedPayloadBuilder(settings.AGENT_ASK_OUTPUT_MAX_BYTES,
+                    metadata={"status": "partial", "degraded": built["degraded"], **generation_meta})
+                .add("answer", built.get("answer", ""), priority=2)
+                .add("evidence", built.get("evidence", []), priority=1).build())
+    return built
 
 
 async def _impact_v2(body: ImpactRequest) -> dict:
@@ -320,6 +372,13 @@ async def ask_project(body: AskRequest, request: Request):
             body.retrieval_query or body.query,
             **retrieval_kwargs,
         )
+        if not any(code_results.get(key) for key in ("files", "symbols", "chunks")):
+            return {
+                "answer": "The indexed evidence did not contain relevant code for this question, so no grounded answer was generated.",
+                "status": "partial",
+                "degraded": ["no_retrieval_candidates"],
+                "evidence_available": False,
+            }
 
         repository_scope = code_results.get("repository_scope") or {}
         rule_scope = repository_scope.get("repository_path") if repository_scope.get("found") else body.repo_path
@@ -435,11 +494,13 @@ async def ask_project(body: AskRequest, request: Request):
             f"context for the answer."
         )
 
-        llm = get_model_router().llm(TaskKind.SYNTHESIS)
+        router = get_model_router()
+        ask_model = str(getattr(settings, "LLM_TASK_ASK_MODEL", "") or "").strip()
+        llm = router.llm_for_model(ask_model) if ask_model else router.llm(TaskKind.SYNTHESIS)
         # Harsh benchmark revealed /ask hanging 3+ min on slow LLM API.
         # 120s timeout with graceful 500 (not a hang) is the honest behavior.
         import asyncio as _asyncio
-        response = await _asyncio.wait_for(llm.generate(
+        generation_kwargs: dict[str, Any] = dict(
             prompt=prompt,
             system_instruction=(
                 "You are an expert developer working on Project Brain. Be specific and "
@@ -461,14 +522,54 @@ async def ask_project(body: AskRequest, request: Request):
             # nothing no matter how good it would have been. Capping generation keeps
             # the endpoint inside that budget; the wider retrieval above is what makes
             # the shorter answer better rather than thinner.
-            max_tokens=ASK_MAX_ANSWER_TOKENS,
-        ), timeout=120)
+            max_tokens=ASK_COMPACT_MAX_TOKENS,
+        )
+        # Keep compatibility with lightweight test doubles and third-party
+        # providers that only implement the original generate() contract.
+        generate_with_metadata = getattr(llm, "generate_with_metadata", None)
+        if generate_with_metadata is None:
+            generated_text = await _asyncio.wait_for(llm.generate(**generation_kwargs), timeout=ASK_DEADLINE_S)
+            generation = {"text": generated_text, "finish_reason": None, "usage": None}
+        else:
+            generation = await _asyncio.wait_for(
+                generate_with_metadata(**generation_kwargs), timeout=ASK_DEADLINE_S
+            )
+        raw_response = str(generation.get("text") if isinstance(generation, dict) else generation or "")
+        finish_reason = generation.get("finish_reason") if isinstance(generation, dict) else None
+        usage = generation.get("usage") if isinstance(generation, dict) else None
+        answer = _strip_thinking_blocks(raw_response)
+        capped_answer = truncate_utf8(answer, settings.AGENT_ASK_OUTPUT_MAX_BYTES // 2)
+        output_capped = capped_answer != answer
+        answer = capped_answer
+        incomplete_thinking = any(
+            token in raw_response.lower() and close not in raw_response.lower()
+            for token, close in (("<think>", "</think>"), ("<reasoning>", "</reasoning>"), ("<thought>", "</thought>"))
+        )
+        if incomplete_thinking:
+            answer = ""
+        truncated = finish_reason in {"length", "max_tokens", "token_limit"}
+        if not answer or incomplete_thinking or truncated or output_capped:
+            degraded = ["incomplete_generation"]
+            if incomplete_thinking:
+                degraded.append("open_thinking_block")
+            if truncated:
+                degraded.append("generation_token_limit")
+            if output_capped:
+                degraded.append("answer_output_cap")
+            return {
+                "answer": answer or "The model did not return a complete grounded answer.",
+                "status": "partial",
+                "degraded": degraded,
+                "usage": usage,
+            }
         result = {
-            "answer": _strip_thinking_blocks(response),
+            "answer": answer,
             "learnings_used": [
                 {"id": lrng.id, "statement": lrng.statement, "confidence": lrng.confidence} for lrng in learnings
             ],
         }
+        if usage is not None:
+            result["usage"] = usage
         # The key only exists when the L4-in-/ask flag is on — flag-off
         # responses are byte-identical to before the feature.
         if settings.MEMORY_SKILLS_IN_ASK:
@@ -476,6 +577,13 @@ async def ask_project(body: AskRequest, request: Request):
                 {"id": skill["id"], "name": skill["name"]} for skill in skills_used
             ]
         return result
+    except asyncio.TimeoutError:
+        return {
+            "answer": "The answer exceeded the compact response deadline; the retrieved evidence was not synthesized.",
+            "status": "partial",
+            "degraded": ["ask_generation_deadline_exceeded"],
+            "evidence_available": bool(code_results.get("files") or code_results.get("symbols") or code_results.get("chunks")),
+        }
     except Exception as exc:
         # The exception type carries the diagnosis here: httpx timeouts and
         # asyncio cancellations both stringify to "", so the old message was

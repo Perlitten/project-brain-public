@@ -47,6 +47,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_repository_and_symbol_indexes(conn)
     await _ensure_audit_request_id_column(conn)
     await _ensure_request_telemetry_table(conn)
+    await _ensure_skill_outcomes_table(conn)
     await _ensure_telemetry_state_table(conn)
     await _ensure_memory_learnings_table(conn)
     await _backfill_memory_repo_scope(conn)
@@ -627,8 +628,26 @@ async def _ensure_request_telemetry_table(conn: AsyncConnection) -> None:
     """))
     await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brain_request_telemetry_created_at ON brain_request_telemetry (created_at)"))
     await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brain_request_telemetry_operation ON brain_request_telemetry (operation)"))
+
+
     await conn.execute(text("ALTER TABLE brain_request_telemetry ADD COLUMN IF NOT EXISTS surface VARCHAR(16) NOT NULL DEFAULT 'http'"))
     await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brain_request_telemetry_repo_time ON brain_request_telemetry (repository_id, created_at)"))
+
+
+async def _ensure_skill_outcomes_table(conn: AsyncConnection) -> None:
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS memory_skill_outcomes (
+            id BIGSERIAL PRIMARY KEY,
+            skill_id BIGINT NOT NULL REFERENCES memory_skills(id) ON DELETE CASCADE,
+            task_id UUID NOT NULL REFERENCES harness.agent_tasks(id) ON DELETE CASCADE,
+            validation_id BIGINT NOT NULL REFERENCES harness.agent_validation_results(id) ON DELETE RESTRICT,
+            outcome VARCHAR(16) NOT NULL CHECK (outcome IN ('success','failure')),
+            evidence JSONB NOT NULL DEFAULT '{}',
+            reported_validation BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT uq_memory_skill_outcome_task_skill UNIQUE (task_id, skill_id)
+        )
+    """))
 
 
 async def _ensure_telemetry_state_table(conn: AsyncConnection) -> None:

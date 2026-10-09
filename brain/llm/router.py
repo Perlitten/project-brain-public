@@ -48,6 +48,20 @@ class ModelRouter:
     def _create_llm(self, model: str) -> LLMProvider:
         return create_llm_provider(self._provider_name, model=model or None)
 
+    def llm_for_model(self, model: str) -> LLMProvider:
+        """Create/cache an explicitly selected model for a bounded endpoint.
+
+        This is intentionally separate from task routing: an endpoint may opt
+        into a fast model without silently changing synthesis for every caller.
+        """
+        selected = str(model or "").strip()
+        if not selected:
+            return self.llm(TaskKind.SYNTHESIS)
+        key = (self._provider_name, selected)
+        if key not in self._llm_cache:
+            self._llm_cache[key] = self._create_llm(selected)
+        return self._llm_cache[key]
+
     def llm(self, task: TaskKind) -> LLMProvider:
         model = self.task_model(task)
         if self._provider_name == "mock":
