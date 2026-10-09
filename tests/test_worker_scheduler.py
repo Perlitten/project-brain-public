@@ -96,6 +96,17 @@ def test_schedule_matches_the_retired_n8n_cron_times():
         "self_diagnosis": "30 3 * * *",
         "benchmark": "0 6 * * 1",
     }
+
+
+def test_memory_schedule_is_independent_and_explicitly_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "MEMORY_CONSOLIDATION_ENABLED", False)
+    assert "memory_consolidation" not in {job.job_type for job in scheduler.active_schedules()}
+    monkeypatch.setattr(settings, "MEMORY_CONSOLIDATION_ENABLED", True)
+    jobs = {job.job_type: job for job in scheduler.active_schedules()}
+    assert jobs["memory_consolidation"].cron == "15 * * * *"
+    assert jobs["memory_consolidation"].params(datetime.now(UTC)) == {"scheduled": True}
+    from apps.api.routers.scheduler import TRIGGER_PATHS
+    assert TRIGGER_PATHS["memory_consolidation"] == "/jobs/memory-consolidation"
     cron = scheduler.Cron.parse("0 6 * * 1")
     assert cron.next_after(datetime(2026, 10, 6, 14, 0, tzinfo=UTC)) == datetime(2026, 10, 12, 6, 0, tzinfo=UTC)
 

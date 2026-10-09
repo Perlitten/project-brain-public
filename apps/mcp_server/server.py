@@ -1,7 +1,7 @@
 import sys
 import asyncio
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Literal
 from functools import wraps
 from inspect import signature
 from time import perf_counter
@@ -36,6 +36,26 @@ if str(PROJECT_ROOT) not in sys.path:
 ASK_RETRIEVAL_LIMIT = 10
 
 mcp = FastMCP("project-brain-mcp-server")
+
+
+@mcp.tool()
+async def record_task_lesson(task_id: str, statement: str, category: str, validation_id: int,
+                             artifact_ids: list[int], source_refs: list[str], idempotency_key: str) -> dict:
+    """Capture task-owned reported evidence as L1; L3 still needs human approval."""
+    from apps.api.routers.harness import LessonCreateRequest, add_validated_lesson
+    return await add_validated_lesson(task_id, LessonCreateRequest(
+        statement=statement, category=category, validation_id=validation_id, artifact_ids=artifact_ids,
+        source_refs=source_refs, idempotency_key=idempotency_key))
+
+
+@mcp.tool()
+async def record_procedure_outcome(skill_id: int, task_id: str, validation_id: int,
+                                    outcome: Literal["success", "failure"], artifact_ids: list[int], source_refs: list[str]) -> dict:
+    """Record a reported outcome once per task/skill, never on retrieval."""
+    from apps.api.routers.core_memory import SkillOutcomeEvidence, SkillOutcomeRequest, record_skill_outcome_endpoint
+    return await record_skill_outcome_endpoint(skill_id, SkillOutcomeRequest(
+        task_id=task_id, validation_id=validation_id, outcome=outcome,
+        evidence=SkillOutcomeEvidence(artifact_ids=artifact_ids, source_refs=source_refs)))
 
 
 def _mcp_outcome(result: object, operation: str) -> str:

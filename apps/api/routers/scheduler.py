@@ -22,6 +22,7 @@ TRIGGER_PATHS = {
     "health_check": "/jobs/health-check",
     "self_diagnosis": "/jobs/self-diagnosis",
     "benchmark": "/jobs/benchmark",
+    "memory_consolidation": "/jobs/memory-consolidation",
 }
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import uuid
 from typing import Any
 
 from sqlalchemy import (
@@ -20,6 +21,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import UUID
 
 from brain.embeddings.constants import EMBEDDING_DIMENSION
 from brain.embeddings.pgvector_sql import pgvector_column_type
@@ -628,3 +630,19 @@ class MemorySkill(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class SkillOutcome(Base):
+    """Idempotent, evidence-linked result of applying one L4 skill to a task."""
+    __tablename__ = "memory_skill_outcomes"
+    __table_args__ = (UniqueConstraint("task_id", "skill_id", name="uq_memory_skill_outcome_task_skill"),
+                      CheckConstraint("outcome IN ('success', 'failure')", name="ck_memory_skill_outcome"))
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    skill_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("memory_skills.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("harness.agent_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    validation_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("harness.agent_validation_results.id", ondelete="RESTRICT"), nullable=False, index=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    reported_validation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

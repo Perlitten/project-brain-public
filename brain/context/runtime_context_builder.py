@@ -12,11 +12,28 @@ from sqlalchemy import or_, select
 
 from brain.config.settings import settings
 from brain.context.budget import BudgetedPayloadBuilder, truncate_utf8
+from brain.context.evidence_support import should_abstain_for_unsupported_query
 from brain.database.models import File, FileChunk, Symbol
 from brain.database.session import async_session_factory
 from brain.memory.relevance import select_relevant_normative_memory
+from brain.memory.learning_retrieval import select_learnings_for_context
 from brain.retrieval.service import RetrievalCandidate, RetrievalResult, RetrievalService
 from brain.search.path_hints import derive_path_hints, path_hint_bonus
+
+
+def _bounded_memory(memory: Any, learnings: list[dict[str, Any]], max_bytes: int) -> dict[str, Any]:
+    """Interleave applicable records so one memory layer cannot consume the cap."""
+    groups = {"learnings": learnings, "rules": (memory or {}).get("rules", []) if isinstance(memory, dict) else [],
+              "decisions": (memory or {}).get("decisions", []) if isinstance(memory, dict) else []}
+    bounded: dict[str, Any] = {}
+    for index in range(max((len(items) for items in groups.values()), default=0)):
+        for name, items in groups.items():
+            if index >= len(items):
+                continue
+            proposed = {**bounded, name: [*bounded.get(name, []), items[index]]}
+            if len(json.dumps(proposed, ensure_ascii=False, separators=(",", ":")).encode()) <= max_bytes:
+                bounded = proposed
+    return bounded
 
 
 def _unsupported_domain_query(
@@ -24,40 +41,8 @@ def _unsupported_domain_query(
     result: RetrievalResult,
     slices: list[dict[str, Any]] | None = None,
 ) -> bool:
-    """Detect weak nearest-neighbour context for an unrepresented domain.
-
-    Runtime retrieval has no shared pipeline debug flag, so use evidence that
-    is stable across legacy and v2 score scales: distinctive query terms must
-    occur in candidate paths, matched symbols, or bounded loaded slice content.
-    Queries with at least two distinctive terms abstain only when none is
-    supported by that evidence; one-term semantic queries remain fail-open.
-    """
-    query_stopwords = {
-        "how", "does", "the", "for", "when", "why", "are", "has", "get", "with",
-        "through", "app", "and", "what", "where", "which", "this", "that", "into",
-        "from", "doesnt", "doesn't", "can", "you", "use", "used", "each", "before",
-    }
-    generic_terms = {
-        "configure", "configuration", "explain", "implement", "implementation",
-        "describe", "description", "identify", "provide", "support", "handle",
-        "behaviour", "behavior", "deployment", "request", "response", "system",
-        "project", "application", "service", "module", "feature", "function",
-        "after", "client", "clients", "requests",
-        "fallback", "active", "current",
-    }
-    terms = {
-        token.lower()
-        for token in re.findall(r"\b[A-Za-z][A-Za-z0-9_-]{2,}\b", query)
-        if token.lower() not in query_stopwords and token.lower() not in generic_terms
-    }
-    if len(terms) < 2 or not result.candidates:
-        return False
-    evidence = " ".join(
-        [candidate.path for candidate in result.candidates]
-        + [symbol for candidate in result.candidates for symbol in candidate.symbols]
-        + [str(item.get("content", "")) for item in (slices or [])]
-    ).lower()
-    return not any(term in evidence for term in terms)
+    """Compatibility seam for the shared evidence-support guard."""
+    return should_abstain_for_unsupported_query(query, result.candidates, slices or [])
 
 
 async def _queue_auto_reindex(repo_path: str) -> bool:
@@ -145,21 +130,19 @@ class RuntimeContextBuilder:
         # Bind cache reads to the same revision used for writes, after the
         # current-source/evidence guards. Cache must fit this request's budget.
         cached = get_cached_context(repo_str, task_description, repo.get("source_revision"), max_bytes)
-        if cached is not None and not include_debug and not result.degraded and "debug" not in cached:
-            res_cached = {**cached, "_cache_hit": True}
-            if len(json.dumps(res_cached, ensure_ascii=False, separators=(",", ":")).encode()) <= max_bytes:
-                return res_cached
-
+        cache_hit = (cached is not None and cached.get("evidence_cache_version") == 1
+                     and not include_debug and not result.degraded)
         await self._include_style_companion(result)
-        slices = await self._load_slices(result, max_bytes)
-        import logging as _lg
-        _lg.getLogger(__name__).warning("SLICES_LOADED: count=%d max_bytes=%d", len(slices), max_bytes)
+        if cache_hit and cached is not None:
+            slices = cached["slices"]
+        else:
+            slices = await self._load_slices(result, max_bytes)
         if not slices:
             metadata["status"] = "partial"
             metadata["missing"].append("no_code_slices")
             return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
 
-        if _unsupported_domain_query(task_description, result, slices):
+        if should_abstain_for_unsupported_query(task_description, result.candidates, slices):
             metadata["status"] = "partial"
             metadata["missing"].append("no_relevant_candidates")
             return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
@@ -169,12 +152,29 @@ class RuntimeContextBuilder:
             [candidate.path for candidate in result.candidates],
             repo.get("path"),
         )
+        # Normative and learned guidance is always live: rejecting, expiring or
+        # superseding a record must apply even on a code-evidence cache hit.
+        memory_cap = min(3000, max_bytes // 5)
+        try:
+            learnings = await asyncio.wait_for(select_learnings_for_context(
+                task_description, repo.get("path"), max_bytes=min(1200, memory_cap // 2),
+            ), timeout=2.0)
+        except Exception as exc:
+            from loguru import logger
+            logger.warning("L3 runtime retrieval skipped: {}", type(exc).__name__)
+            metadata["missing"].append("learning_retrieval_unavailable")
+            learnings = []
+        memory = _bounded_memory(memory, learnings, memory_cap)
+        if cache_hit:
+            metadata["_cache_hit"] = True
         builder = BudgetedPayloadBuilder(max_bytes, metadata=metadata)
         # Include only top 6 candidates in context pack to save tokens.
         # All 12 candidates are still used for slice loading above.
         builder.add("candidates", [candidate.to_locator_dict() for candidate in result.candidates[:6]], priority=4)
+        # Reserve a small, bounded part of the same cap for applicable memory;
+        # unbounded code slices must not silently evict all learned guidance.
+        builder.add("memory", memory, priority=5)
         builder.add("slices", slices, priority=3)
-        builder.add("memory", memory, priority=1)
         # L4 procedural memory, opt-in behind MEMORY_SKILLS_IN_ASK: top matching
         # active skills for this repo, strictly scope-filtered, inside the same
         # byte budget as every other section.
@@ -184,13 +184,22 @@ class RuntimeContextBuilder:
 
                 from brain.memory.skill_store import select_skills_for_context
 
-                procedures = await select_skills_for_context(
+                procedures = await asyncio.wait_for(select_skills_for_context(
                     task_description,
                     repo.get("path"),
                     max_count=settings.MEMORY_SKILLS_IN_ASK_TOP,
-                )
+                ), timeout=2.0)
                 if procedures:
-                    builder.add("procedures", {"skills": procedures, "skills_used": [s["id"] for s in procedures]}, priority=2)
+                    procedure_cap = min(settings.MEMORY_SKILLS_IN_ASK_MAX_BYTES, max_bytes // 10)
+                    bounded_procedures: list[dict[str, Any]] = []
+                    for procedure in procedures:
+                        block = {"skills": [*bounded_procedures, procedure],
+                                 "skills_used": [s["id"] for s in [*bounded_procedures, procedure]]}
+                        if len(json.dumps(block, ensure_ascii=False, separators=(",", ":")).encode()) <= procedure_cap:
+                            bounded_procedures.append(procedure)
+                    if bounded_procedures:
+                        builder.add("procedures", {"skills": bounded_procedures,
+                                    "skills_used": [s["id"] for s in bounded_procedures]}, priority=5)
             except Exception as exc:
                 logger.warning(f"Skill retrieval skipped for runtime context: {exc}")
         if include_debug:
@@ -207,7 +216,8 @@ class RuntimeContextBuilder:
                 .build()
             )
         if freshness == "current":
-            put_cached_context(repo_str, task_description, built, source_revision=repo.get("source_revision"),
+            put_cached_context(repo_str, task_description, {"evidence_cache_version": 1, "slices": slices},
+                               source_revision=repo.get("source_revision"),
                                max_bytes=max_bytes)
         return built
 
