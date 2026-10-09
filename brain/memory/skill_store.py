@@ -5,6 +5,7 @@ async_session_factory, no ORM sessions leak past this module.
 """
 
 from typing import Any, Dict, List, Optional
+import json
 
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.sql.elements import ColumnElement
@@ -188,4 +189,46 @@ async def select_skills_for_context(
     """
     if max_count <= 0:
         return []
-    return await match_skills(query, repo_scope=repo_scope, limit=max_count, strict_scope=True)
+    from brain.memory.learning_retrieval import learning_query_terms
+
+    terms = set(learning_query_terms(query))
+    if not terms:
+        return []
+    # Runtime injection requires task applicability, not merely the nearest
+    # vector in a small skill collection. Keep semantic exploration on /match;
+    # this hot path never embeds an empty store or backfills missing vectors.
+    text_columns = [MemorySkill.name, MemorySkill.description]
+    filters = [column.ilike("%" + term.replace("\\", "\\\\").replace("_", "\\_") + "%", escape="\\")
+               for column in text_columns for term in sorted(terms)[:16]]
+    from sqlalchemy import String, cast
+    filters.extend(cast(MemorySkill.triggers, String).ilike(
+        "%" + term.replace("\\", "\\\\").replace("_", "\\_") + "%", escape="\\")
+        for term in sorted(terms)[:16])
+    async with async_session_factory() as session:
+        rows = list((await session.execute(select(MemorySkill).where(
+            MemorySkill.status == "active", _injection_scope_clause(repo_scope), or_(*filters),
+        ).order_by(MemorySkill.confidence.desc(), MemorySkill.id.desc()).limit(64))).scalars().all())
+    scored = []
+    folded = query.casefold()
+    for skill in rows:
+        triggers = [trigger for trigger in (skill.triggers or []) if trigger.strip()]
+        trigger_matches = sum(1 for trigger in triggers if trigger.casefold() in folded)
+        name_matches = len(terms & set(learning_query_terms(skill.name)))
+        description_matches = len(terms & set(learning_query_terms(skill.description or "")))
+        if not (trigger_matches or name_matches or description_matches >= 2):
+            continue
+        scored.append((trigger_matches * 4 + name_matches * 2 + description_matches, skill))
+    result = []
+    for relevance, skill in sorted(scored, key=lambda item: (-item[0], -item[1].confidence, item[1].id))[:max_count]:
+        item = {"id": skill.id, "name": skill.name[:128], "description": (skill.description or "")[:220],
+                "workflow": [str(step)[:300] for step in (skill.workflow or [])[:6]],
+                "confidence": skill.confidence, "repo_scope": skill.repo_scope, "is_global": skill.is_global,
+                "trigger_score": relevance}
+        if len(json.dumps(item, ensure_ascii=False, separators=(",", ":")).encode()) <= settings_skill_cap():
+            result.append(item)
+    return result
+
+
+def settings_skill_cap() -> int:
+    from brain.config.settings import settings
+    return max(0, settings.MEMORY_SKILLS_IN_ASK_MAX_BYTES)

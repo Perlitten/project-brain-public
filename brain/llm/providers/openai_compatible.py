@@ -107,6 +107,10 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         return self.api_url
 
     async def generate(self, prompt: str, system_instruction: Optional[str] = None, **kwargs) -> str:
+        metadata = await self.generate_with_metadata(prompt, system_instruction=system_instruction, **kwargs)
+        return str(metadata["text"])
+
+    async def generate_with_metadata(self, prompt: str, system_instruction: Optional[str] = None, **kwargs) -> dict:
         api_url = self._check_config()
 
         from brain.llm.observability import audit_and_bound_llm_input
@@ -138,7 +142,13 @@ class OpenAICompatibleLLMProvider(LLMProvider):
                         # e.g. a content-filtered/moderation response — surface a
                         # clear error instead of an opaque KeyError/IndexError.
                         raise ValueError(f"LLM response contained no choices: {str(res_json)[:200]}")
-                    return choices[0]["message"]["content"]
+                    choice = choices[0]
+                    message = choice.get("message") or {}
+                    return {
+                        "text": message.get("content") or "",
+                        "finish_reason": choice.get("finish_reason"),
+                        "usage": res_json.get("usage"),
+                    }
             except httpx.HTTPStatusError as e:
                 if attempt == retries - 1:
                     raise e
