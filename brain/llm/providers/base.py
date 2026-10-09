@@ -23,6 +23,11 @@ class LLMProvider(ABC):
         """
         pass
 
+    async def generate_with_metadata(self, prompt: str, system_instruction: Optional[str] = None, **kwargs):
+        """Generate text plus provider metadata when the provider exposes it."""
+        text = await self.generate(prompt, system_instruction=system_instruction, **kwargs)
+        return {"text": text, "finish_reason": None, "usage": None}
+
 
 class EmbeddingProvider(ABC):
     """Abstract base class for text embedding providers."""

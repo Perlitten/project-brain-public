@@ -63,6 +63,15 @@ SCHEDULES: tuple[ScheduledJob, ...] = (
     ),
 )
 SCHEDULES_BY_TYPE = {job.job_type: job for job in SCHEDULES}
+MEMORY_SCHEDULE = ScheduledJob("memory_consolidation", "15 * * * *", "Hourly memory consolidation",
+                               lambda _slot: {"scheduled": True})
+SCHEDULES_BY_TYPE[MEMORY_SCHEDULE.job_type] = MEMORY_SCHEDULE
+
+
+def active_schedules() -> tuple[ScheduledJob, ...]:
+    # Independent of optional deep maintenance; disabled consolidation adds no
+    # hourly queue noise or misleading stale-job warning.
+    return SCHEDULES + ((MEMORY_SCHEDULE,) if settings.MEMORY_CONSOLIDATION_ENABLED else ())
 
 
 # --------------------------------------------------------------------------- cron
@@ -186,7 +195,7 @@ async def tick(redis: Redis, now: Optional[datetime] = None) -> List[Dict[str, A
     now = now or datetime.now(timezone.utc)
     window = max(int(settings.SCHEDULER_CATCHUP_WINDOW_S), 2 * int(settings.SCHEDULER_TICK_SECONDS))
     fired: List[Dict[str, Any]] = []
-    for job in SCHEDULES:
+    for job in active_schedules():
         cron = Cron.parse(job.cron)
         slot = cron.latest(now)
         if slot is None or (now - slot).total_seconds() > window:
@@ -226,7 +235,7 @@ async def run_scheduler(redis: Redis, stop: asyncio.Event) -> None:
         logger.info("Scheduler disabled (SCHEDULER_ENABLED=false)")
         return
     await redis.set(started_at_key(), datetime.now(timezone.utc).isoformat(), nx=True)
-    logger.info("Scheduler started: {}", ", ".join(f"{j.job_type}@'{j.cron}'" for j in SCHEDULES))
+    logger.info("Scheduler started: {}", ", ".join(f"{j.job_type}@'{j.cron}'" for j in active_schedules()))
     interval = max(5, int(settings.SCHEDULER_TICK_SECONDS))
     while not stop.is_set():
         try:
@@ -264,7 +273,7 @@ async def scheduler_status(redis: Redis, now: Optional[datetime] = None) -> Dict
     now = now or datetime.now(timezone.utc)
     started = _dt(await redis.get(started_at_key()))
     jobs: List[Dict[str, Any]] = []
-    for job in SCHEDULES:
+    for job in active_schedules():
         cron = Cron.parse(job.cron)
         raw = {(_s(k) or ""): v for k, v in (await redis.hgetall(job_stats_key(job.job_type)) or {}).items()}
         last_success, last_failure = _dt(raw.get("last_success_at")), _dt(raw.get("last_failure_at"))

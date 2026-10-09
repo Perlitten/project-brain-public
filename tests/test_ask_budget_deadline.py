@@ -45,3 +45,23 @@ async def test_ask_does_not_start_synthesis_after_its_total_deadline():
     assert payload["degraded"] == ["ask_deadline_exceeded"]
     router.assert_not_called()
     assert _size(payload) <= settings.AGENT_ASK_OUTPUT_MAX_BYTES
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("metadata, marker", [
+    ({"text": "<think>private reasoning", "finish_reason": "stop"}, "open_thinking_block"),
+    ({"text": "answer", "finish_reason": "length", "usage": {"completion_tokens": 900}}, "generation_token_limit"),
+])
+async def test_ask_v2_preserves_metadata_and_marks_unsafe_generation(monkeypatch, metadata, marker):
+    runtime_builder = SimpleNamespace(build=AsyncMock(return_value={"status": "ok", "candidates": []}))
+    provider = SimpleNamespace(generate_with_metadata=AsyncMock(return_value=metadata))
+    router = SimpleNamespace(llm=lambda task: provider)
+    monkeypatch.setattr("apps.api.routers.core_retrieval.RuntimeContextBuilder", lambda: runtime_builder)
+    monkeypatch.setattr("apps.api.routers.core_retrieval.get_model_router", lambda: router)
+    payload = await _ask_v2(AskRequest(query="where is the endpoint", repo_path="/app"))
+    assert payload["status"] == "partial"
+    assert marker in payload["degraded"]
+    if "usage" in metadata:
+        assert payload["usage"] == metadata["usage"]
+    if marker == "open_thinking_block":
+        assert "private reasoning" not in payload["answer"]

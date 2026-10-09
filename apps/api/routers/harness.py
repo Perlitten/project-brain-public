@@ -8,6 +8,8 @@ that calls these endpoints.
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, ConfigDict
+from sqlalchemy import select
 
 from apps.api.auth import require_api_key, require_scope
 from apps.api.harness_schemas import (
@@ -41,8 +43,51 @@ from brain.memory.harness_store import (
     TaskNotFound,
     VersionConflict,
 )
-
+from brain.database.session import async_session_factory
+from brain.memory.validated_evidence import validate_reported_evidence
 router = APIRouter(prefix="/harness", tags=["harness"], dependencies=[Depends(require_api_key), Depends(require_scope("harness:read"))])
+
+
+class LessonCreateRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    statement: str = Field(min_length=1, max_length=10000)
+    category: str = Field(min_length=1, max_length=64)
+    validation_id: int = Field(gt=0)
+    artifact_ids: list[int] = Field(min_length=1, max_length=32)
+    source_refs: list[str] = Field(min_length=1, max_length=16)
+    idempotency_key: str = Field(min_length=8, max_length=255)
+
+
+@router.post("/tasks/{task_id}/lessons", dependencies=[Depends(require_scope("harness:write"))])
+async def add_validated_lesson(task_id: str, body: LessonCreateRequest):
+    """Capture an evidence-linked L1 lesson; it is reported validation, not server execution."""
+    tid = _parse_task_id(task_id)
+    async with async_session_factory() as session:
+        task = (await session.execute(select(AgentTask).where(AgentTask.id == tid))).scalar_one_or_none()
+        validation = (await session.execute(select(AgentValidationResult).where(AgentValidationResult.id == body.validation_id, AgentValidationResult.task_id == tid))).scalar_one_or_none()
+        if task is None:
+            raise HTTPException(status_code=404, detail="task not found")
+        try:
+            await validate_reported_evidence(session, tid, validation, body.artifact_ids, body.source_refs)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    if validation is None or validation.status not in {"pass", "fail", "error"}:
+        raise HTTPException(status_code=422, detail="validation must belong to task and have pass, fail, or error status")
+    classification = "learning" if validation.status == "pass" else "failure_lesson"
+    payload = {"statement": body.statement, "category": body.category, "validation_id": body.validation_id,
+               "artifact_ids": sorted(set(body.artifact_ids)), "source_refs": body.source_refs,
+               "repo_scope": task.repo_path, "reported_validation": True}
+    try:
+        event = await HarnessStore.add_event(tid, "validated_lesson", "client", payload,
+            classification=classification, idempotency_key=body.idempotency_key)
+    except TaskNotFound:
+        raise HTTPException(status_code=404, detail="task not found")
+    except (VersionConflict, IdempotencyConflict, AcceptanceLocked) as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return _event_dict(event)
+
 PROTECTED_DECISION_EVENTS = frozenset(
     {
         "accepted",
