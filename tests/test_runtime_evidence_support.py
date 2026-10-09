@@ -58,3 +58,25 @@ def test_single_anchor_query_is_left_undecided():
     candidates = [Candidate("src/embedding.py", ("EmbeddingStore",))]
     assert not should_abstain_for_unsupported_query("embedding", candidates)
 
+
+def test_real_status_and_parameter_identifiers_support_a_contract_question():
+    candidates = [Candidate("brain/context/runtime_context_builder.py")]
+    slices = [{"path": candidates[0].path, "content": '''
+if not persist:
+    return {"status": "stale_blocked", "context": False}
+'''}]
+    query = "What does stale_blocked mean for a context response, and what does persist=false change about context storage?"
+    result = query_evidence_support(query, candidates, slices)
+    assert "stale_blocked" in result["supported_terms"]
+    assert "persist" in result["supported_terms"]
+    assert result["should_abstain"] is False
+
+
+def test_quoted_prose_and_test_status_values_cannot_establish_a_feature():
+    candidates = [Candidate("src/prompts.py"), Candidate("tests/test_runtime.py")]
+    slices = [
+        {"path": "src/prompts.py", "content": 'prompt = "Kubernetes native mobile deployment"'},
+        {"path": "tests/test_runtime.py", "content": 'status = "kubernetes"\nmobile = True'},
+    ]
+    assert should_abstain_for_unsupported_query("Kubernetes native mobile deployment", candidates, slices)
+
