@@ -67,7 +67,7 @@ async def test_changed_payload_conflicts_without_counter_changes(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scope,global_flag", [("/foreign", False), (None, False)])
+@pytest.mark.parametrize("scope,global_flag", [("/foreign", False), (None, False), ("  ", False)])
 async def test_foreign_and_unowned_procedures_rejected(monkeypatch, scope, global_flag):
     skill, session, args = setup_session(monkeypatch, scope=scope, is_global=global_flag)
     with pytest.raises(PermissionError):
@@ -82,6 +82,13 @@ async def test_failure_counts_use_without_success(monkeypatch):
     args["outcome"] = "failure"
     await record_skill_outcome(**args)
     assert (skill.times_used, skill.times_successful) == (1, 0)
+
+
+@pytest.mark.asyncio
+async def test_explicit_global_skill_outcome_matches_injection_contract(monkeypatch):
+    skill, _, args = setup_session(monkeypatch, scope="/foreign", is_global=True)
+    await record_skill_outcome(**args)
+    assert (skill.times_used, skill.times_successful) == (1, 1)
 
 
 @pytest.mark.asyncio
