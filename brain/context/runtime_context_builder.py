@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import hashlib
 import json
 import re
@@ -21,6 +22,18 @@ from brain.retrieval.service import RetrievalCandidate, RetrievalResult, Retriev
 from brain.search.path_hints import derive_path_hints, path_hint_bonus
 
 
+def _explicit_query_identifiers(query: str) -> set[str]:
+    """Recognize named code anchors, rather than ordinary prose keywords."""
+    identifiers = set(re.findall(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b", query))
+    identifiers.update(re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*=", query))
+    return {identifier.casefold() for identifier in identifiers}
+
+
+def _identifier_hits(content: str, identifiers: set[str]) -> int:
+    words = {word.casefold() for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", content)}
+    return len(words & identifiers)
+
+
 def _bounded_memory(memory: Any, learnings: list[dict[str, Any]], max_bytes: int) -> dict[str, Any]:
     """Interleave applicable records so one memory layer cannot consume the cap."""
     groups = {"learnings": learnings, "rules": (memory or {}).get("rules", []) if isinstance(memory, dict) else [],
@@ -34,6 +47,65 @@ def _bounded_memory(memory: Any, learnings: list[dict[str, Any]], max_bytes: int
             if len(json.dumps(proposed, ensure_ascii=False, separators=(",", ":")).encode()) <= max_bytes:
                 bounded = proposed
     return bounded
+
+
+def _referenced_constant_ranges(chunks: list[Any], matched_ranges: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    """Find bounded top-level constant declarations referenced by matched code."""
+    fragments: list[str] = []
+    remaining = 16_384
+    for chunk in chunks:
+        if (chunk.start_line is not None and chunk.end_line is not None
+                and any(chunk.start_line <= end and start <= chunk.end_line for start, end in matched_ranges)):
+            fragment = truncate_utf8(chunk.content or "", remaining)
+            fragments.append(fragment)
+            remaining -= len(fragment.encode("utf-8"))
+            if remaining <= 0:
+                break
+    matched = "\n".join(fragments)
+    names = set(re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", matched))
+    if not names:
+        return set()
+    lines: list[str] = []
+    remaining = 131_072 - 4_000  # Reserve space for reconstructed line breaks.
+    for chunk in sorted(chunks, key=lambda item: item.start_line or 0):
+        start = max(0, (chunk.start_line or 1) - 1)
+        if start >= 4_000:
+            continue
+        content_lines = truncate_utf8(chunk.content or "", 131_072).splitlines()
+        for offset, line in enumerate(content_lines):
+            index = start + offset
+            if index >= 4_000:
+                break
+            if index >= len(lines):
+                lines.extend([""] * (index + 1 - len(lines)))
+            if not lines[index]:
+                lines[index] = truncate_utf8(line, remaining)
+                remaining -= len(lines[index].encode("utf-8"))
+                if remaining <= 0:
+                    break
+        if remaining <= 0:
+            break
+    source = "\n".join(lines).encode("utf-8")[:131_072].decode("utf-8", errors="ignore")
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    found: set[tuple[int, int]] = set()
+    added_lines = added_bytes = 0
+    for node in tree.body:
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        declared = {target.id for target in targets if isinstance(target, ast.Name)}
+        if declared & names and node.end_lineno and node.end_lineno - node.lineno < 24:
+            line_count = node.end_lineno - node.lineno + 1
+            byte_count = len("\n".join(lines[node.lineno - 1:node.end_lineno]).encode("utf-8"))
+            if added_lines + line_count > 24 or added_bytes + byte_count > 1200:
+                continue
+            found.add((node.lineno, node.end_lineno))
+            added_lines += line_count
+            added_bytes += byte_count
+    return found
 
 
 def _unsupported_domain_query(
@@ -141,6 +213,13 @@ class RuntimeContextBuilder:
             metadata["status"] = "partial"
             metadata["missing"].append("no_code_slices")
             return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
+
+        # Keep public locators aligned with the selected code on cache hits as
+        # well: cached slices can put the actual implementation ahead of tests.
+        slice_rank: dict[str, int] = {}
+        for index, item in enumerate(slices):
+            slice_rank.setdefault(item["path"], index)
+        result.candidates.sort(key=lambda candidate: slice_rank.get(candidate.path, len(slice_rank)))
 
         if should_abstain_for_unsupported_query(task_description, result.candidates, slices):
             metadata["status"] = "partial"
@@ -396,14 +475,38 @@ class RuntimeContextBuilder:
                 return 1
             return 2
 
+        chunks_by_file: dict[str, list[Any]] = {}
+        for chunk, path in rows:
+            chunks_by_file.setdefault(path, []).append(chunk)
+        for path, file_chunks in chunks_by_file.items():
+            companions = _referenced_constant_ranges(file_chunks, original_ranges.get(path, set()))
+            desired_ranges[path].update(companions)
+            original_ranges[path].update(companions)
+
         chunks_by_path: dict[str, list[tuple[Any, int]]] = {}
         for chunk, path in rows:
             orig = original_ranges.get(path, set())
             all_r = desired_ranges.get(path, set())
             chunks_by_path.setdefault(path, []).append((chunk, _overlap_level(chunk, orig, all_r)))
 
-        for path in chunks_by_path:
-            chunks_by_path[path].sort(key=lambda x: (x[1], x[0].start_line or 0, x[0].chunk_index or 0))
+        exact_identifiers = _explicit_query_identifiers(result.query)
+        implementation_hits: dict[str, int] = {}
+        for path, chunks in chunks_by_path.items():
+            # A class range can cover its whole file. Its declaration/header
+            # must not displace the method containing the exact requested
+            # status or parameter. Do not let test assertions establish the
+            # implementation when the same anchor exists in production code.
+            if not re.search(r"(?:^|/)(?:tests?|fixtures?)(?:/|$)", path, re.I):
+                hits = max((_identifier_hits(chunk.content or "", exact_identifiers)
+                            for chunk, _ in chunks), default=0)
+                if hits:
+                    implementation_hits[path] = hits
+                    primary_files.add(path)
+                    strong_primary.add(path)
+            chunks.sort(key=lambda x: (
+                -_identifier_hits(x[0].content or "", exact_identifiers),
+                x[1], x[0].start_line or 0, x[0].chunk_index or 0,
+            ))
 
         # Hybrid allocation: first pass gives 1 slice per file (round-robin
         # by rank) so every candidate gets coverage. Second pass fills
@@ -416,6 +519,10 @@ class RuntimeContextBuilder:
         max_total_slices = 22
 
         ordered_paths = [p for p in ranked_paths if p in chunks_by_path]
+        if implementation_hits:
+            ordered_paths.sort(key=lambda path: -implementation_hits.get(path, 0))
+            rank = {path: index for index, path in enumerate(ordered_paths)}
+            result.candidates.sort(key=lambda candidate: rank.get(candidate.path, len(rank)))
         next_idx: dict[str, int] = {p: 0 for p in ordered_paths}
 
         def _try_take(path: str) -> bool:
