@@ -42,9 +42,10 @@ async def record_skill_outcome(*, skill_id: int, task_id: str, validation_id: in
             raise ValueError("success requires a passing reported validation")
         if outcome == "failure" and validation.status not in {"pass", "fail", "error"}:
             raise ValueError("failure requires validation status pass, fail, or error")
-        if skill.repo_scope is None and not skill.is_global:
+        skill_scope = normalize_repo_scope(skill.repo_scope)
+        if skill_scope is None and not skill.is_global:
             raise PermissionError("unscoped non-global skills cannot record outcomes")
-        if normalize_repo_scope(skill.repo_scope) and normalize_repo_scope(skill.repo_scope) != normalize_repo_scope(task.repo_path):
+        if not skill.is_global and skill_scope != normalize_repo_scope(task.repo_path):
             raise PermissionError("skill repository scope does not match task")
         await validate_reported_evidence(session, task_uuid, validation,
             evidence.get("artifact_ids", []), evidence.get("source_refs", []))
