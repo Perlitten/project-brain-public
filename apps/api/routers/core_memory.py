@@ -266,6 +266,9 @@ async def get_skills(status: Optional[str] = "active", limit: int = Query(50, ge
                 "success_rate": round(s.times_successful / s.times_used, 3) if s.times_used > 0 else None,
                 "status": s.status,
                 "confidence": s.confidence,
+                "repo_scope": s.repo_scope,
+                "is_global": s.is_global,
+                "source_learning_ids": s.source_learning_ids,
             }
             for s in skills
         ]
@@ -299,6 +302,39 @@ async def create_skill(body: SkillCreate):
     except Exception as exc:
         logger.error(f"Failed to create skill: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to create skill") from exc
+
+
+async def _decide_skill(skill_id: int, body: Optional[EpisodeDecisionRequest], *, approve: bool) -> dict:
+    from brain.memory.skill_store import SkillStateError, decide_skill
+
+    reason = body.reason if body else None
+    try:
+        return await decide_skill(skill_id, approve=approve, reason=reason)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SkillStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Skill decision failed for {skill_id}: {type(exc).__name__}: {exc}")
+        raise HTTPException(status_code=500, detail="Skill decision failed") from exc
+
+
+@router.post(
+    "/skills/{skill_id}/approve",
+    dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))],
+)
+async def approve_pending_skill(skill_id: int, body: Optional[EpisodeDecisionRequest] = None):
+    """Activate a pending (machine-distilled) L4 skill so it can be matched and injected."""
+    return await _decide_skill(skill_id, body, approve=True)
+
+
+@router.post(
+    "/skills/{skill_id}/reject",
+    dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))],
+)
+async def reject_pending_skill(skill_id: int, body: Optional[EpisodeDecisionRequest] = None):
+    """Reject a pending distilled L4 skill; its source learnings stay active."""
+    return await _decide_skill(skill_id, body, approve=False)
 
 
 @router.post("/skills/match", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])

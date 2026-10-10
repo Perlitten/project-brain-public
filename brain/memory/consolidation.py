@@ -47,14 +47,26 @@ CONSOLIDATION_LOCK_ID = 0x4D454D01  # "MEM\x01"
 
 # G2: minimum independent L1 events for auto-promotion (1 event needs human confirm).
 MIN_EPISODES_AUTO = 2
+# G2 for unvalidated evidence (observations, handoff summaries): one more
+# independent sighting before a claim nobody checked becomes L3.
+MIN_EPISODES_UNVALIDATED_AUTO = 3
+# G3: when the LLM reports a contradiction without naming the learning, the
+# most similar active learning is the one being corrected if it is at least
+# this close; below it the conflict is unresolvable and goes to a human.
+SUPERSEDE_MIN_SIMILARITY = 0.5
+# G1 reinforcement: a duplicate sighting raises the known learning's confidence by this much.
+REINFORCE_CONFIDENCE_STEP = 0.05
+
+EVIDENCE_TIER_VALIDATED = "validated"
+EVIDENCE_TIER_UNVALIDATED = "unvalidated"
 
 
 class GateOutcome(str, Enum):
     PROMOTE = "promote"
-    LINK_DUPLICATE = "link_duplicate"      # G1: already known
+    SUPERSEDE = "supersede"                # G3: corrects active memory (old learning superseded)
+    LINK_DUPLICATE = "link_duplicate"      # G1: already known (existing learning reinforced)
     REJECT_EVIDENCE = "reject_evidence"    # G2: not enough evidence
-    REJECT_CONTRADICTION = "reject_contradiction"  # G3: conflicts with active memory
-    NEEDS_APPROVAL = "needs_approval"      # G4: high-stakes, human must confirm
+    NEEDS_APPROVAL = "needs_approval"      # G4: high-stakes or unresolved, human must confirm
 
 
 @dataclass
@@ -65,6 +77,10 @@ class ConsolidationCandidate:
     evidence: List[Dict[str, Any]] = field(default_factory=list)
     severity: str = "low"  # low | medium | high
     suggested_target: str = "learning"  # learning | decision | rule
+    # validated: every evidence event carries reported_validation=true
+    # (POST /harness/tasks/{id}/lessons); unvalidated: at least one event is a
+    # plain observation or handoff summary nobody checked.
+    evidence_tier: str = EVIDENCE_TIER_VALIDATED
 
 
 @dataclass
@@ -72,6 +88,9 @@ class GateResult:
     outcome: GateOutcome
     reasons: List[str] = field(default_factory=list)
     duplicate_of: Optional[int] = None
+    # Active learnings this candidate corrects (G3). Applied on PROMOTE/SUPERSEDE
+    # persist, or when a human approves the pending episode.
+    supersedes: List[int] = field(default_factory=list)
 
 
 def _cosine(a: List[float], b: List[float]) -> float:
@@ -88,6 +107,18 @@ def _l1_event_text(event: AgentTaskEvent) -> str:
         if payload.get(key):
             parts.append(str(payload[key]))
     return " | ".join(p for p in parts if p)
+
+
+def _event_is_validated(event: AgentTaskEvent) -> bool:
+    payload = event.payload_json or {}
+    return bool(payload.get("reported_validation"))
+
+
+def evidence_tier_for(cluster: List[AgentTaskEvent]) -> str:
+    """validated only when every L1 event in the cluster was evidence-linked."""
+    if cluster and all(_event_is_validated(e) for e in cluster):
+        return EVIDENCE_TIER_VALIDATED
+    return EVIDENCE_TIER_UNVALIDATED
 
 
 async def _collect_unconsumed_l1_events(
@@ -219,9 +250,13 @@ useful for future sessions.
 Episodes:
 {episodes}
 
-Reply with JSON only: {{"statement": "...", "category": "...", "confidence": 0.0-1.0, "severity": "low|medium|high"}}
+Reply with JSON only: {{"statement": "...", "category": "...", "confidence": 0.0-1.0, "severity": "low|medium|high", "target": "learning|decision|rule"}}
 Category is one of: infra, llm-behavior, repo, workflow, testing.
-Severity is "high" only if acting on a wrong statement would cause damage."""
+Severity is "high" only if acting on a wrong statement would cause damage.
+Target is "rule" for a constraint every change must obey, "decision" for a
+deliberate architectural choice with a reason, otherwise "learning"."""
+
+_VALID_TARGETS = ("learning", "decision", "rule")
 
 
 async def distill_candidate(cluster: List[AgentTaskEvent]) -> ConsolidationCandidate:
@@ -234,7 +269,12 @@ async def distill_candidate(cluster: List[AgentTaskEvent]) -> ConsolidationCandi
     except (ValueError, json.JSONDecodeError):
         data = {}
     evidence = [
-        {"event_id": e.id, "task_id": str(e.task_id), "classification": e.classification}
+        {
+            "event_id": e.id,
+            "task_id": str(e.task_id),
+            "classification": e.classification,
+            "validated": _event_is_validated(e),
+        }
         for e in cluster
     ]
     return ConsolidationCandidate(
@@ -243,6 +283,8 @@ async def distill_candidate(cluster: List[AgentTaskEvent]) -> ConsolidationCandi
         confidence=float(data.get("confidence", 0.5) or 0.5),
         evidence=evidence,
         severity=data.get("severity", "low") if data.get("severity") in ("low", "medium", "high") else "low",
+        suggested_target=data.get("target") if data.get("target") in _VALID_TARGETS else "learning",
+        evidence_tier=evidence_tier_for(cluster),
     )
 
 
@@ -253,7 +295,55 @@ New learning: {statement}
 Existing memory:
 {existing}
 
-Reply with JSON only: {{"contradicts": true|false, "reason": "..."}}"""
+Reply with JSON only: {{"contradicts": true|false, "conflicting_ids": [ids from the existing memory it contradicts], "reason": "..."}}"""
+
+
+@dataclass
+class _Contradiction:
+    """Outcome of one contradiction check against the active learnings."""
+
+    contradicts: bool = False
+    supersedes: List[int] = field(default_factory=list)   # active ids the candidate corrects
+    reason: str = ""
+    failed: bool = False                                   # LLM/parse failure → callers fail open
+
+
+async def _detect_contradiction(
+    candidate: ConsolidationCandidate,
+    active: List[Any],
+    best_idx: int,
+    best_sim: float,
+) -> _Contradiction:
+    """Ask the summarizer whether ``candidate`` contradicts active memory.
+
+    Named ``conflicting_ids`` win when they are in the active set; otherwise the
+    nearest learning by embedding similarity is taken when it is at least
+    ``SUPERSEDE_MIN_SIMILARITY`` close. ``contradicts`` without any resolved id
+    is an unresolved contradiction (G4 decides).
+    """
+    summarizer = get_summarizer_provider()
+    existing_text = "\n".join(f"- [{lrng.id}] {lrng.statement}" for lrng in active[:20])
+    try:
+        raw = await summarizer.summarize(
+            _CONTRADICTION_PROMPT.format(statement=candidate.statement, existing=existing_text)
+        )
+        data = json.loads(raw[raw.index("{"): raw.rindex("}") + 1])
+    except Exception as exc:
+        logger.warning("Contradiction check failed: %s", exc)
+        return _Contradiction(failed=True)
+    if not data.get("contradicts"):
+        return _Contradiction()
+    active_ids = {lrng.id for lrng in active}
+    named: List[int] = []
+    for raw_id in data.get("conflicting_ids") or []:
+        try:
+            named.append(int(raw_id))
+        except (TypeError, ValueError):
+            continue
+    supersedes = [i for i in dict.fromkeys(named) if i in active_ids]
+    if not supersedes and best_idx >= 0 and best_sim >= SUPERSEDE_MIN_SIMILARITY:
+        supersedes = [active[best_idx].id]
+    return _Contradiction(contradicts=True, supersedes=supersedes, reason=str(data.get("reason", "")).strip())
 
 
 async def evaluate_gates(
@@ -262,13 +352,27 @@ async def evaluate_gates(
     require_approval: bool = False,
     repo_scope: Optional[str] = None,
 ) -> GateResult:
-    """Run lexicographic promotion gates G1–G4. First failure decides."""
+    """Run lexicographic promotion gates G1–G4. First failure decides.
+
+    G1 duplicate → LINK_DUPLICATE (the known learning is reinforced on persist),
+    unless the near-duplicate is a *correction* of the fact it resembles: a
+    changed number or flag embeds almost identically to the stale statement,
+    and linking it would reinforce the wrong memory. A near-duplicate is
+    therefore checked for contradiction before it is linked.
+    G2 too little evidence → REJECT_EVIDENCE (unvalidated evidence needs more).
+    G3 contradiction → the corrected learning is superseded, not the new one
+    rejected: SUPERSEDE when the evidence is validated and the stakes are not
+    high, otherwise NEEDS_APPROVAL with the superseded ids recorded.
+    G4 high severity, unvalidated medium severity, or require_approval → NEEDS_APPROVAL.
+    """
     reasons: List[str] = []
+    validated = candidate.evidence_tier == EVIDENCE_TIER_VALIDATED
 
     # G1 — Dedup against active learnings visible to this cluster's repo
     # (global plus same-repo); a learning scoped to another repo must not
     # dedup a candidate it never applied to.
     active = await LearningStore.list_active_learnings(repo_scope)
+    best_idx, best_sim = -1, -1.0
     if active:
         embedder = get_embedding_provider()
         current_model = getattr(embedder, "model", None) or getattr(
@@ -288,54 +392,84 @@ async def evaluate_gates(
             batch = await embedder.embed_batch([active[i].statement for i in missing_idx])
             for i, vec in zip(missing_idx, batch):
                 act_vecs[i] = vec
-        best_idx, best_sim = -1, -1.0
         for i, vec in enumerate(act_vecs):
             sim = _cosine(cand_vec, vec)
             if sim > best_sim:
                 best_idx, best_sim = i, sim
-        if best_sim >= DEDUP_SIMILARITY_THRESHOLD:
+    contradiction: Optional[_Contradiction] = None
+    if active and best_sim >= DEDUP_SIMILARITY_THRESHOLD:
+        contradiction = await _detect_contradiction(candidate, active, best_idx, best_sim)
+        if not contradiction.contradicts:
+            # Confirmed duplicate (or the check failed: linking is the
+            # conservative default — it reinforces, never rewrites).
             return GateResult(
                 outcome=GateOutcome.LINK_DUPLICATE,
                 reasons=[f"G1: similarity {best_sim:.2f} to learning {active[best_idx].id}"],
                 duplicate_of=active[best_idx].id,
             )
-    reasons.append("G1 pass: no duplicate")
+        reasons.append(
+            f"G1: similarity {best_sim:.2f} to learning {active[best_idx].id} but the statement "
+            f"contradicts it — treated as a correction, not a duplicate"
+        )
+    else:
+        reasons.append("G1 pass: no duplicate")
 
-    # G2 — Evidence threshold.
+    # G2 — Evidence threshold; unchecked claims need one more independent sighting.
     event_count = len(candidate.evidence)
-    if event_count < MIN_EPISODES_AUTO and not require_approval:
+    needed = MIN_EPISODES_AUTO if validated else MIN_EPISODES_UNVALIDATED_AUTO
+    if event_count < needed and not require_approval:
         return GateResult(
             outcome=GateOutcome.REJECT_EVIDENCE,
-            reasons=reasons + [f"G2: only {event_count} L1 event(s), need {MIN_EPISODES_AUTO}"],
+            reasons=reasons + [
+                f"G2: only {event_count} {candidate.evidence_tier} L1 event(s), need {needed}"
+            ],
         )
-    reasons.append(f"G2 pass: {event_count} L1 event(s)")
+    reasons.append(f"G2 pass: {event_count} {candidate.evidence_tier} L1 event(s)")
 
-    # G3 — Non-contradiction with active memory.
+    # G3 — Contradiction with active memory corrects the old learning
+    # (supersede, append-only chain) instead of discarding the new evidence.
+    supersedes: List[int] = []
+    contradiction_unresolved = False
     if active:
-        summarizer = get_summarizer_provider()
-        existing_text = "\n".join(f"- [{lrng.id}] {lrng.statement}" for lrng in active[:20])
-        try:
-            raw = await summarizer.summarize(
-                _CONTRADICTION_PROMPT.format(statement=candidate.statement, existing=existing_text)
-            )
-            data = json.loads(raw[raw.index("{"): raw.rindex("}") + 1])
-            if data.get("contradicts"):
-                return GateResult(
-                    outcome=GateOutcome.REJECT_CONTRADICTION,
-                    reasons=reasons + [f"G3: contradicts active memory: {data.get('reason', '')}"],
+        if contradiction is None:
+            contradiction = await _detect_contradiction(candidate, active, best_idx, best_sim)
+        if contradiction.failed:
+            logger.warning("G3 contradiction check failed, failing open")
+        elif contradiction.contradicts:
+            supersedes = list(contradiction.supersedes)
+            if supersedes:
+                reasons.append(f"G3: corrects learning(s) {supersedes}: {contradiction.reason}")
+            else:
+                contradiction_unresolved = True
+                reasons.append(
+                    f"G3: contradicts active memory but no learning identified: {contradiction.reason}"
                 )
-        except Exception as exc:
-            logger.warning("G3 contradiction check failed, failing open: %s", exc)
-    reasons.append("G3 pass: no contradiction")
+    if not supersedes and not contradiction_unresolved:
+        reasons.append("G3 pass: no contradiction")
 
-    # G4 — Human approval for high severity.
-    if candidate.severity == "high" or require_approval:
+    # G4 — Human approval: high stakes, unchecked medium stakes, any
+    # correction that is not backed by validated evidence, unresolved
+    # contradictions, or an operator-wide require_approval.
+    approval_reason = None
+    if candidate.severity == "high":
+        approval_reason = "G4: high severity requires human approval"
+    elif require_approval:
+        approval_reason = "G4: MEMORY_CONSOLIDATION_REQUIRE_APPROVAL"
+    elif contradiction_unresolved:
+        approval_reason = "G4: unresolved contradiction requires human approval"
+    elif supersedes and not validated:
+        approval_reason = "G4: superseding active memory on unvalidated evidence requires human approval"
+    elif candidate.severity == "medium" and not validated:
+        approval_reason = "G4: medium severity on unvalidated evidence requires human approval"
+    if approval_reason:
         return GateResult(
             outcome=GateOutcome.NEEDS_APPROVAL,
-            reasons=reasons + ["G4: high severity requires human approval"],
+            reasons=reasons + [approval_reason],
+            supersedes=supersedes,
         )
     reasons.append("G4 pass: auto-promotable")
-
+    if supersedes:
+        return GateResult(outcome=GateOutcome.SUPERSEDE, reasons=reasons, supersedes=supersedes)
     return GateResult(outcome=GateOutcome.PROMOTE, reasons=reasons)
 
 
@@ -383,7 +517,7 @@ async def promote_candidate(
     ``repo_scope`` wins (normalized); otherwise it is derived from the
     candidate's evidence events. Underivable scope stays NULL.
     """
-    if gate.outcome != GateOutcome.PROMOTE:
+    if gate.outcome not in (GateOutcome.PROMOTE, GateOutcome.SUPERSEDE):
         return None
     scope = normalize_repo_scope(repo_scope) if repo_scope else None
     if scope is None:
@@ -397,7 +531,7 @@ async def promote_candidate(
                 "promote_candidate: repo_scope underivable from %d evidence event(s); learning stays unscoped",
                 len(candidate.evidence or []),
             )
-    return await LearningStore.add_learning(
+    learning_id = await LearningStore.add_learning(
         statement=candidate.statement,
         category=candidate.category,
         confidence=candidate.confidence,
@@ -405,6 +539,9 @@ async def promote_candidate(
         repo_scope=scope,
         promoted_from=run_id,
     )
+    for old_id in gate.supersedes:
+        await LearningStore.supersede(old_id, learning_id)
+    return learning_id
 
 
 async def run_consolidation(
@@ -445,6 +582,7 @@ async def run_consolidation(
                 "promoted": [],
                 "rejected": [],
                 "needs_approval": [],
+                "reinforced": [],
             }
         try:
             return await _run_consolidation_unlocked(
@@ -462,10 +600,10 @@ async def run_consolidation(
 
 _EPISODE_STATUS = {
     GateOutcome.PROMOTE: "promoted",
+    GateOutcome.SUPERSEDE: "promoted",
     GateOutcome.NEEDS_APPROVAL: "pending",
     GateOutcome.LINK_DUPLICATE: "duplicate",
     GateOutcome.REJECT_EVIDENCE: "rejected",
-    GateOutcome.REJECT_CONTRADICTION: "rejected",
 }
 
 
@@ -503,6 +641,46 @@ def _cluster_repo_scope(
     return counts.most_common(1)[0][0]
 
 
+async def _route_to_normative_store(
+    candidate: ConsolidationCandidate,
+    learning_id: int,
+    repo_scope: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """Project a promoted learning into the Rule or Decision store when the
+    distiller classified it as one. The learning stays canonical; the
+    projection is best-effort and runs after the L2/L3 transaction committed."""
+    target = candidate.suggested_target
+    if target not in ("rule", "decision") or not settings.MEMORY_ROUTE_TARGETS:
+        return None
+    title = " ".join(candidate.statement.split())[:120]
+    if target == "rule":
+        from brain.memory.rule_store import RuleStore
+
+        rule_id = await RuleStore.add_rule(
+            name=title,
+            repo_path=repo_scope,
+            description=candidate.statement,
+            type="learned",
+            severity=candidate.severity,
+            status="active",
+            applies_to={"source": "memory_consolidation", "learning_id": learning_id},
+        )
+        return {"target": "rule", "id": rule_id}
+    if repo_scope is None:
+        # A system_global decision needs admin authority; an unscoped learning
+        # cannot claim it. The learning itself is already persisted.
+        return None
+    from brain.memory.decision_store import DecisionStore
+
+    decision_id = await DecisionStore.add_decision(
+        title=title,
+        repo_path=repo_scope,
+        description=candidate.statement,
+        reason=f"Consolidated from {len(candidate.evidence)} L1 event(s); learning {learning_id}",
+    )
+    return {"target": "decision", "id": decision_id}
+
+
 async def _persist_cluster(
     cluster: List[AgentTaskEvent],
     candidate: ConsolidationCandidate,
@@ -510,7 +688,11 @@ async def _persist_cluster(
     run_id: str,
     repo_scope: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Write one L2 episode, its L1 ledger rows and (if promoted) its L3 learning in one transaction."""
+    """Write one L2 episode, its L1 ledger rows and (if promoted) its L3 learning in one transaction.
+
+    PROMOTE/SUPERSEDE also mark the superseded learnings; LINK_DUPLICATE
+    reinforces the known learning (confidence + evidence) in the same transaction.
+    """
     embedding = await _episode_embedding(candidate.statement)
     async with async_session_factory() as session:
         async with session.begin():
@@ -522,6 +704,7 @@ async def _persist_cluster(
                 confidence=candidate.confidence,
                 gate_reasons=list(gate.reasons),
                 duplicate_of_learning_id=gate.duplicate_of,
+                supersedes_learning_ids=list(gate.supersedes) or None,
                 embedding=embedding,
                 repo_scope=normalize_repo_scope(repo_scope),
             )
@@ -529,7 +712,7 @@ async def _persist_cluster(
             await session.flush()
             session.add_all(MemoryEpisodeEvent(event_id=e.id, episode_id=episode.id) for e in cluster)
             learning_id = None
-            if gate.outcome == GateOutcome.PROMOTE:
+            if gate.outcome in (GateOutcome.PROMOTE, GateOutcome.SUPERSEDE):
                 learning_id = await LearningStore.add_learning(
                     statement=candidate.statement,
                     category=candidate.category,
@@ -540,8 +723,29 @@ async def _persist_cluster(
                     session=session,
                 )
                 episode.promoted_to_learning_id = learning_id
+                for old_id in gate.supersedes:
+                    await LearningStore.supersede(old_id, learning_id, session=session)
+            elif gate.outcome == GateOutcome.LINK_DUPLICATE and gate.duplicate_of is not None:
+                await LearningStore.reinforce(
+                    gate.duplicate_of,
+                    evidence=candidate.evidence,
+                    confidence_step=REINFORCE_CONFIDENCE_STEP,
+                    session=session,
+                )
             await session.flush()
-            return {"episode_id": episode.id, "learning_id": learning_id}
+            result = {"episode_id": episode.id, "learning_id": learning_id}
+            if gate.supersedes:
+                result["superseded"] = list(gate.supersedes)
+            scope = episode.repo_scope
+    if learning_id is not None:
+        try:
+            routed = await _route_to_normative_store(candidate, learning_id, scope)
+        except Exception as exc:
+            logger.warning("Normative routing of learning %s failed (learning kept): %s", learning_id, exc)
+            routed = None
+        if routed:
+            result["routed_to"] = routed
+    return result
 
 
 async def _run_consolidation_unlocked(
@@ -555,16 +759,19 @@ async def _run_consolidation_unlocked(
     events, repo_by_event = await collect_l1_events(since)
     report: Dict[str, Any] = {
         "run_id": run_id,
+        "status": "ok",
         "l1_events": len(events),
         "candidates": 0,
         "episodes_created": 0,
         "promoted": [],
         "rejected": [],
         "needs_approval": [],
+        "reinforced": [],
         "errors": [],
         "dry_run": dry_run,
     }
     if not events:
+        await _attach_run_tail(report, dry_run=dry_run)
         return report
     for cluster in await cluster_l1_events(events):
         candidate = await distill_candidate(cluster)
@@ -596,18 +803,57 @@ async def _run_consolidation_unlocked(
                 )
                 continue
             report["episodes_created"] += 1
-        if gate.outcome == GateOutcome.PROMOTE:
+        if gate.outcome in (GateOutcome.PROMOTE, GateOutcome.SUPERSEDE):
             report["promoted"].append(entry)
         elif gate.outcome == GateOutcome.NEEDS_APPROVAL:
             report["needs_approval"].append(entry)
+        elif gate.outcome == GateOutcome.LINK_DUPLICATE:
+            report["reinforced"].append(entry)
         else:
             report["rejected"].append(entry)
+    await _attach_run_tail(report, dry_run=dry_run)
     logger.info(
-        "Consolidation %s: %d L1 events → %d candidates, %d episodes, %d promoted, %d errors",
+        "Consolidation %s: %d L1 events → %d candidates, %d episodes, %d promoted, %d reinforced, "
+        "%d pending total, %d errors",
         run_id, len(events), report["candidates"], report["episodes_created"],
-        len(report["promoted"]), len(report["errors"]),
+        len(report["promoted"]), len(report["reinforced"]), report.get("pending_total", 0),
+        len(report["errors"]),
     )
     return report
+
+
+async def count_pending_episodes() -> int:
+    """How many L2 episodes await a human decision (GET /episodes?status=pending)."""
+    from sqlalchemy import func
+
+    async with async_session_factory() as session:
+        return int(
+            (
+                await session.execute(
+                    select(func.count()).select_from(MemoryEpisode).where(MemoryEpisode.status == "pending")
+                )
+            ).scalar_one()
+        )
+
+
+async def _attach_run_tail(report: Dict[str, Any], *, dry_run: bool) -> None:
+    """Append the pending-queue size and the L3→L4 distillation step to a run report.
+
+    Both are best-effort: a failure here never undoes the episodes already written.
+    """
+    try:
+        report["pending_total"] = await count_pending_episodes()
+    except Exception as exc:
+        logger.warning("Pending episode count failed: %s", exc)
+    if dry_run or not settings.MEMORY_SKILL_DISTILLATION_ENABLED:
+        return
+    try:
+        from brain.memory.skill_distiller import distill_skills
+
+        report["skills"] = await distill_skills()
+    except Exception as exc:
+        logger.warning("L3→L4 skill distillation failed (best-effort): %s", exc)
+        report["skills"] = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
 
 
 async def _decide_pending_episode(episode_id: int, *, approve: bool, reason: Optional[str]) -> Dict[str, Any]:
@@ -625,6 +871,7 @@ async def _decide_pending_episode(episode_id: int, *, approve: bool, reason: Opt
             note = f"{'approved' if approve else 'rejected'} by human" + (f": {reason}" if reason else "")
             episode.gate_reasons = [*(episode.gate_reasons or []), note]
             learning_id = None
+            superseded: List[int] = []
             if approve:
                 learning_id = await LearningStore.add_learning(
                     statement=episode.distilled_summary,
@@ -637,9 +884,19 @@ async def _decide_pending_episode(episode_id: int, *, approve: bool, reason: Opt
                 )
                 episode.status = "promoted"
                 episode.promoted_to_learning_id = learning_id
+                # A human approving a G3 correction also retires what it corrects.
+                for old_id in episode.supersedes_learning_ids or []:
+                    try:
+                        await LearningStore.supersede(int(old_id), learning_id, session=session)
+                        superseded.append(int(old_id))
+                    except LookupError:
+                        continue
             else:
                 episode.status = "rejected"
-            return {"episode_id": episode.id, "status": episode.status, "learning_id": learning_id}
+            result = {"episode_id": episode.id, "status": episode.status, "learning_id": learning_id}
+            if superseded:
+                result["superseded"] = superseded
+            return result
 
 
 async def approve_episode(episode_id: int, reason: Optional[str] = None) -> Dict[str, Any]:

@@ -22,6 +22,7 @@ from brain.embeddings.constants import EMBEDDING_DIMENSION
 from brain.embeddings.pgvector_sql import pgvector_index_dimension
 from brain.memory import consolidation
 from brain.memory.consolidation import EpisodeStateError, approve_episode, reject_episode
+from brain.memory.learning_retrieval import select_learnings_for_context
 from brain.memory.learning_store import LearningStore
 
 STATEMENT = "NVIDIA embeddings are 2048-dimensional"
@@ -47,6 +48,9 @@ async def memory_db(monkeypatch):
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr("brain.memory.consolidation.async_session_factory", sessions)
     monkeypatch.setattr("brain.memory.learning_store.async_session_factory", sessions)
+    monkeypatch.setattr("brain.memory.learning_retrieval.async_session_factory", sessions)
+    monkeypatch.setattr("brain.memory.skill_distiller.async_session_factory", sessions)
+    monkeypatch.setattr("brain.memory.rule_store.async_session_factory", sessions, raising=False)
 
     vector = [1.0] + [0.0] * (pgvector_index_dimension(EMBEDDING_DIMENSION) - 1)
 
@@ -75,15 +79,17 @@ async def memory_db(monkeypatch):
         await session.commit()
         task_id = task.id
 
-    async def add_events(n):
+    async def add_events(n, validated=True):
+        # validated=True models POST /lessons (evidence-linked); False models
+        # POST /observations or a mirrored handoff summary.
         async with sessions() as session:
             events = [
                 AgentTaskEvent(
                     task_id=task_id,
-                    event_type="note",
+                    event_type="validated_lesson" if validated else "observed_lesson",
                     actor="test",
                     classification="learning",
-                    payload_json={"summary": "embedding dim is 2048"},
+                    payload_json={"summary": "embedding dim is 2048", "reported_validation": validated},
                 )
                 for _ in range(n)
             ]
@@ -107,10 +113,11 @@ async def memory_db(monkeypatch):
     async def run(**kwargs):
         return await consolidation._run_consolidation_unlocked(since=since, **kwargs)
 
-    yield SimpleNamespace(sessions=sessions, add_events=add_events, count=count, run=run)
+    yield SimpleNamespace(sessions=sessions, add_events=add_events, count=count, run=run, task_id=task_id)
 
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {_MEMORY_TABLES} RESTART IDENTITY CASCADE"))
+        await conn.execute(text("DELETE FROM rules WHERE applies_to ->> 'source' = 'memory_consolidation'"))
         await conn.execute(text("DELETE FROM harness.agent_tasks WHERE id = :id"), {"id": task_id})
     await engine.dispose()
 
@@ -161,18 +168,135 @@ async def test_failed_l2_write_rolls_back_and_events_are_retried(memory_db):
 
 
 @pytest.mark.asyncio
-async def test_duplicate_episode_keeps_duplicate_of(memory_db):
-    existing_id = await LearningStore.add_learning(statement=STATEMENT, category="infra", confidence=0.9)
-    await memory_db.add_events(2)
+async def test_duplicate_episode_keeps_duplicate_of_and_reinforces(memory_db):
+    existing_id = await LearningStore.add_learning(
+        statement=STATEMENT, category="infra", confidence=0.9, evidence=[{"event_id": -5}]
+    )
+    event_ids = await memory_db.add_events(2)
 
     report = await memory_db.run()
 
-    assert report["rejected"][0]["duplicate_of"] == existing_id
+    assert report["rejected"] == []
+    assert report["reinforced"][0]["duplicate_of"] == existing_id
     async with memory_db.sessions() as session:
         episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+        learning = await session.get(Learning, existing_id)
     assert episode.status == "duplicate"
     assert episode.duplicate_of_learning_id == existing_id
     assert await memory_db.count(Learning) == 1
+    # A duplicate sighting confirms the known learning: confidence up, evidence appended, statement unchanged.
+    assert learning.confidence == pytest.approx(0.95)
+    assert {e["event_id"] for e in learning.evidence} == {-5, *event_ids}
+    assert learning.statement == STATEMENT
+
+
+@pytest.mark.asyncio
+async def test_unvalidated_observations_need_a_third_sighting(memory_db):
+    # Two unchecked observations: G2 rejects (needs 3). The rejected episode
+    # releases its events when a third sighting lands in the same repo, and
+    # the re-clustered trio promotes.
+    await memory_db.add_events(2, validated=False)
+    first = await memory_db.run()
+    assert first["promoted"] == [] and len(first["rejected"]) == 1
+    assert any("need 3" in r for r in first["rejected"][0]["reasons"])
+    assert await memory_db.count(Learning) == 0
+
+    await memory_db.add_events(1, validated=False)
+    second = await memory_db.run()
+    assert second["l1_events"] == 3 and len(second["promoted"]) == 1
+    assert await memory_db.count(Learning) == 1
+    async with memory_db.sessions() as session:
+        learning = (await session.execute(select(Learning))).scalar_one()
+    assert learning.statement == STATEMENT and learning.repo_scope == "/tmp/consolidation-test"
+    assert all(e["validated"] is False for e in learning.evidence)
+
+    # End to end: the promoted learning is what the runtime context reads back.
+    projected = await select_learnings_for_context("nvidia embeddings dimension", "/tmp/consolidation-test")
+    assert [p["id"] for p in projected] == [learning.id]
+    assert await select_learnings_for_context("nvidia embeddings dimension", "/tmp/other-repo") == []
+
+
+def _contradicting_summarizer(conflicting_ids, new_statement="NVIDIA embeddings are 4096-dimensional"):
+    async def summarize(prompt, **_kwargs):
+        if "contradicts" in prompt:
+            return json.dumps({"contradicts": True, "conflicting_ids": conflicting_ids, "reason": "dimension changed"})
+        return json.dumps({"statement": new_statement, "category": "infra", "confidence": 0.9, "severity": "low"})
+
+    return SimpleNamespace(summarize=summarize)
+
+
+@pytest.mark.asyncio
+async def test_contradiction_supersedes_the_old_learning_atomically(memory_db):
+    old_id = await LearningStore.add_learning(
+        statement=STATEMENT, category="infra", confidence=0.9, repo_scope="/tmp/consolidation-test"
+    )
+    await memory_db.add_events(2)
+    with patch(
+        "brain.memory.consolidation.get_summarizer_provider", return_value=_contradicting_summarizer([old_id])
+    ):
+        report = await memory_db.run()
+
+    assert len(report["promoted"]) == 1
+    entry = report["promoted"][0]
+    assert entry["superseded"] == [old_id]
+    async with memory_db.sessions() as session:
+        old = await session.get(Learning, old_id)
+        new = await session.get(Learning, entry["learning_id"])
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+    assert old.status == "superseded" and old.superseded_by == new.id
+    assert new.status == "active" and new.statement == "NVIDIA embeddings are 4096-dimensional"
+    assert episode.status == "promoted" and episode.supersedes_learning_ids == [old_id]
+    # Only the new learning is live for retrieval.
+    assert [lrng.id for lrng in await LearningStore.list_active_learnings("/tmp/consolidation-test")] == [new.id]
+
+
+@pytest.mark.asyncio
+async def test_pending_supersede_is_applied_on_human_approval(memory_db):
+    old_id = await LearningStore.add_learning(
+        statement=STATEMENT, category="infra", confidence=0.9, repo_scope="/tmp/consolidation-test"
+    )
+    # Unvalidated correction of active memory → G4 pending, supersede recorded but not applied.
+    await memory_db.add_events(3, validated=False)
+    with patch(
+        "brain.memory.consolidation.get_summarizer_provider", return_value=_contradicting_summarizer([old_id])
+    ):
+        report = await memory_db.run()
+    assert len(report["needs_approval"]) == 1 and report["promoted"] == []
+    assert report["pending_total"] == 1
+    async with memory_db.sessions() as session:
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+        old = await session.get(Learning, old_id)
+    assert episode.status == "pending" and episode.supersedes_learning_ids == [old_id]
+    assert old.status == "active"
+
+    decision = await approve_episode(episode.id, "checked the model card")
+    assert decision["superseded"] == [old_id]
+    async with memory_db.sessions() as session:
+        old = await session.get(Learning, old_id)
+        new = await session.get(Learning, decision["learning_id"])
+    assert old.status == "superseded" and old.superseded_by == new.id and new.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_rule_target_is_projected_into_rule_store(memory_db):
+    from brain.database.models import Rule
+
+    async def summarize(prompt, **_kwargs):
+        if "contradicts" in prompt:
+            return json.dumps({"contradicts": False, "reason": ""})
+        return json.dumps({"statement": "Always run ruff before committing", "category": "workflow",
+                           "confidence": 0.9, "severity": "low", "target": "rule"})
+
+    await memory_db.add_events(2)
+    with patch("brain.memory.consolidation.get_summarizer_provider", return_value=SimpleNamespace(summarize=summarize)):
+        report = await memory_db.run()
+    entry = report["promoted"][0]
+    assert entry["routed_to"]["target"] == "rule"
+    async with memory_db.sessions() as session:
+        rule = await session.get(Rule, entry["routed_to"]["id"])
+    assert rule is not None and rule.repo_path == "/tmp/consolidation-test"
+    assert rule.applies_to == {"source": "memory_consolidation", "learning_id": entry["learning_id"]}
+    assert rule.type == "learned"
 
 
 @pytest.mark.asyncio
@@ -213,10 +337,10 @@ async def _add_task_events(sessions, repo_path, n):
         events = [
             AgentTaskEvent(
                 task_id=task_id,
-                event_type="note",
+                event_type="validated_lesson",
                 actor="test",
                 classification="learning",
-                payload_json={"summary": f"note from {repo_path}"},
+                payload_json={"summary": f"note from {repo_path}", "reported_validation": True},
             )
             for _ in range(n)
         ]

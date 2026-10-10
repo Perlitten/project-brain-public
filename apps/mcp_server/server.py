@@ -49,6 +49,19 @@ async def record_task_lesson(task_id: str, statement: str, category: str, valida
 
 
 @mcp.tool()
+async def record_task_observation(task_id: str, statement: str, category: str, idempotency_key: str,
+                                  outcome: Literal["learning", "failure_lesson"] = "learning") -> dict:
+    """Capture an unvalidated L1 observation for a task (no validation/artifact needed).
+
+    Consolidation treats it as weaker evidence than record_task_lesson: it needs
+    more independent sightings before it can become durable memory.
+    """
+    from apps.api.routers.harness import ObservationCreateRequest, add_task_observation
+    return await add_task_observation(task_id, ObservationCreateRequest(
+        statement=statement, category=category, idempotency_key=idempotency_key, outcome=outcome))
+
+
+@mcp.tool()
 async def record_procedure_outcome(skill_id: int, task_id: str, validation_id: int,
                                     outcome: Literal["success", "failure"], artifact_ids: list[int], source_refs: list[str]) -> dict:
     """Record a reported outcome once per task/skill, never on retrieval."""

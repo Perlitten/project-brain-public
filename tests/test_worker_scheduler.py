@@ -67,6 +67,13 @@ class _ClockRedis:
         return dict(self.hashes.get(key, {}))
 
 
+@pytest.fixture(autouse=True)
+def _baseline_schedules(monkeypatch):
+    """Pin the four always-on schedules: memory consolidation is on by default
+    since 2026-10-10 and is covered by its own explicit toggle test below."""
+    monkeypatch.setattr(settings, "MEMORY_CONSOLIDATION_ENABLED", False)
+
+
 @pytest.fixture
 def fake_queue(monkeypatch):
     queue = SimpleNamespace(enqueue=AsyncMock(side_effect=lambda job_type, *a, **k: f"job-{job_type}"))

@@ -73,8 +73,13 @@ async def create_skill(
     confidence: float,
     repo_scope: Optional[str],
     is_global: bool = False,
+    status: str = "active",
 ) -> MemorySkill:
     """Persist a new skill; raises SkillConflictError on a name conflict.
+
+    ``status`` is ``active`` for curated skills (POST /skills) and ``pending``
+    for machine-distilled ones awaiting POST /skills/{id}/approve; pending
+    skills are never matched or injected.
 
     ``repo_scope`` is normalized at write time (trailing slashes, backslashes)
     so scope filtering matches the same rules as learnings. ``is_global`` is
@@ -110,11 +115,31 @@ async def create_skill(
             embedding=embedding,
             repo_scope=normalize_repo_scope(repo_scope),
             is_global=is_global,
+            status=status,
         )
         session.add(skill)
         await session.commit()
         await session.refresh(skill)
         return skill
+
+
+class SkillStateError(ValueError):
+    """The skill is not in a state that allows the requested transition."""
+
+
+async def decide_skill(skill_id: int, *, approve: bool, reason: Optional[str] = None) -> Dict[str, Any]:
+    """Approve (→ active) or reject (→ rejected) a pending distilled skill."""
+    async with async_session_factory() as session:
+        skill = (
+            await session.execute(select(MemorySkill).where(MemorySkill.id == skill_id).with_for_update())
+        ).scalar_one_or_none()
+        if skill is None:
+            raise LookupError(f"Skill {skill_id} not found")
+        if skill.status != "pending":
+            raise SkillStateError(f"Skill {skill_id} is {skill.status}, not pending")
+        skill.status = "active" if approve else "rejected"
+        await session.commit()
+        return {"skill_id": skill.id, "status": skill.status, "reason": reason}
 
 
 async def match_skills(

@@ -561,6 +561,9 @@ class MemoryEpisode(Base):
         BigInteger, ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
     )
     gate_reasons: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # G3 outcome: active L3 learnings this episode corrects. Applied (status
+    # superseded) when the episode is promoted or approved.
+    supersedes_learning_ids: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
     # If merged, link to the surviving episode
     merged_into_episode_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("memory_episodes.id", ondelete="SET NULL"), nullable=True
