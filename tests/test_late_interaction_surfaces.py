@@ -770,12 +770,18 @@ async def test_api_ask_and_search_share_integrated_code_search(monkeypatch):
             llm=lambda _kind: types.SimpleNamespace(generate=generate)
         ),
     )
+    # L4 skills are injected by default (MEMORY_SKILLS_IN_ASK=true); keep the
+    # test DB-free and assert the default response shape explicitly.
+    monkeypatch.setattr(core_retrieval.settings, "MEMORY_SKILLS_IN_ASK", True)
+    import brain.memory.skill_store as skill_store
+
+    monkeypatch.setattr(skill_store, "select_skills_for_context", AsyncMock(return_value=[]))
     request = types.SimpleNamespace(headers={"x-request-id": "request-42"})
 
     assert await core.ask_project(
         AskRequest(query="parser", repo_path="/app"),
         request,
-    ) == {"answer": "answer", "learnings_used": []}
+    ) == {"answer": "answer", "learnings_used": [], "skills_used": []}
     assert await core.search_code_endpoint(
         SearchRequest(query="parser", repo_path="/app", limit=3),
         request,

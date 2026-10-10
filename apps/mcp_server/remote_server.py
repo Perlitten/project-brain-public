@@ -69,6 +69,19 @@ async def record_task_lesson(task_id: str, statement: str, category: str, valida
 
 
 @mcp.tool()
+async def record_task_observation(task_id: str, statement: str, category: str, idempotency_key: str,
+                                  outcome: str = "learning") -> dict:
+    """Capture an unvalidated observation for a task; no validation or artifact needed.
+
+    Requires harness:write; creates L1 evidence only. Consolidation needs more
+    independent sightings of an unvalidated claim before it becomes L3.
+    """
+    return await _post(f"/harness/tasks/{quote(task_id, safe='')}/observations", {
+        "statement": statement, "category": category, "idempotency_key": idempotency_key, "outcome": outcome,
+    })
+
+
+@mcp.tool()
 async def record_procedure_outcome(skill_id: int, task_id: str, validation_id: int,
                                     outcome: str, artifact_ids: list[int], source_refs: list[str]) -> dict:
     """Record success/failure after applying a skill; one durable result per task.

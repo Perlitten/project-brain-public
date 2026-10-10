@@ -356,19 +356,36 @@ class Settings(BaseSettings):
     PROACTIVE_INSIGHTS_LLM_ENABLED: bool = False
     PROACTIVE_INSIGHTS_MAX_SNAPSHOT_CHARS: int = 16000
     PROACTIVE_INSIGHTS_TIMEOUT_S: float = 75.0
-    # Memory consolidation loop (L1 working events → L2 episodes → L3 learnings; L4 skills separate).
+    # Memory consolidation loop (L1 working events → L2 episodes → L3 learnings → L4 skills).
     # Manual run via worker job "memory_consolidation" stays available; this
-    # gate is for scheduled automation.
-    MEMORY_CONSOLIDATION_ENABLED: bool = False
-    MEMORY_CONSOLIDATION_REQUIRE_APPROVAL: bool = True
+    # gate is for scheduled automation (hourly, brain/workers/scheduler.py).
+    # On by default since 2026-10-10: the gates (G1 dedup, G2 evidence tiers,
+    # G3 supersede, G4 severity) decide per candidate; REQUIRE_APPROVAL=true
+    # forces every candidate through the human queue regardless.
+    MEMORY_CONSOLIDATION_ENABLED: bool = True
+    MEMORY_CONSOLIDATION_REQUIRE_APPROVAL: bool = False
+    # Project promoted learnings the distiller classified as a rule/decision
+    # into RuleStore/DecisionStore (best-effort, after the L3 write committed).
+    MEMORY_ROUTE_TARGETS: bool = True
+    # L3 → L4: distill repeated same-scope workflow/testing/repo learnings into
+    # procedural skills at the end of each consolidation run. New skills land
+    # as "pending" until approved via POST /skills/{id}/approve.
+    MEMORY_SKILL_DISTILLATION_ENABLED: bool = True
+    MEMORY_SKILL_DISTILLATION_REQUIRE_APPROVAL: bool = True
+    MEMORY_SKILL_DISTILLATION_MIN_LEARNINGS: int = 3
+    # Runtime L3 projection (prepare_task_context / compact /ask): add a
+    # pgvector pass over stored embeddings before the lexical pass. One query
+    # embedding call bounded by the timeout; never backfills missing vectors.
+    MEMORY_RETRIEVAL_SEMANTIC: bool = True
+    MEMORY_RETRIEVAL_EMBED_TIMEOUT_S: float = 0.8
     # Re-open rule: a rejected L2 episode's L1 events may re-cluster when a new
     # event in the same repository scope arrives within this many days of the
     # rejection. 0 disables re-opening (rejected episodes keep their events).
     MEMORY_EPISODE_REOPEN_DAYS: int = 14
     # L4 procedural memory in /ask and the runtime context: inject the top
     # matching active skills as a procedures block, strictly filtered by repo
-    # scope. Off by default — opt-in rollout.
-    MEMORY_SKILLS_IN_ASK: bool = False
+    # scope (same repo or explicitly is_global; NULL scope never injected).
+    MEMORY_SKILLS_IN_ASK: bool = True
     MEMORY_SKILLS_IN_ASK_TOP: int = 2
     MEMORY_SKILLS_IN_ASK_MAX_BYTES: int = 1500
     PROACTIVE_INSIGHTS_LLM_CACHE_TTL_SECONDS: int = 0
