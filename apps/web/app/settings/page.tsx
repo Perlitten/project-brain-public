@@ -1,7 +1,6 @@
 import { Settings } from "@/components/settings/Settings";
-import { Tip } from "@/components/Tip";
 import { PageHead } from "@/components/ui";
-import { SectionNav } from "@/components/SectionNav";
+import { SectionTabs } from "@/components/SectionNav";
 import { getSettingsView } from "@/lib/settings-view";
 
 export const metadata = { title: "Settings" };
@@ -12,14 +11,9 @@ export default async function SettingsPage() {
     <>
       <PageHead
         title="Settings"
-        lede={
-          <>
-            Alerts, automation, search and indexing.
-            <Tip>Saved to the server’s .env and applied to the API at once. Background workers pick changes up after a restart.</Tip>
-          </>
-        }
+        lede="Alerts, scheduled jobs, search and indexing. Changes are saved on the Brain server and take effect at once; background workers pick them up after a restart."
       />
-      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings", active: true }, { href: "/admin", label: "Access" }, { href: "/mcp", label: "Agent tools" }]} />
+      <SectionTabs section="settings" active="/settings" />
       {view.mode === "down" ? (
         <div className="callout tone-warn">
           <b>Brain isn’t answering.</b>

@@ -50,9 +50,9 @@ test('scheduler degradation is a warning rather than an empty service outage', (
   assert.equal(pulseHeadline({ reachable: true, healthy: true, down: [] }), 'Healthy');
 });
 
-test('owner navigation has six destinations and nested deep links activate their parent', () => {
+test('owner navigation has seven destinations and nested deep links activate their parent', () => {
   const nav = load('lib/nav.ts');
-  assert.equal(nav.primaryNavItems.length, 6);
+  assert.equal(nav.primaryNavItems.length, 7);
   assert.equal(nav.activeSection('/indexing'), 'projects');
   assert.equal(nav.activeSection('/packs/1504'), 'memory');
   assert.equal(nav.activeSection('/reranker'), 'quality');

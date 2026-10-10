@@ -37,31 +37,12 @@
 .inline-form { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .inline-form .input { flex: 1 1 220px; min-width: 0; }
 
-/* Progress: one segment per step. */
-.stepbar { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; margin-bottom: var(--s-5); }
-.stepbar__seg {
-  position: relative; display: grid; gap: 8px; padding: 0; min-width: 0;
-  border: 0; background: none; color: var(--text-3); font: inherit; text-align: left; cursor: pointer;
-}
-.stepbar__fill { height: 6px; border-radius: var(--r-pill); background: var(--border-default); transition: background-color var(--dur-control); }
-.stepbar__seg--done .stepbar__fill { background: var(--ok-fg); }
-.stepbar__seg--next .stepbar__fill { background: var(--teal-fg); }
-.stepbar__seg--done { color: var(--text-2); }
-.stepbar__seg--next { color: var(--teal-fg); }
-.stepbar__label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-12); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stepbar__seg--done .stepbar__label svg { color: var(--ok-fg); flex: none; }
-.stepbar__seg:hover, .stepbar__seg:focus-visible { color: var(--text-1); }
-.stepbar__tip {
-  position: absolute; left: 0; top: calc(100% + 6px); z-index: 45;
-  display: grid; gap: 2px; width: max-content; max-width: 260px;
-  padding: var(--s-2) var(--s-3); font-size: var(--fs-12); line-height: var(--lh-ui); color: var(--text-2); white-space: normal;
-  background: var(--surface-raise); border: 1px solid var(--border-default); border-radius: var(--r-sm); box-shadow: var(--shadow-popover);
-  display: none; pointer-events: none;
-}
-.stepbar__tip b { color: var(--text-1); font-weight: 600; }
-.stepbar__seg:last-child .stepbar__tip, .stepbar__seg:nth-last-child(2) .stepbar__tip { left: auto; right: 0; }
-.stepbar__seg:hover .stepbar__tip, .stepbar__seg:focus-visible .stepbar__tip { display: grid; animation: tip-in 160ms var(--ease); }
-@media (max-width: 560px) {
-  .stepbar__label { font-size: 0; gap: 0; }
-  .stepbar__label .num, .stepbar__label svg { font-size: var(--fs-12); }
-}
+/* Why the step exists, then where it stands — always visible, never a hover. */
+.setup-step__why { margin-top: var(--s-1); max-width: 72ch; color: var(--text-2); line-height: var(--lh-prose); }
+.setup-step__status { margin-top: var(--s-2); max-width: 72ch; font-size: var(--fs-12); line-height: var(--lh-ui); color: var(--text-3); }
+.setup-step__status b { font-weight: 600; color: var(--text-2); margin-right: 2px; }
+.setup-step__status--done b:first-child { color: var(--ok-fg); }
+.setup-step__status--next, .setup-step__status--todo { color: var(--text-2); }
+.setup-step__status--next b, .setup-step__status--todo b { color: var(--text-1); }
+.setup-step .disclosure { margin-top: var(--s-2); }
+.setup-step .disclosure > p { margin: var(--s-2) 0 var(--s-3); }

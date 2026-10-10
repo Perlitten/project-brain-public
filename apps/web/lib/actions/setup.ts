@@ -1,5 +1,5 @@
 "use server";
-// Get started: every step on /setup can be done from the page itself.
+// Setup: every step on /setup can be done from the page itself.
 import { mutate } from "./gate";
 import type { ActionResult } from "./types";
 

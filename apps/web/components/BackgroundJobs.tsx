@@ -5,7 +5,7 @@ const jobWords: Record<string, string> = {
   "index.incremental": "Reading recent changes",
   reindex: "Re-reading the code",
   "embeddings.backfill": "Making new code searchable",
-  "context_pack.build": "Preparing an agent briefing",
+  "context_pack.build": "Building a context pack",
   "graph.sync": "Updating the code map",
   "eval.golden_tasks": "Checking answer quality",
   benchmark: "Checking answer quality",

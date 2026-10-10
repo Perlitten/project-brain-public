@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { SectionNav } from "@/components/SectionNav";
+import { SectionTabs } from "@/components/SectionNav";
 import { ListFrame } from "@/components/ListFrame";
 import { PageTabs, pickTab } from "@/components/PageTabs";
 import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
@@ -10,7 +10,7 @@ import type { Decision, Rule, Tone } from "@/lib/types";
 export const metadata = { title: "Decisions & rules" };
 
 const statusTone: Record<Decision["status"], Tone> = { accepted: "ok", proposed: "info", superseded: "idle", validated_unmerged: "info" };
-const statusWords: Record<Decision["status"], string> = { accepted: "agreed", proposed: "proposed", superseded: "replaced", validated_unmerged: "checked, not merged" };
+const statusWords: Record<Decision["status"], string> = { accepted: "agreed", proposed: "proposed", superseded: "replaced by a newer one", validated_unmerged: "verified, not merged yet" };
 const severity: Record<Rule["severity"], [Tone, string]> = {
   block: ["bad", "blocks the change"],
   warn: ["warn", "warns"],
@@ -40,7 +40,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
         title="Memory"
         lede={`Decisions and rules your team recorded${repo ? " for this project" : " across all projects"}. Agents get the relevant ones with their context.`}
       />
-      <SectionNav label="Memory views" items={[{ href: "/memory", label: "Decisions & rules", active: true }, { href: "/packs", label: "Context packs" }]} />
+      <SectionTabs section="memory" active="/memory" />
         <PageTabs
         label="Decisions or rules"
         path="/memory"

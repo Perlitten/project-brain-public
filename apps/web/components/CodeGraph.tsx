@@ -14,7 +14,7 @@ const lanes: Record<string, [number, number, string]> = {
   "brain/workers": [0, 2, "background jobs"],
   "brain/insights": [0, 3, "findings"],
   "brain/search": [1, 0, "code search"],
-  "brain/context": [1, 1, "agent briefings"],
+  "brain/context": [1, 1, "context packs"],
   "brain/retrieval": [1, 2, "retrieval"],
   "brain/indexers": [1, 3, "code reading"],
   "brain/graph": [1, 4, "structure"],

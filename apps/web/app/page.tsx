@@ -61,10 +61,10 @@ export default async function Dashboard({ searchParams }: Props) {
         : { tone: "ok", text: <>Memory is current {projects.length === 1 ? `for ${projects[0].name}` : `in all ${projects.length} projects`}<small>{coverage !== null ? `${measuredNumber(coverage, "%")} of eligible code is searchable. ` : ""}Agents get context from the latest indexed revision.</small></> };
 
   const usage = telemetry && [
-    { label: "Requests", value: measuredNumber(total), note: `${measuredNumber(telemetry.clients)} agents · ${measuredNumber(telemetry.requests.unattributed)} unattributed` },
-    { label: "Context delivered", value: measuredNumber(contextRate, "%"), note: `${measuredNumber(telemetry.context_success)} of ${measuredNumber(telemetry.context_total)} context requests` },
+    { label: "Requests", value: measuredNumber(total), note: `from ${measuredNumber(telemetry.clients)} agents · ${measuredNumber(telemetry.requests.unattributed)} without a known agent` },
+    { label: "Context delivered", value: measuredNumber(contextRate, "%"), note: `${measuredNumber(telemetry.context_success)} of ${measuredNumber(telemetry.context_total)} context pack requests answered` },
     { label: "Failed", value: measuredNumber(telemetry.failed), note: total ? `${measuredNumber(telemetry.failed / total * 100, "%")} of requests, incl. timeouts` : "Including timeouts" },
-    { label: "Search, p95", value: measuredNumber(telemetry.latency.search.p95_ms, " ms"), note: `Context p95 ${measuredNumber(telemetry.latency.context.p95_ms, " ms")}` },
+    { label: "Slowest searches", value: measuredNumber(telemetry.latency.search.p95_ms, " ms"), note: `95% of searches were faster · context packs ${measuredNumber(telemetry.latency.context.p95_ms, " ms")}` },
   ];
 
   return <div className="dashboard">
@@ -73,19 +73,20 @@ export default async function Dashboard({ searchParams }: Props) {
 
     {selected && modules.some((m) => m.chunks > 0) && <div className="dashboard__map"><MemoryMap modules={modules} repoName={selected.name} scanning={jobs.some((j) => j.status === "running" && j.kind.startsWith("index"))} /></div>}
 
-    {projects.length > 0 && <Panel id="projects" title="Project memory" desc="What agents can search in each project, from its latest index." actions={<Link className="link" href={withRepo("/projects")}>Projects</Link>} flush>
+    {projects.length > 0 && <Panel id="projects" title="Project memory" desc="How much of each project's code Brain can hand to agents right now." actions={<Link className="link" href={withRepo("/projects")}>Projects</Link>} flush>
       <div className="memory-rows" role="table" aria-label="Project memory">
-        <div className="memory-rows__head" role="row"><span role="columnheader">Project</span><span role="columnheader">Freshness</span><span role="columnheader">Searchable</span><span role="columnheader">Up to date</span></div>
+        <div className="memory-rows__head" role="row"><span role="columnheader">Project</span><span role="columnheader">Status</span><span role="columnheader">Code agents can use now</span></div>
         {snapshots.map(({ repo, corpus }) => {
           const state = repositoryStatus(repo);
           const meter = (label: string) => corpus.available === false ? undefined : corpus.meters.find((m) => m.label === label);
-          const searchMeter = meter("Searchable");
-          const currentMeter = meter("Up to date");
+          // One number per project: how much of its code is indexed at the
+          // current revision. "Searchable" alone overstates it (old copies count).
+          const ready = meter("Up to date") ?? meter("Searchable");
+          const behind = ready?.parts.filter((p) => p.tone === "missing" && p.count > 0).map((p) => p.text).join(" · ");
           return <div key={repo.id} className="memory-rows__row" role="row">
-            <span role="cell" className="memory-rows__name"><Link href={`/projects?repo=${encodeURIComponent(repo.slug)}`}>{repo.name}</Link><span className="sub mono">{repo.branch || "branch unknown"} · {repo.head || "revision unknown"}</span></span>
+            <span role="cell" className="memory-rows__name"><Link href={`/projects?repo=${encodeURIComponent(repo.slug)}`}>{repo.name}</Link><span className="sub mono">{[repo.branch, repo.head].filter(Boolean).join(" · ") || "revision not recorded"}</span></span>
             <span role="cell"><Chip tone={state.tone}>{state.status}</Chip></span>
-            <span role="cell" data-label="Searchable">{searchMeter ? <Meter meter={searchMeter} compact /> : <span className="text-faint">Unavailable</span>}</span>
-            <span role="cell" data-label="Up to date">{currentMeter ? <Meter meter={currentMeter} compact /> : <span className="text-faint">Unavailable</span>}</span>
+            <span role="cell" data-label="Usable now" className="memory-rows__ready">{ready ? <><Meter meter={ready} compact /><span className="sub">{behind || "All indexed code is current"}</span></> : <span className="text-faint">Not measured</span>}</span>
           </div>;
         })}
       </div>
@@ -103,8 +104,8 @@ export default async function Dashboard({ searchParams }: Props) {
         </div>}
       </Panel>
       <div className="stack">
-        <Panel id="jobs" title="Background jobs" desc="Indexing and checks Brain ran recently." actions={<Link className="link" href={withRepo("/logs")}>Activity</Link>} flush><BackgroundJobs jobs={jobs} /></Panel>
-        <Panel id="quality" title="Search quality" desc="Last saved benchmark, not live traffic." actions={<Link className="link" href="/quality">Quality</Link>}><QualityEvidence evidence={evidence} compact /></Panel>
+        <Panel id="jobs" title="Background jobs" desc="Code reads and checks Brain ran recently." actions={<Link className="link" href={withRepo("/logs")}>Activity</Link>} flush><BackgroundJobs jobs={jobs} /></Panel>
+        <Panel id="quality" title="Search quality" desc="How often search finds the right file, from the last saved test run." actions={<Link className="link" href="/quality">Quality</Link>}><QualityEvidence evidence={evidence} compact /></Panel>
       </div>
     </div>
 
@@ -114,7 +115,8 @@ export default async function Dashboard({ searchParams }: Props) {
         <li><b>Agent requests</b> are recorded HTTP <code>/search</code>, <code>/context</code> and MCP <code>search_code</code>, <code>prepare_task_context</code> calls, failures and timeouts included. {telemetry?.collection_started_at ? `Collection began ${when(telemetry.collection_started_at)} UTC.` : "This server returned no request history."} A dash means not measured, never zero.</li>
         <li><b>Context delivered</b> is technical success: the call returned context. It does not say whether the context was right.</li>
         <li><b>Response time</b> is server handling time, failures included; authentication and transport are excluded.</li>
-        <li><b>Searchable</b> and <b>Up to date</b> come from the latest index and do not depend on the selected period.</li>
+        <li><b>Code agents can use now</b> counts indexed pieces of code that match the latest revision. It comes from the latest index and does not depend on the selected period.</li>
+        <li><b>Slowest searches</b> is the 95th percentile: 95% of searches finished faster than this.</li>
         <li><b>Search quality</b> is a saved benchmark on a fixed question set. Task usefulness and token, time or cost savings are not measured.</li>
         <li>A failed background job is a record of what happened, not proof of an open incident.</li>
       </ul>

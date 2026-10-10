@@ -15,19 +15,19 @@ export const navGroups: { label: string; hint: string; items: NavItem[] }[] = [{
     { key: "quality", href: "/quality", label: "Quality", icon: "vectors", hint: "Measured retrieval quality and saved evaluations" },
     { key: "logs", href: "/logs", label: "Activity", icon: "activity", hint: "Background jobs, requests and agent work", repoScoped: true },
     { key: "settings", href: "/settings", label: "Settings", icon: "gear", hint: "Notifications, models, integrations and access" },
+    { key: "setup", href: "/setup", label: "Setup", icon: "flag", hint: "Six steps from an empty server to an agent using Brain" },
   ],
 }];
 const nested: NavItem[] = [
-  { key: "setup", href: "/setup", label: "Connect a project", icon: "flag", hint: "Connect Brain to code and AI agents", section: "projects" },
   { key: "graph", href: "/graph", label: "Code map", icon: "graph", hint: "Which parts of the code depend on which", repoScoped: true, section: "projects" },
-  { key: "indexing", href: "/indexing", label: "Indexing", icon: "database", hint: "Each time Brain re-read your code", repoScoped: true, section: "projects" },
-  { key: "insights", href: "/insights", label: "Findings", icon: "trend", hint: "Recorded observations about code structure", section: "projects" },
-  { key: "packs", href: "/packs", label: "Context packs", icon: "layers", hint: "Saved briefings prepared for AI agents", repoScoped: true, section: "memory" },
-  { key: "reports", href: "/reports", label: "Reports", icon: "file", hint: "Saved evaluations and checks", section: "quality" },
-  { key: "reranker", href: "/reranker", label: "Reranker", icon: "vectors", hint: "The optional second pass of retrieval", repoScoped: true, section: "quality" },
-  { key: "runs", href: "/runs", label: "Agent runs", icon: "automation", hint: "Recorded agent task history", repoScoped: true, section: "logs" },
-  { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "Available agent integrations and tools", section: "settings" },
-  { key: "admin", href: "/admin", label: "Access", icon: "key", hint: "Identities, credentials and permissions", section: "settings" },
+  { key: "indexing", href: "/indexing", label: "Index runs", icon: "database", hint: "Each time Brain re-read your code", repoScoped: true, section: "projects" },
+  { key: "insights", href: "/insights", label: "Findings", icon: "trend", hint: "Problems Brain noticed in the code structure", section: "projects" },
+  { key: "packs", href: "/packs", label: "Context packs", icon: "layers", hint: "What Brain handed agents for each task", repoScoped: true, section: "memory" },
+  { key: "reports", href: "/reports", label: "Reports", icon: "file", hint: "Every saved evaluation and check", section: "quality" },
+  { key: "reranker", href: "/reranker", label: "Reranker", icon: "vectors", hint: "Optional second pass that re-orders search results", repoScoped: true, section: "quality" },
+  { key: "runs", href: "/runs", label: "Agent tasks", icon: "automation", hint: "Tasks agents ran with Brain's help", repoScoped: true, section: "logs" },
+  { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "The tools agents can call and how they perform", section: "settings" },
+  { key: "admin", href: "/admin", label: "Access", icon: "key", hint: "API keys and what each one may do", section: "settings" },
 ];
 export const primaryNavItems = navGroups.flatMap((g) => g.items);
 export const allNavItems = [...primaryNavItems, ...nested];

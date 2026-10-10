@@ -11,7 +11,7 @@
 }
 .settings__toc a:hover { color: var(--text-1); border-color: var(--border-default); }
 
-.status-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); font-size: var(--fs-14); color: var(--text-2); margin-bottom: var(--s-4); }
+.status-line { display: flex; justify-content: flex-start; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); font-size: var(--fs-14); color: var(--text-2); margin-bottom: var(--s-4); }
 .status-line code { font-size: var(--fs-12); color: var(--text-3); }
 
 .wf { margin: calc(-1 * var(--s-2)) 0 var(--s-4); font-size: var(--fs-14); color: var(--text-2); }

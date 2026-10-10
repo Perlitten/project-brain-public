@@ -1,16 +1,13 @@
-import { AgentConfigurations } from "@/components/setup/AgentConfigurations";
-import { SectionNav } from "@/components/SectionNav";
 import { Term } from "@/components/Term";
-import { Tip } from "@/components/Tip";
 import { SetupSteps } from "@/components/setup/SetupSteps";
-import { PageHead, Panel } from "@/components/ui";
+import { PageHead } from "@/components/ui";
 import { getClientConfigs } from "@/lib/data";
+import { stepTitle } from "@/lib/setup-copy";
 import { getSetupView } from "@/lib/setup-view";
 
-export const metadata = { title: "Get started" };
+export const metadata = { title: "Set up Brain" };
 
-export default async function Setup({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
-  const { repo } = await searchParams;
+export default async function Setup() {
   const [view, clients] = await Promise.all([getSetupView(), getClientConfigs()]);
   const steps = view.steps;
   const done = steps.filter((s) => s.done).length;
@@ -18,16 +15,15 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
   return (
     <>
       <PageHead
-        title="Connect a project"
-        status={steps.length === 0 ? { tone: "idle", text: "Setup status unavailable" } : next ? { tone: "info", text: <>{done} of {steps.length} steps done<small>Next: {next.title}</small></> } : { tone: "ok", text: "Brain is fully set up" }}
+        title="Set up Brain"
+        status={steps.length === 0 ? { tone: "idle", text: "Setup status unavailable" } : next ? { tone: "info", text: <>{done} of {steps.length} steps done<small>Next: {stepTitle(next.id, next.title)}</small></> } : { tone: "ok", text: "Brain is fully set up" }}
         lede={
           <>
-            Connect Brain to your code and your <Term k="agent">agents</Term>.
-            <Tip>Each step opens the control that finishes it. Changes go straight to the Brain server.</Tip>
+            Brain reads your repository once and then answers your coding <Term k="agent">agents</Term>’ questions about it, so they don’t have to read the
+            whole codebase every time. These six steps get it there. Open a step to finish it; changes go straight to the Brain server.
           </>
         }
       />
-      <SectionNav label="Project views" items={[{ href: `/projects${repo ? `?repo=${repo}` : ""}`, label: "Projects" }, { href: `/indexing${repo ? `?repo=${repo}` : ""}`, label: "Indexing" }, { href: `/graph${repo ? `?repo=${repo}` : ""}`, label: "Code map" }, { href: `/setup${repo ? `?repo=${repo}` : ""}`, label: "Connection", active: true }]} />
       {view.mode === "down" ? (
         <div className="callout tone-warn">
           <b>Brain isn’t answering.</b>
@@ -44,12 +40,9 @@ export default async function Setup({ searchParams }: { searchParams: Promise<{ 
               <span>Connect the dashboard to a Brain server (BRAIN_API_URL) to make these steps live.</span>
             </div>
           )}
-          <SetupSteps view={view} />
+          <SetupSteps view={view} clients={clients} />
         </>
       )}
-      {clients.length > 0 && <Panel id="client-configs" title="Connect your agent" desc="Choose your client, then add Brain to its configuration.">
-        <AgentConfigurations clients={clients} />
-      </Panel>}
     </>
   );
 }

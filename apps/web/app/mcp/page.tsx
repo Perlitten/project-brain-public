@@ -1,7 +1,8 @@
 import { Term } from "@/components/Term";
 import { Chip, EmptyState, PageHead, Panel, Table, fmt } from "@/components/ui";
-import { SectionNav } from "@/components/SectionNav";
+import { SectionTabs } from "@/components/SectionNav";
 import { getMcpTools } from "@/lib/data";
+import type { McpTool } from "@/lib/types";
 
 export const metadata = { title: "Agent tools" };
 
@@ -32,8 +33,8 @@ export default async function Mcp() {
           </>
         }
       />
-      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings" }, { href: "/admin", label: "Access" }, { href: "/mcp", label: "Agent tools", active: true }]} />
-      <Panel id="tools" title="Tools" desc={tracked ? "Last 24 hours. An error rate above 5% is shown in red." : "Brain lists its tools but does not count their calls yet."} flush>
+      <SectionTabs section="settings" active="/mcp" />
+      <Panel id="tools" title="Tools" desc={tracked ? "Last 24 hours. An error rate above 5% is shown in red." : "What your agent can ask Brain for. This server doesn’t count calls yet, so usage and errors aren’t shown."} flush>
         {tools.length === 0 ? (
           <EmptyState title="No tools to show" body="Brain didn’t report any agent tools. Check that its MCP server is running." />
         ) : (
@@ -43,7 +44,7 @@ export default async function Mcp() {
           rowKey={(t) => t.name}
           filter={{
             search: (t) => `${t.name} ${t.surface}`,
-            facet: { label: "Health", of: (t) => t.status, values: (["bad", "warn", "ok", "info", "idle"] as const).map((v) => ({ value: v, label: health[v] })) },
+            facet: tracked ? { label: "Health", of: (t) => t.status, values: (["bad", "warn", "ok", "info", "idle"] as const).map((v) => ({ value: v, label: health[v] })) } : undefined,
             noun: ["tool", "tools"],
           }}
           columns={[
@@ -56,21 +57,26 @@ export default async function Mcp() {
                 </>
               ),
             },
-            { head: "Calls", cell: (t) => (t.calls24h === undefined ? "—" : fmt(t.calls24h)), align: "right" },
-            { head: <Term k="p95">Slow answers</Term>, cell: (t) => (t.p95ms === undefined ? "—" : `${fmt(t.p95ms)}ms`), align: "right" },
-            {
-              head: "Errors",
-              cell: (t) =>
-                t.errorRate === undefined ? (
-                  "—"
-                ) : (
-                  <span className={t.errorRate > 0.05 ? "text-bad" : t.errorRate > 0.02 ? "text-warn" : undefined}>
-                    {(t.errorRate * 100).toFixed(1)}%
-                  </span>
-                ),
-              align: "right",
-            },
-            { head: "Health", cell: (t) => <Chip tone={t.status}>{health[t.status]}</Chip> },
+            // Usage columns only when the server measures them; otherwise every cell would read "—".
+            ...(tracked
+              ? [
+                  { head: "Calls", cell: (t: McpTool) => (t.calls24h === undefined ? "—" : fmt(t.calls24h)), align: "right" as const },
+                  { head: <Term k="p95">Slow answers</Term>, cell: (t: McpTool) => (t.p95ms === undefined ? "—" : `${fmt(t.p95ms)}ms`), align: "right" as const },
+                  {
+                    head: "Errors",
+                    cell: (t: McpTool) =>
+                      t.errorRate === undefined ? (
+                        "—"
+                      ) : (
+                        <span className={t.errorRate > 0.05 ? "text-bad" : t.errorRate > 0.02 ? "text-warn" : undefined}>
+                          {(t.errorRate * 100).toFixed(1)}%
+                        </span>
+                      ),
+                    align: "right" as const,
+                  },
+                  { head: "Health", cell: (t: McpTool) => <Chip tone={t.status}>{health[t.status]}</Chip> },
+                ]
+              : []),
           ]}
         />
         )}
