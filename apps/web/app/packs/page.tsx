@@ -24,12 +24,11 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
   return (
     <>
       <PageHead
-        eyebrow="Context packs"
-        title="Briefings Brain prepared for AI agents"
+        title="Context packs"
         lede={
           <>
             Before an agent starts a task, Brain hands it a <Term k="pack">context pack</Term>: only the files, decisions and
-            rules that matter. {repo ? "Briefings for the selected repository." : "Briefings across all repositories."}
+            rules that matter. {repo ? "Packs built for this project." : "Packs built across all projects."}
           </>
         }
       />

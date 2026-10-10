@@ -26,8 +26,7 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
   return (
     <>
       <PageHead
-        eyebrow="Indexing"
-        title="Every time Brain re-read your code"
+        title="Indexing"
         lede={
           <>
             Brain keeps an <Term k="index">index</Term> — its own copy of your code, cut into searchable pieces. It refreshes

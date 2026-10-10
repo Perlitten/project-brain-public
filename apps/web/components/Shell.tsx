@@ -169,7 +169,6 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
             </>
           )}
           <span className="crumb__page">{current?.label ?? "Project Brain"}</span>
-          {current && <span className="crumb__hint">— {current.hint}</span>}
         </p>
         <div className="mast__tools">
           {scoped && (
