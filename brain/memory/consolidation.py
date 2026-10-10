@@ -733,7 +733,7 @@ async def _persist_cluster(
                     session=session,
                 )
             await session.flush()
-            result = {"episode_id": episode.id, "learning_id": learning_id}
+            result: Dict[str, Any] = {"episode_id": episode.id, "learning_id": learning_id}
             if gate.supersedes:
                 result["superseded"] = list(gate.supersedes)
             scope = episode.repo_scope
