@@ -10,9 +10,7 @@ export default async function SettingsPage() {
   const view = await getSettingsView();
   return (
     <>
-      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings", active: true }, { href: "/admin", label: "Access" }, { href: "/mcp", label: "Agent tools" }]} />
       <PageHead
-        eyebrow="Settings"
         title="Settings"
         lede={
           <>
@@ -21,6 +19,7 @@ export default async function SettingsPage() {
           </>
         }
       />
+      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings", active: true }, { href: "/admin", label: "Access" }, { href: "/mcp", label: "Agent tools" }]} />
       {view.mode === "down" ? (
         <div className="callout tone-warn">
           <b>Brain isn’t answering.</b>

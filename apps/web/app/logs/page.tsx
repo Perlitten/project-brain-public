@@ -18,19 +18,19 @@ export default async function Activity({ searchParams }: { searchParams: Promise
   const selected = repo ? repositories.find((r) => r.slug === repo) : undefined;
   const projects = repo ? selected ? [selected] : [] : repositories;
   const [result, jobLists, telemetry] = await Promise.all([getPagedEvents(repo, getListQuery(params)), Promise.all(projects.map((p) => getJobs(p.slug))), getRequestTelemetry(period, repo ? selected?.id ?? 0 : undefined)]);
-  const jobs = jobLists.flatMap((list) => list.slice(0, 5));
+  const jobs = [...new Map(jobLists.flatMap((list) => list.slice(0, 5)).map((j) => [j.id, j])).values()];
   const events = result.items;
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
   return <>
-    <PageHead eyebrow="Activity" title="Recent activity" lede="Background jobs and recorded events, newest first within each section." />
+    <PageHead title="Activity" lede="What agents asked Brain and what Brain ran in the background, newest first." />
     <SectionNav label="Activity views" items={[{ href: "/logs", label: "Activity", active: true }, { href: "/runs", label: "Agent runs" }]} />
-    <Panel id="requests" title="Agent requests" desc="Search and context attempts, including retries. Handler time excludes authentication, transport and telemetry persistence." actions={<nav aria-label="Request period">{(["24h", "7d", "30d"] as const).map((p) => <Link key={p} className="btn btn--neutral btn--sm" aria-current={p === period ? "page" : undefined} href={`/logs?${new URLSearchParams({ ...(repo ? { repo } : {}), period: p })}`}>{p}</Link>)}</nav>} flush>
+    <Panel id="requests" title="Agent requests" desc="The latest search and context calls, retries included. Handling time is measured on the server only." actions={<nav className="segmented" aria-label="Request period">{(["24h", "7d", "30d"] as const).map((p) => <Link key={p} scroll={false} aria-current={p === period ? "page" : undefined} href={`/logs?${new URLSearchParams({ ...(repo ? { repo } : {}), period: p })}`}>{p}</Link>)}</nav>} flush>
       <RequestHistory telemetry={telemetry} />
     </Panel>
-    <Panel id="jobs" title="Recent background jobs" desc="Latest jobs reported by Brain. Failed jobs include the recorded error." flush>
+    <Panel id="jobs" title="Background jobs" desc="Indexing and checks Brain ran recently. A failed job shows its recorded error." flush>
       <BackgroundJobs jobs={jobs} />
     </Panel>
-    <Panel id="events" title="Event log" flush>
+    <Panel id="events" title="Event log" desc="Other events Brain recorded, newest first." flush>
       {events.length || hasQuery ? <Ledger events={events} paging={result.paging} /> : <EmptyState title="No recorded events" body="The event log is empty. Background job history is shown above." />}
     </Panel>
   </>;

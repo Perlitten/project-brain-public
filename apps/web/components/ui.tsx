@@ -36,30 +36,51 @@ export function JobChip({ status }: { status: JobStatus }) {
   return <Chip tone={jobTone(status)}>{status.replace("_", " ")}</Chip>;
 }
 
+/** The answer to "is everything OK here?" — one sentence, toned, with the next step. */
+export interface PageStatus { tone: Tone; text: ReactNode; action?: ReactNode }
+
+// Every screen opens the same way: what this is (title), what it is for (lede),
+// and, when the screen has a state, whether it is fine (status line).
 export function PageHead({
   eyebrow,
   title,
   lede,
   actions,
+  status,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   lede?: ReactNode;
   actions?: ReactNode;
+  status?: PageStatus;
 }) {
   return (
     <header className="page-head">
-      <div>
-        <p className="eyebrow">
-          <Decode text={eyebrow} />
-        </p>
-        <h1 className="page-head__title">
-          <Rise text={title} />
-        </h1>
-        {lede && <p className="page-head__lede">{lede}</p>}
+      <div className="page-head__row">
+        <div>
+          {eyebrow && (
+            <p className="eyebrow">
+              <Decode text={eyebrow} />
+            </p>
+          )}
+          <h1 className="page-head__title">
+            <Rise text={title} />
+          </h1>
+          {lede && <p className="page-head__lede">{lede}</p>}
+        </div>
+        {actions && <div className="page-head__actions">{actions}</div>}
       </div>
-      {actions && <div className="page-head__actions">{actions}</div>}
+      {status && <StatusLine {...status} />}
     </header>
+  );
+}
+
+export function StatusLine({ tone, text, action }: PageStatus) {
+  return (
+    <div className={`status-line tone-${tone}`} role="status">
+      <p className="status-line__text">{text}</p>
+      {action && <div className="status-line__action">{action}</div>}
+    </div>
   );
 }
 
@@ -178,7 +199,8 @@ function Pulse({ tone }: { tone: Tone }) {
 // Twenty discrete cells instead of a smooth bar: the reader counts the missing
 // bricks. Slots are allocated by largest remainder, and any non-zero part
 // keeps at least one cell so a small gap never rounds away to nothing.
-export function Meter({ meter, slots = 20 }: { meter: MeterData; slots?: number }) {
+/** `compact` keeps the cells and the value for table rows; the key moves to the tooltip. */
+export function Meter({ meter, slots = 20, compact = false }: { meter: MeterData; slots?: number; compact?: boolean }) {
   const total = meter.parts.reduce((s, p) => s + p.count, 0) || 1;
   const raw = meter.parts.map((p) => (p.count / total) * slots);
   const alloc = raw.map((r, i) => (meter.parts[i].count > 0 ? Math.max(1, Math.floor(r)) : 0));
@@ -198,6 +220,18 @@ export function Meter({ meter, slots = 20 }: { meter: MeterData; slots?: number 
   }
   const cells = meter.parts.flatMap((p, i) => Array.from({ length: alloc[i] }, () => p.tone));
   const aria = `${meter.label}: ${meter.parts.map((p) => p.text).join(", ")}`;
+  if (compact) {
+    return (
+      <div className="meter meter--compact" title={aria}>
+        <div className="meter__cells" role="img" aria-label={aria}>
+          {cells.map((tone, i) => (
+            <span key={i} className={`meter__cell meter__cell--${tone}`} style={{ "--i": i } as CSSProperties} />
+          ))}
+        </div>
+        <span className="meter__value num">{meter.value}</span>
+      </div>
+    );
+  }
   return (
     <figure className="meter">
       <figcaption className="meter__head">
