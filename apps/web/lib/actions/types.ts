@@ -17,6 +17,19 @@ export type ActionsMode =
   | "locked"
   | "on";
 
+/** How the dashboard is entered (lib/web-auth.ts). */
+export type SignInMode =
+  /** No API: demo data, nothing to protect. */
+  | "demo"
+  /** No password set yet: anyone with the address gets in. */
+  | "open"
+  /** Login and password set on Access → Dashboard sign-in. */
+  | "password"
+  /** Fixed by WEB_BASIC_AUTH in the deployment environment. */
+  | "env"
+  /** Brain isn't answering, or WEB_BASIC_AUTH is malformed. */
+  | "unknown";
+
 export interface JobSnapshot {
   id: string;
   status: string;

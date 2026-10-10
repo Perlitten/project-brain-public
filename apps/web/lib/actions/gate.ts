@@ -3,27 +3,33 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
 import { apiConfigured, brainSend } from "../api";
+import { loginState } from "../web-auth";
 import type { ActionResult, ActionsMode } from "./types";
 
 /**
- * Actions run only where the dashboard itself is protected: behind the
- * Basic-auth gate (WEB_BASIC_AUTH), in local development, or when the operator
- * opts in explicitly with BRAIN_WEB_ACTIONS=1 (e.g. behind their own SSO).
- * BRAIN_WEB_ACTIONS=0 switches them off everywhere.
+ * Actions run only where the dashboard itself is protected: behind a sign-in
+ * password (Settings → Sign-in, or WEB_BASIC_AUTH), in local development, or
+ * when the operator opts in explicitly with BRAIN_WEB_ACTIONS=1 (e.g. behind
+ * their own SSO). BRAIN_WEB_ACTIONS=0 switches them off everywhere.
+ * While sign-in is open, the one thing allowed is setting the first password
+ * (lib/actions/login.ts).
  */
-export function actionsMode(): ActionsMode {
+export async function actionsMode(): Promise<ActionsMode> {
   if (!apiConfigured) return "demo";
   const flag = process.env.BRAIN_WEB_ACTIONS?.trim();
   if (flag === "0") return "locked";
-  if (flag === "1" || process.env.WEB_BASIC_AUTH || process.env.NODE_ENV === "development") return "on";
+  if (flag === "1" || process.env.NODE_ENV === "development") return "on";
+  const state = await loginState();
+  if (state.kind === "env" || (state.kind === "brain" && state.mode === "password")) return "on";
   return "locked";
 }
 
-export function guard(): ActionResult | null {
-  const mode = actionsMode();
+export const LOCKED_MESSAGE = "Actions are locked until the dashboard has a password — set one in Settings → Sign-in.";
+
+export async function guard(): Promise<ActionResult | null> {
+  const mode = await actionsMode();
   if (mode === "demo") return { ok: false, message: "Connect the Brain API to run actions — this is demo data." };
-  if (mode === "locked")
-    return { ok: false, message: "Actions are locked: protect the dashboard with WEB_BASIC_AUTH (or set BRAIN_WEB_ACTIONS=1)." };
+  if (mode === "locked") return { ok: false, message: LOCKED_MESSAGE };
   return null;
 }
 
@@ -39,7 +45,7 @@ interface MutateOptions<T> {
 
 /** Guarded call into the Brain API, shaped for a toast. */
 export async function mutate<T = Record<string, unknown>>(path: string, opts: MutateOptions<T>): Promise<ActionResult<T>> {
-  const blocked = guard();
+  const blocked = await guard();
   if (blocked) return blocked as ActionResult<T>;
   const res = await brainSend<T>(opts.method ?? "POST", path, opts.body, opts.timeoutMs);
   if (!res.ok || res.data === null) {

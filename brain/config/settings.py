@@ -402,9 +402,16 @@ class Settings(BaseSettings):
     TELEGRAM_ALERTS_ENABLED: bool = False
     TELEGRAM_ALERT_BOT_TOKEN: Optional[str] = None
     TELEGRAM_ALERT_CHAT_ID: Optional[str] = None
-    TELEGRAM_ALERT_COOLDOWN_SECONDS: int = 6 * 60 * 60
+    TELEGRAM_ALERT_COOLDOWN_SECONDS: int = 24 * 60 * 60
     TELEGRAM_ALERT_TIMEOUT_S: float = 20.0
     BRAIN_TELEGRAM_DEFAULT_REPO: Optional[str] = None
+
+    # Web dashboard sign-in, managed from its Settings screen (apps/api/routers/web_login.py).
+    # Empty user = open sign-in. The hash is scrypt; the version rotates on every
+    # change so the dashboard's session cookies stop matching.
+    WEB_LOGIN_USER: Optional[str] = None
+    WEB_LOGIN_PASSWORD_HASH: Optional[str] = None
+    WEB_LOGIN_VERSION: Optional[str] = None
 
     # In-process scheduler (brain/workers/scheduler.py), runs inside every worker.
     SCHEDULER_ENABLED: bool = True

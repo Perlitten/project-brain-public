@@ -52,31 +52,34 @@ export function Settings({ view }: { view: SettingsView }) {
         {view.scheduler && <SchedulerTable s={view.scheduler} />}
       </Panel>
 
-      {view.sections
-        .filter((s) => s.id !== "telegram")
-        .map((s) => (
-          <Panel key={s.id} id={s.id} title={s.title}>
-            {s.id === "automation" && view.llmError && (
-              <p className="field__hint field__hint--bad settings__warn">
-                Last diagnosis LLM call failed: {view.llmError}. Fix the language model in{" "}
-                <Link href="/setup#provider">Setup → Connect AI models</Link>, or turn off “Summarize diagnosis with the LLM”.
-              </p>
-            )}
-            <SectionForm section={s} />
-          </Panel>
-        ))}
+      {/* Short forms side by side: the page reads as one screen of cards, not a long column. */}
+      <div className="settings__grid">
+        {view.sections
+          .filter((s) => s.id !== "telegram")
+          .map((s) => (
+            <Panel key={s.id} id={s.id} title={s.title}>
+              {s.id === "automation" && view.llmError && (
+                <p className="field__hint field__hint--bad settings__warn">
+                  Last diagnosis LLM call failed: {view.llmError}. Fix the language model in{" "}
+                  <Link href="/setup#provider">Setup → Connect AI models</Link>, or turn off “Summarize diagnosis with the LLM”.
+                </p>
+              )}
+              <SectionForm section={s} />
+            </Panel>
+          ))}
 
-      <Panel
-        id="models"
-        title="Models"
-        actions={
-          <Link className="btn btn--neutral btn--sm" href="/setup#provider">
-            Change <Icon name="arrow" size={13} />
-          </Link>
-        }
-      >
-        {view.models ? <Models m={view.models} /> : <p className="field__hint">Shown once the server is updated.</p>}
-      </Panel>
+        <Panel
+          id="models"
+          title="Models"
+          actions={
+            <Link className="btn btn--neutral btn--sm" href="/setup#provider">
+              Change <Icon name="arrow" size={13} />
+            </Link>
+          }
+        >
+          {view.models ? <Models m={view.models} /> : <p className="field__hint">Shown once the server is updated.</p>}
+        </Panel>
+      </div>
       <LockNote />
     </div>
   );
@@ -317,7 +320,7 @@ const connectionHelp: Record<string, string> = {
 };
 function settingLabel(f: SettingField): string {
   if (f.key === "TELEGRAM_ALERTS_ENABLED") return "Send Telegram alerts";
-  if (f.key === "TELEGRAM_ALERT_COOLDOWN_SECONDS") return "Repeat interval";
+  if (f.key === "TELEGRAM_ALERT_COOLDOWN_SECONDS") return "Critical reminder";
   if (f.key === "BRAIN_TELEGRAM_DEFAULT_REPO") return "Default repository";
   return f.label;
 }
@@ -329,8 +332,8 @@ function CooldownInput({ f, v, onChange }: { f: SettingField; v: string; onChang
   return (
     <div className="telegram-interval">
       <div>
-        <label htmlFor={id}>Repeat interval</label>
-        <p id={`${id}-help`} className="field__hint">Wait before sending the same findings again.</p>
+        <label htmlFor={id}>Critical reminder</label>
+        <p id={`${id}-help`} className="field__hint">Each problem is announced once, and again when it is fixed. Only a critical one that stays open is repeated this often.</p>
       </div>
       <div className="telegram-interval__control">
         <select id={id} className="select" value={custom ? "custom" : v} aria-describedby={`${id}-help`} onChange={(e) => {
