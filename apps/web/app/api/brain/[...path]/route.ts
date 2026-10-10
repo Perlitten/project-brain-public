@@ -7,7 +7,7 @@ import { authorizeWebRequest, sessionFrom, webAuthResponse } from "@/lib/web-aut
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
-  const authorization = authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")));
+  const authorization = await authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")));
   if (authorization !== 200) return webAuthResponse(authorization);
   const base = process.env.BRAIN_API_URL;
   const key = process.env.BRAIN_API_KEY;
