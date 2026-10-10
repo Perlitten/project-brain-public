@@ -1,5 +1,5 @@
 import { EmptyState, Ledger, PageHead, Panel } from "@/components/ui";
-import { SectionNav } from "@/components/SectionNav";
+import { SectionTabs } from "@/components/SectionNav";
 import { BackgroundJobs } from "@/components/BackgroundJobs";
 import { getJobs, getPagedEvents } from "@/lib/data";
 import { getListQuery } from "@/lib/list-query";
@@ -8,7 +8,7 @@ import { RequestHistory } from "@/components/RequestHistory";
 import { dashboardPeriod, getRequestTelemetry } from "@/lib/dashboard";
 import { getRepositories } from "@/lib/data";
 
-export const metadata = { title: "Activity" };
+export const metadata = { title: "Requests & jobs" };
 
 export default async function Activity({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
@@ -22,8 +22,8 @@ export default async function Activity({ searchParams }: { searchParams: Promise
   const events = result.items;
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
   return <>
-    <PageHead title="Activity" lede="What agents asked Brain and what Brain ran in the background, newest first." />
-    <SectionNav label="Activity views" items={[{ href: "/logs", label: "Activity", active: true }, { href: "/runs", label: "Agent runs" }]} />
+    <PageHead title="Requests & jobs" lede="What agents asked Brain, and what Brain ran in the background on its own. Newest first." />
+    <SectionTabs section="logs" active="/logs" />
     <Panel id="requests" title="Agent requests" desc="The latest search and context calls, retries included. Handling time is measured on the server only." actions={<nav className="segmented" aria-label="Request period">{(["24h", "7d", "30d"] as const).map((p) => <Link key={p} scroll={false} aria-current={p === period ? "page" : undefined} href={`/logs?${new URLSearchParams({ ...(repo ? { repo } : {}), period: p })}`}>{p}</Link>)}</nav>} flush>
       <RequestHistory telemetry={telemetry} />
     </Panel>

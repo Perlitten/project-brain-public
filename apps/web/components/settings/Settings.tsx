@@ -7,7 +7,6 @@ import "./settings.css";
 import { useState, type ReactNode } from "react";
 import { LockNote, RunButton, useAction } from "@/components/act";
 import { Icon } from "@/components/Icon";
-import { Tip } from "@/components/Tip";
 import { Panel } from "@/components/ui";
 import { saveSettings, testTelegram } from "@/lib/actions/settings";
 import type { SettingField, SettingsSection, SettingsView, TelegramStatus } from "@/lib/settings-view";
@@ -59,10 +58,8 @@ export function Settings({ view }: { view: SettingsView }) {
           <Panel key={s.id} id={s.id} title={s.title}>
             {s.id === "automation" && view.llmError && (
               <p className="field__hint field__hint--bad settings__warn">
-                Last diagnosis LLM call failed: {view.llmError}
-                <Tip>
-                  Fix the language model in <Link href="/setup#provider">Get started → Models</Link>, or turn off “Summarize diagnosis with the LLM”.
-                </Tip>
+                Last diagnosis LLM call failed: {view.llmError}. Fix the language model in{" "}
+                <Link href="/setup#provider">Setup → Connect AI models</Link>, or turn off “Summarize diagnosis with the LLM”.
               </p>
             )}
             <SectionForm section={s} />
@@ -103,10 +100,8 @@ function TelegramLine({ t }: { t: TelegramStatus | null }) {
 function EnvHint({ keys }: { keys: string[] }) {
   return (
     <p className="field__hint">
-      Editing here needs a server update.
-      <Tip>
-        Until then set {keys.join(", ")} in the server’s .env and restart: <code>docker compose up -d</code>.
-      </Tip>
+      Editing here needs a server update. Until then set {keys.join(", ")} in the server’s .env and restart with{" "}
+      <code>docker compose up -d</code>.
     </p>
   );
 }
@@ -249,7 +244,7 @@ function SectionForm({ section, telegram }: { section?: SettingsSection; telegra
                 <span className="switch__track" aria-hidden="true" />
                 <span>{f.label}</span>
               </label>
-              <Hints f={f} />
+              {f.help && <p className="field__hint">{f.help}</p>}
             </li>
           ))}
         </ul>
@@ -298,10 +293,6 @@ function SectionForm({ section, telegram }: { section?: SettingsSection; telegra
       )}
     </form>
   );
-}
-
-function Hints({ f }: { f: SettingField }) {
-  return f.help ? <Tip label={`Help for ${f.label}`} end>{f.help}</Tip> : null;
 }
 
 function ServerOverrides({ fields }: { fields: SettingField[] }) {
@@ -373,12 +364,11 @@ function Input({ f, v, cleared, onChange, onClear, quiet = false }: { f: Setting
             {f.min}–{f.max}
           </em>
         )}
-        {!quiet && <Hints f={f} />}
       </div>
       <input
         id={`set-${f.key}`}
         aria-invalid={Boolean(err)}
-        aria-describedby={[err && `set-${f.key}-error`, quiet && f.help && `set-${f.key}-help`].filter(Boolean).join(" ") || undefined}
+        aria-describedby={[err && `set-${f.key}-error`, f.help && `set-${f.key}-help`].filter(Boolean).join(" ") || undefined}
         className={`input${secret || f.kind === "url" || num ? " input--mono" : ""}`}
         type={secret ? "password" : "text"}
         inputMode={num ? "numeric" : undefined}
@@ -388,7 +378,7 @@ function Input({ f, v, cleared, onChange, onClear, quiet = false }: { f: Setting
         autoComplete={secret ? "new-password" : "off"}
         spellCheck={false}
       />
-      {quiet && f.help && <span id={`set-${f.key}-help`} className="field__hint">{f.help}</span>}
+      {f.help && <span id={`set-${f.key}-help`} className="field__hint">{f.help}</span>}
       {err && <span id={`set-${f.key}-error`} className="field__hint field__hint--bad" role="status">{err}</span>}
       {secret && f.set && (
         <label className="check check--sm">

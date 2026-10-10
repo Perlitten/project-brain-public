@@ -855,3 +855,10 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 /* Project detail: stats, coverage meters, then the caveat, each with breathing room. */
 .project-detail { display: grid; gap: var(--s-6); }
 .project-detail__note { margin: 0; font-size: var(--fs-12); }
+
+/* ---------- disclosure: secondary detail, closed by default ---------- */
+.disclosure { border-top: 1px solid var(--border-subtle); padding-top: var(--s-4); color: var(--text-2); font-size: var(--fs-12); line-height: var(--lh-prose); }
+.disclosure > summary { cursor: pointer; width: fit-content; color: var(--text-2); font-size: var(--fs-14); }
+.disclosure > summary:hover { color: var(--text-1); }
+.disclosure ul { display: grid; gap: var(--s-2); margin: var(--s-3) 0; max-width: 96ch; }
+.disclosure b { color: var(--text-1); font-weight: 500; }

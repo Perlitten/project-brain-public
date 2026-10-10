@@ -7,8 +7,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getPulse, type Pulse } from "@/lib/actions/pulse";
 import { pulseHeadline } from "@/lib/pulse-presentation";
+import { stepTitle } from "@/lib/setup-copy";
 
 const POLL_MS = 20_000;
+// One failed /health read is usually a busy server, not an outage: the
+// dashboard fires a dozen API calls at once and the probe can lose. Say
+// "Not answering" only after two misses in a row, re-checking quickly between.
+const RETRY_MS = 3_000;
+const MISSES_TO_ALARM = 2;
 // The last reading, so a reload shows it at once instead of "Checking…"
 // while the first poll is in flight. Per tab; optional.
 const MEMO = "pb:pulse";
@@ -34,6 +40,7 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
     const memoKey = `${MEMO}:${repoSlug ?? "default"}`;
     let stop = false;
     let h: ReturnType<typeof setTimeout>;
+    let misses = 0;
     try {
       const memo = JSON.parse(sessionStorage.getItem(memoKey) ?? "null") as Pulse | null;
       if (memo && Date.now() - memo.at < MEMO_MAX_AGE) setPulse(memo);
@@ -42,6 +49,11 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
       if (document.visibilityState === "visible") {
         const p = await getPulse(repoSlug).catch(() => null);
         if (stop) return;
+        misses = p && !p.reachable ? misses + 1 : 0;
+        if (misses > 0 && misses < MISSES_TO_ALARM) {
+          h = setTimeout(tick, RETRY_MS);
+          return;
+        }
         if (p) {
           setPulse(p);
           try {
@@ -103,7 +115,7 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
         </Link>
       )}
       {setupLeft && (
-        <Link href="/setup" className="vitals__line vitals__line--next" title={`Next: ${pulse.setup!.next}`}>
+        <Link href="/setup" className="vitals__line vitals__line--next" title={`Next: ${stepTitle(pulse.setup!.nextId ?? "", pulse.setup!.next ?? "")}`}>
           <span className="vitals__text">Finish setup</span>
           <span className="num">
             {pulse.setup!.done}/{pulse.setup!.total} →
