@@ -5,7 +5,7 @@ import { Chip, EmptyState, PageHead } from "@/components/ui";
 import { getPagedInsights } from "@/lib/data";
 import { getListQuery } from "@/lib/list-query";
 import type { Insight } from "@/lib/types";
-import { SectionNav } from "@/components/SectionNav";
+import { SectionTabs } from "@/components/SectionNav";
 
 export const metadata = { title: "Findings" };
 
@@ -13,7 +13,7 @@ const kindWords: Record<Insight["kind"], ReactNode> = {
   drift: <Term k="drift">Structure drift</Term>,
   coupling: <Term k="coupling">Tangled modules</Term>,
   hotspot: <Term k="hotspot">Hotspot</Term>,
-  freshness: "Outdated briefing",
+  freshness: "Context pack for older code",
   other: "Observation",
 };
 
@@ -29,7 +29,7 @@ export default async function Insights({ searchParams }: { searchParams: Promise
         title="Findings"
         lede="Places in connected repositories that are getting harder to change. Findings cover the whole service and are not tied to one project."
       />
-      <SectionNav label="Project views" items={[{ href: "/projects", label: "Projects" }, { href: "/insights", label: "Findings across Brain", active: true }]} />
+      <SectionTabs section="projects" active="/insights" />
       {insights.length === 0 && !hasQuery && (
         <EmptyState title="No findings yet" body="Brain hasn’t flagged anything in this code. Findings appear here as Brain notices risky changes." />
       )}

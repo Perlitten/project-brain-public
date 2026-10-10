@@ -19,3 +19,18 @@ export function SectionNav({ label, items }: { label: string; items: SectionNavI
     </nav>
   );
 }
+
+// One tab set per section, defined once, so every page of a section shows the
+// same tabs in the same order with the same names.
+const SECTIONS = {
+  projects: { label: "Project views", items: [["/projects", "Projects"], ["/indexing", "Index runs"], ["/graph", "Code map"], ["/insights", "Findings"]] },
+  memory: { label: "Memory views", items: [["/memory", "Decisions & rules"], ["/packs", "Context packs"]] },
+  quality: { label: "Quality views", items: [["/quality", "Benchmark"], ["/reports", "Reports"], ["/reranker", "Reranker"]] },
+  logs: { label: "Activity views", items: [["/logs", "Requests & jobs"], ["/runs", "Agent tasks"]] },
+  settings: { label: "Settings views", items: [["/settings", "General"], ["/admin", "Access"], ["/mcp", "Agent tools"]] },
+} as const;
+
+export function SectionTabs({ section, active }: { section: keyof typeof SECTIONS; active: string }) {
+  const s = SECTIONS[section];
+  return <SectionNav label={s.label} items={s.items.map(([href, label]) => ({ href, label, active: href === active }))} />;
+}

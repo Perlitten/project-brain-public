@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SectionNav } from "@/components/SectionNav";
+import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, Table } from "@/components/ui";
 import { getCorpus, getPagedIndexRuns, getRepositories, getRepository } from "@/lib/data";
 import { repositoryStatus } from "@/lib/repository-status";
@@ -20,16 +20,16 @@ export default async function Projects({ searchParams }: { searchParams: Promise
       <PageHead
         title={detail?.name ?? "Projects"}
         lede={detail ? "What Brain holds for this repository and how current it is." : "Repositories Brain has indexed for your agents, and how current each one is."}
-        status={state ? { tone: state.tone, text: state.tone === "ok" ? "Index matches the latest revision" : state.status, action: state.tone === "ok" ? undefined : <Link className="btn btn--neutral" href={`/indexing${scope}`}>Open indexing</Link> } : selected ? undefined : repositories.length ? { tone: stale ? "warn" : "ok", text: stale ? `${stale} of ${repositories.length} projects are behind their code` : `All ${repositories.length} projects are up to date` } : undefined}
-        actions={<>{detail && <Link className="btn btn--neutral" href="/projects">All projects</Link>}<Link className="btn btn--primary" href="/setup">Add project</Link></>}
+        status={state ? { tone: state.tone, text: state.tone === "ok" ? "Index matches the latest revision" : state.status, action: state.tone === "ok" ? undefined : <Link className="btn btn--neutral" href={`/indexing${scope}`}>Open index runs</Link> } : selected ? undefined : repositories.length ? { tone: stale ? "warn" : "ok", text: stale ? `${stale} of ${repositories.length} projects are behind their code` : `All ${repositories.length} projects are up to date` } : undefined}
+        actions={<>{detail && <Link className="btn btn--neutral" href="/projects">All projects</Link>}<Link className="btn btn--primary" href="/setup#repo">Add project</Link></>}
       />
-      <SectionNav label="Project views" items={[{ href: "/projects" + (detail ? `?repo=${detail.slug}` : ""), label: detail ? "Overview" : "Projects", active: true }, ...(detail ? [{ href: `/indexing${scope}`, label: "Indexing" }, { href: `/graph${scope}`, label: "Code map" }] : []), { href: `/setup${scope}`, label: "Connection" }]} />
+      <SectionTabs section="projects" active="/projects" />
       {selected && !detail ? <Panel id="unknown-project" title="Project not found"><EmptyState title="That project is unavailable" body="Choose a connected project from the list. Brain did not fall back to another repository." /></Panel> : detail ? (
-        <Panel id="project-detail" title="Index" desc={detail.path || "Repository path unavailable"} actions={<Link className="link" href={`/indexing${scope}`}>Indexing history</Link>}>
+        <Panel id="project-detail" title="Index" desc={detail.path || "Repository path unavailable"} actions={<Link className="link" href={`/indexing${scope}`}>Index runs</Link>}>
           <div className="project-detail">
             <dl className="stats">
               <div className="stat"><dt className="stat__label">Indexed pieces</dt><dd className="stat__value num">{corpus?.available === false || !corpus ? "—" : corpus.chunks.toLocaleString("en-US")}</dd></div>
-              <div className="stat"><dt className="stat__label">Latest revision</dt><dd className="stat__value num">{detail.head || "—"}</dd><dd className="stat__note">{detail.branch || "branch unknown"}</dd></div>
+              <div className="stat"><dt className="stat__label">Latest revision</dt><dd className="stat__value num">{detail.head || "—"}</dd><dd className="stat__note">{detail.branch ? `branch ${detail.branch}` : "branch not recorded"}</dd></div>
               <div className="stat"><dt className="stat__label">Latest index run</dt><dd className="stat__value num">{history?.available === false ? "—" : history?.items[0]?.startedAt ?? "None"}</dd><dd className="stat__note">{history?.items[0]?.status ?? (history?.available === false ? "History unavailable" : "Nothing recorded")}</dd></div>
             </dl>
             {corpus?.meters.length ? <div className="meters">{corpus.meters.map((m) => <Meter key={m.label} meter={m} />)}</div> : <p className="text-dim">Coverage unavailable</p>}

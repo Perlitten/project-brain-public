@@ -5,7 +5,7 @@
 /* Project memory: one row per project, meters aligned in columns. */
 .memory-rows { display: grid; }
 .memory-rows__head, .memory-rows__row {
-  display: grid; grid-template-columns: minmax(160px, 1.1fr) minmax(150px, .8fr) minmax(180px, 1fr) minmax(200px, 1.1fr);
+  display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(150px, .8fr) minmax(220px, 1.4fr);
   gap: var(--s-5); align-items: center; padding: var(--s-3) var(--s-5);
 }
 .memory-rows__head { padding-block: var(--s-2); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-12); color: var(--text-3); }
@@ -16,6 +16,8 @@
 .memory-rows__name > a { font-weight: 500; }
 .memory-rows__name > a:hover { color: var(--teal-fg); }
 .memory-rows__name .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-rows__ready { display: grid; gap: 2px; min-width: 0; }
+.memory-rows__ready .sub { font-size: var(--fs-12); color: var(--text-3); }
 
 .dashboard__lower { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--s-6); align-items: start; }
 .usage { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-4); margin-bottom: var(--s-5); }
@@ -31,11 +33,6 @@
 .dashboard__lower .empty { padding: var(--s-6) var(--s-5); }
 
 /* One place for measurement caveats, closed by default. */
-.disclosure { border-top: 1px solid var(--border-subtle); padding-top: var(--s-4); color: var(--text-2); font-size: var(--fs-12); line-height: var(--lh-prose); }
-.disclosure > summary { cursor: pointer; width: fit-content; color: var(--text-2); font-size: var(--fs-14); }
-.disclosure > summary:hover { color: var(--text-1); }
-.disclosure ul { display: grid; gap: var(--s-2); margin: var(--s-3) 0; max-width: 96ch; }
-.disclosure b { color: var(--text-1); font-weight: 500; }
 
 .dashboard__map .map { margin: 0; }
 .request-chart { position: relative; height: 152px; padding-top: 24px; border-bottom: 1px solid var(--border-subtle); background: repeating-linear-gradient(to top,transparent 0,transparent calc(33.333% - 1px),var(--border-subtle) calc(33.333% - 1px),var(--border-subtle) 33.333%); }
@@ -55,7 +52,7 @@
 .request-chart__table caption { text-align: left; padding-bottom: 8px; color: var(--text-3); }
 @media (max-width: 1100px) {
   .dashboard__lower { grid-template-columns: 1fr; }
-  .memory-rows__head, .memory-rows__row { grid-template-columns: minmax(140px, 1fr) minmax(140px, auto) minmax(160px, 1fr) minmax(180px, 1fr); gap: var(--s-4); }
+  .memory-rows__head, .memory-rows__row { grid-template-columns: minmax(140px, 1fr) minmax(140px, auto) minmax(180px, 1.2fr); gap: var(--s-4); }
 }
 @media (max-width: 760px) {
   .memory-rows__head { display: none; }

@@ -1,6 +1,6 @@
 "use client";
 // A newly minted key, shown exactly once: the key itself plus ready-to-paste
-// agent configs. Used by Get started (agent step) and Access.
+// agent configs. Used by Setup (agent step) and Access.
 
 import { useMemo, type ReactNode } from "react";
 import { CodeBlock, Dialog } from "@/components/act";

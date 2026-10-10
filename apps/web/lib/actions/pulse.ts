@@ -20,7 +20,7 @@ export interface Pulse {
   llm?: string;
   embedding?: string;
   index?: { status: string; at?: string };
-  setup?: { done: number; total: number; next?: string };
+  setup?: { done: number; total: number; next?: string; nextId?: string };
 }
 
 type Json = Record<string, unknown>;
@@ -66,6 +66,7 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
           done: steps.filter((st) => st.status === "done").length,
           total: steps.length,
           next: s(steps.find((st) => st.status !== "done")?.title),
+          nextId: s(steps.find((st) => st.status !== "done")?.id),
         }
       : undefined,
   };

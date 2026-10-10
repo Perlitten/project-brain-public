@@ -3,7 +3,7 @@ export const glossary = {
   chunk: "A small piece of a file — a function, a class or a few paragraphs. Brain stores code in pieces so it can find exactly the right one.",
   searchable: "Brain has turned this piece into a meaning fingerprint (an embedding), so it can be found by what it does, not just by its exact words.",
   index: "Brain reading your repository: files, functions and how they connect. Like a book's index, it must be redone when the book changes.",
-  pack: "A context pack is a briefing Brain prepares for an AI agent: the exact files, rules and decisions it needs for one task, within a token budget.",
+  pack: "A context pack is what Brain hands an AI agent for one task: the exact files, rules and past decisions it needs, trimmed to fit its context window.",
   reranker: "A second, more careful pass over search results that re-orders them by how well they actually match the question.",
   mcp: "Model Context Protocol — the standard plug that lets AI agents like Claude Code or Codex call Brain's tools.",
   agent: "An AI coding assistant (Claude Code, Codex, Cursor, Devin) that asks Brain for context before changing code.",

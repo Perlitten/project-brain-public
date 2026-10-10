@@ -3,9 +3,9 @@
 // and a "Run now" that queues the same POST /jobs/* a schedule slot uses.
 
 import { RunButton } from "@/components/act";
-import { Tip } from "@/components/Tip";
 import { Chip, Table } from "@/components/ui";
 import { runScheduledJob } from "@/lib/actions/scheduler";
+import { cronToText } from "@/lib/cron";
 import type { ScheduleStatus, ScheduledJob, SchedulerView } from "@/lib/scheduler-view";
 import type { Tone } from "@/lib/types";
 
@@ -23,11 +23,10 @@ export function SchedulerLine({ s }: { s: SchedulerView | null }) {
   return (
     <div className="status-line">
       <Chip tone={!s.enabled ? "idle" : stale ? "bad" : "ok"}>{!s.enabled ? "Off" : stale ? `${stale} overdue` : "On"}</Chip>
-      <span className="muted">Runs inside the worker · times in UTC</span>
-      <Tip end>
-        A job is overdue when its last success is older than its interval plus {s.graceHours}h; that also turns /health to
-        “degraded”. Set SCHEDULER_ENABLED=false on the server to switch scheduling off.
-      </Tip>
+      <span className="muted">
+        Brain runs these jobs by itself. A job is overdue when it hasn’t succeeded for its interval plus {s.graceHours} h.
+        {!s.enabled && " Scheduling is switched off on the server (SCHEDULER_ENABLED=false)."}
+      </span>
     </div>
   );
 }
@@ -56,16 +55,15 @@ export function SchedulerTable({ s }: { s: SchedulerView }) {
           cell: (j) => (
             <>
               <span>{j.description}</span>
-              <span className="sub mono">{j.jobType}</span>
+              <span className="sub mono">{j.jobType}{j.pool ? ` · ${j.pool} queue` : ""}</span>
             </>
           ),
         },
-        { head: "Schedule", cell: (j) => <code>{j.cron}</code> },
-        { head: "Pool", cell: (j) => j.pool },
+        { head: "Schedule", cell: (j) => <span title={`cron: ${j.cron}`}>{cronToText(j.cron)}</span> },
         { head: "Next run", cell: (j) => j.nextRun ?? "—" },
         { head: "Last success", cell: (j) => j.lastSuccess ?? <span className="muted">never</span> },
         { head: "Last failure", cell: (j) => <LastFailure j={j} /> },
-        { head: "Attempts", cell: (j) => (j.attempts ? `${j.attempts}/${j.maxAttempts}` : `—/${j.maxAttempts}`), align: "right" },
+        { head: "Tries used", cell: (j) => (j.attempts ? `${j.attempts}/${j.maxAttempts}` : `—/${j.maxAttempts}`), align: "right" },
         {
           head: "Status",
           cell: (j) => {

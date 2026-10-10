@@ -1,5 +1,5 @@
 import { Term } from "@/components/Term";
-import { SectionNav } from "@/components/SectionNav";
+import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, Stat, fmt } from "@/components/ui";
 import { getReranker } from "@/lib/data";
 
@@ -29,7 +29,7 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
           </>
         }
       />
-      <SectionNav label="Quality views" items={[{ href: "/quality", label: "Quality" }, { href: "/reports", label: "Reports" }, { href: "/reranker", label: "Reranker", active: true }]} />
+      <SectionTabs section="quality" active="/reranker" />
       {r.available === false ? (
         <EmptyState
           title="No reranker status"

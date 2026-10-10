@@ -45,7 +45,7 @@ export function condition(repo: Repository): Condition {
       tiles: [
         { value: String(repo.behind), label: "changes not yet read", tone: "bad" },
         { value: "2,960", label: "pieces not searchable yet", tone: "warn" },
-        { value: "9", label: "agent briefings to rebuild", tone: "warn" },
+        { value: "9", label: "context packs to rebuild", tone: "warn" },
         { value: "6d", label: "since Brain last read the code", tone: "bad" },
       ],
     };
@@ -60,7 +60,7 @@ export function condition(repo: Repository): Condition {
       tiles: [
         { value: String(repo.behind), label: "changes not yet read", tone: "bad" },
         { value: "412", label: "pieces not searchable yet", tone: "warn" },
-        { value: "2", label: "agent briefings to rebuild", tone: "warn" },
+        { value: "2", label: "context packs to rebuild", tone: "warn" },
         { value: "4h", label: "since Brain last read the code", tone: "ok" },
       ],
     };
@@ -72,7 +72,7 @@ export function condition(repo: Repository): Condition {
     tiles: [
       { value: "0", label: "changes not yet read", tone: "ok" },
       { value: "0", label: "pieces not searchable yet", tone: "ok" },
-      { value: "0", label: "agent briefings to rebuild", tone: "ok" },
+      { value: "0", label: "context packs to rebuild", tone: "ok" },
       { value: "38m", label: "since Brain last read the code", tone: "ok" },
     ],
   };
