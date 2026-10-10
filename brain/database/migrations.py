@@ -783,6 +783,9 @@ async def _ensure_memory_episode_ledger(conn: AsyncConnection) -> None:
             text("ALTER TABLE memory_episodes ADD COLUMN IF NOT EXISTS gate_reasons JSONB NOT NULL DEFAULT '[]'")
         )
         await conn.execute(
+            text("ALTER TABLE memory_episodes ADD COLUMN IF NOT EXISTS supersedes_learning_ids JSONB")
+        )
+        await conn.execute(
             text(
                 """
                 CREATE TABLE IF NOT EXISTS memory_episode_events (
@@ -879,4 +882,5 @@ async def downgrade_memory_episode_ledger(conn: AsyncConnection) -> None:
     """Reverse ``_ensure_memory_episode_ledger`` (manual rollback; data in these objects is lost)."""
     await conn.execute(text("DROP TABLE IF EXISTS memory_episode_events"))
     await conn.execute(text("ALTER TABLE memory_episodes DROP COLUMN IF EXISTS gate_reasons"))
+    await conn.execute(text("ALTER TABLE memory_episodes DROP COLUMN IF EXISTS supersedes_learning_ids"))
     await conn.execute(text("ALTER TABLE memory_episodes DROP COLUMN IF EXISTS duplicate_of_learning_id"))
