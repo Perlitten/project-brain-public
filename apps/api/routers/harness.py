@@ -58,6 +58,43 @@ class LessonCreateRequest(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=255)
 
 
+class ObservationCreateRequest(BaseModel):
+    """An unvalidated lesson: no validation or artifact required.
+
+    Consolidation treats it as evidence_tier=unvalidated (G2 needs one more
+    independent sighting; medium severity goes to the human queue).
+    """
+    model_config = ConfigDict(str_strip_whitespace=True)
+    statement: str = Field(min_length=1, max_length=10000)
+    category: str = Field(min_length=1, max_length=64)
+    idempotency_key: str = Field(min_length=8, max_length=255)
+    outcome: str = Field("learning", pattern="^(learning|failure_lesson)$")
+
+
+@router.post("/tasks/{task_id}/observations", dependencies=[Depends(require_scope("harness:write"))])
+async def add_task_observation(task_id: str, body: ObservationCreateRequest):
+    """Capture an unvalidated L1 lesson (what a session noticed, not what it proved).
+
+    Cheaper than /lessons: no validation or artifact. The payload marks
+    reported_validation=false so consolidation applies the stricter
+    unvalidated evidence tier instead of trusting the claim.
+    """
+    tid = _parse_task_id(task_id)
+    task = await HarnessStore.get_task(tid)
+    if task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    payload = {"statement": body.statement, "category": body.category, "repo_scope": task.repo_path,
+               "reported_validation": False, "evidence_tier": "unvalidated"}
+    try:
+        event = await HarnessStore.add_event(tid, "observed_lesson", "client", payload,
+            classification=body.outcome, idempotency_key=body.idempotency_key)
+    except TaskNotFound:
+        raise HTTPException(status_code=404, detail="task not found")
+    except (VersionConflict, IdempotencyConflict, AcceptanceLocked) as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return _event_dict(event)
+
+
 @router.post("/tasks/{task_id}/lessons", dependencies=[Depends(require_scope("harness:write"))])
 async def add_validated_lesson(task_id: str, body: LessonCreateRequest):
     """Capture an evidence-linked L1 lesson; it is reported validation, not server execution."""
