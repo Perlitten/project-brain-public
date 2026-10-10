@@ -1,5 +1,5 @@
 import { CodeGraph } from "@/components/CodeGraph";
-import { SectionNav } from "@/components/SectionNav";
+import { SectionTabs } from "@/components/SectionNav";
 import { PageTabs, pickTab } from "@/components/PageTabs";
 import { Term } from "@/components/Term";
 import { Chip, EmptyState, PageHead, Panel, Table, type Column } from "@/components/ui";
@@ -34,7 +34,7 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
           </>
         }
       />
-      <SectionNav label="Project views" items={[{ href: `/projects${repo ? `?repo=${repo}` : ""}`, label: "Projects" }, { href: `/indexing${repo ? `?repo=${repo}` : ""}`, label: "Indexing" }, { href: `/graph${repo ? `?repo=${repo}` : ""}`, label: "Code map", active: true }, { href: `/setup${repo ? `?repo=${repo}` : ""}`, label: "Connection" }]} />
+      <SectionTabs section="projects" active="/graph" />
       {edges.length === 0 ? (
         <Panel id="map" title="Module map">
           <EmptyState

@@ -1,7 +1,7 @@
 import { IdentityList, NewIdentityForm } from "@/components/access/Access";
 import { Term } from "@/components/Term";
 import { EmptyState, PageHead, Panel, Stat, fmt } from "@/components/ui";
-import { SectionNav } from "@/components/SectionNav";
+import { SectionTabs } from "@/components/SectionNav";
 import { getAccessView } from "@/lib/data";
 import { getAgentTarget } from "@/lib/setup-view";
 
@@ -22,7 +22,7 @@ export default async function Admin() {
           </>
         }
       />
-      <SectionNav label="Settings views" items={[{ href: "/settings", label: "Settings" }, { href: "/admin", label: "Access", active: true }, { href: "/mcp", label: "Agent tools" }]} />
+      <SectionTabs section="settings" active="/admin" />
 
       {view.readable && (
         <div className="stats">

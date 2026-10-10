@@ -8,6 +8,7 @@ import { cache } from "react";
 import { apiConfigured, brainFetch } from "./api";
 import * as mock from "./mock";
 import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./list-query";
+import { shortRevision } from "./revision";
 import type {
   AccessKey,
   AccessView,
@@ -191,7 +192,7 @@ function toRepository(r: RawRepo): Repository {
     name: str(r.name) || `repository ${r.id}`,
     path: str(r.path),
     branch: str(f.branch),
-    head: commit.startsWith("snapshot:") ? commit.slice(9, 16) : commit.slice(0, 7),
+    head: shortRevision(commit),
     behind: num(f.commits_behind) ?? null,
     freshness: str(f.status) || "unknown",
   };
@@ -679,7 +680,7 @@ export const getIndexRuns = async (slug?: string | null): Promise<IndexRun[]> =>
       const rev = str(r.revision);
       return {
         id: int(r.id),
-        revision: rev.startsWith("snapshot:") ? rev.slice(9, 16) : rev.slice(0, 7),
+        revision: shortRevision(rev),
         trigger: indexTrigger(r.trigger),
         status,
         completeness: completeness(r.completeness, status),
@@ -850,7 +851,7 @@ export const getPagedIndexRuns = async (slug: string | null | undefined, input: 
     const data = await brainFetch<Json>(`/api/web/index-runs?repository_id=${repo.id}&${queryString(q)}`, { fresh: true });
     return data ? { ...pageResult(data, "runs", q, (r) => {
       const status = jobStatus(r.status), rev = str(r.revision);
-      return { id: int(r.id), revision: rev.startsWith("snapshot:") ? rev.slice(9, 16) : rev.slice(0, 7), trigger: indexTrigger(r.trigger), status, completeness: completeness(r.completeness, status), files: int(r.files), changed: int(r.changed), chunks: int(r.chunks), startedAt: fmtWhen(r.started_at), duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration) };
+      return { id: int(r.id), revision: shortRevision(rev), trigger: indexTrigger(r.trigger), status, completeness: completeness(r.completeness, status), files: int(r.files), changed: int(r.changed), chunks: int(r.chunks), startedAt: fmtWhen(r.started_at), duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration) };
     }), available: true } : null;
   });
 };

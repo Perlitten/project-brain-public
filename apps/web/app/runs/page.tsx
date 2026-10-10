@@ -1,10 +1,10 @@
 import { Term } from "@/components/Term";
-import { SectionNav } from "@/components/SectionNav";
+import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, JobChip, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
 import { getPagedAgentRuns } from "@/lib/data";
 import { getListQuery } from "@/lib/list-query";
 
-export const metadata = { title: "Agent runs" };
+export const metadata = { title: "Agent tasks" };
 
 export default async function Runs({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
@@ -20,21 +20,22 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
   return (
     <>
       <PageHead
-        title="Agent runs"
+        title="Agent tasks"
         lede={
           <>
-            Every task an <Term k="agent">agent</Term> ran while connected to Brain, with the briefing it received.
+            Every task an <Term k="agent">agent</Term> told Brain it was starting, and whether it got a context pack for it. Agents report the end
+            themselves; a task nobody closes is marked timed out, which doesn’t mean the work failed.
           </>
         }
       />
-      <SectionNav label="Activity views" items={[{ href: "/logs", label: "Activity" }, { href: "/runs", label: "Agent runs", active: true }]} />
+      <SectionTabs section="logs" active="/runs" />
       <div className="stats">
-        <Stat label="Tasks" value={String(result.paging.total)} note="matching the current filters" />
+        <Stat label="Tasks" value={fmt(result.paging.total)} note={hasQuery ? "matching the filters" : "all recorded"} />
         <div className="tone-ok">
           <Stat
-            label="Got a briefing"
+            label="Started with a context pack"
             value={briefingTracked ? `${briefed}/${runs.length}` : "—"}
-            note={briefingTracked ? "started with a context pack, on this page" : "not tracked yet"}
+            note={briefingTracked ? "on this page" : "this Brain version doesn’t record it"}
           />
         </div>
         <div className={failed ? "tone-bad" : "tone-ok"}>
@@ -42,7 +43,7 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
         </div>
         {timedOut > 0 && (
           <div className="tone-warn">
-            <Stat label="Timed out on this page" value={String(timedOut)} note="never reported back; closed after the deadline" />
+            <Stat label="No end reported, on this page" value={String(timedOut)} note="closed automatically after the deadline" />
           </div>
         )}
       </div>
@@ -55,23 +56,23 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
           rows={runs}
           paging={result.paging}
           rowKey={(r) => r.id}
-          filter={{ search: (r) => `${r.task} ${r.id} ${r.agent}`, facet: { label: "Result", of: (r) => r.status, values: [{ value: "timed_out", label: "timed out" }] }, noun: ["task", "tasks"] }}
+          filter={{ search: (r) => `${r.task} ${r.id} ${r.agent}`, facet: { label: "Result", of: (r) => r.status, values: [{ value: "timed_out", label: "no end reported" }] }, noun: ["task", "tasks"] }}
           columns={[
             {
               head: "Task",
               cell: (r) => (
                 <>
                   <span>{r.task}</span>
-                  <span className="sub mono">
-                    {r.id} · {r.agent}
+                  <span className="sub mono" title={r.id}>
+                    {r.agent} · {r.id.length > 12 ? r.id.slice(0, 8) : r.id}
                   </span>
                 </>
               ),
             },
             {
-              head: "Briefing",
+              head: "Context pack",
               cell: (r) =>
-                r.packHit === undefined ? <Chip tone="idle">not tracked</Chip> : r.packHit ? <Chip tone="ok">yes</Chip> : <Chip tone="warn">none</Chip>,
+                r.packHit === undefined ? <span className="text-faint">—</span> : r.packHit ? <Chip tone="ok">yes</Chip> : <Chip tone="warn">none</Chip>,
             },
             { head: <Term k="tokens">Tokens</Term>, cell: (r) => (r.tokens === undefined ? "—" : fmt(r.tokens)), align: "right" },
             { head: "Took", cell: (r) => r.duration, align: "right" },
