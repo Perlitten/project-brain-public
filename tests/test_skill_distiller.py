@@ -16,7 +16,7 @@ def _learning(lid, statement, category="workflow", scope="/repo"):
 
 
 _GOOD = json.dumps({
-    "name": "Release to Contabo",
+    "name": "Release to VPS",
     "description": "How a release reaches the VPS without touching reports/.",
     "triggers": ["deploy", "release", "server_up"],
     "workflow": [{"step": 1, "action": "tar --exclude=reports"}, {"step": 2, "action": "run server_up.sh"}],
@@ -27,7 +27,7 @@ _GOOD = json.dumps({
 
 def test_parse_skill_json_shapes_and_rejects():
     parsed = _parse_skill_json("noise " + _GOOD + " trailing")
-    assert parsed["name"] == "Release to Contabo"
+    assert parsed["name"] == "Release to VPS"
     assert parsed["triggers"] == ["deploy", "release", "server_up"]
     assert parsed["workflow"] == [{"step": 1, "action": "tar --exclude=reports"},
                                   {"step": 2, "action": "run server_up.sh"}]
@@ -59,7 +59,7 @@ async def test_distill_creates_pending_skill_per_repo_group(monkeypatch):
     with patch("brain.memory.skill_store.create_skill", new=create_skill):
         report = await distill_skills(min_learnings=3)
     assert report["status"] == "ok" and report["groups"] == 1
-    assert report["created"] == [{"skill_id": 10, "name": "Release to Contabo", "status": "pending",
+    assert report["created"] == [{"skill_id": 10, "name": "Release to VPS", "status": "pending",
                                   "repo_scope": "/repo", "source_learning_ids": [1, 2, 3]}]
     assert created[0]["repo_scope"] == "/repo" and created[0]["is_global"] is False
     assert created[0]["status"] == "pending"
@@ -78,7 +78,7 @@ async def test_distill_active_without_approval_and_skips_non_procedural(monkeypa
                 return raw
         return _GOOD
 
-    create = AsyncMock(return_value=SimpleNamespace(id=5, name="Release to Contabo", status="active",
+    create = AsyncMock(return_value=SimpleNamespace(id=5, name="Release to VPS", status="active",
                                                     source_learning_ids=[3, 4]))
     monkeypatch.setattr(skill_distiller, "_eligible_groups", AsyncMock(return_value=groups))
     monkeypatch.setattr(skill_distiller, "get_summarizer_provider", lambda: SimpleNamespace(summarize=summarize))
@@ -101,9 +101,9 @@ async def test_distill_name_conflict_merges_learnings_into_existing_skill(monkey
     with patch("brain.memory.skill_store.create_skill", new=AsyncMock(side_effect=SkillConflictError("dup"))):
         report = await distill_skills(min_learnings=2)
     assert report["created"] == []
-    assert report["skipped"][0]["reason"] == "skill 'Release to Contabo' exists"
+    assert report["skipped"][0]["reason"] == "skill 'Release to VPS' exists"
     assert report["skipped"][0]["merged"] is True
-    merge.assert_awaited_once_with("Release to Contabo", [7, 8])
+    merge.assert_awaited_once_with("Release to VPS", [7, 8])
 
 
 @pytest.mark.asyncio
