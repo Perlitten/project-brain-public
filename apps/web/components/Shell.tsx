@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { Tone } from "@/lib/types";
-import type { ActionResult, ActionsMode } from "@/lib/actions/types";
+import type { ActionResult, ActionsMode, SignInMode } from "@/lib/actions/types";
 import { startBenchmark, startHealthCheck, startInsights, startReindex, startSelfDiagnosis } from "@/lib/actions/jobs";
 import { verifyProviders } from "@/lib/actions/setup";
 import { activeSection, allNavItems, locate, navGroups, withProject } from "@/lib/nav";
@@ -23,7 +23,7 @@ export interface ShellRepo {
 
 const isActive = (href: string, path: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
-export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; demo: boolean; mode: ActionsMode; children: ReactNode }) {
+export function Shell({ repos, demo, mode, access, children }: { repos: ShellRepo[]; demo: boolean; mode: ActionsMode; access: SignInMode; children: ReactNode }) {
   const path = usePathname();
   const params = useSearchParams();
   const page = locate(path)?.item;
@@ -203,11 +203,22 @@ export function Shell({ repos, demo, mode, children }: { repos: ShellRepo[]; dem
             )}
           </div>
           )}
+          {access === "open" && (
+            <Link className="access-chip chip chip--warn" href="/admin#sign-in" title="Anyone who opens this address gets in. Set a login and password.">
+              <span className="chip__dot" aria-hidden="true" />
+              <span>No password<span className="access-chip__more"> · set one</span></span>
+            </Link>
+          )}
           <button type="button" className="search-btn" aria-label="Go to a screen or run a command" onClick={openPalette}>
             <Icon name="search" size={16} />
             <span className="search-btn__text">Go or run…</span>
             <kbd>Ctrl K</kbd>
           </button>
+          {(access === "password" || access === "env") && (
+            <a className="btn btn--ghost btn--sm" href="/__logout" title="Sign out of this browser">
+              Sign out
+            </a>
+          )}
         </div>
       </header>
 

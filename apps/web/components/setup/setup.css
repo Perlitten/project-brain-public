@@ -46,3 +46,7 @@
 .setup-step__status--next b, .setup-step__status--todo b { color: var(--text-1); }
 .setup-step .disclosure { margin-top: var(--s-2); }
 .setup-step .disclosure > p { margin: var(--s-2) 0 var(--s-3); }
+
+/* A finished, closed step is a single compact row: title, "Done …", Change. */
+.setup-step.step--done:not(.is-open) { padding-block: var(--s-3); align-items: center; }
+.setup-step.step--done:not(.is-open) .setup-step__status { margin-top: 0; }

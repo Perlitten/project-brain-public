@@ -101,7 +101,8 @@ function Step({ step, index, isNext, open, onToggle, children }: { step: StepVie
             </span>
           </button>
         </div>
-        {copy && <p className="setup-step__why">{copy.why}</p>}
+        {/* A finished step is one line; its explanation comes back when you open it. */}
+        {copy && (!step.done || open) && <p className="setup-step__why">{copy.why}</p>}
         {status && (
           <p className={`setup-step__status setup-step__status--${state}`}>
             {status.now && (

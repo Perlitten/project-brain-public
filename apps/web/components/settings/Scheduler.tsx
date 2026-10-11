@@ -21,7 +21,7 @@ export function SchedulerLine({ s }: { s: SchedulerView | null }) {
   if (!s) return <p className="field__hint">Shown once the server is updated (needs GET /scheduler/jobs).</p>;
   const stale = s.jobs.filter((j) => j.status === "stale").length;
   return (
-    <div className="status-line">
+    <div className="sched-line">
       <Chip tone={!s.enabled ? "idle" : stale ? "bad" : "ok"}>{!s.enabled ? "Off" : stale ? `${stale} overdue` : "On"}</Chip>
       <span className="muted">
         Brain runs these jobs by itself. A job is overdue when it hasn’t succeeded for its interval plus {s.graceHours} h.

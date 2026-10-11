@@ -1,14 +1,16 @@
 import { IdentityList, NewIdentityForm } from "@/components/access/Access";
+import { SignIn } from "@/components/access/SignIn";
 import { Term } from "@/components/Term";
-import { EmptyState, PageHead, Panel, Stat, fmt } from "@/components/ui";
+import { EmptyState, Fold, PageHead, Panel, Stat, fmt } from "@/components/ui";
 import { SectionTabs } from "@/components/SectionNav";
 import { getAccessView } from "@/lib/data";
 import { getAgentTarget } from "@/lib/setup-view";
+import { getSignInView } from "@/lib/sign-in-view";
 
 export const metadata = { title: "Access" };
 
 export default async function Admin() {
-  const [view, agent] = await Promise.all([getAccessView(), getAgentTarget()]);
+  const [view, agent, signIn] = await Promise.all([getAccessView(), getAgentTarget(), getSignInView()]);
   const { summary: s, identities } = view;
   const target = { apiUrl: agent.publicApiUrl, repoPath: agent.repoPath };
   return (
@@ -17,12 +19,14 @@ export default async function Admin() {
         title="Access"
         lede={
           <>
-            Every person, agent and integration has its own <Term k="principal">identity</Term> with keys you can revoke. Each
+            Who can open this dashboard, and which agents and integrations can talk to Brain. Every person, agent and integration has its own <Term k="principal">identity</Term> with keys you can revoke. Each
             one only gets the <Term k="scope">permissions</Term> it needs.
           </>
         }
       />
       <SectionTabs section="settings" active="/admin" />
+
+      <SignIn view={signIn} />
 
       {view.readable && (
         <div className="stats">
@@ -35,9 +39,15 @@ export default async function Admin() {
         </div>
       )}
 
-      <Panel id="new-identity" title="New identity" desc="Creates the identity and its first key. You’ll see the key once, right after.">
+      <Fold
+        id="new-identity"
+        title="New identity"
+        desc="Creates the identity and its first key. You’ll see the key once, right after."
+        cta="+ New identity"
+        open={view.readable && identities.length === 0}
+      >
         <NewIdentityForm target={target} />
-      </Panel>
+      </Fold>
 
       <Panel id="identities" title={`${identities.length} identit${identities.length === 1 ? "y" : "ies"}`} desc="Open one to see its keys, add a key or switch it off." flush>
         {!view.readable ? (

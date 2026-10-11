@@ -61,9 +61,13 @@ Named volumes:
 - Postgres, Redis, and Neo4j are internal Docker services with no host ports.
 - API binds to `127.0.0.1:${BRAIN_API_PORT:-8010}`.
 - nginx terminates TLS for the public API host.
-- The Next.js dashboard uses `WEB_BASIC_AUTH=user:password` on Vercel.
-  Live `BRAIN_API_URL` + `BRAIN_API_KEY` credentials require this gate; missing
-  or malformed gate configuration returns 503 instead of exposing live data.
+- The Next.js dashboard uses `WEB_BASIC_AUTH=user:password` on Vercel; when set
+  it wins over everything else. Without it the dashboard asks the Brain API
+  (`/api/web-login`) for the login set on Settings → Access → Dashboard sign-in
+  (scrypt hash in the server `.env`, `WEB_LOGIN_*`); a fresh install is open
+  until one is set. A malformed `WEB_BASIC_AUTH`, or a Brain that can't be asked
+  and was never seen, returns 503 instead of exposing live data. Recovery: delete
+  the `WEB_LOGIN_*` lines from the server `.env` and restart the API.
 - The self-hosted API uses API-key and scope dependencies. `/dashboard/*`
   redirects to `BRAIN_WEB_URL`; there is no legacy login form or session cookie.
 - `POST /webhooks/git-merge` accepts either a GitHub-style
