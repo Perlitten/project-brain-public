@@ -50,6 +50,20 @@
 .request-chart__table table { width: 100%; border-collapse: collapse; }
 .request-chart__table th,.request-chart__table td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; font-weight: 400; }
 .request-chart__table caption { text-align: left; padding-bottom: 8px; color: var(--text-3); }
+/* Agent value: one row per caller, numbers right-aligned so a thin column of
+   zeros reads as a column. */
+.agents { display: grid; }
+.agents__head, .agents__row {
+  display: grid; grid-template-columns: minmax(140px, 1.4fr) repeat(4, minmax(66px, .55fr)) minmax(104px, .8fr);
+  gap: var(--s-4); align-items: center; padding: var(--s-3) 0;
+}
+.agents__head { padding-block: var(--s-2); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-12); color: var(--text-3); }
+.agents__row { border-bottom: 1px solid var(--border-subtle); }
+.agents__row:last-child { border-bottom: 0; }
+.agents__name { min-width: 0; display: grid; gap: 2px; }
+.agents__name .sub { font-size: var(--fs-11); color: var(--text-3); }
+.agents [role="columnheader"]:not(:first-child), .agents__row > [data-num] { text-align: right; font-variant-numeric: tabular-nums; }
+
 @media (max-width: 1100px) {
   .dashboard__lower { grid-template-columns: 1fr; }
   .memory-rows__head, .memory-rows__row { grid-template-columns: minmax(140px, 1fr) minmax(140px, auto) minmax(180px, 1.2fr); gap: var(--s-4); }
@@ -59,5 +73,9 @@
   .memory-rows__row { grid-template-columns: minmax(0, 1fr) auto; gap: var(--s-2) var(--s-3); padding-block: var(--s-4); }
   .memory-rows__row > [data-label] { grid-column: 1 / -1; display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: var(--s-3); }
   .memory-rows__row > [data-label]::before { content: attr(data-label); font-size: var(--fs-12); color: var(--text-3); }
+  .agents__head { display: none; }
+  .agents__row { grid-template-columns: minmax(0, 1fr) auto; gap: var(--s-1) var(--s-3); padding-block: var(--s-4); }
+  .agents__row > [data-num] { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .agents__row > [data-num]::before { content: attr(data-num); text-align: left; font-size: var(--fs-12); color: var(--text-3); }
   .usage { grid-template-columns: 1fr 1fr; }
 }

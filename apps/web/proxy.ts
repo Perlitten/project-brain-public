@@ -2,9 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { loginPage } from "./lib/login-page";
 import { SESSION_COOKIE, authorizeWebRequest, sessionFrom, signIn, webAuthResponse } from "./lib/web-auth";
 
-// Live data requires authentication. An unconfigured demo may be public.
-// Browsers get a sign-in page and a session cookie; scripts can still send
-// HTTP Basic credentials (curl -u user:password).
+// Who may enter is decided in lib/web-auth.ts (WEB_BASIC_AUTH, or the login
+// set on Settings → Sign-in, or open until one is set). Browsers get a sign-in
+// page and a session cookie; scripts can still send HTTP Basic credentials
+// (curl -u user:password).
 
 const LOGIN = "/__login";
 const LOGOUT = "/__logout";
@@ -17,7 +18,7 @@ function safeNext(value: unknown) {
   return value;
 }
 
-function page(next: string, failed: boolean, user = "") {
+function page(next: string, failed: boolean | "throttled", user = "") {
   return new NextResponse(loginPage({ action: LOGIN, next, failed, user }), {
     status: 401,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
@@ -38,9 +39,11 @@ export async function proxy(req: NextRequest) {
     const next = safeNext(form?.get("next"));
     const user = form?.get("username");
     const password = form?.get("password");
-    const result = signIn(typeof user === "string" ? user : "", typeof password === "string" ? password : "");
+    const result = await signIn(typeof user === "string" ? user : "", typeof password === "string" ? password : "");
     if (result.status === 503) return webAuthResponse(503);
-    if (result.status === 401) return page(next, true, typeof user === "string" ? user : "");
+    if (result.status === 401 || result.status === 429) {
+      return page(next, result.status === 429 ? "throttled" : true, typeof user === "string" ? user : "");
+    }
     const res = NextResponse.redirect(new URL(next, req.url), 303);
     if (result.session) {
       res.cookies.set(SESSION_COOKIE, result.session, {
@@ -54,7 +57,7 @@ export async function proxy(req: NextRequest) {
     return res;
   }
 
-  const status = authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")));
+  const status = await authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")));
   if (status === 200) return pathname === LOGIN ? NextResponse.redirect(new URL("/", req.url), 303) : NextResponse.next();
   if (status === 503) return webAuthResponse(503);
 

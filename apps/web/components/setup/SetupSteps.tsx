@@ -101,7 +101,8 @@ function Step({ step, index, isNext, open, onToggle, children }: { step: StepVie
             </span>
           </button>
         </div>
-        {copy && <p className="setup-step__why">{copy.why}</p>}
+        {/* A finished step is one line; its explanation comes back when you open it. */}
+        {copy && (!step.done || open) && <p className="setup-step__why">{copy.why}</p>}
         {status && (
           <p className={`setup-step__status setup-step__status--${state}`}>
             {status.now && (
@@ -123,23 +124,36 @@ function Step({ step, index, isNext, open, onToggle, children }: { step: StepVie
   );
 }
 
-// Where a step stands, in a sentence. The API's detail strings are terse; the
-// one that confused people most is the context-pack step, which stays undone
-// after every re-index because older packs describe an older revision.
+// Where a step stands, in a sentence. The API's detail strings are terse.
+// The context-pack step needs the most care: a pack describes the code at the
+// moment it was built, so after any index run the older ones stop matching.
+// That is the normal rhythm of using Brain, not an unfinished setup — so this
+// says what you already achieved, then what the rhythm is.
 function statusLine(step: StepView): { now: string; next?: string } | null {
   const next = !step.done && step.hint ? sentence(step.hint) : undefined;
-  if (step.id === "first_task" && !step.done && step.status !== "blocked") {
+  if (step.id === "first_task" && step.status !== "blocked") {
     const p = obj(step.extra.packs);
     const n = (k: string) => (typeof p[k] === "number" ? (p[k] as number) : 0);
-    const old = n("stale");
+    const num = (v: number) => v.toLocaleString("en");
+    const current = n("usable");
+    const older = n("historic") + n("stale");
     const broken = n("missing") + n("empty");
-    const parts = [
-      old > 0 && `${old.toLocaleString("en")} context pack${old === 1 ? " was" : "s were"} built before the latest index run, so ${old === 1 ? "it describes" : "they describe"} older code`,
-      broken > 0 && `${broken.toLocaleString("en")} pack file${broken === 1 ? " is" : "s are"} missing on the server`,
-    ].filter(Boolean) as string[];
-    return parts.length
-      ? { now: sentence(parts.join("; ")), next: "Build one for the current code below — that finishes this step." }
-      : { now: "No context pack yet.", next: "Describe a task below and build one." };
+    const rhythm = "Build a fresh pack each time you start a task — it is one call from your agent.";
+    if (current > 0) {
+      const now = `${num(current)} context pack${current === 1 ? "" : "s"} ${current === 1 ? "matches" : "match"} the code as it is indexed now`;
+      const tail = older > 0 ? `; ${num(older)} older ${older === 1 ? "one describes" : "ones describe"} earlier code, which is expected` : "";
+      return { now: sentence(now + tail) };
+    }
+    if (step.done) {
+      const at = str(obj(step.extra.milestone).at).slice(0, 10);
+      const built = `You have built a context pack from this repository${at ? ` — first one on ${at}` : ""}`;
+      const stale = older + broken > 0 ? `, and the ${num(older + broken)} you have describe code from before the latest index run` : "";
+      return { now: sentence(built + stale), next: rhythm };
+    }
+    if (broken > 0 && older === 0) {
+      return { now: sentence(`${num(broken)} pack file${broken === 1 ? " is" : "s are"} missing on the server`), next: "Build one below." };
+    }
+    return { now: "No context pack yet.", next: "Describe a task below and build one — that is the whole point of the install." };
   }
   if (!step.detail && !next) return null;
   return { now: sentence(step.detail), next };

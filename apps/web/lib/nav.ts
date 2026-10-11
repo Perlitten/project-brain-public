@@ -12,7 +12,7 @@ export const navGroups: { label: string; hint: string; items: NavItem[] }[] = [{
     { key: "command", href: "/", label: "Dashboard", icon: "zap", hint: "Usage, memory health and what needs attention", repoScoped: true },
     { key: "projects", href: "/projects", label: "Projects", icon: "database", hint: "Connected repositories, indexing and code maps", repoScoped: true },
     { key: "memory", href: "/memory", label: "Memory", icon: "layers", hint: "Decisions, rules and saved context packs", repoScoped: true },
-    { key: "quality", href: "/quality", label: "Quality", icon: "vectors", hint: "Measured retrieval quality and saved evaluations" },
+    { key: "quality", href: "/quality", label: "Quality", icon: "vectors", hint: "Whether Brain finds the right code, and the saved reports behind it" },
     { key: "logs", href: "/logs", label: "Activity", icon: "activity", hint: "Background jobs, requests and agent work", repoScoped: true },
     { key: "settings", href: "/settings", label: "Settings", icon: "gear", hint: "Notifications, models, integrations and access" },
     { key: "setup", href: "/setup", label: "Setup", icon: "flag", hint: "Six steps from an empty server to an agent using Brain" },
@@ -23,8 +23,11 @@ const nested: NavItem[] = [
   { key: "indexing", href: "/indexing", label: "Index runs", icon: "database", hint: "Each time Brain re-read your code", repoScoped: true, section: "projects" },
   { key: "insights", href: "/insights", label: "Findings", icon: "trend", hint: "Problems Brain noticed in the code structure", section: "projects" },
   { key: "packs", href: "/packs", label: "Context packs", icon: "layers", hint: "What Brain handed agents for each task", repoScoped: true, section: "memory" },
+  // /reports is now a tab of Quality and redirects there; the entry stays so
+  // report detail pages (/reports/<id>) still resolve to the Quality section
+  // and the word "Reports" keeps working in the command palette.
   { key: "reports", href: "/reports", label: "Reports", icon: "file", hint: "Every saved evaluation and check", section: "quality" },
-  { key: "reranker", href: "/reranker", label: "Reranker", icon: "vectors", hint: "Optional second pass that re-orders search results", repoScoped: true, section: "quality" },
+  { key: "reranker", href: "/reranker", label: "Reranker", icon: "vectors", hint: "Optional second pass that re-orders search results", repoScoped: true, section: "settings" },
   { key: "runs", href: "/runs", label: "Agent tasks", icon: "automation", hint: "Tasks agents ran with Brain's help", repoScoped: true, section: "logs" },
   { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "The tools agents can call and how they perform", section: "settings" },
   { key: "admin", href: "/admin", label: "Access", icon: "key", hint: "API keys and what each one may do", section: "settings" },

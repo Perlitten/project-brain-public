@@ -169,11 +169,11 @@ export const decisions: Decision[] = [
 ];
 
 export const rules: Rule[] = [
-  { id: "R-014", rule: "brain/ must not import apps/", severity: "block", scope: "brain/**", hits30d: 2 },
-  { id: "R-021", rule: "Tests raise settings before importing app modules", severity: "warn", scope: "tests/**", hits30d: 0 },
-  { id: "R-009", rule: "rules/golden_tasks.yaml changes with every module move", severity: "warn", scope: "brain/**", hits30d: 3 },
-  { id: "R-030", rule: "No raw colour or length literals in templates", severity: "advise", scope: "apps/api/templates/**", hits30d: 7 },
-  { id: "R-031", rule: "Secrets never enter a field value", severity: "block", scope: "apps/**", hits30d: 0 },
+  { id: "R-014", rule: "brain/ must not import apps/", severity: "block", scope: "brain/**", delivered30d: 18, caught30d: 2 },
+  { id: "R-021", rule: "Tests raise settings before importing app modules", severity: "warn", scope: "tests/**", delivered30d: 11, caught30d: 0 },
+  { id: "R-009", rule: "rules/golden_tasks.yaml changes with every module move", severity: "warn", scope: "brain/**", delivered30d: 9, caught30d: 3 },
+  { id: "R-030", rule: "No raw colour or length literals in templates", severity: "advise", scope: "apps/api/templates/**", delivered30d: 24, caught30d: 7 },
+  { id: "R-031", rule: "Secrets never enter a field value", severity: "block", scope: "apps/**", delivered30d: 0, caught30d: 0 },
 ];
 
 export const insights: Insight[] = [
