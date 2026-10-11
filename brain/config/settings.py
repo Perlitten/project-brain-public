@@ -40,6 +40,8 @@ class Settings(BaseSettings):
 
     # General Settings
     ENVIRONMENT: str = "local"
+    # Unset: documentation is available locally and disabled in production.
+    API_DOCS_ENABLED: Optional[bool] = None
     BRAIN_BUILD_SHA: str = "unknown"
     BRAIN_SOURCE_DIGEST: str = "unknown"
     # Off by default - DEBUG drives SQLAlchemy echo, which logs every statement

@@ -52,7 +52,7 @@ def _audit_query(
     until: Optional[datetime],
     limit: int,
     offset: int,
-) -> Select[AuditEvent]:
+) -> Select[tuple[AuditEvent]]:
     stmt = select(AuditEvent).order_by(desc(AuditEvent.created_at), desc(AuditEvent.id))
     if outcome is not None:
         if outcome not in _VALID_OUTCOMES:
@@ -87,7 +87,7 @@ def _serialize(event: AuditEvent) -> dict[str, object]:
     }
 
 
-async def _fetch(stmt: Select[AuditEvent]) -> Sequence[AuditEvent]:
+async def _fetch(stmt: Select[tuple[AuditEvent]]) -> Sequence[AuditEvent]:
     async with async_session_factory() as session:
         result = await session.scalars(stmt)
         return result.all()

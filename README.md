@@ -1,6 +1,6 @@
 # Project Brain
 
-Project Brain is an AI-native engineering system designed to serve as a central layer of memory, navigation, impact analysis, and context preparation for other AI agents (such as Claude Code, Codex, and Antigravity) working on large codebases.
+Project Brain is a spatial navigation and context boundary layer for coding agents (such as Claude Code, Codex, and Antigravity) working on large codebases. It also provides impact analysis and evidence-bound memory.
 
 Current release: **0.9.0** (`tournament-sandbox`).
 
@@ -60,7 +60,7 @@ The step-by-step guide with measured timings and troubleshooting is
 ### Prerequisites
 
 * Python 3.10+
-* Docker with Docker Compose v2
+* Docker with Docker Compose 2.24.0 or later (optional `.env` support)
 * ~2 GB free RAM for the services
 * Optional: Node.js 20+ for the web UI; `postgresql-client` (pg15) for backups
 
@@ -109,6 +109,21 @@ anywhere.
 starts the `api` and `worker` containers (the worker also runs the job scheduler). The containers see only the
 Project Brain checkout (`/app`); to index another repository from inside them,
 mount it into the `api` and `worker` services first.
+
+Storage services can start before `.env` exists. Copy `.env.example` and configure
+your providers, repository mounts and API key before using the API or worker.
+API documentation (`/docs`, `/redoc`, `/openapi.json`) is disabled by default when
+`ENVIRONMENT=production`. `API_DOCS_ENABLED=false` also disables it locally;
+`API_DOCS_ENABLED=true` explicitly enables it, including in production.
+
+### Evidence and limitations
+
+Navigation quality and context budgets are measurable; they do not establish
+coding cost savings. The agent benchmark separates file-location tasks from
+coding tasks and records whether the agent actually called Brain. Its current
+sample is small, and coding token savings are not established. L1–L4 memory
+requires captured evidence and review; installing Brain does not supply a
+pre-populated body of learned experience.
 
 ### Real models
 
