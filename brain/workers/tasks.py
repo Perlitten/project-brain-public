@@ -730,6 +730,9 @@ async def run_deep_context(params: Dict[str, Any]) -> Dict[str, Any]:
             budget="deep",
             retrieval_mode="deep",
             late_interaction_client=exact_client,
+            # Supplied by whichever surface queued the job; a job queued before
+            # this was recorded simply has no consumer, which is the truth.
+            consumer=str(params.get("consumer") or "") or None,
         )
     finally:
         await exact_client.aclose()

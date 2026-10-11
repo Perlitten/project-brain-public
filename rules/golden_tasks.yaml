@@ -66,3 +66,20 @@ golden_tasks:
       - "dead code"
     required_surfaces: []
     must_include_tests: false
+
+  - id: task_6
+    description: "Change memory consolidation gates, evidence tiers or L3 to L4 skill distillation"
+    expected_files:
+      - "brain/memory/consolidation.py"
+      - "brain/memory/skill_distiller.py"
+      - "brain/memory/learning_store.py"
+      - "apps/api/routers/core_memory.py"
+    expected_modules:
+      - "brain/memory"
+      - "apps/api"
+    expected_features:
+      - "memory"
+      - "consolidation"
+      - "skills"
+    required_surfaces: []
+    must_include_tests: true

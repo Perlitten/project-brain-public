@@ -334,4 +334,7 @@ async def test_deep_context_returns_only_after_applied_exact_lfm(monkeypatch):
         budget="deep",
         retrieval_mode="deep",
         late_interaction_client=exact_client,
+        # This job was queued without a caller, so the pack is unattributed —
+        # not attributed to the worker that happened to run it.
+        consumer=None,
     )

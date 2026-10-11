@@ -37,7 +37,7 @@ async def test_prepare_context_records_returned_error_and_survives_telemetry_fai
 
     records = []
     class FakeBuilder:
-        async def build_context_pack(self, task, target):
+        async def build_context_pack(self, task, target, consumer=None):
             return {"status": "failed", "error": "context unavailable"}
 
     async def fake_record(**payload):

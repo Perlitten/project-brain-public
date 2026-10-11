@@ -4,6 +4,7 @@ Mirrors the shape of brain.memory.rule_store: a thin classmethod wrapper
 around async_session_factory, no ORM sessions leak past this module.
 """
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from brain.database.models import Learning
 from brain.database.session import async_session_factory
 from brain.memory.repo_scope import normalize_repo_scope
+
+
+def json_key(item: Any) -> str:
+    """Stable identity of an evidence ref for dedup when reinforcing."""
+    try:
+        return json.dumps(item, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return repr(item)
 
 
 def _scope_clause(repo_path: Optional[str]):
@@ -109,16 +118,77 @@ class LearningStore:
             return list(result.scalars().all())
 
     @classmethod
-    async def supersede(cls, learning_id: int, superseded_by: int) -> None:
-        """Mark a learning superseded by a newer one. Append-only history."""
-        async with async_session_factory() as session:
-            result = await session.execute(select(Learning).where(Learning.id == learning_id))
+    async def supersede(
+        cls,
+        learning_id: int,
+        superseded_by: int,
+        session: Optional[AsyncSession] = None,
+    ) -> None:
+        """Mark a learning superseded by a newer one. Append-only history.
+
+        With ``session`` the change is only flushed inside the caller's
+        transaction (consolidation retires the corrected learning atomically
+        with the episode and the new learning).
+        """
+        if learning_id == superseded_by:
+            raise ValueError("A learning cannot supersede itself")
+
+        async def _apply(sess: AsyncSession) -> None:
+            result = await sess.execute(select(Learning).where(Learning.id == learning_id))
             learning = result.scalar_one_or_none()
             if learning is None:
                 raise LookupError(f"Learning {learning_id} not found")
             learning.status = "superseded"
             learning.superseded_by = superseded_by
-            await session.commit()
+
+        if session is not None:
+            await _apply(session)
+            await session.flush()
+            return
+        async with async_session_factory() as own_session:
+            await _apply(own_session)
+            await own_session.commit()
+
+    @classmethod
+    async def reinforce(
+        cls,
+        learning_id: int,
+        *,
+        evidence: Optional[List[Dict[str, Any]]] = None,
+        confidence_step: float = 0.05,
+        session: Optional[AsyncSession] = None,
+    ) -> float:
+        """Record that an active learning was observed again (G1 duplicate).
+
+        Appends the new evidence refs and raises confidence by ``confidence_step``
+        (capped at 1.0). Returns the new confidence. The statement never changes:
+        a duplicate confirms, it does not rewrite.
+        """
+
+        async def _apply(sess: AsyncSession) -> float:
+            result = await sess.execute(select(Learning).where(Learning.id == learning_id))
+            learning = result.scalar_one_or_none()
+            if learning is None:
+                raise LookupError(f"Learning {learning_id} not found")
+            if evidence:
+                known = {json_key(item) for item in (learning.evidence or [])}
+                merged = list(learning.evidence or [])
+                for item in evidence:
+                    if json_key(item) not in known:
+                        merged.append(item)
+                        known.add(json_key(item))
+                learning.evidence = merged
+            learning.confidence = max(0.0, min(1.0, float(learning.confidence) + confidence_step))
+            return float(learning.confidence)
+
+        if session is not None:
+            new_conf = await _apply(session)
+            await session.flush()
+            return new_conf
+        async with async_session_factory() as own_session:
+            new_conf = await _apply(own_session)
+            await own_session.commit()
+            return new_conf
 
     @classmethod
     async def reject(cls, learning_id: int) -> None:

@@ -22,6 +22,8 @@ from brain.search.code_search import extract_keywords
 from brain.search.path_hints import expand_keywords
 from brain.database.repository_utils import get_repository_by_path
 from brain.memory.repo_scope import normalize_repo_scope, repository_scope_clause
+from brain.memory.rule_usage import record_rules_delivered
+from brain.context.budget import estimated_tokens
 
 
 def _learning_scope_clause(repo_scope: Optional[str]):
@@ -487,8 +489,14 @@ class ContextPackBuilder:
         debug_retrieval: bool = False,
         retrieval_mode: str = "fast",
         late_interaction_client=None,
+        consumer: Optional[str] = None,
     ) -> dict:
-        """Classifies the task and retrieves context using Hybrid Context Engine v2."""
+        """Classifies the task and retrieves context using Hybrid Context Engine v2.
+
+        ``consumer`` names the principal the pack is built for (e.g.
+        ``mcp:claude-code``), supplied by the transport that knows it; it is
+        recorded with the pack so adoption can be reported per agent.
+        """
         logger.info(f"ContextPackBuilder: Building context pack with budget={budget}...")
 
         repo_record = await get_repository_by_path(repo_path)
@@ -1048,17 +1056,38 @@ class ContextPackBuilder:
             if index_revision is not None and index_revision == final_index_revision
             else None
         )
+        # What this pack delivered, recorded now rather than re-derived later by
+        # parsing the artifact: the counts are what tell an owner whether packs
+        # are small enough to be useful and whether recorded memory reaches the
+        # agent at all. The caller's identity comes from the transport.
         async with async_session_factory() as session:
             cp_record = ContextPack(
                 task_description=task_description,
                 path=output_file_path.as_posix(),
                 repository_id=repository_id,
                 repo_commit=repo_commit,
+                budget=budget,
+                token_estimate=estimated_tokens(len(markdown_content.encode("utf-8"))),
+                file_count=len(final_files),
+                symbol_count=len(final_symbols),
+                rule_count=len(active_rules),
+                decision_count=len(active_decisions),
+                learning_count=len(active_learnings),
+                consumer=consumer[:255] if consumer else None,
             )
             session.add(cp_record)
             await session.commit()
             await session.refresh(cp_record)
             cp_id = cp_record.id
+
+        # Rules that reached the agent in this pack. Recorded separately from
+        # the count so "which rules are actually used" is answerable per rule.
+        await record_rules_delivered(
+            [r.id for r in active_rules],
+            repository_id=repository_id,
+            context_pack_id=cp_id,
+            principal_name=consumer,
+        )
 
         logger.info(f"ContextPackBuilder: Saved context pack to {output_file_path} with status={critic_status}")
 

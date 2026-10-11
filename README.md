@@ -197,8 +197,17 @@ npm run dev                    # http://localhost:3100
 |---|---|
 | `BRAIN_API_URL` | Base URL of the Brain API |
 | `BRAIN_API_KEY` | Sent as `X-API-Key` from the server only |
-| `WEB_BASIC_AUTH` | `user:password` gate; required when live API credentials are configured |
+| `WEB_BASIC_AUTH` | Optional fixed `user:password`; when set it wins and sign-in can't be changed from the dashboard |
+| `BRAIN_WEB_ACTIONS` | `0` turns dashboard actions off; `1` turns them on without a password (behind your own SSO) |
 | `BRAIN_TIMEZONE` | Optional IANA time zone for displayed times (default UTC) |
+
+**Signing in.** A fresh install opens without a password and says so in the top
+bar. Set a login and password on **Settings → Access → Dashboard sign-in**: the
+Brain API stores only a scrypt hash in its `.env` (`WEB_LOGIN_*`), the browser
+that set it stays signed in and every other browser is signed out on each
+change. Until a password exists, dashboard actions stay locked (except in
+`npm run dev`). Forgot it? Delete the `WEB_LOGIN_*` lines from the server's
+`.env` and restart the API. Scripts can sign in with `curl -u login:password`.
 
 **Deploy to Vercel:** import the repository, set *Root Directory* to `apps/web`
 (framework preset Next.js), add the variables above, deploy. Then set

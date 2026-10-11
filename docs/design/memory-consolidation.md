@@ -193,8 +193,9 @@ automatically.
   rejection, its ledger rows are released and the events re-cluster. Scopes
   match exactly: a NULL-scope episode re-opens only on a fresh NULL-scope
   event, never on a scoped one.
-- **L4 in /ask and the runtime context** (`MEMORY_SKILLS_IN_ASK=false`
-  default): `brain/memory/skill_store.py` holds matching; `/ask` injects the
+- **L4 in /ask and the runtime context** (`MEMORY_SKILLS_IN_ASK=true`
+  default since 2026-10-10; was `false` during rollout):
+  `brain/memory/skill_store.py` holds matching; `/ask` injects the
   top `MEMORY_SKILLS_IN_ASK_TOP` active skills as a `### Procedures` block
   capped at `MEMORY_SKILLS_IN_ASK_MAX_BYTES` and returns `skills_used`;
   `RuntimeContextBuilder` adds a `procedures` section inside the same byte
@@ -203,3 +204,56 @@ automatically.
   alone is never injected, and a skill scoped elsewhere is never injected.
   With the flag off, /ask context and response shape are byte-identical to
   before (no Procedures section, no `skills_used` key in the response).
+
+## 7. Implemented semantics (closing the loop, 2026-10-10)
+
+What the 2026-10-10 audit found: a sound L1→L3 skeleton whose loop was open —
+only `/lessons` fed it, every correction was rejected, duplicates were dropped,
+L3→L4 never ran, and retrieval was lexical only. The fixes, all covered by
+`tests/test_consolidation_gates.py`, `tests/test_memory_consolidation_db.py`,
+`tests/test_memory_observation_protocol.py`, `tests/test_skill_distiller.py`
+and `tests/test_runtime_memory_projection.py`:
+
+- **Unvalidated intake**: `POST /harness/tasks/{id}/observations` and the
+  automatic handoff → L1 mirror (`HarnessStore._mirror_handoff_as_l1_event`)
+  write `reported_validation=false`. **Evidence tiers**: a cluster is
+  validated only when every event is; validated clusters promote from 2
+  events (`MIN_EPISODES_AUTO`), unvalidated from 3
+  (`MIN_EPISODES_UNVALIDATED_AUTO`). Legacy events without the flag are
+  unvalidated.
+- **G1 links instead of dropping**: `LINK_DUPLICATE` reinforces the known
+  learning (`LearningStore.reinforce`: confidence +0.05 capped, evidence
+  appended by stable key, statement untouched) and the report lists it under
+  `reinforced`. A near-duplicate is checked for contradiction *before* it is
+  linked: a changed number embeds like the stale fact, and linking it would
+  have reinforced the wrong memory. A contradicting near-duplicate becomes a
+  correction and continues through G2–G4.
+- **G3 supersedes instead of rejecting**: the contradicted active learning
+  (named `conflicting_ids` ∩ active, else nearest by similarity ≥
+  `SUPERSEDE_MIN_SIMILARITY` 0.5) is retired through the append-only
+  `superseded_by` chain inside the same transaction as the episode and new
+  learning; `MemoryEpisode.supersedes_learning_ids` records the intent so a
+  pending correction applies it on approve. Unresolved contradictions and
+  corrections on unvalidated evidence go to approval; a failed check fails
+  open.
+- **G4 defaults**: `MEMORY_CONSOLIDATION_ENABLED=true`,
+  `MEMORY_CONSOLIDATION_REQUIRE_APPROVAL=false`; approval is still forced for
+  high severity, medium severity on unvalidated evidence, unvalidated
+  supersedes and unresolved contradictions.
+- **Routing**: a distilled `target` of `rule`/`decision` is projected into
+  `RuleStore`/`DecisionStore` after commit (`MEMORY_ROUTE_TARGETS`,
+  best-effort, `routed_to` in the report; the learning stays canonical).
+- **L3 → L4**: `brain/memory/skill_distiller.py` runs at the end of every
+  consolidation pass (`_attach_run_tail`, best-effort) and turns ≥
+  `MEMORY_SKILL_DISTILLATION_MIN_LEARNINGS` unconsumed same-repo learnings in
+  procedural categories into one `pending` skill per repo (≤ 5 per run);
+  `POST /skills/{id}/approve|reject` moves them. Pending skills are never
+  matched or injected.
+- **Hybrid retrieval** (`brain/memory/learning_retrieval.py`): a bounded
+  pgvector cosine pass over stored embeddings of the current model plus the
+  lexical pass, ranked 0.6·cos + 0.3·lexical + 0.1·confidence, semantic-only
+  hits need ≥ 0.45; degrades to lexical without an embedder
+  (`MEMORY_RETRIEVAL_SEMANTIC`, `MEMORY_RETRIEVAL_EMBED_TIMEOUT_S`).
+- **Scheduling**: `MEMORY_SCHEDULE` is part of `active_schedules()` whenever
+  consolidation is enabled; `run_consolidation` takes a Postgres advisory lock
+  and reports `status`, `pending_total` and the `skills` tail.

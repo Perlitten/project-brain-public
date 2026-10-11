@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loguru import logger
 from sqlalchemy import String, case, cast, func, literal, select
 
 from apps.api.auth import require_api_key, require_scope
@@ -78,6 +79,41 @@ async def web_dashboard(period: str = Query("24h"), repository_id: int | None = 
     result["buckets"] = [{"at": item["bucket"], "total": item["requests"], "failed": item["failures"], "p95_ms": item.get("p95_ms"), "partial": item["partial"]} for item in result["series"]]
     result["recent_requests"] = result.get("recent_requests", [])
     return result
+
+
+@router.get("/agent-value")
+async def web_agent_value(period: str = Query("30d"), repository_id: int | None = Query(None, ge=1)) -> dict[str, Any]:
+    """Is Brain useful to the agents using it — adoption, pack economy, memory reach.
+
+    Unavailable is reported as such. A dashboard that cannot tell a failed query
+    from a measured zero would show "no agent used memory" when the truth is
+    "nobody asked the database".
+    """
+    from brain.insights.agent_value import agent_value_metrics
+
+    days = {"24h": 1, "7d": 7, "30d": 30, "90d": 90}.get(period)
+    if days is None:
+        raise HTTPException(status_code=400, detail="period must be one of 24h, 7d, 30d, 90d")
+    if repository_id is not None:
+        await _resolve_repository(repository_id)
+    try:
+        result = await agent_value_metrics(period_days=days, repository_id=repository_id)
+    except Exception as exc:
+        logger.warning("Agent value metrics unavailable: {}", type(exc).__name__)
+        return {
+            "period": period,
+            "unavailable": True,
+            "scope": {"repository_id": repository_id, "mode": "repository" if repository_id is not None else "all"},
+            "window": {"days": days, "started_at": None, "until": None},
+            "packs": None,
+            "agents": [],
+            "rules": None,
+        }
+    result["period"] = period
+    result["unavailable"] = False
+    result["scope"] = {"repository_id": repository_id, "mode": "repository" if repository_id is not None else "all"}
+    return result
+
 
 MODULE_GRAPH_EDGE_LIMIT = 50_000
 ROOT_MODULE = "(root)"
@@ -245,16 +281,20 @@ def parse_context_pack_markdown(text: str) -> dict[str, Any]:
 
 
 def shape_context_pack(pack: Any, resolved: Path | None, index_commit: str | None) -> dict[str, Any]:
-    budget: str | None = None
-    files: int | None = None
-    tokens: int | None = None
-    if resolved is not None:
+    # Prefer what the builder recorded: it is what the agent was actually given,
+    # it survives the artifact being moved or pruned, and it is the same number
+    # the aggregate reports. Re-reading the file is the fallback for packs built
+    # before that accounting existed.
+    budget: str | None = getattr(pack, "budget", None)
+    files: int | None = getattr(pack, "file_count", None)
+    tokens: int | None = getattr(pack, "token_estimate", None)
+    if resolved is not None and (budget is None or files is None or tokens is None):
         try:
             raw = resolved.read_bytes()
-            tokens = estimated_tokens(len(raw))
+            tokens = tokens if tokens is not None else estimated_tokens(len(raw))
             parsed = parse_context_pack_markdown(raw.decode("utf-8", errors="replace"))
-            budget = parsed["budget"]
-            files = parsed["files"]
+            budget = budget if budget is not None else parsed["budget"]
+            files = files if files is not None else parsed["files"]
         except OSError:
             pass
     created = _parse_dt(pack.created_at)
@@ -270,8 +310,15 @@ def shape_context_pack(pack: Any, resolved: Path | None, index_commit: str | Non
         "files": files,
         "created_at": _iso(created),
         "stale": stale,
-        # Not recorded: context_packs has no consumer/agent column.
-        "consumer": None,
+        # Null when the transport that asked did not identify itself, or when
+        # the pack predates attribution — in neither case is it "nobody".
+        "consumer": getattr(pack, "consumer", None),
+        "memory": {
+            "rules": getattr(pack, "rule_count", None),
+            "decisions": getattr(pack, "decision_count", None),
+            "learnings": getattr(pack, "learning_count", None),
+        },
+        "symbols": getattr(pack, "symbol_count", None),
         "path": pack.path,
         "available": resolved is not None,
     }
@@ -520,10 +567,41 @@ async def web_rules(page: int = Query(1, ge=1, le=1000000), page_size: int = Que
         filtered = base.where(severity_expr == _rule_severity(severity)) if severity else base
         total = int((await session.execute(select(func.count()).select_from(filtered.subquery()))).scalar() or 0)
         rows = (await session.execute(filtered.order_by(Rule.id).offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    # How each rule on this page has been used. Counted only for the page, so a
+    # large rule set costs the same as a small one. Usage keys are omitted
+    # entirely until something has been recorded: a rendered 0 would claim the
+    # rule never fired, when the truth is that nothing was counting.
+    usage = await _rule_usage_for_page([r.id for r in rows], repository_id)
+    counts = usage["counts"] if usage["measurement_started_at"] else {}
+    measured = bool(usage["measurement_started_at"])
+
+    def shape(rule: Any) -> dict[str, Any]:
+        shaped = {"id": rule.id, "name": rule.name, "description": rule.description, "status": rule.status,
+                  "severity": _rule_severity(rule.severity), "raw_severity": rule.severity, "type": rule.type,
+                  "applies_to": rule.applies_to, "repo_path": rule.repo_path}
+        if measured:
+            seen = counts.get(rule.id) or {}
+            shaped["delivered_30d"] = int(seen.get("delivered") or 0)
+            shaped["flagged_30d"] = int(seen.get("flagged") or 0)
+            # Legacy name the web client already reads: "caught something".
+            shaped["hits_30d"] = shaped["flagged_30d"]
+        return shaped
+
     return {"total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),
             "facets": {"severity": {str(k): int(v) for k, v in facet_rows}}, "scope": "repository" if repository_id is not None else "global",
-            "rules": [{"id": r.id, "name": r.name, "description": r.description, "status": r.status, "severity": _rule_severity(r.severity),
-                       "raw_severity": r.severity, "type": r.type, "applies_to": r.applies_to, "repo_path": r.repo_path} for r in rows]}
+            "usage": {"measurement_started_at": usage["measurement_started_at"], "window_days": 30},
+            "rules": [shape(r) for r in rows]}
+
+
+async def _rule_usage_for_page(rule_ids: list[str], repository_id: int | None) -> dict[str, Any]:
+    """Usage counts, or an honest blank when the store cannot answer."""
+    from brain.insights.agent_value import rule_usage_counts
+
+    try:
+        return await rule_usage_counts(rule_ids, period_days=30, repository_id=repository_id)
+    except Exception as exc:
+        logger.warning("Rule usage counts unavailable: {}", type(exc).__name__)
+        return {"measurement_started_at": None, "counts": {}}
 
 def report_kind(name: str) -> str:
     lowered = name.lower()

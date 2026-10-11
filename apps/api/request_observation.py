@@ -26,6 +26,17 @@ def classify_result(result: Any, operation: str) -> str:
     return "success" if any(result.get(key) for key in ("slices", "markdown_content", "path", "context")) else "empty"
 
 
+def requesting_principal(request: Any) -> str:
+    """Who is asking, in the one spelling the rest of the system records.
+
+    Both request measurements and context-pack attribution need this name, and
+    they are only comparable if they spell an unauthenticated caller the same
+    way — hence one helper rather than two ``getattr`` chains.
+    """
+    principal = getattr(getattr(request, "state", None), "principal", None)
+    return getattr(principal, "name", None) or "api:unattributed"
+
+
 def observed_repository_path(result: Any, fallback: str | None) -> str | None:
     if isinstance(result, dict):
         for key in ("repo", "repository", "repository_scope"):
@@ -47,7 +58,7 @@ async def observe_http_request(request: Any, *, operation: str, result: Any, rep
     async def persist() -> None:
         from apps.api.telemetry import record_request, repository_id_for_path
         await record_request(operation=operation, repository_id=await repository_id_for_path(path),
-                             repository_path=path, principal_name=getattr(principal, "name", "api:unattributed"),
+                             repository_path=path, principal_name=getattr(principal, "name", None) or "api:unattributed",
                              request_id=getattr(state, "request_id", None), outcome=outcome,
                              latency_ms=latency_ms)
     try:

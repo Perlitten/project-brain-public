@@ -22,7 +22,8 @@
 | `routers/freshness.py` | `brain/freshness/` | `test_freshness_incremental.py`, `test_repo_freshness.py` |
 | `routers/ledger.py` | `brain/ledger/` | `test_evidence_ledger.py` |
 | `routers/workspace.py` | `brain/workspace/` | `test_workspace_registry.py` |
-| `routers/harness.py` | `brain/database/harness_models.py`, `brain/memory/harness_store.py` | `test_harness_api.py`, `test_harness_store.py` |
+| `routers/harness.py` | `brain/database/harness_models.py`, `brain/memory/harness_store.py` | `test_harness_api.py`, `test_harness_store.py`, `test_memory_observation_protocol.py` |
+| `routers/core_memory.py` (episodes, learnings, skills) | `brain/memory/consolidation.py`, `skill_distiller.py`, `learning_retrieval.py`, `skill_store.py` | `test_consolidation_gates.py`, `test_memory_consolidation_db.py`, `test_skill_distiller.py`, `test_runtime_memory_projection.py` |
 | `routers/jobs.py` | `brain/workers/` | `test_worker_queue.py`, `test_worker_capacity_readiness.py` |
 | `routers/lab.py` | `brain/lab/` | `test_change_laboratory.py` |
 | `routers/experiments.py` | `brain/experiments/` | `test_remediation_experiments.py` |
@@ -44,6 +45,8 @@
 | Эмбеддинги, pgvector | `brain/embeddings/store.py`, `pgvector_sql.py`, `integrity.py` |
 | ColBERT / late interaction | `brain/late_interaction/provider.py`, `store.py`, `client.py` |
 | Память, решения, правила | `brain/memory/decision_store.py`, `rule_store.py`, `relevance.py` |
+| Консолидация памяти L1→L2→L3→L4 (гейты G1–G4, уровни доказательств, supersede, скиллы) | `brain/memory/consolidation.py`, `skill_distiller.py`, `learning_store.py`; ввод — `routers/harness.py` (`/lessons`, `/observations`); протокол — `docs/MEMORY_LESSON_PROTOCOL.md` |
+| Ретривал L3 в контекст/ask (гибрид pgvector + лексика) | `brain/memory/learning_retrieval.py`, `brain/context/runtime_context_builder.py` |
 | Скоуп репозитория и свежесть индекса | `brain/memory/repo_scope.py`, `repo_freshness.py`, `source_manifest.py` |
 | MCP-инструменты | `apps/mcp_server/server.py` (локальный), `remote_server.py` (удалённый), `tests/test_mcp.py` |
 | Фоновые задачи | `brain/workers/tasks.py`, `queue.py`, `worker.py` |

@@ -1,18 +1,28 @@
 """Bounded, live L3 projection for task contexts (not a source of code truth)."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
 
+from loguru import logger
 from sqlalchemy import func, or_, select
 
+from brain.config.settings import settings
 from brain.database.models import Learning
 from brain.database.session import async_session_factory
 from brain.memory.learning_store import _scope_clause
 
 _TOKEN = re.compile(r"[^\W\d][\w-]{2,}", re.UNICODE)
 _STOP = frozenset("the and for with from this that how what where does can you fix add implement explain current project brain use task code что как для это где почему нужно надо сделай исправь проект код".split())
+
+# Semantic pass: how many nearest stored vectors to pull before merging.
+SEMANTIC_CANDIDATES = 32
+# Score weights of the hybrid ranking (cosine, lexical overlap share, confidence).
+_W_SEMANTIC, _W_LEXICAL, _W_CONFIDENCE = 0.6, 0.3, 0.1
+# A learning found only by the semantic pass must be at least this close.
+SEMANTIC_MIN_SIMILARITY = 0.45
 
 
 def learning_query_terms(task: str) -> list[str]:
@@ -21,37 +31,103 @@ def learning_query_terms(task: str) -> list[str]:
                              if t.casefold() not in _STOP))[:16]
 
 
+def _live_scoped(repo_scope: str | None):
+    return (
+        Learning.status == "active",
+        or_(Learning.valid_until.is_(None), Learning.valid_until > func.now()),
+        _scope_clause(repo_scope),
+    )
+
+
+async def _embed_query(task: str) -> tuple[list[float] | None, str | None]:
+    """One bounded embedding call for the query; (None, None) when unavailable.
+
+    Never backfills stored vectors: a learning without an embedding of the
+    current model simply does not take part in the semantic pass.
+    """
+    if not settings.MEMORY_RETRIEVAL_SEMANTIC:
+        return None, None
+    try:
+        from brain.llm import get_embedding_provider
+
+        embedder = get_embedding_provider()
+        model = getattr(embedder, "model", None) or getattr(embedder, "provider", "unknown")
+        vec = await asyncio.wait_for(embedder.embed(task), timeout=settings.MEMORY_RETRIEVAL_EMBED_TIMEOUT_S)
+        return (list(vec) if vec else None), model
+    except Exception as exc:  # timeout, provider down, missing config
+        logger.debug(f"learning retrieval: semantic pass skipped ({type(exc).__name__}: {exc})")
+        return None, None
+
+
+async def _semantic_rows(
+    session, query_vec: list[float], model: str, repo_scope: str | None,
+) -> tuple[dict[int, float], dict[int, Learning]]:
+    """(id → cosine similarity, id → row) for the nearest stored learnings of the current model."""
+    distance = Learning.embedding.cosine_distance(query_vec)
+    stmt = (
+        select(Learning, distance.label("distance"))
+        .where(*_live_scoped(repo_scope), Learning.embedding.isnot(None), Learning.embedding_model == model)
+        .order_by(distance)
+        .limit(SEMANTIC_CANDIDATES)
+    )
+    sims: dict[int, float] = {}
+    rows: dict[int, Learning] = {}
+    for learning, dist in (await session.execute(stmt)).all():
+        if dist is None:
+            continue
+        sims[learning.id] = max(0.0, 1.0 - float(dist))
+        rows[learning.id] = learning
+    return sims, rows
+
+
 async def select_learnings_for_context(
     task: str, repo_scope: str | None, *, max_count: int = 3, max_bytes: int = 1200,
 ) -> list[dict[str, Any]]:
     """Read applicable active facts each time, with bounded rows and no LLM call.
 
-    Deliberately lexical: persisted embeddings are optional and a missing vector
-    must never cause unbounded embedding backfills on a context request. Semantic
-    discovery remains available through the full memory/legacy context surface.
+    Hybrid: a pgvector pass over stored embeddings (one bounded query-embedding
+    call, no backfill) plus the lexical pass over statements. Ranking is
+    0.6*cosine + 0.3*lexical overlap + 0.1*confidence; a learning seen only by
+    the semantic pass must clear ``SEMANTIC_MIN_SIMILARITY``. Without an
+    embedder the function degrades to the lexical pass alone.
     """
     terms = learning_query_terms(task)
     if not terms or max_count <= 0 or max_bytes < 2:
         return []
+    query_vec, model = await _embed_query(task)
     matches = [Learning.statement.ilike("%" + term.replace("\\", "\\\\")
                .replace("%", "\\%").replace("_", "\\_") + "%", escape="\\") for term in terms]
+    sims: dict[int, float] = {}
+    semantic_rows: dict[int, Learning] = {}
     async with async_session_factory() as session:
+        if query_vec and model:
+            try:
+                sims, semantic_rows = await _semantic_rows(session, query_vec, model, repo_scope)
+            except Exception as exc:
+                logger.debug(f"learning retrieval: semantic query failed ({type(exc).__name__}: {exc})")
+                sims, semantic_rows = {}, {}
         rows = list((await session.execute(
             select(Learning).where(
-                Learning.status == "active",
-                or_(Learning.valid_until.is_(None), Learning.valid_until > func.now()),
-                _scope_clause(repo_scope), or_(*matches),
+                *_live_scoped(repo_scope), or_(*matches),
             ).order_by(Learning.confidence.desc(), Learning.updated_at.desc(), Learning.id.desc()).limit(64)
         )).scalars().all())
+    by_id: dict[int, Learning] = {row.id: row for row in rows}
+    for lid, row in semantic_rows.items():
+        by_id.setdefault(lid, row)
+    term_set = set(terms)
     scored = []
-    for row in rows:
+    for row in by_id.values():
         words = set(learning_query_terms(row.statement))
-        overlap = len(set(terms) & words)
-        if overlap:
-            scored.append((overlap, row.confidence, row.id, row))
+        overlap = len(term_set & words)
+        sim = sims.get(row.id, 0.0)
+        if not overlap and sim < SEMANTIC_MIN_SIMILARITY:
+            continue
+        lexical = overlap / max(1, len(term_set))
+        score = _W_SEMANTIC * sim + _W_LEXICAL * lexical + _W_CONFIDENCE * float(row.confidence or 0.0)
+        scored.append((score, overlap, row.confidence, row.id, row))
     selected: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for _, _, _, row in sorted(scored, key=lambda item: item[:3], reverse=True):
+    for _, _, _, _, row in sorted(scored, key=lambda item: item[:4], reverse=True):
         statement = " ".join(row.statement.split())
         if statement.casefold() in seen:
             continue

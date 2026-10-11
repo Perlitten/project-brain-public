@@ -12,6 +12,11 @@ than assumed:
 - ``provider_verifications``: per-provider credential probe outcomes keyed by
   a fingerprint of the credential value (a truncated SHA-256 — never the key
   itself), so a changed key invalidates the old verdict.
+- ``first_pack``: the one-off first-use milestone, keyed by repository path —
+  the moment a usable context pack was first observed for that repository.
+  A milestone is reached once and stays reached; later re-indexing makes older
+  packs describe older code, which is normal operation and not a regression of
+  the install. Switching to a different repository starts a fresh milestone.
 
 The file lives in the user's home (``~/.project_brain/setup_state.json``):
 the MCP stdio server may run from any working directory and under a different
@@ -144,6 +149,28 @@ def record_provider_verification(
         }
 
     _save(_mut)
+
+
+def record_first_pack(repo_path: str, repo_commit: Optional[str] = None) -> None:
+    """Stamp the first-use milestone for ``repo_path``. Idempotent: an already
+    recorded milestone is never overwritten, so the date stays the real one."""
+
+    def _mut(state: Dict[str, Any]) -> None:
+        packs = state.setdefault("first_pack", {})
+        if repo_path in packs:
+            return
+        packs[repo_path] = {"at": _now(), "repo_commit": repo_commit}
+
+    _save(_mut)
+
+
+def first_pack_milestone(state: Dict[str, Any], repo_path: Optional[str]) -> Optional[Dict[str, Any]]:
+    """The recorded milestone for one repository, read from an already loaded
+    state so readiness collection stays a single file read."""
+    if not repo_path:
+        return None
+    record = (state.get("first_pack") or {}).get(repo_path)
+    return record if isinstance(record, dict) else None
 
 
 def last_client_activity() -> Optional[Dict[str, Any]]:
