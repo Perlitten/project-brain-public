@@ -20,6 +20,8 @@ const paths = {
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>,
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  eye: <><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>,
+  "eye-off": <><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" /></>,
   arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
   check: <polyline points="4 12.5 9.5 18 20 6" />,
   activity: <polyline points="2 12 6 12 9 4 15 20 18 12 22 12" />,

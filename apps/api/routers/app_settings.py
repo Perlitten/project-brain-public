@@ -50,7 +50,7 @@ FIELDS: List[SettingField] = [
     SettingField("TELEGRAM_ALERTS_ENABLED", "telegram", "Send alerts", "bool", "Self-diagnosis, maintenance and deep-context findings go to the chat below."),
     SettingField("TELEGRAM_ALERT_BOT_TOKEN", "telegram", "Bot token", "secret", "From @BotFather → /newbot. Write-only.", clearable=True),
     SettingField("TELEGRAM_ALERT_CHAT_ID", "telegram", "Chat ID", "text", "Numeric id of the chat or channel (e.g. -1001234567890) or @channel.", pattern=r"-?\d{1,20}|@[A-Za-z0-9_]{4,64}", clearable=True),
-    SettingField("TELEGRAM_ALERT_COOLDOWN_SECONDS", "telegram", "Repeat cooldown, s", "int", "The same findings are not re-sent within this window.", min=60, max=7 * 24 * 3600),
+    SettingField("TELEGRAM_ALERT_COOLDOWN_SECONDS", "telegram", "Critical reminder, s", "int", "A critical problem that is still open is repeated this often. Warnings are announced once.", min=60, max=7 * 24 * 3600),
     SettingField("BRAIN_TELEGRAM_DEFAULT_REPO", "telegram", "Default repository for the bot", "text", "Repository the Telegram bridge uses when a message names none.", clearable=True),
     SettingField("SELF_DIAGNOSIS_ENABLED", "automation", "Scheduled self-diagnosis", "bool", "Brain checks its own health on a schedule and reports findings."),
     SettingField("SELF_DIAGNOSIS_USE_LLM", "automation", "Summarize diagnosis with the LLM", "bool", "Off = deterministic probes only, no model calls."),

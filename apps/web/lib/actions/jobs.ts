@@ -7,7 +7,7 @@ import type { ActionResult, JobSnapshot } from "./types";
 const FINISHED = new Set(["completed", "degraded", "failed", "cancelled"]);
 
 export async function getJob(id: string): Promise<JobSnapshot | null> {
-  if (guard()) return null;
+  if (await guard()) return null;
   if (!/^[\w-]{1,80}$/.test(id)) return null;
   const job = await brainFetch<Record<string, unknown>>(`/jobs/${id}`, { fresh: true });
   if (!job) return null;

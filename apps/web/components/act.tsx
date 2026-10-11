@@ -35,7 +35,7 @@ export const useActionsMode = () => useContext(ModeContext);
 
 export const LOCK_REASON: Record<ActionsMode, string> = {
   demo: "Connect the Brain API to run actions — this is demo data.",
-  locked: "Actions are locked: protect the dashboard with WEB_BASIC_AUTH (or set BRAIN_WEB_ACTIONS=1).",
+  locked: "Actions are locked until the dashboard has a password — set one in Settings → Sign-in.",
   on: "",
 };
 
@@ -287,7 +287,11 @@ export function Dialog({ open, onClose, title, children, wide }: { open: boolean
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) d.showModal();
+    if (open && !d.open) {
+      d.showModal();
+      // showModal() focuses the first control (the close button); React's autoFocus ran before it.
+      d.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    }
     if (!open && d.open) d.close();
   }, [open]);
   return (

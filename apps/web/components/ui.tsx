@@ -123,6 +123,25 @@ export function Panel({
   );
 }
 
+/** A panel that stays one line until you need it — for forms you use now and then. */
+export function Fold({ title, desc, cta, open, id, children }: { title: ReactNode; desc?: ReactNode; cta: ReactNode; open?: boolean; id?: string; children: ReactNode }) {
+  return (
+    <details className="panel fold" id={id} open={open}>
+      <summary className="panel__head fold__head">
+        <div>
+          <h2 className="panel__title">{title}</h2>
+          {desc && <p className="panel__desc">{desc}</p>}
+        </div>
+        <span className="btn btn--neutral btn--sm fold__cta">
+          <span className="fold__open">{cta}</span>
+          <span className="fold__close">Hide</span>
+        </span>
+      </summary>
+      <div className="panel__body">{children}</div>
+    </details>
+  );
+}
+
 /** `action` is a live control (e.g. a RunButton) for the condition's next step. */
 export function Verdict({ condition, action }: { condition: Condition; action?: ReactNode }) {
   return (
