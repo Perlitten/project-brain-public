@@ -277,10 +277,14 @@ def _rule_section(events: Sequence[Any], measurement_started: Optional[datetime]
     delivered_rules = sum(1 for e in per_rule.values() if e["delivered"])
     flagged_rules = sum(1 for e in per_rule.values() if e["flagged"])
     started = _utc(measurement_started) if measurement_started else None
-    top = sorted(
-        ({"rule_id": rule_id, **counts} for rule_id, counts in per_rule.items()),
-        key=lambda r: (-r["flagged"], -r["delivered"], r["rule_id"]),
-    )[:10]
+    # Sorted over the counts themselves rather than over the merged rows, whose
+    # values are a str and two ints and so carry no usable element type.
+    top = [
+        {"rule_id": rule_id, **counts}
+        for rule_id, counts in sorted(
+            per_rule.items(), key=lambda item: (-item[1]["flagged"], -item[1]["delivered"], item[0])
+        )[:10]
+    ]
     return {
         "active": active,
         "measurement_started_at": _iso(started),
