@@ -14,6 +14,9 @@ Configure via environment:
                     agent key is revocable without rotating the shared key.
     BRAIN_REPO      default repo_path for context, search, and ask calls
                     (defaults to TARGET_REPO_PATH or ".")
+    BRAIN_MCP_INLINE_MAX_BYTES
+                    inline budget for enumeration-shaped results before the tail
+                    moves to a ``brain://payload/<token>`` resource (0 disables).
 
 Run:  BRAIN_API_URL=... BRAIN_API_KEY=... python -m apps.mcp_server.remote_server
 """
@@ -26,6 +29,12 @@ from urllib.parse import quote
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+
+from apps.mcp_server.deferred_payload import (
+    DeferredPayloadStore,
+    compact_payload,
+    register_payload_resource,
+)
 
 def _env(name: str) -> str:
     """Read an env var, treating an unexpanded ``${VAR}`` placeholder as unset.
@@ -52,6 +61,11 @@ _MISSING_CONFIG = (
 )
 
 mcp = FastMCP("project-brain-remote")
+
+# Enumeration-shaped results (impact projections, graph walks, review reports)
+# keep their head inline and park the tail here; see deferred_payload.py.
+_PAYLOADS = DeferredPayloadStore()
+register_payload_resource(mcp, _PAYLOADS)
 
 
 @mcp.tool()
@@ -201,11 +215,14 @@ async def get_background_job(job_id: str) -> dict:
 
 @mcp.tool()
 async def impact_analysis(change_request: str, repo_path: Optional[str] = None) -> dict:
-    """Bounded deterministic impact projection; narrative work stays async."""
-    return await _post(
-        "/impact",
-        {"change_request": change_request, "repo_path": repo_path or DEFAULT_REPO},
-        timeout=11.0,
+    """Bounded deterministic impact projection; long tails move to a brain:// resource."""
+    return compact_payload(
+        await _post(
+            "/impact",
+            {"change_request": change_request, "repo_path": repo_path or DEFAULT_REPO},
+            timeout=11.0,
+        ),
+        _PAYLOADS,
     )
 
 
@@ -276,10 +293,13 @@ async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
 
 @mcp.tool()
 async def find_related_files(file_path: str, repo_path: Optional[str] = None) -> dict:
-    """Find files directly and indirectly related to a path via the dependency graph."""
-    return await _post(
-        "/related",
-        {"file_path": file_path, "repo_path": repo_path or DEFAULT_REPO},
+    """Graph neighbours of a path; long tails move to a brain:// resource."""
+    return compact_payload(
+        await _post(
+            "/related",
+            {"file_path": file_path, "repo_path": repo_path or DEFAULT_REPO},
+        ),
+        _PAYLOADS,
     )
 
 
@@ -306,8 +326,15 @@ async def review_diff(
 
 @mcp.tool()
 async def get_diff_review(job_id: str) -> dict:
-    """Poll a diff review queued by ``review_diff``; ``status`` is completed, failed, or still running."""
-    return await _get(f"/diff-review/{quote(job_id, safe='')}")
+    """Poll a diff review queued by ``review_diff``; ``status`` is completed, failed, or still running.
+
+    A completed report is the one result that is routinely larger than the
+    decision it informs, so its tail moves to a ``brain://payload`` resource.
+    """
+    return compact_payload(
+        await _get(f"/diff-review/{quote(job_id, safe='')}"),
+        _PAYLOADS,
+    )
 
 
 if __name__ == "__main__":

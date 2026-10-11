@@ -12,6 +12,12 @@ from loguru import logger
 import mcp.types as _mcp_types
 from mcp.server.fastmcp import FastMCP
 
+from apps.mcp_server.deferred_payload import (
+    DeferredPayloadStore,
+    compact_payload,
+    register_payload_resource,
+)
+
 from brain.config.paths import get_repo_root, resolve_repo_path
 from brain.graph.graph_client import GraphClient
 from brain.context.context_pack_builder import ContextPackBuilder
@@ -37,6 +43,11 @@ if str(PROJECT_ROOT) not in sys.path:
 ASK_RETRIEVAL_LIMIT = 10
 
 mcp = FastMCP("project-brain-mcp-server")
+
+# Enumeration-shaped results keep their head inline and park the tail here, so
+# the agent pays for the list it acts on rather than the one it receives.
+_PAYLOADS = DeferredPayloadStore()
+register_payload_resource(mcp, _PAYLOADS)
 
 
 @mcp.tool()
@@ -331,13 +342,13 @@ async def get_background_job(job_id: str) -> dict:
 
 @mcp.tool()
 async def impact_analysis(change_request: str, repo_path: Optional[str] = None) -> dict:
-    """Analyzes affected components and estimates risks for a given change request."""
+    """Affected components and risks for a change; long tails move to a brain:// resource."""
     try:
         analyzer = ImpactAnalyzer(resolve_repo_path(repo_path))
         if settings.BRAIN_AGENT_CONTEXT_V2_MODE == "on":
-            return await analyzer.analyze_bounded(change_request)
+            return compact_payload(await analyzer.analyze_bounded(change_request), _PAYLOADS)
         result = await analyzer.analyze_impact(change_request)
-        return result
+        return compact_payload(result, _PAYLOADS)
     except Exception as e:
         return {"error": f"Failed to perform impact analysis: {str(e)}", "status": "failed"}
 
@@ -437,7 +448,7 @@ async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
 
 @mcp.tool()
 async def find_related_files(file_path: str, repo_path: Optional[str] = None) -> dict:
-    """Queries the Neo4j graph for directly and indirectly related files to the target file path."""
+    """Graph neighbours of a path, direct then indirect; long tails move to a brain:// resource."""
     try:
         target_path = resolve_repo_path(repo_path)
         repository = await require_repository_by_path(target_path)
@@ -465,7 +476,14 @@ async def find_related_files(file_path: str, repo_path: Optional[str] = None) ->
                         visited.add(tgt)
                         indirectly.append(tgt)
 
-        return {"file": file_path, "directly_related_files": directly, "indirectly_related_files": indirectly}
+        # A hub file can have hundreds of second-degree neighbours, and this walk
+        # had no ceiling of its own: the whole list travelled into the context
+        # window on every call. Deferral keeps it reachable without charging for
+        # it up front.
+        return compact_payload(
+            {"file": file_path, "directly_related_files": directly, "indirectly_related_files": indirectly},
+            _PAYLOADS,
+        )
     except Exception as e:
         return {"error": f"Failed to find related files: {str(e)}", "status": "failed"}
 
@@ -476,11 +494,15 @@ async def review_diff(
     head: Optional[str] = "current",
     repo_path: Optional[str] = None,
 ) -> dict:
-    """Review changes; omitted base resolves from the repository's origin/HEAD."""
+    """Review changes; omitted base resolves from the repository's origin/HEAD.
+
+    The report's tail moves to a ``brain://payload`` resource when it outgrows
+    the inline budget.
+    """
     try:
         analyzer = DiffAnalyzer(resolve_repo_path(repo_path) if repo_path else PROJECT_ROOT)
         result = await analyzer.review_diff(base=base, head=head)
-        return result
+        return compact_payload(result, _PAYLOADS)
     except Exception as e:
         return {"error": f"Failed to review diff: {str(e)}", "status": "failed"}
 

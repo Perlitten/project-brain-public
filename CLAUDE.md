@@ -49,6 +49,7 @@
 | Ретривал L3 в контекст/ask (гибрид pgvector + лексика) | `brain/memory/learning_retrieval.py`, `brain/context/runtime_context_builder.py` |
 | Скоуп репозитория и свежесть индекса | `brain/memory/repo_scope.py`, `repo_freshness.py`, `source_manifest.py` |
 | MCP-инструменты | `apps/mcp_server/server.py` (локальный), `remote_server.py` (удалённый), `tests/test_mcp.py` |
+| Размер MCP-ответа в контексте агента | `apps/mcp_server/deferred_payload.py` (голова инлайн, хвост — ресурс `brain://payload/<token>`; `BRAIN_MCP_INLINE_MAX_BYTES`), `tests/test_mcp_deferred_payload.py` |
 | Фоновые задачи | `brain/workers/tasks.py`, `queue.py`, `worker.py` |
 | Схема БД, миграции | `brain/database/models.py`, `harness_models.py`, `migrations.py` |
 | Настройки, пути | `brain/config/settings.py`, `paths.py` |
