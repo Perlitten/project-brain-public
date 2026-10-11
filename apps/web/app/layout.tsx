@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { BOOT_SCRIPT, Boot } from "@/components/Boot";
 import { Shell, type ShellRepo } from "@/components/Shell";
 import { actionsMode } from "@/lib/actions/gate";
+import { signInMode } from "@/lib/sign-in-view";
 import { dataSource, getRepositories } from "@/lib/data";
 import { repositoryStatus } from "@/lib/repository-status";
 import "./globals.css";
@@ -42,6 +43,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     path: r.path,
     ...repositoryStatus(r),
   }));
+  const [mode, access] = await Promise.all([actionsMode(), signInMode()]);
   const live = dataSource !== "demo";
   const first = repos[0];
   const bootLines = [
@@ -58,7 +60,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         <Boot lines={bootLines} />
         <Suspense>
-          <Shell repos={repos} demo={dataSource === "demo"} mode={actionsMode()}>
+          <Shell repos={repos} demo={dataSource === "demo"} mode={mode} access={access}>
             {children}
           </Shell>
         </Suspense>

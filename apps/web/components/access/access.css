@@ -51,3 +51,27 @@
 .scope-pick__row .check { font-size: var(--fs-12); }
 .scope-pick__row .check:has(input:disabled) { cursor: default; opacity: 0.7; }
 .scope-pick__none { font-size: var(--fs-11); color: var(--text-3); }
+
+/* Dashboard sign-in: state on the left, the form beside it. */
+.signin { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.4fr); gap: var(--s-5) var(--s-6); align-items: start; }
+.signin__state { display: grid; gap: var(--s-2); justify-items: start; }
+.signin__state > b { font-size: var(--fs-16); line-height: var(--lh-head); }
+.signin__state > p { margin: 0; color: var(--text-2); line-height: var(--lh-prose); }
+.signin__state > .field__hint { margin: 0; }
+.signin__form { gap: var(--s-3); padding: var(--s-4); background: var(--surface-inset); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); }
+.signin__remove { margin-left: auto; }
+@media (max-width: 900px) {
+  .signin { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Password field with an eye toggle inside it */
+.secret { position: relative; display: block; }
+.secret .input { width: 100%; padding-right: 40px; }
+.secret__eye {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 28px; padding: 0;
+  border: 0; border-radius: var(--r-1, 4px); background: transparent; color: var(--text-3); cursor: pointer;
+}
+.secret__eye:hover { color: var(--text-1); background: var(--gray-5); }
+.secret__eye:focus-visible { outline: 2px solid var(--teal-fg); outline-offset: 1px; }

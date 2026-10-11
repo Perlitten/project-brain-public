@@ -771,7 +771,10 @@ export const getRules = async (): Promise<Rule[]> => {
         rule: str(r.description) || str(r.name) || str(r.id),
         severity: ruleSeverity(r.severity),
         scope: ruleScope(r.applies_to, str(r.type)),
-        hits30d: num(r.hits_30d),
+        // Absent until the API has something recorded; undefined and 0 mean
+        // different things here and the table renders them differently.
+        delivered30d: num(r.delivered_30d),
+        caught30d: num(r.flagged_30d),
       }));
   });
 };
@@ -904,7 +907,7 @@ export const getPagedRules = async (slug: string | null | undefined, input: Part
     const scope = repo ? `&repository_id=${repo.id}` : "";
     const severity = q.status && ["block", "warn", "advise"].includes(q.status) ? `&severity=${q.status}` : "";
     const data = await brainFetch<Json>(`/api/web/rules?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${scope}${severity}`);
-    return data ? pageResult(data, "rules", q, (r) => ({ id: str(r.id), rule: str(r.description) || str(r.name) || str(r.id), severity: ruleSeverity(r.severity), scope: ruleScope(r.applies_to, str(r.type)), hits30d: num(r.hits_30d) })) : null;
+    return data ? pageResult(data, "rules", q, (r) => ({ id: str(r.id), rule: str(r.description) || str(r.name) || str(r.id), severity: ruleSeverity(r.severity), scope: ruleScope(r.applies_to, str(r.type)), delivered30d: num(r.delivered_30d), caught30d: num(r.flagged_30d) })) : null;
   });
 };
 

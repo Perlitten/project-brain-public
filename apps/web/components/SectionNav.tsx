@@ -25,12 +25,16 @@ export function SectionNav({ label, items }: { label: string; items: SectionNavI
 const SECTIONS = {
   projects: { label: "Project views", items: [["/projects", "Projects"], ["/indexing", "Index runs"], ["/graph", "Code map"], ["/insights", "Findings"]] },
   memory: { label: "Memory views", items: [["/memory", "Decisions & rules"], ["/packs", "Context packs"]] },
-  quality: { label: "Quality views", items: [["/quality", "Benchmark"], ["/reports", "Reports"], ["/reranker", "Reranker"]] },
+  quality: { label: "Quality views", items: [["/quality", "Quality"]] },
   logs: { label: "Activity views", items: [["/logs", "Requests & jobs"], ["/runs", "Agent tasks"]] },
-  settings: { label: "Settings views", items: [["/settings", "General"], ["/admin", "Access"], ["/mcp", "Agent tools"]] },
+  // Reranker is a switch with a measurement next to it, not a report: it
+  // belongs with the other things you configure.
+  settings: { label: "Settings views", items: [["/settings", "General"], ["/admin", "Access"], ["/mcp", "Agent tools"], ["/reranker", "Reranker"]] },
 } as const;
 
 export function SectionTabs({ section, active }: { section: keyof typeof SECTIONS; active: string }) {
   const s = SECTIONS[section];
+  // A single-destination section is not a choice, so it draws no tab strip.
+  if (s.items.length < 2) return null;
   return <SectionNav label={s.label} items={s.items.map(([href, label]) => ({ href, label, active: href === active }))} />;
 }

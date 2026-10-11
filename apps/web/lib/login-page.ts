@@ -1,4 +1,5 @@
-// Sign-in screen served by proxy.ts while the site is locked with WEB_BASIC_AUTH.
+// Sign-in screen served by proxy.ts while the site is locked (WEB_BASIC_AUTH or
+// the login set on Settings → Sign-in).
 // It is a self-contained HTML string on purpose: the root layout fetches live
 // repository data, so the gate must answer before any page or layout renders.
 // Values mirror app/globals.css (Ledger tokens, mark, ambient, verdict, pulse,
@@ -32,10 +33,18 @@ function ecg(period: number, width = 1200, base = 24) {
 const LIT = 13;
 const BRICKS = 20;
 
-export function loginPage({ action, next, failed, user = "" }: { action: string; next: string; failed: boolean; user?: string }) {
+export function loginPage({ action, next, failed, user = "" }: { action: string; next: string; failed: boolean | "throttled"; user?: string }) {
   const tone = failed ? "bad" : "idle";
   const d = ecg(failed ? 92 : 0);
-  const log = ["› waking up project brain", "› site is locked", failed ? "› sign-in refused · try again" : "› waiting for sign-in"];
+  const throttled = failed === "throttled";
+  const log = ["› waking up project brain", "› site is locked", throttled ? "› too many tries · paused" : failed ? "› sign-in refused · try again" : "› waiting for sign-in"];
+  const eyebrow = throttled ? "Paused" : failed ? "Access denied" : "Locked";
+  const title = throttled ? "Too many wrong tries." : failed ? "That didn’t match." : "This Brain is private.";
+  const detail = throttled
+    ? "Sign-in for this name is paused for a few minutes. Wait, then try again."
+    : failed
+      ? "Check the username and password and try again."
+      : "Sign in to see what your agents know about your code.";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -155,14 +164,17 @@ input:hover { border-color: var(--border-default); }
 input:focus-visible { border-color: var(--teal-fg); box-shadow: 0 0 0 3px color-mix(in oklab, var(--teal-fg) 16%, transparent); }
 .verdict--bad input#password { border-color: var(--bad-line); }
 .verdict--bad input#password:focus-visible { border-color: var(--teal-fg); }
-#password { padding-right: 64px; }
+#password { padding-right: 48px; }
 .reveal {
   position: absolute; right: 5px; top: 5px; height: 32px; padding: 0 10px;
+  display: inline-flex; align-items: center; justify-content: center;
   border: 0; border-radius: 4px; background: transparent; color: var(--text-3);
-  font: 400 12px / 1 var(--mono); cursor: pointer;
+  cursor: pointer;
   transition: color 120ms var(--ease), background-color 120ms var(--ease);
 }
 .reveal:hover { color: var(--text-1); background: var(--gray-5); }
+.reveal__hide, .reveal[aria-pressed="true"] .reveal__show { display: none; }
+.reveal[aria-pressed="true"] .reveal__hide { display: block; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   height: 42px; margin-top: 4px; padding: 0 16px;
@@ -253,9 +265,9 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
 
   <section class="verdict verdict--${tone}" aria-labelledby="verdict">
     <div class="verdict__main">
-      <p class="eyebrow" style="margin:0" data-decode>${failed ? "Access denied" : "Locked"}</p>
-      <h1 id="verdict"${failed ? ' role="alert"' : ""}>${failed ? "That didn’t match." : "This Brain is private."}</h1>
-      <p class="detail">${failed ? "Check the username and password and try again." : "Sign in to see what your agents know about your code."}</p>
+      <p class="eyebrow" style="margin:0" data-decode>${eyebrow}</p>
+      <h1 id="verdict"${failed ? ' role="alert"' : ""}>${title}</h1>
+      <p class="detail">${detail}</p>
     </div>
     <form method="post" action="${escape(action)}" id="login">
       <input type="hidden" name="next" value="${escape(next)}">
@@ -265,7 +277,7 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
       <label class="field"><span class="field__label">Password</span>
         <span class="field__box">
           <input id="password" name="password" type="password" autocomplete="current-password" required${user ? " autofocus" : ""}>
-          <button class="reveal" type="button" aria-controls="password" aria-pressed="false">show</button>
+          <button class="reveal" type="button" aria-controls="password" aria-pressed="false" aria-label="Show password" title="Show password"><svg class="reveal__show" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="reveal__hide" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg></button>
         </span>
       </label>
       <button class="btn" type="submit">Sign in</button>
@@ -307,8 +319,9 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
   reveal.addEventListener("click", function () {
     var show = pw.type === "password";
     pw.type = show ? "text" : "password";
-    reveal.textContent = show ? "hide" : "show";
     reveal.setAttribute("aria-pressed", String(show));
+    reveal.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    reveal.title = reveal.getAttribute("aria-label");
     pw.focus();
   });
   document.getElementById("login").addEventListener("submit", function (e) {

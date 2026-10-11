@@ -11,8 +11,8 @@
 }
 .settings__toc a:hover { color: var(--text-1); border-color: var(--border-default); }
 
-.status-line { display: flex; justify-content: flex-start; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); font-size: var(--fs-14); color: var(--text-2); margin-bottom: var(--s-4); }
-.status-line code { font-size: var(--fs-12); color: var(--text-3); }
+.sched-line { display: flex; justify-content: flex-start; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); font-size: var(--fs-14); color: var(--text-2); margin-bottom: var(--s-4); }
+.sched-line code { font-size: var(--fs-12); color: var(--text-3); }
 
 .wf { margin: calc(-1 * var(--s-2)) 0 var(--s-4); font-size: var(--fs-14); color: var(--text-2); }
 .wf summary { cursor: pointer; width: fit-content; }
@@ -75,8 +75,10 @@
 .settings-form .form__row { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .settings__warn { margin-bottom: var(--s-3); }
 .settings__pad { padding: var(--s-4) var(--s-4) 0; }
-.settings__pad .status-line { margin-bottom: var(--s-3); }
+.settings__pad .sched-line { margin-bottom: var(--s-3); }
 /* Nine columns: scroll sideways on narrow screens instead of crushing cells. */
 .sched-scroll { overflow-x: auto; max-width: 100%; }
 .sched-scroll .table { min-width: 980px; }
 .sched-scroll .table-wrap { overflow: visible; }
+.settings__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: var(--s-4); align-items: start; }
+.settings__grid .toggles { grid-template-columns: minmax(0, 1fr); gap: var(--s-3); }

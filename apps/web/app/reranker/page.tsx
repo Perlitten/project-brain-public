@@ -29,7 +29,7 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
           </>
         }
       />
-      <SectionTabs section="quality" active="/reranker" />
+      <SectionTabs section="settings" active="/reranker" />
       {r.available === false ? (
         <EmptyState
           title="No reranker status"

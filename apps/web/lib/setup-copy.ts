@@ -30,7 +30,7 @@ export const STEP_COPY: Record<string, StepCopy> = {
   },
   first_task: {
     title: "Try it on a real task",
-    why: "Describe a task the way you would give it to an agent. Brain answers with a context pack: the files, rules and past decisions the agent needs for that task.",
+    why: "Describe a task the way you would give it to an agent. Brain answers with a context pack — the handful of files, rules and past decisions that task needs — so the agent reads those instead of the whole repository. A pack describes the code at the moment it is built, so you build a new one per task; that is the normal way to use Brain, and this step just proves it works once.",
   },
 };
 

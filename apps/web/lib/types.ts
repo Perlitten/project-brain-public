@@ -126,8 +126,10 @@ export interface Rule {
   rule: string;
   severity: "block" | "warn" | "advise";
   scope: string;
-  /** Unknown when the API does not count rule hits. */
-  hits30d?: number;
+  /** Context packs this rule went into over the last 30 days: did it reach anyone. */
+  delivered30d?: number;
+  /** Diff reviews that cited this rule over the same window: did it catch anything. */
+  caught30d?: number;
 }
 
 export interface Insight {
