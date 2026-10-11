@@ -123,7 +123,7 @@ def test_envfile_rejects_multiline_values(tmp_path):
 
 
 def _collect(*, health=None, repo=None, run=None, packs=None, total_packs=None,
-             state=None, client_activity=None):
+             state=None, client_activity=None, milestone=None):
     """Drive collect_setup_status with a fake session: get_repository_by_path
     opens its own session (patched directly), then the IndexingRun list, the
     repo-scoped pack list and the total pack count run on the shared factory
@@ -134,7 +134,8 @@ def _collect(*, health=None, repo=None, run=None, packs=None, total_packs=None,
     queries = [_result(scalar=total_packs)]
     if repo is not None:
         queries.insert(0, _result(scalars_all=packs))
-        queries.insert(0, _result(scalars_all=[run] if run else []))
+        runs = run if isinstance(run, list) else ([run] if run else [])
+        queries.insert(0, _result(scalars_all=runs))
     session = AsyncMock()
     session.execute.side_effect = queries
     with (
@@ -144,9 +145,13 @@ def _collect(*, health=None, repo=None, run=None, packs=None, total_packs=None,
         patch.object(readiness, "resolve_repo_path", return_value="/repos/brain") as resolver,
         patch.object(readiness, "load_state", return_value=state or {}),
         patch.object(readiness, "last_client_activity", return_value=client_activity),
+        patch.object(readiness, "first_pack_milestone", return_value=milestone),
+        # Never let a readiness test stamp the real ~/.project_brain milestone.
+        patch.object(readiness, "record_first_pack") as recorder,
     ):
         status = _run(readiness.collect_setup_status())
         resolver.assert_called_once_with(readiness.settings.TARGET_REPO_PATH)
+        status["_recorded"] = recorder.call_args_list
         return status
 
 
@@ -165,7 +170,8 @@ def test_readiness_first_use_complete_when_a_pack_exists(tmp_path):
     assert steps["indexed"]["status"] == "done"
     assert steps["first_task"]["status"] == "done"
     assert steps["first_task"]["title"] == "Build your first context pack"
-    assert "1 usable context pack" in steps["first_task"]["detail"]
+    assert "1 context pack matches the code as indexed now" in steps["first_task"]["detail"]
+    assert status["_recorded"], "reaching the milestone must stamp it"
 
 
 def test_readiness_pack_from_another_repository_does_not_complete(tmp_path):
@@ -231,7 +237,49 @@ def test_readiness_stale_pack_does_not_complete(tmp_path):
     )
     assert status["first_use_complete"] is False
     step = next(s for s in status["steps"] if s["id"] == "first_task")
-    assert "predates the latest index" in step["detail"]
+    assert "was never indexed" in step["detail"]
+
+
+def test_readiness_reindexing_keeps_the_milestone_done(tmp_path):
+    """Regression: the step used to un-complete itself after every index run.
+
+    The pack was built against a completed run of this repository, so the
+    milestone holds; only its freshness changed."""
+    runs = [_indexing_run(commit="newer-commit-999"), _indexing_run(commit="abcdef123456")]
+    status = _collect(repo=_repo(), run=runs, packs=[_pack(tmp_path, repo_commit="abcdef123456")])
+    step = next(s for s in status["steps"] if s["id"] == "first_task")
+    assert step["status"] == "done"
+    assert status["first_use_complete"] is True
+    assert step["packs"]["historic"] == 1
+    assert "describe older code" in step["detail"]
+
+
+def test_readiness_recorded_milestone_survives_a_lost_pack(tmp_path):
+    """Nothing usable on disk, but the milestone was stamped earlier: the
+    first-use step reports it instead of demanding the first pack again."""
+    status = _collect(repo=_repo(), run=_indexing_run(), packs=[],
+                      milestone={"at": "2026-10-01T10:00:00+00:00", "repo_commit": "old"})
+    step = next(s for s in status["steps"] if s["id"] == "first_task")
+    assert step["status"] == "done"
+    assert "first pack built on 2026-10-01" in step["detail"]
+    assert not status["_recorded"], "an existing milestone must not be re-stamped"
+
+
+def test_readiness_milestone_is_stamped_only_once(tmp_path):
+    status = _collect(repo=_repo(), run=_indexing_run(), packs=[_pack(tmp_path)],
+                      milestone={"at": "2026-10-01T10:00:00+00:00", "repo_commit": "abcdef123456"})
+    assert not status["_recorded"]
+
+
+def test_index_detail_names_unchanged_files():
+    """Regression: a completed no-change run read "0 indexed / 0 failed of 706"
+    next to a green tick, which looks like every file failed."""
+    detail = readiness._index_detail("completed", {"indexed": 0, "failed": 0,
+                                                   "unchanged": 706, "discovered": 706})
+    assert detail == "completed — all 706 files already up to date, nothing changed since the last run"
+    mixed = readiness._index_detail("completed", {"indexed": 4, "failed": 1,
+                                                  "unchanged": 700, "discovered": 706})
+    assert mixed == "completed — 4 read, 700 unchanged, 1 failed of 706 found"
 
 
 def test_readiness_is_stable_across_refresh(tmp_path):

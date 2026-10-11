@@ -169,7 +169,7 @@ function demoView(): SetupView {
       { id: "provider", title: "Choose the AI models", done: true, status: "done", detail: "Both providers answered a real call", extra: { llm: { provider: "openai", state: "verified" }, embedding: { provider: "openai", state: "verified" } } },
       { id: "indexed", title: "Index the code", done: true, status: "done", detail: "Last run completed", extra: { run: { run_id: 42, status: "completed", commit: "2a84512c0f1e", files: { processed: 1284, skipped: 12, failed: 0 } } } },
       { id: "agent", title: "Connect an agent", done: false, status: "todo", detail: "No agent has connected yet", hint: "Create a key below and paste the config into your agent", extra: { self_check: null, external_client: { connected: false } } },
-      { id: "first_task", title: "Brief an agent on a real task", done: false, status: "todo", detail: "No context pack yet", extra: { packs: { usable: 0, missing: 0, empty: 0, stale: 0 } } },
+      { id: "first_task", title: "Brief an agent on a real task", done: false, status: "todo", detail: "No context pack yet", extra: { packs: { usable: 0, historic: 0, missing: 0, empty: 0, stale: 0 }, milestone: null } },
     ],
   };
 }

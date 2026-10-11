@@ -1,6 +1,6 @@
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from apps.api.auth import require_api_key, require_scope
 from apps.api.schemas import (
@@ -184,15 +184,20 @@ async def enqueue_nightly_maintenance(
 
 
 @router.post("/deep-context", dependencies=[Depends(require_scope("jobs:write"))])
-async def enqueue_deep_context(body: DeepContextJobRequest):
+async def enqueue_deep_context(body: DeepContextJobRequest, request: Request = cast(Request, None)):
     if not settings.LATE_INTERACTION_DEEP_ENABLED:
         raise HTTPException(
             status_code=503,
             detail="LFM deep lane is disabled",
         )
+    from apps.api.request_observation import requesting_principal
+
     params: dict[str, Any] = {
         "task_description": body.task_description,
         "notify": body.notify,
+        # Carried into the job because the worker that builds the pack cannot
+        # see who asked, and an unattributed pack counts towards no agent.
+        "consumer": requesting_principal(request),
     }
     if body.repo_path:
         params["repo_path"] = body.repo_path

@@ -4,9 +4,17 @@ services → repository → provider → index → agent → first pack.
 Each step reports ``status`` (``done`` | ``action`` | ``blocked``), a short
 ``detail`` of what was observed, and a ``hint`` the operator can act on. The
 first-use completion criterion is a usable context pack **for the selected
-repository, built against the current index revision** — proof the user got a
-useful artifact out of this install, not merely green service LEDs and not a
-pack produced for some other repository.
+repository** — proof the user got a useful artifact out of this install, not
+merely green service LEDs and not a pack produced for some other repository.
+
+That criterion is a *milestone*, not a health check: it is reached once and
+stays reached. Re-indexing is routine and makes existing packs describe older
+code, so requiring a pack at the current revision made the step un-complete
+itself after every commit. Evidence that the milestone was reached is a pack at
+the current index revision, a pack built against some earlier completed index
+run of this repository, or a recorded milestone from when one was last seen.
+Freshness still matters, and is reported in ``detail`` — it just no longer
+retracts the step. Switching repositories starts a fresh milestone.
 """
 from __future__ import annotations
 
@@ -23,7 +31,12 @@ from brain.database.models import ContextPack, IndexingRun
 from brain.database.repository_utils import get_repository_by_path
 from brain.database.session import async_session_factory, check_health
 from brain.onboarding.provider_check import provider_state
-from brain.onboarding.setup_state import last_client_activity, load_state
+from brain.onboarding.setup_state import (
+    first_pack_milestone,
+    last_client_activity,
+    load_state,
+    record_first_pack,
+)
 
 _DONE = "done"
 _ACTION = "action"
@@ -168,6 +181,29 @@ def _agent_step() -> Dict[str, Any]:
     }
 
 
+def _index_detail(status: str, counts: Dict[str, Any]) -> str:
+    """What the last run actually did, in words that survive an incremental run.
+
+    Reporting only ``indexed`` made a completed no-change run read "0 indexed /
+    0 failed of 706" next to a green tick, which looks like total failure. Files
+    the run skipped because they had not changed are the normal majority, so
+    they are named instead of being silently dropped from the count.
+    """
+    if not counts:
+        return status
+    read = int(counts.get("indexed") or 0)
+    unchanged = int(counts.get("unchanged") or 0)
+    failed = int(counts.get("failed") or 0)
+    discovered = int(counts.get("discovered") or 0)
+    if not read and not failed and unchanged:
+        return f"{status} — all {unchanged} files already up to date, nothing changed since the last run"
+    parts = [f"{read} read"]
+    if unchanged:
+        parts.append(f"{unchanged} unchanged")
+    parts.append(f"{failed} failed")
+    return f"{status} — {', '.join(parts)} of {discovered} found"
+
+
 def _index_step(repo_path: Optional[Path], indexed: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if repo_path is None:
         return {
@@ -186,10 +222,7 @@ def _index_step(repo_path: Optional[Path], indexed: Optional[Dict[str, Any]]) ->
             "hint": "run an index — button below or `brain index`",
         }
     status = indexed["status"]
-    counts = indexed.get("files") or {}
-    detail = f"{status}"
-    if counts:
-        detail += f" — {counts.get('indexed', 0)} indexed / {counts.get('failed', 0)} failed of {counts.get('discovered', 0)}"
+    detail = _index_detail(status, indexed.get("files") or {})
     return {
         "id": "indexed",
         "title": "Index the repository",
@@ -200,8 +233,14 @@ def _index_step(repo_path: Optional[Path], indexed: Optional[Dict[str, Any]]) ->
     }
 
 
-def _classify_pack(pack: ContextPack, index_commit: Optional[str]) -> str:
-    """Bucket a repo-scoped pack: usable | missing | empty | stale."""
+def _classify_pack(pack: ContextPack, index_commit: Optional[str], index_commits: frozenset[str]) -> str:
+    """Bucket a repo-scoped pack: usable | historic | missing | empty | stale.
+
+    ``usable`` describes the code as indexed right now. ``historic`` is a pack
+    whose revision matches some earlier completed index run of this repository:
+    no longer current, but proof a real pack was once built here — which is what
+    the first-use milestone asks for.
+    """
     try:
         path = Path(pack.path)
         if not path.is_file():
@@ -210,9 +249,13 @@ def _classify_pack(pack: ContextPack, index_commit: Optional[str]) -> str:
             return "empty"
     except OSError:
         return "missing"
-    if not pack.repo_commit or not index_commit or pack.repo_commit != index_commit:
+    if not pack.repo_commit:
         return "stale"
-    return "usable"
+    if index_commit and pack.repo_commit == index_commit:
+        return "usable"
+    if pack.repo_commit in index_commits:
+        return "historic"
+    return "stale"
 
 
 def _first_task_step(
@@ -220,13 +263,22 @@ def _first_task_step(
     unattributed: int,
     indexed_done: bool,
     index_commit: Optional[str],
+    index_commits: frozenset[str] = frozenset(),
+    milestone: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     title = "Build your first context pack"
-    buckets = {"usable": 0, "missing": 0, "empty": 0, "stale": 0}
+    buckets = {"usable": 0, "historic": 0, "missing": 0, "empty": 0, "stale": 0}
     for pack in packs:
-        buckets[_classify_pack(pack, index_commit)] += 1
+        buckets[_classify_pack(pack, index_commit, index_commits)] += 1
     usable = buckets["usable"]
-    step = {"id": "first_task", "title": title, "packs": buckets, "unattributed_packs": unattributed}
+    older = buckets["historic"] + buckets["stale"]
+    step = {
+        "id": "first_task",
+        "title": title,
+        "packs": buckets,
+        "unattributed_packs": unattributed,
+        "milestone": milestone,
+    }
     if not indexed_done:
         step.update(
             {
@@ -241,17 +293,28 @@ def _first_task_step(
         )
         return step
     if usable:
-        step.update(
-            {
-                "status": _DONE,
-                "detail": f"{usable} usable context pack{'s' if usable != 1 else ''} for this repository",
-                "hint": "",
-            }
-        )
+        plural = "" if usable == 1 else "s"
+        detail = f"{usable} context pack{plural} {'matches' if usable == 1 else 'match'} the code as indexed now"
+        if older:
+            detail += f"; {older} describe{'s' if older == 1 else ''} older code"
+        step.update({"status": _DONE, "detail": detail, "hint": ""})
+        return step
+    # The milestone was reached earlier: either a pack built against an earlier
+    # completed index run is still on disk, or one was recorded when it was.
+    # Re-indexing is routine, so this stays done and only reports freshness.
+    if buckets["historic"] or milestone:
+        when = f" on {milestone['at'][:10]}" if milestone and milestone.get("at") else ""
+        count = older or buckets["missing"] + buckets["empty"]
+        detail = f"first pack built{when}"
+        if count:
+            detail += f"; {count} pack{'s' if count != 1 else ''} describe older code — rebuild one when you start a task"
+        else:
+            detail += "; no pack for the current code — rebuild one when you start a task"
+        step.update({"status": _DONE, "detail": detail, "hint": ""})
         return step
     reasons = []
     if buckets["stale"]:
-        reasons.append("revision is unknown or predates the latest index — rebuild for the current revision")
+        reasons.append("revision is unknown or was never indexed — rebuild for the current revision")
     if buckets["missing"] or buckets["empty"]:
         reasons.append("artifact file missing or empty — rebuild it")
     if unattributed:
@@ -281,6 +344,7 @@ async def collect_setup_status() -> Dict[str, Any]:
 
     indexed: Optional[Dict[str, Any]] = None
     index_commit: Optional[str] = None
+    index_commits: frozenset[str] = frozenset()
     packs: list[ContextPack] = []
     unattributed = 0
     async with async_session_factory() as session:
@@ -304,6 +368,9 @@ async def collect_setup_status() -> Dict[str, Any]:
                 }
                 completed = next((r for r in runs if r.status == "completed"), None)
                 index_commit = completed.commit_hash if completed else None
+                index_commits = frozenset(
+                    r.commit_hash for r in runs if r.status == "completed" and r.commit_hash
+                )
             packs = list(
                 (
                     await session.execute(
@@ -324,7 +391,15 @@ async def collect_setup_status() -> Dict[str, Any]:
     indexed_step = _index_step(repo_path, indexed)
     agent = _agent_step()
     indexed_done = indexed_step["status"] == _DONE
-    first_task = _first_task_step(packs, unattributed, indexed_done, index_commit)
+    repo_key = str(repo_path) if repo_path else None
+    milestone = first_pack_milestone(load_state(), repo_key)
+    first_task = _first_task_step(
+        packs, unattributed, indexed_done, index_commit, index_commits, milestone
+    )
+    # Stamp the milestone the first time it is observed, so it survives both a
+    # re-index and the ten-run window the commit set above is read from.
+    if repo_key and milestone is None and first_task["status"] == _DONE:
+        record_first_pack(repo_key, index_commit)
 
     steps = [services, repo, provider, indexed_step, agent, first_task]
     next_step = next((s["id"] for s in steps if s["status"] != _DONE), None)

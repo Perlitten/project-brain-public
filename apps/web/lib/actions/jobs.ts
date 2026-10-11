@@ -76,7 +76,7 @@ export async function startSelfDiagnosis(): Promise<ActionResult> {
 }
 
 export async function startBenchmark(): Promise<ActionResult> {
-  return mutate("/jobs/benchmark", { body: {}, success: "Search benchmark queued.", revalidate: ["/reranker", "/reports"] });
+  return mutate("/jobs/benchmark", { body: {}, success: "Search benchmark queued.", revalidate: ["/reranker", "/quality"] });
 }
 
 export async function retryJob(jobId: string): Promise<ActionResult> {

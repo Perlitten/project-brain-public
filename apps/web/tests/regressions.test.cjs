@@ -55,7 +55,10 @@ test('owner navigation has seven destinations and nested deep links activate the
   assert.equal(nav.primaryNavItems.length, 7);
   assert.equal(nav.activeSection('/indexing'), 'projects');
   assert.equal(nav.activeSection('/packs/1504'), 'memory');
-  assert.equal(nav.activeSection('/reranker'), 'quality');
+  // Reranker is a configuration panel, so it now lives under Settings; the
+  // saved reports it used to sit beside stayed with Quality as a tab.
+  assert.equal(nav.activeSection('/reranker'), 'settings');
+  assert.equal(nav.activeSection('/reports/42'), 'quality');
   assert.equal(nav.activeSection('/admin'), 'settings');
   assert.equal(nav.locate('/memory-other'), null);
   assert.ok(nav.allNavItems.some(item => item.href === '/setup'));
@@ -85,6 +88,33 @@ test('dashboard request scope fails closed and distinguishes unavailable measure
   assert.equal(dashboard.measuredNumber(0), '0');
   assert.equal(dashboard.measuredNumber(null), '—');
   assert.equal(dashboard.dashboardPeriod('unsupported'), '7d');
+});
+
+test('agent value reports absence as absence rather than as a zero score', async () => {
+  const calls = [];
+  let answer;
+  const dashboard = load('lib/dashboard.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: true, brainFetch: async path => { calls.push(path); return answer; } },
+  });
+  // An unresolved repository never widens into every project's traffic.
+  assert.equal(await dashboard.getAgentValue('7d', 0), null);
+  assert.equal(calls.length, 0);
+
+  answer = { unavailable: true, packs: null, agents: [], rules: null };
+  assert.equal(await dashboard.getAgentValue('30d', 3), null);
+  assert.equal(calls[0], '/api/web/agent-value?period=30d&repository_id=3');
+
+  answer = { unavailable: false, packs: { measured: 4, memory_reach: 0 }, agents: [], rules: null };
+  const measured = await dashboard.getAgentValue('7d');
+  assert.equal(calls[1], '/api/web/agent-value?period=7d');
+  // A measured zero survives: no pack carried memory, which is a real answer.
+  assert.equal(measured.packs.memory_reach, 0);
+  assert.equal(dashboard.measuredShare(0), '0%');
+  assert.equal(dashboard.measuredShare(0.6129), '61.3%');
+  // Nothing recorded is a dash, so it can never be read as "nothing reached".
+  assert.equal(dashboard.measuredShare(null), '—');
+  assert.equal(dashboard.measuredShare(undefined), '—');
 });
 
 test('checked but unmerged decisions are not shown as agreed', async () => {

@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Term } from "@/components/Term";
+import { ClampText } from "@/components/ClampText";
 import { ListFrame } from "@/components/ListFrame";
 import { Chip, EmptyState, PageHead } from "@/components/ui";
 import { getPagedInsights } from "@/lib/data";
@@ -48,7 +49,7 @@ export default async function Insights({ searchParams }: { searchParams: Promise
               <span className="text-dim">{kindWords[f.kind]}</span>
             </div>
             <h2 className="card__title">{f.title}</h2>
-            <p className="card__body mono">{f.evidence}</p>
+            <ClampText text={f.evidence} className="card__body mono" lines={6} label="evidence" />
             <p className="card__meta">
               <span className="mono">{f.module}</span>
               <span>found {f.detectedAt}</span>

@@ -44,6 +44,8 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_late_interaction_shadow_table(conn)
     await _ensure_indexing_run_file_counts(conn)
     await _ensure_context_pack_repo_scope(conn)
+    await _ensure_context_pack_composition_columns(conn)
+    await _ensure_rule_usage_events_table(conn)
     await _ensure_repository_and_symbol_indexes(conn)
     await _ensure_audit_request_id_column(conn)
     await _ensure_request_telemetry_table(conn)
@@ -383,6 +385,57 @@ async def _ensure_indexing_run_file_counts(conn: AsyncConnection) -> None:
         )
     except Exception as exc:
         logger.warning(f"Could not apply indexing_runs.file_counts migration: {exc}")
+
+
+async def _ensure_context_pack_composition_columns(conn: AsyncConnection) -> None:
+    """What each pack delivered, recorded at build time instead of re-parsed
+    from the markdown artifact. Existing rows stay NULL on purpose: a null
+    means "not measured", and reporting it as zero would understate every
+    pack built before this accounting existed."""
+    for column, kind in (
+        ("budget", "VARCHAR(50)"),
+        ("token_estimate", "INTEGER"),
+        ("file_count", "INTEGER"),
+        ("symbol_count", "INTEGER"),
+        ("rule_count", "INTEGER"),
+        ("decision_count", "INTEGER"),
+        ("learning_count", "INTEGER"),
+        ("consumer", "VARCHAR(255)"),
+    ):
+        await conn.execute(text(f"ALTER TABLE context_packs ADD COLUMN IF NOT EXISTS {column} {kind}"))
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_context_packs_consumer ON context_packs (consumer)")
+    )
+    await conn.execute(
+        text("CREATE INDEX IF NOT EXISTS ix_context_packs_created_at ON context_packs (created_at)")
+    )
+
+
+async def _ensure_rule_usage_events_table(conn: AsyncConnection) -> None:
+    """Durable, payload-free record of rules reaching agents and catching
+    changes, so "used in the last 30 days" is a window and not a lifetime sum."""
+    await conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS rule_usage_events (
+                id BIGSERIAL PRIMARY KEY,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                rule_id VARCHAR(255) NOT NULL,
+                kind VARCHAR(16) NOT NULL,
+                repository_id INTEGER,
+                context_pack_id INTEGER,
+                principal_name VARCHAR(128)
+            )
+            """
+        )
+    )
+    for name, columns in (
+        ("ix_rule_usage_events_rule_id", "(rule_id)"),
+        ("ix_rule_usage_events_kind", "(kind)"),
+        ("ix_rule_usage_events_created_at", "(created_at)"),
+        ("ix_rule_usage_events_window", "(rule_id, kind, created_at)"),
+    ):
+        await conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON rule_usage_events {columns}"))
 
 
 async def _ensure_late_interaction_shadow_table(conn: AsyncConnection) -> None:

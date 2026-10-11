@@ -178,6 +178,24 @@ class ContextPack(Base):
     repo_commit: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    # What the pack actually delivered, recorded at build time. These were
+    # previously re-derived per request by parsing the markdown artifact, which
+    # made them unavailable in aggregate and impossible once a file was gone.
+    # Null means the pack predates this accounting — never read a null as zero,
+    # or every old pack looks like it delivered nothing.
+    budget: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    token_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    symbol_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Memory that reached the agent inside this pack: the whole point of
+    # recording decisions and rules is that they turn up in the next task.
+    rule_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    decision_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    learning_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Principal that asked for the pack (e.g. "mcp:claude-code"), as recorded
+    # by the transport; null when the caller was not attributed.
+    consumer: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+
 
 class IndexingRun(Base):
     __tablename__ = "indexing_runs"
@@ -531,6 +549,33 @@ class BrainRequestTelemetry(Base):
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     outcome: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class RuleUsageEvent(Base):
+    """One occasion on which a recorded rule did something, payload-free.
+
+    A rule is worth keeping only if it reaches the work. Two kinds are
+    recorded, and they mean different things:
+
+    - ``delivered``: the rule was put into a context pack an agent asked for,
+      so the agent saw it. Proves reach.
+    - ``flagged``: a diff review cited the rule against an actual change.
+      Proves the rule caught something.
+
+    Rows rather than counters on ``rules``, so "in the last 30 days" is a real
+    window instead of a total that can only grow.
+    """
+
+    __tablename__ = "rule_usage_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    rule_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # delivered | flagged
+    repository_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # Pack the rule was delivered in, when the event came from a pack build.
+    context_pack_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    principal_name: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
 
 
 class MemoryEpisode(Base):

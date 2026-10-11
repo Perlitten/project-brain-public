@@ -525,7 +525,23 @@ code, .mono { font-family: var(--mono); }
 .cards--grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: stretch; }
 .cards--grid .card__body { overflow-wrap: anywhere; }
 .artifact-content { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono), monospace; font-size: var(--fs-14); line-height: 1.65; }
-.cards--grid .card { grid-template-rows: auto auto 1fr auto; }
+/* body row is 1fr so the meta line stays on the baseline; the optional
+   Show more/less control gets its own row above it. */
+.cards--grid .card { grid-template-rows: auto auto 1fr auto auto; }
+/* Clamped to a fixed number of lines, so one long summary can no longer set
+   the height of every card in its row. Expanding is per card. */
+.clamp {
+  display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--clamp-lines, 4); line-clamp: var(--clamp-lines, 4);
+  overflow: hidden;
+}
+.clamp-toggle {
+  justify-self: start; padding: 0; background: none; border: 0; cursor: pointer;
+  font: 500 var(--fs-12) / 1 var(--sans); color: var(--teal-fg);
+  text-decoration: underline dotted currentColor; text-underline-offset: 3px;
+  transition: color var(--dur-control);
+}
+.clamp-toggle:hover { color: var(--text-1); }
 .card {
   position: relative; display: grid; gap: var(--s-2);
   padding: var(--s-4) var(--s-5) var(--s-4) calc(var(--s-5) + 3px);

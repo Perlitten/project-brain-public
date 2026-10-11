@@ -28,6 +28,12 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("memory_episode_events", "episode_id"),
     ("memory_skill_outcomes", "task_id"),
     ("memory_skill_outcomes", "validation_id"),
+    # What a pack delivered and who asked for it: the agent-value report reads
+    # these, so a migration that silently stops adding them must fail the build.
+    ("context_packs", "token_estimate"),
+    ("context_packs", "rule_count"),
+    ("context_packs", "consumer"),
+    ("rule_usage_events", "kind"),
 ]
 
 

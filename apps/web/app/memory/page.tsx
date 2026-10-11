@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { SectionTabs } from "@/components/SectionNav";
+import { ClampText } from "@/components/ClampText";
 import { ListFrame } from "@/components/ListFrame";
 import { PageTabs, pickTab } from "@/components/PageTabs";
 import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
@@ -32,7 +33,11 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
   ]);
   const decisions = decisionsResult.items;
   const rules = rulesResult.items;
-  const hitsTracked = rules.some((r) => r.hits30d !== undefined);
+  // Usage is reported per page of rules, and only once something has been
+  // recorded. Before that the columns are hidden rather than filled with
+  // zeros: "0 delivered" and "never counted" are not the same claim.
+  const usageTracked = rules.some((r) => r.delivered30d !== undefined);
+  const unusedCount = rules.filter((r) => r.delivered30d === 0).length;
   const blocking = rules.filter((r) => r.severity === "block").length;
   return (
     <>
@@ -71,7 +76,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
                 <span className="mono text-faint">{d.id}</span>
               </div>
               <h2 className="card__title">{d.title}</h2>
-              <p className="card__body" title={d.summary}>{d.summary}</p>
+              <ClampText text={d.summary} label="decision" />
               <p className="card__meta">
                 <span className="mono">{d.scope}</span>
                 <span>recorded {d.recordedAt}</span>
@@ -82,7 +87,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           )}
         </section>
       ) : (
-        <Panel id="rules" title="Rules agents must follow" desc={`${blocking} blocking rule${blocking === 1 ? "" : "s"} on this page. ${hitsTracked ? "“Caught” counts problems each rule stopped in the last 30 days." : "Brain doesn’t count how often each rule fires yet."}`}
+        <Panel id="rules" title="Rules agents must follow" desc={`${blocking} blocking rule${blocking === 1 ? "" : "s"} on this page. ${usageTracked ? `Last 30 days: “Reached” counts the context packs a rule went into, “Caught” the reviews that cited it${unusedCount ? `; ${unusedCount} reached no agent at all` : ""}.` : "Nothing is recorded yet, so this page can’t say which rules reach agents."}`}
           flush
         >
           {rules.length === 0 && !hasQuery ? (
@@ -111,7 +116,30 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
                 ),
               },
               { head: "If broken", cell: (r) => <Chip tone={severity[r.severity][0]}>{severity[r.severity][1]}</Chip> },
-              { head: "Caught", cell: (r) => r.hits30d ?? "—", align: "right" },
+              // A rule that reached nobody is the actionable case, so zero is
+              // shown as such and never as a dash — the dash is reserved for
+              // "not counted", which is a different problem.
+              ...(usageTracked
+                ? [
+                    {
+                      head: "Reached",
+                      cell: (r: Rule) =>
+                        r.delivered30d === undefined ? (
+                          "—"
+                        ) : r.delivered30d === 0 ? (
+                          <Chip tone="warn">never</Chip>
+                        ) : (
+                          r.delivered30d.toLocaleString("en")
+                        ),
+                      align: "right" as const,
+                    },
+                    {
+                      head: "Caught",
+                      cell: (r: Rule) => (r.caught30d === undefined ? "—" : r.caught30d.toLocaleString("en")),
+                      align: "right" as const,
+                    },
+                  ]
+                : []),
             ]}
           />
           )}

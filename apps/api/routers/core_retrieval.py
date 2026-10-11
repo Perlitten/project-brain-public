@@ -595,7 +595,7 @@ async def ask_project(body: AskRequest, request: Request):
 
 @router.post("/context", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def build_task_context(body: ContextRequest, request: Request = cast(Request, None)):
-    from apps.api.request_observation import classify_result, observe_http_request
+    from apps.api.request_observation import classify_result, observe_http_request, requesting_principal
     started = time.perf_counter()
     outcome = "error"
     result = None
@@ -618,7 +618,12 @@ async def build_task_context(body: ContextRequest, request: Request = cast(Reque
                     metadata={"status": "partial", "missing": [f"context_error:{type(exc).__name__}"]},
                 ).build()
         repo_path = str(resolve_repo_path(body.repo_path))
-        result = await ContextPackBuilder().build_context_pack(body.task_description, Path(repo_path))
+        # The transport is the only layer that knows who called, so it tells the
+        # builder: adoption is reported per agent, and a pack with no name
+        # attached cannot be counted towards anybody.
+        result = await ContextPackBuilder().build_context_pack(
+            body.task_description, Path(repo_path), consumer=requesting_principal(request)
+        )
         outcome = classify_result(result, "context")
         return result
     except asyncio.CancelledError:

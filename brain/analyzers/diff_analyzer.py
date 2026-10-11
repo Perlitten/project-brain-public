@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import List, Optional
 from loguru import logger
 from brain.database.models import DiffReview
+from brain.database.repository_utils import get_repository_by_path
 from brain.database.session import async_session_factory
 from brain.llm.router import TaskKind, get_model_router
 from brain.memory.rule_store import RuleStore
+from brain.memory.rule_usage import record_rules_flagged
 
 from brain.config.paths import get_repo_root
 
@@ -388,6 +390,26 @@ class DiffAnalyzer:
             await session.commit()
             await session.refresh(review_record)
             review_id = review_record.id
+
+        # 7. Record which rules caught something. Only when the review actually
+        # ran: a failed LLM call produces an empty violation list, and recording
+        # that would read as "no rule fired" — the same lie the report already
+        # refuses to tell. Only ids that match an active rule are recorded, so a
+        # hallucinated rule id cannot invent usage for a rule nobody wrote.
+        if llm_review_status == "completed" and rule_violations:
+            known = {r.id for r in active_rules}
+            flagged = [
+                str(v.get("rule_id"))
+                for v in rule_violations
+                if isinstance(v, dict) and str(v.get("rule_id")) in known
+            ]
+            if flagged:
+                repository = await get_repository_by_path(self.repo_path)
+                await record_rules_flagged(
+                    flagged,
+                    repository_id=repository.id if repository else None,
+                    principal_name="review:diff",
+                )
 
         return {
             "id": review_id,

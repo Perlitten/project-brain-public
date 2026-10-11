@@ -1,5 +1,6 @@
 import sys
 import asyncio
+import re
 from pathlib import Path
 from typing import List, Optional, Literal
 from functools import wraps
@@ -121,7 +122,7 @@ def _mcp_telemetry(operation: str):
                         repository_id = await repository_id_for_path(repository_path)
                         await record_request(operation=operation, surface="mcp", repository_id=repository_id,
                                              repository_path=repository_path,
-                                             principal_name="mcp:unattributed", request_id=request_id,
+                                             principal_name=_mcp_principal(), request_id=request_id,
                                              outcome=outcome, latency_ms=latency_ms)
                     await asyncio.wait_for(persist(), timeout=0.5)
                 except BaseException:
@@ -132,16 +133,35 @@ def _mcp_telemetry(operation: str):
     return decorate
 
 
+# Which client is on the other end of this stdio session, learned from the
+# initialize handshake. A local MCP server serves exactly one client, so a
+# module-level name is accurate and costs no file read on the hot path.
+_CONNECTED_CLIENT: Optional[str] = None
+
+
+def _mcp_principal() -> str:
+    """The calling agent's name, or an honest admission that it is unknown.
+
+    Adoption is reported per agent, which only works if every surface spells
+    the same caller identically — hence the single ``mcp:`` prefix and the
+    explicit unattributed value instead of a null.
+    """
+    if not _CONNECTED_CLIENT:
+        return "mcp:unattributed"
+    slug = re.sub(r"[^a-z0-9]+", "-", _CONNECTED_CLIENT.lower()).strip("-")
+    return f"mcp:{slug}" if slug else "mcp:unattributed"
+
+
 def _record_external_client(client_info: Optional[_mcp_types.Implementation]) -> None:
     """Persist proof that a real MCP client connected — the setup checklist
     only claims 'external client connected' from this observation."""
+    global _CONNECTED_CLIENT
+    name = getattr(client_info, "name", None) or "unknown-client"
+    _CONNECTED_CLIENT = name
     try:
         from brain.onboarding.setup_state import record_client_activity
 
-        record_client_activity(
-            getattr(client_info, "name", None) or "unknown-client",
-            getattr(client_info, "version", "") or "",
-        )
+        record_client_activity(name, getattr(client_info, "version", "") or "")
     except Exception:
         pass  # telemetry must never break a client handshake
 
@@ -246,7 +266,7 @@ async def prepare_task_context(task_description: str, repo_path: Optional[str] =
     try:
         target_path = Path(repo_path).resolve() if repo_path else PROJECT_ROOT
         builder = ContextPackBuilder()
-        result = await builder.build_context_pack(task_description, target_path)
+        result = await builder.build_context_pack(task_description, target_path, consumer=_mcp_principal())
         return result
     except Exception as e:
         return {"error": f"Failed to prepare task context: {str(e)}", "status": "failed"}
@@ -273,6 +293,7 @@ async def prepare_deep_context(
             "task_description": task_description,
             "repo_path": repo_path or settings.TARGET_REPO_PATH,
             "notify": notify,
+            "consumer": _mcp_principal(),
         },
         max_attempts=1,
         timeout_seconds=settings.WORKER_MAX_JOB_TIMEOUT_SECONDS,
