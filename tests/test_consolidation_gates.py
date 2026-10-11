@@ -8,23 +8,38 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from brain.memory.consolidation import (
+    EVIDENCE_TIER_UNVALIDATED,
+    EVIDENCE_TIER_VALIDATED,
     ConsolidationCandidate,
     GateOutcome,
     _cosine,
     distill_candidate,
     evaluate_gates,
+    evidence_tier_for,
     run_consolidation,
 )
 
 
-def _event(event_id=1, task_id="t1", classification="learning", summary="dim is 2048"):
+def _event(event_id=1, task_id="t1", classification="learning", summary="dim is 2048", validated=True):
     return SimpleNamespace(
         id=event_id,
         task_id=task_id,
         event_type="note",
         classification=classification,
-        payload_json={"summary": summary},
+        payload_json={"summary": summary, "reported_validation": validated},
         created_at=None,
+    )
+
+
+def _gate_patches(active, summarize=None, embedder=None):
+    """Common evaluate_gates patch set: active learnings, embedder, summarizer."""
+    if summarize is None:
+        async def summarize(text, **kwargs):
+            return json.dumps({"contradicts": False, "reason": ""})
+    return (
+        patch("brain.memory.consolidation.LearningStore.list_active_learnings", new=AsyncMock(return_value=active)),
+        patch("brain.memory.consolidation.get_embedding_provider", return_value=embedder or _orthogonal_embedder()),
+        patch("brain.memory.consolidation.get_summarizer_provider", return_value=SimpleNamespace(summarize=summarize)),
     )
 
 
@@ -100,16 +115,52 @@ async def test_gate_g1_detects_duplicate():
         evidence=[{"event_id": 1}, {"event_id": 2}],
         severity="low",
     )
-    with patch(
-        "brain.memory.consolidation.LearningStore.list_active_learnings",
-        new=AsyncMock(return_value=[existing]),
-    ), patch(
-        "brain.memory.consolidation.get_embedding_provider",
-        return_value=_orthogonal_embedder(),
-    ):
+    p1, p2, p3 = _gate_patches([existing])
+    with p1, p2, p3:
         result = await evaluate_gates(candidate)
     assert result.outcome == GateOutcome.LINK_DUPLICATE
     assert result.duplicate_of == 7
+
+
+@pytest.mark.asyncio
+async def test_gate_g1_near_duplicate_that_contradicts_is_a_correction():
+    """A changed number embeds like the stale fact. It must supersede, not reinforce."""
+    existing = SimpleNamespace(id=7, statement="Embeddings dimension is 2048")
+    candidate = ConsolidationCandidate(
+        statement="Embeddings dimension is 4096",
+        evidence=[{"event_id": 1}, {"event_id": 2}],
+        severity="low",
+    )
+    embedder = _similarity_embedder({"Embeddings dimension is 2048": 0.97, "Embeddings dimension is 4096": 1.0})
+    embedder.model = "test-mock"
+    p1, p2, p3 = _gate_patches([existing], summarize=await _contradiction([7]), embedder=embedder)
+    with p1, p2, p3:
+        result = await evaluate_gates(candidate)
+    assert result.outcome == GateOutcome.SUPERSEDE
+    assert result.supersedes == [7] and result.duplicate_of is None
+    assert any("treated as a correction" in r for r in result.reasons)
+    assert sum("G3" in r for r in result.reasons) == 1  # the G1 verdict is reused, not re-asked
+
+
+@pytest.mark.asyncio
+async def test_gate_g1_near_duplicate_links_when_contradiction_check_fails():
+    """Fail closed to the conservative outcome: link (reinforce), never rewrite on a guess."""
+    existing = SimpleNamespace(id=7, statement="Embeddings dimension is 2048")
+    candidate = ConsolidationCandidate(
+        statement="Embeddings dimension is 4096",
+        evidence=[{"event_id": 1}, {"event_id": 2}],
+        severity="low",
+    )
+    embedder = _similarity_embedder({"Embeddings dimension is 2048": 0.97, "Embeddings dimension is 4096": 1.0})
+    embedder.model = "test-mock"
+
+    async def broken(text, **kwargs):
+        raise RuntimeError("llm down")
+
+    p1, p2, p3 = _gate_patches([existing], summarize=broken, embedder=embedder)
+    with p1, p2, p3:
+        result = await evaluate_gates(candidate)
+    assert result.outcome == GateOutcome.LINK_DUPLICATE and result.duplicate_of == 7
 
 
 @pytest.mark.asyncio
@@ -134,13 +185,8 @@ async def test_gate_g1_detects_paraphrase():
     })
     # The mock needs a model attribute for the stored-embedding fast path.
     embedder.model = "test-mock"
-    with patch(
-        "brain.memory.consolidation.LearningStore.list_active_learnings",
-        new=AsyncMock(return_value=[existing]),
-    ), patch(
-        "brain.memory.consolidation.get_embedding_provider",
-        return_value=embedder,
-    ):
+    p1, p2, p3 = _gate_patches([existing], embedder=embedder)
+    with p1, p2, p3:
         result = await evaluate_gates(candidate)
     assert result.outcome == GateOutcome.LINK_DUPLICATE
     assert result.duplicate_of == 7
@@ -197,13 +243,8 @@ async def test_gate_g1_threshold_is_meaningful():
             "candidate statement": 1.0,
         })
         embedder.model = "test-mock"
-        with patch(
-            "brain.memory.consolidation.LearningStore.list_active_learnings",
-            new=AsyncMock(return_value=[existing]),
-        ), patch(
-            "brain.memory.consolidation.get_embedding_provider",
-            return_value=embedder,
-        ):
+        p1, p2, p3 = _gate_patches([existing], embedder=embedder)
+        with p1, p2, p3:
             result = await evaluate_gates(candidate)
         if expect_duplicate:
             assert result.outcome == GateOutcome.LINK_DUPLICATE, f"sim={sim}"
@@ -233,31 +274,136 @@ async def test_gate_g4_requires_approval_for_high_severity():
     assert result.outcome == GateOutcome.NEEDS_APPROVAL
 
 
-@pytest.mark.asyncio
-async def test_gate_g3_rejects_contradiction():
-    existing = SimpleNamespace(id=3, statement="Always use port 5432 for postgres")
-    candidate = ConsolidationCandidate(
+def _port_candidate(**overrides):
+    kwargs = dict(
         statement="Never use port 5432 for postgres",
         evidence=[{"event_id": 1}, {"event_id": 2}],
         severity="low",
     )
+    kwargs.update(overrides)
+    return ConsolidationCandidate(**kwargs)
 
+
+async def _contradiction(conflicting_ids=None):
     async def fake_summarize(text, **kwargs):
-        return json.dumps({"contradicts": True, "reason": "direct conflict on port"})
+        data = {"contradicts": True, "reason": "direct conflict on port"}
+        if conflicting_ids is not None:
+            data["conflicting_ids"] = conflicting_ids
+        return json.dumps(data)
 
-    fake_summarizer = SimpleNamespace(summarize=fake_summarize)
-    with patch(
-        "brain.memory.consolidation.LearningStore.list_active_learnings",
-        new=AsyncMock(return_value=[existing]),
-    ), patch(
-        "brain.memory.consolidation.get_embedding_provider",
-        return_value=_orthogonal_embedder(),
-    ), patch(
-        "brain.memory.consolidation.get_summarizer_provider", return_value=fake_summarizer
-    ):
+    return fake_summarize
+
+
+@pytest.mark.asyncio
+async def test_gate_g3_contradiction_supersedes_named_learning():
+    # A contradiction corrects the old learning: validated, low severity → SUPERSEDE.
+    existing = SimpleNamespace(id=3, statement="Always use port 5432 for postgres")
+    p1, p2, p3 = _gate_patches([existing], summarize=await _contradiction([3]))
+    with p1, p2, p3:
+        result = await evaluate_gates(_port_candidate())
+    assert result.outcome == GateOutcome.SUPERSEDE
+    assert result.supersedes == [3]
+    assert any("G3: corrects learning(s) [3]" in r for r in result.reasons)
+
+
+@pytest.mark.asyncio
+async def test_gate_g3_ignores_conflicting_ids_outside_active_set():
+    # The LLM may hallucinate ids; only active learnings can be superseded.
+    existing = SimpleNamespace(id=3, statement="Always use port 5432 for postgres")
+    p1, p2, p3 = _gate_patches([existing], summarize=await _contradiction([99, "x"]))
+    with p1, p2, p3:
+        result = await evaluate_gates(_port_candidate())
+    # Orthogonal embedder: best similarity ≈ 0 < SUPERSEDE_MIN_SIMILARITY → unresolved.
+    assert result.outcome == GateOutcome.NEEDS_APPROVAL
+    assert result.supersedes == []
+    assert any("unresolved contradiction" in r for r in result.reasons)
+
+
+@pytest.mark.asyncio
+async def test_gate_g3_falls_back_to_nearest_learning_by_similarity():
+    existing = SimpleNamespace(id=3, statement="Always use port 5432 for postgres")
+    candidate = _port_candidate()
+    embedder = _similarity_embedder({candidate.statement: 1.0, existing.statement: 0.6})
+    p1, p2, p3 = _gate_patches([existing], summarize=await _contradiction(), embedder=embedder)
+    with p1, p2, p3:
         result = await evaluate_gates(candidate)
-    # G1 uses orthogonal embedder: distinct statements -> distinct vectors -> pass.
-    assert result.outcome == GateOutcome.REJECT_CONTRADICTION
+    assert result.outcome == GateOutcome.SUPERSEDE
+    assert result.supersedes == [3]
+
+
+@pytest.mark.asyncio
+async def test_gate_g3_supersede_on_unvalidated_evidence_needs_approval():
+    existing = SimpleNamespace(id=3, statement="Always use port 5432 for postgres")
+    candidate = _port_candidate(
+        evidence=[{"event_id": 1}, {"event_id": 2}, {"event_id": 3}], evidence_tier=EVIDENCE_TIER_UNVALIDATED,
+    )
+    p1, p2, p3 = _gate_patches([existing], summarize=await _contradiction([3]))
+    with p1, p2, p3:
+        result = await evaluate_gates(candidate)
+    assert result.outcome == GateOutcome.NEEDS_APPROVAL
+    # The correction is recorded so a human approval still retires learning 3.
+    assert result.supersedes == [3]
+    assert any("unvalidated evidence" in r for r in result.reasons)
+
+
+@pytest.mark.asyncio
+async def test_gate_g3_contradiction_check_fails_open():
+    existing = SimpleNamespace(id=3, statement="Always use port 5432 for postgres")
+
+    async def broken(text, **kwargs):
+        raise RuntimeError("llm down")
+
+    p1, p2, p3 = _gate_patches([existing], summarize=broken)
+    with p1, p2, p3:
+        result = await evaluate_gates(_port_candidate())
+    assert result.outcome == GateOutcome.PROMOTE
+    assert result.supersedes == []
+
+
+@pytest.mark.asyncio
+async def test_gate_g2_unvalidated_evidence_needs_three_events():
+    two = ConsolidationCandidate(
+        statement="Observed but never proven", severity="low",
+        evidence=[{"event_id": 1}, {"event_id": 2}], evidence_tier=EVIDENCE_TIER_UNVALIDATED,
+    )
+    three = ConsolidationCandidate(
+        statement="Observed but never proven", severity="low",
+        evidence=[{"event_id": 1}, {"event_id": 2}, {"event_id": 3}], evidence_tier=EVIDENCE_TIER_UNVALIDATED,
+    )
+    p1, p2, p3 = _gate_patches([])
+    with p1, p2, p3:
+        rejected = await evaluate_gates(two)
+        promoted = await evaluate_gates(three)
+    assert rejected.outcome == GateOutcome.REJECT_EVIDENCE
+    assert any("need 3" in r for r in rejected.reasons)
+    assert promoted.outcome == GateOutcome.PROMOTE
+
+
+@pytest.mark.asyncio
+async def test_gate_g4_medium_severity_on_unvalidated_evidence_needs_approval():
+    candidate = ConsolidationCandidate(
+        statement="Always restart the worker after deploy", severity="medium",
+        evidence=[{"event_id": 1}, {"event_id": 2}, {"event_id": 3}], evidence_tier=EVIDENCE_TIER_UNVALIDATED,
+    )
+    validated = ConsolidationCandidate(
+        statement="Always restart the worker after deploy", severity="medium",
+        evidence=[{"event_id": 1}, {"event_id": 2}], evidence_tier=EVIDENCE_TIER_VALIDATED,
+    )
+    p1, p2, p3 = _gate_patches([])
+    with p1, p2, p3:
+        pending = await evaluate_gates(candidate)
+        auto = await evaluate_gates(validated)
+    assert pending.outcome == GateOutcome.NEEDS_APPROVAL
+    assert any("medium severity on unvalidated" in r for r in pending.reasons)
+    assert auto.outcome == GateOutcome.PROMOTE
+
+
+def test_evidence_tier_for_cluster():
+    assert evidence_tier_for([_event(1), _event(2)]) == EVIDENCE_TIER_VALIDATED
+    # One unvalidated sighting makes the whole cluster unvalidated.
+    assert evidence_tier_for([_event(1), _event(2, validated=False)]) == EVIDENCE_TIER_UNVALIDATED
+    legacy = SimpleNamespace(id=9, payload_json={"summary": "old event without the flag"})
+    assert evidence_tier_for([legacy]) == EVIDENCE_TIER_UNVALIDATED
 
 
 @pytest.mark.asyncio
@@ -281,6 +427,37 @@ async def test_distill_candidate_parses_llm_json():
     assert candidate.statement == "NVIDIA embeddings dimension is 2048"
     assert candidate.category == "infra"
     assert len(candidate.evidence) == 2
+    assert candidate.evidence[0]["validated"] is True
+    assert candidate.evidence_tier == EVIDENCE_TIER_VALIDATED
+    assert candidate.suggested_target == "learning"
+
+
+@pytest.mark.asyncio
+async def test_distill_candidate_reads_target_and_evidence_tier():
+    cluster = [_event(summary="always run ruff before commit", validated=False),
+               _event(event_id=2, summary="ruff first", validated=True)]
+
+    async def fake_summarize(text, **kwargs):
+        return json.dumps({"statement": "Run ruff before committing", "category": "workflow",
+                           "confidence": 0.8, "severity": "low", "target": "rule"})
+
+    with patch(
+        "brain.memory.consolidation.get_summarizer_provider",
+        return_value=SimpleNamespace(summarize=fake_summarize),
+    ):
+        candidate = await distill_candidate(cluster)
+    assert candidate.suggested_target == "rule"
+    assert candidate.evidence_tier == EVIDENCE_TIER_UNVALIDATED
+
+    async def bogus_target(text, **kwargs):
+        return json.dumps({"statement": "x", "category": "infra", "target": "database"})
+
+    with patch(
+        "brain.memory.consolidation.get_summarizer_provider",
+        return_value=SimpleNamespace(summarize=bogus_target),
+    ):
+        candidate = await distill_candidate(cluster)
+    assert candidate.suggested_target == "learning"
 
 
 @pytest.mark.asyncio
@@ -299,13 +476,93 @@ async def test_distill_candidate_survives_garbage_llm_output():
     assert candidate.statement
 
 
+def _fake_lock_engine(acquired=True):
+    """Stand-in for brain.database.session.async_engine: the advisory lock always succeeds."""
+    conn = AsyncMock()
+    conn.execute.return_value = SimpleNamespace(scalar=lambda: acquired)
+    engine = SimpleNamespace(connect=lambda: _AsyncCtx(conn))
+    return engine, conn
+
+
+class _AsyncCtx:
+    def __init__(self, value):
+        self.value = value
+
+    async def __aenter__(self):
+        return self.value
+
+    async def __aexit__(self, *_):
+        return False
+
+
 @pytest.mark.asyncio
 async def test_run_consolidation_empty_episodes():
+    distill = AsyncMock(return_value={"status": "ok", "groups": 0, "created": [], "skipped": []})
+    engine, lock_conn = _fake_lock_engine()
     with patch(
+        "brain.database.session.async_engine", engine
+    ), patch(
         "brain.memory.consolidation.collect_l1_events", new=AsyncMock(return_value=([], {}))
+    ), patch(
+        "brain.memory.consolidation.count_pending_episodes", new=AsyncMock(return_value=4)
+    ), patch(
+        "brain.memory.skill_distiller.distill_skills", new=distill
+    ), patch(
+        "brain.memory.consolidation.settings.MEMORY_SKILL_DISTILLATION_ENABLED", True
     ):
         report = await run_consolidation()
     assert report["l1_events"] == 0
     assert report["episodes_created"] == 0
     assert report["candidates"] == 0
     assert report["promoted"] == []
+    assert report["reinforced"] == []
+    # The run tail always reports the human queue and runs L3→L4 distillation.
+    assert report["pending_total"] == 4
+    assert report["skills"]["status"] == "ok"
+    distill.assert_awaited_once()
+    # Lock taken and released.
+    assert lock_conn.execute.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_run_consolidation_skips_when_lock_is_held():
+    engine, _ = _fake_lock_engine(acquired=False)
+    collect = AsyncMock(return_value=([], {}))
+    with patch("brain.database.session.async_engine", engine), patch(
+        "brain.memory.consolidation.collect_l1_events", new=collect
+    ):
+        report = await run_consolidation()
+    assert report["status"] == "skipped" and report["reinforced"] == []
+    collect.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_tail_is_best_effort():
+    engine, _ = _fake_lock_engine()
+    with patch(
+        "brain.database.session.async_engine", engine
+    ), patch(
+        "brain.memory.consolidation.collect_l1_events", new=AsyncMock(return_value=([], {}))
+    ), patch(
+        "brain.memory.consolidation.count_pending_episodes", new=AsyncMock(side_effect=RuntimeError("db"))
+    ), patch(
+        "brain.memory.skill_distiller.distill_skills", new=AsyncMock(side_effect=RuntimeError("llm"))
+    ), patch(
+        "brain.memory.consolidation.settings.MEMORY_SKILL_DISTILLATION_ENABLED", True
+    ):
+        report = await run_consolidation()
+    assert "pending_total" not in report
+    assert report["skills"]["status"] == "failed"
+    assert report["status"] == "ok"
+
+    with patch(
+        "brain.database.session.async_engine", engine
+    ), patch(
+        "brain.memory.consolidation.collect_l1_events", new=AsyncMock(return_value=([], {}))
+    ), patch(
+        "brain.memory.consolidation.count_pending_episodes", new=AsyncMock(return_value=0)
+    ), patch(
+        "brain.memory.consolidation.settings.MEMORY_SKILL_DISTILLATION_ENABLED", True
+    ):
+        dry = await run_consolidation(dry_run=True)
+    assert "skills" not in dry

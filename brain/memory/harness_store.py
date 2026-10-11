@@ -880,9 +880,65 @@ class HarnessStore:
                 artifact_refs=artifact_refs,
             )
             session.add(handoff)
+            await session.flush()
+            if task_id is not None:
+                await cls._mirror_handoff_as_l1_event(session, handoff)
             await session.commit()
             await session.refresh(handoff)
             return handoff
+
+    @classmethod
+    async def _mirror_handoff_as_l1_event(cls, session, handoff: MemoryHandoff) -> Optional[AgentTaskEvent]:
+        """Feed a task-bound handoff summary to memory consolidation as unvalidated L1.
+
+        Handoffs were write-only: nothing read them back. Mirroring the summary
+        as a ``classification='learning'`` event (``reported_validation=false``)
+        lets the hourly consolidation cluster what sessions keep telling each
+        other. Same transaction as the handoff row; no task version bump and no
+        acceptance fence (a handoff is an observation, not a decision). Skipped
+        when the task row is gone or the summary is blank.
+        """
+        summary = (handoff.summary or "").strip()
+        if not summary:
+            return None
+        task = (
+            await session.execute(select(AgentTask).where(AgentTask.id == handoff.task_id))
+        ).scalar_one_or_none()
+        if task is None:
+            return None
+        idempotency_key = "handoff:" + hashlib.sha256(
+            f"{handoff.session_id}|{summary}".encode("utf-8")
+        ).hexdigest()[:48]
+        existing = (
+            await session.execute(
+                select(AgentTaskEvent.id).where(
+                    AgentTaskEvent.task_id == handoff.task_id,
+                    AgentTaskEvent.idempotency_key == idempotency_key,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return None
+        event = AgentTaskEvent(
+            task_id=handoff.task_id,
+            event_type="handoff_summary",
+            actor="handoff",
+            classification="learning",
+            idempotency_key=idempotency_key,
+            task_version=task.version,
+            payload_json={
+                "summary": summary,
+                "memory_ref": handoff.memory_ref,
+                "session_id": handoff.session_id,
+                "repo_scope": task.repo_path,
+                "reported_validation": False,
+                "evidence_tier": "unvalidated",
+                "source": "handoff",
+            },
+        )
+        session.add(event)
+        await session.flush()
+        return event
 
     @classmethod
     async def list_handoffs(

@@ -252,9 +252,13 @@ def test_enqueue_deep_context_is_authenticated_and_explicitly_gated(
         )
 
     assert enabled.status_code == 200
+    # The caller travels with the job: the worker builds the pack later and
+    # cannot see who asked, and a pack with no name counts towards no agent.
+    # The name is the one the auth layer gave this request, so the pack and
+    # the request telemetry land on the same row of the agent report.
     mock_queue.enqueue.assert_awaited_once_with(
         "deep_context",
-        body,
+        {**body, "consumer": "legacy-api-key"},
         idempotency_key=None,
         max_attempts=1,
         timeout_seconds=21_600,

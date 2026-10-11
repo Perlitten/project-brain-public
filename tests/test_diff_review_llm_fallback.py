@@ -118,3 +118,75 @@ async def test_invalid_escape_json_is_repaired_not_dropped(tmp_path):
     assert result["llm_review_status"] == "completed"
     assert result["suspicious_changes"] == ["debug print left in D:\\prod\\data"]
     assert result["status"] == "needs_review"
+
+
+# --- rule usage recording ------------------------------------------------------
+# A rule is only worth keeping if it catches something, so "caught" has to be
+# recorded from the one place that knows: a review that actually ran.
+
+
+def _active_rule(rule_id):
+    return SimpleNamespace(id=rule_id, name=rule_id, description="matters")
+
+
+@pytest.mark.asyncio
+async def test_cited_rule_is_recorded_as_having_caught_something(tmp_path):
+    async def violating(**kwargs):
+        return '{"rule_violations": [{"rule_id": "no-apps-import", "details": "brain imports apps"}], "suspicious_changes": [], "feedback": "fix it"}'
+
+    analyzer = _make_analyzer(tmp_path, violating)
+    recorder = AsyncMock(return_value=1)
+    with (
+        patch("brain.analyzers.diff_analyzer.RuleStore.list_active_rules",
+              new=AsyncMock(return_value=[_active_rule("no-apps-import")])),
+        patch("brain.analyzers.diff_analyzer.async_session_factory", new=_make_session_mock()),
+        patch("brain.analyzers.diff_analyzer.get_repository_by_path", new=AsyncMock(return_value=SimpleNamespace(id=12))),
+        patch("brain.analyzers.diff_analyzer.record_rules_flagged", new=recorder),
+    ):
+        result = await analyzer.review_diff(base="HEAD~1", head="HEAD")
+
+    assert result["llm_review_status"] == "completed"
+    recorder.assert_awaited_once()
+    assert recorder.await_args.args[0] == ["no-apps-import"]
+    assert recorder.await_args.kwargs["repository_id"] == 12
+
+
+@pytest.mark.asyncio
+async def test_rule_id_the_model_invented_is_not_recorded(tmp_path):
+    async def hallucinating(**kwargs):
+        return '{"rule_violations": [{"rule_id": "R-999-does-not-exist", "details": "made up"}], "suspicious_changes": [], "feedback": "?"}'
+
+    analyzer = _make_analyzer(tmp_path, hallucinating)
+    recorder = AsyncMock(return_value=0)
+    with (
+        patch("brain.analyzers.diff_analyzer.RuleStore.list_active_rules",
+              new=AsyncMock(return_value=[_active_rule("no-apps-import")])),
+        patch("brain.analyzers.diff_analyzer.async_session_factory", new=_make_session_mock()),
+        patch("brain.analyzers.diff_analyzer.record_rules_flagged", new=recorder),
+    ):
+        result = await analyzer.review_diff(base="HEAD~1", head="HEAD")
+
+    # The report still carries the claim for a human to judge; usage statistics
+    # for a rule nobody wrote would be invented data.
+    assert result["rule_violations"]
+    recorder.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failed_review_records_no_rule_usage(tmp_path):
+    async def boom(**kwargs):
+        raise RuntimeError("provider exploded")
+
+    analyzer = _make_analyzer(tmp_path, boom)
+    recorder = AsyncMock(return_value=0)
+    with (
+        patch("brain.analyzers.diff_analyzer.RuleStore.list_active_rules",
+              new=AsyncMock(return_value=[_active_rule("no-apps-import")])),
+        patch("brain.analyzers.diff_analyzer.async_session_factory", new=_make_session_mock()),
+        patch("brain.analyzers.diff_analyzer.record_rules_flagged", new=recorder),
+    ):
+        result = await analyzer.review_diff(base="HEAD~1", head="HEAD")
+
+    assert result["llm_review_status"] == "failed"
+    # An unchecked diff is not a diff where no rule fired.
+    recorder.assert_not_awaited()
