@@ -23,18 +23,30 @@ Run:  BRAIN_API_URL=... BRAIN_API_KEY=... python -m apps.mcp_server.remote_serve
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 from typing import Any, List, Optional
 from urllib.parse import quote
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.lowlevel.server import request_ctx
 
 from apps.mcp_server.deferred_payload import (
     DeferredPayloadStore,
     compact_payload,
     register_payload_resource,
 )
+from apps.mcp_server.protocol import (
+    confirm_memory_write,
+    only_active,
+    register_memory_resources,
+    register_prompts,
+    sample_answer,
+    tool_meta,
+)
+
 
 def _env(name: str) -> str:
     """Read an env var, treating an unexpanded ``${VAR}`` placeholder as unset.
@@ -55,6 +67,11 @@ BASE_URL = _env("BRAIN_API_URL").rstrip("/")
 API_KEY = _env("BRAIN_API_KEY")
 DEFAULT_REPO = _env("BRAIN_REPO") or _env("TARGET_REPO_PATH") or "."
 
+_SAMPLING_SYSTEM = (
+    "You answer questions about a software project using only the context provided. "
+    "Cite file paths. Say so when the context does not contain the answer."
+)
+
 _MISSING_CONFIG = (
     "BRAIN_API_URL and BRAIN_API_KEY must be set. The project .mcp.json expands "
     "them from the environment, so set them where your client launches this server."
@@ -68,7 +85,7 @@ _PAYLOADS = DeferredPayloadStore()
 register_payload_resource(mcp, _PAYLOADS)
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("record_task_lesson"))
 async def record_task_lesson(task_id: str, statement: str, category: str, validation_id: int,
                              artifact_ids: list[int], source_refs: list[str], idempotency_key: str) -> dict:
     """Capture a lesson from an existing task's reported check and artifacts.
@@ -82,7 +99,7 @@ async def record_task_lesson(task_id: str, statement: str, category: str, valida
     })
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("record_task_observation"))
 async def record_task_observation(task_id: str, statement: str, category: str, idempotency_key: str,
                                   outcome: str = "learning") -> dict:
     """Capture an unvalidated observation for a task; no validation or artifact needed.
@@ -95,7 +112,7 @@ async def record_task_observation(task_id: str, statement: str, category: str, i
     })
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("record_procedure_outcome"))
 async def record_procedure_outcome(skill_id: int, task_id: str, validation_id: int,
                                     outcome: str, artifact_ids: list[int], source_refs: list[str]) -> dict:
     """Record success/failure after applying a skill; one durable result per task.
@@ -114,73 +131,127 @@ def _is_safe_base_url(url: str) -> bool:
     return url.startswith("https://") or url.startswith(("http://127.0.0.1", "http://localhost"))
 
 
-async def _post(path: str, payload: dict, timeout: float = 120.0) -> Any:
-    if not BASE_URL or not API_KEY:
-        return {"error": _MISSING_CONFIG, "status": "failed"}
-    if not _is_safe_base_url(BASE_URL):
-        return {
-            "error": "BRAIN_API_URL must use https (refusing to send the API key over plaintext http)",
-            "status": "failed",
-        }
-    headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        try:
-            r = await client.post(f"{BASE_URL}{path}", json=payload, headers=headers)
-            r.raise_for_status()
-            return r.json()
-        except httpx.HTTPStatusError as e:
-            return {"error": f"{path} -> HTTP {e.response.status_code}: {e.response.text[:300]}", "status": "failed"}
-        except Exception as e:  # noqa: BLE001
-            # The exception TYPE matters more than its message here: httpx timeouts
-            # and asyncio cancellations both stringify to "", which produced the
-            # useless "/ask request failed: " that hid a latency problem for weeks.
+# --- backend ---------------------------------------------------------------------
+#
+# Two deployments share these tools. Launched by a client over stdio, the server
+# is a bridge: it calls a Brain over HTTPS with the operator's configured key.
+# Mounted inside the API at /mcp (apps/api/mcp_http.py), it calls that same API
+# in-process and presents the MCP caller's own credential, so scope checks,
+# audit and telemetry see the agent that asked - never a key of the server's.
+
+_IN_PROCESS_BASE = "http://brain.internal"
+_asgi_app: Any = None
+
+
+def use_asgi_backend(app: Any) -> None:
+    """Route tool calls to ``app`` in-process instead of to BRAIN_API_URL."""
+    global _asgi_app
+    _asgi_app = app
+
+
+def _caller_credential() -> str | None:
+    """The credential the Streamable HTTP caller authenticated with, if any.
+
+    ``None`` means there is no authenticated HTTP caller; an empty string is the
+    API's dev-open principal (no key configured), which needs no header.
+    """
+    try:
+        request = request_ctx.get().request
+    except LookupError:
+        return None
+    user = request.scope.get("user") if request is not None else None
+    token = getattr(user, "access_token", None)
+    return getattr(token, "token", None)
+
+
+def _failure(path: str, exc: Exception) -> dict:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return {"error": f"{path} -> HTTP {exc.response.status_code}: {exc.response.text[:300]}", "status": "failed"}
+    # The exception TYPE matters more than its message here: httpx timeouts
+    # and asyncio cancellations both stringify to "", which produced the
+    # useless "/ask request failed: " that hid a latency problem for weeks.
+    return {"error": f"{path} request failed: {type(exc).__name__}: {exc}".rstrip(": "), "status": "failed"}
+
+
+async def _request(method: str, path: str, payload: dict | None, timeout: float) -> Any:
+    if _asgi_app is not None:
+        credential = _caller_credential()
+        if credential is None:
+            return {"error": "no authenticated MCP caller for an in-process call", "status": "failed"}
+        headers = {"X-API-Key": credential} if credential else {}
+        client = httpx.AsyncClient(transport=httpx.ASGITransport(app=_asgi_app), base_url=_IN_PROCESS_BASE)
+    else:
+        if not BASE_URL or not API_KEY:
+            return {"error": _MISSING_CONFIG, "status": "failed"}
+        if not _is_safe_base_url(BASE_URL):
             return {
-                "error": f"{path} request failed: {type(e).__name__}: {e}".rstrip(": "),
+                "error": "BRAIN_API_URL must use https (refusing to send the API key over plaintext http)",
                 "status": "failed",
             }
+        headers = {"X-API-Key": API_KEY}
+        client = httpx.AsyncClient(base_url=BASE_URL, timeout=timeout)
+    async with client:
+        try:
+            # ASGITransport ignores httpx timeouts, so bound the call itself.
+            response = await asyncio.wait_for(client.request(method, path, json=payload, headers=headers), timeout)
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:  # noqa: BLE001
+            return _failure(path, exc)
+
+
+async def _post(path: str, payload: dict, timeout: float = 120.0) -> Any:
+    return await _request("POST", path, payload, timeout)
 
 
 async def _get(path: str, timeout: float = 30.0) -> Any:
-    if not BASE_URL or not API_KEY:
-        return {"error": _MISSING_CONFIG, "status": "failed"}
-    if not _is_safe_base_url(BASE_URL):
-        return {
-            "error": "BRAIN_API_URL must use https (refusing to send the API key over plaintext http)",
-            "status": "failed",
-        }
-    headers = {"X-API-Key": API_KEY}
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        try:
-            response = await client.get(f"{BASE_URL}{path}", headers=headers)
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as exc:
-            return {
-                "error": (
-                    f"{path} -> HTTP {exc.response.status_code}: "
-                    f"{exc.response.text[:300]}"
-                ),
-                "status": "failed",
-            }
-        except Exception as exc:  # noqa: BLE001
-            return {
-                "error": (
-                    f"{path} request failed: {type(exc).__name__}: {exc}"
-                ).rstrip(": "),
-                "status": "failed",
-            }
+    return await _request("GET", path, None, timeout)
 
 
-@mcp.tool()
-async def ask_project(query: str, repo_path: Optional[str] = None) -> str:
+# --- resources and prompts ---------------------------------------------------------
+
+
+async def _active_rules() -> list[dict[str, Any]]:
+    return only_active(await _get("/rules"))
+
+
+async def _active_decisions() -> list[dict[str, Any]]:
+    return only_active(await _get("/decisions"))
+
+
+register_memory_resources(mcp, list_rules=_active_rules, list_decisions=_active_decisions)
+register_prompts(mcp)
+
+
+# --- tools ---------------------------------------------------------------------------
+
+
+@mcp.tool(**tool_meta("ask_project"))
+async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> str:
     """Grounded answer; use search_code first when only location is unknown."""
-    res = await _post("/ask", {"query": query, "repo_path": repo_path or DEFAULT_REPO}, timeout=30.0)
+    repo = repo_path or DEFAULT_REPO
+    res = await _post("/ask", {"query": query, "repo_path": repo}, timeout=30.0)
     if isinstance(res, dict) and "answer" in res:
         return res["answer"]
+    # The server-side model failed or timed out. The bounded context pack does
+    # not need it, so let the client's own model answer from that instead.
+    context = await _post(
+        "/context",
+        {"task_description": query, "repo_path": repo, "persist": False, "max_tokens": 3500},
+        timeout=9.0,
+    )
+    if isinstance(context, dict) and context.get("status") != "failed":
+        answer = await sample_answer(
+            ctx,
+            f"Question: {query}\n\nProject context (JSON):\n{json.dumps(context, default=str)[:24_000]}",
+            system=_SAMPLING_SYSTEM,
+        )
+        if answer is not None:
+            return answer
     return str(res)
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("prepare_task_context"))
 async def prepare_task_context(task_description: str, repo_path: Optional[str] = None) -> dict:
     """Bounded ephemeral code slices after a locator; no durable write by default."""
     return await _post(
@@ -190,7 +261,7 @@ async def prepare_task_context(task_description: str, repo_path: Optional[str] =
     )
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("prepare_deep_context"))
 async def prepare_deep_context(
     task_description: str,
     repo_path: Optional[str] = None,
@@ -207,13 +278,13 @@ async def prepare_deep_context(
     )
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("get_background_job"))
 async def get_background_job(job_id: str) -> dict:
     """Read a compact async-job status; full artifacts are fetched explicitly."""
     return await _get(f"/jobs/{job_id}?include_result=false")
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("impact_analysis"))
 async def impact_analysis(change_request: str, repo_path: Optional[str] = None) -> dict:
     """Bounded deterministic impact projection; long tails move to a brain:// resource."""
     return compact_payload(
@@ -226,7 +297,7 @@ async def impact_analysis(change_request: str, repo_path: Optional[str] = None) 
     )
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("record_decision"))
 async def record_decision(
     title: str,
     repo_path: Optional[str] = None,
@@ -237,8 +308,12 @@ async def record_decision(
     affected_features: Optional[List[str]] = None,
     affected_modules: Optional[List[str]] = None,
     affected_files: Optional[List[str]] = None,
+    ctx: Optional[Context] = None,
 ) -> dict:
     """Record an architectural/design decision into the Brain's persistent memory."""
+    declined = await confirm_memory_write(ctx, f"Record decision: {title}. {description or ''}".strip())
+    if declined is not None:
+        return declined
     return await _post(
         "/decisions",
         {
@@ -255,7 +330,7 @@ async def record_decision(
     )
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("record_rule"))
 async def record_rule(
     name: str,
     repo_path: Optional[str] = None,
@@ -265,8 +340,12 @@ async def record_rule(
     status: Optional[str] = "active",
     applies_to: Optional[dict[str, Any]] = None,
     rule_id: Optional[str] = None,
+    ctx: Optional[Context] = None,
 ) -> dict:
     """Record a repository-scoped normative rule in the Brain's persistent memory."""
+    declined = await confirm_memory_write(ctx, f"Record {severity} rule: {name}. {description or ''}".strip())
+    if declined is not None:
+        return declined
     return await _post(
         "/rules",
         {
@@ -282,7 +361,7 @@ async def record_rule(
     )
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("search_code"))
 async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
     """Compact locator: paths, symbols and ranges only (≤600 estimated tokens)."""
     # The API owns the rollout flag and its locator defaults. Keep this MCP
@@ -291,7 +370,7 @@ async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
     return await _post("/search", {"query": query, "limit": 5, "repo_path": repo_path or DEFAULT_REPO})
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("find_related_files"))
 async def find_related_files(file_path: str, repo_path: Optional[str] = None) -> dict:
     """Graph neighbours of a path; long tails move to a brain:// resource."""
     return compact_payload(
@@ -303,7 +382,7 @@ async def find_related_files(file_path: str, repo_path: Optional[str] = None) ->
     )
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("review_diff"))
 async def review_diff(
     base: Optional[str] = None,
     head: Optional[str] = "current",
@@ -324,7 +403,7 @@ async def review_diff(
     )
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("get_diff_review"))
 async def get_diff_review(job_id: str) -> dict:
     """Poll a diff review queued by ``review_diff``; ``status`` is completed, failed, or still running.
 

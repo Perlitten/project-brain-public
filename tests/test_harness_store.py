@@ -85,7 +85,7 @@ async def test_list_and_count_task_status_predicates_stay_in_parity(display_stat
 @pytest.fixture(autouse=True)
 def _configured_acceptance_public_key(monkeypatch):
     monkeypatch.setenv(
-        "NOSTIA_HARNESS_ACCEPTANCE_PUBLIC_KEY",
+        "BRAIN_HARNESS_ACCEPTANCE_PUBLIC_KEY",
         TEST_ACCEPTANCE_PUBLIC_HEX,
     )
 
@@ -93,7 +93,7 @@ def _configured_acceptance_public_key(monkeypatch):
 def _signed_acceptance_record() -> dict:
     payload = {
         "schema_version": 1,
-        "task_id": "NOSTIA-TEST",
+        "task_id": "PROJ-TEST",
         "attempt_id": "attempt-1",
         "contract_sha256": "1" * 64,
         "gate_report_sha256": "2" * 64,
@@ -457,7 +457,7 @@ async def test_acceptance_checkpoint_fails_before_mutation_when_public_key_missi
 ):
     from brain.memory.harness_store import AcceptanceUnavailable
 
-    monkeypatch.delenv("NOSTIA_HARNESS_ACCEPTANCE_PUBLIC_KEY")
+    monkeypatch.delenv("BRAIN_HARNESS_ACCEPTANCE_PUBLIC_KEY")
     mock_session, mock_session_factory = _mock_session_factory()
 
     with (
@@ -495,7 +495,7 @@ async def test_acceptance_finalize_atomically_marks_task_passed():
         classification="decision",
         task_version=5,
         payload_json={
-            "external_task_id": "NOSTIA-TEST",
+            "external_task_id": "PROJ-TEST",
             "attempt_id": "attempt-1",
             "contract_sha256": "1" * 64,
             "gate_report_sha256": "2" * 64,
@@ -519,7 +519,7 @@ async def test_acceptance_finalize_atomically_marks_task_passed():
         patch("brain.memory.harness_store.async_session_factory", mock_session_factory),
         patch.dict(
             os.environ,
-            {"NOSTIA_HARNESS_ACCEPTANCE_PUBLIC_KEY": TEST_ACCEPTANCE_PUBLIC_HEX},
+            {"BRAIN_HARNESS_ACCEPTANCE_PUBLIC_KEY": TEST_ACCEPTANCE_PUBLIC_HEX},
         ),
     ):
         event = await HarnessStore.finalize_acceptance_checkpoint(
@@ -547,7 +547,7 @@ async def test_acceptance_finalize_rejects_forged_signature():
         classification="decision",
         task_version=5,
         payload_json={
-            "external_task_id": "NOSTIA-TEST",
+            "external_task_id": "PROJ-TEST",
             "attempt_id": "attempt-1",
             "contract_sha256": "1" * 64,
             "gate_report_sha256": "2" * 64,
@@ -564,7 +564,7 @@ async def test_acceptance_finalize_rejects_forged_signature():
     with (
         patch.dict(
             os.environ,
-            {"NOSTIA_HARNESS_ACCEPTANCE_PUBLIC_KEY": TEST_ACCEPTANCE_PUBLIC_HEX},
+            {"BRAIN_HARNESS_ACCEPTANCE_PUBLIC_KEY": TEST_ACCEPTANCE_PUBLIC_HEX},
         ),
         pytest.raises(AcceptanceAttestationInvalid),
     ):
@@ -583,7 +583,7 @@ def test_acceptance_finalize_rejects_mismatched_fencing_token():
         classification="decision",
         task_version=5,
         payload_json={
-            "external_task_id": "NOSTIA-TEST",
+            "external_task_id": "PROJ-TEST",
             "attempt_id": "attempt-1",
             "contract_sha256": "1" * 64,
             "gate_report_sha256": "2" * 64,
@@ -599,7 +599,7 @@ def test_acceptance_finalize_rejects_mismatched_fencing_token():
     with (
         patch.dict(
             os.environ,
-            {"NOSTIA_HARNESS_ACCEPTANCE_PUBLIC_KEY": TEST_ACCEPTANCE_PUBLIC_HEX},
+            {"BRAIN_HARNESS_ACCEPTANCE_PUBLIC_KEY": TEST_ACCEPTANCE_PUBLIC_HEX},
         ),
         pytest.raises(AcceptanceAttestationInvalid),
     ):

@@ -10,12 +10,12 @@ from apps.api.routers.quality import load_quality_evidence
 
 def _write(tmp_path: Path, payload: object) -> None:
     target = tmp_path / "eval" / "quality"
-    target.mkdir(parents=True)
-    (target / "owner-benchmark-20261008.json").write_text(json.dumps(payload), encoding="utf-8")
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "quality-evidence.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_quality_evidence_contract_is_readonly_and_source_backed(tmp_path):
-    payload = json.loads((Path(__file__).resolve().parents[1] / "eval/quality/owner-benchmark-20261008.json").read_text())
+    payload = json.loads((Path(__file__).resolve().parent / "fixtures" / "quality_evidence.json").read_text())
     _write(tmp_path, payload)
     with patch("apps.api.routers.quality.get_repo_root", return_value=tmp_path):
         assert load_quality_evidence() == payload
@@ -30,7 +30,18 @@ def test_quality_evidence_rejects_incomplete_or_unsupported_schema(tmp_path, pay
     assert error.value.status_code == 503
 
 
-def test_quality_evidence_reports_missing_artifact(tmp_path):
+def test_quality_evidence_missing_artifact_is_an_empty_state(tmp_path):
+    """A fresh install has never run the benchmark — say so, never show someone else's numbers."""
+    with patch("apps.api.routers.quality.get_repo_root", return_value=tmp_path):
+        assert load_quality_evidence() == {"available": False, "reason": "not_run"}
+
+
+def test_quality_evidence_reference_run_flag_must_be_boolean(tmp_path):
+    payload = json.loads((Path(__file__).resolve().parent / "fixtures" / "quality_evidence.json").read_text())
+    _write(tmp_path, {**payload, "reference_run": True})
+    with patch("apps.api.routers.quality.get_repo_root", return_value=tmp_path):
+        assert load_quality_evidence()["reference_run"] is True
+    _write(tmp_path, {**payload, "reference_run": "yes"})
     with patch("apps.api.routers.quality.get_repo_root", return_value=tmp_path):
         with pytest.raises(HTTPException) as error:
             load_quality_evidence()
@@ -39,7 +50,7 @@ def test_quality_evidence_reports_missing_artifact(tmp_path):
 
 @pytest.mark.parametrize("field,value", [("hit5_any_pct", 101), ("mrr_any", float("nan")), ("hit1_any_pct", True)])
 def test_quality_evidence_rejects_invalid_metrics(tmp_path, field, value):
-    payload = json.loads((Path(__file__).resolve().parents[1] / "eval/quality/owner-benchmark-20261008.json").read_text())
+    payload = json.loads((Path(__file__).resolve().parent / "fixtures" / "quality_evidence.json").read_text())
     payload["search"][field] = value
     _write(tmp_path, payload)
     with patch("apps.api.routers.quality.get_repo_root", return_value=tmp_path):

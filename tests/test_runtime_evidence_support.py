@@ -49,7 +49,7 @@ def test_substring_inside_unrelated_identifier_is_not_support():
 
 def test_non_latin_semantic_query_is_left_undecided():
     candidates = [Candidate("src/core.py", ("Core",))]
-    result = query_evidence_support("проверка контекста", candidates)
+    result = query_evidence_support("上下文检查", candidates)
     assert result["decided"] is False
     assert result["should_abstain"] is False
 

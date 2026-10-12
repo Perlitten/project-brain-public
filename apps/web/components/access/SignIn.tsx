@@ -1,6 +1,6 @@
 "use client";
-// Access → Dashboard sign-in. A fresh install is locked; with WEB_OPEN_MODE=true
-// it is open and the owner sets a login and password here. Once set, changing or removing it takes the current
+// Access → Dashboard sign-in. A fresh install on 127.0.0.1 (or with WEB_OPEN_MODE=true)
+// is open and the owner sets a login and password here. Once set, changing or removing it takes the current
 // password. Works without the actions gate: setting the first password is
 // exactly what unlocks the rest of the dashboard.
 
@@ -35,7 +35,7 @@ export function SignIn({ view }: { view: SignInView }) {
           <b>{s.title}</b>
           <p>
             {view.mode === "open" &&
-              "WEB_OPEN_MODE is on and no password is set. Set a login and password to lock the dashboard and unlock actions, then turn WEB_OPEN_MODE off. This browser stays signed in."}
+              "No password is set. That is fine while the dashboard listens on this machine only; set a login and password before anyone else can reach it. This browser stays signed in."}
             {view.mode === "password" && (
               <>
                 Signed in as <code>{view.user}</code>. Changing the login or password signs every other browser out.
@@ -53,7 +53,7 @@ export function SignIn({ view }: { view: SignInView }) {
           {editable && (
             <p className="field__hint">
               Forgot the password? On the Brain server delete the <code>WEB_LOGIN_…</code> lines from <code>.env</code> and restart the API, then
-              start the dashboard once with <code>WEB_OPEN_MODE=true</code> to set a new one (or use <code>WEB_BASIC_AUTH</code>).
+              open the dashboard on this machine (it listens on 127.0.0.1 by default) to set a new one (or use <code>WEB_BASIC_AUTH</code>).
             </p>
           )}
           {view.pinned.length > 0 && (

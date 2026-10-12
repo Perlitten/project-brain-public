@@ -1567,7 +1567,7 @@
   },
   {
    "id": "q021",
-   "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+   "question": "How does the indexer split files into chunks, where do the window size and overlap come from, and where are symbol boundaries respected?",
    "expect_files": [
     "brain/indexers/file_indexer.py",
     "brain/indexers/repo_indexer.py"
@@ -1631,7 +1631,7 @@
     ".tsx"
    ],
    "category": "architecture_memory",
-   "language": "ru",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q001",
@@ -1646,7 +1646,7 @@
   },
   {
    "id": "q022",
-   "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+   "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
    "expect_files": [
     "brain/retrieval/pipeline.py",
     "brain/search/filters.py",
@@ -1711,7 +1711,7 @@
     "HISTORICAL_SUMMARY_PREFIX"
    ],
    "category": "architecture_memory",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation and bilingual expansion of q002",
@@ -1726,7 +1726,7 @@
   },
   {
    "id": "q023",
-   "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+   "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
    "expect_files": [
     "brain/embeddings/config.py",
     "brain/config/settings.py",
@@ -1791,7 +1791,7 @@
     "model_validator"
    ],
    "category": "ru_to_en",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q003",
@@ -1806,7 +1806,7 @@
   },
   {
    "id": "q024",
-   "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+   "question": "Where is text length capped for NVIDIA embedding, and how is an oversized chunk truncated or logged?",
    "expect_files": [
     "brain/llm/providers/nvidia_provider.py",
     "brain/indexers/file_indexer.py"
@@ -1870,7 +1870,7 @@
     "Return provider-level char limit if explicitly configured."
    ],
    "category": "ru_to_en",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q004",
@@ -1885,7 +1885,7 @@
   },
   {
    "id": "q025",
-   "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+   "question": "Show the exact path of POST /search: request schema, router, and the function that actually runs the search.",
    "expect_files": [
     "apps/api/routers/core.py",
     "apps/api/schemas.py",
@@ -1950,7 +1950,7 @@
     "architecture"
    ],
    "category": "ru_to_en",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q005",
@@ -1965,7 +1965,7 @@
   },
   {
    "id": "q026",
-   "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+   "question": "How do active decisions and rules get into the /ask answer, and which code sets their format and repository scope?",
    "expect_files": [
     "apps/api/routers/core.py",
     "brain/memory/decision_store.py",
@@ -2030,7 +2030,7 @@
     "active"
    ],
    "category": "architecture_memory",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q006",
@@ -2045,7 +2045,7 @@
   },
   {
    "id": "q027",
-   "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+   "question": "Where is the harness task state machine declared, and which transitions are terminal or forbidden?",
    "expect_files": [
     "brain/database/harness_models.py",
     "brain/memory/harness_store.py"
@@ -2109,7 +2109,7 @@
     "Raised when a status update doesn't follow the task state machine."
    ],
    "category": "ru_to_en",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q007",
@@ -2124,7 +2124,7 @@
   },
   {
    "id": "q028",
-   "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+   "question": "How does expected_task_version protect task ledger updates from races between workers?",
    "expect_files": [
     "brain/memory/harness_store.py",
     "brain/database/harness_models.py",
@@ -2189,7 +2189,7 @@
     "TERMINAL_STATUSES"
    ],
    "category": "ru_to_en",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q008",
@@ -2204,7 +2204,7 @@
   },
   {
    "id": "q029",
-   "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+   "question": "Find the canonical upsert implementation for DecisionStore and its protection against duplicate decisions.",
    "expect_files": [
     "brain/memory/decision_store.py",
     "brain/database/repository_utils.py",
@@ -2269,7 +2269,7 @@
     "Delete all indexed files, chunks, symbols, and chunk embeddings for a repo."
    ],
    "category": "known_symbol",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q009",
@@ -2284,7 +2284,7 @@
   },
   {
    "id": "q030",
-   "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+   "question": "How does RuleStore select only active rules for the right repository scope while still including global rules?",
    "expect_files": [
     "brain/memory/rule_store.py",
     "brain/database/repository_utils.py",
@@ -2349,7 +2349,7 @@
     "Delete all indexed files, chunks, symbols, and chunk embeddings for a repo."
    ],
    "category": "architecture_memory",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q010",
@@ -2364,7 +2364,7 @@
   },
   {
    "id": "q031",
-   "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+   "question": "How do API auth requirements differ between production and development, and what response does an invalid X-API-Key get?",
    "expect_files": [
     "apps/api/auth.py",
     "apps/api/dependencies.py",
@@ -2429,7 +2429,7 @@
     "FastAPI dependency to get the Neo4j driver."
    ],
    "category": "stale_or_failure",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q011",
@@ -2444,7 +2444,7 @@
   },
   {
    "id": "q032",
-   "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
+   "question": "Where are the cookie signature, CSRF and login state checked for the dashboard?",
    "expect_files": [
     "apps/api/dashboard_auth.py",
     "apps/api/main.py",
@@ -2509,7 +2509,7 @@
     "font/woff2"
    ],
    "category": "stale_or_failure",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q012",
@@ -2524,7 +2524,7 @@
   },
   {
    "id": "q033",
-   "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
+   "question": "Which background job actions are available from the dashboard, and how is the UI wired to the worker queue?",
    "expect_files": [
     "apps/api/routers/dashboard.py",
     "apps/api/routers/jobs.py",
@@ -2589,7 +2589,7 @@
     "/health-check"
    ],
    "category": "known_symbol",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q014",
@@ -2604,7 +2604,7 @@
   },
   {
    "id": "q034",
-   "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+   "question": "How are a repository's graph nodes deleted, and how are stale file nodes cleaned up after re-indexing?",
    "expect_files": [
     "brain/graph/graph_client.py",
     "brain/indexers/repo_indexer.py",
@@ -2669,7 +2669,7 @@
     ".tsx"
    ],
    "category": "cross_surface",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from curated translation of q016",
@@ -2684,7 +2684,7 @@
   },
   {
    "id": "q035",
-   "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+   "question": "Where is init_db guarded against repeated runs, and where must malformed LLM self-diagnosis output degrade without crashing?",
    "expect_files": [
     "brain/database/session.py",
     "brain/insights/proactive.py",
@@ -2750,7 +2750,7 @@
     "_VALID_SEVERITIES"
    ],
    "category": "cross_surface",
-   "language": "ru-en",
+   "language": "en",
    "provenance": {
     "kind": "curated",
     "source": "Enriched from LFM council exact-query acceptance scenario",
@@ -3893,7 +3893,7 @@
   }
  ],
  "repository": {
-  "name": "Perlitten/Brain",
+  "name": "project-brain",
   "pinned_commit": "2f2e08e5c8a6b8c4ed18473098d2bb056d25643b",
   "pinned_ref": "master@2026-10-02"
  },

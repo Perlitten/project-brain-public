@@ -53,9 +53,9 @@ def test_card_hash_deterministic_and_format_sensitive():
 
 
 def test_card_fields_domain_terms():
-    f = build_card_fields("scripts/sync_hermes_rag.py", {"function": ["sync_vault"]})
+    f = build_card_fields("scripts/sync_wiki_rag.py", {"function": ["sync_vault"]})
     assert f["role"] == "script"
-    assert any("hermes" in t or "rag" in t or "sync" in t for t in f["domain_terms"])
+    assert any("wiki" in t or "rag" in t or "sync" in t for t in f["domain_terms"])
 
 
 def test_card_embedding_provider_defaults_to_embedding_config():

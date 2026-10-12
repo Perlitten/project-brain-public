@@ -28,7 +28,7 @@ dependencies = [
     "pydantic-settings",
     # asyncio extras pull in greenlet — required by brain.database.session,
     # which is imported by the CLI entrypoint.
-    "sqlalchemy[asyncio]>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.54",
     "asyncpg",
     "redis>=4.2.0",
     "neo4j",
@@ -39,8 +39,8 @@ dependencies = [
     # Cockpit tool enumeration use the current stable v1 SDK contract.
     "mcp==1.29.0",
     "pgvector",
-    "cryptography>=42.0.0",
-    "numpy>=1.26,<3",
+    "cryptography>=50.0.2",
+    "numpy>=2.2.6,<3",
 ]
 
 [project.urls]

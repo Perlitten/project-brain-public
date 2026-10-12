@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-EVAL_DIR = Path(os.environ.get("EVAL_DIR", "/home/ubuntu/eval_external"))
+EVAL_DIR = Path(os.environ.get("EVAL_DIR", str(Path.home() / "eval_external")))
 REPOS_DIR = EVAL_DIR / "repos"
 RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
 SEED = 20261006

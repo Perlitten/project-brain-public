@@ -11,5 +11,5 @@ export INDEX_EMBEDDING_BATCH_SIZE=96
 export INDEX_FILE_CONCURRENCY=6
 export INDEX_PROVIDER_CONCURRENCY=8
 export DEFAULT_LLM_PROVIDER=mock
-export EVAL_DIR="/home/ubuntu/eval_external"
+export EVAL_DIR="${EVAL_DIR:-$HOME/eval_external}"
 export PYTHONHASHSEED=0

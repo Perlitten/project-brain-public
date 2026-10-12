@@ -13,9 +13,10 @@ type LoginReply = { mode: "open" | "password"; user: string | null; version: str
 const MAX_AGE = 60 * 60 * 24 * 30;
 
 // Once a login is set, changing it takes the current password — the API checks
-// it. Setting the FIRST password (Brain keeps none yet) is allowed only in the
-// explicit WEB_OPEN_MODE=true, so an anonymous first visitor can never claim a
-// fresh deployment; otherwise the owner sets it via WEB_BASIC_AUTH or the API.
+// it. Setting the FIRST password (Brain keeps none yet) is allowed only in open
+// mode (a loopback-only dashboard opened from this machine, or WEB_OPEN_MODE=true),
+// so an anonymous visitor can never claim a fresh public deployment; otherwise
+// the owner sets it via WEB_BASIC_AUTH or the API.
 // Never when the dashboard runs on demo data or WEB_BASIC_AUTH.
 async function blocked(): Promise<ActionResult | null> {
   if (!apiConfigured) return { ok: false, message: "Connect the Brain API first — there is nothing to protect on demo data." };
@@ -24,8 +25,8 @@ async function blocked(): Promise<ActionResult | null> {
   if (state.kind === "env") return { ok: false, message: "Sign-in is set by WEB_BASIC_AUTH in the deployment environment — change it there." };
   if (state.kind === "misconfigured") return { ok: false, message: state.reason };
   if (state.kind !== "brain") return { ok: false, message: "Brain is unreachable right now, so the login can’t be changed." };
-  if (state.mode === "open" && !openMode())
-    return { ok: false, message: "No login is set and WEB_OPEN_MODE is off — set the first password via WEB_BASIC_AUTH or the Brain API." };
+  if (state.mode === "open" && !openMode((await headers()).get("host")))
+    return { ok: false, message: "No login is set and this dashboard is reachable beyond this machine — set the first password via WEB_BASIC_AUTH or the Brain API, or open the dashboard on 127.0.0.1." };
   return null;
 }
 
@@ -67,8 +68,8 @@ export async function disableWebLogin(input: { currentPassword: string }): Promi
   const stop = await blocked();
   if (stop) return stop as ActionResult<LoginReply>;
   // Without open mode, no login means a locked dashboard — including for this browser.
-  if (!openMode())
-    return { ok: false, message: "Removing the password would lock the dashboard for everyone (WEB_OPEN_MODE is off). Change the password instead." };
+  if (!openMode((await headers()).get("host")))
+    return { ok: false, message: "Removing the password would lock the dashboard for everyone (it is reachable beyond this machine). Change the password instead." };
   const res = await brainSend<LoginReply>("POST", "/api/web-login/disable", { current_password: input.currentPassword });
   if (!res.ok || !res.data) return { ok: false, message: res.error ?? "Brain didn’t confirm the change." };
   await keepThisBrowserSignedIn(res.data);

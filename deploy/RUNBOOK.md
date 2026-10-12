@@ -24,20 +24,11 @@ ${PROJECT_BRAIN_RELEASE_ROOT:-/opt/project-brain}/
   apps/web/                    # Next.js app, deployed separately on Vercel
 ```
 
-The managed VPS provider currently uses a release root inside the deploy
-account's home — `~/project-brain`, not `/opt/project-brain`. Its host name,
-login and key are deliberately uncommitted; take them from your SSH config or
-the private ops notes. `check_no_stale_terms` in `deploy/doctor.sh` fails the
-build when that identity appears in a tracked file, so do not paste it back
-into this runbook.
+The release root can also live inside the deploy account's home (for example
+`~/project-brain`); everything below works the same either way.
 
-If SSH is refused there, re-check the user name before suspecting the network.
-The login is neither `root` nor a generic service account, and a rejected
-guess is a wrong user name rather than a blocked port — do not diagnose it as
-a local firewall and abandon an otherwise healthy deploy.
-
-That host receives immutable `git archive` releases and records the exact SHA
-in `.project-brain-release`; there is intentionally no `.git` directory on it.
+The recommended flow ships immutable `git archive` releases and records the exact SHA
+in `.project-brain-release`; there is no `.git` directory on the host.
 Build/start it with `bash deploy/server_up.sh` so image labels and
 `/api/version` keep the same release SHA and source digest.
 
@@ -142,7 +133,9 @@ Read public hosts from `.env`:
 
 ```bash
 set -a && . ./.env && set +a
-echo "Brain: https://${BRAIN_PUBLIC_HOST}/health"
+echo "Brain: https://${BRAIN_PUBLIC_HOST}/api/version"
+# /health and /ready answer publicly only with a valid X-API-Key (404 otherwise);
+# read them on the host via 127.0.0.1:${BRAIN_API_PORT:-8010}.
 ```
 
 ## Alerts and first response
@@ -236,6 +229,16 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+The vhost has a `location = /mcp` block for the native MCP endpoint: SSE needs
+`proxy_buffering off` and a long read timeout. On a host whose vhost predates it,
+copy that block into the TLS `server` that certbot generated (or refresh the file as
+above and run certbot again). Without it, MCP calls still work but events arrive
+late and idle streams drop after 120s.
+
+With `BRAIN_PUBLIC_HOST` set, `/mcp` also serves OAuth for clients that cannot be
+given a key (see the README's MCP section). Set `BRAIN_PUBLIC_URL` to override the
+issuer URL.
+
 Issue or renew certificates:
 
 ```bash
@@ -263,7 +266,8 @@ then verify Overview, Activity, Reports, Get Started and a second repository's
 Indexing and Code Map. Check both desktop and mobile widths for overflow.
 The UI has no mutation controls; repair with the CLI commands in DEPLOYMENT.md.
 
-Check the self-hosted API's `/health` and `/api/version`, and confirm
+Check the self-hosted API's `/api/version` (public) and `/health` (on the host,
+or publicly with `X-API-Key`), and confirm
 `/dashboard/` redirects to the configured `BRAIN_WEB_URL`. The Vercel project
 Root Directory must be `apps/web`. A successful deployment must match the
 release commit; an older READY deployment is insufficient.

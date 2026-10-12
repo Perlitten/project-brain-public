@@ -73,7 +73,7 @@ def late_interaction_requested(repository_id: int | None, query: str) -> bool:
 
 
 def infer_query_language(query: str) -> str:
-    if re.search(r"[А-Яа-яЁё]", query):
+    if re.search(r"[\u0400-\u04FF]", query):  # Cyrillic block
         return "ru"
     if re.search(r"[A-Za-z]", query):
         return "en"

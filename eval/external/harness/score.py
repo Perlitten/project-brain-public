@@ -11,6 +11,7 @@ import argparse
 import glob
 import json
 import math
+import os
 import random
 from pathlib import Path
 
@@ -18,7 +19,7 @@ SEED = 20261006
 BOOT_B = 10_000
 KS = (1, 5, 10, 30)
 
-REPOS_DIR = Path("/home/ubuntu/eval_external/repos")
+REPOS_DIR = Path(os.environ.get("EVAL_DIR", str(Path.home() / "eval_external"))) / "repos"
 
 
 def _repo_dir(repo: str) -> Path:

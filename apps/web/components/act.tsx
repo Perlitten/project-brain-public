@@ -144,7 +144,7 @@ function JobToast({ t }: { t: Toast }) {
   }, [t.job, t.id, router]);
 
   const done = snap?.done;
-  const tone: Tone = done ? (snap.ok ? "ok" : "bad") : "info";
+  const tone: Tone = done ? (snap.ok ? "ok" : "bad") : snap?.stalled ? "warn" : "info";
   const pct = snap?.progress;
   return (
     <div className={`toast tone-${tone}`} role="status">

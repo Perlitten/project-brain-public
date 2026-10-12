@@ -716,7 +716,7 @@ class HarnessStore:
 
     @staticmethod
     def _acceptance_public_key() -> Ed25519PublicKey:
-        public_hex = os.environ.get("NOSTIA_HARNESS_ACCEPTANCE_PUBLIC_KEY", "")
+        public_hex = os.environ.get("BRAIN_HARNESS_ACCEPTANCE_PUBLIC_KEY", "")
         try:
             return Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_hex))
         except ValueError as exc:

@@ -9,7 +9,7 @@ from brain.routing.policy_engine import SelectivePolicyEngine
 
 def run_selective_evaluation():
     engine = SelectivePolicyEngine()
-    repo_root = Path("d:/Brain/project-brain")
+    repo_root = Path(__file__).resolve().parents[2]
 
     results_dir = repo_root / "reports" / "v0.5.3-selective-product" / "selective-holdout"
     results_dir.mkdir(parents=True, exist_ok=True)
