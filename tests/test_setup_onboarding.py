@@ -3,6 +3,8 @@ and the /api/setup surface — all faked at the session/settings boundary."""
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 with (
@@ -123,7 +125,7 @@ def test_envfile_rejects_multiline_values(tmp_path):
 
 
 def _collect(*, health=None, repo=None, run=None, packs=None, total_packs=None,
-             state=None, client_activity=None, milestone=None):
+             state=None, client_activity=None, milestone=None, worker=None, indexed_repos=None):
     """Drive collect_setup_status with a fake session: get_repository_by_path
     opens its own session (patched directly), then the IndexingRun list, the
     repo-scoped pack list and the total pack count run on the shared factory
@@ -131,7 +133,7 @@ def _collect(*, health=None, repo=None, run=None, packs=None, total_packs=None,
     packs = packs or []
     if total_packs is None:
         total_packs = len(packs)
-    queries = [_result(scalar=total_packs)]
+    queries = [_result(scalar=total_packs), _result(scalars_all=indexed_repos or [])]
     if repo is not None:
         queries.insert(0, _result(scalars_all=packs))
         runs = run if isinstance(run, list) else ([run] if run else [])
@@ -140,6 +142,9 @@ def _collect(*, health=None, repo=None, run=None, packs=None, total_packs=None,
     session.execute.side_effect = queries
     with (
         patch.object(readiness, "check_health", new=AsyncMock(return_value=health or _healthy())),
+        patch.object(
+            readiness, "worker_liveness", new=AsyncMock(return_value=worker or {"running": True, "hint": ""})
+        ),
         patch.object(readiness, "async_session_factory", new=_factory_for(session)),
         patch.object(readiness, "get_repository_by_path", new=AsyncMock(return_value=repo)),
         patch.object(readiness, "resolve_repo_path", return_value="/repos/brain") as resolver,
@@ -161,6 +166,60 @@ def test_readiness_blocked_services_is_first_action():
     assert steps["services"]["status"] == "blocked"
     assert status["next_step"] == "services"
     assert status["first_use_complete"] is False
+
+
+def test_readiness_missing_worker_blocks_services_with_a_start_hint(tmp_path):
+    from brain.workers.queue import WORKER_START_HINT
+
+    status = _collect(
+        repo=_repo(), run=_indexing_run(), packs=[_pack(tmp_path)],
+        worker={"running": False, "hint": WORKER_START_HINT},
+    )
+    steps = {s["id"]: s for s in status["steps"]}
+    assert steps["services"]["status"] == "blocked"
+    assert "Worker is not running. Start it with `./scripts/start.sh`" in steps["services"]["detail"]
+    assert steps["services"]["hint"] == "python -m brain.workers.worker"
+    assert steps["services"]["worker"] == {"running": False}
+    assert status["next_step"] == "services"
+
+
+def test_readiness_unreadable_worker_heartbeat_is_not_reported_as_running():
+    # collect_setup_status passes None when the heartbeat can't be read.
+    services = readiness._services_step(_healthy(), None)
+    assert services["status"] == "blocked"
+    assert services["worker"] == {"running": False}
+
+
+def _indexed(path, name="other"):
+    return SimpleNamespace(name=name, path=path)
+
+
+def test_readiness_repo_step_lists_indexed_repositories_and_flags_a_mismatch():
+    # TARGET_REPO_PATH was never indexed, but the user indexed another repo with the CLI.
+    status = _collect(indexed_repos=[_indexed("/home/u/app", "app")])
+    repo = {s["id"]: s for s in status["steps"]}["repo"]
+    assert repo["status"] == "action"
+    assert repo["indexed_repositories"] == [{"name": "app", "path": "/home/u/app"}]
+    assert "it is not indexed, but 1 other repository is: /home/u/app" in repo["detail"]
+    assert repo["hint"] == "pick the repository you indexed, or index this one"
+    assert status["next_step"] == "repo"
+
+
+def test_readiness_repo_step_done_when_the_selected_repository_is_indexed(tmp_path):
+    status = _collect(
+        repo=_repo(), run=_indexing_run(), packs=[_pack(tmp_path)],
+        indexed_repos=[_indexed("/repos/brain", "brain"), _indexed("/home/u/app", "app")],
+    )
+    repo = {s["id"]: s for s in status["steps"]}["repo"]
+    assert repo["status"] == "done"
+    assert len(repo["indexed_repositories"]) == 2
+
+
+def test_readiness_repo_step_names_the_sample_source():
+    with patch.object(readiness, "get_repo_root", return_value=Path("/repos/brain")):
+        repo = readiness._repo_step(Path("/repos/brain"), [], selected_indexed=False)
+    assert repo["status"] == "done"
+    assert repo["detail"].endswith("Project Brain's own source, used as a sample")
 
 
 def test_readiness_first_use_complete_when_a_pack_exists(tmp_path):
@@ -310,12 +369,25 @@ def test_readiness_unindexed_repo_guides_to_index():
     assert steps["first_task"]["status"] == "blocked"
 
 
-def test_readiness_mock_providers_need_no_keys():
+def test_readiness_mock_providers_need_no_keys_but_stay_a_warning():
+    """Mock runs without keys, but its results mean nothing — the step must not
+    read as finished, and it must name the free way to real results."""
     status = _collect()
     provider = next(s for s in status["steps"] if s["id"] == "provider")
-    assert provider["status"] == "done"
-    assert "mock" in provider["detail"]
+    assert provider["status"] == "action"
+    assert provider["mock"] is True
+    assert "smoke test only, results not meaningful" in provider["detail"]
+    assert "ollama pull nomic-embed-text" in provider["hint"]
     assert provider["llm"]["state"] == "demo"
+
+
+def test_readiness_verified_providers_are_done(monkeypatch):
+    verified = {"provider": "openai", "state": "verified", "detail": "openai — verified"}
+    monkeypatch.setattr(readiness, "provider_state", lambda *_: dict(verified))
+    provider = readiness._provider_step()
+    assert provider["status"] == "done"
+    assert provider["mock"] is False
+    assert provider["hint"] == ""
 
 
 def test_readiness_agent_step_needs_a_self_check():

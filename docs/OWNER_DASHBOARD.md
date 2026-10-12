@@ -55,8 +55,10 @@ from your own benchmark run (schema version 1; see `tests/fixtures/quality_evide
 for the shape). It carries SHA256 source provenance, the measured search/context build
 identities, the golden corpus hash, sample counts and limitations. It is historical
 evidence, independent of the dashboard period. Nothing ships by default: until the file
-exists the endpoint returns HTTP 503 and the dashboard shows "Benchmark measurements
-unavailable". Malformed files also return 503. Saved reports remain available for
+exists the endpoint returns `{"available": false, "reason": "not_run"}` and the dashboard
+shows "No benchmark run yet" with a "Run the benchmark" button. A file with
+`"reference_run": true` is labelled "Reference run by maintainers". Malformed files
+return 503. Saved reports remain available for
 further evaluations.
 
 Usefulness and token/time/cost savings remain not measured until comparable task

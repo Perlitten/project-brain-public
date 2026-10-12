@@ -58,7 +58,7 @@ export async function verifyProviders(): Promise<ActionResult<{ llm?: ProbeSide;
     timeoutMs: 60_000,
     success: (d) => {
       const say = (name: string, s?: ProbeSide) =>
-        !s ? "" : s.state === "verified" ? `${name} works` : s.state === "demo" ? `${name} is in demo mode` : `${name} failed: ${s.detail ?? s.state}`;
+        !s ? "" : s.state === "verified" ? `${name} works` : s.state === "demo" ? `${name} is the mock (smoke test only, results not meaningful)` : `${name} failed: ${s.detail ?? s.state}`;
       return [say("Language model", d.llm), say("Embeddings", d.embedding)].filter(Boolean).join(" · ") || "Providers checked.";
     },
     revalidate: SETUP,

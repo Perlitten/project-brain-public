@@ -33,12 +33,48 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Quality on a fresh install shows "No benchmark run yet" with a "Run the
+  benchmark" button instead of "measurements unavailable"
+  (`/api/web/quality` returns `{"available": false, "reason": "not_run"}`
+  rather than HTTP 503 when no evidence file exists). A shipped evidence file
+  with `"reference_run": true` is labelled "Reference run by maintainers". The
+  period-selector note appears only on the overview, which has one.
+- The mock provider is labelled "smoke test only, results not meaningful" in
+  Setup, `brain doctor`, `.env.example` and the README, each with the one-line
+  keyless path to real results (Ollama `nomic-embed-text`). Setup's "Connect
+  AI models" step stays a warning on mock instead of turning green.
+
+- Setup's "Choose the code to read" step lists the repositories Brain has
+  actually indexed and makes one the active repository in a click. When
+  `TARGET_REPO_PATH` was never indexed but another repository was (for example
+  with `brain index --repo`), the step says so instead of reporting done; the
+  default sample (Brain's own source) is labelled as such.
+- `scripts/start.sh` starts the API, the worker and the web dashboard in one
+  terminal; `scripts/bootstrap.sh` lists all three in its "Next" output, writes
+  `--repo` into `TARGET_REPO_PATH`, and says so when it falls back to Brain's
+  own source as a sample repository.
+- `/health` reports worker liveness (`worker.running`, from the heartbeat each
+  worker keeps in Redis). Without a worker, Setup blocks "Start Brain's
+  services", the sidebar shows "worker down", and a queued job's toast says
+  "Worker is not running. Start it with …" instead of waiting silently.
+- First run: with no sign-in configured, the web dashboard opens without a
+  password when it listens on loopback and is opened from this machine
+  (`npm run dev` / `npm run start` now bind `127.0.0.1`; change it with
+  `WEB_HOST`). Any other address, or a same-host reverse proxy that forwards a
+  public `Host`, stays locked. `WEB_OPEN_MODE=false` locks loopback too.
 - Telegram alert messages are in English.
 - The web proxy returns a JSON 503 when the Brain API is unreachable.
 - Release docs moved from `docs/release/0.9.0-rc1/` to `docs/release/0.9.0/`;
   historical design docs, benchmark results and pre-release reports removed.
 
 ### Fixed
+
+- Lexical search finds code by the identifiers a query names: CamelCase and
+  snake_case identifiers are kept whole and split into their words
+  (`HTTPAdapter` → `httpadapter`, `http`, `adapter`), and a file that defines a
+  symbol the query names leads the file channel, so "HTTPAdapter" returns
+  `adapters.py`. Identifiers with underscores or trailing digits are no longer
+  dropped from the keyword list.
 
 - The NVIDIA embedding provider no longer fails on code that contains a
   `data:image/...;base64,` literal. NIM parsed it as an image input and

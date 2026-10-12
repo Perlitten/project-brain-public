@@ -22,7 +22,7 @@ from brain.late_interaction.operator_status import (
 from brain.late_interaction.provider import LfmColbertProvider
 from brain.llm.presets import llm_provider_ready
 from brain.version import build_info
-from brain.workers.queue import worker_pool_status
+from brain.workers.queue import worker_liveness, worker_pool_status
 
 router = APIRouter()
 
@@ -38,10 +38,17 @@ async def health_check():
     except Exception as exc:  # noqa: BLE001 — Redis down is already reported in details
         scheduler = {"error": f"{type(exc).__name__}: {exc}", "stale": [], "jobs": []}
     status = "error" if not is_healthy else "degraded" if scheduler.get("stale") else "ok"
+    try:
+        worker: dict[str, Any] = await worker_liveness(
+            redis_client, settings.WORKER_REDIS_PREFIX, pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED
+        )
+    except Exception as exc:  # noqa: BLE001 — Redis down is already reported in details
+        worker = {"running": None, "pools": None, "hint": "", "error": type(exc).__name__}
     return {
         "status": status,
         "version": __version__,
         "details": details,
+        "worker": worker,
         "scheduler": {
             "enabled": scheduler.get("enabled"),
             "stale": scheduler.get("stale", []),

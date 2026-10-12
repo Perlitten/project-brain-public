@@ -34,7 +34,7 @@ export default async function Quality({ searchParams }: { searchParams: Promise<
       <PageHead
         title="Quality"
         lede="Whether Brain finds the right code. Measured by asking questions whose right answers are known, not from live traffic — live request success is on Activity."
-        actions={<RunButton action={startBenchmark} label="Run the test again" icon="play" title="Run search benchmark" />}
+        actions={<RunButton action={startBenchmark} label="Run the benchmark" icon="play" title="Run search benchmark" />}
       />
       <SectionTabs section="quality" active="/quality" />
       <PageTabs
