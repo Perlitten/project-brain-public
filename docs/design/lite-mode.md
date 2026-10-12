@@ -16,10 +16,13 @@ What each service actually does:
 |---|---|---|
 | Postgres + pgvector | All relational state (jobs, memory, repos, chunks) **and** vector search (`vector(N)`/`halfvec(N)` columns, HNSW indexes) | `brain/database/` (async SQLAlchemy + asyncpg), `brain/embeddings/pgvector_sql.py` |
 | Neo4j | Code graph: modules/imports/dependents for `impact`, couplings, architecture rules | `brain/graph/graph_client.py`, `builder_v2.py`, `extractors_v2.py` |
-| Redis | Job queue for worker (`brain/workers/queue.py`), freshness/caches | `brain/workers/`, `brain/config/settings.py` (`REDIS_URL` optional already) |
+| Redis | Job queue for worker (`brain/workers/queue.py`), freshness/caches | `brain/workers/`, `brain/config/settings.py` (`REDIS_URL` is derived from host/port when omitted) |
 
-Important: `REDIS_URL` is already `Optional` — the queue degrades, and jobs
-can run in-process. So the queue is not the hard part; the two databases are.
+Important: Redis is currently required at runtime. Although `REDIS_URL` is
+typed as optional, the settings validator derives a URL from `REDIS_HOST` and
+`REDIS_PORT`; `brain/database/session.py` asserts the resulting URL and the job
+queue is Redis-backed. There is no in-process fallback today, so lite mode must
+either retain Redis or implement and test a replacement queue/scheduler path.
 
 ## Option A — SQLite + sqlite-vec, in-process everything (the "single file")
 
@@ -73,5 +76,6 @@ service that doesn't exist yet — roadmap item, not an install fix.
 2. **Later, only if single-binary is a stated goal:** Option A as a real
    project with a lite dialect — do NOT sneak it in as a config flag; it
    needs its own test matrix and doc.
-3. Keep `REDIS_URL` optional semantics — the in-process fallback already
-   exists and is the right pattern for lite.
+3. Treat removing Redis as explicit implementation work: add an in-process
+   queue/scheduler path with its own concurrency, durability, and test limits,
+   or keep Redis in the supported lite topology.
