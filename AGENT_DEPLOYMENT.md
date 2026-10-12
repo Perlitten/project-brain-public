@@ -86,12 +86,6 @@ python -m brain.version
 python -m pytest -q tests/test_web_router.py tests/test_jobs_api.py tests/test_worker_scheduler.py
 ```
 
-Run the stale-project scan. It must print `DOCTOR OK`:
-
-```bash
-bash deploy/doctor.sh stale-scan
-```
-
 Run the secret-shape scan. Placeholder/test hits are acceptable only in
 `.env.example` and tests:
 

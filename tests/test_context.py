@@ -48,23 +48,23 @@ def test_context_pack_protection_respects_abstention():
 
 
 def test_decision_scope_clause_includes_global_and_matching_repo():
-    statement = str(_decision_scope_clause("/indexed/Eunoia/").compile(compile_kwargs={"literal_binds": True}))
+    statement = str(_decision_scope_clause("/indexed/docs-site/").compile(compile_kwargs={"literal_binds": True}))
 
     assert "decisions.repo_path IS NULL" in statement
-    assert "lower(trim(decisions.repo_path)) = '/indexed/eunoia'" in statement
+    assert "lower(trim(decisions.repo_path)) = '/indexed/docs-site'" in statement
 
 
 def test_rule_scope_clause_includes_global_and_matching_repo():
-    statement = str(_rule_scope_clause("/indexed/Eunoia/").compile(compile_kwargs={"literal_binds": True}))
+    statement = str(_rule_scope_clause("/indexed/docs-site/").compile(compile_kwargs={"literal_binds": True}))
 
     assert "rules.repo_path IS NULL" in statement
-    assert "lower(trim(rules.repo_path)) = '/indexed/eunoia'" in statement
+    assert "lower(trim(rules.repo_path)) = '/indexed/docs-site'" in statement
 
 
 @pytest.mark.asyncio
 async def test_active_normative_memory_is_loaded_fresh_and_scoped():
     active_rule = SimpleNamespace(name="global rule")
-    scoped_decision = SimpleNamespace(title="Nostia decision")
+    scoped_decision = SimpleNamespace(title="Scoped decision")
     rules_result = MagicMock()
     rules_result.scalars.return_value.all.return_value = [active_rule]
     decisions_result = MagicMock()
@@ -78,7 +78,7 @@ async def test_active_normative_memory_is_loaded_fresh_and_scoped():
         "brain.context.context_pack_builder.async_session_factory",
         session_factory,
     ):
-        rules, decisions = await _load_active_normative_memory("/indexed/Eunoia")
+        rules, decisions = await _load_active_normative_memory("/indexed/docs-site")
 
     assert rules == [active_rule]
     assert decisions == [scoped_decision]

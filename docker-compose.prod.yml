@@ -118,10 +118,6 @@ services:
       - ./context_packs:/app/context_packs
       - ${BRAIN_INDEXED_PROJECTS_DIR:-./indexed-projects}:/indexed:ro
       - ${BRAIN_TARGET_REPO_DIR:-./target-repo}:/repo:ro
-      - ${BRAIN_NOSTIA_DIR:-./repos/nostia}:/repos/nostia:ro
-      - ${BRAIN_NOSTIA_VAULT_DIR:-./repos/nostia-vault}:/repos/nostia-vault:ro
-      - ${BRAIN_NOSTIA_MEMORY_DIR:-./repos/nostia-memory}:/repos/nostia-memory:ro
-      - ${BRAIN_NOSTIA_SITE_DIR:-./repos/nostia-site}:/repos/nostia-site:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -185,10 +181,6 @@ services:
       - ./context_packs:/app/context_packs
       - ${BRAIN_INDEXED_PROJECTS_DIR:-./indexed-projects}:/indexed:ro
       - ${BRAIN_TARGET_REPO_DIR:-./target-repo}:/repo:ro
-      - ${BRAIN_NOSTIA_DIR:-./repos/nostia}:/repos/nostia:ro
-      - ${BRAIN_NOSTIA_VAULT_DIR:-./repos/nostia-vault}:/repos/nostia-vault:ro
-      - ${BRAIN_NOSTIA_MEMORY_DIR:-./repos/nostia-memory}:/repos/nostia-memory:ro
-      - ${BRAIN_NOSTIA_SITE_DIR:-./repos/nostia-site}:/repos/nostia-site:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -42,6 +42,8 @@ export function measuredNumber(value: number | null | undefined, suffix = ""): s
 
 export interface QualityEvidence {
   historical: boolean;
+  /** Measured by the maintainers on Brain's own source and shipped with it. */
+  reference_run?: boolean;
   generated_at: string | null;
   source: { build_sha: string; corpus_sha256: string; search_sample_count: number; context_fixture_count: number; provenance: { artifact: string; measured_build_sha: string; sha256: string }[] };
   search: { hit1_any_pct: number; hit3_any_pct: number; hit5_any_pct: number; mrr_any: number };
@@ -49,10 +51,18 @@ export interface QualityEvidence {
   quality_limits: { native_tasks_passed: number; native_task_count: number; native_precision: number; native_recall: number };
 }
 
-export async function getQualityEvidence(): Promise<QualityEvidence | null> {
+/** No benchmark has been saved on this install yet. */
+export interface QualityNotRun {
+  available: false;
+  reason: "not_run";
+}
+export const qualityNotRun = (e: QualityEvidence | QualityNotRun | null): e is QualityNotRun =>
+  Boolean(e && (e as QualityNotRun).available === false);
+
+export async function getQualityEvidence(): Promise<QualityEvidence | QualityNotRun | null> {
   await connection();
   if (!apiConfigured) return null;
-  return brainFetch<QualityEvidence>("/api/web/quality", { fresh: true });
+  return brainFetch<QualityEvidence | QualityNotRun>("/api/web/quality", { fresh: true });
 }
 
 // Whether Brain is worth having: adoption per agent, pack economy, and

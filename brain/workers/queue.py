@@ -81,6 +81,29 @@ async def worker_pool_status(
     return result
 
 
+WORKER_START_HINT = (
+    "Worker is not running. Start it with `./scripts/start.sh` "
+    "(or `python -m brain.workers.worker`; `docker compose up -d worker` when Brain runs in Docker)."
+)
+
+
+async def worker_liveness(redis: Redis, base_prefix: str, *, pools_enabled: bool) -> dict[str, Any]:
+    """Is any worker alive to pick queued jobs up? Read from the heartbeat each
+    worker refreshes in Redis (WORKER_HEARTBEAT_TTL_SECONDS); a missing key
+    means no worker has reported within that window."""
+    pools = WORKER_POOLS if pools_enabled else ("maintenance",)
+    seen: dict[str, bool] = {}
+    for pool in pools:
+        key = f"{worker_pool_prefix(base_prefix, pool, enabled=pools_enabled)}:heartbeat"
+        seen[pool] = bool(await redis.get(key))
+    running = all(seen.values())
+    return {
+        "running": running,
+        "pools": seen if pools_enabled else None,
+        "hint": "" if running else WORKER_START_HINT,
+    }
+
+
 class QueueDepthExceeded(RuntimeError):
     """Raised when enqueue would push the queue past WORKER_QUEUE_MAX_DEPTH."""
 

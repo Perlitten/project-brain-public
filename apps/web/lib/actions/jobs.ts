@@ -26,12 +26,19 @@ export async function getJob(id: string): Promise<JobSnapshot | null> {
   const phase = typeof progress.phase === "string" ? progress.phase : typeof progress.stage === "string" ? progress.stage : undefined;
   const stage = phase ? (seen > 0 ? `${phase} · ${doneFiles}/${seen} files` : phase) : typeof progress.message === "string" ? progress.message : undefined;
   const err = typeof job.error === "string" && job.error ? job.error : undefined;
+  // A job that stays queued with no worker alive would wait forever: say so.
+  let waiting: string | undefined;
+  if (status === "queued") {
+    const worker = (await brainFetch<Record<string, unknown>>("/health", { fresh: true }))?.worker as Record<string, unknown> | undefined;
+    if (worker?.running === false) waiting = typeof worker.hint === "string" && worker.hint ? worker.hint : "Worker is not running.";
+  }
   return {
     id,
     status,
     done: FINISHED.has(status),
     ok: status === "completed",
-    detail: err ?? stage,
+    detail: err ?? waiting ?? stage,
+    stalled: Boolean(waiting),
     progress: pct,
   };
 }

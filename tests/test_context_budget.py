@@ -11,7 +11,7 @@ def _encoded_size(value: dict) -> int:
 
 
 def test_truncate_utf8_is_valid_deterministic_and_never_over_budget():
-    source = "alpha🙂бета" * 20
+    source = "alpha🙂ßété" * 20
     for limit in range(0, 80):
         first = truncate_utf8(source, limit)
         second = truncate_utf8(source, limit)

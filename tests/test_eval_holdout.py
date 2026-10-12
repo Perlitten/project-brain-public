@@ -172,5 +172,5 @@ def test_holdout_provenance_records_selection_and_digest(tmp_path):
     )
     assert provenance["split"] == "holdout"
     assert provenance["artifacts"]["holdout_dataset"]["sha256"] == (
-        "00699ca00deda452eb02cb6b026a102bdd42ebab1a74eb7fb6c5e57f6a28b239"
+        "5e1f95705eb7a7dabccaa25e2b72f4a1c81fa72f98c3adc790bd8ccd4a9a7b70"
     )

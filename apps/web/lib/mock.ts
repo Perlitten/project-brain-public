@@ -25,8 +25,8 @@ import type {
 
 export const repositories: Repository[] = [
   { id: 1, slug: "project-brain", name: "project-brain", path: "/srv/repos/project-brain", branch: "master", head: "d57f014", behind: 3 },
-  { id: 2, slug: "mycelium", name: "MYCELIUM", path: "/srv/repos/MYCELIUM", branch: "main", head: "b113aca", behind: 0 },
-  { id: 3, slug: "forex-bot", name: "forex-bot", path: "/srv/repos/forex-bot", branch: "master", head: "bec759d", behind: 0 },
+  { id: 2, slug: "docs-site", name: "docs-site", path: "/srv/repos/docs-site", branch: "main", head: "b113aca", behind: 0 },
+  { id: 3, slug: "mobile-app", name: "mobile-app", path: "/srv/repos/mobile-app", branch: "master", head: "bec759d", behind: 0 },
   { id: 4, slug: "billing-service", name: "billing-service", path: "/srv/repos/billing-service", branch: "main", head: "9f949e9", behind: 41 },
 ];
 
@@ -114,8 +114,8 @@ export function corpus(repo: Repository): Corpus {
 export const jobs: Job[] = [
   { id: "j-8841", kind: "index.incremental", status: "running", repo: "project-brain", startedAt: "14:02:11", detail: "14 / 31 files" },
   { id: "j-8840", kind: "embeddings.backfill", status: "queued", repo: "project-brain", startedAt: "14:02:11" },
-  { id: "j-8839", kind: "context_pack.build", status: "completed", repo: "MYCELIUM", startedAt: "13:58:40", duration: "4.2s" },
-  { id: "j-8838", kind: "graph.sync", status: "retrying", repo: "forex-bot", startedAt: "13:51:02", detail: "neo4j timeout · attempt 2/5" },
+  { id: "j-8839", kind: "context_pack.build", status: "completed", repo: "docs-site", startedAt: "13:58:40", duration: "4.2s" },
+  { id: "j-8838", kind: "graph.sync", status: "retrying", repo: "mobile-app", startedAt: "13:51:02", detail: "neo4j timeout · attempt 2/5" },
   { id: "j-8836", kind: "eval.golden_tasks", status: "failed", repo: "project-brain", startedAt: "13:20:47", duration: "2m 14s", detail: "3 of 48 tasks regressed" },
 ];
 
@@ -213,7 +213,7 @@ export const reports: Report[] = [
 ];
 
 export const principals: Principal[] = [
-  { id: "p-1", name: "andrei", kind: "human", scopes: ["*"], lastSeen: "now", credentials: 1 },
+  { id: "p-1", name: "admin", kind: "human", scopes: ["*"], lastSeen: "now", credentials: 1 },
   { id: "p-2", name: "claude-code", kind: "agent", scopes: ["core:read", "memory:write"], lastSeen: "13:41", credentials: 2 },
   { id: "p-3", name: "codex", kind: "agent", scopes: ["core:read"], lastSeen: "12:58", credentials: 1 },
   { id: "p-4", name: "ci-bridge", kind: "service", scopes: ["core:read"], lastSeen: "10:40", credentials: 1 },
@@ -222,7 +222,7 @@ export const principals: Principal[] = [
 
 export const identities: Identity[] = [
   {
-    id: 1, name: "andrei", kind: "human", disabled: false, createdAt: "Sep 24", activeKeys: 1, scopes: ["principals:write", "setup:write"], lastSeen: "13:58",
+    id: 1, name: "admin", kind: "human", disabled: false, createdAt: "Sep 24", activeKeys: 1, scopes: ["principals:write", "setup:write"], lastSeen: "13:58",
     keys: [
       { id: 1, scopes: ["principals:write", "setup:write"], status: "active", created: "Sep 24 · 09:12", expires: "never", lastUsed: "13:58", expiringSoon: false, neverUsed: false },
     ],

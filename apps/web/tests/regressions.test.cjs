@@ -20,12 +20,12 @@ function load(file, overrides = {}) {
     return require(name);
   };
   vm.runInNewContext(output, { module, exports: module.exports, require: requireModule,
-    process, Buffer, Response, URL, URLSearchParams, AbortSignal, console, fetch: global.fetch }, { filename });
+    process, Buffer, Response, URL, URLSearchParams, AbortSignal, console, performance, fetch: global.fetch }, { filename });
   return module.exports;
 }
 
 function withEnv(values, run) {
-  const names = ['WEB_BASIC_AUTH', 'BRAIN_API_URL', 'BRAIN_API_KEY', 'WEB_OPEN_MODE'];
+  const names = ['WEB_BASIC_AUTH', 'BRAIN_API_URL', 'BRAIN_API_KEY', 'WEB_OPEN_MODE', 'WEB_LOOPBACK_BIND'];
   const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
   for (const name of names) {
     if (values[name] === undefined) delete process.env[name];
@@ -463,6 +463,48 @@ test('half-configured deployments fail closed with a reason instead of falling b
   } finally { global.fetch = oldFetch; console.error = oldError; }
 });
 
+test('open mode: on by default only on a loopback-only dashboard; WEB_OPEN_MODE overrides either way', () => {
+  const { openMode } = load('lib/web-auth.ts');
+  for (const [bind, flag, expected] of [
+    [undefined, undefined, false], ['0', undefined, false], ['1', undefined, true],
+    ['1', 'false', false], ['1', '0', false], ['1', 'true', true], [undefined, 'true', true], ['1', 'junk', true],
+  ]) {
+    withEnv({ WEB_LOOPBACK_BIND: bind, WEB_OPEN_MODE: flag }, () => assert.equal(openMode('localhost:3100'), expected, `${bind}/${flag}`));
+  }
+  // A same-host reverse proxy forwards the public Host: the loopback default must not open it.
+  withEnv({ WEB_LOOPBACK_BIND: '1', WEB_OPEN_MODE: undefined }, () => {
+    for (const host of ['127.0.0.1:3100', 'localhost', '[::1]:3100', '127.1.2.3']) assert.equal(openMode(host), true, host);
+    for (const host of [null, '', 'brain.example.com', 'brain.example.com:443', '10.0.0.5:3100', 'localhost.example.com']) assert.equal(openMode(host), false, String(host));
+  });
+});
+
+test('fresh live install on loopback opens without a password; the same install on a public address stays locked', async () => {
+  const oldFetch = global.fetch;
+  try {
+    global.fetch = fakeBrainLogin({ mode: 'open', user: null, version: '0', from_env: [] }).fetch;
+    const auth = load('lib/web-auth.ts');
+    await withEnv({ BRAIN_API_URL: 'http://127.0.0.1:8000', BRAIN_API_KEY: 'fixture', WEB_LOOPBACK_BIND: '1' }, async () => {
+      assert.equal(await auth.authorizeWebRequest(null, null, '127.0.0.1:3100'), 200);
+      assert.equal(await auth.lockReason('127.0.0.1:3100'), null);
+      assert.equal(await auth.authorizeWebRequest(null, null, 'brain.example.com'), 503);
+      assert.equal((await auth.lockReason('brain.example.com')).reason, 'unconfigured');
+    });
+    await withEnv({ BRAIN_API_URL: 'http://127.0.0.1:8000', BRAIN_API_KEY: 'fixture' }, async () => {
+      assert.equal(await auth.authorizeWebRequest(null, null, '127.0.0.1:3100'), 503);
+      assert.equal((await auth.lockReason('127.0.0.1:3100')).reason, 'unconfigured');
+    });
+  } finally { global.fetch = oldFetch; }
+});
+
+test('serve.mjs binds loopback by default and marks it for web-auth', () => {
+  const src = fs.readFileSync(path.join(root, 'scripts/serve.mjs'), 'utf8');
+  assert.match(src, /\|\| "127\.0\.0\.1"/);
+  assert.match(src, /if \(loopback\) env\.WEB_LOOPBACK_BIND = "1";\s*else delete env\.WEB_LOOPBACK_BIND;/);
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  assert.equal(pkg.scripts.dev, 'node scripts/serve.mjs dev');
+  assert.equal(pkg.scripts.start, 'node scripts/serve.mjs start');
+});
+
 test('WEB_OPEN_MODE accepts only explicit truthy values', () => {
   const { openMode } = load('lib/web-auth.ts');
   for (const [value, expected] of [[undefined, false], ['', false], ['0', false], ['false', false], ['no', false], ['true', true], ['TRUE', true], ['1', true], [' yes ', true]]) {
@@ -470,7 +512,7 @@ test('WEB_OPEN_MODE accepts only explicit truthy values', () => {
   }
 });
 
-test('first password can be set only in WEB_OPEN_MODE, and removing it is refused without it', async () => {
+test('first password can be set only in open mode (loopback from this machine or WEB_OPEN_MODE), and removing it is refused otherwise', async () => {
   const brain = fakeBrainLogin();
   const sent = [];
   const oldFetch = global.fetch;
@@ -478,8 +520,9 @@ test('first password can be set only in WEB_OPEN_MODE, and removing it is refuse
   try {
     const auth = load('lib/web-auth.ts');
     const reply = { mode: 'password', user: 'owner', version: 'v1' };
+    let host = 'brain.example.com';
     const login = load('lib/actions/login.ts', {
-      'next/headers': { cookies: async () => ({ set() {} }), headers: async () => new Headers() },
+      'next/headers': { cookies: async () => ({ set() {} }), headers: async () => new Headers({ host }) },
       'next/cache': { revalidatePath() {} },
       '../api': { apiConfigured: true, brainSend: async (method, path) => { sent.push(`${method} ${path}`); return { ok: true, status: 200, data: reply }; } },
       '../web-auth': auth,
@@ -487,18 +530,30 @@ test('first password can be set only in WEB_OPEN_MODE, and removing it is refuse
     await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' }, async () => {
       const refused = await login.setWebLogin({ user: 'mallory', password: 'hijacked!!' });
       assert.equal(refused.ok, false);
-      assert.match(refused.message, /WEB_OPEN_MODE is off/);
+      assert.match(refused.message, /reachable beyond this machine/);
+      assert.deepEqual(sent, []);
+    });
+    // Loopback bind, but reached through a public Host (same-host reverse proxy): still refused.
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture', WEB_LOOPBACK_BIND: '1' }, async () => {
+      assert.equal((await login.setWebLogin({ user: 'mallory', password: 'hijacked!!' })).ok, false);
       assert.deepEqual(sent, []);
     });
     await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture', WEB_OPEN_MODE: 'true' }, async () => {
       assert.equal((await login.setWebLogin({ user: 'owner', password: 'correct horse' })).ok, true);
       assert.deepEqual(sent, ['PUT /api/web-login']);
     });
+    // Loopback bind opened from this machine: the first password may be set.
+    host = '127.0.0.1:3100';
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture', WEB_LOOPBACK_BIND: '1' }, async () => {
+      assert.equal((await login.setWebLogin({ user: 'owner', password: 'correct horse' })).ok, true);
+      assert.deepEqual(sent, ['PUT /api/web-login', 'PUT /api/web-login']);
+    });
+    host = 'brain.example.com';
     Object.assign(brain.state, reply);
     await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' }, async () => {
       const refused = await login.disableWebLogin({ currentPassword: 'correct horse' });
       assert.equal(refused.ok, false);
-      assert.deepEqual(sent, ['PUT /api/web-login']);
+      assert.deepEqual(sent, ['PUT /api/web-login', 'PUT /api/web-login']);
     });
   } finally { global.fetch = oldFetch; }
 });
@@ -544,6 +599,14 @@ test('robots and metadata: only pure demo may be indexed', () => {
   const layout = fs.readFileSync(path.join(root, 'app/layout.tsx'), 'utf8');
   assert.match(layout, /robots: demo \? \{ index: true, follow: true \} : \{ index: false, follow: false \}/);
   assert.match(layout, /openGraph: \{ title: "Project Brain", description: DESCRIPTION/);
+});
+
+test('setup shows the mock provider as a warning, never as a finished step', () => {
+  const steps = fs.readFileSync(path.join(root, 'components/setup/SetupSteps.tsx'), 'utf8');
+  assert.match(steps, /demo: "warn"/);
+  assert.match(steps, /demo: "mock — smoke test only"/);
+  const actions = fs.readFileSync(path.join(root, 'lib/actions/setup.ts'), 'utf8');
+  assert.match(actions, /smoke test only, results not meaningful/);
 });
 
 test('selected repository scopes indexing and graph requests, and unknown freshness stays unknown', async () => {
@@ -653,4 +716,58 @@ test('list URLs preserve punctuation and validate paging before reaching the API
   for (const page of ['2x', '-1', '0', '9007199254740992']) assert.equal(lists.getListQuery({ page }).page, 1);
   assert.equal(lists.getListQuery({ size: 50 }).size, 50);
   assert.equal(lists.getListQuery({ page_size: '200' }).size, 20);
+});
+
+test('missing worker heartbeat: the rail says the worker is down and a queued job says how to start it', async () => {
+  const hint = 'Worker is not running. Start it with `./scripts/start.sh` (or `python -m brain.workers.worker`; `docker compose up -d worker` when Brain runs in Docker).';
+  let worker = { running: false, pools: null, hint };
+  const replies = {
+    '/health': () => ({ status: 'ok', details: { postgres: { status: 'healthy' } }, scheduler: {}, worker }),
+    '/api/version': () => ({ version: '1.0.0' }),
+    '/api/setup/status': () => ({ steps: [] }),
+    '/jobs/job-1': () => ({ status: 'queued', progress: {} }),
+  };
+  const api = { apiConfigured: true, brainFetch: async (url) => (replies[url] ? replies[url]() : null), brainSend: async () => ({ ok: true, data: {} }) };
+  const { getPulse } = load('lib/actions/pulse.ts', { '../api': api, '../data': { getRepository: async () => ({}) } });
+  const down = await getPulse('');
+  assert.equal(down.healthy, false);
+  assert.deepEqual([...down.down], ['worker']);
+  assert.equal(down.workerHint, hint);
+
+  const jobs = load('lib/actions/jobs.ts', { '../api': api, './gate': { guard: async () => null, mutate: async () => ({ ok: true }) } });
+  const stalled = await jobs.getJob('job-1');
+  assert.equal(stalled.stalled, true);
+  assert.equal(stalled.detail, hint);
+
+  worker = { running: true, pools: null, hint: '' };
+  const up = await getPulse('');
+  assert.equal(up.healthy, true);
+  assert.deepEqual([...up.down], []);
+  assert.equal(up.workerHint, undefined);
+  const waiting = await jobs.getJob('job-1');
+  assert.equal(waiting.stalled, false);
+  assert.equal(waiting.status, 'queued');
+});
+
+test('setup repository step offers the repositories Brain has actually indexed', () => {
+  const { indexedRepositories } = load('lib/setup-copy.ts');
+  const step = { extra: { indexed_repositories: [{ name: 'app', path: '/home/u/app' }, { path: '/home/u/lib' }, { name: 'bad' }, null] } };
+  assert.deepEqual(JSON.parse(JSON.stringify(indexedRepositories(step))), [
+    { name: 'app', path: '/home/u/app' },
+    { name: '/home/u/lib', path: '/home/u/lib' },
+  ]);
+  assert.deepEqual([...indexedRepositories({ extra: {} })], []);
+});
+
+test('quality shows "Run the benchmark" on a fresh install and labels a maintainers\' reference run', () => {
+  const dash = load('lib/dashboard.ts', { 'next/server': { connection: async () => {} }, './api': { apiConfigured: true, brainFetch: async () => null } });
+  assert.equal(dash.qualityNotRun({ available: false, reason: 'not_run' }), true);
+  assert.equal(dash.qualityNotRun(null), false);
+  assert.equal(dash.qualityNotRun({ historical: true }), false);
+  const view = fs.readFileSync(path.join(root, 'components/QualityEvidence.tsx'), 'utf8');
+  assert.match(view, /title="No benchmark run yet"/);
+  assert.match(view, /label="Run the benchmark"/);
+  assert.match(view, /Reference run by maintainers/);
+  // The period selector lives on the overview only; /quality has none to mention.
+  assert.match(view, /compact \? "; the period selector does not change it" : ""/);
 });

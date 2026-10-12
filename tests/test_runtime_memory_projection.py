@@ -69,7 +69,7 @@ async def test_learning_projection_is_scoped_live_relevant_and_bounded(monkeypat
     assert "memory_learnings.repo_scope IS NULL" in sql and "'/app'" in sql
     assert "LIMIT 64" in sql
     session.reset_mock()
-    assert await select_learnings_for_context("что как для", "/app") == []
+    assert await select_learnings_for_context("the and for", "/app") == []
     session.execute.assert_not_awaited()
 
 

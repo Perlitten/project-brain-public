@@ -356,7 +356,7 @@ async def test_decision_store_updates_existing_normalized_title():
         affected_features=None,
         affected_modules=None,
         affected_files=None,
-        repo_path="/indexed/Eunoia",
+        repo_path="/indexed/docs-site",
     )
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = existing
@@ -372,7 +372,7 @@ async def test_decision_store_updates_existing_normalized_title():
     ):
         decision_id = await DecisionStore.add_decision(
             title="  Canonical decision  ",
-            repo_path="/indexed/Eunoia/",
+            repo_path="/indexed/docs-site/",
             description="Current description",
             status="superseded",
         )
@@ -381,7 +381,7 @@ async def test_decision_store_updates_existing_normalized_title():
     assert existing.title == "Canonical decision"
     assert existing.description == "Current description"
     assert existing.status == "superseded"
-    assert existing.repo_path == "/indexed/Eunoia"
+    assert existing.repo_path == "/indexed/docs-site"
     assert existing.date == datetime.date(2026, 6, 1)
     mock_session.add.assert_not_called()
     mock_session.commit.assert_awaited_once()

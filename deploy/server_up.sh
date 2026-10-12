@@ -27,6 +27,11 @@ fi
 
 cd "$(dirname "$0")/.."
 COMPOSE="docker compose -f docker-compose.prod.yml"
+# Optional host-local additions (extra read-only source mounts and the like),
+# kept out of git. See DEPLOYMENT.md, "Indexing more source trees".
+if [[ -f docker-compose.local.yml ]]; then
+    COMPOSE="$COMPOSE -f docker-compose.local.yml"
+fi
 ENV_FILE=".env"
 DEPLOY_ENV_FILE=".deploy.env"
 compose_config_temp=""
@@ -513,7 +518,7 @@ fi
 # the new release actually serves traffic, keeps a rollback window of the most
 # recent BRAIN_IMAGE_RETENTION images, and never touches a tag some container
 # still references or a repository other than brain-api. Anything else on the
-# host (external-brain, n8n, datastores) is out of scope by construction.
+# host (other projects' containers, datastores) is out of scope by construction.
 prune_old_release_images() {
     local keep tag index in_use
     local age_sorted=() removable=()

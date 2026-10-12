@@ -3,7 +3,7 @@
   "historical": true,
   "generated_at": "2026-10-08T01:15:44Z",
   "source": {
-    "artifact": "owner-benchmark-20261008",
+    "artifact": "quality-evidence",
     "provenance": [
       {"artifact": "final-summary.json", "sha256": "7d47cd14032fbed5675266db7d4dcfe60ce8767bfbe4a1cea5e3ffccc58ed7cf", "measured_build_sha": "e00fc52c3f89675259e4b1e5f2f730ff7d928971"},
       {"artifact": "retrieval-1c56.json", "sha256": "ade500a32d7941bd4fd3b661b5b045f8d863a55f6fe59459c778db4cacc1dfd3", "measured_build_sha": "1c56e75b6d6b423e0cd3e840bf70b487c6980e97"},

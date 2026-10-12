@@ -27,10 +27,11 @@ from sqlalchemy import func, select
 
 from brain.config.paths import get_repo_root, resolve_repo_path
 from brain.config.settings import settings
-from brain.database.models import ContextPack, IndexingRun
+from brain.database.models import ContextPack, IndexingRun, Repository
 from brain.database.repository_utils import get_repository_by_path
-from brain.database.session import async_session_factory, check_health
-from brain.onboarding.provider_check import provider_state
+from brain.database.session import async_session_factory, check_health, redis_client
+from brain.onboarding.provider_check import FREE_PROVIDER_HINT, provider_state
+from brain.workers.queue import WORKER_START_HINT, worker_liveness
 from brain.onboarding.setup_state import (
     first_pack_milestone,
     last_client_activity,
@@ -52,52 +53,99 @@ def _provider_status(provider: str, kind: str) -> Dict[str, Any]:
     return state
 
 
-def _services_step(health: Dict[str, Any]) -> Dict[str, Any]:
+def _services_step(health: Dict[str, Any], worker: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Datastores plus the background worker. Without a worker every queued
+    job (indexing, health checks, benchmarks) waits forever, so a missing
+    heartbeat blocks this step just like a down database."""
     unhealthy = {
         name: str((svc or {}).get("status") or "unknown")
         for name, svc in health.items()
         if (svc or {}).get("status") != "healthy"
     }
-    detail = (
-        "postgres, redis and neo4j all healthy"
-        if not unhealthy
-        else "unhealthy: " + ", ".join(f"{k}={v}" for k, v in sorted(unhealthy.items()))
-    )
+    worker_running = bool((worker or {}).get("running"))
+    if unhealthy:
+        detail = "unhealthy: " + ", ".join(f"{k}={v}" for k, v in sorted(unhealthy.items()))
+        hint = "docker compose up -d"
+    elif not worker_running:
+        detail = "postgres, redis and neo4j healthy; " + (
+            (worker or {}).get("hint") or WORKER_START_HINT
+        )
+        hint = "python -m brain.workers.worker"
+    else:
+        detail = "postgres, redis, neo4j and the worker are running"
+        hint = ""
     return {
         "id": "services",
         "title": "Services running",
-        "status": _DONE if not unhealthy else _BLOCKED,
+        "status": _DONE if not unhealthy and worker_running else _BLOCKED,
         "detail": detail,
-        "hint": "docker compose up -d postgres redis neo4j",
+        "hint": hint,
         "services": {name: (svc or {}).get("status") for name, svc in health.items()},
+        "worker": {"running": worker_running},
     }
 
 
-def _repo_step(repo_path: Optional[Path]) -> Dict[str, Any]:
+def _same_path(a: str, b: str) -> bool:
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return a == b
+
+
+def _repo_step(
+    repo_path: Optional[Path],
+    indexed_repos: Optional[list[Dict[str, str]]] = None,
+    selected_indexed: bool = False,
+) -> Dict[str, Any]:
+    """The repository Brain reads (TARGET_REPO_PATH), next to the ones it has
+    actually indexed. Indexing another repository with ``brain index --repo``
+    does not move TARGET_REPO_PATH, so a mismatch is reported here instead of
+    surfacing later as an unexplained "no completed index run"."""
+    indexed_repos = indexed_repos or []
+    step: Dict[str, Any] = {"id": "repo", "title": "Choose a repository", "indexed_repositories": indexed_repos}
+    names = ", ".join(r["path"] for r in indexed_repos[:3])
     if repo_path is None:
-        return {
-            "id": "repo",
-            "title": "Choose a repository",
-            "status": _BLOCKED,
-            "detail": f"TARGET_REPO_PATH ({settings.TARGET_REPO_PATH!r}) is not a directory",
-            "hint": "point it at the repository you work in — save it here or edit .env",
-        }
-    return {
-        "id": "repo",
-        "title": "Choose a repository",
-        "status": _DONE,
-        "detail": str(repo_path),
-        "hint": "",
-    }
+        step.update(
+            {
+                "status": _BLOCKED,
+                "detail": f"TARGET_REPO_PATH ({settings.TARGET_REPO_PATH!r}) is not a directory",
+                "hint": (
+                    f"pick an indexed repository below ({names})"
+                    if indexed_repos
+                    else "point it at the repository you work in — save it here or edit .env"
+                ),
+            }
+        )
+        return step
+    sample = _same_path(str(repo_path), str(get_repo_root()))
+    detail = str(repo_path) + (" — Project Brain's own source, used as a sample" if sample else "")
+    others = [r for r in indexed_repos if not _same_path(r["path"], str(repo_path))]
+    if not selected_indexed and others:
+        step.update(
+            {
+                "status": _ACTION,
+                "detail": f"{detail}; it is not indexed, but {len(others)} other repositor"
+                f"{'y is' if len(others) == 1 else 'ies are'}: {', '.join(r['path'] for r in others[:3])}",
+                "hint": "pick the repository you indexed, or index this one",
+            }
+        )
+        return step
+    step.update({"status": _DONE, "detail": detail, "hint": ""})
+    return step
 
 
 def _provider_step() -> Dict[str, Any]:
     llm = _provider_status(settings.DEFAULT_LLM_PROVIDER, "LLM")
     emb = _provider_status(settings.DEFAULT_EMBEDDING_PROVIDER, "embedding")
-    ok = all(s["state"] in ("demo", "verified") for s in (llm, emb))
+    # Mock is a warning, not a finished step: it runs, but nothing it returns
+    # is meaningful, so the step stays open with the free way out.
+    mock = any(s["state"] == "demo" for s in (llm, emb))
+    ok = all(s["state"] == "verified" for s in (llm, emb))
     unverified = any(s["state"] == "configured" for s in (llm, emb))
     hint = ""
-    if unverified:
+    if mock:
+        hint = FREE_PROVIDER_HINT
+    elif unverified:
         hint = "run Verify provider credentials below — a key present is not a key verified"
     elif not ok:
         hint = "export the provider key in your environment, then restart"
@@ -109,6 +157,7 @@ def _provider_step() -> Dict[str, Any]:
         "hint": hint,
         "llm": llm,
         "embedding": emb,
+        "mock": mock,
     }
 
 
@@ -335,7 +384,13 @@ def _first_task_step(
 
 async def collect_setup_status() -> Dict[str, Any]:
     health = await check_health()
-    services = _services_step(health)
+    try:
+        worker = await worker_liveness(
+            redis_client, settings.WORKER_REDIS_PREFIX, pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED
+        )
+    except Exception:  # noqa: BLE001 — Redis down is already reported by check_health
+        worker = None
+    services = _services_step(health, worker)
 
     try:
         repo_path: Optional[Path] = resolve_repo_path(settings.TARGET_REPO_PATH)
@@ -385,8 +440,18 @@ async def collect_setup_status() -> Dict[str, Any]:
         # Packs not provably built for the selected repository: other-repo
         # packs and unattributed legacy rows (repository_id NULL).
         unattributed = total_packs - len(packs)
+        completed_repo_ids = select(IndexingRun.repository_id).where(IndexingRun.status == "completed")
+        indexed_rows = (
+            await session.execute(
+                select(Repository)
+                .where(Repository.id.in_(completed_repo_ids))
+                .order_by(Repository.updated_at.desc())
+                .limit(20)
+            )
+        ).scalars().all()
+    indexed_repos = [{"name": r.name, "path": r.path} for r in indexed_rows]
 
-    repo = _repo_step(repo_path)
+    repo = _repo_step(repo_path, indexed_repos, selected_indexed=index_commit is not None)
     provider = _provider_step()
     indexed_step = _index_step(repo_path, indexed)
     agent = _agent_step()

@@ -10,10 +10,12 @@ const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
 //      changed only by editing that variable.
 //   2. The login set on Settings → Sign-in, kept by the Brain API
 //      (/api/web-login, scrypt hash in the server's .env).
-//   3. Nothing set: the dashboard stays LOCKED (503 "unconfigured"), so an
-//      anonymous first visitor can neither read data nor set the password.
-//      WEB_OPEN_MODE=true opts in to the old open behaviour (local dev, or
-//      briefly to set the first password from Settings → Sign-in).
+//   3. Nothing set: open mode (anyone gets in and can set the first password
+//      from Settings → Sign-in) when the dashboard listens on loopback only
+//      (`npm run dev` / `npm run start` default, see scripts/serve.mjs), or when
+//      WEB_OPEN_MODE=true. Anywhere else the dashboard stays LOCKED (503
+//      "unconfigured"), so an anonymous visitor can neither read data nor set
+//      the password. WEB_OPEN_MODE=false locks a loopback dashboard too.
 // Without a Brain API (both BRAIN_API_URL and BRAIN_API_KEY unset) the
 // dashboard shows demo data and holds nothing to protect: open.
 // Only one of BRAIN_API_URL / BRAIN_API_KEY set, a malformed WEB_BASIC_AUTH,
@@ -40,8 +42,30 @@ const apiBase = () => process.env.BRAIN_API_URL?.trim();
 const apiKey = () => process.env.BRAIN_API_KEY?.trim();
 const live = () => Boolean(apiBase() && apiKey());
 
-/** WEB_OPEN_MODE=true: no password set means anyone may enter (local dev only). */
-export const openMode = () => /^(1|true|yes|on)$/i.test(process.env.WEB_OPEN_MODE?.trim() ?? "");
+const TRUTHY = /^(1|true|yes|on)$/i;
+const FALSY = /^(0|false|no|off)$/i;
+
+/** Listening on loopback only (set by scripts/serve.mjs): nobody else can reach this dashboard. */
+export const loopbackBind = () => process.env.WEB_LOOPBACK_BIND?.trim() === "1";
+
+/** The request's Host header names this machine (localhost, 127.x.x.x, [::1]). */
+export function localHost(host: string | null | undefined): boolean {
+  const value = (host ?? "").trim().toLowerCase();
+  const name = value.startsWith("[") ? value.slice(1, value.indexOf("]")) : value.replace(/:\d+$/, "");
+  return name === "localhost" || name === "::1" || /^127(\.\d{1,3}){3}$/.test(name);
+}
+
+/**
+ * No password set means anyone may enter: WEB_OPEN_MODE=true, or a loopback-only
+ * dashboard opened by a loopback address, unless WEB_OPEN_MODE=false. A reverse
+ * proxy on the same host forwards its public Host, so it stays locked.
+ */
+export const openMode = (host?: string | null) => {
+  const flag = process.env.WEB_OPEN_MODE?.trim() ?? "";
+  if (TRUTHY.test(flag)) return true;
+  if (FALSY.test(flag)) return false;
+  return loopbackBind() && localHost(host);
+};
 
 // One server-side line per distinct problem, so a broken deployment says why
 // in the logs without flooding them on every request.
@@ -174,23 +198,23 @@ async function verifyWithBrain(user: string, password: string): Promise<{ ok: bo
 }
 
 /** Brain keeps no login and WEB_OPEN_MODE is off: nobody gets in until one is configured. */
-function unconfigured(state: LoginState): boolean {
-  return state.kind === "brain" && state.mode === "open" && !openMode();
+function unconfigured(state: LoginState, host: string | null): boolean {
+  return state.kind === "brain" && state.mode === "open" && !openMode(host);
 }
 
 /** Why the dashboard is answering 503 right now (null: it isn't). */
-export async function lockReason(): Promise<{ reason: LockReason; detail: string } | null> {
+export async function lockReason(host: string | null = null): Promise<{ reason: LockReason; detail: string } | null> {
   const state = await loginState();
   if (state.kind === "misconfigured") return { reason: "misconfigured", detail: state.reason };
   if (state.kind === "unreachable") return { reason: "unreachable", detail: "Brain is not answering, so sign-in can't be checked." };
-  if (unconfigured(state)) return { reason: "unconfigured", detail: UNCONFIGURED_DETAIL };
+  if (unconfigured(state, host)) return { reason: "unconfigured", detail: UNCONFIGURED_DETAIL };
   return null;
 }
 
 export const UNCONFIGURED_DETAIL =
-  "No dashboard sign-in is configured. Set WEB_BASIC_AUTH=user:password in the dashboard's environment, or set a login through the Brain API (PUT /api/web-login), or start with WEB_OPEN_MODE=true to set one from Settings → Sign-in (local development only).";
+  "No dashboard sign-in is configured. Set WEB_BASIC_AUTH=user:password in the dashboard's environment, or set a login through the Brain API (PUT /api/web-login), or open the dashboard on this machine (npm run dev / npm run start listen on 127.0.0.1) to set one from Settings → Sign-in.";
 
-export async function authorizeWebRequest(header: string | null, session: string | null = null): Promise<200 | 401 | 503> {
+export async function authorizeWebRequest(header: string | null, session: string | null = null, host: string | null = null): Promise<200 | 401 | 503> {
   const state = await loginState();
   if (state.kind === "demo") return 200;
   if (state.kind === "misconfigured" || state.kind === "unreachable") return 503;
@@ -205,15 +229,15 @@ export async function authorizeWebRequest(header: string | null, session: string
     }
   }
   if (state.mode === "open") {
-    if (openMode()) return 200;
-    warnOnce("No dashboard sign-in is configured and WEB_OPEN_MODE is off: the dashboard stays locked.");
+    if (openMode(host)) return 200;
+    warnOnce("No dashboard sign-in is configured and the dashboard is reachable beyond this machine: it stays locked.");
     return 503;
   }
   if (session) {
     if (state.user && same(session, brainSession(state.user, state.version))) return 200;
     // The login may have just changed in another instance: look again once.
     const now = await loginState({ fresh: true });
-    if (now.kind === "brain" && now.mode === "open") return openMode() ? 200 : 503;
+    if (now.kind === "brain" && now.mode === "open") return openMode(host) ? 200 : 503;
     if (now.kind === "brain" && now.user && same(session, brainSession(now.user, now.version))) return 200;
   }
   const pair = basicPair(header);
@@ -226,7 +250,7 @@ export async function authorizeWebRequest(header: string | null, session: string
   if (!result.ok) return 401;
   if (result.open) {
     forgetLoginState();
-    return openMode() ? 200 : 503;
+    return openMode(host) ? 200 : 503;
   }
   basicOk.set(key, Date.now());
   return 200;
@@ -235,19 +259,19 @@ export async function authorizeWebRequest(header: string | null, session: string
 export type SignInResult = { status: 401 } | { status: 429 } | { status: 503 } | { status: 200; session: string | null };
 
 /** Checks a sign-in form; on success returns the session cookie value to set. */
-export async function signIn(user: string, password: string): Promise<SignInResult> {
+export async function signIn(user: string, password: string, host: string | null = null): Promise<SignInResult> {
   const state = await loginState();
   if (state.kind === "demo") return { status: 200, session: null };
   if (state.kind === "misconfigured" || state.kind === "unreachable") return { status: 503 };
   if (state.kind === "env") return same(`${user}:${password}`, state.expected) ? { status: 200, session: envSession(state.expected) } : { status: 401 };
-  if (state.mode === "open") return openMode() ? { status: 200, session: null } : { status: 503 };
+  if (state.mode === "open") return openMode(host) ? { status: 200, session: null } : { status: 503 };
   const result = await verifyWithBrain(user, password);
   if (result.throttled) return { status: 429 };
   if (result.down) return { status: 503 };
   if (!result.ok) return { status: 401 };
   if (result.open) {
     forgetLoginState();
-    return openMode() ? { status: 200, session: null } : { status: 503 };
+    return openMode(host) ? { status: 200, session: null } : { status: 503 };
   }
   return { status: 200, session: brainSession(user, result.version ?? state.version) };
 }
