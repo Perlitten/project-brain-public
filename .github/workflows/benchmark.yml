@@ -70,6 +70,8 @@ jobs:
       EMBEDDING_DIMENSION: 1536
       TARGET_REPO_PATH: .
       REPO_ROOT: .
+      # Throwaway key for this ephemeral API; the benchmark client requires one.
+      PROJECT_BRAIN_API_KEY: ci-benchmark-ephemeral-key
 
     steps:
       - uses: actions/checkout@v4
@@ -104,15 +106,23 @@ jobs:
       - name: Index repository
         run: |
           # POST /index runs the index synchronously and returns its result.
-          RESULT=$(curl -sf -X POST http://127.0.0.1:8000/index             -H "Content-Type: application/json"             -d '{"repo_path": ".", "clean": true}')
+          RESULT=$(curl -sf -X POST http://127.0.0.1:8000/index \
+            -H "X-API-Key: $PROJECT_BRAIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"repo_path": ".", "clean": true}')
           echo "${RESULT:0:500}"
-          echo "$RESULT" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('status') == 'success' else 1)"             || { echo "indexing failed"; cat /tmp/brain-api.log | tail -50; exit 1; }
-          RUN=$(curl -sf http://127.0.0.1:8000/api/status/indexing             | python3 -c "import json,sys; r=json.load(sys.stdin)['recent_runs'][0]; print(r['status'], r['progress'].get('files', {}))"             || echo "unknown")
+          if ! echo "$RESULT" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('status') == 'success' else 1)"; then
+            echo "indexing failed"; tail -50 /tmp/brain-api.log; exit 1
+          fi
+          RUN=$(curl -sf -H "X-API-Key: $PROJECT_BRAIN_API_KEY" http://127.0.0.1:8000/api/status/indexing \
+            | python3 -c "import json,sys; r=json.load(sys.stdin)['recent_runs'][0]; print(r['status'], r['progress'].get('files', {}))" \
+            || echo "unknown")
           echo "latest indexing run: $RUN"
           case "$RUN" in failed*) echo "indexing run failed"; exit 1 ;; esac
 
       - name: Run harness benchmark
         run: |
+          set -o pipefail
           mkdir -p eval/harness_benchmark/results
           python eval/harness_benchmark/run.py \
             --api-url http://127.0.0.1:8000 \
