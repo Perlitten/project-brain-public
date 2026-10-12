@@ -33,6 +33,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Quality on a fresh install shows "No benchmark run yet" with a "Run the
+  benchmark" button instead of "measurements unavailable"
+  (`/api/web/quality` returns `{"available": false, "reason": "not_run"}`
+  rather than HTTP 503 when no evidence file exists). A shipped evidence file
+  with `"reference_run": true` is labelled "Reference run by maintainers". The
+  period-selector note appears only on the overview, which has one.
 - The mock provider is labelled "smoke test only, results not meaningful" in
   Setup, `brain doctor`, `.env.example` and the README, each with the one-line
   keyless path to real results (Ollama `nomic-embed-text`). Setup's "Connect

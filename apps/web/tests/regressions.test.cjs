@@ -758,3 +758,16 @@ test('setup repository step offers the repositories Brain has actually indexed',
   ]);
   assert.deepEqual([...indexedRepositories({ extra: {} })], []);
 });
+
+test('quality shows "Run the benchmark" on a fresh install and labels a maintainers\' reference run', () => {
+  const dash = load('lib/dashboard.ts', { 'next/server': { connection: async () => {} }, './api': { apiConfigured: true, brainFetch: async () => null } });
+  assert.equal(dash.qualityNotRun({ available: false, reason: 'not_run' }), true);
+  assert.equal(dash.qualityNotRun(null), false);
+  assert.equal(dash.qualityNotRun({ historical: true }), false);
+  const view = fs.readFileSync(path.join(root, 'components/QualityEvidence.tsx'), 'utf8');
+  assert.match(view, /title="No benchmark run yet"/);
+  assert.match(view, /label="Run the benchmark"/);
+  assert.match(view, /Reference run by maintainers/);
+  // The period selector lives on the overview only; /quality has none to mention.
+  assert.match(view, /compact \? "; the period selector does not change it" : ""/);
+});
