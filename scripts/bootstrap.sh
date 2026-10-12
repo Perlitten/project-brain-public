@@ -51,8 +51,22 @@ echo "  package installed"
 step "Configuring .env"
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  echo "  created .env from .env.example (mock providers by default)"
-  echo "  WARNING: change PROJECT_BRAIN_API_KEY before exposing port 8000"
+  # Replace the published placeholders with fresh random secrets.
+  .venv/bin/python - <<'EOF'
+import pathlib, secrets
+env = pathlib.Path(".env")
+text = env.read_text(encoding="utf-8")
+text = text.replace(
+    "PROJECT_BRAIN_API_KEY=change-me-in-production",
+    f"PROJECT_BRAIN_API_KEY={secrets.token_hex(32)}",
+)
+text = text.replace(
+    "PROJECT_BRAIN_WEBHOOK_TOKEN=change-me-to-a-random-64-character-token",
+    f"PROJECT_BRAIN_WEBHOOK_TOKEN={secrets.token_hex(32)}",
+)
+env.write_text(text, encoding="utf-8")
+EOF
+  echo "  created .env from .env.example (mock providers, random API key)"
 else
   echo "  .env already exists, leaving it alone"
 fi
@@ -81,7 +95,7 @@ echo "Done. Next:"
 echo "  .venv/bin/brain index --repo ${REPO:-/path/to/your/repo}"
 echo "  .venv/bin/uvicorn apps.api.main:app --port 8000"
 echo
-echo "Then: curl -H \"X-API-Key: \$(grep PROJECT_BRAIN_API_KEY .env | cut -d= -f2)\" \\"
+echo "Then: curl -H \"X-API-Key: \$(grep '^PROJECT_BRAIN_API_KEY=' .env | cut -d= -f2)\" \\"
 echo "  -H 'Content-Type: application/json' \\"
 echo "  -d '{\"repo_path\": \"${REPO:-/path/to/your/repo}\", \"task_description\": \"add oauth login\", \"persist\": true}' \\"
 echo "  http://127.0.0.1:8000/context"

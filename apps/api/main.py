@@ -95,11 +95,20 @@ async def lifespan(app: FastAPI):
             await close_database_connections()
 
 
+_api_docs_enabled = (
+    settings.API_DOCS_ENABLED
+    if settings.API_DOCS_ENABLED is not None
+    else settings.ENVIRONMENT.lower() != "production"
+)
+
 app = FastAPI(
     title="Project Brain API",
     description="Backend API services for Project Brain",
     version=build_info()["version"],
     lifespan=lifespan,
+    docs_url="/docs" if _api_docs_enabled else None,
+    redoc_url="/redoc" if _api_docs_enabled else None,
+    openapi_url="/openapi.json" if _api_docs_enabled else None,
 )
 
 
@@ -126,7 +135,9 @@ if _cors_origins:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins,
-        allow_credentials=True,
+        # A wildcard origin must never carry credentials: Starlette would echo the
+        # caller's Origin back and let any site make authenticated requests.
+        allow_credentials="*" not in _cors_origins,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["X-API-Key", "X-CSRF-Token", "Authorization", "Content-Type"],
     )

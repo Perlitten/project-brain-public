@@ -11,7 +11,7 @@ from __future__ import annotations
 import csv
 import io
 from datetime import datetime
-from typing import Iterator, Optional, Sequence
+from typing import Any, Iterator, Optional, Sequence, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -52,7 +52,10 @@ def _audit_query(
     until: Optional[datetime],
     limit: int,
     offset: int,
-) -> Select[AuditEvent]:
+) -> Select[Any]:
+    # 2.0 parameterizes Select by a tuple, 2.1 by individual columns.
+    # Keep this transport boundary compatible with both; this query always
+    # selects AuditEvent as its first (and only) scalar column.
     stmt = select(AuditEvent).order_by(desc(AuditEvent.created_at), desc(AuditEvent.id))
     if outcome is not None:
         if outcome not in _VALID_OUTCOMES:
@@ -87,10 +90,10 @@ def _serialize(event: AuditEvent) -> dict[str, object]:
     }
 
 
-async def _fetch(stmt: Select[AuditEvent]) -> Sequence[AuditEvent]:
+async def _fetch(stmt: Select[Any]) -> Sequence[AuditEvent]:
     async with async_session_factory() as session:
         result = await session.scalars(stmt)
-        return result.all()
+        return cast(Sequence[AuditEvent], result.all())
 
 
 @router.get("/events", dependencies=[Depends(require_scope("audit:read"))])

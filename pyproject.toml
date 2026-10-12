@@ -9,6 +9,17 @@ description = "Project Brain core foundation services and utilities"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+authors = [{ name = "Perlitten" }]
+keywords = ["mcp", "code-search", "rag", "developer-tools", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+]
 dependencies = [
     "fastapi",
     "uvicorn",
@@ -31,6 +42,12 @@ dependencies = [
     "cryptography>=42.0.0",
     "numpy>=1.26,<3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Perlitten/project-brain-public"
+Issues = "https://github.com/Perlitten/project-brain-public/issues"
+Changelog = "https://github.com/Perlitten/project-brain-public/blob/main/CHANGELOG.md"
+Security = "https://github.com/Perlitten/project-brain-public/blob/main/SECURITY.md"
 
 [project.optional-dependencies]
 dev = [
@@ -72,6 +89,9 @@ brain-mcp = "apps.mcp_server.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["brain", "apps"]
+# A wheel may be built after the separate web app. Never ship its generated
+# cache, npm dependencies, or local credentials with the Python runtime.
+exclude = ["**/.next/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.env", "**/.env.*", "**/.deploy.env"]
 
 [tool.hatch.build.targets.editable]
 dev-mode-dirs = ["."]

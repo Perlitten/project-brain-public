@@ -51,7 +51,8 @@ ensure_secret() {
     local key="$1" gen="$2"
     local cur
     cur="$(sed -n -E "s/^${key}=//p" "$ENV_FILE" | head -1)"
-    if [[ -z "$cur" ]]; then
+    # Empty or still the published .env.example placeholder -> generate.
+    if [[ -z "$cur" || "$cur" == change-me* ]]; then
         echo "==> Generating ${key}"
         # portable in-place replace of "KEY=" (empty) with KEY=<value>
         local val; val="$gen"

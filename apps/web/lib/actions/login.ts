@@ -5,23 +5,27 @@
 import { cookies, headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { apiConfigured, brainSend } from "../api";
-import { SESSION_COOKIE, forgetLoginState, loginState, sessionForLogin } from "../web-auth";
+import { SESSION_COOKIE, forgetLoginState, loginState, openMode, sessionForLogin } from "../web-auth";
 import type { ActionResult } from "./types";
 
 type LoginReply = { mode: "open" | "password"; user: string | null; version: string };
 
 const MAX_AGE = 60 * 60 * 24 * 30;
 
-// Changing the login is allowed while sign-in is open (that is how the first
-// password gets set) and, once set, only with the current password — the API
-// checks it. Never when the dashboard runs on demo data or WEB_BASIC_AUTH.
+// Once a login is set, changing it takes the current password — the API checks
+// it. Setting the FIRST password (Brain keeps none yet) is allowed only in the
+// explicit WEB_OPEN_MODE=true, so an anonymous first visitor can never claim a
+// fresh deployment; otherwise the owner sets it via WEB_BASIC_AUTH or the API.
+// Never when the dashboard runs on demo data or WEB_BASIC_AUTH.
 async function blocked(): Promise<ActionResult | null> {
   if (!apiConfigured) return { ok: false, message: "Connect the Brain API first — there is nothing to protect on demo data." };
   if (process.env.BRAIN_WEB_ACTIONS?.trim() === "0") return { ok: false, message: "Changes from the dashboard are switched off (BRAIN_WEB_ACTIONS=0)." };
   const state = await loginState({ fresh: true });
-  if (state.kind === "env" || state.kind === "misconfigured")
-    return { ok: false, message: "Sign-in is set by WEB_BASIC_AUTH in the deployment environment — change it there." };
+  if (state.kind === "env") return { ok: false, message: "Sign-in is set by WEB_BASIC_AUTH in the deployment environment — change it there." };
+  if (state.kind === "misconfigured") return { ok: false, message: state.reason };
   if (state.kind !== "brain") return { ok: false, message: "Brain is unreachable right now, so the login can’t be changed." };
+  if (state.mode === "open" && !openMode())
+    return { ok: false, message: "No login is set and WEB_OPEN_MODE is off — set the first password via WEB_BASIC_AUTH or the Brain API." };
   return null;
 }
 
@@ -62,6 +66,9 @@ export async function setWebLogin(input: { user: string; password: string; curre
 export async function disableWebLogin(input: { currentPassword: string }): Promise<ActionResult<LoginReply>> {
   const stop = await blocked();
   if (stop) return stop as ActionResult<LoginReply>;
+  // Without open mode, no login means a locked dashboard — including for this browser.
+  if (!openMode())
+    return { ok: false, message: "Removing the password would lock the dashboard for everyone (WEB_OPEN_MODE is off). Change the password instead." };
   const res = await brainSend<LoginReply>("POST", "/api/web-login/disable", { current_password: input.currentPassword });
   if (!res.ok || !res.data) return { ok: false, message: res.error ?? "Brain didn’t confirm the change." };
   await keepThisBrowserSignedIn(res.data);

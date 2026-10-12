@@ -1,6 +1,6 @@
 # Project Brain
 
-Project Brain is an AI-native engineering system designed to serve as a central layer of memory, navigation, impact analysis, and context preparation for other AI agents (such as Claude Code, Codex, and Antigravity) working on large codebases.
+Project Brain is a spatial navigation and context boundary layer for coding agents (such as Claude Code, Codex, and Antigravity) working on large codebases. It also provides impact analysis and evidence-bound memory.
 
 Current release: **0.9.0** (`tournament-sandbox`).
 
@@ -43,7 +43,10 @@ cd project-brain
 This creates the venv, installs the package, writes `.env`, starts
 postgres+redis+neo4j via Docker, and runs the `brain doctor` preflight.
 The step-by-step guide with measured timings and troubleshooting is
-[`docs/release/0.9.0-rc1/INSTALL.md`](docs/release/0.9.0-rc1/INSTALL.md).
+[`docs/release/0.9.0/INSTALL.md`](docs/release/0.9.0/INSTALL.md).
+
+**Windows:** `scripts/bootstrap.sh` is POSIX-only. Run it inside WSL2, or use
+the manual steps below. Native Windows is not tested in CI.
 
 ### What runs where
 
@@ -55,14 +58,16 @@ The step-by-step guide with measured timings and troubleshooting is
 | API (FastAPI) | your venv, or the `api` container | 8000 |
 | Worker (background jobs) | your venv, or the `worker` container | — |
 | MCP server (stdio) | started by your AI client | — |
-| Web UI (Next.js, optional) | `apps/web`, Node 20+ | 3100 |
+| Web UI (Next.js, optional) | `apps/web`, Node 22 | 3100 |
 
 ### Prerequisites
 
-* Python 3.10+
-* Docker with Docker Compose v2
+* Python 3.12 — the only version CI tests (`pyproject.toml` declares
+  `>=3.10`, but 3.10 and 3.11 are untested)
+* Docker with Docker Compose 2.24.0 or later (optional `.env` support)
 * ~2 GB free RAM for the services
-* Optional: Node.js 20+ for the web UI; `postgresql-client` (pg15) for backups
+* Optional: Node.js 22 for the web UI (the version CI tests);
+  `postgresql-client` (pg15) only for `scripts/backup_runner.py` backups
 
 ### Steps
 
@@ -76,7 +81,7 @@ pip install -e ".[dev]"
 
 # 2. Configure
 cp .env.example .env                 # Windows: copy .env.example .env
-# Set TARGET_REPO_PATH to the repository you want indexed.
+# Set TARGET_REPO_PATH to the repository you want indexed (see below).
 
 # 3. Start the storage services
 docker compose up -d postgres redis neo4j
@@ -92,23 +97,45 @@ uvicorn apps.api.main:app --port 8000
 python -m brain.workers.worker
 ```
 
+`TARGET_REPO_PATH` is the default repository for the server side (API, worker
+jobs, web UI, `brain embeddings`, `brain doctor`). `REPO_ROOT` is only the
+fallback for the CLI's `--repo` option (`brain index`, `audit`, `context`,
+`eval`, `review-diff`; default `.`), so pass `--repo` explicitly as above.
+
 Check it:
 
 ```bash
 curl http://127.0.0.1:8000/health
-curl -H "X-API-Key: change-me-in-production" -H "Content-Type: application/json" \
+curl -H "X-API-Key: $(grep '^PROJECT_BRAIN_API_KEY=' .env | cut -d= -f2)" -H "Content-Type: application/json" \
      -d '{"repo_path": "/path/to/your/repo", "task_description": "add oauth login"}' \
      http://127.0.0.1:8000/context
 ```
 
 API auth is on by default: every call needs `X-API-Key` equal to
-`PROJECT_BRAIN_API_KEY` in `.env`. Change that value before you expose the port
-anywhere.
+`PROJECT_BRAIN_API_KEY` in `.env`. `scripts/bootstrap.sh` writes a random key
+there. If you copied `.env.example` by hand, replace the placeholder first
+(`python -c "import secrets; print(secrets.token_hex(32))"`): the API refuses to
+start with `ENVIRONMENT=production` while the placeholder is still set.
 
 **Everything in Docker instead.** `docker compose up -d --build` also builds and
 starts the `api` and `worker` containers (the worker also runs the job scheduler). The containers see only the
 Project Brain checkout (`/app`); to index another repository from inside them,
 mount it into the `api` and `worker` services first.
+
+Storage services can start before `.env` exists. Copy `.env.example` and configure
+your providers, repository mounts and API key before using the API or worker.
+API documentation (`/docs`, `/redoc`, `/openapi.json`) is disabled by default when
+`ENVIRONMENT=production`. `API_DOCS_ENABLED=false` also disables it locally;
+`API_DOCS_ENABLED=true` explicitly enables it, including in production.
+
+### Evidence and limitations
+
+Navigation quality and context budgets are measurable; they do not establish
+coding cost savings. The agent benchmark separates file-location tasks from
+coding tasks and records whether the agent actually called Brain. Its current
+sample is small, and coding token savings are not established. L1–L4 memory
+requires captured evidence and review; installing Brain does not supply a
+pre-populated body of learned experience.
 
 ### Real models
 
@@ -342,7 +369,7 @@ covers a fresh Ubuntu VPS, Docker Compose, nginx/TLS, the worker scheduler, repo
 indexing, smoke tests, MCP client setup, backups, and safety rules. Day-2
 operations (release layout, upgrades, rollback) are in
 [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) and
-[`docs/release/0.9.0-rc1/UPGRADING_AND_ROLLBACK.md`](docs/release/0.9.0-rc1/UPGRADING_AND_ROLLBACK.md).
+[`docs/release/0.9.0/UPGRADING_AND_ROLLBACK.md`](docs/release/0.9.0/UPGRADING_AND_ROLLBACK.md).
 The web UI deploys separately (section 4).
 
 If an AI coding agent will do the deployment, start with
@@ -380,7 +407,10 @@ shared secret (`scripts/mint_api_credential.py --name <agent> --scopes core:writ
 
 ## 9. MCP Server
 
-Project Brain ships with a Model Context Protocol (MCP) server exposing **10 tools**:
+Project Brain ships two Model Context Protocol (MCP) servers: the local stdio
+server `apps.mcp_server.server` exposes **13 tools**, and the remote HTTP-backed
+server `apps.mcp_server.remote_server` exposes the same 13 plus
+`get_diff_review` (**14 tools**):
 
 | Tool | Purpose |
 |------|---------|
@@ -394,6 +424,10 @@ Project Brain ships with a Model Context Protocol (MCP) server exposing **10 too
 | `search_code` | Hybrid file/symbol/chunk search |
 | `find_related_files` | Neo4j graph neighborhood lookup |
 | `review_diff` | Review git diff for rule violations (remote server: queues a job, poll with `get_diff_review`) |
+| `get_diff_review` | Remote server only: poll a diff review queued by `review_diff` |
+| `record_task_observation` | Record an unvalidated observation for a task (weak evidence for memory consolidation) |
+| `record_task_lesson` | Record a task lesson backed by a validation and artifacts; durable memory still needs human approval |
+| `record_procedure_outcome` | Record the success/failure outcome of a procedure (skill) once per task |
 
 `search_code` and `ask_project` accept an optional `repo_path` argument. Use it when
 multiple repositories are indexed, for example `/indexed/forex-bot`, so retrieval
@@ -453,6 +487,15 @@ Agents must respect these rules prior to modifying the main repository:
 2. **Read the Context Pack**: Analyze the generated context pack before initiating changes.
 3. **Minimize footprint**: Do not modify files outside the context pack scope.
 4. **After editing**: Invoke `review_diff` to run checks on generated diffs, checking for rule violations or untested files.
+
+---
+
+## Contributing, security and changes
+
+* [CONTRIBUTING.md](CONTRIBUTING.md) — development setup, checks and pull requests
+* [SECURITY.md](SECURITY.md) — supported versions and how to report a vulnerability privately
+* [CHANGELOG.md](CHANGELOG.md) — release history and unreleased changes
+* [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ---
 

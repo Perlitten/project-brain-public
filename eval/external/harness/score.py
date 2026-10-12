@@ -12,7 +12,6 @@ import glob
 import json
 import math
 import random
-import sys
 from pathlib import Path
 
 SEED = 20261006
@@ -141,9 +140,12 @@ def score_repobench_rows(rows: list[dict]) -> dict:
                 continue
             order = arm["order"]
             m = per_arm.setdefault(arm_name, {k: [] for k in ("acc1", "acc3", "acc5", "ms")})
-            top = set(order[:1]); m["acc1"].append(1.0 if gold in top else 0.0)
-            top = set(order[:3]); m["acc3"].append(1.0 if gold in top else 0.0)
-            top = set(order[:5]); m["acc5"].append(1.0 if gold in top else 0.0)
+            top = set(order[:1])
+            m["acc1"].append(1.0 if gold in top else 0.0)
+            top = set(order[:3])
+            m["acc3"].append(1.0 if gold in top else 0.0)
+            top = set(order[:5])
+            m["acc5"].append(1.0 if gold in top else 0.0)
             m["ms"].append(float(arm.get("ms") or 0.0))
     return _emit(per_arm, rows)
 
