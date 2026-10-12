@@ -56,8 +56,7 @@ def test_brain_mcp_console_script_is_declared_and_callable():
 
 async def _handshake(pythonpath: str, cwd: str) -> int:
     """Spawn the server exactly as a client would and complete initialize."""
-    from mcp import ClientSession, StdioServerParameters
-    from mcp.client.stdio import stdio_client
+    from mcp import Client, StdioServerParameters
 
     params = StdioServerParameters(
         command=sys.executable,
@@ -65,11 +64,9 @@ async def _handshake(pythonpath: str, cwd: str) -> int:
         env={"PYTHONPATH": pythonpath},
         cwd=cwd,
     )
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            tools = await session.list_tools()
-            return len(tools.tools)
+    async with Client(params, mode="legacy") as client:
+        tools = await client.list_tools()
+        return len(tools.tools)
 
 
 def test_server_launches_from_an_unrelated_working_directory(tmp_path):

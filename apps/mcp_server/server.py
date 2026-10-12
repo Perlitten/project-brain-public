@@ -12,6 +12,7 @@ from loguru import logger
 
 import mcp.types as _mcp_types
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.types import InputRequiredResult
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
@@ -217,7 +218,7 @@ def _record_external_client(client_info: Optional[_mcp_types.Implementation]) ->
         pass  # telemetry must never break a client handshake
 
 
-async def _record_client_initialize(ctx, call_next):
+async def _record_client_initialize(ctx: ServerRequestContext, call_next: CallNext) -> HandlerResult:
     """Observe handshakes and modern request identities via public middleware."""
     if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS:
         params = ctx.session.client_params
