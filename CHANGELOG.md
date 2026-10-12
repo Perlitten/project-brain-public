@@ -40,6 +40,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The NVIDIA embedding provider no longer fails on code that contains a
+  `data:image/...;base64,` literal. NIM parsed it as an image input and
+  rejected the request, so those chunks never got embeddings.
 - Blank chunks left over from empty files no longer count as missing
   embeddings, so nightly verification of repositories with an empty
   `__init__.py` stops reporting "degraded" (providers reject empty input).
