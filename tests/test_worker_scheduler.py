@@ -96,7 +96,7 @@ def _fired_types(queue):
 # --------------------------------------------------------------------------- scheduler
 
 
-def test_schedule_matches_the_retired_n8n_cron_times():
+def test_schedule_matches_the_retired_orchestrator_cron_times():
     assert {j.job_type: j.cron for j in scheduler.SCHEDULES} == {
         "nightly_maintenance": "30 0 * * *",
         "health_check": "0 2 * * *",
