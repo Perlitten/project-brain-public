@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "project-brain": {
+      "command": "/absolute/path/to/.venv/bin/python",
+      "args": ["-m", "apps.mcp_server"],
+      "env": { "BRAIN_API_KEY": "${PROJECT_BRAIN_API_KEY}" }
+    }
+  }
+}

@@ -70,3 +70,6 @@ By contributing, you agree that your contributions are licensed under the
 [MIT License](LICENSE) and that you follow the
 [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues as described in
 [`SECURITY.md`](SECURITY.md), not in public issues.
+
+New to the project? Prepared starter tasks live in
+[`docs/good-first-issues.md`](docs/good-first-issues.md).

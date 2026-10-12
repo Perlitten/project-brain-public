@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "project-brain": {
+      "command": "C:\\path\\to\\project-brain\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "apps.mcp_server"],
+      "env": { "BRAIN_API_KEY": "pbk_your_scoped_key" }
+    }
+  }
+}
