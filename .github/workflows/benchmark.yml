@@ -103,18 +103,13 @@ jobs:
 
       - name: Index repository
         run: |
-          curl -sf -X POST http://127.0.0.1:8000/index \
-            -H "Content-Type: application/json" \
-            -d '{"repo_path": ".", "clean": true}' | head -c 500
-          echo
-          for i in $(seq 1 60); do
-            STATUS=$(curl -s http://127.0.0.1:8000/index/runs \
-              | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['recent_runs'][0]['status'])" 2>/dev/null)
-            echo "  poll $i: $STATUS"
-            if [ "$STATUS" = "completed" ]; then break; fi
-            if [ "$STATUS" = "failed" ]; then echo "indexing failed"; exit 1; fi
-            sleep 20
-          done
+          # POST /index runs the index synchronously and returns its result.
+          RESULT=$(curl -sf -X POST http://127.0.0.1:8000/index             -H "Content-Type: application/json"             -d '{"repo_path": ".", "clean": true}')
+          echo "${RESULT:0:500}"
+          echo "$RESULT" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('status') == 'success' else 1)"             || { echo "indexing failed"; cat /tmp/brain-api.log | tail -50; exit 1; }
+          RUN=$(curl -sf http://127.0.0.1:8000/api/status/indexing             | python3 -c "import json,sys; r=json.load(sys.stdin)['recent_runs'][0]; print(r['status'], r['progress'].get('files', {}))"             || echo "unknown")
+          echo "latest indexing run: $RUN"
+          case "$RUN" in failed*) echo "indexing run failed"; exit 1 ;; esac
 
       - name: Run harness benchmark
         run: |
