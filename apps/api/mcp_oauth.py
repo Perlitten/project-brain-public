@@ -274,19 +274,19 @@ async def _approver(user: str, password: str, api_key: str, scopes: list[str], c
     if dev_open():
         return "dev-open", ""
     if user and web_login_configured():
-        if _throttled(user):
+        if _throttled(user, client_ip):
             return "", "Too many failed attempts. Try again in a few minutes."
         if await _matches(user, password):
             return f"web:{user}", ""
-        _fail(user)
+        _fail(user, client_ip)
         return "", "Wrong username or password."
     if api_key:
         throttle_key = f"oauth-key:{client_ip}"
-        if _throttled(throttle_key):
+        if _throttled(throttle_key, client_ip):
             return "", "Too many failed attempts. Try again in a few minutes."
         principal = await resolve_api_key(api_key)
         if principal is None:
-            _fail(throttle_key)
+            _fail(throttle_key, client_ip)
             return "", "That API key is not valid."
         missing = [scope for scope in scopes if not principal.has_scope(scope)]
         if missing:
