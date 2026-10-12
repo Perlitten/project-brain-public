@@ -1,8 +1,8 @@
-# ADR 009: n8n as Operations Orchestration Layer
+# ADR 009: External Operations Orchestration Layer
 
 ## Status
 
-Superseded by [ADR 013](013-worker-scheduler.md) (2026-10-06) — n8n removed; scheduling runs inside the worker.
+Superseded by [ADR 013](013-worker-scheduler.md) (2026-10-06) — the external orchestrator was removed; scheduling runs inside the worker.
 
 Previously: Accepted — Phase 9 foundation
 
@@ -12,10 +12,10 @@ Project Brain needs scheduled and event-driven operations (re-index after merge,
 
 ## Decision
 
-Introduce **self-hosted n8n** as an external orchestration layer that calls thin **job trigger API** endpoints on Project Brain. Jobs are enqueued to a **dedicated Redis worker queue** (`brain:worker` prefix). n8n uses its own SQLite data volume and Redis DB 2 for internal queueing — not shared with the brain worker queue.
+Introduce a **self-hosted external orchestration layer** (workflow engine) that calls thin **job trigger API** endpoints on Project Brain. Jobs are enqueued to a **dedicated Redis worker queue** (`brain:worker` prefix). The orchestrator uses its own SQLite data volume and Redis DB 2 for internal queueing — not shared with the brain worker queue.
 
 ```
-n8n → POST /jobs/* → Redis (brain:worker) → worker → existing brain modules
+orchestrator → POST /jobs/* → Redis (brain:worker) → worker → existing brain modules
 MCP → stdio → brain modules (unchanged)
 ```
 
@@ -24,22 +24,22 @@ MCP → stdio → brain modules (unchanged)
 ### Positive
 
 - Clear separation: orchestration vs intelligence vs agent interface
-- n8n UI for schedules, webhooks, and notifications without code deploys
+- the orchestrator UI for schedules, webhooks, and notifications without code deploys
 - API endpoints stay thin; business logic remains in `brain/` modules
 - Foundation for PR impact, backups, ADR import workflows
 
 ### Negative
 
-- Another service to operate (n8n container, credentials, workflow exports)
+- Another service to operate (the orchestrator container, credentials, workflow exports)
 - Polling-based status checks in v1 workflows (no push callbacks yet)
 - Two Redis usages on same instance (different DB/prefix — must not mix)
 
 ## Out of scope (explicit)
 
 - Retrieval, RRF, graph traversal, context packs, embedding generation, indexing internals
-- MCP proxy through n8n (SSE vs stdio incompatibility)
+- MCP proxy through the orchestrator (SSE vs stdio incompatibility)
 
 ## References
 
-- `n8n/workflows/git-merge-reindex.json` (removed with n8n)
+- `the orchestrator/workflows/git-merge-reindex.json` (removed with the orchestrator)
 - `apps/api/routers/jobs.py`, `brain/workers/`

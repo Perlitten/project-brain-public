@@ -50,7 +50,7 @@ def test_get_never_returns_secret_values():
     token = _field(body, "TELEGRAM_ALERT_BOT_TOKEN")
     assert token["set"] is True and token["value"] is None
     assert {s["id"] for s in body["sections"]} >= {"telegram", "automation"}
-    assert "n8n" not in response.text.lower()
+    assert "orchestrator" not in response.text.lower()
 
 
 def test_patch_writes_env_and_applies_live(tmp_path):
@@ -95,7 +95,7 @@ def test_patch_clear_removes_a_secret(tmp_path):
         {"values": {"TELEGRAM_ALERTS_ENABLED": "yes"}},
         {"values": {"TELEGRAM_ALERT_CHAT_ID": "123\nOPENAI_API_KEY=sk"}},
         {"values": {"TELEGRAM_ALERT_CHAT_ID": "not a chat"}},
-        {"values": {"N8N_BASE_URL": "http://n8n:5678"}},  # removed with n8n
+        {"values": {"LEGACY_ORCHESTRATOR_URL": "http://orch:5678"}},  # retired integration key
         {"values": {"TELEGRAM_ALERT_BOT_TOKEN": "has space"}},
         {"values": {"TELEGRAM_ALERT_BOT_TOKEN": ""}},
         {"clear": ["TELEGRAM_ALERT_COOLDOWN_SECONDS"]},  # not clearable
@@ -123,5 +123,5 @@ def test_telegram_test_reports_missing_credentials():
     assert response.json()["status"] == "disabled"
 
 
-def test_n8n_test_endpoint_is_gone():
-    assert client.post("/api/settings/test/n8n").status_code in (404, 405)
+def test_retired_provider_test_endpoint_is_gone():
+    assert client.post("/api/settings/test/retired_orchestrator").status_code in (404, 405)

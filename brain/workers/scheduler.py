@@ -35,7 +35,7 @@ def _repo_path() -> str:
     return settings.PROJECT_BRAIN_GIT_REPO_PATH
 
 
-# Same cron times (UTC) and payloads as the retired n8n workflows.
+# Same cron times (UTC) and payloads as the retired external orchestrator workflows.
 SCHEDULES: tuple[ScheduledJob, ...] = (
     ScheduledJob(
         "nightly_maintenance",

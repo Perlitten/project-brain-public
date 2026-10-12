@@ -1,4 +1,4 @@
-"""Durable, payload-free request telemetry for owner dashboard metrics."""
+"""Durable, payload-free request telemetry for operator dashboard metrics."""
 from __future__ import annotations
 
 import math
@@ -64,7 +64,7 @@ async def dashboard_metrics(*, period_days: int, repository_id: int | None = Non
         filters = [BrainRequestTelemetry.created_at >= start, BrainRequestTelemetry.created_at <= now]
         if repository_id is not None:
             filters.append(BrainRequestTelemetry.repository_id == repository_id)
-        # Bound owner-dashboard work. Above this volume an aggregate SQL store is
+        # Bound operator-dashboard work. Above this volume an aggregate SQL store is
         # needed; returning unavailable is preferable to silently sampling totals.
         rows = (await session.execute(select(
             BrainRequestTelemetry.operation, BrainRequestTelemetry.outcome,
