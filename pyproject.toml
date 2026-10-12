@@ -39,7 +39,7 @@ dependencies = [
     # Cockpit tool enumeration use the current stable v1 SDK contract.
     "mcp==1.29.0",
     "pgvector",
-    "cryptography>=42.0.0",
+    "cryptography>=50.0.2",
     "numpy>=1.26,<3",
 ]
 
