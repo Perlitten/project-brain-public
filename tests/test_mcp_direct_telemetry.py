@@ -5,6 +5,7 @@ import pytest
 async def test_search_code_records_success_with_direct_mcp_identity(monkeypatch):
     from apps.mcp_server import server
 
+    monkeypatch.setattr(server, "_CONNECTED_CLIENT", None)
     records = []
     async def fake_search(query, *, limit, repo_path):
         return {"repository_scope": {"repository_path": "/srv/project"}, "chunks": [{"path": "a.py"}]}

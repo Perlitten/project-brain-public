@@ -354,7 +354,8 @@ def get_mcp_tools_list() -> List[Dict[str, Any]]:
         from apps.mcp_server.server import mcp as mcp_instance
 
         tool_manager = mcp_instance._tool_manager
-        for tool_name, tool_obj in tool_manager._tools.items():
+        for tool_obj in tool_manager.list_tools():
+            tool_name = tool_obj.name
             tool_desc = getattr(tool_obj, "description", "") or ""
             if not tool_desc:
                 tool_fn = getattr(tool_obj, "fn", None)
