@@ -63,6 +63,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Lexical search finds code by the identifiers a query names: CamelCase and
+  snake_case identifiers are kept whole and split into their words
+  (`HTTPAdapter` → `httpadapter`, `http`, `adapter`), and a file that defines a
+  symbol the query names leads the file channel, so "HTTPAdapter" returns
+  `adapters.py`. Identifiers with underscores or trailing digits are no longer
+  dropped from the keyword list.
+
 - The NVIDIA embedding provider no longer fails on code that contains a
   `data:image/...;base64,` literal. NIM parsed it as an image input and
   rejected the request, so those chunks never got embeddings.
