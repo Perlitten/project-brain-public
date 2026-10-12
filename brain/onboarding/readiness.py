@@ -29,8 +29,9 @@ from brain.config.paths import get_repo_root, resolve_repo_path
 from brain.config.settings import settings
 from brain.database.models import ContextPack, IndexingRun
 from brain.database.repository_utils import get_repository_by_path
-from brain.database.session import async_session_factory, check_health
+from brain.database.session import async_session_factory, check_health, redis_client
 from brain.onboarding.provider_check import provider_state
+from brain.workers.queue import WORKER_START_HINT, worker_liveness
 from brain.onboarding.setup_state import (
     first_pack_milestone,
     last_client_activity,
@@ -52,24 +53,35 @@ def _provider_status(provider: str, kind: str) -> Dict[str, Any]:
     return state
 
 
-def _services_step(health: Dict[str, Any]) -> Dict[str, Any]:
+def _services_step(health: Dict[str, Any], worker: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Datastores plus the background worker. Without a worker every queued
+    job (indexing, health checks, benchmarks) waits forever, so a missing
+    heartbeat blocks this step just like a down database."""
     unhealthy = {
         name: str((svc or {}).get("status") or "unknown")
         for name, svc in health.items()
         if (svc or {}).get("status") != "healthy"
     }
-    detail = (
-        "postgres, redis and neo4j all healthy"
-        if not unhealthy
-        else "unhealthy: " + ", ".join(f"{k}={v}" for k, v in sorted(unhealthy.items()))
-    )
+    worker_running = bool((worker or {}).get("running"))
+    if unhealthy:
+        detail = "unhealthy: " + ", ".join(f"{k}={v}" for k, v in sorted(unhealthy.items()))
+        hint = "docker compose up -d"
+    elif not worker_running:
+        detail = "postgres, redis and neo4j healthy; " + (
+            (worker or {}).get("hint") or WORKER_START_HINT
+        )
+        hint = "python -m brain.workers.worker"
+    else:
+        detail = "postgres, redis, neo4j and the worker are running"
+        hint = ""
     return {
         "id": "services",
         "title": "Services running",
-        "status": _DONE if not unhealthy else _BLOCKED,
+        "status": _DONE if not unhealthy and worker_running else _BLOCKED,
         "detail": detail,
-        "hint": "docker compose up -d postgres redis neo4j",
+        "hint": hint,
         "services": {name: (svc or {}).get("status") for name, svc in health.items()},
+        "worker": {"running": worker_running},
     }
 
 
@@ -335,7 +347,13 @@ def _first_task_step(
 
 async def collect_setup_status() -> Dict[str, Any]:
     health = await check_health()
-    services = _services_step(health)
+    try:
+        worker = await worker_liveness(
+            redis_client, settings.WORKER_REDIS_PREFIX, pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED
+        )
+    except Exception:  # noqa: BLE001 — Redis down is already reported by check_health
+        worker = None
+    services = _services_step(health, worker)
 
     try:
         repo_path: Optional[Path] = resolve_repo_path(settings.TARGET_REPO_PATH)

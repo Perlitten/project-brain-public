@@ -42,6 +42,16 @@ cd project-brain
 
 This creates the venv, installs the package, writes `.env`, starts
 postgres+redis+neo4j via Docker, and runs the `brain doctor` preflight.
+Pass `--repo /path/to/your/repo` to choose the repository Brain reads; without
+it Brain uses its own source as a sample. Then:
+
+```bash
+.venv/bin/brain index --repo /path/to/your/repo
+./scripts/start.sh     # API :8000, worker, web dashboard :3100 — Ctrl+C stops all three
+```
+
+The worker runs indexing and every other background job. Without it, jobs stay
+queued; the dashboard says so and shows how to start it.
 The step-by-step guide with measured timings and troubleshooting is
 [`docs/release/0.9.0/INSTALL.md`](docs/release/0.9.0/INSTALL.md).
 
@@ -92,7 +102,8 @@ brain doctor
 # 5. Index a repository
 brain index --repo /path/to/your/repo
 
-# 6. Run the API (and, in a second terminal, the worker for background jobs)
+# 6. Run the API and, in a second terminal, the worker (background jobs never
+#    start without it). ./scripts/start.sh runs both plus the web dashboard.
 uvicorn apps.api.main:app --port 8000
 python -m brain.workers.worker
 ```

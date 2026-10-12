@@ -20,7 +20,7 @@ function load(file, overrides = {}) {
     return require(name);
   };
   vm.runInNewContext(output, { module, exports: module.exports, require: requireModule,
-    process, Buffer, Response, URL, URLSearchParams, AbortSignal, console, fetch: global.fetch }, { filename });
+    process, Buffer, Response, URL, URLSearchParams, AbortSignal, console, performance, fetch: global.fetch }, { filename });
   return module.exports;
 }
 
@@ -708,4 +708,35 @@ test('list URLs preserve punctuation and validate paging before reaching the API
   for (const page of ['2x', '-1', '0', '9007199254740992']) assert.equal(lists.getListQuery({ page }).page, 1);
   assert.equal(lists.getListQuery({ size: 50 }).size, 50);
   assert.equal(lists.getListQuery({ page_size: '200' }).size, 20);
+});
+
+test('missing worker heartbeat: the rail says the worker is down and a queued job says how to start it', async () => {
+  const hint = 'Worker is not running. Start it with `./scripts/start.sh` (or `python -m brain.workers.worker`; `docker compose up -d worker` when Brain runs in Docker).';
+  let worker = { running: false, pools: null, hint };
+  const replies = {
+    '/health': () => ({ status: 'ok', details: { postgres: { status: 'healthy' } }, scheduler: {}, worker }),
+    '/api/version': () => ({ version: '1.0.0' }),
+    '/api/setup/status': () => ({ steps: [] }),
+    '/jobs/job-1': () => ({ status: 'queued', progress: {} }),
+  };
+  const api = { apiConfigured: true, brainFetch: async (url) => (replies[url] ? replies[url]() : null), brainSend: async () => ({ ok: true, data: {} }) };
+  const { getPulse } = load('lib/actions/pulse.ts', { '../api': api, '../data': { getRepository: async () => ({}) } });
+  const down = await getPulse('');
+  assert.equal(down.healthy, false);
+  assert.deepEqual([...down.down], ['worker']);
+  assert.equal(down.workerHint, hint);
+
+  const jobs = load('lib/actions/jobs.ts', { '../api': api, './gate': { guard: async () => null, mutate: async () => ({ ok: true }) } });
+  const stalled = await jobs.getJob('job-1');
+  assert.equal(stalled.stalled, true);
+  assert.equal(stalled.detail, hint);
+
+  worker = { running: true, pools: null, hint: '' };
+  const up = await getPulse('');
+  assert.equal(up.healthy, true);
+  assert.deepEqual([...up.down], []);
+  assert.equal(up.workerHint, undefined);
+  const waiting = await jobs.getJob('job-1');
+  assert.equal(waiting.stalled, false);
+  assert.equal(waiting.status, 'queued');
 });

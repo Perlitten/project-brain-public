@@ -123,7 +123,7 @@ def test_envfile_rejects_multiline_values(tmp_path):
 
 
 def _collect(*, health=None, repo=None, run=None, packs=None, total_packs=None,
-             state=None, client_activity=None, milestone=None):
+             state=None, client_activity=None, milestone=None, worker=None):
     """Drive collect_setup_status with a fake session: get_repository_by_path
     opens its own session (patched directly), then the IndexingRun list, the
     repo-scoped pack list and the total pack count run on the shared factory
@@ -140,6 +140,9 @@ def _collect(*, health=None, repo=None, run=None, packs=None, total_packs=None,
     session.execute.side_effect = queries
     with (
         patch.object(readiness, "check_health", new=AsyncMock(return_value=health or _healthy())),
+        patch.object(
+            readiness, "worker_liveness", new=AsyncMock(return_value=worker or {"running": True, "hint": ""})
+        ),
         patch.object(readiness, "async_session_factory", new=_factory_for(session)),
         patch.object(readiness, "get_repository_by_path", new=AsyncMock(return_value=repo)),
         patch.object(readiness, "resolve_repo_path", return_value="/repos/brain") as resolver,
@@ -161,6 +164,28 @@ def test_readiness_blocked_services_is_first_action():
     assert steps["services"]["status"] == "blocked"
     assert status["next_step"] == "services"
     assert status["first_use_complete"] is False
+
+
+def test_readiness_missing_worker_blocks_services_with_a_start_hint(tmp_path):
+    from brain.workers.queue import WORKER_START_HINT
+
+    status = _collect(
+        repo=_repo(), run=_indexing_run(), packs=[_pack(tmp_path)],
+        worker={"running": False, "hint": WORKER_START_HINT},
+    )
+    steps = {s["id"]: s for s in status["steps"]}
+    assert steps["services"]["status"] == "blocked"
+    assert "Worker is not running. Start it with `./scripts/start.sh`" in steps["services"]["detail"]
+    assert steps["services"]["hint"] == "python -m brain.workers.worker"
+    assert steps["services"]["worker"] == {"running": False}
+    assert status["next_step"] == "services"
+
+
+def test_readiness_unreadable_worker_heartbeat_is_not_reported_as_running():
+    # collect_setup_status passes None when the heartbeat can't be read.
+    services = readiness._services_step(_healthy(), None)
+    assert services["status"] == "blocked"
+    assert services["worker"] == {"running": False}
 
 
 def test_readiness_first_use_complete_when_a_pack_exists(tmp_path):

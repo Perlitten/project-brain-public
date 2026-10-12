@@ -33,6 +33,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `scripts/start.sh` starts the API, the worker and the web dashboard in one
+  terminal; `scripts/bootstrap.sh` lists all three in its "Next" output, writes
+  `--repo` into `TARGET_REPO_PATH`, and says so when it falls back to Brain's
+  own source as a sample repository.
+- `/health` reports worker liveness (`worker.running`, from the heartbeat each
+  worker keeps in Redis). Without a worker, Setup blocks "Start Brain's
+  services", the sidebar shows "worker down", and a queued job's toast says
+  "Worker is not running. Start it with …" instead of waiting silently.
 - First run: with no sign-in configured, the web dashboard opens without a
   password when it listens on loopback and is opened from this machine
   (`npm run dev` / `npm run start` now bind `127.0.0.1`; change it with

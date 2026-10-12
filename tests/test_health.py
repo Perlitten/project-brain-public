@@ -203,3 +203,20 @@ def test_ready_probes_remote_late_interaction_without_draining_api(
     assert response.status_code == 200
     assert response.json()["optional_dependencies"]["late_interaction_provider"] == "unhealthy"
     remote.ready.assert_awaited_once()
+
+
+@patch("apps.api.routers.core_lifecycle.worker_liveness", new_callable=AsyncMock)
+@patch("apps.api.routers.core_lifecycle.check_health", new_callable=AsyncMock)
+def test_health_reports_worker_liveness_and_start_hint(mock_check_health, mock_liveness):
+    from brain.workers.queue import WORKER_START_HINT
+
+    mock_check_health.return_value = {"postgres": {"status": "healthy"}}
+    mock_liveness.return_value = {"running": False, "pools": None, "hint": WORKER_START_HINT}
+    data = client.get("/health").json()
+    assert data["worker"]["running"] is False
+    assert data["worker"]["hint"].startswith("Worker is not running. Start it with")
+
+    mock_liveness.side_effect = ConnectionError("redis down")
+    data = client.get("/health").json()
+    assert data["worker"]["running"] is None
+    assert data["worker"]["error"] == "ConnectionError"

@@ -13,6 +13,8 @@ export interface Pulse {
   healthy?: boolean;
   /** Services that aren't healthy, by name. */
   down: string[];
+  /** Set when no background worker heartbeat is seen: how to start one. */
+  workerHint?: string;
   /** Scheduled jobs reported overdue by Brain, distinct from a service outage. */
   warnings?: string[];
   version?: string;
@@ -44,6 +46,10 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
   const down = Object.entries(details)
     .filter(([, v]) => o(v).status !== "healthy")
     .map(([k]) => k);
+  // Without a worker every queued job waits forever: count it as down.
+  const worker = o(health.worker);
+  const workerDown = worker.running === false;
+  if (workerDown) down.push("worker");
   const stale = o(health.scheduler).stale;
   const run = o((Array.isArray(indexing?.runs) ? indexing.runs : [])[0]);
   const steps = (Array.isArray(setup?.steps) ? setup.steps : []).map(o);
@@ -53,8 +59,9 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
     at: Date.now(),
     reachable: true,
     latencyMs,
-    healthy: health.status === "ok",
+    healthy: health.status === "ok" && !workerDown,
     down,
+    workerHint: workerDown ? s(worker.hint) ?? "Worker is not running." : undefined,
     warnings: Array.isArray(stale) ? stale.filter((job): job is string => typeof job === "string") : [],
     version: s(o(version).version) ?? s(health.version),
     build: sha && sha !== "unknown" ? sha.slice(0, 7) : undefined,

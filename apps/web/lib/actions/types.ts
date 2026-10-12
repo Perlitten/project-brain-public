@@ -38,4 +38,6 @@ export interface JobSnapshot {
   ok: boolean;
   detail?: string;
   progress?: number;
+  /** Queued while no worker is running: it will not start on its own. */
+  stalled?: boolean;
 }
