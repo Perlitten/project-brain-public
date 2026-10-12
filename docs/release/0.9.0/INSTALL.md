@@ -1,4 +1,4 @@
-# Install — Brain 0.9.0 (single-user)
+# Install — Brain 0.9.x (single-user)
 
 One instance per user, on a machine you control, with your own repositories and
 your own provider credentials. Verified commands below were run end-to-end on a
@@ -10,12 +10,28 @@ inside WSL2, or follow the manual steps below (use `.venv\Scripts\` instead of
 
 ## Prerequisites
 
-| Requirement | Minimum | Verified |
+| Requirement | Minimum | Verified (2026-10-12, 0.9.1) |
 |---|---|---|
-| Python | 3.12 (CI-tested); `pyproject.toml` declares `>=3.10`, but 3.10/3.11 are untested | 3.12.13 |
-| Docker Engine + Compose | Compose 2.24.0+ | 29.7.2 / v5.4.0 |
-| RAM / disk for services | ~2 GB free | — |
+| Python | 3.12 (CI-tested); `pyproject.toml` declares `>=3.10`, but 3.10/3.11 are untested | 3.12 |
+| Docker Engine + Compose | Compose 2.24.0+ | Docker CE / compose v5.4.0 |
+| RAM | ~2 GB free for the services | — |
+| Disk | ~2.5 GB (images ~1.2 GB + venv ~1 GB + index) | — |
 | Provider credentials | none required (mock works) | — |
+
+## Measured end-to-end (re-run 2026-10-12, fresh clone, Ubuntu, 3.12, warm network)
+
+| Step | Time |
+|---|---|
+| `git clone` + `cd` | ~2 s |
+| `./scripts/bootstrap.sh` (venv + `pip install -e .` + `.env` + docker pull of postgres/redis/neo4j + `brain doctor`) | ~40 s (cold docker pull included) |
+| Clone a medium repo (pallets/flask, shallow) | ~5 s |
+| `brain index --repo flask` (mock providers) | ~17 s |
+| `./scripts/start.sh` until API+worker+web ready | ~10 s |
+| `eval/mcp_stdio_e2e.py` — all tools incl. `prepare_task_context` + `record_decision` | ~3 s |
+| **Clone → agent answer through MCP** | **~1.5–2 min** |
+
+With a real embedding provider (Ollama or an API key) add model pull time once
+and slower indexing proportional to embed calls.
 
 Optional, only when you want real LLM/embeddings: `OPENAI_API_KEY` /
 `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` / `NVIDIA_API_KEY` (nvapi-…).

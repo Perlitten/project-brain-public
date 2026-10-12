@@ -23,7 +23,7 @@ classifiers = [
 dependencies = [
     "fastapi",
     "uvicorn",
-    "typer[all]",
+    "typer",
     "pydantic>=2.0.0",
     "pydantic-settings",
     # asyncio extras pull in greenlet — required by brain.database.session,
