@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const ts = require('typescript');
+// TypeScript 7 is the project's CLI compiler; this harness needs the legacy runtime API.
+const ts = require('typescript5');
 const root = path.resolve(__dirname, '..');
 
 // Compile the actual TypeScript modules; isolate only Next request and API boundaries.

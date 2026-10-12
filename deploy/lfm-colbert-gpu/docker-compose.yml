@@ -5,7 +5,7 @@ services:
     build:
       context: ../..
       dockerfile: deploy/lfm-colbert-gpu/Dockerfile
-    image: project-brain/lfm-colbert-gpu:${LFM_GPU_IMAGE_TAG:-pylate-1.4.0}
+    image: project-brain/lfm-colbert-gpu:${LFM_GPU_IMAGE_TAG:-pylate-1.6.0}
     container_name: lfm-colbert-gpu
     command:
       - uvicorn
