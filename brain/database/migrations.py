@@ -218,7 +218,7 @@ async def _backfill_non_current_knowledge_authority(
             SET summary = btrim(:prefix_text || ' ' || COALESCE(summary, ''))
             WHERE ({path_predicate})
               AND (summary IS NULL OR ltrim(summary) NOT LIKE :prefix_like)
-            """
+            """  # nosec B608
         ),
         params,
     )
@@ -234,7 +234,7 @@ async def _backfill_non_current_knowledge_authority(
                   chunk.summary IS NULL
                   OR ltrim(chunk.summary) NOT LIKE :prefix_like
               )
-            """
+            """  # nosec B608
         ),
         params,
     )
@@ -582,7 +582,7 @@ async def _ensure_embedding_vector_column(conn: AsyncConnection, dimension: int)
                     WHERE embedding IS NULL
                       AND vector_data IS NOT NULL
                       AND jsonb_array_length(vector_data::jsonb) = {dimension}
-                    """
+                    """  # nosec B608
                 )
             )
     except Exception as exc:

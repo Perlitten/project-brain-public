@@ -164,7 +164,7 @@ def _coerce_symbol_line(value: Any, fallback: int) -> int:
 
 # Helper to calculate MD5 hash of a file's content
 def calculate_file_hash(content: str) -> str:
-    return hashlib.md5(content.encode("utf-8", errors="ignore")).hexdigest()
+    return hashlib.md5(content.encode("utf-8", errors="ignore"), usedforsecurity=False).hexdigest()  # content dedup key, not a security digest
 
 
 # Simple symbol extractor using regex for Python, TS/JS, Kotlin, Go, Rust
