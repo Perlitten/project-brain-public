@@ -159,9 +159,11 @@ class AutonomousOperatorEngine:
     def _run_test(self, oracle_test: Optional[str]) -> Tuple[bool, str]:
         if not oracle_test:
             return True, "No oracle test provided."
+        if oracle_test.startswith("-"):
+            return False, "Rejected oracle_test: must be a test path, not a pytest option."
         try:
             completed = subprocess.run(
-                [Path(sys.executable).as_posix(), "-m", "pytest", oracle_test, "-v", "--tb=short"],
+                [Path(sys.executable).as_posix(), "-m", "pytest", "-v", "--tb=short", "--", oracle_test],
                 cwd=PROJECT_ROOT,
                 capture_output=True,
                 text=True,

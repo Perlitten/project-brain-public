@@ -1,0 +1,61 @@
+name: Bug report
+description: Something does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Do not include secrets, API keys or `.env` contents.
+        Security issues go to a private advisory, not here.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "v0.9.0 or a commit SHA"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - API
+        - Worker / scheduler
+        - CLI
+        - MCP server
+        - Web UI (apps/web)
+        - Install / deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS (and WSL2 if on Windows), Python version, Docker / Compose version, LLM provider.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include error messages and relevant logs (`brain doctor` output helps).
+      render: text
+    validations:
+      required: true

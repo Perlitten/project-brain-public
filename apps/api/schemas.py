@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class IndexRequest(BaseModel):
@@ -41,9 +41,17 @@ class ImpactRequest(BaseModel):
 
 
 class DiffReviewRequest(BaseModel):
-    base: Optional[str] = None
-    head: Optional[str] = "current"
+    base: Optional[str] = Field(default=None, max_length=200)
+    head: Optional[str] = Field(default="current", max_length=200)
     repo_path: Optional[str] = None
+
+    @field_validator("base", "head")
+    @classmethod
+    def _no_option_like_ref(cls, value: Optional[str]) -> Optional[str]:
+        # A ref starting with '-' would be parsed by git as an option.
+        if value is not None and value.startswith("-"):
+            raise ValueError("git ref must not start with '-'")
+        return value
 
 
 class LearningCreate(BaseModel):

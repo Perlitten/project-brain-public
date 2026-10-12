@@ -130,7 +130,7 @@ async def intake_capture(
 
 
 def _is_non_latin(text: str) -> bool:
-    return any("Ѐ" <= ch <= "ӿ" for ch in text)
+    return any("\u0400" <= ch <= "\u04ff" for ch in text)
 
 
 async def _translate(text: str, target: str) -> str:
@@ -185,7 +185,7 @@ async def assistant_reply(
         answer = result.get("answer") if isinstance(result, dict) else str(result)
     except Exception as exc:  # a chat bot must answer, not 500 into silence
         logger.warning(f"telegram bridge: ask failed for repo={repo_path}: {exc}")
-        return {"answer": f"Не смог ответить: {exc}"}
+        return {"answer": f"Could not answer: {type(exc).__name__}"}
 
-    scope = repo_path or "репозиторий по умолчанию"
+    scope = repo_path or "default repository"
     return {"answer": f"[{scope}]\n{answer}"}

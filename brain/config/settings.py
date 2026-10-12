@@ -653,6 +653,10 @@ class Settings(BaseSettings):
             insecure = {
                 "POSTGRES_PASSWORD": "postgres_password",
                 "NEO4J_PASSWORD": "neo4j_password",
+                # Placeholders shipped in .env.example: anyone who read the
+                # README knows them, so they are not secrets.
+                "PROJECT_BRAIN_API_KEY": "change-me-in-production",
+                "PROJECT_BRAIN_WEBHOOK_TOKEN": "change-me-to-a-random-64-character-token",
             }
             offenders = [name for name, default in insecure.items() if getattr(self, name) == default]
             if offenders:

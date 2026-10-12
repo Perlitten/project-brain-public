@@ -8,8 +8,10 @@ Every other credential stays in the operator's own environment.
 """
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
+import socket
 import stat
 import tempfile
 from io import StringIO
@@ -58,6 +60,44 @@ def setup_env_path() -> Path:
     return Path(explicit).expanduser() if explicit else Path(".env")
 
 
+_METADATA_HOSTS = frozenset(
+    {
+        "metadata.google.internal",
+        "metadata.goog",
+        "metadata",
+        "instance-data",
+        "instance-data.ec2.internal",
+    }
+)
+
+
+def check_endpoint_host(label: str, hostname: str) -> None:
+    """Reject cloud-metadata and link-local hosts for a provider base URL.
+
+    Loopback and private ranges stay allowed on purpose: self-hosted Ollama /
+    vLLM / LM Studio legitimately run on localhost or the LAN. Only the
+    addresses that expose instance credentials (169.254.0.0/16, fe80::/10,
+    the AWS IPv6 IMDS fd00:ec2::254 and well-known metadata names) are refused.
+    """
+    host = hostname.strip().rstrip(".").lower()
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    if host in _METADATA_HOSTS:
+        raise ValueError(f"{label}: cloud metadata hosts are not allowed")
+    try:
+        ip: ipaddress.IPv4Address | ipaddress.IPv6Address = ipaddress.ip_address(host.split("%", 1)[0])
+    except ValueError:
+        # Legacy IPv4 spellings the resolver still accepts (2852039166, 0xa9fea9fe, 169.254.43518).
+        try:
+            ip = ipaddress.IPv4Address(socket.inet_aton(host))
+        except (OSError, ValueError):
+            return
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    if ip.is_link_local or ip == ipaddress.ip_address("fd00:ec2::254"):
+        raise ValueError(f"{label}: link-local / cloud metadata addresses are not allowed")
+
+
 def _sanitize_value(key: str, value: str) -> str:
     if any(ch in value for ch in ("\n", "\r", "\x00")):
         raise ValueError(f"{key}: value must be a single line")
@@ -71,6 +111,7 @@ def _sanitize_value(key: str, value: str) -> str:
             raise ValueError(f"{key}: must be an http(s) URL such as https://api.openai.com/v1")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError(f"{key}: put credentials in the API key, not in the URL")
+        check_endpoint_host(key, parsed.hostname)
     if key == "EMBEDDING_DIMENSION" and value and not (value.isdigit() and 0 < int(value) <= 65536):
         raise ValueError(f"{key}: must be a positive whole number")
     if (key in SECRET_SETUP_KEYS or key.endswith("_MODEL")) and any(ch.isspace() for ch in value):

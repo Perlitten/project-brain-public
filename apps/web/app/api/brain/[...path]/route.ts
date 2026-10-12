@@ -1,14 +1,16 @@
 import type { NextRequest } from "next/server";
-import { authorizeWebRequest, sessionFrom, webAuthResponse } from "@/lib/web-auth";
+import { authorizeWebRequest, lockReason, sessionFrom, webAuthResponse } from "@/lib/web-auth";
 
 // Server-side bridge to the Brain API on the VPS. The API key lives only in
 // the Vercel environment and is attached here, so it never reaches a browser.
 // Read-only until actions are designed with explicit confirmation.
+// Nothing is forwarded with the server key unless authorizeWebRequest lets
+// the caller in; every refusal is JSON {error, detail}.
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const authorization = await authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")));
-  if (authorization !== 200) return webAuthResponse(authorization);
+  if (authorization !== 200) return webAuthResponse(authorization, authorization === 503 ? await lockReason() : null);
   const base = process.env.BRAIN_API_URL;
   const key = process.env.BRAIN_API_KEY;
   if (!base || !key) {
@@ -31,6 +33,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ path: strin
       headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "application/json" },
     });
   } catch {
-    return Response.json({ error: "upstream_unreachable" }, { status: 502 });
+    return Response.json(
+      { error: "brain_unreachable", detail: "The Brain API did not answer. Check that it is running and that BRAIN_API_URL is right." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }

@@ -209,6 +209,10 @@ async def collect_embedding_inventory(
                 skip = excluded[path] = should_exclude_from_retrieval(path)
             if skip:
                 continue
+            # Blank chunks (legacy rows from empty files) cannot be embedded:
+            # providers reject empty input, so they would stay "missing" forever.
+            if (not content) if fast else not (content or "").strip():
+                continue
             inventory.total_eligible_chunks += 1
             if fast:
                 reason = fast_embedding_reason(emb_id, dim, provider, model, vec_len, config)

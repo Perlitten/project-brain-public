@@ -1,10 +1,14 @@
-# Brain 0.9.0-rc1 — release notes
+# Brain 0.9.0 — release notes
 
-First release candidate of the single-user distribution of Project Brain: an
+First public release of the single-user distribution of Project Brain: an
 AI-native memory/navigation/context layer for coding agents, run per-user with
 your own repositories and provider credentials.
 
-Suggested tag: `v0.9.0-rc1` (naming follows `v0.5.0-rc1`).
+Tag: `v0.9.0`. Changes after the tag are tracked in
+[`CHANGELOG.md`](../../../CHANGELOG.md).
+
+Pull request and issue numbers below (`#NN`) refer to the pre-public private
+repository and do not resolve on GitHub.
 
 ## Highlights since 0.9.0 development
 
@@ -40,31 +44,40 @@ Suggested tag: `v0.9.0-rc1` (naming follows `v0.5.0-rc1`).
 - `brain doctor` preflight: python/.env/dirs/provider keys/service health with
   actionable failures (#94).
 - Hashed `pip-compile` locks (`--require-hashes`); wheel build + clean-install
-  smoke in CI config (Actions currently disabled repo-wide — local gates only).
+  smoke in CI (GitHub Actions: Python 3.12, Node 22).
 - Test suite is hermetic to a configured `.env` (#96): 1508 tests, 0 failures
   with services configured.
 - Dashboard: WCAG 2.2 AA pass (#91); admin page for principals/credentials (#92).
+  The operator UI is now the separate Next.js app in `apps/web`.
+- Scheduling moved into the worker (`brain/workers/scheduler.py`,
+  [ADR 013](../../adr/013-worker-scheduler.md)); n8n is no longer used or required.
 
 **Quality bar**
 
 - mypy baseline 0 across `brain/`, `apps/`, `scripts/` (was 203).
 - 1508 tests; ruff clean.
 
-## Verified for this RC
+## Verified for this release
 
-See `docs/launch-readiness/2026-10-02-single-user-journey-validation.md` —
+See the archived pre-release report
+[`docs/archive/launch-readiness/2026-10-02-single-user-journey-validation.md`](../../archive/launch-readiness/2026-10-02-single-user-journey-validation.md) —
 install→first-task ~50s, restart persistence, incremental upgrade, live
 backup/restore, crash recovery, docker sandbox, full suite.
 
-## Known issues / manual steps for rc1
+## Known issues / manual steps
 
-1. `pg_dump`/`psql` required on PATH for backups; must match server major.
+1. Backups only: `pg_dump`/`psql` required on PATH; must match server major.
 2. `docker pull debian:bookworm-slim` needed for the docker sandbox backend.
-3. Default `.env` API key is `change-me-in-production` — rotate before exposure.
+3. The `.env.example` API key is the placeholder `change-me-in-production`.
+   `scripts/bootstrap.sh` replaces it with a random value; if you copy the file
+   by hand, rotate it yourself (production refuses to start with it — see
+   `CHANGELOG.md`, Unreleased).
 4. Real-provider paths (openai/anthropic/google/nvidia) configured but not
-   verified with live keys in this RC.
-5. Remote MCP server, n8n artifact restore, `unshare` backend, dashboard
-   session login, and wheel-install smoke are unverified for rc1.
+   verified with live keys in this release.
+5. Remote MCP server, `unshare` backend and web UI session login are outside
+   the verified single-user profile.
+6. CI tests only Python 3.12 and Node 22; `scripts/bootstrap.sh` is POSIX-only
+   (use WSL2 on Windows).
 
 ## Upgrade & rollback
 
@@ -74,5 +87,5 @@ startup; there are no down-migrations — rollback restores from backup.
 ## License
 
 MIT — see `LICENSE`. Third-party components keep their own licenses; see
-`THIRD_PARTY_NOTICES.md`. This RC does not publish a release or change
-repository visibility.
+`THIRD_PARTY_NOTICES.md`. The repository is public on GitHub
+(Perlitten/project-brain-public).
