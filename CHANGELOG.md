@@ -33,6 +33,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Setup's "Choose the code to read" step lists the repositories Brain has
+  actually indexed and makes one the active repository in a click. When
+  `TARGET_REPO_PATH` was never indexed but another repository was (for example
+  with `brain index --repo`), the step says so instead of reporting done; the
+  default sample (Brain's own source) is labelled as such.
 - `scripts/start.sh` starts the API, the worker and the web dashboard in one
   terminal; `scripts/bootstrap.sh` lists all three in its "Next" output, writes
   `--repo` into `TARGET_REPO_PATH`, and says so when it falls back to Brain's

@@ -27,7 +27,7 @@ from sqlalchemy import func, select
 
 from brain.config.paths import get_repo_root, resolve_repo_path
 from brain.config.settings import settings
-from brain.database.models import ContextPack, IndexingRun
+from brain.database.models import ContextPack, IndexingRun, Repository
 from brain.database.repository_utils import get_repository_by_path
 from brain.database.session import async_session_factory, check_health, redis_client
 from brain.onboarding.provider_check import provider_state
@@ -85,22 +85,53 @@ def _services_step(health: Dict[str, Any], worker: Optional[Dict[str, Any]] = No
     }
 
 
-def _repo_step(repo_path: Optional[Path]) -> Dict[str, Any]:
+def _same_path(a: str, b: str) -> bool:
+    try:
+        return Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return a == b
+
+
+def _repo_step(
+    repo_path: Optional[Path],
+    indexed_repos: Optional[list[Dict[str, str]]] = None,
+    selected_indexed: bool = False,
+) -> Dict[str, Any]:
+    """The repository Brain reads (TARGET_REPO_PATH), next to the ones it has
+    actually indexed. Indexing another repository with ``brain index --repo``
+    does not move TARGET_REPO_PATH, so a mismatch is reported here instead of
+    surfacing later as an unexplained "no completed index run"."""
+    indexed_repos = indexed_repos or []
+    step: Dict[str, Any] = {"id": "repo", "title": "Choose a repository", "indexed_repositories": indexed_repos}
+    names = ", ".join(r["path"] for r in indexed_repos[:3])
     if repo_path is None:
-        return {
-            "id": "repo",
-            "title": "Choose a repository",
-            "status": _BLOCKED,
-            "detail": f"TARGET_REPO_PATH ({settings.TARGET_REPO_PATH!r}) is not a directory",
-            "hint": "point it at the repository you work in — save it here or edit .env",
-        }
-    return {
-        "id": "repo",
-        "title": "Choose a repository",
-        "status": _DONE,
-        "detail": str(repo_path),
-        "hint": "",
-    }
+        step.update(
+            {
+                "status": _BLOCKED,
+                "detail": f"TARGET_REPO_PATH ({settings.TARGET_REPO_PATH!r}) is not a directory",
+                "hint": (
+                    f"pick an indexed repository below ({names})"
+                    if indexed_repos
+                    else "point it at the repository you work in — save it here or edit .env"
+                ),
+            }
+        )
+        return step
+    sample = _same_path(str(repo_path), str(get_repo_root()))
+    detail = str(repo_path) + (" — Project Brain's own source, used as a sample" if sample else "")
+    others = [r for r in indexed_repos if not _same_path(r["path"], str(repo_path))]
+    if not selected_indexed and others:
+        step.update(
+            {
+                "status": _ACTION,
+                "detail": f"{detail}; it is not indexed, but {len(others)} other repositor"
+                f"{'y is' if len(others) == 1 else 'ies are'}: {', '.join(r['path'] for r in others[:3])}",
+                "hint": "pick the repository you indexed, or index this one",
+            }
+        )
+        return step
+    step.update({"status": _DONE, "detail": detail, "hint": ""})
+    return step
 
 
 def _provider_step() -> Dict[str, Any]:
@@ -403,8 +434,18 @@ async def collect_setup_status() -> Dict[str, Any]:
         # Packs not provably built for the selected repository: other-repo
         # packs and unattributed legacy rows (repository_id NULL).
         unattributed = total_packs - len(packs)
+        completed_repo_ids = select(IndexingRun.repository_id).where(IndexingRun.status == "completed")
+        indexed_rows = (
+            await session.execute(
+                select(Repository)
+                .where(Repository.id.in_(completed_repo_ids))
+                .order_by(Repository.updated_at.desc())
+                .limit(20)
+            )
+        ).scalars().all()
+    indexed_repos = [{"name": r.name, "path": r.path} for r in indexed_rows]
 
-    repo = _repo_step(repo_path)
+    repo = _repo_step(repo_path, indexed_repos, selected_indexed=index_commit is not None)
     provider = _provider_step()
     indexed_step = _index_step(repo_path, indexed)
     agent = _agent_step()

@@ -740,3 +740,13 @@ test('missing worker heartbeat: the rail says the worker is down and a queued jo
   assert.equal(waiting.stalled, false);
   assert.equal(waiting.status, 'queued');
 });
+
+test('setup repository step offers the repositories Brain has actually indexed', () => {
+  const { indexedRepositories } = load('lib/setup-copy.ts');
+  const step = { extra: { indexed_repositories: [{ name: 'app', path: '/home/u/app' }, { path: '/home/u/lib' }, { name: 'bad' }, null] } };
+  assert.deepEqual(JSON.parse(JSON.stringify(indexedRepositories(step))), [
+    { name: 'app', path: '/home/u/app' },
+    { name: '/home/u/lib', path: '/home/u/lib' },
+  ]);
+  assert.deepEqual([...indexedRepositories({ extra: {} })], []);
+});

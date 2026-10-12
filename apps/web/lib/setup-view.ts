@@ -165,7 +165,7 @@ function demoView(): SetupView {
     },
     steps: [
       { id: "services", title: "Start the services", done: true, status: "done", detail: "Postgres, Redis and Neo4j answer", extra: { services: { postgres: "ok", redis: "ok", neo4j: "ok" } } },
-      { id: "repo", title: "Point Brain at your repository", done: true, status: "done", detail: "/home/you/code/project-brain", extra: {} },
+      { id: "repo", title: "Point Brain at your repository", done: true, status: "done", detail: "/home/you/code/project-brain", extra: { indexed_repositories: [{ name: "project-brain", path: "/home/you/code/project-brain" }] } },
       { id: "provider", title: "Choose the AI models", done: true, status: "done", detail: "Both providers answered a real call", extra: { llm: { provider: "openai", state: "verified" }, embedding: { provider: "openai", state: "verified" } } },
       { id: "indexed", title: "Index the code", done: true, status: "done", detail: "Last run completed", extra: { run: { run_id: 42, status: "completed", commit: "2a84512c0f1e", files: { processed: 1284, skipped: 12, failed: 0 } } } },
       { id: "agent", title: "Connect an agent", done: false, status: "todo", detail: "No agent has connected yet", hint: "Create a key below and paste the config into your agent", extra: { self_check: null, external_client: { connected: false } } },
