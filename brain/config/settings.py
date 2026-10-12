@@ -368,7 +368,8 @@ class Settings(BaseSettings):
     LATE_INTERACTION_DEEP_VECTOR_LIMIT: int = 200
     LATE_INTERACTION_DEEP_NOTIFY: bool = True
     NIGHTLY_DEEP_MAINTENANCE_ENABLED: bool = False
-    NIGHTLY_DEEP_MAINTENANCE_REPO_PATH: str = "/app"
+    # Blank = the indexed repository (TARGET_REPO_PATH); see _default_repo_paths.
+    NIGHTLY_DEEP_MAINTENANCE_REPO_PATH: str = ""
     NIGHTLY_DEEP_MAINTENANCE_NOTIFY: bool = True
     NIGHTLY_DEEP_MAINTENANCE_QUALITY_QUERIES: int = 3
     # Test/migration escape hatch only. Production requests must bind every
@@ -459,7 +460,8 @@ class Settings(BaseSettings):
     # changing the trigger branch alone is enough unless the workflow is
     # pinned to a different ref.
     PROJECT_BRAIN_WEBHOOK_REF: str = "refs/heads/main"
-    PROJECT_BRAIN_GIT_REPO_PATH: str = "/app"
+    # Blank = the indexed repository (TARGET_REPO_PATH); see _default_repo_paths.
+    PROJECT_BRAIN_GIT_REPO_PATH: str = ""
 
     @field_validator("POSTGRES_POOL_SIZE")
     @classmethod
@@ -760,10 +762,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 "the LFM deep lane requires an approved corpus lineage id"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _default_repo_paths(self):
+        # Scheduled maintenance and the merge webhook act on the repository
+        # Brain indexes unless told otherwise. A hard-coded container path here
+        # made every scheduled job fail on a local (venv) install.
+        target = (self.TARGET_REPO_PATH or ".").strip() or "."
         if not self.NIGHTLY_DEEP_MAINTENANCE_REPO_PATH.strip():
-            raise ValueError(
-                "NIGHTLY_DEEP_MAINTENANCE_REPO_PATH cannot be blank"
-            )
+            self.NIGHTLY_DEEP_MAINTENANCE_REPO_PATH = target
+        if not self.PROJECT_BRAIN_GIT_REPO_PATH.strip():
+            self.PROJECT_BRAIN_GIT_REPO_PATH = target
         return self
 
     @model_validator(mode="after")

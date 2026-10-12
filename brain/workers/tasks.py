@@ -576,20 +576,26 @@ async def auto_heal_stale_repositories(exclude_repository_id: int | None = None)
 
 
 async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
-    if (
-        params.get("scheduled")
-        and not settings.NIGHTLY_DEEP_MAINTENANCE_ENABLED
-    ):
-        return {
-            "status": "skipped",
-            "reason": "NIGHTLY_DEEP_MAINTENANCE_ENABLED=false",
-            "scheduled": True,
-        }
+    """Keep the indexed repository healthy: heal stale repos, reindex, verify and
+    repair embeddings, consolidate memory.
+
+    The late-interaction (LFM) deep lane is an optional extra on top. Without it
+    the standard maintenance still runs, so a default install gets a working
+    nightly job instead of a skipped or failing one.
+    """
+    deep = bool(settings.NIGHTLY_DEEP_MAINTENANCE_ENABLED)
 
     await init_db()
 
     repo_path = _deep_repo_path(params)
-    record = await _approved_deep_repository(repo_path)
+    if deep:
+        record = await _approved_deep_repository(repo_path)
+    else:
+        record = await get_repository_by_path(repo_path)
+        if record is None:
+            raise PermanentJobError(
+                f"Repository is not indexed yet: {repo_path.as_posix()}. Run `brain index --repo {repo_path.as_posix()}` first."
+            )
     # The selected target has its own reindex below; sweep only other repos.
     auto_heal_result = await auto_heal_stale_repositories(exclude_repository_id=record.id)
 
@@ -626,17 +632,20 @@ async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
             },
         )
 
-    late_sync, exact_client = await _reconcile_exact_lfm(record.id)
-    try:
-        quality_probes = await _run_deep_quality_probes(
-            record.path,
-            exact_client,
-        )
-    finally:
-        await exact_client.aclose()
-    if not quality_probes or any(
+    late_sync: Dict[str, Any] = {"status": "skipped", "reason": "NIGHTLY_DEEP_MAINTENANCE_ENABLED=false"}
+    quality_probes: list[dict[str, Any]] = []
+    if deep:
+        late_sync, exact_client = await _reconcile_exact_lfm(record.id)
+        try:
+            quality_probes = await _run_deep_quality_probes(
+                record.path,
+                exact_client,
+            )
+        finally:
+            await exact_client.aclose()
+    if deep and (not quality_probes or any(
         not probe.get("passed") for probe in quality_probes
-    ):
+    )):
         raise PermanentJobError(
             "Nightly deep quality probe failed closed",
             result={
@@ -677,6 +686,7 @@ async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
     )
     result = {
         "status": "completed",
+        "mode": "deep" if deep else "standard",
         "repository": {
             "id": record.id,
             "path": record.path,
