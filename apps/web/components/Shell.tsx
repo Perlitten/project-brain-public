@@ -130,7 +130,14 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
         <RailNav path={path} withRepo={withRepo} slim={slim} />
         {mobile && drawer && <button type="button" className="btn btn--neutral rail__close" onClick={() => setDrawer(false)}>Close menu</button>}
         <div className="rail__foot">
-          {demo ? (
+          {demo && process.env.NEXT_PUBLIC_DEMO_SITE === "1" && (
+          <p className="rail__note">
+            <a href="https://github.com/Perlitten/project-brain#readme">
+              Live demo with example data → install your own
+            </a>
+          </p>
+        )}
+        {demo ? (
             <p className="rail__note">
               <span className="chip chip--info">
                 <span className="chip__dot" aria-hidden="true" />
