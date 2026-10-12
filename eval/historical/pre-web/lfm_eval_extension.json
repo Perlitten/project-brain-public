@@ -235,12 +235,12 @@
   },
   {
     "id": "q047",
-    "question": "Which checked-in n8n workflows trigger nightly health, proactive insights, git reindex, and the weekly benchmark?",
-    "expect_files": ["n8n/workflows/nightly-health.json", "n8n/workflows/nightly-proactive-insights.json", "n8n/workflows/git-merge-reindex.json", "n8n/workflows/weekly-benchmark.json"],
+    "question": "Where are the nightly and weekly maintenance jobs scheduled, and which API route reports their status and receives the git-merge reindex trigger?",
+    "expect_files": ["brain/workers/scheduler.py", "apps/api/routers/scheduler.py"],
     "why": "Adds an orchestration artifact query.",
     "language": "en",
     "query_class": "exact_identifier",
-    "provenance": {"kind": "curated_synthetic", "source": "n8n orchestration ADR", "production_real": false}
+    "provenance": {"kind": "curated_synthetic", "source": "worker scheduler ADR", "production_real": false}
   },
   {
     "id": "q048",

@@ -260,9 +260,7 @@ Post-merge reindex: set the GitHub repo variable `PROJECT_BRAIN_WEBHOOK_URL` to
 `https://<BRAIN_PUBLIC_HOST>/webhooks/git-merge` and the secret
 `PROJECT_BRAIN_WEBHOOK_TOKEN` to the value in `.env`.
 
-## 6. (removed) n8n watchdog — no longer needed
-
-## 7. Index the Target Repo
+## 6. Index the Target Repo
 
 Run from the VPS:
 
