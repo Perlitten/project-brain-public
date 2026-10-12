@@ -72,3 +72,4 @@ eval/mutation_testing/results/
 # Host-local compose additions (extra source mounts)
 docker-compose.local.yml
 coverage.xml
+.coverage
