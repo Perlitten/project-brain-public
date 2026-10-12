@@ -129,6 +129,13 @@ the manual steps below. Native Windows is not tested in CI.
 * Optional: Node.js 22 for the web UI (the version CI tests);
   `postgresql-client` (pg15) only for `scripts/backup_runner.py` backups
 
+### Alternative: pre-built images (after the first tagged release)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Perlitten/project-brain/main/docker-compose.quickstart.yml -o docker-compose.yml
+docker compose up -d   # postgres+pgvector, neo4j, redis, api, worker, web from GHCR
+```
+
 ### Steps
 
 ```bash
