@@ -15,8 +15,7 @@ Time-bound audit snapshots, archived design sources, and repository Task
 Contracts receive the same non-current authority treatment automatically; the
 live harness injects its exact active contract separately.
 
-**Brain Insights** is a proactive inbox backed by the worker queue and the `insights` database table, shown in the web UI. Manual scans enqueue `proactive_insights`; recurring jobs (nightly maintenance, health, self-diagnosis, weekly benchmark) are fired by the scheduler inside the worker — see Settings → Scheduler and [ADR 013](docs/adr/013-worker-scheduler.md).
+**Brain Insights** is a proactive inbox backed by the worker queue and the `insights` database table, shown in the web UI. Manual scans enqueue `proactive_insights`; recurring jobs (nightly maintenance, health, self-diagnosis, weekly benchmark) are fired by the scheduler inside the worker — see Settings → Scheduler and [ADR 013](adr/013-worker-scheduler.md).
 
 ---
-
 
