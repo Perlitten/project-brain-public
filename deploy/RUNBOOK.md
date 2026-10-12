@@ -229,6 +229,16 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+The vhost has a `location = /mcp` block for the native MCP endpoint: SSE needs
+`proxy_buffering off` and a long read timeout. On a host whose vhost predates it,
+copy that block into the TLS `server` that certbot generated (or refresh the file as
+above and run certbot again). Without it, MCP calls still work but events arrive
+late and idle streams drop after 120s.
+
+With `BRAIN_PUBLIC_HOST` set, `/mcp` also serves OAuth for clients that cannot be
+given a key (see the README's MCP section). Set `BRAIN_PUBLIC_URL` to override the
+issuer URL.
+
 Issue or renew certificates:
 
 ```bash

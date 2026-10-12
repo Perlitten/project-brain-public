@@ -49,6 +49,10 @@ There is no need to read it all — aim to land on the right 2–3 files in one 
 | L3 retrieval into context/ask (hybrid pgvector + lexical) | `brain/memory/learning_retrieval.py`, `brain/context/runtime_context_builder.py` |
 | Repository scope and index freshness | `brain/memory/repo_scope.py`, `repo_freshness.py`, `source_manifest.py` |
 | MCP tools | `apps/mcp_server/server.py` (local), `remote_server.py` (remote), `tests/test_mcp.py` |
+| MCP protocol: annotations, resources, prompts, elicitation and sampling | `apps/mcp_server/protocol.py`, `tests/test_mcp_protocol.py` |
+| Native Streamable HTTP with principal-bound sessions | `apps/api/mcp_http.py`, `tests/test_mcp_http.py` |
+| OAuth 2.1: DCR, PKCE, consent, scoped credentials and refresh rotation | `apps/api/mcp_oauth.py`, `brain/auth/oauth_store.py`, `tests/test_mcp_oauth_db.py` |
+| Deferred MCP results and inline byte budgets | `apps/mcp_server/deferred_payload.py`, `tests/test_mcp_deferred_payload.py` |
 | Background jobs | `brain/workers/tasks.py`, `queue.py`, `worker.py` |
 | DB schema, migrations | `brain/database/models.py`, `harness_models.py`, `migrations.py` |
 | Settings, paths | `brain/config/settings.py`, `paths.py` |

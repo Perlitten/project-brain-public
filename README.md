@@ -72,6 +72,7 @@ the manual steps below. Native Windows is not tested in CI.
 | API (FastAPI) | your venv, or the `api` container | 8000 |
 | Worker (background jobs) | your venv, or the `worker` container | — |
 | MCP server (stdio) | started by your AI client | — |
+| MCP server (Streamable HTTP) | served by the API at `/mcp` | 8000 |
 | Web UI (Next.js, optional) | `apps/web`, Node 22 | 3100 |
 
 ### Prerequisites
@@ -491,6 +492,46 @@ Other clients (Claude Desktop, Cursor) take the same command in their JSON confi
 exactly this from environment variables, and `.mcp.json.example` is the
 template for clients that keep their config elsewhere. Details:
 [`DEPLOYMENT.md`](DEPLOYMENT.md), section 10.
+
+**Remote (native Streamable HTTP).** The API serves the same remote tool set at
+`https://<host>/mcp`, so a client that speaks Streamable HTTP needs only the URL:
+
+```bash
+claude mcp add --transport http project-brain https://brain.example.com/mcp \
+  --header "Authorization: Bearer pbk_..."
+```
+
+It accepts `Authorization: Bearer` or `X-API-Key` with any `pbk_` credential or the
+legacy key. Tool calls run in-process with the caller's own credential, so scopes,
+audit rows and telemetry attribute the agent exactly as the REST API would.
+Sessions are stateful (elicitation and sampling need them), which is why the API
+runs a single worker. `BRAIN_MCP_HTTP_ENABLED=false` turns the endpoint off.
+
+**OAuth.** With `BRAIN_PUBLIC_URL` (or `BRAIN_PUBLIC_HOST`, read as `https://<host>`)
+set, `/mcp` also advertises an OAuth 2.1 authorization server, for clients such as
+claude.ai connectors that cannot be given a key: dynamic client registration,
+PKCE, a consent page at `/oauth/consent`, one-hour access tokens and 30-day
+rotating refresh tokens. The access token is an ordinary scoped `pbk_` credential
+for a principal named `oauth:<client>:<id>`. Whoever clicks **Allow** signs in to the
+web dashboard or enters an API key that already holds the requested scopes, so a
+client never gets more than its approver could do directly.
+
+### Protocol features
+
+Besides tools, both servers implement:
+
+* **Tool annotations.** Every tool carries a title and read-only, destructive,
+  idempotent and open-world hints, so clients can auto-approve the read-only ones.
+* **Resources.** `brain://rules` and `brain://decisions` list the active rules and
+  decisions; `brain://payload/{token}` holds the tail of oversized tool results.
+* **Prompts.** `plan_change`, `review_changes` and `capture_lesson` encode the
+  intended tool sequence for common jobs.
+* **Elicitation.** With `BRAIN_MCP_CONFIRM_WRITES=true`, `record_decision` and
+  `record_rule` ask the human to approve the write when the client supports
+  elicitation. It is opt-in, because an unattended agent would stall on the prompt.
+* **Sampling.** When the server-side model fails, the remote `ask_project` asks the
+  client's own model to answer from the Brain's context pack instead of returning
+  an error.
 
 ### MCP stdio E2E verification
 

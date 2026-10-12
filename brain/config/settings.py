@@ -111,6 +111,14 @@ class Settings(BaseSettings):
     # and the retired /dashboard paths redirect to it; unset means no UI link.
     BRAIN_WEB_URL: Optional[str] = None
 
+    # Native MCP over Streamable HTTP at /mcp (apps/api/mcp_http.py).
+    BRAIN_MCP_HTTP_ENABLED: bool = True
+    # Public base URL of this API. Turns on the MCP OAuth authorization server
+    # (it is the token issuer, so it must be what clients reach); when unset it
+    # falls back to https://BRAIN_PUBLIC_HOST, and with neither OAuth stays off.
+    BRAIN_PUBLIC_URL: Optional[str] = None
+    BRAIN_PUBLIC_HOST: Optional[str] = None
+
     # PostgreSQL Configuration
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5433
