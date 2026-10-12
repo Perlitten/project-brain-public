@@ -3,7 +3,8 @@ import { loginPage } from "./lib/login-page";
 import { SESSION_COOKIE, authorizeWebRequest, lockReason, sessionFrom, signIn, webAuthResponse } from "./lib/web-auth";
 
 // Who may enter is decided in lib/web-auth.ts (WEB_BASIC_AUTH, or the login
-// set on Settings → Sign-in; with neither, locked unless WEB_OPEN_MODE=true).
+// set on Settings → Sign-in; with neither, open on a loopback-only dashboard or
+// with WEB_OPEN_MODE=true, locked everywhere else).
 // Browsers get a sign-in
 // page and a session cookie; scripts can still send HTTP Basic credentials
 // (curl -u user:password).
@@ -30,7 +31,7 @@ const wantsHtml = (req: NextRequest) => (req.headers.get("accept") ?? "").includ
 
 // 503: a readable page for browsers, JSON {error, detail} for everyone else.
 async function locked(req: NextRequest) {
-  const lock = await lockReason();
+  const lock = await lockReason(req.headers.get("host"));
   if (!wantsHtml(req)) return webAuthResponse(503, lock);
   const notice =
     lock?.reason === "unconfigured"
@@ -68,7 +69,7 @@ async function gate(req: NextRequest): Promise<Response> {
     const next = safeNext(form?.get("next"));
     const user = form?.get("username");
     const password = form?.get("password");
-    const result = await signIn(typeof user === "string" ? user : "", typeof password === "string" ? password : "");
+    const result = await signIn(typeof user === "string" ? user : "", typeof password === "string" ? password : "", req.headers.get("host"));
     if (result.status === 503) return locked(req);
     if (result.status === 401 || result.status === 429) {
       return page(next, result.status === 429 ? "throttled" : true, typeof user === "string" ? user : "");
@@ -86,7 +87,7 @@ async function gate(req: NextRequest): Promise<Response> {
     return res;
   }
 
-  const status = await authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")));
+  const status = await authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")), req.headers.get("host"));
   if (status === 200) return pathname === LOGIN ? NextResponse.redirect(new URL("/", req.url), 303) : NextResponse.next();
   if (status === 503) return locked(req);
 

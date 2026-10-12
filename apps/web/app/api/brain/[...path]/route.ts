@@ -9,8 +9,8 @@ import { authorizeWebRequest, lockReason, sessionFrom, webAuthResponse } from "@
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
-  const authorization = await authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")));
-  if (authorization !== 200) return webAuthResponse(authorization, authorization === 503 ? await lockReason() : null);
+  const authorization = await authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")), req.headers.get("host"));
+  if (authorization !== 200) return webAuthResponse(authorization, authorization === 503 ? await lockReason(req.headers.get("host")) : null);
   const base = process.env.BRAIN_API_URL;
   const key = process.env.BRAIN_API_KEY;
   if (!base || !key) {

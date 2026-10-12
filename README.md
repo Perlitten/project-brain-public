@@ -228,12 +228,14 @@ npm run dev                    # http://localhost:3100
 | `BRAIN_WEB_ACTIONS` | `0` turns dashboard actions off; `1` turns them on without a password (behind your own SSO) |
 | `BRAIN_TIMEZONE` | Optional IANA time zone for displayed times (default UTC) |
 
-**Signing in.** A fresh install opens without a password and says so in the top
-bar. Set a login and password on **Settings → Access → Dashboard sign-in**: the
+**Signing in.** A fresh install opens without a password while the dashboard
+listens on this machine only (`npm run dev` / `npm run start` bind `127.0.0.1`;
+change it with `WEB_HOST`) and says so in the top bar. On any other address it
+stays locked until a sign-in exists. Set a login and password on **Settings → Access → Dashboard sign-in**: the
 Brain API stores only a scrypt hash in its `.env` (`WEB_LOGIN_*`), the browser
 that set it stays signed in and every other browser is signed out on each
-change. Until a password exists, dashboard actions stay locked (except in
-`npm run dev`). Forgot it? Delete the `WEB_LOGIN_*` lines from the server's
+change. Until a password exists, dashboard actions stay locked unless the
+dashboard listens on loopback or runs under `npm run dev`. Forgot it? Delete the `WEB_LOGIN_*` lines from the server's
 `.env` and restart the API. Scripts can sign in with `curl -u login:password`.
 
 **Deploy to Vercel:** import the repository, set *Root Directory* to `apps/web`

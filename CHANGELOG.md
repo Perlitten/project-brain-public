@@ -33,6 +33,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- First run: with no sign-in configured, the web dashboard opens without a
+  password when it listens on loopback and is opened from this machine
+  (`npm run dev` / `npm run start` now bind `127.0.0.1`; change it with
+  `WEB_HOST`). Any other address, or a same-host reverse proxy that forwards a
+  public `Host`, stays locked. `WEB_OPEN_MODE=false` locks loopback too.
 - Telegram alert messages are in English.
 - The web proxy returns a JSON 503 when the Brain API is unreachable.
 - Release docs moved from `docs/release/0.9.0-rc1/` to `docs/release/0.9.0/`;
