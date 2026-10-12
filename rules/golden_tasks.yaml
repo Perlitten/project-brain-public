@@ -83,3 +83,20 @@ golden_tasks:
       - "skills"
     required_surfaces: []
     must_include_tests: true
+
+  - id: task_7
+    description: "Change MCP Streamable HTTP transport, OAuth consent or token issuing for remote agents"
+    expected_files:
+      - "apps/api/mcp_http.py"
+      - "apps/api/mcp_oauth.py"
+      - "brain/auth/oauth_store.py"
+      - "tests/test_mcp_oauth_db.py"
+    expected_modules:
+      - "apps/api"
+      - "brain/auth"
+    expected_features:
+      - "mcp"
+      - "oauth"
+      - "streamable http"
+    required_surfaces: []
+    must_include_tests: true

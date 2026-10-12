@@ -46,10 +46,10 @@ cross-surface, 5 architecture/memory, 5 RU-to-EN and 5 stale/failure cases.
 before any result is written, and refuses a non-production corpus at acceptance
 mode.
 
-Measured results and the honest read of them live in
-`docs/release/benefit-verification.md`. An unfamiliar-repository leg needs
-its own schema-v2 50-task manifest (fixed category split) authored against
-that repo's code — the harness is already parameterized for it.
+No measured results ship with the repository: run the harness against your own
+indexed repositories. An unfamiliar-repository leg needs its own schema-v2 50-task
+manifest (fixed category split) authored against that repo's code; the harness is
+already parameterized for it.
 
 ## LFM paired evaluation and runtime parity
 

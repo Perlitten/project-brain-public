@@ -68,3 +68,6 @@ eval/mutation_testing/results/
 .cursor/
 .agents/
 .cline/
+
+# Host-local compose additions (extra source mounts)
+docker-compose.local.yml

@@ -4,7 +4,7 @@ import pytest
 from brain.indexers.file_indexer import MAX_CHUNK_CHARS, chunk_file_content
 
 
-@pytest.mark.parametrize("unit", ["x", "Ж", "😀"])
+@pytest.mark.parametrize("unit", ["x", "é", "😀"])
 def test_single_long_line_is_preserved_without_oversized_chunks(unit):
     content = unit * (MAX_CHUNK_CHARS * 2 + 37)
     chunks = chunk_file_content(content, [])

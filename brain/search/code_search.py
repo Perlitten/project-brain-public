@@ -115,8 +115,18 @@ def _trim_summary(summary: Optional[str]) -> Optional[str]:
     return summary[:SUMMARY_RESPONSE_CHARS].rstrip() + "…"
 
 
+# One identifier word: an acronym run that ends where a capitalised word starts
+# (HTTP|Adapter), a capitalised or lower-case word, or a trailing acronym.
+_IDENTIFIER_PART = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+")
+
+
 def extract_keywords(query: str) -> List[str]:
     """Extract lowercase keywords from a natural-language query.
+
+    Identifiers are kept whole and also split into their words, so
+    ``HTTPAdapter`` yields ``httpadapter``, ``http`` and ``adapter`` (the last
+    one matches ``adapters.py``) and ``http_adapter`` yields ``http_adapter``,
+    ``http`` and ``adapter``.
 
     Stopwords are dropped so lexical matching keys on the terms that carry
     meaning. If a query is *nothing but* stopwords ("why did they"), the
@@ -124,7 +134,14 @@ def extract_keywords(query: str) -> List[str]:
     searching with none, and an empty keyword list would silently disable the
     whole lexical branch.
     """
-    tokens = [kw.lower() for kw in re.findall(r"\b[a-zA-Z]{3,}\b", query)]
+    tokens: List[str] = []
+    for raw in re.findall(r"\b[A-Za-z][A-Za-z0-9_]*[A-Za-z0-9]\b", query):
+        words = [w for chunk in raw.split("_") for w in _IDENTIFIER_PART.findall(chunk)]
+        if len(raw) >= 3:
+            tokens.append(raw.lower())
+        if len(words) > 1:
+            tokens.extend(w.lower() for w in words if len(w) >= 3)
+    tokens = list(dict.fromkeys(tokens))
     meaningful = [kw for kw in tokens if kw not in ENGLISH_STOPWORDS]
     return meaningful or tokens
 
@@ -565,9 +582,7 @@ async def search_code(
                         == KNOWLEDGE_STATUS_HISTORICAL
                     )
                 )
-            for file_record in file_records:
-                if should_exclude_from_retrieval(file_record.path):
-                    continue
+            def _file_item(file_record) -> Dict[str, Any]:
                 status = knowledge_status_from_summary(file_record.summary)
                 weight = (
                     get_file_type_weight(file_record.file_type)
@@ -585,9 +600,9 @@ async def search_code(
                 }
                 if status == KNOWLEDGE_STATUS_HISTORICAL:
                     item["authority_note"] = HISTORICAL_AUTHORITY_NOTE
-                files_found.append(item)
-                if len(files_found) >= limit:
-                    break
+                return item
+
+            path_hits = [_file_item(file_record) for file_record in file_records]
 
             # Guarded like the file branch above: or_() with zero clauses is an
             # error in SQLAlchemy 2.x, and keywords can now legitimately be
@@ -596,14 +611,25 @@ async def search_code(
                 [Symbol.name.ilike(f"%{kw}%") for kw in keywords]
                 + [Symbol.summary.ilike(f"%{kw}%") for kw in keywords]
             )
-            stmt_symbols = select(Symbol, File.path).join(File, Symbol.file_id == File.id)
+            stmt_symbols = select(Symbol, File).join(File, Symbol.file_id == File.id)
             stmt_symbols = stmt_symbols.where(
                 or_(*sym_clauses) if sym_clauses else false()
             ).order_by(*symbol_relevance_order(keywords)).limit(limit * 2)
             if repository_id is not None:
                 stmt_symbols = stmt_symbols.where(File.repository_id == repository_id)
             res_symbols = await session.execute(stmt_symbols)
-            for sym, symbol_path in res_symbols.all():
+            # A file that defines a symbol the query names ("HTTPAdapter" ->
+            # adapters.py) is a stronger lexical hit than a path or summary
+            # that merely contains a keyword, so it leads the file channel.
+            symbol_hits: List[Dict[str, Any]] = []
+            for sym, symbol_file in res_symbols.all():
+                symbol_path = symbol_file.path
+                if (
+                    sym.name
+                    and any(kw in sym.name.casefold() for kw in keywords)
+                    and not should_exclude_from_retrieval(symbol_path)
+                ):
+                    symbol_hits.append(_file_item(symbol_file))
                 symbols_found.append(
                     {
                         "name": sym.name,
@@ -618,6 +644,15 @@ async def search_code(
                     }
                 )
                 if len(symbols_found) >= limit:
+                    break
+
+            seen_paths: set[str] = set()
+            for item in symbol_hits + path_hits:
+                if item["path"] in seen_paths:
+                    continue
+                seen_paths.add(item["path"])
+                files_found.append(item)
+                if len(files_found) >= limit:
                     break
 
     # Release the lexical/symbol session before vector sessions, remote scoring,

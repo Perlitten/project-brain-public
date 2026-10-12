@@ -15,7 +15,7 @@ import { createAgentKey, type NewKey } from "@/lib/actions/admin";
 import { startHealthCheck, startReindex } from "@/lib/actions/jobs";
 import { buildFirstPack, saveProvider, saveRepoPath, verifyAgent, verifyProviders, type ProviderInput } from "@/lib/actions/setup";
 import { shortRevision } from "@/lib/revision";
-import { STEP_COPY } from "@/lib/setup-copy";
+import { STEP_COPY, indexedRepositories } from "@/lib/setup-copy";
 import type { ProviderPreset, ProviderSlot, SetupView, StepView } from "@/lib/setup-view";
 
 type Json = Record<string, unknown>;
@@ -200,6 +200,7 @@ function Repo({ step, repoPath }: { step: StepView; repoPath?: string }) {
   const [path, setPath] = useState(repoPath ?? "");
   const { run, pending, mode } = useAction(saveRepoPath, { title: "Repository" });
   const changed = path.trim() !== (repoPath ?? "");
+  const indexed = indexedRepositories(step);
   return (
     <form
       className="form"
@@ -208,6 +209,30 @@ function Repo({ step, repoPath }: { step: StepView; repoPath?: string }) {
         run(path);
       }}
     >
+      {indexed.length > 0 && (
+        <div className="field">
+          <span className="field__label">Already indexed</span>
+          <div className="chips">
+            {indexed.map((r) => (
+              <button
+                key={r.path}
+                type="button"
+                className={`btn btn--sm ${r.path === repoPath ? "btn--primary" : "btn--neutral"}`}
+                aria-pressed={r.path === path.trim()}
+                title={r.path}
+                disabled={pending || mode !== "on" || r.path === repoPath}
+                onClick={() => {
+                  setPath(r.path);
+                  run(r.path);
+                }}
+              >
+                {r.name}
+              </button>
+            ))}
+          </div>
+          <span className="field__hint">Pick one to make it the repository Brain reads, or type another folder below.</span>
+        </div>
+      )}
       <label className="field" htmlFor="setup-repo-path">
         <span className="field__label">Folder on the Brain server</span>
         <input id="setup-repo-path" className="input input--mono" value={path} onChange={(e) => setPath(e.target.value)} placeholder="e.g. /home/you/code/my-project" spellCheck={false} autoComplete="off" />
@@ -256,14 +281,14 @@ const STATE_TONE: Record<string, "ok" | "warn" | "bad" | "idle" | "info"> = {
   configured: "warn",
   missing: "bad",
   failed: "bad",
-  demo: "idle",
+  demo: "warn",
 };
 const STATE_WORD: Record<string, string> = {
   verified: "works",
   configured: "saved, not verified",
   missing: "key missing",
   failed: "failed",
-  demo: "demo mode",
+  demo: "mock — smoke test only",
 };
 
 function Providers({ step, view }: { step: StepView; view: SetupView }) {

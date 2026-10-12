@@ -35,3 +35,13 @@ export const STEP_COPY: Record<string, StepCopy> = {
 };
 
 export const stepTitle = (id: string, fallback: string) => STEP_COPY[id]?.title ?? fallback;
+
+/** Repositories with a completed index run, as /api/setup/status reports them. */
+export function indexedRepositories(step: { extra: Record<string, unknown> }): { name: string; path: string }[] {
+  const list = step.extra.indexed_repositories;
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((r) => (r && typeof r === "object" ? (r as Record<string, unknown>) : {}))
+    .filter((r) => typeof r.path === "string" && r.path)
+    .map((r) => ({ name: typeof r.name === "string" && r.name ? r.name : String(r.path), path: String(r.path) }));
+}

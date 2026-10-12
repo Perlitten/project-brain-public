@@ -1,7 +1,7 @@
 {
   "id": "memory-003",
   "learning_category": "benchmark",
-  "learning_statement": "Benchmark probe (2026-10): `systemctl restart brain-api` no longer works; restart the API by killing uvicorn and relaunching via /home/hatch/workspace/brain-env.sh.",
+  "learning_statement": "Benchmark probe (2026-10): `systemctl restart brain-api` no longer works; restart the API by killing uvicorn and relaunching via ~/project-brain/brain-env.sh.",
   "learnings": [
     {
       "category": "benchmark",

@@ -39,7 +39,7 @@ CORRECTNESS_CASES = [
         0,
     ),
     (
-        "Как отправляются предупреждения владельцу?",
+        "How are owner alerts delivered?",
         [
             "Self-diagnosis deduplicates findings and sends owner alerts through the Telegram bot.",
             "Neo4j stores dependency edges between symbols.",

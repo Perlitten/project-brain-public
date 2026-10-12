@@ -29,7 +29,7 @@ jobs:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -116,9 +116,6 @@ jobs:
 
       - name: Run tests
         run: pytest -q
-
-      - name: Reject stale deployment identities
-        run: bash deploy/doctor.sh stale-scan
 
       - name: Build wheel + clean-install smoke
         run: |

@@ -132,10 +132,22 @@ Any additional source tree you want indexed must reach the containers through a
 container's writable layer, so the next `up --build` deletes them while their
 rows in Postgres survive — and a clean re-index clears the index *before* it
 rebuilds, so the following run destroys the index instead of refreshing it.
-`BRAIN_NOSTIA_DIR`, `BRAIN_NOSTIA_VAULT_DIR`, `BRAIN_NOSTIA_MEMORY_DIR` and
-`BRAIN_NOSTIA_SITE_DIR` exist for exactly this reason. Mount such trees
-individually rather than mounting a shared parent, so a home directory holding
-backups or ssh keys is never exposed to a container.
+Put extra mounts in a host-local `docker-compose.local.yml` next to
+`docker-compose.prod.yml` (it is git-ignored, and `deploy/server_up.sh` and
+`deploy/doctor.sh` pick it up automatically). Mount such trees individually
+rather than mounting a shared parent, so a home directory holding backups or
+ssh keys is never exposed to a container:
+
+```yaml
+# docker-compose.local.yml
+services:
+  api:
+    volumes:
+      - /srv/src/docs-site:/repos/docs-site:ro
+  worker:
+    volumes:
+      - /srv/src/docs-site:/repos/docs-site:ro
+```
 
 Before any clean re-index, confirm the container can actually see the source:
 

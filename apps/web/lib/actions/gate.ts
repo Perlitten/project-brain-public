@@ -3,12 +3,14 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
 import { apiConfigured, brainSend } from "../api";
-import { loginState } from "../web-auth";
+import { headers } from "next/headers";
+import { localHost, loginState, loopbackBind } from "../web-auth";
 import type { ActionResult, ActionsMode } from "./types";
 
 /**
  * Actions run only where the dashboard itself is protected: behind a sign-in
- * password (Settings → Sign-in, or WEB_BASIC_AUTH), in local development, or
+ * password (Settings → Sign-in, or WEB_BASIC_AUTH), in local development, on a
+ * dashboard that listens on loopback only (scripts/serve.mjs), or
  * when the operator opts in explicitly with BRAIN_WEB_ACTIONS=1 (e.g. behind
  * their own SSO). BRAIN_WEB_ACTIONS=0 switches them off everywhere.
  * While sign-in is open, the one thing allowed is setting the first password
@@ -18,7 +20,7 @@ export async function actionsMode(): Promise<ActionsMode> {
   if (!apiConfigured) return "demo";
   const flag = process.env.BRAIN_WEB_ACTIONS?.trim();
   if (flag === "0") return "locked";
-  if (flag === "1" || process.env.NODE_ENV === "development") return "on";
+  if (flag === "1" || process.env.NODE_ENV === "development" || (loopbackBind() && localHost((await headers()).get("host")))) return "on";
   const state = await loginState();
   if (state.kind === "env" || (state.kind === "brain" && state.mode === "password")) return "on";
   return "locked";

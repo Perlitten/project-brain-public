@@ -21,7 +21,7 @@ export type ActionsMode =
 export type SignInMode =
   /** No API: demo data, nothing to protect. */
   | "demo"
-  /** No password set yet and WEB_OPEN_MODE=true: anyone with the address gets in. */
+  /** No password set yet and open mode (loopback-only, or WEB_OPEN_MODE=true): anyone with the address gets in. */
   | "open"
   /** Login and password set on Access → Dashboard sign-in. */
   | "password"
@@ -38,4 +38,6 @@ export interface JobSnapshot {
   ok: boolean;
   detail?: string;
   progress?: number;
+  /** Queued while no worker is running: it will not start on its own. */
+  stalled?: boolean;
 }

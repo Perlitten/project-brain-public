@@ -512,6 +512,45 @@ class ApiCredential(Base):
     principal: Mapped["Principal"] = relationship("Principal")
 
 
+class OAuthClient(Base):
+    """An MCP client registered through OAuth dynamic client registration.
+
+    ``client_info`` is the RFC 7591 registration as the client sent it (with
+    the issued id and secret), so the authorization server can re-validate
+    redirect URIs and client authentication after a restart."""
+
+    __tablename__ = "oauth_clients"
+
+    client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    client_info: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class OAuthRefreshToken(Base):
+    """A refresh token for an OAuth-issued access credential.
+
+    Access tokens are ordinary ``api_credentials`` rows; this row is what lets
+    the client swap one for the next. Rotation revokes both the token and the
+    credential it last issued. Only the SHA-256 of the token is stored."""
+
+    __tablename__ = "oauth_refresh_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    client_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("oauth_clients.client_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    principal_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    subject: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    access_credential_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("api_credentials.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AuditEvent(Base):
     """Append-only record of who did what through the API (B7c).
 

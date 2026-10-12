@@ -2,7 +2,7 @@
 
 Per instance: checkout repo@base_commit -> incremental `brain index` -> run all
 system arms -> append one JSONL row. Resumable via --out (already-done ids are
-skipped). Protocol: ../PROTOCOL.md + ../PROTOCOL_AMENDMENTS.md.
+skipped). Protocol: ../PROTOCOL.md.
 
 Usage:
   python run_swebench.py --subset stratified60

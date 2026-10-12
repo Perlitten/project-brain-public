@@ -38,6 +38,20 @@ DEV_PRINCIPAL = ResolvedPrincipal(
 )
 
 
+def dev_open() -> bool:
+    """No key configured outside production: keyless requests act as DEV_PRINCIPAL."""
+    return not settings.PROJECT_BRAIN_API_KEY and settings.ENVIRONMENT.lower() != "production"
+
+
+async def resolve_api_key(raw_key: str) -> ResolvedPrincipal | None:
+    """Resolve a presented key (legacy shared key or ``pbk_`` credential)."""
+    if hmac.compare_digest(raw_key, settings.PROJECT_BRAIN_API_KEY or ""):
+        return LEGACY_PRINCIPAL
+    async with async_session_factory() as session:
+        async with session.begin():
+            return await resolve_credential(session, raw_key)
+
+
 async def require_principal(
     request: Request,
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
@@ -50,12 +64,8 @@ async def require_principal(
             # silently leave the mutating API open.
             raise HTTPException(status_code=503, detail="API key not configured on server")
         principal = DEV_PRINCIPAL
-    elif hmac.compare_digest(x_api_key, settings.PROJECT_BRAIN_API_KEY or ""):
-        principal = LEGACY_PRINCIPAL
     else:
-        async with async_session_factory() as session:
-            async with session.begin():
-                resolved = await resolve_credential(session, x_api_key)
+        resolved = await resolve_api_key(x_api_key)
         if resolved is None:
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
         principal = resolved

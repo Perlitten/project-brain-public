@@ -43,7 +43,7 @@ def post_index(api_url: str, api_key: str, repo_path: str, timeout: int) -> tupl
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("repos", nargs="+", help="Mounted repo paths, e.g. /indexed/Eunoia")
+    parser.add_argument("repos", nargs="+", help="Mounted repo paths, e.g. /indexed/docs-site")
     parser.add_argument("--api-url", default="http://127.0.0.1:8010")
     parser.add_argument("--env", default=str(Path.home() / "project-brain" / ".env"))
     parser.add_argument("--timeout", type=int, default=1800)

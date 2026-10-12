@@ -1,13 +1,11 @@
-"""Compatibility surface for the existing Telegram poller.
+"""Compatibility surface for an external Telegram poller.
 
-The poller (external-brain's `app/workers/telegram_poller.py`) is a live,
-working piece of software whose only problem is that the API it was pointed at
-no longer serves the endpoints it calls — every message died on a 404 before it
-could reach anyone. Rather than edit a running system, this reproduces the two
-endpoints it expects so it can be repointed here with a single env var, and
-rolled back the same way.
+A separately deployed Telegram poller can forward messages to Project Brain by
+pointing its API base URL here. This module serves the two endpoints such a
+poller expects, authenticated with the Brain API key, so it can be connected
+(or disconnected) with a single env var on the poller side.
 
-Its contract, read from the poller source:
+The contract:
   POST /v1/intake/capture   -> any 2xx
   POST /v1/assistant/reply  {workspace_slug, project_slug, question} -> {"answer": str}
   Authorization: Bearer <token>
@@ -81,7 +79,7 @@ async def _resolve_repo(question: str, project_slug: Optional[str]) -> tuple[Opt
     """Pick which indexed repository a question is about.
 
     Returns (repo_path, question_without_prefix). A message may name its target
-    with a `forex: ...` style prefix, because one bot serving nine indexed
+    with an `app: ...` style prefix, because one bot serving many indexed
     repositories is useless if every question hits the same one.
     """
     from pathlib import Path as _Path
@@ -91,8 +89,8 @@ async def _resolve_repo(question: str, project_slug: Optional[str]) -> tuple[Opt
         repos = [(r.path, (r.name or r.path.rstrip("/").split("/")[-1]).lower()) for r in rows]
 
     # Repositories whose source no longer exists still answer, and their names
-    # often collide with live ones ("brain:" matched a dead D:/Brain/project-brain
-    # row before /app). Live sources win; a stale row is only a last resort.
+    # often collide with live ones (a stale local checkout row can shadow the
+    # deployed /app). Live sources win; a stale row is only a last resort.
     def _alive(item: tuple[str, str]) -> int:
         try:
             return 0 if _Path(item[0]).is_dir() else 1
