@@ -12,6 +12,10 @@ __pycache__/
 
 # Environments
 .env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
 .deploy.env
 .secrets/
 
@@ -31,6 +35,8 @@ logs/
 *.db
 
 .cache/
+# Local audit output (screenshots, reports); never versioned.
+/artifacts/
 
 # .mcp.json is tracked on purpose so a fresh clone (including a cloud Claude Code
 # session) gets the Brain MCP server. It must stay secret-free: BRAIN_API_URL and

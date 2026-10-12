@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field as PydanticField
 
 from apps.api.auth import require_api_key, require_scope
 from brain.config.settings import settings
-from brain.onboarding.envfile import setup_env_path, update_env_file
+from brain.onboarding.envfile import check_endpoint_host, setup_env_path, update_env_file
 
 router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_api_key)])
 
@@ -173,6 +173,7 @@ def _coerce(f: SettingField, value: Value) -> tuple[str, Any]:
             raise ValueError(f"{f.label}: a full http(s):// address")
         if p.username or p.password or p.query or p.fragment:
             raise ValueError(f"{f.label}: no credentials, query or fragment in the URL")
+        check_endpoint_host(f.label, p.hostname)
         text = text.rstrip("/")
     if f.pattern and not re.fullmatch(f.pattern, text):
         raise ValueError(f"{f.label}: unexpected format")

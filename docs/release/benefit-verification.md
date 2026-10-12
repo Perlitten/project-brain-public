@@ -1,5 +1,11 @@
 # Benefit verification — measured results
 
+> **Note:** these runs were recorded before the repository became public.
+> Pull request numbers and some commit hashes cited from this project's own
+> history (for example the index revision `cd022eb`) refer to the pre-public
+> private repository and may not resolve on GitHub. The pinned third-party
+> revisions (such as `pallets/flask`) are unaffected.
+
 Controlled comparison harness: `eval/token_economy_benchmark.py` (schema-v2,
 paired arms — every task runs through BOTH strategies against the same
 indexed repository and the same read-window budgets).

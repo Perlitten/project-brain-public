@@ -53,6 +53,8 @@ class GitDiffEngine:
         """Validate and resolve Git revision to full 40-char commit SHA."""
         if not rev or not isinstance(rev, str):
             raise ValueError("Revision string cannot be empty")
+        if rev.startswith("-"):
+            raise ValueError(f"Invalid Git revision (looks like an option): {rev}")
         # Sanitize revision string (only alphanumeric, ~, ^, ., _, -, /)
         if not re.match(r"^[a-zA-Z0-9_\-.~/^]+$", rev):
             raise ValueError(f"Invalid Git revision syntax: {rev}")

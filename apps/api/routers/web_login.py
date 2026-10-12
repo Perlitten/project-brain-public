@@ -22,7 +22,7 @@ import time
 from collections import defaultdict, deque
 from typing import Any, Deque, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from apps.api.auth import require_api_key, require_scope
@@ -41,7 +41,11 @@ _N, _R, _P = 2**14, 8, 1
 
 # Failed checks per login name; past the limit the name is refused until the
 # window slides, so a public dashboard can't be brute-forced through the API.
+# Failures are also counted per client address, so rotating login names from
+# one host is throttled too. No trusted-proxy setting exists, so
+# X-Forwarded-For is ignored and the socket peer address is used.
 FAIL_LIMIT = 5
+IP_FAIL_LIMIT = 20
 FAIL_WINDOW_S = 300
 _failures: Dict[str, Deque[float]] = defaultdict(deque)
 
@@ -90,16 +94,27 @@ def _state() -> Dict[str, Any]:
     }
 
 
-def _throttled(user: str) -> bool:
-    window = _failures[user.lower()]
+def _client_ip(request: Optional[Request]) -> str:
+    client = request.client if request is not None else None
+    return client.host if client and client.host else "unknown"
+
+
+def _over(key: str, limit: int) -> bool:
+    window = _failures[key]
     cutoff = time.monotonic() - FAIL_WINDOW_S
     while window and window[0] < cutoff:
         window.popleft()
-    return len(window) >= FAIL_LIMIT
+    return len(window) >= limit
 
 
-def _fail(user: str) -> None:
-    _failures[user.lower()].append(time.monotonic())
+def _throttled(user: str, ip: str) -> bool:
+    return _over(f"user:{user.lower()}", FAIL_LIMIT) or _over(f"ip:{ip}", IP_FAIL_LIMIT)
+
+
+def _fail(user: str, ip: str) -> None:
+    now = time.monotonic()
+    _failures[f"user:{user.lower()}"].append(now)
+    _failures[f"ip:{ip}"].append(now)
 
 
 async def _matches(user: str, password: str) -> bool:
@@ -137,14 +152,15 @@ class DisableBody(BaseModel):
     current_password: str = Field(max_length=MAX_PASSWORD * 4)
 
 
-async def _require_current(current: Optional[str]) -> None:
+async def _require_current(current: Optional[str], request: Request) -> None:
     if not _configured():
         return
     user = settings.WEB_LOGIN_USER or ""
-    if _throttled(user):
+    ip = _client_ip(request)
+    if _throttled(user, ip):
         raise HTTPException(status_code=429, detail="Too many wrong passwords. Try again in a few minutes.")
     if not current or not await _matches(user, current):
-        _fail(user)
+        _fail(user, ip)
         raise HTTPException(status_code=403, detail="The current password is wrong.")
 
 
@@ -154,19 +170,20 @@ async def get_web_login() -> Dict[str, Any]:
 
 
 @router.post("/verify", dependencies=[Depends(require_scope("setup:read"))])
-async def verify_web_login(body: VerifyBody) -> Dict[str, Any]:
+async def verify_web_login(body: VerifyBody, request: Request) -> Dict[str, Any]:
     if not _configured():
         return {"ok": False, "mode": "open"}
-    if _throttled(body.user):
+    ip = _client_ip(request)
+    if _throttled(body.user, ip):
         raise HTTPException(status_code=429, detail="Too many wrong passwords. Try again in a few minutes.")
     ok = await _matches(body.user, body.password)
     if not ok:
-        _fail(body.user)
+        _fail(body.user, ip)
     return {"ok": ok, "mode": "password", "version": settings.WEB_LOGIN_VERSION or "0"}
 
 
 @router.put("", dependencies=[Depends(require_scope("setup:write"))])
-async def set_web_login(body: SetBody) -> Dict[str, Any]:
+async def set_web_login(body: SetBody, request: Request) -> Dict[str, Any]:
     user = body.user.strip()
     if not USER_PATTERN.fullmatch(user):
         raise HTTPException(status_code=400, detail="Login: 1–64 letters, digits or . _ @ + -")
@@ -174,7 +191,7 @@ async def set_web_login(body: SetBody) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"Password: at least {MIN_PASSWORD} characters.")
     if body.password.strip() != body.password or any(ch in body.password for ch in "\r\n\x00"):
         raise HTTPException(status_code=400, detail="Password: no spaces at the ends or line breaks.")
-    await _require_current(body.current_password)
+    await _require_current(body.current_password, request)
     hashed = await asyncio.to_thread(hash_password, body.password)
     _write({"WEB_LOGIN_USER": user, "WEB_LOGIN_PASSWORD_HASH": hashed, "WEB_LOGIN_VERSION": secrets.token_hex(8)})
     _failures.clear()
@@ -182,9 +199,9 @@ async def set_web_login(body: SetBody) -> Dict[str, Any]:
 
 
 @router.post("/disable", dependencies=[Depends(require_scope("setup:write"))])
-async def disable_web_login(body: DisableBody) -> Dict[str, Any]:
+async def disable_web_login(body: DisableBody, request: Request) -> Dict[str, Any]:
     if not _configured():
         return _state()
-    await _require_current(body.current_password)
+    await _require_current(body.current_password, request)
     _write({"WEB_LOGIN_USER": "", "WEB_LOGIN_PASSWORD_HASH": "", "WEB_LOGIN_VERSION": secrets.token_hex(8)})
     return _state()

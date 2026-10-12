@@ -1,256 +1,262 @@
 # Brand: Project Brain
 
-Источник правды для любого UI проекта: новый фронт `apps/web` (Next.js, Vercel) и
-легаси-дашборд `apps/api/templates`. Агент читает этот файл целиком до любой
-генерации экрана, компонента или медиа. Отклонение от него помечается в PR и
-объясняется.
+The source of truth for every UI in the project: the web front end `apps/web`
+(Next.js, Vercel). (The legacy server-rendered dashboard under
+`apps/api/templates` has been removed.) An agent reads this file in full before
+generating any screen, component or media. Any deviation from it is flagged in
+the PR and explained.
 
-Значения токенов происходят из дизайн-системы V2 «Ledger»
-(`apps/api/static/tokens/*.css`, синхронизировано с claude.ai/design) — там же
-лежат измерения контраста и обоснования каждого шага. Этот файл не дублирует
-обоснования, он фиксирует правила.
+Token values come from the V2 "Ledger" design system, implemented as CSS custom
+properties in `apps/web/app/globals.css` (originally synced with
+claude.ai/design, where the contrast measurements and the rationale for every
+step live). This file does not repeat the rationale; it records the rules.
 
-## Характер
+## Character
 
-**Приборная доска, которую понимает любой — и от которой хочется ахнуть.**
-Ясный, точный, живой, честный, тёмный.
+**An instrument panel anyone can understand — and that makes you gasp.**
+Clear, precise, alive, honest, dark.
 
-### Понятность прежде всего
+### Clarity first
 
-- Каждый экран за 3 секунды отвечает на три вопроса простыми словами:
-  **что это**, **всё ли в порядке**, **что сделать**. Если человек, впервые
-  видящий продукт, не может ответить — экран не готов.
-- Сначала человеческая фраза, потом термин. «Brain помнит 96% вашего кода»
-  крупно, а `18,491 / 18,903 chunks vectorised` — мелко, моно, второй строкой.
-- Любой специальный термин (chunk, embedding, context pack, reranker, MCP)
-  подчёркнут пунктиром и по наведению или тапу объясняет себя одной фразой.
-- Навигация называется словами пользователя («Overview», «Activity»,
-  «Code map»), а не именами внутренних подсистем.
-- У каждой цифры есть подпись, что она значит, и тон: хорошо или плохо.
+- Every screen answers three questions in plain words within 3 seconds:
+  **what is this**, **is everything OK**, **what should I do**. If someone
+  seeing the product for the first time cannot answer, the screen is not ready.
+- Human sentence first, term second. "Brain remembers 96% of your code" large,
+  and `18,491 / 18,903 chunks vectorised` small, monospace, on a second line.
+- Every specialist term (chunk, embedding, context pack, reranker, MCP) gets a
+  dotted underline and explains itself in one sentence on hover or tap.
+- Navigation uses the user's words ("Overview", "Activity", "Code map"), not
+  the names of internal subsystems.
+- Every number has a caption saying what it means, and a tone: good or bad.
 
-### Вау-эффект — дозированно
+### Wow effect — in measured doses
 
-- На главном экране одна **фирменная сцена**: «карта памяти». Весь код
-  репозитория показан мозаикой ячеек; ячейки появляются волной по диагонали
-  при загрузке (один раз), подсвечивают модуль при наведении, а пока идёт
-  индексация, по карте медленно проходит линия сканирования.
-- Вау достигается точностью и движением данных, а не декором: никаких
-  градиентов, частиц, свечений и 3D ради красоты.
-- **Поправка 2026-10-02** (владелец: «хорош, но явно не вау, давай ещё»):
-  разрешён **свет**, но только как отклик или как данные. Это фон-чертёж из
-  точек, который подсвечивается линзой у курсора; кромка панели, ловящая свет
-  у курсора; тоновый свет вердикта и его «пульс»; частицы на связях карты кода
-  (их число соответствует числу вызовов); «нейронные» вспышки на карте памяти
-  по ячейкам, которые Brain помнит; заставка при первом входе за сессию.
-  Декор без данных по-прежнему запрещён.
+- The main screen has one **signature scene**: the "memory map". All of the
+  repository's code is shown as a mosaic of cells; the cells appear in a
+  diagonal wave on load (once), highlight a module on hover, and while indexing
+  is running a scan line slowly sweeps across the map.
+- The wow comes from precision and moving data, not decoration: no gradients,
+  particles, glows or 3D for the sake of looks.
+- **Amendment 2026-10-02** (owner: "good, but clearly not wow, push further"):
+  **light** is allowed, but only as feedback or as data. That means a dotted
+  blueprint background lit by a lens around the cursor; a panel edge that
+  catches the light near the cursor; the verdict's tonal light and its "pulse";
+  particles on code-map links (their count matches the number of calls);
+  "neural" flashes on the memory map over the cells Brain remembers; and a
+  splash screen on the first visit of a session. Decoration without data is
+  still forbidden.
 
-- Экран сначала выносит **вердикт одной фразой** («Индекс отстаёт на 3 коммита»),
-  а затем показывает доказательства. Цифры — это улики, а не украшение.
-- Не корпоративный SaaS, не «AI-магия», не игровой. Никаких восторгов
-  в копирайте, никаких «Unlock the power of…».
-- Честность важнее красоты: состояние «нет данных» показывается как
-  «нет данных», а демо-данные всегда подписаны как демо.
+- A screen first states a **one-sentence verdict** ("Index is 3 commits
+  behind") and then shows the evidence. Numbers are evidence, not ornament.
+- Not corporate SaaS, not "AI magic", not a game. No gushing copy, no
+  "Unlock the power of…".
+- Honesty beats beauty: a "no data" state is shown as "no data", and demo data
+  is always labelled as demo.
 
-## Цвета
+## Colours
 
-Только тёмная тема. Это осознанное решение: инструмент живёт рядом с
-терминалом и IDE. Светлой темы нет и не будет без отдельного решения в этом
-файле.
+Dark theme only. This is a deliberate decision: the tool lives next to the
+terminal and the IDE. There is no light theme and there will not be one
+without a separate decision recorded in this file.
 
-| Роль | Токен | Hex | Правило |
+| Role | Token | Hex | Rule |
 |---|---|---|---|
-| Страница | `--surface-canvas` | `#05080B` | самый нижний слой |
-| Хром (rail, masthead) | `--surface-rail` | `#0E141A` | одна плашка, одно значение |
-| Модуль / панель | `--surface-module` | `#151D27` | основная поверхность |
-| Вставка / hover строки | `--surface-inset` | `#1F2936` | на шаг выше модуля |
-| Приподнятое | `--surface-raise` | `#283541` | поповеры, активные контролы |
-| Граница | `--border-default` | `#3A4A5C` | контур поверхности |
-| Делитель | `--border-subtle` | `#2C3949` | строки внутри поверхности |
-| Текст 1 / 2 / 3 | `--text-1/2/3` | `#E6EDF3` / `#9FB0BD` / `#93A1AE` | все три проходят AA на всех поверхностях |
-| Акцент | `--teal-fg` | `#2FE3C8` | **только интерактив**: фокус, выделение, главное действие, активная навигация, ссылки |
-| ok / warn / bad / info | `--ok-fg` и т.д. | `#3DDC91` / `#F2B33D` / `#FF7A8A` / `#5CB8FF` | **только статус**, никогда не интерактив; у каждого есть `-soft` (плашка) и `-line` (контур) |
+| Page | `--surface-canvas` | `#05080B` | the lowest layer |
+| Chrome (rail, masthead) | `--surface-rail` | `#0E141A` | one bar, one value |
+| Module / panel | `--surface-module` | `#151D27` | the main surface |
+| Inset / row hover | `--surface-inset` | `#1F2936` | one step above the module |
+| Raised | `--surface-raise` | `#283541` | popovers, active controls |
+| Border | `--border-default` | `#3A4A5C` | surface outline |
+| Divider | `--border-subtle` | `#2C3949` | rows inside a surface |
+| Text 1 / 2 / 3 | `--text-1/2/3` | `#E6EDF3` / `#9FB0BD` / `#93A1AE` | all three pass AA on every surface |
+| Accent | `--teal-fg` | `#2FE3C8` | **interaction only**: focus, selection, primary action, active navigation, links |
+| ok / warn / bad / info | `--ok-fg` etc. | `#3DDC91` / `#F2B33D` / `#FF7A8A` / `#5CB8FF` | **status only**, never interaction; each has a `-soft` (fill) and a `-line` (outline) variant |
 
-Глубина = шаг значения + одна линия. Никакого стекла, blur, alpha-наслоений.
+Depth = one value step + one line. No glass, no blur, no alpha layering.
 
-**Запрещено:** градиенты (любые, включая фиолетово-синие), неоновое свечение,
-бирюза как декор или статус, статусные цвета на кнопках, случайные hex вне
-токенов. Единственное свечение — `--live-glow` на живом пульсе (heartbeat).
-*Поправка 2026-10-02:* допускаются радиальные «пятна света» малой плотности
-(≤10% тона): фоновый верхний свет, линза курсора, тоновый свет вердикта,
-кромка-прожектор панелей. Также допускается свечение у самих данных: вспышки
-карты памяти, след пульса, нарушенная связь. Фиолетово-синие градиенты, стекло
-и blur под запретом без изменений.
+**Forbidden:** gradients (any, including purple-blue), neon glow, teal as
+decoration or status, status colours on buttons, arbitrary hex values outside
+the tokens. The only glow is `--live-glow` on the live pulse (heartbeat).
+*Amendment 2026-10-02:* low-density radial "light spots" (≤10% of the tone) are
+allowed: the top background light, the cursor lens, the verdict's tonal light,
+the spotlight edge on panels. A glow on the data itself is also allowed:
+memory-map flashes, the pulse trail, a broken link. Purple-blue gradients,
+glass and blur remain forbidden.
 
-## Типографика
+## Typography
 
-- Текст и заголовки: **Outfit** 400/500/600 (self-hosted woff2).
-- Цифры, пути, хэши, коды, kbd: **JetBrains Mono** 400/500, всегда
+- Body text and headings: **Outfit** 400/500/600 (self-hosted woff2).
+- Numbers, paths, hashes, codes, kbd: **JetBrains Mono** 400/500, always
   `tabular-nums`.
-- Шкала из семи шагов, промежуточных значений нет:
-  `11` подпись · `12` лейбл/чип/заголовок колонки · `14` текст и ячейки ·
-  `16` заголовок панели · `20` вердикт · `28` H1 страницы · `40` одна
-  hero-цифра на экран · `72` дисплей — только главная цифра карты памяти.
-- Line-height — это роль: `1.6` проза, `1.35` интерфейс, `1.25` заголовки.
-- Капс только в eyebrow-лейблах, трекинг `0.06em`. Ширина абзаца не больше `68ch`.
+- A seven-step scale with no in-between values:
+  `11` caption · `12` label/chip/column header · `14` text and cells ·
+  `16` panel heading · `20` verdict · `28` page H1 · `40` one hero number per
+  screen · `72` display — only the memory map's main number.
+- Line height is a role: `1.6` prose, `1.35` interface, `1.25` headings.
+- Upper case only in eyebrow labels, tracking `0.06em`. Paragraphs are at most
+  `68ch` wide.
 
-## Сетка и форма
+## Grid and shape
 
-- Шаг 4px: `4 8 12 16 20 24 32 40 48 64 80`.
-- Радиусы: `4` для мелких элементов (чип, контрол), `8` для поверхностей,
-  `999` для пилюль. Других радиусов нет.
-- Rail шириной 200px (64px в свёрнутом виде), высота плашки хрома 52px,
-  гаттер страницы 24px (16px на мобильных).
-- Плотность: comfortable по умолчанию (строка 44px), compact для журналов
-  (строка 32px).
-- Тени только у того, что парит: поповер, палитра, drawer, модалка.
+- 4px step: `4 8 12 16 20 24 32 40 48 64 80`.
+- Radii: `4` for small elements (chip, control), `8` for surfaces, `999` for
+  pills. No other radii.
+- Rail 200px wide (64px collapsed), chrome bar height 52px, page gutter 24px
+  (16px on mobile).
+- Density: comfortable by default (44px rows), compact for logs (32px rows).
+- Shadows only on things that float: popover, palette, drawer, modal.
 
-## Формы настроек
+## Settings forms
 
-- Группируем по задаче человека: уведомления, подключение, рабочие параметры.
-- Основной контрол, его подпись и одна короткая поясняющая строка читаются
-  вместе. Повторяющиеся `?` и бейджи с происхождением каждого значения
-  не ставим в ряд с контролами.
-- Служебные ключи и источники значений находятся в раскрываемом разделе
-  «Server configuration». Если сервер может восстановить старое значение
-  после перезапуска, предупреждение появляется возле несохранённых изменений.
-- Интервалы показываем с единицами («6 hours»), сохраняя возможность задать
-  нестандартное значение. Подключение уже настроенного бота свернуто;
-  при отсутствии реквизитов поля сразу открыты.
-- Внутри одного блока все изменения сохраняются явно. Save/Discard появляются
-  после редактирования; постоянная кнопка «Saved» не изображает действие.
-- Раскрытие деталей и появление строки сохранения: 120ms, opacity/transform,
-  без анимации размеров. При reduced motion состояние меняется мгновенно.
+- Group by the person's task: notifications, connection, working parameters.
+- The main control, its label and one short explanatory line read together.
+  Repeated `?` icons and badges showing where each value comes from are not
+  placed in line with the controls.
+- Internal keys and value sources live in an expandable "Server configuration"
+  section. If the server may restore an old value after a restart, the warning
+  appears next to the unsaved changes.
+- Intervals are shown with units ("6 hours"), while still allowing a custom
+  value. The connection of an already configured bot is collapsed; when
+  credentials are missing, the fields are open straight away.
+- Within one block every change is saved explicitly. Save/Discard appear after
+  an edit; a permanent "Saved" button does not pretend to be an action.
+- Expanding details and showing the save row: 120ms, opacity/transform, no size
+  animation. With reduced motion the state changes instantly.
 
-## Фирменные решения
+## Signature decisions
 
-То, что отличает этот продукт от шаблона. Не размывать.
+What sets this product apart from a template. Do not dilute.
 
-0. **Карта памяти.** Мозаика ячеек, где одна ячейка — кусок кода. Тон
-   ячейки — её состояние (помнит / устарела / не прочитана / исключена).
-   Главная сцена продукта и самый богатый моушн (см. «Хореография»).
-1. **Вердикт-строка.** Каждый экран открывается фразой состояния размером 20px
-   с тоном слева (spine). Это не hero, а заголовок протокола.
-2. **Сегментированный метр.** Покрытие и свежесть рисуются 20 дискретными
-   ячейками, а не гладким прогресс-баром: видно, сколько «кирпичей» не хватает.
-   Легенда стоит под метром и читается словами.
-3. **Spine.** Карточка, у которой есть тяжесть (ok/bad), получает вертикальную
-   полосу 3px слева. Без заливки фона и без иконки-смайла.
-4. **Журнал как ledger.** События идут строками с моно-таймстемпом, hairline-
-   делителями и тоном в виде точки. Без пузырей и аватаров.
-5. **Знак.** «Мозг из строк кода» (с 2026-10-02 заменяет прежний знак
-   «столбец, строки, стрелка»): семь рядов «токенов» складываются в силуэт
-   мозга, посередине щель между полушариями. Бирюзовые токены означают
-   сигналы. На заставке токены вырастают от щели наружу, сигналы пробегают
-   по очереди; при наведении на бренд мозг «думает». Источник: `BrandMark`
-   в `apps/web/components/Icon.tsx`, favicon `apps/web/app/icon.svg`.
-6. **Пульс вердикта.** Кардиограмма тоном вердикта по нижнему краю. Ритм —
-   это состояние: спокойный (ok), учащённый (warn), частый (bad), прямая
-   линия (idle).
+0. **Memory map.** A mosaic of cells, one cell per chunk of code. A cell's tone
+   is its state (remembered / stale / not read / excluded). The product's main
+   scene and its richest motion (see "Choreography").
+1. **Verdict line.** Every screen opens with a 20px status sentence with a tone
+   on the left (spine). It is not a hero; it is the heading of a log entry.
+2. **Segmented meter.** Coverage and freshness are drawn as 20 discrete cells,
+   not a smooth progress bar: you can see how many "bricks" are missing. The
+   legend sits under the meter and reads as words.
+3. **Spine.** A card that carries weight (ok/bad) gets a 3px vertical bar on
+   the left. No background fill and no smiley icon.
+4. **Log as a ledger.** Events are rows with a monospace timestamp, hairline
+   dividers and a tone shown as a dot. No bubbles, no avatars.
+5. **Mark.** "A brain made of lines of code" (since 2026-10-02 it replaces the
+   earlier "column, rows, arrow" mark): seven rows of "tokens" form the
+   silhouette of a brain with a gap between the hemispheres in the middle.
+   Teal tokens are signals. On the splash screen the tokens grow outwards from
+   the gap and the signals run in turn; hovering over the brand makes the brain
+   "think". Source: `BrandMark` in `apps/web/components/Icon.tsx`, favicon
+   `apps/web/app/icon.svg`.
+6. **Verdict pulse.** A cardiogram in the verdict's tone along the bottom edge.
+   The rhythm is the state: calm (ok), faster (warn), rapid (bad), flat line
+   (idle).
 
-## Моушн
+## Motion
 
-Моушн — часть вау-эффекта, но каждое движение что-то сообщает: появление
-данных, прочтение кода, переход, фокус. Красивое движение без смысла
-не делаем. (Расширено 2026-10-02 по запросу владельца: «анимации должны быть
-пиздатые» — прежний минимализм заменён системой ниже.)
+Motion is part of the wow effect, but every movement communicates something:
+data appearing, code being read, a transition, focus. Beautiful motion without
+meaning is not done. (Expanded 2026-10-02 at the owner's request for much
+bolder animation — the earlier minimalism was replaced by the system below.)
 
-- Длительности: `120ms` контрол · `170ms` смена маршрута · `180ms`
-  поверхность · `220ms` появление · `420–700ms` хореография данных ·
-  `≤1200ms` общий «запуск» главного экрана.
-- Easing: `cubic-bezier(.2,.6,.35,1)`, на появлении `cubic-bezier(.16,.84,.44,1)`,
-  для «доезда» индикаторов `cubic-bezier(.22,1,.36,1)` (expo-out). Без overshoot.
-- Анимируются transform, opacity, clip-path, stroke-dashoffset и цвет
-  заливки ячеек. Никогда не анимируем width/height/top/left.
+- Durations: `120ms` control · `170ms` route change · `180ms` surface ·
+  `220ms` appearance · `420–700ms` data choreography · `≤1200ms` the overall
+  "launch" of the main screen.
+- Easing: `cubic-bezier(.2,.6,.35,1)`; on appearance
+  `cubic-bezier(.16,.84,.44,1)`; for indicators settling into place
+  `cubic-bezier(.22,1,.36,1)` (expo-out). No overshoot.
+- Animate transform, opacity, clip-path, stroke-dashoffset and cell fill
+  colour. Never animate width/height/top/left.
 
-Хореография (фирменная, не размывать):
+Choreography (signature, do not dilute):
 
-1. **Запуск экрана.** Секции страницы входят каскадом снизу (8px, 60ms шаг).
-   Заголовок-вердикт поднимается по словам из-под маски, spine прорисовывается
-   сверху вниз.
-2. **Карта памяти.** Ячейки загораются диагональной волной (≤900ms): каждая
-   вспыхивает светлым «прочитано» и оседает в цвет своего состояния. Наведение
-   на модуль запускает рябь от курсора по ячейкам этого модуля, остальные
-   гаснут. Пока идёт индексация, по карте идёт линия сканирования, а ячейки
-   под ней подсвечиваются.
-3. **Цифры-одометр.** Ключевые числа прокатываются барабаном до значения
-   (только при первом показе и при смене фокуса), а не «тикают» счётчиком.
-4. **Метры** заполняются кирпич за кирпичом слева направо.
-5. **Навигация.** Индикатор активного пункта переезжает к новому пункту;
-   палитра ⌘K раскрывается из точки вызова, строки входят каскадом.
-6. **Карта кода.** Связи прорисовываются от источника к цели; нарушение
-   правила течёт пунктиром тоном bad.
-7. **Скролл.** Панели ниже первого экрана проявляются при входе в зону
-   видимости (scroll-driven, без JS).
-8. **Заставка** (один раз за сессию, ≤1.5s, любой клик или клавиша её
-   пропускают). Знак собирается, печатаются 3–4 строки реальных фактов
-   (число репозиториев, отставание), метр заполняется, затем экран уходит
-   шторкой вверх.
-9. **Карта памяти на canvas.** Поверх волны появления ячеек по ячейкам
-   «помнит» расходятся кольца-вспышки (Brain вспоминает). Устаревшие ячейки
-   медленно «дышат» тоном warn, у курсора ячейки увеличиваются линзой.
-10. **Расшифровка.** Короткие подписи-eyebrow один раз проявляются из
-   случайных символов при первом показе.
+1. **Screen launch.** Page sections enter in a cascade from below (8px, 60ms
+   step). The verdict heading rises word by word from under a mask; the spine
+   draws from top to bottom.
+2. **Memory map.** Cells light up in a diagonal wave (≤900ms): each flashes a
+   light "read" and settles into its state colour. Hovering a module sends a
+   ripple from the cursor through that module's cells while the rest dim.
+   While indexing is running, a scan line moves across the map and the cells
+   under it light up.
+3. **Odometer numbers.** Key numbers roll to their value like a drum (only on
+   first display and on focus change), rather than ticking like a counter.
+4. **Meters** fill brick by brick from left to right.
+5. **Navigation.** The active-item indicator slides to the new item; the ⌘K
+   palette expands from the point where it was invoked, and its rows enter in
+   a cascade.
+6. **Code map.** Links draw from source to target; a rule violation flows as a
+   dashed line in the bad tone.
+7. **Scrolling.** Panels below the first screen fade in as they enter the
+   viewport (scroll-driven, no JS).
+8. **Splash screen** (once per session, ≤1.5s, any click or key skips it). The
+   mark assembles, 3–4 lines of real facts are typed out (number of
+   repositories, lag), the meter fills, then the screen leaves with a curtain
+   moving up.
+9. **Canvas memory map.** On top of the cells' appearance wave, ring flashes
+   spread over the "remembered" cells (Brain is recalling). Stale cells slowly
+   "breathe" in the warn tone; cells near the cursor are magnified by a lens.
+10. **Decoding.** Short eyebrow captions resolve once from random characters on
+    first display.
 
-- **Никогда:** bounce, параллакс, вращение ради вращения, частицы, свечения
-  (кроме `--live-glow`), тикающие счётчики, бесконечные декоративные циклы.
-  Бесконечными бывают только: пульс heartbeat, линия сканирования (идёт
-  индексация) и поток по нарушенной связи на карте кода. *С 2026-10-02 к ним
-  добавлены:* вспышки карты памяти, пульс вердикта и частицы связей карты
-  кода. Все они несут данные и останавливаются вне экрана.
-- `prefers-reduced-motion` убирает всё движение, оставляя мгновенные
-  состояния и смену цвета.
+- **Never:** bounce, parallax, rotation for its own sake, particles, glows
+  (other than `--live-glow`), ticking counters, endless decorative loops. The
+  only endless animations are: the heartbeat pulse, the scan line (indexing in
+  progress) and the flow along a broken link on the code map. *Since
+  2026-10-02 these are added:* memory-map flashes, the verdict pulse and
+  particles on code-map links. All of them carry data and stop when off
+  screen.
+- `prefers-reduced-motion` removes all motion, leaving instant states and
+  colour changes.
 
-## Иконки и иллюстрации
+## Icons and illustrations
 
-- Иконки: собственный спрайт 24×24, обводка 1.75, `round` caps/joins, без
-  заливки (layers, database, graph, file, zap, search, chip, code, automation,
-  vectors, key, flag). Новая иконка рисуется в той же геометрии; эмодзи
-  вместо иконок запрещены.
-- Одна иконка на маршрут, иконки не повторяются в навигации.
-- Иллюстрации и сгенерированные изображения в продукте не используются.
-  Если понадобятся (OG-картинка, промо): тёмная сцена `#05080B`, холодный
-  нейтральный свет, единственный акцент — бирюза `#2FE3C8`, геометрия из
-  прямоугольников, как в знаке. **Без текста на изображении.** Пустая тёмная
-  зона минимум на 40% кадра под накладываемый вектором заголовок.
+- Icons: a custom 24×24 sprite, stroke 1.75, `round` caps/joins, no fill
+  (layers, database, graph, file, zap, search, chip, code, automation, vectors,
+  key, flag). A new icon is drawn with the same geometry; emoji in place of
+  icons are forbidden.
+- One icon per route; icons are not repeated in the navigation.
+- Illustrations and generated images are not used in the product. If they are
+  ever needed (OG image, promo): a dark `#05080B` scene, cool neutral light,
+  the only accent is teal `#2FE3C8`, geometry made of rectangles as in the
+  mark. **No text in the image.** At least 40% of the frame is an empty dark
+  area for a heading overlaid as vector.
 
-## Голос
+## Voice
 
-- Английский интерфейс: короткие глагольные лейблы («Reindex», «Open pack»).
-- Пишем как объясняем коллеге без контекста: «Brain's copy of your code is
-  3 changes behind», а не «Index trails master by 3 commits».
-- Числа с единицами: `3 commits behind`, `4h since index`.
-- Пустое состояние говорит, что здесь будет и как это получить. Без «Oops».
+- English interface: short verb labels ("Reindex", "Open pack").
+- Write as if explaining to a colleague without context: "Brain's copy of your
+  code is 3 changes behind", not "Index trails master by 3 commits".
+- Numbers with units: `3 commits behind`, `4h since index`.
+- An empty state says what will be here and how to get it. No "Oops".
 
-## Референсы
+## References
 
-- **Linear** (linear.app): берём плотность навигации, клавиатуру первым
-  классом, ⌘K-палитру.
-- **Vercel dashboard**: берём строгую моно-типографику для идентификаторов и
-  статусов деплоя.
-- **Grafana / Honeycomb**: берём честное представление «нет данных» и журнал
-  событий как основной экран расследования.
-- **Bloomberg Terminal**: берём идею, что цифра всегда стоит рядом с
-  интерпретацией, и табличную плотность.
+- **Linear** (linear.app): we take its navigation density, keyboard as a
+  first-class citizen, and the ⌘K palette.
+- **Vercel dashboard**: we take its strict monospace typography for
+  identifiers and deployment statuses.
+- **Grafana / Honeycomb**: we take their honest "no data" representation and
+  the event log as the main investigation screen.
+- **Bloomberg Terminal**: we take the idea that a number always sits next to
+  its interpretation, and its tabular density.
 
-Дополнено 2026-10-08 по референсам владельца:
+Added 2026-10-08 from the owner's references:
 
 - **[21st — Settings pages](https://news.21st.dev/blog/react-settings-page-components)**:
-  строки с контролами и пояснениями, единый режим сохранения внутри секции,
-  явные состояния Save/Discard. Применяем в наших токенах Ledger, без
-  заимствования палитры и декоративных эффектов из каталога.
-- **[Amicro](https://amicro.vercel.app/)** и
-  **[React Bits](https://www.reactbits.dev/get-started/index)**: референсы
-  короткого отклика на действие. Длительности и reduced motion подчиняются
-  разделу «Моушн»; движение в Settings обслуживает изменение состояния.
-- **[OpenDesign](https://github.com/nexu-io/open-design)**: возможное отдельное
-  пространство для визуального ревью с агентами и контрактом DESIGN.md.
-  Его интеграция с **[HyperFrames](https://github.com/heygen-com/hyperframes)**
-  подходит для будущих роликов и демонстраций продукта.
+  rows with controls and explanations, a single save mode within a section,
+  explicit Save/Discard states. Applied with our Ledger tokens, without
+  borrowing the catalogue's palette or decorative effects.
+- **[Amicro](https://amicro.vercel.app/)** and
+  **[React Bits](https://www.reactbits.dev/get-started/index)**: references for
+  short feedback on actions. Durations and reduced motion follow the "Motion"
+  section; motion in Settings serves state changes.
+- **[OpenDesign](https://github.com/nexu-io/open-design)**: a possible separate
+  space for visual review with agents and a DESIGN.md contract. Its integration
+  with **[HyperFrames](https://github.com/heygen-com/hyperframes)** suits future
+  product videos and demos.
 
-## Анти-референсы
+## Anti-references
 
-- Лендинговый шаблон «hero с градиентом + три карточки с иконками + CTA».
-- Glassmorphism, неоновые киберпанк-дашборды, «AI-сияние».
-- Kanban-доски и пастельные SaaS-панели с крупными аватарами.
-- Круговые диаграммы и спидометры для величин, у которых есть числитель и
-  знаменатель: для них есть сегментированный метр.
+- The landing-page template "gradient hero + three cards with icons + CTA".
+- Glassmorphism, neon cyberpunk dashboards, "AI glow".
+- Kanban boards and pastel SaaS panels with large avatars.
+- Pie charts and speedometers for quantities that have a numerator and a
+  denominator: the segmented meter exists for those.
