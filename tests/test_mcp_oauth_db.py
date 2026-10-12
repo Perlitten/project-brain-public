@@ -5,6 +5,7 @@ Skipped locally without Postgres; required under GITHUB_ACTIONS (same contract
 as test_memory_consolidation_db).
 """
 
+import asyncio
 import base64
 import contextlib
 import hashlib
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from apps.api import mcp_http
 from apps.mcp_server import remote_server
 from brain.auth.principals import mint_credential
+from brain.auth import oauth_store
 from brain.config.settings import settings
 from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken, Principal
 
@@ -265,3 +267,33 @@ async def test_denied_consent_returns_access_denied(oauth_app):
         assert query["state"] == ["st4te"]
         # The request is spent: it cannot be approved afterwards.
         assert (await _consent(client, request_id, action="allow", api_key=LEGACY_KEY)).status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_refresh_rotation_is_single_use_under_overlap(oauth_app, monkeypatch):
+    # Widen the interval between validation and revocation so competing
+    # transactions reliably exercise the row lock, rather than running serially.
+    revoke_row = oauth_store._revoke_row
+
+    async def delayed_revoke(session, row):
+        await asyncio.sleep(0.1)
+        await revoke_row(session, row)
+
+    monkeypatch.setattr(oauth_store, "_revoke_row", delayed_revoke)
+    async with _client(oauth_app) as client:
+        client_id = await _register(client)
+        verifier, challenge = _pkce()
+        request_id = await _authorize(client, client_id, challenge)
+        approved = await _consent(client, request_id, action="allow", api_key=LEGACY_KEY)
+        code = parse_qs(urlparse(approved.headers["location"]).query)["code"][0]
+        exchanged = await client.post("/token", data={
+            "grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT,
+            "client_id": client_id, "code_verifier": verifier,
+        })
+        tokens = exchanged.json()
+        data = {"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"], "client_id": client_id}
+        results = await asyncio.gather(client.post("/token", data=data), client.post("/token", data=data))
+        assert sorted(response.status_code for response in results) == [200, 400]
+        rotated = next(response.json() for response in results if response.status_code == 200)
+        assert await _mcp_status(client, rotated["access_token"]) == 200
+        assert await _mcp_status(client, tokens["access_token"]) == 401

@@ -116,6 +116,9 @@ def test_rejects_missing_and_unknown_keys(base_url):
 def test_unauthorized_response_points_at_oauth_metadata(oauth_base_url):
     base_url, public = oauth_base_url
     with httpx.Client(base_url=base_url) as client:
+        metadata = client.get("/.well-known/oauth-authorization-server").json()
+        assert "none" in metadata["token_endpoint_auth_methods_supported"]
+        assert "none" in metadata["revocation_endpoint_auth_methods_supported"]
         denied = client.post("/mcp", json=INIT, headers=STREAM_HEADERS)
         assert denied.status_code == 401
         assert f'resource_metadata="{public}/.well-known/oauth-protected-resource/mcp"' in denied.headers[

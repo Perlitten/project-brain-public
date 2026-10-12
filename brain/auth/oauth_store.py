@@ -127,9 +127,13 @@ async def issue_tokens(
     )
 
 
-async def _live_refresh(session: AsyncSession, raw: str) -> Optional[OAuthRefreshToken]:
+async def _live_refresh(session: AsyncSession, raw: str, *, for_update: bool = False) -> Optional[OAuthRefreshToken]:
+    query = select(OAuthRefreshToken).where(OAuthRefreshToken.token_hash == hash_credential(raw))
+    if for_update:
+        # Serialize the live check and issuance across competing transactions.
+        query = query.with_for_update()
     row = (
-        await session.execute(select(OAuthRefreshToken).where(OAuthRefreshToken.token_hash == hash_credential(raw)))
+        await session.execute(query)
     ).scalar_one_or_none()
     if row is None or row.revoked_at is not None:
         return None
@@ -191,7 +195,7 @@ async def rotate_refresh(
     refresh_ttl: Optional[timedelta],
 ) -> Optional[IssuedTokens]:
     """Spend a refresh token: revoke it and its access key, issue the next pair."""
-    row = await _live_refresh(session, raw)
+    row = await _live_refresh(session, raw, for_update=True)
     if row is None:
         return None
     await _revoke_row(session, row)

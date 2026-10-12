@@ -32,10 +32,12 @@ from mcp.server.auth.provider import (
     TokenError,
     construct_redirect_uri,
 )
-from mcp.server.auth.routes import create_auth_routes, create_protected_resource_routes
+from mcp.server.auth.handlers.metadata import MetadataHandler
+from mcp.server.auth.routes import build_metadata, cors_middleware, create_auth_routes, create_protected_resource_routes
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyHttpUrl
+from starlette.routing import Route
 
 from apps.api.auth import dev_open, resolve_api_key
 from apps.api.routers.web_login import _configured as web_login_configured
@@ -340,6 +342,21 @@ def oauth_routes(provider: BrainOAuthProvider, *, issuer: str, resource: str) ->
         ),
         revocation_options=RevocationOptions(enabled=True),
     )
+    # The SDK's v1 default omits public clients, which Brain registers with
+    # token_endpoint_auth_method=none. Preserve the other advertised methods.
+    metadata = build_metadata(
+        AnyHttpUrl(issuer), None,
+        ClientRegistrationOptions(enabled=True, valid_scopes=SUPPORTED_SCOPES, default_scopes=SUPPORTED_SCOPES),
+        RevocationOptions(enabled=True),
+    )
+    metadata.token_endpoint_auth_methods_supported = ["none", "client_secret_post", "client_secret_basic"]
+    metadata.revocation_endpoint_auth_methods_supported = ["none", "client_secret_post", "client_secret_basic"]
+    routes = [route for route in routes if route.path != "/.well-known/oauth-authorization-server"]
+    routes.insert(0, Route(
+        "/.well-known/oauth-authorization-server",
+        endpoint=cors_middleware(MetadataHandler(metadata).handle, ["GET", "OPTIONS"]),
+        methods=["GET", "OPTIONS"],
+    ))
     routes += create_protected_resource_routes(
         resource_url=AnyHttpUrl(resource),
         authorization_servers=[AnyHttpUrl(issuer)],
