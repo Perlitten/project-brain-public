@@ -1,13 +1,13 @@
 [
   {
     "id": "q021",
-    "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+    "question": "How does the indexer split files into chunks, where do the window size and overlap come from, and where are symbol boundaries respected?",
     "expect_files": [
       "brain/indexers/file_indexer.py",
       "brain/indexers/repo_indexer.py"
     ],
     "why": "Russian translation checks whether retrieval maps user language to English implementation terms.",
-    "language": "ru",
+    "language": "en",
     "query_class": "ru_to_en",
     "provenance": {
       "kind": "curated_translation",
@@ -17,14 +17,14 @@
   },
   {
     "id": "q022",
-    "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+    "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
     "expect_files": [
       "brain/retrieval/pipeline.py",
       "brain/search/filters.py",
       "brain/retrieval/reranker.py"
     ],
     "why": "Tests a Russian cross-file architecture query containing standard English retrieval terms.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "ru_to_en",
     "provenance": {
       "kind": "curated_translation",
@@ -34,14 +34,14 @@
   },
   {
     "id": "q023",
-    "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+    "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
     "expect_files": [
       "brain/embeddings/config.py",
       "brain/config/settings.py",
       "brain/llm/__init__.py"
     ],
     "why": "Measures bilingual configuration lookup.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "ru_to_en",
     "provenance": {
       "kind": "curated_translation",
@@ -51,13 +51,13 @@
   },
   {
     "id": "q024",
-    "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+    "question": "Where is text length capped for NVIDIA embedding, and how is an oversized chunk truncated or logged?",
     "expect_files": [
       "brain/llm/providers/nvidia_provider.py",
       "brain/indexers/file_indexer.py"
     ],
     "why": "Tests Russian bug-oriented retrieval with code vocabulary.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "bug",
     "provenance": {
       "kind": "curated_translation",
@@ -67,14 +67,14 @@
   },
   {
     "id": "q025",
-    "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+    "question": "Show the exact path of POST /search: request schema, router, and the function that actually runs the search.",
     "expect_files": [
       "apps/api/routers/core.py",
       "apps/api/schemas.py",
       "brain/search/code_search.py"
     ],
     "why": "Tests exact API identifier retrieval from Russian prose.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "exact_identifier",
     "provenance": {
       "kind": "curated_translation",
@@ -84,14 +84,14 @@
   },
   {
     "id": "q026",
-    "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+    "question": "How do active decisions and rules get into the /ask answer, and which code sets their format and repository scope?",
     "expect_files": [
       "apps/api/routers/core.py",
       "brain/memory/decision_store.py",
       "brain/memory/rule_store.py"
     ],
     "why": "Measures cross-file governance retrieval for a bilingual query.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "cross_file",
     "provenance": {
       "kind": "curated_translation",
@@ -101,13 +101,13 @@
   },
   {
     "id": "q027",
-    "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+    "question": "Where is the harness task state machine declared, and which transitions are terminal or forbidden?",
     "expect_files": [
       "brain/database/harness_models.py",
       "brain/memory/harness_store.py"
     ],
     "why": "Tests conceptual retrieval across Russian and English state-machine terms.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "conceptual",
     "provenance": {
       "kind": "curated_translation",
@@ -117,14 +117,14 @@
   },
   {
     "id": "q028",
-    "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+    "question": "How does expected_task_version protect task ledger updates from races between workers?",
     "expect_files": [
       "brain/memory/harness_store.py",
       "brain/database/harness_models.py",
       "brain/database/session.py"
     ],
     "why": "Tests bilingual bug/reliability retrieval.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "bug",
     "provenance": {
       "kind": "curated_translation",
@@ -134,14 +134,14 @@
   },
   {
     "id": "q029",
-    "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+    "question": "Find the canonical upsert implementation for DecisionStore and its protection against duplicate decisions.",
     "expect_files": [
       "brain/memory/decision_store.py",
       "brain/database/repository_utils.py",
       "brain/database/models.py"
     ],
     "why": "Tests exact class-name retrieval from Russian instructions.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "exact_identifier",
     "provenance": {
       "kind": "curated_translation",
@@ -151,14 +151,14 @@
   },
   {
     "id": "q030",
-    "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+    "question": "How does RuleStore select only active rules for the right repository scope while still including global rules?",
     "expect_files": [
       "brain/memory/rule_store.py",
       "brain/database/repository_utils.py",
       "brain/database/models.py"
     ],
     "why": "Measures scope semantics in a bilingual query.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "conceptual",
     "provenance": {
       "kind": "curated_translation",
@@ -168,14 +168,14 @@
   },
   {
     "id": "q031",
-    "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+    "question": "How do API auth requirements differ between production and development, and what response does an invalid X-API-Key get?",
     "expect_files": [
       "apps/api/auth.py",
       "apps/api/dependencies.py",
       "apps/api/main.py"
     ],
     "why": "Tests security retrieval in mixed-language phrasing.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "bug",
     "provenance": {
       "kind": "curated_translation",
@@ -185,14 +185,14 @@
   },
   {
     "id": "q032",
-    "question": "Где Next.js закрывает доступ к live-данным без настроенной авторизации и проверяет Basic credentials?",
+    "question": "Where does Next.js block access to live data when auth is not configured, and where does it check Basic credentials?",
     "expect_files": [
       "apps/web/lib/web-auth.ts",
       "apps/web/proxy.ts",
       "apps/web/app/api/brain/[...path]/route.ts"
     ],
     "why": "Tests exact security surfaces with Russian connective words.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "bug",
     "provenance": {
       "kind": "curated_translation",
@@ -202,14 +202,14 @@
   },
   {
     "id": "q033",
-    "question": "Где web UI читает статусы background jobs, а API и worker queue выполняют действия?",
+    "question": "Where does the web UI read background job statuses, and where do the API and worker queue perform the actions?",
     "expect_files": [
       "apps/web/lib/data.ts",
       "apps/api/routers/jobs.py",
       "brain/workers/queue.py"
     ],
     "why": "Measures a cross-surface bilingual query.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "cross_file",
     "provenance": {
       "kind": "curated_translation",
@@ -219,14 +219,14 @@
   },
   {
     "id": "q034",
-    "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+    "question": "How are a repository's graph nodes deleted, and how are stale file nodes cleaned up after re-indexing?",
     "expect_files": [
       "brain/graph/graph_client.py",
       "brain/indexers/repo_indexer.py",
       "brain/indexers/file_indexer.py"
     ],
     "why": "Tests bilingual graph cleanup retrieval.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "cross_file",
     "provenance": {
       "kind": "curated_translation",
@@ -236,7 +236,7 @@
   },
   {
     "id": "q035",
-    "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+    "question": "Where is init_db guarded against repeated runs, and where must malformed LLM self-diagnosis output degrade without crashing?",
     "expect_files": [
       "brain/database/session.py",
       "brain/insights/proactive.py",
@@ -244,7 +244,7 @@
       "tests/test_proactive_insights.py"
     ],
     "why": "Curated bilingual acceptance query spanning runtime and regression tests.",
-    "language": "ru-en",
+    "language": "en",
     "query_class": "ru_to_en",
     "provenance": {
       "kind": "curated_synthetic",

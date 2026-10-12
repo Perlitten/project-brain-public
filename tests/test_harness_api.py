@@ -196,7 +196,7 @@ def test_add_event_forwards_idempotency_and_cas(api_key_env):
         event_type="agent_completed_unaccepted",
         actor="claude",
         classification="claim",
-        idempotency_key="NOSTIA-TASK:completed:attempt-1",
+        idempotency_key="PROJ-TASK:completed:attempt-1",
         causal_parent_id=6,
         expected_task_version=3,
         task_version=4,
@@ -312,7 +312,7 @@ def test_acceptance_checkpoint_forwards_cas_and_evidence(api_key_env):
             f"/harness/tasks/{TASK_ID}/acceptance-checkpoints",
             json={
                 "attempt_id": "attempt-1",
-                "external_task_id": "NOSTIA-TEST",
+                "external_task_id": "PROJ-TEST",
                 "authority": "codex",
                 "idempotency_key": "acceptance-checkpoint-attempt-1",
                 "expected_task_version": 4,
@@ -355,7 +355,7 @@ def test_acceptance_finalize_forwards_signed_record(api_key_env):
             json={
                 "expected_task_version": 5,
                 "acceptance_record": {
-                    "task_id": "NOSTIA-TEST",
+                    "task_id": "PROJ-TEST",
                     "attempt_id": "attempt-1",
                     "contract_sha256": "1" * 64,
                     "gate_report_sha256": "2" * 64,

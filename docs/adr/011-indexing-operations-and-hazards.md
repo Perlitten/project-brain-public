@@ -37,12 +37,11 @@ indexing speed would be the wrong trade.
 `purge_repository_graph()` **before** it indexes anything. If the source
 directory is absent, the result is an emptied index and nothing to refill it.
 
-This is not hypothetical. `/repos/nostia`, `-vault`, `-memory` and `-site` are
-staged into the worker with `docker cp` (see `~/nostia-reindex.sh` on the host),
-so they live in the **container's writable layer**. Any
-`docker compose up -d --build worker` erases them while the Postgres index rows
-survive — an index pointing at a source that no longer exists. A clean re-index
-over that list would have destroyed ~6800 chunks of Nostia knowledge.
+This is not hypothetical. Several extra source trees under `/repos/` were once
+staged into the worker with `docker cp`, so they lived in the **container's
+writable layer**. Any `docker compose up -d --build worker` erased them while the
+Postgres index rows survived — an index pointing at a source that no longer
+exists. A clean re-index over that list would have destroyed ~6800 chunks.
 
 Before enqueuing a clean re-index:
 
@@ -50,9 +49,10 @@ Before enqueuing a clean re-index:
 docker exec brain-worker test -d <repo_path> || echo "REFUSE: clean would wipe this index"
 ```
 
-**Follow-up (not yet done):** mount those directories read-only, the way
-`BRAIN_INDEXED_PROJECTS_DIR` already backs `/indexed`, so a rebuild cannot erase
-them. `docker cp` staging is the underlying defect.
+**Follow-up (done):** extra trees are mounted read-only (see DEPLOYMENT.md,
+host-local `docker-compose.local.yml`), the way `BRAIN_INDEXED_PROJECTS_DIR`
+already backs `/indexed`, so a rebuild cannot erase them. `docker cp` staging
+was the underlying defect.
 
 ## Reliability update (issue #39)
 

@@ -12,7 +12,7 @@ windows and historical evaluations. Coverage below 100% cannot round up to 100%.
 Unknown repositories fail closed. All-project coverage is unknown when any included
 project has no coverage observations. A current source revision is not retrieval
 correctness. The memory-map animation is a visualization of a snapshot, not live
-agent activity or a MYCELIUM organ event.
+agent activity.
 
 ## Request collection
 

@@ -430,7 +430,7 @@ server `apps.mcp_server.remote_server` exposes the same 13 plus
 | `record_procedure_outcome` | Record the success/failure outcome of a procedure (skill) once per task |
 
 `search_code` and `ask_project` accept an optional `repo_path` argument. Use it when
-multiple repositories are indexed, for example `/indexed/forex-bot`, so retrieval
+multiple repositories are indexed, for example `/indexed/mobile-app`, so retrieval
 does not mix files from unrelated projects. The HTTP `/search` and `/ask` endpoints
 accept the same `repo_path` field. For the remote MCP server, `BRAIN_REPO` is used
 as the default repo scope when `repo_path` is omitted.

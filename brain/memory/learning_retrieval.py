@@ -15,7 +15,7 @@ from brain.database.session import async_session_factory
 from brain.memory.learning_store import _scope_clause
 
 _TOKEN = re.compile(r"[^\W\d][\w-]{2,}", re.UNICODE)
-_STOP = frozenset("the and for with from this that how what where does can you fix add implement explain current project brain use task code что как для это где почему нужно надо сделай исправь проект код".split())
+_STOP = frozenset("the and for with from this that how what where does can you fix add implement explain current project brain use task code".split())
 
 # Semantic pass: how many nearest stored vectors to pull before merging.
 SEMANTIC_CANDIDATES = 32

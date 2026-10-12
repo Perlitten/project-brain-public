@@ -5600,7 +5600,7 @@
                 "should_ignore_file"
               ],
               "id": "q021",
-              "language": "ru",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -5612,7 +5612,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q001"
               },
-              "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+              "question": "How does the indexer split files into chunks, where do the window size and overlap come from, and where are symbol boundaries respected?",
               "required_assertions": [
                 "Clamp chunking settings to safe values to avoid zero-step windows.",
                 "Yield inclusive line ranges with overlap between consecutive chunks.",
@@ -5845,7 +5845,7 @@
                 "classify_knowledge_status"
               ],
               "id": "q022",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -5857,7 +5857,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation and bilingual expansion of q002"
               },
-              "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+              "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
               "required_assertions": [
                 "Hybrid retrieval pipeline: query understanding → channels → fusion → rerank.",
                 "Synthetic recall-pool candidate for a co-rank injected path.",
@@ -6113,7 +6113,7 @@
                 "Settings.validate_postgres_pool_size"
               ],
               "id": "q023",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -6125,7 +6125,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q003"
               },
-              "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+              "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
               "required_assertions": [
                 "dataclass",
                 "Configured embedding provider metadata and dimension resolution.",
@@ -6364,7 +6364,7 @@
                 "_iter_overlap_ranges"
               ],
               "id": "q024",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -6376,7 +6376,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q004"
               },
-              "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+              "question": "Where is text length capped for NVIDIA embedding, and how is an oversized chunk truncated or logged?",
               "required_assertions": [
                 "MAX_INPUT_CHARS",
                 "NVIDIA NIM API implementation of LLMProvider using integrate.api.nvidia.com.",
@@ -6610,7 +6610,7 @@
                 "AskRequest"
               ],
               "id": "q025",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -6622,7 +6622,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q005"
               },
-              "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+              "question": "Show the exact path of POST /search: request schema, router, and the function that actually runs the search.",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -6868,7 +6868,7 @@
                 "DecisionStore.add_decision"
               ],
               "id": "q026",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -6880,7 +6880,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q006"
               },
-              "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+              "question": "How do active decisions and rules get into the /ask answer, and which code sets their format and repository scope?",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -7131,7 +7131,7 @@
                 "TaskNotFound"
               ],
               "id": "q027",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -7143,7 +7143,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q007"
               },
-              "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+              "question": "Where is the harness task state machine declared, and which transitions are terminal or forbidden?",
               "required_assertions": [
                 "HARNESS_SCHEMA",
                 "TASK_STATUSES",
@@ -7389,7 +7389,7 @@
                 "AgentTaskEvent"
               ],
               "id": "q028",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -7401,7 +7401,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q008"
               },
-              "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+              "question": "How does expected_task_version protect task ledger updates from races between workers?",
               "required_assertions": [
                 "classmethod",
                 "staticmethod",
@@ -7636,7 +7636,7 @@
                 "require_repository_by_path"
               ],
               "id": "q029",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -7648,7 +7648,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q009"
               },
-              "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+              "question": "Find the canonical upsert implementation for DecisionStore and its protection against duplicate decisions.",
               "required_assertions": [
                 "classmethod",
                 "Store for managing architectural and technical decisions.",
@@ -7917,7 +7917,7 @@
                 "require_repository_by_path"
               ],
               "id": "q030",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -7929,7 +7929,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q010"
               },
-              "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+              "question": "How does RuleStore select only active rules for the right repository scope while still including global rules?",
               "required_assertions": [
                 "classmethod",
                 "Helper to convert a rule name to a standard slug ID.",
@@ -8156,7 +8156,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q031",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -8168,7 +8168,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q011"
               },
-              "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+              "question": "How do API auth requirements differ between production and development, and what response does an invalid X-API-Key get?",
               "required_assertions": [
                 "API key authentication for orchestration endpoints.",
                 "X-API-Key",
@@ -8410,7 +8410,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q032",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -8422,7 +8422,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q012"
               },
-              "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
+              "question": "Where are the cookie signature, CSRF and login state checked for the dashboard?",
               "required_assertions": [
                 "SESSION_COOKIE",
                 "LOGIN_CSRF_COOKIE",
@@ -8664,7 +8664,7 @@
                 "_enqueue_response"
               ],
               "id": "q033",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -8676,7 +8676,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q014"
               },
-              "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
+              "question": "Which background job actions are available from the dashboard, and how is the UI wired to the worker queue?",
               "required_assertions": [
                 "_CORE_SERVICES",
                 "_SERVICE_LABELS",
@@ -8948,7 +8948,7 @@
                 "should_ignore_file"
               ],
               "id": "q034",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -8960,7 +8960,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q016"
               },
-              "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+              "question": "How are a repository's graph nodes deleted, and how are stale file nodes cleaned up after re-indexing?",
               "required_assertions": [
                 "GRAPH_SCHEMA_VERSION",
                 "EXCLUDED_HUB_SYMBOLS",
@@ -9209,7 +9209,7 @@
                 "InsightTransitionError"
               ],
               "id": "q035",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -9221,7 +9221,7 @@
                 "production_real": false,
                 "source": "Enriched from LFM council exact-query acceptance scenario"
               },
-              "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+              "question": "Where is init_db guarded against repeated runs, and where must malformed LLM self-diagnosis output degrade without crashing?",
               "required_assertions": [
                 "DATABASE_URL is not configured",
                 "REDIS_URL is not configured",
@@ -18392,7 +18392,7 @@
                 "should_ignore_file"
               ],
               "id": "q021",
-              "language": "ru",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -18404,7 +18404,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q001"
               },
-              "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+              "question": "How does the indexer split files into chunks, where do the window size and overlap come from, and where are symbol boundaries respected?",
               "required_assertions": [
                 "Clamp chunking settings to safe values to avoid zero-step windows.",
                 "Yield inclusive line ranges with overlap between consecutive chunks.",
@@ -18637,7 +18637,7 @@
                 "classify_knowledge_status"
               ],
               "id": "q022",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -18649,7 +18649,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation and bilingual expansion of q002"
               },
-              "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+              "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
               "required_assertions": [
                 "Hybrid retrieval pipeline: query understanding → channels → fusion → rerank.",
                 "Synthetic recall-pool candidate for a co-rank injected path.",
@@ -18905,7 +18905,7 @@
                 "Settings.validate_postgres_pool_size"
               ],
               "id": "q023",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -18917,7 +18917,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q003"
               },
-              "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+              "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
               "required_assertions": [
                 "dataclass",
                 "Configured embedding provider metadata and dimension resolution.",
@@ -19156,7 +19156,7 @@
                 "_iter_overlap_ranges"
               ],
               "id": "q024",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -19168,7 +19168,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q004"
               },
-              "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+              "question": "Where is text length capped for NVIDIA embedding, and how is an oversized chunk truncated or logged?",
               "required_assertions": [
                 "MAX_INPUT_CHARS",
                 "NVIDIA NIM API implementation of LLMProvider using integrate.api.nvidia.com.",
@@ -19402,7 +19402,7 @@
                 "AskRequest"
               ],
               "id": "q025",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -19414,7 +19414,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q005"
               },
-              "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+              "question": "Show the exact path of POST /search: request schema, router, and the function that actually runs the search.",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -19660,7 +19660,7 @@
                 "DecisionStore.add_decision"
               ],
               "id": "q026",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -19672,7 +19672,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q006"
               },
-              "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+              "question": "How do active decisions and rules get into the /ask answer, and which code sets their format and repository scope?",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -19923,7 +19923,7 @@
                 "TaskNotFound"
               ],
               "id": "q027",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -19935,7 +19935,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q007"
               },
-              "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+              "question": "Where is the harness task state machine declared, and which transitions are terminal or forbidden?",
               "required_assertions": [
                 "HARNESS_SCHEMA",
                 "TASK_STATUSES",
@@ -20181,7 +20181,7 @@
                 "AgentTaskEvent"
               ],
               "id": "q028",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -20193,7 +20193,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q008"
               },
-              "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+              "question": "How does expected_task_version protect task ledger updates from races between workers?",
               "required_assertions": [
                 "classmethod",
                 "staticmethod",
@@ -20428,7 +20428,7 @@
                 "require_repository_by_path"
               ],
               "id": "q029",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -20440,7 +20440,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q009"
               },
-              "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+              "question": "Find the canonical upsert implementation for DecisionStore and its protection against duplicate decisions.",
               "required_assertions": [
                 "classmethod",
                 "Store for managing architectural and technical decisions.",
@@ -20709,7 +20709,7 @@
                 "require_repository_by_path"
               ],
               "id": "q030",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -20721,7 +20721,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q010"
               },
-              "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+              "question": "How does RuleStore select only active rules for the right repository scope while still including global rules?",
               "required_assertions": [
                 "classmethod",
                 "Helper to convert a rule name to a standard slug ID.",
@@ -20948,7 +20948,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q031",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -20960,7 +20960,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q011"
               },
-              "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+              "question": "How do API auth requirements differ between production and development, and what response does an invalid X-API-Key get?",
               "required_assertions": [
                 "API key authentication for orchestration endpoints.",
                 "X-API-Key",
@@ -21202,7 +21202,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q032",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -21214,7 +21214,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q012"
               },
-              "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
+              "question": "Where are the cookie signature, CSRF and login state checked for the dashboard?",
               "required_assertions": [
                 "SESSION_COOKIE",
                 "LOGIN_CSRF_COOKIE",
@@ -21456,7 +21456,7 @@
                 "_enqueue_response"
               ],
               "id": "q033",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -21468,7 +21468,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q014"
               },
-              "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
+              "question": "Which background job actions are available from the dashboard, and how is the UI wired to the worker queue?",
               "required_assertions": [
                 "_CORE_SERVICES",
                 "_SERVICE_LABELS",
@@ -21740,7 +21740,7 @@
                 "should_ignore_file"
               ],
               "id": "q034",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -21752,7 +21752,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q016"
               },
-              "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+              "question": "How are a repository's graph nodes deleted, and how are stale file nodes cleaned up after re-indexing?",
               "required_assertions": [
                 "GRAPH_SCHEMA_VERSION",
                 "EXCLUDED_HUB_SYMBOLS",
@@ -22001,7 +22001,7 @@
                 "InsightTransitionError"
               ],
               "id": "q035",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -22013,7 +22013,7 @@
                 "production_real": false,
                 "source": "Enriched from LFM council exact-query acceptance scenario"
               },
-              "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+              "question": "Where is init_db guarded against repeated runs, and where must malformed LLM self-diagnosis output degrade without crashing?",
               "required_assertions": [
                 "DATABASE_URL is not configured",
                 "REDIS_URL is not configured",
@@ -31184,7 +31184,7 @@
                 "should_ignore_file"
               ],
               "id": "q021",
-              "language": "ru",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -31196,7 +31196,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q001"
               },
-              "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+              "question": "How does the indexer split files into chunks, where do the window size and overlap come from, and where are symbol boundaries respected?",
               "required_assertions": [
                 "Clamp chunking settings to safe values to avoid zero-step windows.",
                 "Yield inclusive line ranges with overlap between consecutive chunks.",
@@ -31429,7 +31429,7 @@
                 "classify_knowledge_status"
               ],
               "id": "q022",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -31441,7 +31441,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation and bilingual expansion of q002"
               },
-              "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+              "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
               "required_assertions": [
                 "Hybrid retrieval pipeline: query understanding → channels → fusion → rerank.",
                 "Synthetic recall-pool candidate for a co-rank injected path.",
@@ -31697,7 +31697,7 @@
                 "Settings.validate_postgres_pool_size"
               ],
               "id": "q023",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -31709,7 +31709,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q003"
               },
-              "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+              "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
               "required_assertions": [
                 "dataclass",
                 "Configured embedding provider metadata and dimension resolution.",
@@ -31948,7 +31948,7 @@
                 "_iter_overlap_ranges"
               ],
               "id": "q024",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -31960,7 +31960,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q004"
               },
-              "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+              "question": "Where is text length capped for NVIDIA embedding, and how is an oversized chunk truncated or logged?",
               "required_assertions": [
                 "MAX_INPUT_CHARS",
                 "NVIDIA NIM API implementation of LLMProvider using integrate.api.nvidia.com.",
@@ -32194,7 +32194,7 @@
                 "AskRequest"
               ],
               "id": "q025",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -32206,7 +32206,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q005"
               },
-              "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+              "question": "Show the exact path of POST /search: request schema, router, and the function that actually runs the search.",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -32452,7 +32452,7 @@
                 "DecisionStore.add_decision"
               ],
               "id": "q026",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -32464,7 +32464,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q006"
               },
-              "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+              "question": "How do active decisions and rules get into the /ask answer, and which code sets their format and repository scope?",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -32715,7 +32715,7 @@
                 "TaskNotFound"
               ],
               "id": "q027",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -32727,7 +32727,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q007"
               },
-              "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+              "question": "Where is the harness task state machine declared, and which transitions are terminal or forbidden?",
               "required_assertions": [
                 "HARNESS_SCHEMA",
                 "TASK_STATUSES",
@@ -32973,7 +32973,7 @@
                 "AgentTaskEvent"
               ],
               "id": "q028",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -32985,7 +32985,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q008"
               },
-              "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+              "question": "How does expected_task_version protect task ledger updates from races between workers?",
               "required_assertions": [
                 "classmethod",
                 "staticmethod",
@@ -33220,7 +33220,7 @@
                 "require_repository_by_path"
               ],
               "id": "q029",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -33232,7 +33232,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q009"
               },
-              "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+              "question": "Find the canonical upsert implementation for DecisionStore and its protection against duplicate decisions.",
               "required_assertions": [
                 "classmethod",
                 "Store for managing architectural and technical decisions.",
@@ -33501,7 +33501,7 @@
                 "require_repository_by_path"
               ],
               "id": "q030",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -33513,7 +33513,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q010"
               },
-              "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+              "question": "How does RuleStore select only active rules for the right repository scope while still including global rules?",
               "required_assertions": [
                 "classmethod",
                 "Helper to convert a rule name to a standard slug ID.",
@@ -33740,7 +33740,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q031",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -33752,7 +33752,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q011"
               },
-              "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+              "question": "How do API auth requirements differ between production and development, and what response does an invalid X-API-Key get?",
               "required_assertions": [
                 "API key authentication for orchestration endpoints.",
                 "X-API-Key",
@@ -33994,7 +33994,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q032",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -34006,7 +34006,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q012"
               },
-              "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
+              "question": "Where are the cookie signature, CSRF and login state checked for the dashboard?",
               "required_assertions": [
                 "SESSION_COOKIE",
                 "LOGIN_CSRF_COOKIE",
@@ -34248,7 +34248,7 @@
                 "_enqueue_response"
               ],
               "id": "q033",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -34260,7 +34260,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q014"
               },
-              "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
+              "question": "Which background job actions are available from the dashboard, and how is the UI wired to the worker queue?",
               "required_assertions": [
                 "_CORE_SERVICES",
                 "_SERVICE_LABELS",
@@ -34532,7 +34532,7 @@
                 "should_ignore_file"
               ],
               "id": "q034",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -34544,7 +34544,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q016"
               },
-              "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+              "question": "How are a repository's graph nodes deleted, and how are stale file nodes cleaned up after re-indexing?",
               "required_assertions": [
                 "GRAPH_SCHEMA_VERSION",
                 "EXCLUDED_HUB_SYMBOLS",
@@ -34793,7 +34793,7 @@
                 "InsightTransitionError"
               ],
               "id": "q035",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -34805,7 +34805,7 @@
                 "production_real": false,
                 "source": "Enriched from LFM council exact-query acceptance scenario"
               },
-              "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+              "question": "Where is init_db guarded against repeated runs, and where must malformed LLM self-diagnosis output degrade without crashing?",
               "required_assertions": [
                 "DATABASE_URL is not configured",
                 "REDIS_URL is not configured",
@@ -43977,7 +43977,7 @@
               "should_ignore_file"
             ],
             "id": "q021",
-            "language": "ru",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -43989,7 +43989,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q001"
             },
-            "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+            "question": "How does the indexer split files into chunks, where do the window size and overlap come from, and where are symbol boundaries respected?",
             "required_assertions": [
               "Clamp chunking settings to safe values to avoid zero-step windows.",
               "Yield inclusive line ranges with overlap between consecutive chunks.",
@@ -44222,7 +44222,7 @@
               "classify_knowledge_status"
             ],
             "id": "q022",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -44234,7 +44234,7 @@
               "production_real": false,
               "source": "Enriched from curated translation and bilingual expansion of q002"
             },
-            "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+            "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
             "required_assertions": [
               "Hybrid retrieval pipeline: query understanding → channels → fusion → rerank.",
               "Synthetic recall-pool candidate for a co-rank injected path.",
@@ -44490,7 +44490,7 @@
               "Settings.validate_postgres_pool_size"
             ],
             "id": "q023",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -44502,7 +44502,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q003"
             },
-            "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+            "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
             "required_assertions": [
               "dataclass",
               "Configured embedding provider metadata and dimension resolution.",
@@ -44741,7 +44741,7 @@
               "_iter_overlap_ranges"
             ],
             "id": "q024",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -44753,7 +44753,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q004"
             },
-            "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+            "question": "Where is text length capped for NVIDIA embedding, and how is an oversized chunk truncated or logged?",
             "required_assertions": [
               "MAX_INPUT_CHARS",
               "NVIDIA NIM API implementation of LLMProvider using integrate.api.nvidia.com.",
@@ -44987,7 +44987,7 @@
               "AskRequest"
             ],
             "id": "q025",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -44999,7 +44999,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q005"
             },
-            "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+            "question": "Show the exact path of POST /search: request schema, router, and the function that actually runs the search.",
             "required_assertions": [
               "ASK_RETRIEVAL_LIMIT",
               "ASK_DECISION_LIMIT",
@@ -45245,7 +45245,7 @@
               "DecisionStore.add_decision"
             ],
             "id": "q026",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -45257,7 +45257,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q006"
             },
-            "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+            "question": "How do active decisions and rules get into the /ask answer, and which code sets their format and repository scope?",
             "required_assertions": [
               "ASK_RETRIEVAL_LIMIT",
               "ASK_DECISION_LIMIT",
@@ -45508,7 +45508,7 @@
               "TaskNotFound"
             ],
             "id": "q027",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -45520,7 +45520,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q007"
             },
-            "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+            "question": "Where is the harness task state machine declared, and which transitions are terminal or forbidden?",
             "required_assertions": [
               "HARNESS_SCHEMA",
               "TASK_STATUSES",
@@ -45766,7 +45766,7 @@
               "AgentTaskEvent"
             ],
             "id": "q028",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -45778,7 +45778,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q008"
             },
-            "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+            "question": "How does expected_task_version protect task ledger updates from races between workers?",
             "required_assertions": [
               "classmethod",
               "staticmethod",
@@ -46013,7 +46013,7 @@
               "require_repository_by_path"
             ],
             "id": "q029",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -46025,7 +46025,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q009"
             },
-            "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+            "question": "Find the canonical upsert implementation for DecisionStore and its protection against duplicate decisions.",
             "required_assertions": [
               "classmethod",
               "Store for managing architectural and technical decisions.",
@@ -46294,7 +46294,7 @@
               "require_repository_by_path"
             ],
             "id": "q030",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -46306,7 +46306,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q010"
             },
-            "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+            "question": "How does RuleStore select only active rules for the right repository scope while still including global rules?",
             "required_assertions": [
               "classmethod",
               "Helper to convert a rule name to a standard slug ID.",
@@ -46533,7 +46533,7 @@
               "SecurityHeadersMiddleware"
             ],
             "id": "q031",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -46545,7 +46545,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q011"
             },
-            "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+            "question": "How do API auth requirements differ between production and development, and what response does an invalid X-API-Key get?",
             "required_assertions": [
               "API key authentication for orchestration endpoints.",
               "X-API-Key",
@@ -46787,7 +46787,7 @@
               "SecurityHeadersMiddleware"
             ],
             "id": "q032",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -46799,7 +46799,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q012"
             },
-            "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
+            "question": "Where are the cookie signature, CSRF and login state checked for the dashboard?",
             "required_assertions": [
               "SESSION_COOKIE",
               "LOGIN_CSRF_COOKIE",
@@ -47041,7 +47041,7 @@
               "_enqueue_response"
             ],
             "id": "q033",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -47053,7 +47053,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q014"
             },
-            "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
+            "question": "Which background job actions are available from the dashboard, and how is the UI wired to the worker queue?",
             "required_assertions": [
               "_CORE_SERVICES",
               "_SERVICE_LABELS",
@@ -47325,7 +47325,7 @@
               "should_ignore_file"
             ],
             "id": "q034",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -47337,7 +47337,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q016"
             },
-            "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+            "question": "How are a repository's graph nodes deleted, and how are stale file nodes cleaned up after re-indexing?",
             "required_assertions": [
               "GRAPH_SCHEMA_VERSION",
               "EXCLUDED_HUB_SYMBOLS",
@@ -47586,7 +47586,7 @@
               "InsightTransitionError"
             ],
             "id": "q035",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -47598,7 +47598,7 @@
               "production_real": false,
               "source": "Enriched from LFM council exact-query acceptance scenario"
             },
-            "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+            "question": "Where is init_db guarded against repeated runs, and where must malformed LLM self-diagnosis output degrade without crashing?",
             "required_assertions": [
               "DATABASE_URL is not configured",
               "REDIS_URL is not configured",
@@ -57008,7 +57008,7 @@
                 "should_ignore_file"
               ],
               "id": "q021",
-              "language": "ru",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -57020,7 +57020,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q001"
               },
-              "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+              "question": "How does the indexer split files into chunks, where do the window size and overlap come from, and where are symbol boundaries respected?",
               "required_assertions": [
                 "Clamp chunking settings to safe values to avoid zero-step windows.",
                 "Yield inclusive line ranges with overlap between consecutive chunks.",
@@ -57192,7 +57192,7 @@
                 "classify_knowledge_status"
               ],
               "id": "q022",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -57204,7 +57204,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation and bilingual expansion of q002"
               },
-              "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+              "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
               "required_assertions": [
                 "Hybrid retrieval pipeline: query understanding → channels → fusion → rerank.",
                 "Synthetic recall-pool candidate for a co-rank injected path.",
@@ -57411,7 +57411,7 @@
                 "Settings.validate_postgres_pool_size"
               ],
               "id": "q023",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -57423,7 +57423,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q003"
               },
-              "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+              "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
               "required_assertions": [
                 "dataclass",
                 "Configured embedding provider metadata and dimension resolution.",
@@ -57649,7 +57649,7 @@
                 "_iter_overlap_ranges"
               ],
               "id": "q024",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -57661,7 +57661,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q004"
               },
-              "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+              "question": "Where is text length capped for NVIDIA embedding, and how is an oversized chunk truncated or logged?",
               "required_assertions": [
                 "MAX_INPUT_CHARS",
                 "NVIDIA NIM API implementation of LLMProvider using integrate.api.nvidia.com.",
@@ -57856,7 +57856,7 @@
                 "AskRequest"
               ],
               "id": "q025",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -57868,7 +57868,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q005"
               },
-              "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+              "question": "Show the exact path of POST /search: request schema, router, and the function that actually runs the search.",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -58038,7 +58038,7 @@
                 "DecisionStore.add_decision"
               ],
               "id": "q026",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -58050,7 +58050,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q006"
               },
-              "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+              "question": "How do active decisions and rules get into the /ask answer, and which code sets their format and repository scope?",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -58247,7 +58247,7 @@
                 "TaskNotFound"
               ],
               "id": "q027",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -58259,7 +58259,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q007"
               },
-              "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+              "question": "Where is the harness task state machine declared, and which transitions are terminal or forbidden?",
               "required_assertions": [
                 "HARNESS_SCHEMA",
                 "TASK_STATUSES",
@@ -58430,7 +58430,7 @@
                 "AgentTaskEvent"
               ],
               "id": "q028",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -58442,7 +58442,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q008"
               },
-              "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+              "question": "How does expected_task_version protect task ledger updates from races between workers?",
               "required_assertions": [
                 "classmethod",
                 "staticmethod",
@@ -58626,7 +58626,7 @@
                 "require_repository_by_path"
               ],
               "id": "q029",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -58638,7 +58638,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q009"
               },
-              "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+              "question": "Find the canonical upsert implementation for DecisionStore and its protection against duplicate decisions.",
               "required_assertions": [
                 "classmethod",
                 "Store for managing architectural and technical decisions.",
@@ -59028,7 +59028,7 @@
                 "require_repository_by_path"
               ],
               "id": "q030",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -59040,7 +59040,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q010"
               },
-              "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+              "question": "How does RuleStore select only active rules for the right repository scope while still including global rules?",
               "required_assertions": [
                 "classmethod",
                 "Helper to convert a rule name to a standard slug ID.",
@@ -59252,7 +59252,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q031",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -59264,7 +59264,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q011"
               },
-              "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+              "question": "How do API auth requirements differ between production and development, and what response does an invalid X-API-Key get?",
               "required_assertions": [
                 "API key authentication for orchestration endpoints.",
                 "X-API-Key",
@@ -59804,7 +59804,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q032",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -59816,7 +59816,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q012"
               },
-              "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
+              "question": "Where are the cookie signature, CSRF and login state checked for the dashboard?",
               "required_assertions": [
                 "SESSION_COOKIE",
                 "LOGIN_CSRF_COOKIE",
@@ -59988,7 +59988,7 @@
                 "_enqueue_response"
               ],
               "id": "q033",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -60000,7 +60000,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q014"
               },
-              "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
+              "question": "Which background job actions are available from the dashboard, and how is the UI wired to the worker queue?",
               "required_assertions": [
                 "_CORE_SERVICES",
                 "_SERVICE_LABELS",
@@ -60170,7 +60170,7 @@
                 "should_ignore_file"
               ],
               "id": "q034",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -60182,7 +60182,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q016"
               },
-              "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+              "question": "How are a repository's graph nodes deleted, and how are stale file nodes cleaned up after re-indexing?",
               "required_assertions": [
                 "GRAPH_SCHEMA_VERSION",
                 "EXCLUDED_HUB_SYMBOLS",
@@ -60367,7 +60367,7 @@
                 "InsightTransitionError"
               ],
               "id": "q035",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -60379,7 +60379,7 @@
                 "production_real": false,
                 "source": "Enriched from LFM council exact-query acceptance scenario"
               },
-              "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+              "question": "Where is init_db guarded against repeated runs, and where must malformed LLM self-diagnosis output degrade without crashing?",
               "required_assertions": [
                 "DATABASE_URL is not configured",
                 "REDIS_URL is not configured",
@@ -68900,7 +68900,7 @@
                 "should_ignore_file"
               ],
               "id": "q021",
-              "language": "ru",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -68912,7 +68912,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q001"
               },
-              "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+              "question": "How does the indexer split files into chunks, where do the window size and overlap come from, and where are symbol boundaries respected?",
               "required_assertions": [
                 "Clamp chunking settings to safe values to avoid zero-step windows.",
                 "Yield inclusive line ranges with overlap between consecutive chunks.",
@@ -69084,7 +69084,7 @@
                 "classify_knowledge_status"
               ],
               "id": "q022",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -69096,7 +69096,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation and bilingual expansion of q002"
               },
-              "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+              "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
               "required_assertions": [
                 "Hybrid retrieval pipeline: query understanding → channels → fusion → rerank.",
                 "Synthetic recall-pool candidate for a co-rank injected path.",
@@ -69313,7 +69313,7 @@
                 "Settings.validate_postgres_pool_size"
               ],
               "id": "q023",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -69325,7 +69325,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q003"
               },
-              "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+              "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
               "required_assertions": [
                 "dataclass",
                 "Configured embedding provider metadata and dimension resolution.",
@@ -69551,7 +69551,7 @@
                 "_iter_overlap_ranges"
               ],
               "id": "q024",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -69563,7 +69563,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q004"
               },
-              "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+              "question": "Where is text length capped for NVIDIA embedding, and how is an oversized chunk truncated or logged?",
               "required_assertions": [
                 "MAX_INPUT_CHARS",
                 "NVIDIA NIM API implementation of LLMProvider using integrate.api.nvidia.com.",
@@ -69758,7 +69758,7 @@
                 "AskRequest"
               ],
               "id": "q025",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -69770,7 +69770,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q005"
               },
-              "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+              "question": "Show the exact path of POST /search: request schema, router, and the function that actually runs the search.",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -69993,7 +69993,7 @@
                 "DecisionStore.add_decision"
               ],
               "id": "q026",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -70005,7 +70005,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q006"
               },
-              "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+              "question": "How do active decisions and rules get into the /ask answer, and which code sets their format and repository scope?",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -70194,7 +70194,7 @@
                 "TaskNotFound"
               ],
               "id": "q027",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -70206,7 +70206,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q007"
               },
-              "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+              "question": "Where is the harness task state machine declared, and which transitions are terminal or forbidden?",
               "required_assertions": [
                 "HARNESS_SCHEMA",
                 "TASK_STATUSES",
@@ -70437,7 +70437,7 @@
                 "AgentTaskEvent"
               ],
               "id": "q028",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -70449,7 +70449,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q008"
               },
-              "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+              "question": "How does expected_task_version protect task ledger updates from races between workers?",
               "required_assertions": [
                 "classmethod",
                 "staticmethod",
@@ -70634,7 +70634,7 @@
                 "require_repository_by_path"
               ],
               "id": "q029",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -70646,7 +70646,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q009"
               },
-              "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+              "question": "Find the canonical upsert implementation for DecisionStore and its protection against duplicate decisions.",
               "required_assertions": [
                 "classmethod",
                 "Store for managing architectural and technical decisions.",
@@ -70842,7 +70842,7 @@
                 "require_repository_by_path"
               ],
               "id": "q030",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -70854,7 +70854,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q010"
               },
-              "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+              "question": "How does RuleStore select only active rules for the right repository scope while still including global rules?",
               "required_assertions": [
                 "classmethod",
                 "Helper to convert a rule name to a standard slug ID.",
@@ -71089,7 +71089,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q031",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -71101,7 +71101,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q011"
               },
-              "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+              "question": "How do API auth requirements differ between production and development, and what response does an invalid X-API-Key get?",
               "required_assertions": [
                 "API key authentication for orchestration endpoints.",
                 "X-API-Key",
@@ -71395,7 +71395,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q032",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -71407,7 +71407,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q012"
               },
-              "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
+              "question": "Where are the cookie signature, CSRF and login state checked for the dashboard?",
               "required_assertions": [
                 "SESSION_COOKIE",
                 "LOGIN_CSRF_COOKIE",
@@ -71579,7 +71579,7 @@
                 "_enqueue_response"
               ],
               "id": "q033",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -71591,7 +71591,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q014"
               },
-              "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
+              "question": "Which background job actions are available from the dashboard, and how is the UI wired to the worker queue?",
               "required_assertions": [
                 "_CORE_SERVICES",
                 "_SERVICE_LABELS",
@@ -71761,7 +71761,7 @@
                 "should_ignore_file"
               ],
               "id": "q034",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -71773,7 +71773,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q016"
               },
-              "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+              "question": "How are a repository's graph nodes deleted, and how are stale file nodes cleaned up after re-indexing?",
               "required_assertions": [
                 "GRAPH_SCHEMA_VERSION",
                 "EXCLUDED_HUB_SYMBOLS",
@@ -71962,7 +71962,7 @@
                 "InsightTransitionError"
               ],
               "id": "q035",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -71974,7 +71974,7 @@
                 "production_real": false,
                 "source": "Enriched from LFM council exact-query acceptance scenario"
               },
-              "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+              "question": "Where is init_db guarded against repeated runs, and where must malformed LLM self-diagnosis output degrade without crashing?",
               "required_assertions": [
                 "DATABASE_URL is not configured",
                 "REDIS_URL is not configured",
@@ -83825,7 +83825,7 @@
                 "should_ignore_file"
               ],
               "id": "q021",
-              "language": "ru",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -83837,7 +83837,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q001"
               },
-              "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+              "question": "How does the indexer split files into chunks, where do the window size and overlap come from, and where are symbol boundaries respected?",
               "required_assertions": [
                 "Clamp chunking settings to safe values to avoid zero-step windows.",
                 "Yield inclusive line ranges with overlap between consecutive chunks.",
@@ -84009,7 +84009,7 @@
                 "classify_knowledge_status"
               ],
               "id": "q022",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -84021,7 +84021,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation and bilingual expansion of q002"
               },
-              "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+              "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
               "required_assertions": [
                 "Hybrid retrieval pipeline: query understanding → channels → fusion → rerank.",
                 "Synthetic recall-pool candidate for a co-rank injected path.",
@@ -84268,7 +84268,7 @@
                 "Settings.validate_postgres_pool_size"
               ],
               "id": "q023",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -84280,7 +84280,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q003"
               },
-              "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+              "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
               "required_assertions": [
                 "dataclass",
                 "Configured embedding provider metadata and dimension resolution.",
@@ -84506,7 +84506,7 @@
                 "_iter_overlap_ranges"
               ],
               "id": "q024",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -84518,7 +84518,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q004"
               },
-              "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+              "question": "Where is text length capped for NVIDIA embedding, and how is an oversized chunk truncated or logged?",
               "required_assertions": [
                 "MAX_INPUT_CHARS",
                 "NVIDIA NIM API implementation of LLMProvider using integrate.api.nvidia.com.",
@@ -84720,7 +84720,7 @@
                 "AskRequest"
               ],
               "id": "q025",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -84732,7 +84732,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q005"
               },
-              "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+              "question": "Show the exact path of POST /search: request schema, router, and the function that actually runs the search.",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -84959,7 +84959,7 @@
                 "DecisionStore.add_decision"
               ],
               "id": "q026",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -84971,7 +84971,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q006"
               },
-              "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+              "question": "How do active decisions and rules get into the /ask answer, and which code sets their format and repository scope?",
               "required_assertions": [
                 "ASK_RETRIEVAL_LIMIT",
                 "ASK_DECISION_LIMIT",
@@ -85184,7 +85184,7 @@
                 "TaskNotFound"
               ],
               "id": "q027",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -85196,7 +85196,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q007"
               },
-              "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+              "question": "Where is the harness task state machine declared, and which transitions are terminal or forbidden?",
               "required_assertions": [
                 "HARNESS_SCHEMA",
                 "TASK_STATUSES",
@@ -85377,7 +85377,7 @@
                 "AgentTaskEvent"
               ],
               "id": "q028",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -85389,7 +85389,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q008"
               },
-              "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+              "question": "How does expected_task_version protect task ledger updates from races between workers?",
               "required_assertions": [
                 "classmethod",
                 "staticmethod",
@@ -85574,7 +85574,7 @@
                 "require_repository_by_path"
               ],
               "id": "q029",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -85586,7 +85586,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q009"
               },
-              "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+              "question": "Find the canonical upsert implementation for DecisionStore and its protection against duplicate decisions.",
               "required_assertions": [
                 "classmethod",
                 "Store for managing architectural and technical decisions.",
@@ -85798,7 +85798,7 @@
                 "require_repository_by_path"
               ],
               "id": "q030",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -85810,7 +85810,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q010"
               },
-              "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+              "question": "How does RuleStore select only active rules for the right repository scope while still including global rules?",
               "required_assertions": [
                 "classmethod",
                 "Helper to convert a rule name to a standard slug ID.",
@@ -86172,7 +86172,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q031",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -86184,7 +86184,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q011"
               },
-              "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+              "question": "How do API auth requirements differ between production and development, and what response does an invalid X-API-Key get?",
               "required_assertions": [
                 "API key authentication for orchestration endpoints.",
                 "X-API-Key",
@@ -86736,7 +86736,7 @@
                 "SecurityHeadersMiddleware"
               ],
               "id": "q032",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -86748,7 +86748,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q012"
               },
-              "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
+              "question": "Where are the cookie signature, CSRF and login state checked for the dashboard?",
               "required_assertions": [
                 "SESSION_COOKIE",
                 "LOGIN_CSRF_COOKIE",
@@ -86920,7 +86920,7 @@
                 "_enqueue_response"
               ],
               "id": "q033",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -86932,7 +86932,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q014"
               },
-              "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
+              "question": "Which background job actions are available from the dashboard, and how is the UI wired to the worker queue?",
               "required_assertions": [
                 "_CORE_SERVICES",
                 "_SERVICE_LABELS",
@@ -87311,7 +87311,7 @@
                 "should_ignore_file"
               ],
               "id": "q034",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -87323,7 +87323,7 @@
                 "production_real": false,
                 "source": "Enriched from curated translation of q016"
               },
-              "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+              "question": "How are a repository's graph nodes deleted, and how are stale file nodes cleaned up after re-indexing?",
               "required_assertions": [
                 "GRAPH_SCHEMA_VERSION",
                 "EXCLUDED_HUB_SYMBOLS",
@@ -87508,7 +87508,7 @@
                 "InsightTransitionError"
               ],
               "id": "q035",
-              "language": "ru-en",
+              "language": "en",
               "provenance": {
                 "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
                 "kind": "curated",
@@ -87520,7 +87520,7 @@
                 "production_real": false,
                 "source": "Enriched from LFM council exact-query acceptance scenario"
               },
-              "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+              "question": "Where is init_db guarded against repeated runs, and where must malformed LLM self-diagnosis output degrade without crashing?",
               "required_assertions": [
                 "DATABASE_URL is not configured",
                 "REDIS_URL is not configured",
@@ -96822,7 +96822,7 @@
               "should_ignore_file"
             ],
             "id": "q021",
-            "language": "ru",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -96834,7 +96834,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q001"
             },
-            "question": "Как индексатор режет файлы на чанки, откуда берутся размер окна и overlap и где учитываются границы символов?",
+            "question": "How does the indexer split files into chunks, where do the window size and overlap come from, and where are symbol boundaries respected?",
             "required_assertions": [
               "Clamp chunking settings to safe values to avoid zero-step windows.",
               "Yield inclusive line ranges with overlap between consecutive chunks.",
@@ -97006,7 +97006,7 @@
               "classify_knowledge_status"
             ],
             "id": "q022",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -97018,7 +97018,7 @@
               "production_real": false,
               "source": "Enriched from curated translation and bilingual expansion of q002"
             },
-            "question": "Где объединяются lexical, symbol, vector, graph и memory каналы и как для них применяются веса RRF?",
+            "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
             "required_assertions": [
               "Hybrid retrieval pipeline: query understanding → channels → fusion → rerank.",
               "Synthetic recall-pool candidate for a co-rank injected path.",
@@ -97225,7 +97225,7 @@
               "Settings.validate_postgres_pool_size"
             ],
             "id": "q023",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -97237,7 +97237,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q003"
             },
-            "question": "Какие провайдеры эмбеддингов поддерживаются и что произойдёт при неизвестном имени provider?",
+            "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
             "required_assertions": [
               "dataclass",
               "Configured embedding provider metadata and dimension resolution.",
@@ -97463,7 +97463,7 @@
               "_iter_overlap_ranges"
             ],
             "id": "q024",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -97475,7 +97475,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q004"
             },
-            "question": "Где ограничивается длина текста для NVIDIA embedding и как oversized chunk обрезается или логируется?",
+            "question": "Where is text length capped for NVIDIA embedding, and how is an oversized chunk truncated or logged?",
             "required_assertions": [
               "MAX_INPUT_CHARS",
               "NVIDIA NIM API implementation of LLMProvider using integrate.api.nvidia.com.",
@@ -97670,7 +97670,7 @@
               "AskRequest"
             ],
             "id": "q025",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -97682,7 +97682,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q005"
             },
-            "question": "Покажи точный путь POST /search: схема запроса, router и функция, которая реально выполняет поиск.",
+            "question": "Show the exact path of POST /search: request schema, router, and the function that actually runs the search.",
             "required_assertions": [
               "ASK_RETRIEVAL_LIMIT",
               "ASK_DECISION_LIMIT",
@@ -97852,7 +97852,7 @@
               "DecisionStore.add_decision"
             ],
             "id": "q026",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -97864,7 +97864,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q006"
             },
-            "question": "Как активные decisions и rules попадают в ответ /ask и какой код задаёт их формат и область репозитория?",
+            "question": "How do active decisions and rules get into the /ask answer, and which code sets their format and repository scope?",
             "required_assertions": [
               "ASK_RETRIEVAL_LIMIT",
               "ASK_DECISION_LIMIT",
@@ -98061,7 +98061,7 @@
               "TaskNotFound"
             ],
             "id": "q027",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -98073,7 +98073,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q007"
             },
-            "question": "Где объявлена state machine задач harness и какие переходы считаются terminal или запрещёнными?",
+            "question": "Where is the harness task state machine declared, and which transitions are terminal or forbidden?",
             "required_assertions": [
               "HARNESS_SCHEMA",
               "TASK_STATUSES",
@@ -98244,7 +98244,7 @@
               "AgentTaskEvent"
             ],
             "id": "q028",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -98256,7 +98256,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q008"
             },
-            "question": "Как expected_task_version защищает обновление task ledger от гонок между воркерами?",
+            "question": "How does expected_task_version protect task ledger updates from races between workers?",
             "required_assertions": [
               "classmethod",
               "staticmethod",
@@ -98440,7 +98440,7 @@
               "require_repository_by_path"
             ],
             "id": "q029",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -98452,7 +98452,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q009"
             },
-            "question": "Найди реализацию canonical upsert для DecisionStore и защиту от дубликатов решений.",
+            "question": "Find the canonical upsert implementation for DecisionStore and its protection against duplicate decisions.",
             "required_assertions": [
               "classmethod",
               "Store for managing architectural and technical decisions.",
@@ -98842,7 +98842,7 @@
               "require_repository_by_path"
             ],
             "id": "q030",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -98854,7 +98854,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q010"
             },
-            "question": "Как RuleStore выбирает только активные правила нужного repository scope и учитывает глобальные правила?",
+            "question": "How does RuleStore select only active rules for the right repository scope while still including global rules?",
             "required_assertions": [
               "classmethod",
               "Helper to convert a rule name to a standard slug ID.",
@@ -99066,7 +99066,7 @@
               "SecurityHeadersMiddleware"
             ],
             "id": "q031",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -99078,7 +99078,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q011"
             },
-            "question": "Чем требования API auth отличаются в production и development и какой ответ получает неверный X-API-Key?",
+            "question": "How do API auth requirements differ between production and development, and what response does an invalid X-API-Key get?",
             "required_assertions": [
               "API key authentication for orchestration endpoints.",
               "X-API-Key",
@@ -99618,7 +99618,7 @@
               "SecurityHeadersMiddleware"
             ],
             "id": "q032",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -99630,7 +99630,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q012"
             },
-            "question": "Где проверяются cookie подпись, CSRF и login state для dashboard?",
+            "question": "Where are the cookie signature, CSRF and login state checked for the dashboard?",
             "required_assertions": [
               "SESSION_COOKIE",
               "LOGIN_CSRF_COOKIE",
@@ -99802,7 +99802,7 @@
               "_enqueue_response"
             ],
             "id": "q033",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -99814,7 +99814,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q014"
             },
-            "question": "Какие действия с background jobs доступны из dashboard и как UI связан с worker queue?",
+            "question": "Which background job actions are available from the dashboard, and how is the UI wired to the worker queue?",
             "required_assertions": [
               "_CORE_SERVICES",
               "_SERVICE_LABELS",
@@ -99984,7 +99984,7 @@
               "should_ignore_file"
             ],
             "id": "q034",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -99996,7 +99996,7 @@
               "production_real": false,
               "source": "Enriched from curated translation of q016"
             },
-            "question": "Как удаляются graph nodes для репозитория и как чистятся stale file nodes после переиндексации?",
+            "question": "How are a repository's graph nodes deleted, and how are stale file nodes cleaned up after re-indexing?",
             "required_assertions": [
               "GRAPH_SCHEMA_VERSION",
               "EXCLUDED_HUB_SYMBOLS",
@@ -100181,7 +100181,7 @@
               "InsightTransitionError"
             ],
             "id": "q035",
-            "language": "ru-en",
+            "language": "en",
             "provenance": {
               "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
               "kind": "curated",
@@ -100193,7 +100193,7 @@
               "production_real": false,
               "source": "Enriched from LFM council exact-query acceptance scenario"
             },
-            "question": "Где init_db защищён от повторного запуска и где malformed LLM self-diagnosis output должен деградировать без падения?",
+            "question": "Where is init_db guarded against repeated runs, and where must malformed LLM self-diagnosis output degrade without crashing?",
             "required_assertions": [
               "DATABASE_URL is not configured",
               "REDIS_URL is not configured",

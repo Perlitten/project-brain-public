@@ -104,11 +104,11 @@ def test_search_endpoint_forwards_repo_path_to_hybrid_search(api_key_env):
         "chunks": [],
         "vector_status": VectorSearchStatus.OK,
         "repository_scope": {
-            "requested_path": "/indexed/forex-bot",
+            "requested_path": "/indexed/mobile-app",
             "found": True,
             "repository_id": 7,
-            "repository_path": "/indexed/forex-bot",
-            "repository_name": "forex-bot",
+            "repository_path": "/indexed/mobile-app",
+            "repository_name": "mobile-app",
             "last_indexed_commit": "d1ee6b44620a0000000000000000000000000000",
             "indexing_status": "completed",
         },
@@ -118,13 +118,13 @@ def test_search_endpoint_forwards_repo_path_to_hybrid_search(api_key_env):
     with patch("apps.api.routers.core_retrieval.hybrid_search_code", search_mock):
         response = client.post(
             "/search",
-            json={"query": "telegram digest", "limit": 7, "repo_path": "/indexed/forex-bot"},
+            json={"query": "telegram digest", "limit": 7, "repo_path": "/indexed/mobile-app"},
             headers={"X-API-Key": "test-secret-key"},
         )
 
     assert response.status_code == 200
     assert response.json()["repository_scope"]["repository_id"] == 7
-    search_mock.assert_awaited_once_with("telegram digest", limit=7, repo_path="/indexed/forex-bot")
+    search_mock.assert_awaited_once_with("telegram digest", limit=7, repo_path="/indexed/mobile-app")
 
 
 @pytest.mark.asyncio
@@ -133,12 +133,12 @@ async def test_remote_mcp_search_uses_repo_path_payload():
 
     post_mock = AsyncMock(return_value={"files": []})
     with patch.object(remote_server, "_post", post_mock):
-        result = await remote_server.search_code("risk gate", repo_path="/indexed/forex-bot")
+        result = await remote_server.search_code("risk gate", repo_path="/indexed/mobile-app")
 
     assert result == {"files": []}
     post_mock.assert_awaited_once_with(
         "/search",
-        {"query": "risk gate", "limit": 5, "repo_path": "/indexed/forex-bot"},
+        {"query": "risk gate", "limit": 5, "repo_path": "/indexed/mobile-app"},
     )
 
 

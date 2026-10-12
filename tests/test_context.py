@@ -64,7 +64,7 @@ def test_rule_scope_clause_includes_global_and_matching_repo():
 @pytest.mark.asyncio
 async def test_active_normative_memory_is_loaded_fresh_and_scoped():
     active_rule = SimpleNamespace(name="global rule")
-    scoped_decision = SimpleNamespace(title="Nostia decision")
+    scoped_decision = SimpleNamespace(title="Scoped decision")
     rules_result = MagicMock()
     rules_result.scalars.return_value.all.return_value = [active_rule]
     decisions_result = MagicMock()

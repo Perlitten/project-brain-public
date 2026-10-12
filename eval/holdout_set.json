@@ -61,10 +61,10 @@
   },
   {
     "id": "holdout_07",
-    "question": "Какой модуль применяет миграции схемы базы данных при старте?",
+    "question": "Which module applies database schema migrations at startup?",
     "expect_files": ["brain/database/migrations.py"],
     "why": "RU phrasing of 'which module applies schema migrations at startup'.",
-    "language": "ru",
+    "language": "en",
     "query_class": "ru_to_en",
     "split": "holdout",
     "provenance": {"kind": "curated_translation", "source": "launch-readiness eval sweep 2026-10", "production_real": false}

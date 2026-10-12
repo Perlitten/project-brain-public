@@ -87,7 +87,7 @@ _NIGHTLY_QUALITY_PROBES = (
         ),
     ),
     (
-        "как синхронизируется LFM late interaction корпус и применяется reranking",
+        "how the LFM late interaction corpus is synced and reranking applied",
         frozenset(
             {
                 "brain/late_interaction/application.py",
