@@ -37,7 +37,7 @@ dependencies = [
     "httpx",
     # MCP 2.0 removed mcp.server.fastmcp while the Project Brain server and
     # Cockpit tool enumeration use the current stable v1 SDK contract.
-    "mcp==1.29.0",
+    "mcp==2.3.0",
     "pgvector",
     "cryptography>=50.0.2",
     "numpy>=1.26,<3",
