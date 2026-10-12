@@ -16,6 +16,7 @@ from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.types import InputRequiredResult
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
+from apps.mcp_server.client_activity import record_client_activity
 from apps.mcp_server.deferred_payload import (
     DeferredPayloadStore,
     compact_payload,
@@ -210,12 +211,7 @@ def _record_external_client(client_info: Optional[_mcp_types.Implementation]) ->
     global _CONNECTED_CLIENT
     name = getattr(client_info, "name", None) or "unknown-client"
     _CONNECTED_CLIENT = name
-    try:
-        from brain.onboarding.setup_state import record_client_activity
-
-        record_client_activity(name, getattr(client_info, "version", "") or "")
-    except Exception:
-        pass  # telemetry must never break a client handshake
+    record_client_activity(client_info)
 
 
 async def _record_client_initialize(ctx: ServerRequestContext, call_next: CallNext) -> HandlerResult:

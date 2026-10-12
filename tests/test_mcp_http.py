@@ -170,3 +170,14 @@ def test_in_process_call_without_an_http_caller_fails_closed(monkeypatch):
     result = asyncio.run(remote_server._get("/rules"))
     assert result["status"] == "failed"
     assert "no authenticated MCP caller" in result["error"]
+
+
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+def test_native_http_client_records_setup_evidence(base_url, tmp_path, monkeypatch, mode):
+    from brain.onboarding import setup_state
+
+    monkeypatch.setenv("BRAIN_SETUP_STATE_DIR", str(tmp_path))
+    asyncio.run(_read_rules(base_url, {"Authorization": "Bearer pbk_alice"}, mode))
+    activity = setup_state.last_client_activity()
+    assert activity is not None
+    assert activity["client"] == "mcp"

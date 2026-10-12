@@ -258,3 +258,29 @@ async def test_stdio_subprocess_records_real_initialize(tmp_path, monkeypatch):
     activity = setup_state.last_client_activity()
     assert activity["client"] == "stdio-test"
     assert activity["version"] == "2.3"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+async def test_remote_client_records_setup_evidence(tmp_path, monkeypatch, mode):
+    from mcp.types import Implementation
+    from brain.onboarding import setup_state
+
+    monkeypatch.setenv("BRAIN_SETUP_STATE_DIR", str(tmp_path))
+    async with Client(remote_server.mcp, mode=mode, client_info=Implementation(name="remote-test", version="2.3")) as client:
+        await client.list_tools()
+    activity = setup_state.last_client_activity()
+    assert activity["client"] == "remote-test"
+    assert activity["version"] == "2.3"
+
+
+def test_remote_import_does_not_load_the_brain_core():
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import sys; from apps.mcp_server import remote_server; "
+         "assert not any(name == 'brain' or name.startswith('brain.') for name in sys.modules)"],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr

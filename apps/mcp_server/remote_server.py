@@ -34,6 +34,7 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import InputRequiredResult
 from mcp.server.auth.middleware.auth_context import get_access_token
 
+from apps.mcp_server.client_activity import observe_client_activity
 from apps.mcp_server.deferred_payload import (
     DeferredPayloadStore,
     compact_payload,
@@ -78,7 +79,7 @@ _MISSING_CONFIG = (
     "them from the environment, so set them where your client launches this server."
 )
 
-mcp = MCPServer("project-brain-remote")
+mcp = MCPServer("project-brain-remote", middleware=[observe_client_activity])
 
 # Enumeration-shaped results (impact projections, graph walks, review reports)
 # keep their head inline and park the tail here; see deferred_payload.py.
