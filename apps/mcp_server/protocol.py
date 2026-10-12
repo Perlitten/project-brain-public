@@ -25,16 +25,24 @@ import json
 import os
 from typing import Any, Awaitable, Callable
 
-from mcp.server.fastmcp import Context
+from mcp.server.mcpserver import Context
 from mcp.types import (
     ClientCapabilities,
     ElicitationCapability,
+    ElicitRequest,
+    ElicitRequestFormParams,
+    ElicitResult,
+    CreateMessageRequest,
+    CreateMessageRequestParams,
+    CreateMessageResult,
+    InputRequiredResult,
     SamplingCapability,
     SamplingMessage,
     TextContent,
     ToolAnnotations,
 )
 from pydantic import BaseModel, Field
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 RULES_URI = "brain://rules"
 DECISIONS_URI = "brain://decisions"
@@ -56,10 +64,10 @@ def _annotations(
     # pessimistic default of True for non-read-only tools.
     return ToolAnnotations(
         title=title,
-        readOnlyHint=read_only,
-        destructiveHint=None if read_only else False,
-        idempotentHint=idempotent if not read_only else None,
-        openWorldHint=open_world,
+        read_only_hint=read_only,
+        destructive_hint=None if read_only else False,
+        idempotent_hint=idempotent if not read_only else None,
+        open_world_hint=open_world,
     )
 
 
@@ -129,7 +137,7 @@ def confirm_writes_enabled() -> bool:
     return os.environ.get(CONFIRM_WRITES_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-async def confirm_memory_write(ctx: Context | None, summary: str) -> dict[str, Any] | None:
+async def confirm_memory_write(ctx: Context | None, summary: str) -> dict[str, Any] | InputRequiredResult | None:
     """Ask the human to approve a durable write.
 
     Returns ``None`` to proceed, or the tool result to return instead when the
@@ -139,6 +147,25 @@ async def confirm_memory_write(ctx: Context | None, summary: str) -> dict[str, A
     if not confirm_writes_enabled() or not supports_elicitation(ctx):
         return None
     assert ctx is not None
+    if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS:
+        # Modern MCP carries interaction as a retry result, without a backchannel.
+        response = (ctx.input_responses or {}).get("confirm-memory-write")
+        if response is None:
+            return InputRequiredResult(input_requests={
+                "confirm-memory-write": ElicitRequest(params=ElicitRequestFormParams(
+                    message=summary, requested_schema=WriteConfirmation.model_json_schema(),
+                )),
+            })
+        if not isinstance(response, ElicitResult):
+            return {"status": "cancelled", "reason": "Invalid memory write confirmation.", "note": ""}
+        data = WriteConfirmation.model_validate(response.content) if response.action == "accept" else None
+        if data is not None and data.approve:
+            return None
+        return {
+            "status": "cancelled",
+            "reason": f"The user {'dismissed' if response.action == 'cancel' else 'declined'} this memory write.",
+            "note": data.note if data is not None else "",
+        }
     try:
         result = await ctx.elicit(message=summary, schema=WriteConfirmation)
     except Exception:  # noqa: BLE001 - a broken prompt must not lose the write
@@ -156,7 +183,7 @@ async def confirm_memory_write(ctx: Context | None, summary: str) -> dict[str, A
 # --- sampling ------------------------------------------------------------------
 
 
-async def sample_answer(ctx: Context | None, prompt: str, *, system: str) -> str | None:
+async def sample_answer(ctx: Context | None, prompt: str, *, system: str) -> str | InputRequiredResult | None:
     """Answer with the client's model, or ``None`` when the client cannot sample.
 
     Used only as a fallback: the server-side model sees the same context and
@@ -166,6 +193,18 @@ async def sample_answer(ctx: Context | None, prompt: str, *, system: str) -> str
     if not supports_sampling(ctx):
         return None
     assert ctx is not None
+    if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS:
+        response = (ctx.input_responses or {}).get("sample-grounded-answer")
+        if response is None:
+            return InputRequiredResult(input_requests={
+                "sample-grounded-answer": CreateMessageRequest(params=CreateMessageRequestParams(
+                    messages=[SamplingMessage(role="user", content=TextContent(type="text", text=prompt))],
+                    max_tokens=SAMPLING_MAX_TOKENS, system_prompt=system,
+                )),
+            })
+        if not isinstance(response, CreateMessageResult):
+            return None
+        return response.content.text if isinstance(response.content, TextContent) else None
     try:
         result = await ctx.session.create_message(
             messages=[SamplingMessage(role="user", content=TextContent(type="text", text=prompt))],

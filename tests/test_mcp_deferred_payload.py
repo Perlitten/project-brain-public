@@ -8,7 +8,7 @@ URI, and nothing is deferred that was small enough to read inline.
 import json
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from apps.mcp_server.deferred_payload import (
     DEFAULT_LIST_HEAD,
@@ -105,12 +105,12 @@ def test_deferred_tail_is_readable_as_a_resource():
 
 @pytest.mark.asyncio
 async def test_resource_template_serves_the_full_payload():
-    server = FastMCP("deferred-payload-test")
+    server = MCPServer("deferred-payload-test")
     store = DeferredPayloadStore()
     register_payload_resource(server, store)
     token = store.put(json.dumps({"affected_files": ["a.py", "b.py"]}))
 
-    templates = {template.uriTemplate for template in await server.list_resource_templates()}
+    templates = {template.uri_template for template in await server.list_resource_templates()}
     assert f"{PAYLOAD_URI_PREFIX}{{token}}" in templates
 
     read = await server.read_resource(f"{PAYLOAD_URI_PREFIX}{token}")
@@ -119,7 +119,7 @@ async def test_resource_template_serves_the_full_payload():
 
 @pytest.mark.asyncio
 async def test_unknown_token_explains_itself_instead_of_failing():
-    server = FastMCP("deferred-payload-test")
+    server = MCPServer("deferred-payload-test")
     store = DeferredPayloadStore()
     register_payload_resource(server, store)
 
@@ -186,5 +186,5 @@ async def test_both_servers_expose_the_payload_resource():
     from apps.mcp_server import remote_server, server
 
     for module in (server, remote_server):
-        templates = {template.uriTemplate for template in await module.mcp.list_resource_templates()}
+        templates = {template.uri_template for template in await module.mcp.list_resource_templates()}
         assert f"{PAYLOAD_URI_PREFIX}{{token}}" in templates, module.__name__

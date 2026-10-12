@@ -41,8 +41,8 @@ async def test_mcp_record_decision_tool():
                 "status": "active",
             },
         )
-        assert len(result) == 1
-        data = json.loads(result[0].text)
+        assert len(result.content) == 1
+        data = json.loads(result.content[0].text)
         assert data["status"] == "success"
         assert data["decision_id"] == 77
         mock_add_decision.assert_called_once()
@@ -64,8 +64,8 @@ async def test_mcp_record_rule_tool():
                 "status": "active",
             },
         )
-        assert len(result) == 1
-        data = json.loads(result[0].text)
+        assert len(result.content) == 1
+        data = json.loads(result.content[0].text)
         assert data["status"] == "success"
         assert data["rule_id"] == "brand-logo-source"
         assert mock_add_rule.await_args.kwargs["repo_path"] == "/indexed/example"

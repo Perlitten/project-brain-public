@@ -30,8 +30,9 @@ from typing import Any, List, Optional
 from urllib.parse import quote
 
 import httpx
-from mcp.server.fastmcp import Context, FastMCP
-from mcp.server.lowlevel.server import request_ctx
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.types import InputRequiredResult
+from mcp.server.auth.middleware.auth_context import get_access_token
 
 from apps.mcp_server.deferred_payload import (
     DeferredPayloadStore,
@@ -77,7 +78,7 @@ _MISSING_CONFIG = (
     "them from the environment, so set them where your client launches this server."
 )
 
-mcp = FastMCP("project-brain-remote")
+mcp = MCPServer("project-brain-remote")
 
 # Enumeration-shaped results (impact projections, graph walks, review reports)
 # keep their head inline and park the tail here; see deferred_payload.py.
@@ -155,13 +156,8 @@ def _caller_credential() -> str | None:
     ``None`` means there is no authenticated HTTP caller; an empty string is the
     API's dev-open principal (no key configured), which needs no header.
     """
-    try:
-        request = request_ctx.get().request
-    except LookupError:
-        return None
-    user = request.scope.get("user") if request is not None else None
-    token = getattr(user, "access_token", None)
-    return getattr(token, "token", None)
+    access = get_access_token()
+    return access.token if access is not None else None
 
 
 def _failure(path: str, exc: Exception) -> dict:
@@ -227,7 +223,7 @@ register_prompts(mcp)
 
 
 @mcp.tool(**tool_meta("ask_project"))
-async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> str:
+async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> str | InputRequiredResult:
     """Grounded answer; use search_code first when only location is unknown."""
     repo = repo_path or DEFAULT_REPO
     res = await _post("/ask", {"query": query, "repo_path": repo}, timeout=30.0)
@@ -309,7 +305,7 @@ async def record_decision(
     affected_modules: Optional[List[str]] = None,
     affected_files: Optional[List[str]] = None,
     ctx: Optional[Context] = None,
-) -> dict:
+) -> dict | InputRequiredResult:
     """Record an architectural/design decision into the Brain's persistent memory."""
     declined = await confirm_memory_write(ctx, f"Record decision: {title}. {description or ''}".strip())
     if declined is not None:
@@ -341,7 +337,7 @@ async def record_rule(
     applies_to: Optional[dict[str, Any]] = None,
     rule_id: Optional[str] = None,
     ctx: Optional[Context] = None,
-) -> dict:
+) -> dict | InputRequiredResult:
     """Record a repository-scoped normative rule in the Brain's persistent memory."""
     declined = await confirm_memory_write(ctx, f"Record {severity} rule: {name}. {description or ''}".strip())
     if declined is not None:

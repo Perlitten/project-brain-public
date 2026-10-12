@@ -8,8 +8,8 @@ import sys
 from pathlib import Path
 
 import anyio
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import get_default_environment, stdio_client
+from mcp import Client, StdioServerParameters
+from mcp.client.stdio import get_default_environment
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,12 +50,12 @@ TOOL_CALLS = [
 TOOL_TIMEOUT_S = 120
 
 
-async def _call_tool(session: ClientSession, tool: str, args: dict) -> tuple[bool, str | None]:
+async def _call_tool(session: Client, tool: str, args: dict) -> tuple[bool, str | None]:
     with anyio.move_on_after(TOOL_TIMEOUT_S) as scope:
         resp = await session.call_tool(tool, args)
     if scope.cancelled_caught:
         return False, f"timeout after {TOOL_TIMEOUT_S}s"
-    ok = not resp.isError
+    ok = not resp.is_error
     payload = None
     if resp.content:
         block = resp.content[0]
@@ -81,28 +81,28 @@ async def _run() -> dict:
     results: dict = {"steps": [], "pass": True}
 
     try:
-        async with stdio_client(server_params) as (read_stream, write_stream):
-            async with ClientSession(read_stream, write_stream) as session:
-                init = await session.initialize()
-                results["steps"].append({"initialize": init.serverInfo.model_dump()})
+        async with Client(server_params, mode="legacy") as session:
+            init = session.session.initialize_result
+            assert init is not None
+            results["steps"].append({"initialize": init.server_info.model_dump()})
 
-                tools = await session.list_tools()
-                tool_names = {t.name for t in tools.tools}
-                results["steps"].append({"tools/list": sorted(tool_names)})
-                if not REQUIRED_TOOLS.issubset(tool_names):
-                    results["pass"] = False
-                    results["error"] = f"Missing tools: {sorted(REQUIRED_TOOLS - tool_names)}"
-                    return results
+            tools = await session.list_tools()
+            tool_names = {t.name for t in tools.tools}
+            results["steps"].append({"tools/list": sorted(tool_names)})
+            if not REQUIRED_TOOLS.issubset(tool_names):
+                results["pass"] = False
+                results["error"] = f"Missing tools: {sorted(REQUIRED_TOOLS - tool_names)}"
+                return results
 
-                for tool, args in TOOL_CALLS:
-                    try:
-                        ok, detail = await _call_tool(session, tool, args)
-                        results["steps"].append({tool: detail})
-                        if not ok:
-                            results["pass"] = False
-                    except Exception as exc:
-                        results["steps"].append({tool: str(exc)})
+            for tool, args in TOOL_CALLS:
+                try:
+                    ok, detail = await _call_tool(session, tool, args)
+                    results["steps"].append({tool: detail})
+                    if not ok:
                         results["pass"] = False
+                except Exception as exc:
+                    results["steps"].append({tool: str(exc)})
+                    results["pass"] = False
     except Exception as exc:
         results["pass"] = False
         results["transport_error"] = str(exc)

@@ -29,6 +29,7 @@ from mcp.server.auth.provider import (
     AuthorizationCode,
     AuthorizationParams,
     RefreshToken,
+    IdentityAssertionParams,
     TokenError,
     construct_redirect_uri,
 )
@@ -77,6 +78,12 @@ class BrainOAuthProvider:
         now = time.time()
         self._pending = {k: v for k, v in self._pending.items() if now - v.created < PENDING_TTL_S}
         self._codes = {k: v for k, v in self._codes.items() if v.expires_at > now}
+
+    async def exchange_identity_assertion(
+        self, client: OAuthClientInformationFull, params: IdentityAssertionParams,
+    ) -> OAuthToken:
+        """Enterprise identity assertions are not an enabled Brain grant."""
+        raise TokenError("unsupported_grant_type", "Identity assertion grants are not supported")
 
     # --- clients ---------------------------------------------------------------
 

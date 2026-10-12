@@ -11,7 +11,7 @@ import httpx
 import pytest
 import uvicorn
 from fastapi import FastAPI, Request
-from mcp import ClientSession
+from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
 from apps.api import mcp_http
@@ -146,23 +146,22 @@ def test_session_is_bound_to_the_principal_that_opened_it(base_url):
         assert hijack.status_code == 404
 
 
-async def _read_rules(url: str, headers: dict) -> list:
+async def _read_rules(url: str, headers: dict, mode: str) -> list:
     import json
 
     async with httpx.AsyncClient(headers=headers, timeout=30) as http_client:
-        async with streamable_http_client(f"{url}/mcp", http_client=http_client) as (read, write, _):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                tools = await session.list_tools()
-                assert any(tool.name == "search_code" for tool in tools.tools)
-                result = await session.read_resource("brain://rules")
-                return json.loads(result.contents[0].text)
+        async with Client(streamable_http_client(f"{url}/mcp", http_client=http_client), mode=mode) as client:
+            tools = await client.list_tools()
+            assert any(tool.name == "search_code" for tool in tools.tools)
+            result = await client.read_resource("brain://rules")
+            return json.loads(result.contents[0].text)
 
 
-def test_tools_run_in_process_with_the_callers_own_key(base_url):
-    rows = asyncio.run(_read_rules(base_url, {"Authorization": "Bearer pbk_alice"}))
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+def test_tools_run_in_process_with_the_callers_own_key(base_url, mode):
+    rows = asyncio.run(_read_rules(base_url, {"Authorization": "Bearer pbk_alice"}, mode))
     assert rows == [{"name": "seen-key", "status": "active", "key": "pbk_alice"}]
-    rows = asyncio.run(_read_rules(base_url, {"X-API-Key": "pbk_bob"}))
+    rows = asyncio.run(_read_rules(base_url, {"X-API-Key": "pbk_bob"}, mode))
     assert rows[0]["key"] == "pbk_bob"
 
 

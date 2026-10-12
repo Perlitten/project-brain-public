@@ -139,6 +139,6 @@ def install(app: Any, *, public_url: Optional[str]) -> McpHttpEndpoint:
         app.router.routes.extend(oauth_routes(provider, issuer=public_url, resource=resource))
         app.include_router(consent_router(provider))
         logger.info("MCP OAuth authorization server enabled, issuer {}", public_url)
-    endpoint = McpHttpEndpoint(_SessionManagerHolder(remote_server.mcp._mcp_server), resource_metadata_url)
+    endpoint = McpHttpEndpoint(_SessionManagerHolder(remote_server.mcp._lowlevel_server), resource_metadata_url)
     app.router.routes.append(Route(MCP_PATH, endpoint=endpoint, methods=["GET", "POST", "DELETE"]))
     return endpoint

@@ -4,13 +4,16 @@ import re
 from pathlib import Path
 from typing import List, Optional, Literal
 from functools import wraps
+from contextvars import ContextVar
 from inspect import signature
 from time import perf_counter
 from uuid import uuid4
 from loguru import logger
 
 import mcp.types as _mcp_types
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.types import InputRequiredResult
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from apps.mcp_server.deferred_payload import (
     DeferredPayloadStore,
@@ -49,7 +52,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 ASK_RETRIEVAL_LIMIT = 10
 
-mcp = FastMCP("project-brain-mcp-server")
+mcp = MCPServer("project-brain-mcp-server")
 
 # Enumeration-shaped results keep their head inline and park the tail here, so
 # the agent pays for the list it acts on rather than the one it receives.
@@ -181,6 +184,7 @@ def _mcp_telemetry(operation: str):
 # initialize handshake. A local MCP server serves exactly one client, so a
 # module-level name is accurate and costs no file read on the hot path.
 _CONNECTED_CLIENT: Optional[str] = None
+_REQUEST_CLIENT: ContextVar[str | None] = ContextVar("brain_mcp_client", default=None)
 
 
 def _mcp_principal() -> str:
@@ -190,9 +194,12 @@ def _mcp_principal() -> str:
     the same caller identically — hence the single ``mcp:`` prefix and the
     explicit unattributed value instead of a null.
     """
-    if not _CONNECTED_CLIENT:
+    name = _REQUEST_CLIENT.get()
+    if name is None:
+        name = _CONNECTED_CLIENT
+    if not name:
         return "mcp:unattributed"
-    slug = re.sub(r"[^a-z0-9]+", "-", _CONNECTED_CLIENT.lower()).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return f"mcp:{slug}" if slug else "mcp:unattributed"
 
 
@@ -210,33 +217,31 @@ def _record_external_client(client_info: Optional[_mcp_types.Implementation]) ->
         pass  # telemetry must never break a client handshake
 
 
-def _install_client_activity_recording() -> None:
-    """Wrap ServerSession._received_request so each initialize handshake is
-    recorded. The SDK handles initialize inside the session (not via
-    request_handlers), so this is the only reliable observation point; if the
-    SDK internals move, the hook degrades to a no-op."""
-    try:
-        from mcp.server import session as _mcp_session
+async def _record_client_initialize(ctx, call_next):
+    """Observe handshakes and modern request identities via public middleware."""
+    if ctx.protocol_version in MODERN_PROTOCOL_VERSIONS:
+        params = ctx.session.client_params
+        info = params.client_info if params is not None else None
+        token = _REQUEST_CLIENT.set(info.name if info is not None else "")
+        try:
+            result = await call_next(ctx)
+            if info is not None:
+                _record_external_client(info)
+            return result
+        finally:
+            _REQUEST_CLIENT.reset(token)
+    result = await call_next(ctx)
+    if ctx.method == "initialize" and ctx.params:
+        info = ctx.params.get("clientInfo")
+        if info:
+            _record_external_client(_mcp_types.Implementation.model_validate(info))
+    return result
 
-        original = getattr(_mcp_session.ServerSession, "_received_request", None)
-        if original is None:
-            return
-
-        async def _recording_received(self, responder):
-            if isinstance(responder.request.root, _mcp_types.InitializeRequest):
-                _record_external_client(responder.request.root.params.clientInfo)
-            return await original(self, responder)
-
-        _mcp_session.ServerSession._received_request = _recording_received  # type: ignore[method-assign]
-    except Exception:
-        pass
-
-
-_install_client_activity_recording()
+mcp.middleware.append(_record_client_initialize)
 
 
 @mcp.tool(**tool_meta("ask_project"))
-async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> str:
+async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> str | InputRequiredResult:
     """Asks the project LLM assistant a question about the project code,
 
     leveraging database code searches and active rules.
@@ -404,7 +409,7 @@ async def record_decision(
     affected_modules: Optional[List[str]] = None,
     affected_files: Optional[List[str]] = None,
     ctx: Optional[Context] = None,
-) -> dict:
+) -> dict | InputRequiredResult:
     """Records an architectural or design decision to the database."""
     declined = await confirm_memory_write(ctx, f"Record decision: {title}. {description or ''}".strip())
     if declined is not None:
@@ -441,7 +446,7 @@ async def record_rule(
     applies_to: Optional[dict] = None,
     rule_id: Optional[str] = None,
     ctx: Optional[Context] = None,
-) -> dict:
+) -> dict | InputRequiredResult:
     """Record a repository-scoped normative rule in the database."""
     declined = await confirm_memory_write(ctx, f"Record {severity} rule: {name}. {description or ''}".strip())
     if declined is not None:
