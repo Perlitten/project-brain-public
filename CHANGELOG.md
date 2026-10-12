@@ -40,6 +40,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Blank chunks left over from empty files no longer count as missing
+  embeddings, so nightly verification of repositories with an empty
+  `__init__.py` stops reporting "degraded" (providers reject empty input).
 - The `benchmark` workflow's service containers use the same database
   passwords as the application defaults, so the job can connect.
 
