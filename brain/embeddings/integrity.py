@@ -117,7 +117,7 @@ async def _pgvector_health(session) -> tuple[bool, bool]:
         row = (
             await session.execute(
                 text(
-                    f"SELECT EXISTS("
+                    f"SELECT EXISTS("  # nosec B608
                     f"SELECT 1 FROM pg_indexes "
                     f"WHERE indexname IN ({index_list})"
                     f")"

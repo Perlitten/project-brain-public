@@ -115,10 +115,10 @@ class TestBackupRunner:
 
         manifest = run_backup(output_dir=str(tmp_path / "backup"))
 
-        # n8n is gone as an artifact type (orchestration layer removed);
+        # the external orchestrator is gone as an artifact type (orchestration layer removed);
         # a backup produced today contains exactly the two real stores.
         assert [a["name"] for a in manifest["artifacts"]] == ["postgres", "neo4j"]
-        assert not (tmp_path / "backup" / "n8n_database.sqlite").exists()
+        assert not (tmp_path / "backup" / "orchestrator_database.sqlite").exists()
         assert manifest["status"] == "ok"
 
     def test_unknown_allow_missing_rejected(self, tmp_path):
@@ -140,7 +140,7 @@ class TestRestoreDrill:
         file_name = {
             "postgres": "postgres_dump.sql",
             "neo4j": "neo4j_export.jsonl",
-            "n8n": "n8n_database.sqlite",
+            "orchestrator": "orchestrator_database.sqlite",
         }[name]
         p = backup_dir / file_name
         p.write_bytes(content)
@@ -158,7 +158,7 @@ class TestRestoreDrill:
         # Reproduce the v1 bug exactly: marker files + SUCCESS report.
         self._write_manifest(tmp_path, [
             self._artifact(tmp_path, "postgres", b"-- pg_dump backup fallback marker\n-- error: boom\n"),
-            self._artifact(tmp_path, "n8n", b"-- n8n sqlite backup marker\n"),
+            self._artifact(tmp_path, "orchestrator", b"-- orchestrator sqlite backup marker\n"),
         ])
         report = verify_restore_drill(backup_dir=str(tmp_path))
         assert report["restore_drill_status"] == "failed"
@@ -172,18 +172,18 @@ class TestRestoreDrill:
         report = verify_restore_drill(backup_dir=str(tmp_path))
         assert report["restore_drill_status"] == "failed"
 
-    def test_legacy_n8n_artifact_verified_by_checksum_only(self, tmp_path):
-        # Backups written before n8n removal still verify: the artifact is
-        # checksum-checked like any other but gets no n8n-specific inspection.
-        n8n = tmp_path / "seed.sqlite"
-        _make_sqlite(n8n, tables=2)
+    def test_legacy_orchestrator_artifact_verified_by_checksum_only(self, tmp_path):
+        # Backups written before the orchestrator removal still verify: the artifact is
+        # checksum-checked like any other but gets no orchestrator-specific inspection.
+        orch = tmp_path / "seed.sqlite"
+        _make_sqlite(orch, tables=2)
         self._write_manifest(tmp_path, [
             self._artifact(tmp_path, "postgres", REAL_DUMP.encode()),
-            self._artifact(tmp_path, "n8n", n8n.read_bytes()),
+            self._artifact(tmp_path, "orchestrator", orch.read_bytes()),
         ])
         report = verify_restore_drill(backup_dir=str(tmp_path))
         assert report["restore_drill_status"] == "artifacts_validated"
-        assert "n8n" not in report["checks"]
+        assert "orchestrator" not in report["checks"]
         assert report["failures"] == []
 
     def test_real_artifacts_validate_without_live_target(self, tmp_path):

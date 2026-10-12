@@ -97,9 +97,11 @@ Deployment: `deploy/RUNBOOK.md` and `deploy/server_up.sh`.
   flip behaviour — `PROJECT_BRAIN_API_KEY` and the like). There is no logic there: tests still
   set settings themselves before importing application modules — hence `E402` in
   `per-file-ignores` for `tests/**`. Do not "fix" the import order.
-- **`brain/graph/` holds several generations side by side**: `schema.py` / `schema_v2.py`,
-  `builder_v2.py`, `extractors_v2.py`, `migration_v3.py`. Before editing, find out which
-  generation the calling code actually uses.
+- **`brain/graph/` holds two live halves plus legacy**: `schema.py` + `graph_client.py` +
+  `write_buffer.py` are the write path (used by `file_indexer`); `schema_v2.py`,
+  `builder_v2.py`, `extractors_v2.py` + `identity.py` are the query/enrichment path
+  (used by `routers/graph_v2.py`). `migration_v3.py` is a LEGACY one-shot migration
+  script, not on the runtime path.
 - **`rules/golden_tasks.yaml` is an eval contract**, not documentation: "task description →
   expected files and modules". If you change the module layout, update it too, or the eval
   starts lying. A new common task → a new entry there (and a row in the routes table above).

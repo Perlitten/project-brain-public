@@ -296,7 +296,7 @@ async def collect_proactive_snapshot(repo_path: str | Path | None = None) -> dic
 
     try:
         async with async_session_factory() as session:
-            from apps.api.helpers import get_db_counts
+            from brain.dashboard.helpers import get_db_counts
 
             counts = await get_db_counts(session)
             snapshot["counts"] = counts
@@ -334,7 +334,7 @@ async def collect_proactive_snapshot(repo_path: str | Path | None = None) -> dic
         snapshot["database_collection_warning"] = _clean_text(exc, limit=260)
 
     try:
-        from apps.api.helpers import get_recent_brain_jobs, get_reports_list
+        from brain.dashboard.helpers import get_recent_brain_jobs, get_reports_list
 
         job_data = await get_recent_brain_jobs(limit=100)
         snapshot["recent_jobs"] = [
@@ -474,7 +474,7 @@ async def collect_proactive_snapshot(repo_path: str | Path | None = None) -> dic
         }
 
     try:
-        from apps.api.helpers import get_latest_eval_metrics
+        from brain.dashboard.helpers import get_latest_eval_metrics
 
         snapshot["evaluation"] = get_latest_eval_metrics(target_repo)
     except Exception as exc:

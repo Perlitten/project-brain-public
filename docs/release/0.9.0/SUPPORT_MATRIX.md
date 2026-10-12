@@ -31,8 +31,8 @@ pg client tools on the operator host must match the server major version —
 |---|---|
 | Remote embedding/late-interaction provider | optional; off by default |
 
-n8n is not used: scheduled jobs run inside the worker (`brain/workers/scheduler.py`,
-[ADR 013](../../adr/013-worker-scheduler.md)), and backups no longer include an n8n
+No external orchestrator is used: scheduled jobs run inside the worker (`brain/workers/scheduler.py`,
+[ADR 013](../../adr/013-worker-scheduler.md)), and backups no longer include an orchestrator
 artifact.
 | Sandbox image `debian:bookworm-slim` | required only for docker sandbox backend |
 

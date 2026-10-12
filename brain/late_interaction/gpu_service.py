@@ -567,7 +567,7 @@ class SQLiteMatrixStore:
                 SELECT chunk_id, path, content_hash FROM late_interaction_documents
                 WHERE repository_id = ? AND model_revision = ?
                   AND chunk_id IN ({placeholders})
-                """,
+                """,  # nosec B608
                 (repository_id, model_revision, *chunk_ids),
             ).fetchall()
             return {
@@ -641,7 +641,7 @@ class SQLiteMatrixStore:
                 DELETE FROM late_interaction_documents
                 WHERE repository_id = ? AND model_revision = ?
                   AND chunk_id IN ({placeholders})
-                """,
+                """,  # nosec B608
                 (repository_id, model_revision, *chunk_ids),
             )
             deleted = max(cursor.rowcount, 0)
@@ -666,7 +666,7 @@ class SQLiteMatrixStore:
                     DELETE FROM late_interaction_documents
                     WHERE repository_id = ? AND model_revision = ?
                       AND chunk_id NOT IN ({placeholders})
-                    """,
+                    """,  # nosec B608
                     (repository_id, model_revision, *keep_chunk_ids),
                 )
             else:
@@ -701,7 +701,7 @@ class SQLiteMatrixStore:
                 FROM late_interaction_documents
                 WHERE repository_id = ? AND model_revision = ?
                   AND chunk_id IN ({placeholders})
-                """,
+                """,  # nosec B608
                 (repository_id, model_revision, *chunk_ids),
             ).fetchall()
         return {

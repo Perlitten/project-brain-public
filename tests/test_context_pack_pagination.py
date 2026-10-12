@@ -89,8 +89,8 @@ def test_memory_filters_normalize_legacy_statuses_before_filtering():
         model.__table__.create(engine)
     with Session(engine) as session:
         session.add_all([
-            Decision(id=1, title="n8n old", status="historical"),
-            Decision(id=2, title="n8n retired", status="deprecated"),
+            Decision(id=1, title="legacy old", status="historical"),
+            Decision(id=2, title="legacy retired", status="deprecated"),
             Decision(id=3, title="native worker", status="active"),
             Rule(id="rule-1", name="Native", severity="critical", status="active"),
             Rule(id="rule-2", name="Check", severity="medium", status="active"),
@@ -107,7 +107,7 @@ def test_memory_filters_normalize_legacy_statuses_before_filtering():
             yield AsyncSession()
 
         with patch.object(web, "async_session_factory", factory):
-            result = asyncio.run(web.web_decisions(page=1, page_size=20, q="n8n", status="superseded"))
+            result = asyncio.run(web.web_decisions(page=1, page_size=20, q="legacy", status="superseded"))
             assert result["total"] == 2
             assert result["facets"]["status"] == {"superseded": 2}
             accepted = asyncio.run(web.web_decisions(page=1, page_size=20, q=None, status="accepted"))
