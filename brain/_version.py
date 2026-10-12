@@ -1,9 +1,9 @@
 from pathlib import Path
 
-__version__ = "0.9.0"
-VERSION = "0.9.0"
+__version__ = "0.9.1"
+VERSION = "0.9.1"
 RELEASE_CHANNEL = "self-hosted"
-RELEASE_CODENAME = "tournament-sandbox-v0.9.0"
+RELEASE_CODENAME = "tournament-sandbox-v0.9.1"
 
 
 def _static_fingerprint() -> str:

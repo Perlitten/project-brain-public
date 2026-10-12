@@ -37,7 +37,7 @@ Clear, precise, alive, honest, dark.
   is running a scan line slowly sweeps across the map.
 - The wow comes from precision and moving data, not decoration: no gradients,
   particles, glows or 3D for the sake of looks.
-- **Amendment 2026-10-02** (owner: "good, but clearly not wow, push further"):
+- **Amendment 2026-10-02**:
   **light** is allowed, but only as feedback or as data. That means a dotted
   blueprint background lit by a lens around the cursor; a panel edge that
   catches the light near the cursor; the verdict's tonal light and its "pulse";
@@ -154,8 +154,8 @@ What sets this product apart from a template. Do not dilute.
 
 Motion is part of the wow effect, but every movement communicates something:
 data appearing, code being read, a transition, focus. Beautiful motion without
-meaning is not done. (Expanded 2026-10-02 at the owner's request for much
-bolder animation — the earlier minimalism was replaced by the system below.)
+meaning is not done. (Expanded 2026-10-02 for much bolder animation —
+the earlier minimalism was replaced by the system below.)
 
 - Durations: `120ms` control · `170ms` route change · `180ms` surface ·
   `220ms` appearance · `420–700ms` data choreography · `≤1200ms` the overall
@@ -238,7 +238,7 @@ Choreography (signature, do not dilute):
 - **Bloomberg Terminal**: we take the idea that a number always sits next to
   its interpretation, and its tabular density.
 
-Added 2026-10-08 from the owner's references:
+Added 2026-10-08 from design references:
 
 - **[21st — Settings pages](https://news.21st.dev/blog/react-settings-page-components)**:
   rows with controls and explanations, a single save mode within a section,

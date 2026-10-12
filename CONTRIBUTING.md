@@ -10,8 +10,8 @@ Requirements: Docker with Compose, Python 3.12 (the version CI tests), and
 Node 22 if you work on the web UI in `apps/web`.
 
 ```bash
-git clone https://github.com/Perlitten/project-brain-public.git
-cd project-brain-public
+git clone https://github.com/Perlitten/project-brain.git
+cd project-brain
 cp .env.example .env              # or run scripts/bootstrap.sh (POSIX shells)
 docker compose up -d postgres redis neo4j
 python -m venv .venv && . .venv/bin/activate

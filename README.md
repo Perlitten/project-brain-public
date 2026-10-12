@@ -1,29 +1,73 @@
-# Project Brain
+<p align="center">
+  <img src="docs/assets/dashboard.png" alt="Project Brain dashboard: which projects your agents can use right now and what needs attention" width="900">
+</p>
 
-Project Brain is a spatial navigation and context boundary layer for coding agents (such as Claude Code, Codex, and Antigravity) working on large codebases. It also provides impact analysis and evidence-bound memory.
+<h1 align="center">Project Brain</h1>
 
-Current release: **0.9.0** (`tournament-sandbox`).
+<p align="center">
+  <b>Long-term memory and a live code map for your AI coding agents.</b><br>
+  Self-hosted and single-user: run it on your laptop or on your own server.
+</p>
 
-Instead of replacing execution tools, Project Brain operates as a reasoning and indexing layer above the codebase, ensuring agents have a stable map of the project, understand cross-component dependencies, and maintain historical context.
+<p align="center">
+  <a href="https://github.com/Perlitten/project-brain/actions/workflows/ci.yml"><img src="https://github.com/Perlitten/project-brain/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/python-3.12-blue.svg" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/MCP-stdio%20%7C%20Streamable%20HTTP-6f42c1.svg" alt="MCP: stdio and Streamable HTTP">
+</p>
+
+<p align="center">
+  <a href="#3-quickstart-local-single-user">Quickstart</a> ·
+  <a href="#9-mcp-server">Connect your agent</a> ·
+  <a href="#why-not-just-an-obsidian-vault">Why not Obsidian</a> ·
+  <a href="#evidence-and-limitations">Limitations</a>
+</p>
+
+Claude Code, Codex and other agents start every session from zero. They re-read
+the same files, forget the decision you made last week and break the web app
+while fixing the API. Project Brain sits next to your repositories, indexes the
+code, keeps the decisions, rules and lessons your agents record, and hands every
+new task a compact, evidence-backed context pack over MCP.
+
+Current release: **0.9.1**. Early, but used daily by its author.
 
 ---
 
-## 1. What Project Brain Resolves
+## About
 
-* **Navigation Degradation**: Prevents agents from getting lost in large codebases.
-* **Impact Blindness**: Reduces cases where changes in one surface (e.g., backend API) silently break others (e.g., Android app, web portal).
-* **Context Bloat**: Prepares task-specific, highly relevant context packages rather than dumping large amounts of unneeded files into the prompt.
-* **Architectural Drift**: Enforces rules and keeps track of past architecture and product decisions.
-* **Passive Memory**: Generates evidence-bound proactive insights instead of acting like a static knowledge base.
+| | |
+|---|---|
+| **What it is** | A memory and navigation layer for coding agents: code index (pgvector), dependency graph (Neo4j), scoped decisions and rules, a reviewed L1–L4 lesson memory, impact analysis and diff review. |
+| **Who it is for** | One developer running AI agents across one or many repositories. One user, one instance. Not a team SaaS. |
+| **Where it runs** | Locally (Docker + a Python venv, one bootstrap script) or on your own VPS (one compose file, TLS, OAuth for remote MCP clients). |
+| **How agents use it** | 13 MCP tools over stdio or Streamable HTTP, plus resources, prompts, elicitation and sampling. Also a REST API, a CLI and a web dashboard. |
+| **Your data** | Stays on your machine or your server. Models come from any OpenAI-compatible provider, or run fully local with Ollama. |
 
----
+## Why not just an Obsidian vault?
 
-## 2. What Project Brain is NOT
+Obsidian is a great place for *you* to think. Project Brain is a place for your
+*agents* to remember. Markdown notes are passive: nothing reads them unless you
+paste them in, nothing notices when they go stale, and nothing ties them to the
+code they describe.
 
-* It is **not** a replacement for Claude Code, Codex, or Antigravity (they remain the "hands" that write code).
-* It is **not** a replacement for Git, CI, or IDEs.
-* It is **not** a general-purpose chat interface or a personal note-taking wiki.
-* It is **not** a monolithic developer platform.
+| | Obsidian vault as agent memory | Project Brain |
+|---|---|---|
+| Who writes memory | You, by hand | Agents record decisions, rules and lessons through MCP; lessons need evidence and review before they become trusted |
+| Who reads it | You, or an agent you paste notes into | Every agent task gets a context pack automatically |
+| Knows the code | No | Indexes files, symbols and the dependency graph; answers "what breaks if I change this?" |
+| Stale knowledge | Stays until you delete it | Superseded decisions are replaced; historical docs are demoted in retrieval |
+| Several projects | One vault, mixed notes | Rules and decisions are scoped per repository, so one project's rules never leak into another |
+| Token cost | Whole notes in the prompt | Retrieval under a byte budget; oversized results are deferred, not dumped |
+
+Already have a vault? `brain import obsidian --vault /path/to/vault` turns it into
+rules and decisions.
+
+## What it is not
+
+* Not a replacement for Claude Code, Codex or your IDE: they stay the hands that write code.
+* Not a replacement for Git or CI.
+* Not a note-taking app or a chat UI.
+* Not a multi-tenant service: each person deploys their own instance.
 
 ---
 
@@ -39,7 +83,7 @@ before indexing; see [Real models](#real-models).
 One command:
 
 ```bash
-git clone https://github.com/Perlitten/project-brain-public.git project-brain
+git clone https://github.com/Perlitten/project-brain.git project-brain
 cd project-brain
 ./scripts/bootstrap.sh
 ```
@@ -88,7 +132,7 @@ the manual steps below. Native Windows is not tested in CI.
 
 ```bash
 # 1. Get the code and install the package (registers the `brain` command)
-git clone https://github.com/Perlitten/project-brain-public.git project-brain
+git clone https://github.com/Perlitten/project-brain.git project-brain
 cd project-brain
 python3 -m venv .venv
 source .venv/bin/activate            # Windows PowerShell: .\.venv\Scripts\Activate.ps1
@@ -225,6 +269,8 @@ ruff check .
 ---
 
 ## 4. Web UI
+
+<p align="center"><img src="docs/assets/graph.png" alt="Code map: modules, their connections and a dependency that breaks a recorded rule" width="900"></p>
 
 The API serves JSON only. The human interface is a separate Next.js app in
 [`apps/web/`](apps/web/) that reads the API **server-side**, so the API key never
@@ -404,7 +450,7 @@ Minimal server flow:
 ```bash
 sudo mkdir -p /opt/project-brain
 sudo chown -R "$USER:$USER" /opt/project-brain
-git clone https://github.com/Perlitten/project-brain-public.git /opt/project-brain
+git clone https://github.com/Perlitten/project-brain.git /opt/project-brain
 cd /opt/project-brain
 
 cp deploy/.env.prod.example .env
