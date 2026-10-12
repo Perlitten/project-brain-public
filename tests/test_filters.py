@@ -76,7 +76,7 @@ def test_snapshot_and_task_contract_paths_are_non_current_evidence():
     for path in (
         "docs/audits/product-readiness/report.md",
         "docs/design/sources/prototype/index.html",
-        ".agent-factory/tasks/NOSTIA-001.json",
+        ".agent-factory/tasks/PROJ-001.json",
     ):
         assert (
             classify_knowledge_status(path, "Current-looking content")
@@ -118,11 +118,10 @@ def test_historical_evidence_is_demoted_unless_explicitly_requested():
         HISTORICAL_RETRIEVAL_WEIGHT
     )
     assert knowledge_authority_weight(summary, "historical production runtime") == 1.0
-    assert knowledge_authority_weight(summary, "история старой топологии") == 1.0
     assert knowledge_authority_weight("Current runtime.", "current runtime") == 1.0
     assert query_requests_historical_context("show the previous decision context")
     assert query_requests_historical_context("show the audit evidence")
-    assert query_requests_historical_context("load task contract NOSTIA-001")
+    assert query_requests_historical_context("load task contract PROJ-001")
     assert not query_requests_historical_context("remove the old version")
 
 

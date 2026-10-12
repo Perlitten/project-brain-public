@@ -19,8 +19,10 @@ router = APIRouter(
     dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))],
 )
 
-_ARTIFACT = "eval/quality/owner-benchmark-20261008.json"
+_ARTIFACT = "eval/quality/quality-evidence.json"
 _REQUIRED = ("schema_version", "generated_at", "source", "search", "context", "acceptance")
+# A fresh install has no saved benchmark: that is an empty state, not an outage.
+NOT_RUN: dict[str, Any] = {"available": False, "reason": "not_run"}
 
 
 def _quality_path() -> Path:
@@ -35,8 +37,8 @@ def load_quality_evidence() -> dict[str, Any]:
     path = _quality_path()
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=503, detail="Quality evidence is unavailable") from exc
+    except FileNotFoundError:
+        return dict(NOT_RUN)
     except (OSError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=503, detail="Quality evidence is malformed") from exc
     if not isinstance(payload, dict) or any(key not in payload for key in _REQUIRED):
@@ -53,6 +55,10 @@ def load_quality_evidence() -> dict[str, Any]:
 def _validate_quality(payload: dict[str, Any]) -> None:
     if payload.get("historical") is not True:
         raise ValueError("artifact must be historical")
+    # True when the maintainers measured Brain's own source and shipped the
+    # result; the dashboard labels it so nobody reads it as their own numbers.
+    if "reference_run" in payload and not isinstance(payload["reference_run"], bool):
+        raise ValueError("reference_run")
     timestamp = payload.get("generated_at")
     if timestamp is not None:
         if not isinstance(timestamp, str):

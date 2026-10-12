@@ -28,7 +28,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 MODEL_ID = os.environ.get("EVAL_EMBED_MODEL", "jinaai/jina-embeddings-v2-base-code")
-CACHE_PATH = Path(os.environ.get("EVAL_EMBED_CACHE", "/home/ubuntu/eval_external/embed_cache.sqlite"))
+CACHE_PATH = Path(os.environ.get("EVAL_EMBED_CACHE", str(Path.home() / "eval_external" / "embed_cache.sqlite")))
 PORT = int(os.environ.get("EVAL_EMBED_PORT", "18099"))
 DIM = int(os.environ.get("EVAL_EMBED_DIM", "768"))
 MAX_CHARS = int(os.environ.get("EVAL_EMBED_MAX_CHARS", "30000"))

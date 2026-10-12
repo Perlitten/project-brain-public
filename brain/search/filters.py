@@ -45,11 +45,6 @@ _HISTORICAL_QUERY_TOKENS = (
     "task contract",
     "task id",
     "prototype source",
-    "истор",
-    "архив",
-    "раньше",
-    "как было",
-    "предыдущего решения",
 )
 
 

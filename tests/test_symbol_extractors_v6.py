@@ -94,9 +94,9 @@ def test_test_source_import_edge():
 
 def test_script_domain_edges_share_tokens():
     edges = extract_script_domain_edges(
-        "scripts/sync_hermes_rag.py",
-        ["scripts/build_hermes_rag_snapshot.py", "scripts/unrelated_tool.py"],
+        "scripts/sync_wiki_rag.py",
+        ["scripts/build_wiki_rag_snapshot.py", "scripts/unrelated_tool.py"],
     )
     refs = {e.to_ref for e in edges}
-    assert "scripts/build_hermes_rag_snapshot.py" in refs
+    assert "scripts/build_wiki_rag_snapshot.py" in refs
     assert "scripts/unrelated_tool.py" not in refs

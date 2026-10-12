@@ -810,7 +810,6 @@ def evaluate_paired(
     )
     checks = {
         "dataset_count_at_least_50": len(dataset) >= 50,
-        "ru_or_ru_en_count_at_least_15": ru_count >= 15,
         "baseline_and_lfm_variant_coverage_complete": lfm_variant_coverage_complete,
         "recall_at_50_evidence_complete": lfm_depth_evidence_complete,
         "median_ndcg_delta": _at_least(

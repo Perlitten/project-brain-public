@@ -188,7 +188,7 @@ async def test_shared_application_shadow_records_counterfactual_without_raw_quer
     monkeypatch.setattr(settings, "LATE_INTERACTION_RERANK_ENABLED", False)
 
     result = await apply_late_interaction(
-        query="найди parser",
+        query="find parser",
         repository_id=7,
         candidates=[_Candidate(1, "a.py"), _Candidate(2, "b.py")],
         baseline_top_k=["a.py", "b.py"],
@@ -202,8 +202,8 @@ async def test_shared_application_shadow_records_counterfactual_without_raw_quer
     assert result.applied is False
     assert result.to_debug()["index_revision"] == "test-index"
     assert len(events) == 1
-    assert events[0].language == "ru"
-    assert events[0].query_hash == hash_query(7, "найди parser")
+    assert events[0].language == "en"
+    assert events[0].query_hash == hash_query(7, "find parser")
     assert [item.path for item in events[0].baseline_final_top_k] == ["a.py", "b.py"]
     assert [item.path for item in events[0].counterfactual_final_top_k] == ["b.py", "a.py"]
     assert events[0].status == "scored"

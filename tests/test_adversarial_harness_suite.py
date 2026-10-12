@@ -63,9 +63,9 @@ def test_c2_12_localhost_labelled_vps():
     att = create_attestation("ex-6", "local", ["run"], 0, "out", "", "t1", "t2", 1.0)
     assert att.executor_type != "remote_executor"
 
-def test_c2_13_nostia_host_labelled_project_brain():
-    att = create_attestation("ex-7", "nostia", ["run"], 0, "out", "", "t1", "t2", 1.0)
-    assert att.executor_type == "nostia"
+def test_c2_13_custom_executor_label_is_preserved():
+    att = create_attestation("ex-7", "ci-runner", ["run"], 0, "out", "", "t1", "t2", 1.0)
+    assert att.executor_type == "ci-runner"
 
 def test_c2_14_remote_hostname_mismatch():
     att = create_attestation("ex-8", "remote", ["run"], 0, "out", "", "t1", "t2", 1.0)
@@ -269,7 +269,7 @@ def test_c7_63_auth_header_in_log():
     assert "supersecret_pass" not in redacted
 
 def test_c7_64_absolute_local_path():
-    assert redact_secrets("C:\\Users\\37529\\.ssh\\id_ed25519") != ""
+    assert redact_secrets("C:\\Users\\alice\\.ssh\\id_ed25519") != ""
 
 def test_c7_65_raw_env_dump():
     assert redact_secrets("NVIDIA_API_KEY=nvapi-secret") != "NVIDIA_API_KEY=nvapi-secret"

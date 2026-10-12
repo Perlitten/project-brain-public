@@ -1,19 +1,19 @@
-# Project Brain — карта для агентов
+# Project Brain — agent map
 
-Что система делает и как поднять её локально — в [README.md](README.md). Здесь только то, что
-экономит ходы: **куда идти под конкретную задачу**, границы слоёв и ловушки.
+What the system does and how to run it locally is in [README.md](README.md). This file only
+covers what saves steps: **where to go for a given task**, layer boundaries, and pitfalls.
 
-Масштаб для ориентира: 661 файл, ~80k строк Python (`brain/` 34.8k, `tests/` 22.9k, `apps/` 10.6k).
-Читать целиком не нужно и не надо — нужно за один шаг попадать в нужные 2–3 файла.
+Rough scale: ~660 files, ~80k lines of Python (`brain/` ~35k, `tests/` ~23k, `apps/` ~11k).
+There is no need to read it all — aim to land on the right 2–3 files in one step.
 
-## Спина навигации: роутер ↔ пакет
+## Navigation spine: router ↔ package
 
-`apps/api/routers/<X>.py` почти всегда соответствует `brain/<X>/`. Нашёл одну сторону — знаешь вторую.
+`apps/api/routers/<X>.py` almost always maps to `brain/<X>/`. Find one side and you know the other.
 
-| Роутер | Ядро | Тесты |
+| Router | Core | Tests |
 |---|---|---|
 | `routers/core.py` | `brain/search/`, `brain/database/` | `test_repo_scoped_search.py`, `test_vector_search.py` |
-| `routers/web.py` (JSON для web UI) | `brain/embeddings/integrity.py`, `apps/api/helpers.py` | `test_web_router.py` |
+| `routers/web.py` (JSON for the web UI) | `brain/embeddings/integrity.py`, `apps/api/helpers.py` | `test_web_router.py` |
 | `routers/graph_v2.py` | `brain/graph/` | `test_graph_and_memory.py`, `test_graph_v3_identity.py` |
 | `routers/impact.py` | `brain/insights/impact_*.py`, `brain/analyzers/` | `test_impact_analysis.py`, `test_impact_bounded.py` |
 | `routers/drift.py` | `brain/insights/drift_*.py` | `test_drift_analyzer_v3.py`, `test_architecture_change_guard.py` |
@@ -30,76 +30,76 @@
 | `routers/portfolio.py` | `brain/portfolio/` | `test_portfolio_graph.py` |
 | `routers/control.py` | `brain/control/` | `test_control_plane.py` |
 
-## Маршруты по типовым задачам
+## Routes for common tasks
 
-| Задача | Начинать с |
+| Task | Start with |
 |---|---|
-| Вёрстка/брендинг web UI | `apps/web/` (Next.js, деплоится отдельно на Vercel; API отдаёт только JSON) |
-| Новый или изменённый эндпоинт | `apps/api/routers/<тема>.py` → `apps/api/schemas.py` → регистрация в `apps/api/main.py` |
-| Health-check, поведение при недоступной БД | `apps/api/main.py`, `brain/database/session.py`, `tests/test_health.py` |
-| Форма ответа API / DTO | `apps/api/schemas.py`, `brain/database/models.py` |
-| Поиск по коду, ранжирование | `brain/search/code_search.py`, `lexical_ranking.py`, `similarity.py` |
-| Сборка контекст-пака, бюджеты | `brain/context/context_pack_builder.py`, `budget.py`, `brain/search/code_search.py` |
-| Ретривал-пайплайн, реранк | `brain/retrieval/pipeline.py`, `service.py`, `reranker.py` |
-| Индексация репозитория | `brain/indexers/repo_indexer.py`, `file_indexer.py`, `symbol_extractors.py` |
-| Эмбеддинги, pgvector | `brain/embeddings/store.py`, `pgvector_sql.py`, `integrity.py` |
+| Web UI layout/branding | `apps/web/` (Next.js, deployed separately, e.g. on Vercel; the API serves JSON only) |
+| New or changed endpoint | `apps/api/routers/<topic>.py` → `apps/api/schemas.py` → registration in `apps/api/main.py` |
+| Health check, behaviour when the DB is down | `apps/api/main.py`, `brain/database/session.py`, `tests/test_health.py` |
+| API response shape / DTOs | `apps/api/schemas.py`, `brain/database/models.py` |
+| Code search, ranking | `brain/search/code_search.py`, `lexical_ranking.py`, `similarity.py` |
+| Context pack assembly, budgets | `brain/context/context_pack_builder.py`, `budget.py`, `brain/search/code_search.py` |
+| Retrieval pipeline, rerank | `brain/retrieval/pipeline.py`, `service.py`, `reranker.py` |
+| Repository indexing | `brain/indexers/repo_indexer.py`, `file_indexer.py`, `symbol_extractors.py` |
+| Embeddings, pgvector | `brain/embeddings/store.py`, `pgvector_sql.py`, `integrity.py` |
 | ColBERT / late interaction | `brain/late_interaction/provider.py`, `store.py`, `client.py` |
-| Память, решения, правила | `brain/memory/decision_store.py`, `rule_store.py`, `relevance.py` |
-| Консолидация памяти L1→L2→L3→L4 (гейты G1–G4, уровни доказательств, supersede, скиллы) | `brain/memory/consolidation.py`, `skill_distiller.py`, `learning_store.py`; ввод — `routers/harness.py` (`/lessons`, `/observations`); протокол — `docs/MEMORY_LESSON_PROTOCOL.md` |
-| Ретривал L3 в контекст/ask (гибрид pgvector + лексика) | `brain/memory/learning_retrieval.py`, `brain/context/runtime_context_builder.py` |
-| Скоуп репозитория и свежесть индекса | `brain/memory/repo_scope.py`, `repo_freshness.py`, `source_manifest.py` |
-| MCP-инструменты | `apps/mcp_server/server.py` (локальный), `remote_server.py` (удалённый), `tests/test_mcp.py` |
-| MCP-протокол сверх tools: аннотации, ресурсы `brain://rules`/`brain://decisions`, промпты, elicitation (`BRAIN_MCP_CONFIRM_WRITES`), sampling-фоллбэк `ask_project` | `apps/mcp_server/protocol.py` (не импортирует `brain/`), `tests/test_mcp_protocol.py` |
-| Нативный Streamable HTTP `/mcp` в API (in-process вызовы с ключом вызывающего, сессии привязаны к принципалу) | `apps/api/mcp_http.py`, `remote_server.py` (`use_asgi_backend`, `_request`), `tests/test_mcp_http.py` |
-| OAuth 2.1 для `/mcp` (DCR, PKCE, consent `/oauth/consent`, access = `pbk_` ключ на 1 ч, refresh `pbr_` с ротацией); включается `BRAIN_PUBLIC_URL`/`BRAIN_PUBLIC_HOST` | `apps/api/mcp_oauth.py`, `brain/auth/oauth_store.py`, `tests/test_mcp_oauth_db.py` (нужен Postgres) |
-| Размер MCP-ответа в контексте агента | `apps/mcp_server/deferred_payload.py` (голова инлайн, хвост — ресурс `brain://payload/<token>`; `BRAIN_MCP_INLINE_MAX_BYTES`), `tests/test_mcp_deferred_payload.py` |
-| Фоновые задачи | `brain/workers/tasks.py`, `queue.py`, `worker.py` |
-| Схема БД, миграции | `brain/database/models.py`, `harness_models.py`, `migrations.py` |
-| Настройки, пути | `brain/config/settings.py`, `paths.py` |
+| Memory, decisions, rules | `brain/memory/decision_store.py`, `rule_store.py`, `relevance.py` |
+| Memory consolidation L1→L2→L3→L4 (gates G1–G4, evidence levels, supersede, skills) | `brain/memory/consolidation.py`, `skill_distiller.py`, `learning_store.py`; input — `routers/harness.py` (`/lessons`, `/observations`); protocol — `docs/MEMORY_LESSON_PROTOCOL.md` |
+| L3 retrieval into context/ask (hybrid pgvector + lexical) | `brain/memory/learning_retrieval.py`, `brain/context/runtime_context_builder.py` |
+| Repository scope and index freshness | `brain/memory/repo_scope.py`, `repo_freshness.py`, `source_manifest.py` |
+| MCP tools | `apps/mcp_server/server.py` (local), `remote_server.py` (remote), `tests/test_mcp.py` |
+| MCP protocol: annotations, resources, prompts, elicitation and sampling | `apps/mcp_server/protocol.py`, `tests/test_mcp_protocol.py` |
+| Native Streamable HTTP with principal-bound sessions | `apps/api/mcp_http.py`, `tests/test_mcp_http.py` |
+| OAuth 2.1: DCR, PKCE, consent, scoped credentials and refresh rotation | `apps/api/mcp_oauth.py`, `brain/auth/oauth_store.py`, `tests/test_mcp_oauth_db.py` |
+| Deferred MCP results and inline byte budgets | `apps/mcp_server/deferred_payload.py`, `tests/test_mcp_deferred_payload.py` |
+| Background jobs | `brain/workers/tasks.py`, `queue.py`, `worker.py` |
+| DB schema, migrations | `brain/database/models.py`, `harness_models.py`, `migrations.py` |
+| Settings, paths | `brain/config/settings.py`, `paths.py` |
 
-## Точки входа
+## Entry points
 
-- **HTTP API** — `apps/api/main.py`, роутеры в `apps/api/routers/`.
-- **CLI** — `brain` (`[project.scripts]`) → `apps/cli/main.py`, команды в `apps/cli/commands/`.
-- **MCP** — `apps/mcp_server/server.py` и `remote_server.py`.
-- **Воркер** — `brain/workers/worker.py`; очередь `queue.py`, задачи `tasks.py`.
-- `brain/__main__.py` — тонкий шим на CLI, логики там нет.
+- **HTTP API** — `apps/api/main.py`, routers in `apps/api/routers/`.
+- **CLI** — `brain` (`[project.scripts]`) → `apps/cli/main.py`, commands in `apps/cli/commands/`.
+- **MCP** — `apps/mcp_server/server.py` and `remote_server.py`.
+- **Worker** — `brain/workers/worker.py`; queue `queue.py`, tasks `tasks.py`.
+- `brain/__main__.py` — a thin shim over the CLI, no logic there.
 
-## Границы слоёв
+## Layer boundaries
 
-- `brain/` — ядро: логика, хранилища, анализ. **Не должно импортировать `apps/`.**
-  Существующие исключения: 4 ленивых импорта `apps.api.helpers` внутри функций в
-  `brain/insights/proactive.py` и шим `brain/__main__.py`. Новых не добавлять — выноси
-  общий код в `brain/`, а не тяни транспорт в ядро.
-- `apps/` — транспорт: HTTP, CLI, MCP. Бизнес-логике здесь не место.
-- Хранилища: Postgres + pgvector (реляционка и векторы), Neo4j (граф, через
-  `brain/graph/graph_client.py`), Redis (кэш). Сервисы — в `docker-compose.yml`.
+- `brain/` — the core: logic, storage, analysis. **It must not import `apps/`.**
+  Existing exceptions: 4 lazy imports of `apps.api.helpers` inside functions in
+  `brain/insights/proactive.py`, and the `brain/__main__.py` shim. Do not add new ones — move
+  shared code into `brain/` instead of pulling transport into the core.
+- `apps/` — transport: HTTP, CLI, MCP. Business logic does not belong here.
+- Storage: Postgres + pgvector (relational data and vectors), Neo4j (graph, via
+  `brain/graph/graph_client.py`), Redis (cache). Services are in `docker-compose.yml`.
 
-## Команды
+## Commands
 
 ```bash
-docker compose up -d                        # postgres, redis, neo4j, api, worker (+scheduler)
-py -3 -m pytest tests/ -q                   # полный прогон ~9 мин — запускать детачем
-py -3 -m pytest tests/test_health.py -q     # обычный цикл: один файл
-py -3 -m ruff check .                       # line-length 120, select E,F,W
-py -3 -m brain.insights.drift_cli check --repo . --base master --candidate HEAD
+docker compose up -d                          # postgres, redis, neo4j, api, worker (+scheduler)
+python -m pytest tests/ -q                    # full run takes ~9 min — run it in the background
+python -m pytest tests/test_health.py -q      # normal loop: one file
+python -m ruff check .                        # line-length 120, select E,F,W
+python -m brain.insights.drift_cli check --repo . --base master --candidate HEAD
 ```
 
-На Windows использовать `py -3`: системные `python` и `pip` в PATH рассинхронизированы.
-Деплой — `deploy/RUNBOOK.md` и `deploy/server_up.sh`.
+On Windows, if `python` and `pip` on PATH point at different interpreters, use `py -3`.
+Deployment: `deploy/RUNBOOK.md` and `deploy/server_up.sh`.
 
-## Ловушки
+## Pitfalls
 
-- **`reports/` принадлежит контейнерам** (uid 999). Распаковка релизного tar на проде на нём
-  всегда падает — это норма, а не сбой деплоя; исключать через `--exclude='reports'`.
-  Не чейнить стамповку релиза через `&&` после `tar`.
-- **`tests/conftest.py` только гасит внешнее окружение** (нейтрализует ключи из `.env`,
-  которые флипают поведение — `PROJECT_BRAIN_API_KEY` и т.п.). Логики там нет: тесты по-прежнему
-  сами поднимают настройки до импорта модулей
-  приложения — отсюда `E402` в `per-file-ignores` для `tests/**`. Не «чини» порядок импортов.
-- **В `brain/graph/` сосуществуют поколения**: `schema.py` / `schema_v2.py`, `builder_v2.py`,
-  `extractors_v2.py`, `migration_v3.py`. Прежде чем править — определи, какое поколение
-  реально используется вызывающим кодом.
-- **`rules/golden_tasks.yaml` — контракт eval**, а не документация: «описание задачи →
-  ожидаемые файлы и модули». Меняешь раскладку модулей — обнови и его, иначе eval начнёт
-  врать. Новая типовая задача → новая запись там же (и строка в таблице маршрутов выше).
+- **`reports/` is owned by the containers** (uid 999). Unpacking a release tar over it in
+  production always fails on that directory — expected, not a deploy failure; exclude it with
+  `--exclude='reports'`. Do not chain the release stamp with `&&` after `tar`.
+- **`tests/conftest.py` only neutralises the outside environment** (it clears `.env` keys that
+  flip behaviour — `PROJECT_BRAIN_API_KEY` and the like). There is no logic there: tests still
+  set settings themselves before importing application modules — hence `E402` in
+  `per-file-ignores` for `tests/**`. Do not "fix" the import order.
+- **`brain/graph/` holds several generations side by side**: `schema.py` / `schema_v2.py`,
+  `builder_v2.py`, `extractors_v2.py`, `migration_v3.py`. Before editing, find out which
+  generation the calling code actually uses.
+- **`rules/golden_tasks.yaml` is an eval contract**, not documentation: "task description →
+  expected files and modules". If you change the module layout, update it too, or the eval
+  starts lying. A new common task → a new entry there (and a row in the routes table above).

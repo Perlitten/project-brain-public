@@ -257,7 +257,7 @@ class Verification:
             default_branch=PathSandbox.get_git_default_branch(resolved),
             current_revision=self.revision,
             trust_level=TrustLevel.TRUSTED_INTERNAL.value,
-            organization="Perlitten",
+            organization="example-org",
             owner="project-brain-maintainers",
             languages=PathSandbox.detect_languages(resolved),
             capabilities=CapabilitiesManager.get_defaults(TrustLevel.TRUSTED_INTERNAL),

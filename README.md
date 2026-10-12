@@ -31,6 +31,10 @@ Instead of replacing execution tools, Project Brain operates as a reasoning and 
 
 Runs on one machine with your own repositories. **No API keys are needed** to
 try it: the shipped `.env.example` uses mock LLM and embedding providers.
+The mock is a **smoke test only — its results are not meaningful** (search
+ranks by noise). For real results without a key, run
+`ollama pull nomic-embed-text` and set `DEFAULT_EMBEDDING_PROVIDER=ollama`
+before indexing; see [Real models](#real-models).
 
 One command:
 
@@ -42,6 +46,16 @@ cd project-brain
 
 This creates the venv, installs the package, writes `.env`, starts
 postgres+redis+neo4j via Docker, and runs the `brain doctor` preflight.
+Pass `--repo /path/to/your/repo` to choose the repository Brain reads; without
+it Brain uses its own source as a sample. Then:
+
+```bash
+.venv/bin/brain index --repo /path/to/your/repo
+./scripts/start.sh     # API :8000, worker, web dashboard :3100 — Ctrl+C stops all three
+```
+
+The worker runs indexing and every other background job. Without it, jobs stay
+queued; the dashboard says so and shows how to start it.
 The step-by-step guide with measured timings and troubleshooting is
 [`docs/release/0.9.0/INSTALL.md`](docs/release/0.9.0/INSTALL.md).
 
@@ -93,7 +107,8 @@ brain doctor
 # 5. Index a repository
 brain index --repo /path/to/your/repo
 
-# 6. Run the API (and, in a second terminal, the worker for background jobs)
+# 6. Run the API and, in a second terminal, the worker (background jobs never
+#    start without it). ./scripts/start.sh runs both plus the web dashboard.
 uvicorn apps.api.main:app --port 8000
 python -m brain.workers.worker
 ```
@@ -144,7 +159,8 @@ Pick providers in `.env`, set the matching key, then re-index:
 
 | Provider | `.env` |
 |---|---|
-| Mock (default, offline) | `DEFAULT_LLM_PROVIDER=mock`, `DEFAULT_EMBEDDING_PROVIDER=mock` |
+| Mock (default, offline) — smoke test only, results not meaningful | `DEFAULT_LLM_PROVIDER=mock`, `DEFAULT_EMBEDDING_PROVIDER=mock` |
+| Ollama (local, free, no key) | `ollama pull nomic-embed-text`, then `DEFAULT_EMBEDDING_PROVIDER=ollama` (add `ollama pull llama3.1` and `DEFAULT_LLM_PROVIDER=ollama` for summaries) |
 | NVIDIA NIM (production default) | `DEFAULT_LLM_PROVIDER=nvidia`, `DEFAULT_EMBEDDING_PROVIDER=nvidia`, `NVIDIA_API_KEY=nvapi-…` |
 | OpenAI / Anthropic / Google | `DEFAULT_LLM_PROVIDER=openai` (or `anthropic`, `google`) and the matching `*_API_KEY` |
 
@@ -229,12 +245,14 @@ npm run dev                    # http://localhost:3100
 | `BRAIN_WEB_ACTIONS` | `0` turns dashboard actions off; `1` turns them on without a password (behind your own SSO) |
 | `BRAIN_TIMEZONE` | Optional IANA time zone for displayed times (default UTC) |
 
-**Signing in.** A fresh install opens without a password and says so in the top
-bar. Set a login and password on **Settings → Access → Dashboard sign-in**: the
+**Signing in.** A fresh install opens without a password while the dashboard
+listens on this machine only (`npm run dev` / `npm run start` bind `127.0.0.1`;
+change it with `WEB_HOST`) and says so in the top bar. On any other address it
+stays locked until a sign-in exists. Set a login and password on **Settings → Access → Dashboard sign-in**: the
 Brain API stores only a scrypt hash in its `.env` (`WEB_LOGIN_*`), the browser
 that set it stays signed in and every other browser is signed out on each
-change. Until a password exists, dashboard actions stay locked (except in
-`npm run dev`). Forgot it? Delete the `WEB_LOGIN_*` lines from the server's
+change. Until a password exists, dashboard actions stay locked unless the
+dashboard listens on loopback or runs under `npm run dev`. Forgot it? Delete the `WEB_LOGIN_*` lines from the server's
 `.env` and restart the API. Scripts can sign in with `curl -u login:password`.
 
 **Deploy to Vercel:** import the repository, set *Root Directory* to `apps/web`
@@ -431,7 +449,7 @@ server `apps.mcp_server.remote_server` exposes the same 13 plus
 | `record_procedure_outcome` | Record the success/failure outcome of a procedure (skill) once per task |
 
 `search_code` and `ask_project` accept an optional `repo_path` argument. Use it when
-multiple repositories are indexed, for example `/indexed/forex-bot`, so retrieval
+multiple repositories are indexed, for example `/indexed/mobile-app`, so retrieval
 does not mix files from unrelated projects. The HTTP `/search` and `/ask` endpoints
 accept the same `repo_path` field. For the remote MCP server, `BRAIN_REPO` is used
 as the default repo scope when `repo_path` is omitted.

@@ -59,9 +59,7 @@ repository and do not resolve on GitHub.
 
 ## Verified for this release
 
-See the archived pre-release report
-[`docs/archive/launch-readiness/2026-10-02-single-user-journey-validation.md`](../../archive/launch-readiness/2026-10-02-single-user-journey-validation.md) —
-install→first-task ~50s, restart persistence, incremental upgrade, live
+Pre-release validation covered install→first-task ~50s, restart persistence, incremental upgrade, live
 backup/restore, crash recovery, docker sandbox, full suite.
 
 ## Known issues / manual steps

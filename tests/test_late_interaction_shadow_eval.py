@@ -229,13 +229,12 @@ async def test_shadow_migration_creates_only_scalar_indexes():
     assert "counterfactual_final_top_k)" not in ddl
 
 
-def test_checked_in_paired_dataset_has_required_size_ru_slice_and_provenance():
+def test_checked_in_paired_dataset_has_required_size_and_provenance():
     dataset = load_dataset(
         ROOT / "eval" / "golden_set.json",
         ROOT / "eval" / "lfm_eval_extension.json",
     )
     assert len(dataset) == 50
-    assert sum(1 for entry in dataset if entry.language.startswith("ru")) >= 15
     assert all(entry.provenance["production_real"] is False for entry in dataset)
     assert len({entry.query_id for entry in dataset}) == 50
     schema = json.loads((ROOT / "eval" / "paired_dataset.schema.json").read_text(encoding="utf-8"))
@@ -264,7 +263,7 @@ def test_paired_eval_computes_metrics_slices_deltas_and_passes_strong_fixture():
     assert report["aggregate"]["lfm_rerank"]["recall@50"] == 1.0
     assert report["paired"]["lfm_rerank"]["median_deltas"]["ndcg@10"] >= 0.03
     assert report["paired"]["lfm_rerank"]["improved_ndcg_ratio"] == 1.0
-    assert "ru-en" in report["slices"]["language"]
+    assert "en" in report["slices"]["language"]
     assert "bug" in report["slices"]["query_class"]
     assert report["lfm_rerank_gate"]["passed"] is True
     assert report["fastplaid_gate"]["passed"] is True

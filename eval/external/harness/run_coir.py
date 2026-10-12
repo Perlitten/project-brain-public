@@ -35,7 +35,7 @@ from brain.context.context_pack_builder import ContextPackBuilder  # noqa: E402
 
 import run_swebench as swe  # noqa: E402  reuse arms
 
-CORPUS_ROOT = Path("/home/ubuntu/eval_external/coir_corpus")
+CORPUS_ROOT = common.EVAL_DIR / "coir_corpus"
 EMBED_URL = "http://127.0.0.1:18099/v1/embeddings"
 
 

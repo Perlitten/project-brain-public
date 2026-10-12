@@ -56,6 +56,15 @@ def test_doctor_all_green(tmp_path):
     assert "FAIL" not in result.output
 
 
+def test_doctor_labels_mock_as_smoke_test_with_a_free_way_out(tmp_path):
+    settings_patch, health_patch = _doctor_env(tmp_path)
+    with settings_patch, health_patch:
+        result = runner.invoke(cli, ["doctor"])
+    output = " ".join(result.output.split())
+    assert "smoke test only, results not meaningful" in output
+    assert "ollama pull nomic-embed-text" in output
+
+
 def test_doctor_fails_closed_when_services_down(tmp_path):
     down = _healthy()
     down["neo4j"] = {"status": "unhealthy", "error": "connection refused"}

@@ -2,8 +2,7 @@
 
 One instance per user, on a machine you control, with your own repositories and
 your own provider credentials. Verified commands below were run end-to-end on a
-clean Ubuntu box; the historical pre-release measurements are archived in
-[`docs/archive/launch-readiness/2026-10-02-single-user-journey-validation.md`](../../archive/launch-readiness/2026-10-02-single-user-journey-validation.md).
+clean Ubuntu box.
 
 **Windows:** `scripts/bootstrap.sh` is a POSIX shell script. On Windows run it
 inside WSL2, or follow the manual steps below (use `.venv\Scripts\` instead of
