@@ -15,17 +15,18 @@ directly. All gates default off.
 
 ## Operator visibility
 
-Cockpit exposes the selected repository's precision-layer state at
-`/dashboard/late-interaction` and as JSON at
-`/dashboard/late-interaction.json?repo=<repository path>`.
+The API exposes the selected repository's precision-layer state as JSON at
+`GET /late-interaction/status?repo_path=<repository path>` (scope `core:read`).
+The former server-rendered `/dashboard/late-interaction` page was removed
+together with the built-in dashboard.
 
 Treat this as the release truth surface, not as an enable switch. It separates
 live model/index/lineage identity and base-index freshness, infrastructure
 registration from effective traffic, retained diagnostic evidence from
 process-local counters, and offline/shadow/online readiness.
 
-The page must show `NO-GO` while any identity, freshness, evidence, quality,
-latency or production-approval gate is missing. Do not infer approval from a
+Treat the layer as `NO-GO` while any identity, freshness, evidence, quality,
+latency or production-approval gate in the status is missing. Do not infer approval from a
 healthy sidecar or from a completed query count.
 
 Runtime settings and `deploy/server_up.sh` enforce two independent
@@ -391,7 +392,7 @@ never turn missing telemetry into a successful quality gate.
 The non-loopback opt-in is mandatory because source chunks are sent during
 indexing. Rerank requests contain only the query plus chunk IDs, paths and
 content hashes; token matrices never leave the GPU service. Keep the endpoint
-private and the shared token independent from Brain/n8n credentials.
+private and the shared token independent from Brain credentials.
 Late-interaction ranking and dual-write are fail-open. Dual-write opens its
 local circuit after three consecutive failures. The hot retrieval path has a
 hard 2-second whole-rerank budget, caps the pool at 500 chunks, and active
@@ -413,12 +414,13 @@ NIGHTLY_DEEP_MAINTENANCE_QUALITY_QUERIES=3
 WORKER_MAX_JOB_TIMEOUT_SECONDS=21600
 ```
 
-`nightly-deep-maintenance.json` runs at 00:30 UTC. The single worker performs
+The worker's built-in scheduler (`brain/workers/scheduler.py`) runs the
+nightly deep maintenance job at 00:30 UTC. The single worker performs
 an incremental reindex, verifies and repairs dense embeddings, exactly
 reconciles and prunes the approved LFM corpus, then runs three relevance probes
 (including Russian). A probe passes only when LFM scoring is applied with
 100% candidate coverage and at least one expected source file reaches top 10.
-The job and its n8n execution fail closed on any final contract failure.
+The job fails closed on any final contract failure.
 
 `POST /jobs/deep-context` (or MCP `prepare_deep_context`) is the explicit
 interactive entry. It reconciles the exact corpus first, spends up to the Deep

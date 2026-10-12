@@ -41,6 +41,6 @@ MCP → stdio → brain modules (unchanged)
 
 ## References
 
-- [docs/phase-9-n8n-orchestration.md](./phase-9-n8n-orchestration.md)
-- `n8n/workflows/git-merge-reindex.json`
+- [docs/archive/phase-9-n8n-orchestration.md](../archive/phase-9-n8n-orchestration.md)
+- `n8n/workflows/git-merge-reindex.json` (removed with n8n)
 - `apps/api/routers/jobs.py`, `brain/workers/`

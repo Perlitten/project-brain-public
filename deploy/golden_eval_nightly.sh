@@ -69,7 +69,7 @@ if [ "$verdict" != "ok" ]; then
   echo "$(stamp) !! retrieval quality $verdict — inspect $LATEST" >> "$LOG"
   ALERT="${REPO_DIR}/deploy/brain_alert.sh"
   [ -x "$ALERT" ] || ALERT=""
-  [ -n "$ALERT" ] && printf '• Hit@3 (все каналы): %s%%  ← было %s%%\n• Hit@3 (лексический): %s%%\n• Подробности: %s' \
+  [ -n "$ALERT" ] && printf '• Hit@3 (all channels): %s%%  (was %s%%)\n• Hit@3 (lexical): %s%%\n• Details: %s' \
       "$now_any" "$prev_any" "$now_lex" "$LATEST" \
-    | bash "$ALERT" "Качество поиска: $verdict"
+    | bash "$ALERT" "Search quality: $verdict"
 fi

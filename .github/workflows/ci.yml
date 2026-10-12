@@ -6,7 +6,22 @@ on:
   pull_request:
     branches: [master, main]
 
+permissions:
+  contents: read
+
 jobs:
+  public-privacy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify public commit identity and messages
+        run: python scripts/check_public_privacy.py --allow-github-identities
+
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -91,7 +106,7 @@ jobs:
           pip install --no-deps -e .
 
       - name: Lint with ruff
-        run: ruff check brain apps tests
+        run: ruff check .
 
       - name: Type check ratchet (mypy, non-increasing baseline)
         run: bash scripts/mypy_gate.sh

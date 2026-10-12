@@ -144,6 +144,8 @@ async def _chunks_needing_regeneration(
     for chunk_id, content, path, emb_id, dim, provider, model, chash, vec_len, has_vec in rows:
         if should_exclude_from_retrieval(path):
             continue
+        if not (content or "").strip():
+            continue  # providers reject empty input; nothing to embed
         reason = _embedding_reason(emb_id, dim, provider, model, chash, vec_len, content, config)
         if reason == "current" and has_vec:
             continue

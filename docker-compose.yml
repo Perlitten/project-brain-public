@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: pgvector/pgvector:pg15
@@ -9,7 +7,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres_password
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +22,7 @@ services:
     image: redis:7-alpine
     container_name: brain-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -38,8 +36,8 @@ services:
     image: neo4j:5.12-community
     container_name: brain-neo4j
     ports:
-      - "7474:7474" # HTTP
-      - "7687:7687" # Bolt
+      - "127.0.0.1:7474:7474" # HTTP
+      - "127.0.0.1:7687:7687" # Bolt
     environment:
       NEO4J_AUTH: neo4j/neo4j_password
       NEO4J_PLUGINS: '["apoc"]'
@@ -60,9 +58,10 @@ services:
     build: .
     container_name: brain-api
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -95,7 +94,8 @@ services:
     container_name: brain-worker
     command: python -m brain.workers.worker
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432

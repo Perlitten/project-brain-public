@@ -7,7 +7,7 @@ Status: **decided 2026-10-02 — MIT.**
 | Intended distribution | Public, non-commercial portfolio / reference project |
 | License | MIT — [`LICENSE`](../../LICENSE), copyright Andrei Damashkevich; matches `pyproject.toml` metadata |
 | Third-party notices | [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md) — bundled fonts and icons (license texts included), Python and npm dependencies, container images, models and hosted services, trademarks |
-| Repo visibility | Private until the owner flips it |
+| Repo visibility | **Public** on GitHub ([Perlitten/project-brain-public](https://github.com/Perlitten/project-brain-public)) under the MIT license; first public release tag `v0.9.0` |
 
 ## Why MIT
 
@@ -17,8 +17,8 @@ Status: **decided 2026-10-02 — MIT.**
   file-level weak-copyleft MPL-2.0. They are installed unmodified; any
   redistributed copies retain their own notice and source requirements.
 - Copyleft components (Neo4j Community GPL-3.0, libvips LGPL-3.0) and
-  restricted-terms components (Redis 7.4+ RSALv2/SSPL, n8n Sustainable Use
-  License, LFM Open License v1.0) run as separate services or runtime
+  restricted-terms components (Redis 7.4+ RSALv2/SSPL,
+  LFM Open License v1.0) run as separate services or runtime
   downloads and are not redistributed in this repository.
 
 ## Keep it true

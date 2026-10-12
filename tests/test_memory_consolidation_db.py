@@ -45,7 +45,10 @@ async def memory_db(monkeypatch):
         if os.environ.get("GITHUB_ACTIONS"):
             raise
         pytest.skip("PostgreSQL is unavailable locally")
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    # Helper tasks belong to this fixture too; deleting only the main task
+    # leaves their L1 events behind for subsequent consolidation tests.
+    owned_task_ids = []
+    sessions = async_sessionmaker(engine, expire_on_commit=False, info={"owned_task_ids": owned_task_ids})
     monkeypatch.setattr("brain.memory.consolidation.async_session_factory", sessions)
     monkeypatch.setattr("brain.memory.learning_store.async_session_factory", sessions)
     monkeypatch.setattr("brain.memory.learning_retrieval.async_session_factory", sessions)
@@ -78,6 +81,7 @@ async def memory_db(monkeypatch):
         session.add(task)
         await session.commit()
         task_id = task.id
+        owned_task_ids.append(task_id)
 
     async def add_events(n, validated=True):
         # validated=True models POST /lessons (evidence-linked); False models
@@ -118,7 +122,9 @@ async def memory_db(monkeypatch):
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {_MEMORY_TABLES} RESTART IDENTITY CASCADE"))
         await conn.execute(text("DELETE FROM rules WHERE applies_to ->> 'source' = 'memory_consolidation'"))
-        await conn.execute(text("DELETE FROM harness.agent_tasks WHERE id = :id"), {"id": task_id})
+        await conn.execute(
+            text("DELETE FROM harness.agent_tasks WHERE id = ANY(:ids)"), {"ids": owned_task_ids}
+        )
     await engine.dispose()
 
 
@@ -334,6 +340,7 @@ async def _add_task_events(sessions, repo_path, n):
         session.add(task)
         await session.commit()
         task_id = task.id
+        session.info["owned_task_ids"].append(task_id)
         events = [
             AgentTaskEvent(
                 task_id=task_id,

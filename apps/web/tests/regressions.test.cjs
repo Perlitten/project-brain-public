@@ -25,7 +25,7 @@ function load(file, overrides = {}) {
 }
 
 function withEnv(values, run) {
-  const names = ['WEB_BASIC_AUTH', 'BRAIN_API_URL', 'BRAIN_API_KEY'];
+  const names = ['WEB_BASIC_AUTH', 'BRAIN_API_URL', 'BRAIN_API_KEY', 'WEB_OPEN_MODE'];
   const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
   for (const name of names) {
     if (values[name] === undefined) delete process.env[name];
@@ -290,7 +290,7 @@ function fakeBrainLogin(initial = { mode: 'open', user: null, version: '0' }, pa
   return brain;
 }
 
-test('Brain-kept login: open until set, then a password whose sessions die when it changes', async () => {
+test('Brain-kept login: open only in WEB_OPEN_MODE until set, then a password whose sessions die when it changes', async () => {
   const brain = fakeBrainLogin();
   const oldFetch = global.fetch;
   global.fetch = brain.fetch;
@@ -298,9 +298,17 @@ test('Brain-kept login: open until set, then a password whose sessions die when 
     const auth = load('lib/web-auth.ts');
     const plain = result => ({ ...result });
     await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' }, async () => {
-      // Fresh install: in without a password.
-      assert.equal(await auth.authorizeWebRequest(null), 200);
-      assert.deepEqual(plain(await auth.signIn('', '')), { status: 200, session: null });
+      // Fresh install, no opt-in: locked for everyone, nothing to sign in with.
+      assert.equal(await auth.authorizeWebRequest(null), 503);
+      assert.equal(await auth.authorizeWebRequest(basic('anyone:anything')), 503);
+      assert.deepEqual(plain(await auth.signIn('', '')), { status: 503 });
+      assert.equal((await auth.lockReason()).reason, 'unconfigured');
+      // Explicit local-dev opt-in: in without a password.
+      await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture', WEB_OPEN_MODE: 'true' }, async () => {
+        assert.equal(await auth.authorizeWebRequest(null), 200);
+        assert.deepEqual(plain(await auth.signIn('', '')), { status: 200, session: null });
+        assert.equal(await auth.lockReason(), null);
+      });
 
       // The owner sets a password (on Access, which also clears this process's memory).
       Object.assign(brain.state, { mode: 'password', user: 'owner', version: 'v1' });
@@ -338,13 +346,26 @@ test('Brain-kept login: open until set, then a password whose sessions die when 
   } finally { global.fetch = oldFetch; }
 });
 
-test('password removed in another instance: a stale "password" cache never locks people out', async () => {
+test('password removed in another instance: open only in WEB_OPEN_MODE, locked otherwise', async () => {
   const brain = fakeBrainLogin({ mode: 'password', user: 'owner', version: 'v1' }, 'correct horse');
   const oldFetch = global.fetch;
   global.fetch = brain.fetch;
   try {
     const auth = load('lib/web-auth.ts');
     await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' }, async () => {
+      const old = auth.sessionForLogin('owner', 'v1');
+      assert.equal(await auth.authorizeWebRequest(null), 401);
+      Object.assign(brain.state, { mode: 'open', user: null, version: 'v2' });
+      // Without the opt-in, no login means locked, even for the old cookie once
+      // this process looks again (cached state lives at most STATE_TTL_MS).
+      auth.forgetLoginState();
+      assert.equal(await auth.authorizeWebRequest(null, old), 503);
+      assert.deepEqual({ ...(await auth.signIn('anyone', 'anything')) }, { status: 503 });
+      assert.equal(await auth.authorizeWebRequest(null), 503);
+    });
+    Object.assign(brain.state, { mode: 'password', user: 'owner', version: 'v1' });
+    auth.forgetLoginState();
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture', WEB_OPEN_MODE: 'true' }, async () => {
       const old = auth.sessionForLogin('owner', 'v1');
       assert.equal(await auth.authorizeWebRequest(null), 401);
       Object.assign(brain.state, { mode: 'open', user: null, version: 'v2' });
@@ -403,6 +424,126 @@ test('route handler enforces auth even without the proxy and never forwards an a
       assert.equal(calls, 2);
     });
   } finally { global.fetch = oldFetch; }
+});
+
+test('half-configured deployments fail closed with a reason instead of falling back to public data', async () => {
+  const oldFetch = global.fetch;
+  const oldError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(' '));
+  try {
+    global.fetch = async () => { throw new Error('must not be called'); };
+    const auth = load('lib/web-auth.ts');
+    for (const env of [{ BRAIN_API_URL: 'https://api.example' }, { BRAIN_API_KEY: 'fixture' }]) {
+      for (const open of [undefined, 'true']) {
+        await withEnv({ ...env, WEB_OPEN_MODE: open }, async () => {
+          assert.equal(await auth.authorizeWebRequest(null), 503);
+          assert.deepEqual({ ...(await auth.signIn('a', 'b')) }, { status: 503 });
+          const lock = await auth.lockReason();
+          assert.equal(lock.reason, 'misconfigured');
+          assert.match(lock.detail, env.BRAIN_API_URL ? /BRAIN_API_KEY is missing/ : /BRAIN_API_URL is missing/);
+        });
+      }
+    }
+    assert.ok(logged.some(line => line.includes('[web-auth]') && line.includes('BRAIN_API_KEY is missing')));
+
+    // Brain reports "open" but only one of the WEB_LOGIN_* pair is in its environment.
+    const brain = fakeBrainLogin({ mode: 'open', user: null, version: '0', from_env: ['WEB_LOGIN_USER'] });
+    global.fetch = brain.fetch;
+    const fresh = load('lib/web-auth.ts');
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture', WEB_OPEN_MODE: 'true' }, async () => {
+      assert.equal(await fresh.authorizeWebRequest(null), 503);
+      const lock = await fresh.lockReason();
+      assert.equal(lock.reason, 'misconfigured');
+      assert.match(lock.detail, /WEB_LOGIN_USER but not WEB_LOGIN_PASSWORD_HASH/);
+      const res = fresh.webAuthResponse(503, lock);
+      assert.equal(res.status, 503);
+      assert.deepEqual(await res.json(), { error: 'misconfigured', detail: lock.detail });
+    });
+  } finally { global.fetch = oldFetch; console.error = oldError; }
+});
+
+test('WEB_OPEN_MODE accepts only explicit truthy values', () => {
+  const { openMode } = load('lib/web-auth.ts');
+  for (const [value, expected] of [[undefined, false], ['', false], ['0', false], ['false', false], ['no', false], ['true', true], ['TRUE', true], ['1', true], [' yes ', true]]) {
+    withEnv({ WEB_OPEN_MODE: value }, () => assert.equal(openMode(), expected, String(value)));
+  }
+});
+
+test('first password can be set only in WEB_OPEN_MODE, and removing it is refused without it', async () => {
+  const brain = fakeBrainLogin();
+  const sent = [];
+  const oldFetch = global.fetch;
+  global.fetch = brain.fetch;
+  try {
+    const auth = load('lib/web-auth.ts');
+    const reply = { mode: 'password', user: 'owner', version: 'v1' };
+    const login = load('lib/actions/login.ts', {
+      'next/headers': { cookies: async () => ({ set() {} }), headers: async () => new Headers() },
+      'next/cache': { revalidatePath() {} },
+      '../api': { apiConfigured: true, brainSend: async (method, path) => { sent.push(`${method} ${path}`); return { ok: true, status: 200, data: reply }; } },
+      '../web-auth': auth,
+    });
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' }, async () => {
+      const refused = await login.setWebLogin({ user: 'mallory', password: 'hijacked!!' });
+      assert.equal(refused.ok, false);
+      assert.match(refused.message, /WEB_OPEN_MODE is off/);
+      assert.deepEqual(sent, []);
+    });
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture', WEB_OPEN_MODE: 'true' }, async () => {
+      assert.equal((await login.setWebLogin({ user: 'owner', password: 'correct horse' })).ok, true);
+      assert.deepEqual(sent, ['PUT /api/web-login']);
+    });
+    Object.assign(brain.state, reply);
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' }, async () => {
+      const refused = await login.disableWebLogin({ currentPassword: 'correct horse' });
+      assert.equal(refused.ok, false);
+      assert.deepEqual(sent, ['PUT /api/web-login']);
+    });
+  } finally { global.fetch = oldFetch; }
+});
+
+test('proxy route: unconfigured live dashboard never forwards with the server key; unreachable Brain is JSON 503', async () => {
+  const brain = fakeBrainLogin();
+  let forwarded = 0;
+  brain.other = async () => { forwarded++; throw new Error('connection refused'); };
+  const oldFetch = global.fetch;
+  global.fetch = brain.fetch;
+  try {
+    const auth = load('lib/web-auth.ts');
+    const { GET } = load('app/api/brain/[...path]/route.ts', { '@/lib/web-auth': auth });
+    const request = () => ({ headers: new Headers(), nextUrl: new URL('https://web.example/api/brain/web/reports') });
+    const context = { params: Promise.resolve({ path: ['web', 'reports'] }) };
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' }, async () => {
+      const locked = await GET(request(), context);
+      assert.equal(locked.status, 503);
+      assert.equal(locked.headers.get('cache-control'), 'no-store');
+      const body = await locked.json();
+      assert.equal(body.error, 'unconfigured');
+      assert.match(body.detail, /WEB_BASIC_AUTH/);
+      assert.equal(forwarded, 0);
+    });
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture', WEB_OPEN_MODE: 'true' }, async () => {
+      const down = await GET(request(), context);
+      assert.equal(forwarded, 1);
+      assert.equal(down.status, 503);
+      assert.match(down.headers.get('content-type'), /application\/json/);
+      const body = await down.json();
+      assert.equal(body.error, 'brain_unreachable');
+      assert.equal(typeof body.detail, 'string');
+    });
+  } finally { global.fetch = oldFetch; }
+});
+
+test('robots and metadata: only pure demo may be indexed', () => {
+  const robots = load('app/robots.ts');
+  withEnv({}, () => assert.deepEqual({ ...robots.default().rules }, { userAgent: '*', allow: '/' }));
+  for (const env of [{ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' }, { BRAIN_API_URL: 'https://api.example' }, { BRAIN_API_KEY: 'fixture' }]) {
+    withEnv(env, () => assert.deepEqual({ ...robots.default().rules }, { userAgent: '*', disallow: '/' }));
+  }
+  const layout = fs.readFileSync(path.join(root, 'app/layout.tsx'), 'utf8');
+  assert.match(layout, /robots: demo \? \{ index: true, follow: true \} : \{ index: false, follow: false \}/);
+  assert.match(layout, /openGraph: \{ title: "Project Brain", description: DESCRIPTION/);
 });
 
 test('selected repository scopes indexing and graph requests, and unknown freshness stays unknown', async () => {

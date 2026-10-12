@@ -1,4 +1,4 @@
-> **Superseded (2026-10-06):** n8n was removed; see [ADR 013](adr/013-worker-scheduler.md). Kept for history.
+> **Superseded (2026-10-06):** n8n was removed; see [ADR 013](../adr/013-worker-scheduler.md). Kept for history.
 
 # Phase 9: n8n Operations Orchestration
 

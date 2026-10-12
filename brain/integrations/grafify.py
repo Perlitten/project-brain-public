@@ -19,7 +19,6 @@ def resolve_grafify_output_path(explicit: Optional[str] = None) -> Path:
     candidates = [
         repo_root.parent / "graphify-out" / "graph.json",
         repo_root / "graphify-out" / "graph.json",
-        Path("D:/Brain/graphify-out/graph.json"),
     ]
     for candidate in candidates:
         if candidate.exists():

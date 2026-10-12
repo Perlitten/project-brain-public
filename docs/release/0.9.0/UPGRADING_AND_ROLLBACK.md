@@ -1,4 +1,4 @@
-# Upgrading & rollback — Brain 0.9.0-rc1
+# Upgrading & rollback — Brain 0.9.0
 
 ## How schema changes apply
 
@@ -9,17 +9,20 @@ re-apply must be a no-op and exits 1 otherwise.
 
 ## Upgrade procedure
 
-The example uses the default Compose service credentials and no n8n. Replace
-connection values with your configured credentials. For an n8n installation,
-omit `--allow-missing n8n` and supply `--n8n-source` with its SQLite file.
-The backup script reads process environment variables; it does not load `.env`.
+The example uses the default Compose service credentials. Replace connection
+values with your configured credentials. Backups contain two artifacts,
+`postgres` and `neo4j`; n8n is no longer part of the stack, so there is no n8n
+artifact and `--allow-missing` only accepts `postgres` or `neo4j`. The backup
+script reads process environment variables; it does not load `.env`. It needs
+`pg_dump` on PATH, and the live restore leg of the drill needs `psql`
+(`postgresql-client`, same major version as the server).
 
 ```bash
 # 1. Back up first — rollback depends on it
 PG_BACKUP_DSN='postgresql://postgres:postgres_password@localhost:5433/brain_db'
 NEO4J_URI=bolt://localhost:7687 NEO4J_USER=neo4j NEO4J_PASSWORD=neo4j_password \
     .venv/bin/python scripts/backup_runner.py --output ./backups/$(date +%F) \
-    --pg-dsn "$PG_BACKUP_DSN" --allow-missing n8n
+    --pg-dsn "$PG_BACKUP_DSN"
 .venv/bin/python scripts/restore_verification_drill.py \
     ./backups/$(date +%F) --pg-url "$PG_BACKUP_DSN"
 
@@ -56,7 +59,7 @@ git checkout <previous-sha>
 Compatibility note: migrations are additive (columns/tables only). Running
 older code against a newer schema is safe for additive columns; it is *not*
 safe if the old code reads a shape the new migration renamed/dropped — none in
-rc1, but verify against the release diff before skipping the restore.
+0.9.0, but verify against the release diff before skipping the restore.
 
 ## Failure modes and what to do
 

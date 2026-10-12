@@ -122,12 +122,12 @@ async def test_telegram_alert_is_deduplicated_then_sends_recovery():
     assert quiet["status"] == "quiet"
     assert send.await_count == 2
     alert, fixed = (call.args[0] for call in send.await_args_list)
-    assert "1 новая проблема" in alert
-    assert "Не работает postgres" in alert
+    assert "1 new problem" in alert
+    assert "Down: postgres" in alert
     assert "→ " in alert and "https://brain.example/logs" in alert
     # No noise the owner can't act on.
-    assert "LLM" not in alert and "Build" not in alert and "Проверка" not in alert
-    assert "всё снова в порядке" in fixed and "Не работает postgres" in fixed
+    assert "LLM" not in alert and "Build" not in alert
+    assert "all clear again" in fixed and "Down: postgres" in fixed
     state = json.loads(redis.values[ALERT_STATE_KEY])
     assert state["active"] == {}
 
@@ -147,9 +147,9 @@ async def test_changed_finding_bypasses_cooldown():
     assert changed["new"] == 1
     assert send.await_count == 2
     text = send.await_args_list[1].args[0]
-    assert "Качество поиска не измерено" in text
-    assert "Не работает" not in text  # already announced
-    assert "Ещё открыто, уже сообщал: 1" in text
+    assert "Search quality not measured" in text
+    assert "Down:" not in text  # already announced
+    assert "Still open, already reported: 1" in text
 
 
 @pytest.mark.asyncio
@@ -168,9 +168,9 @@ async def test_only_lasting_critical_findings_are_repeated_after_cooldown():
     assert reminder["status"] == "sent"
     assert reminder["reminded"] == 1
     text = send.await_args_list[1].args[0]
-    assert "критичное всё ещё не решено" in text
-    assert "⏰ уже 2 ч" in text and "Не работает postgres" in text
-    assert "Качество поиска" not in text and "Упала задача" not in text
+    assert "critical problems still unresolved" in text
+    assert "⏰ open 2 h" in text and "Down: postgres" in text
+    assert "Search quality" not in text and "Job failed" not in text
     assert quiet["status"] == "suppressed"
     assert send.await_count == 2
 
@@ -196,8 +196,8 @@ async def test_llm_observations_and_duplicate_job_triggers_are_not_pushed():
 
     assert first["finding_count"] == 1
     text = send.await_args_list[0].args[0]
-    assert "Упала задача reindex" in text
-    assert "Ошибка: source revision mismatch (job j-42)" in text
+    assert "Job failed: reindex" in text
+    assert "Error: source revision mismatch (job j-42)" in text
     assert "Precision" not in text and "Low" not in text
     assert later["status"] == "quiet"
     assert send.await_count == 1
@@ -263,9 +263,9 @@ async def test_healthy_nightly_maintenance_is_silent():
     assert quiet["status"] == "quiet"
     assert degraded["status"] == "sent"
     text = send.await_args.args[0]
-    assert "Ночное обслуживание shop" in text
-    assert "Без актуальных векторов 60 из 8360" in text
-    assert "прошли 1 из 2" in text
+    assert "Nightly maintenance of shop" in text
+    assert "60 of 8360 chunks lack current embeddings" in text
+    assert "1 of 2 passed" in text
     assert "Build" not in text
 
 

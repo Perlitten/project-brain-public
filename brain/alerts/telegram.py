@@ -55,12 +55,8 @@ def _text(value: Any, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def _plural(n: int, one: str, few: str, many: str) -> str:
-    if n % 10 == 1 and n % 100 != 11:
-        return one
-    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
-        return few
-    return many
+def _plural(n: int, one: str, many: str) -> str:
+    return one if n == 1 else many
 
 
 def _link(path: str) -> str:
@@ -92,16 +88,16 @@ class _Card:
 
 
 def _job_card(item: dict[str, Any]) -> _Card:
-    job_type = _evidence(item, "job_type") or "фоновая"
+    job_type = _evidence(item, "job_type") or "background"
     error = _evidence(item, "error")
     job_id = _evidence(item, "job_id")
-    detail = f"Ошибка: {_text(error, 300)}" if error and error != "failed" else ""
+    detail = f"Error: {_text(error, 300)}" if error and error != "failed" else ""
     if job_id:
         detail = f"{detail} (job {job_id})".strip()
     return _Card(
-        f"Упала задача {job_type}",
+        f"Job failed: {job_type}",
         detail,
-        "Посмотреть ошибку в журнале задач и перезапустить, когда причина устранена.",
+        "Check the error in the job log and re-run once the cause is fixed.",
         "/logs",
     )
 
@@ -110,9 +106,9 @@ def _trigger_card(item: dict[str, Any]) -> _Card:
     reference = str(_evidence(item, "reference") or "")
     job_type = reference.split(":", 1)[0] if ":" in reference else ""
     return _Card(
-        f"Упала задача {job_type}" if job_type else "Внешняя автоматизация сообщила об ошибке",
-        f"Ошибка: {_text(item.get('summary'), 300)}",
-        "Посмотреть ошибку в журнале задач и перезапустить, когда причина устранена.",
+        f"Job failed: {job_type}" if job_type else "An external automation reported an error",
+        f"Error: {_text(item.get('summary'), 300)}",
+        "Check the error in the job log and re-run once the cause is fixed.",
         "/logs",
     )
 
@@ -120,9 +116,9 @@ def _trigger_card(item: dict[str, Any]) -> _Card:
 def _services_card(item: dict[str, Any]) -> _Card:
     names = [str(entry.get("label")) for entry in item.get("evidence") or [] if isinstance(entry, dict)]
     return _Card(
-        f"Не работает {', '.join(names) or 'хранилище'}",
-        "Пока сервис лежит, поиск, контекст и фоновые задачи не работают.",
-        "Поднять сервис: docker compose ps, затем docker compose logs <сервис>.",
+        f"Down: {', '.join(names) or 'storage'}",
+        "While the service is down, search, context and background jobs do not work.",
+        "Bring the service back: docker compose ps, then docker compose logs <service>.",
         "/logs",
     )
 
@@ -130,21 +126,21 @@ def _services_card(item: dict[str, Any]) -> _Card:
 def _recall_card(item: dict[str, Any]) -> _Card:
     recall = _evidence(item, "avg_recall")
     floor = _evidence(item, "minimum_avg_recall")
-    detail = "Поиск находит меньше нужных файлов, чем допустимо"
+    detail = "Search finds fewer of the expected files than allowed"
     if recall is not None and floor is not None:
-        detail += f": recall {recall}, минимум {floor}"
+        detail += f": recall {recall}, floor {floor}"
     return _Card(
-        "Качество поиска ниже нормы",
+        "Search quality below the floor",
         detail + ".",
-        "Открыть бенчмарк, посмотреть, какие файлы не нашлись, починить индекс и прогнать бенчмарк снова.",
+        "Open the benchmark, see which files were missed, fix the index and re-run the benchmark.",
         "/quality",
     )
 
 
 def _embeddings_card(item: dict[str, Any]) -> _Card:
     parts = []
-    for label, word in (("missing_embeddings", "без векторов"), ("stale_embeddings", "устаревших"),
-                        ("incompatible_embeddings", "несовместимых")):
+    for label, word in (("missing_embeddings", "missing"), ("stale_embeddings", "stale"),
+                        ("incompatible_embeddings", "incompatible")):
         try:
             count = int(_evidence(item, label) or 0)
         except (TypeError, ValueError):
@@ -152,9 +148,9 @@ def _embeddings_card(item: dict[str, Any]) -> _Card:
         if count:
             parts.append(f"{count} {word}")
     return _Card(
-        "Часть кода не видна семантическому поиску",
-        f"Фрагменты: {', '.join(parts)}." if parts else "",
-        "Запустить пересчёт эмбеддингов (backfill) и дождаться 100% покрытия.",
+        "Part of the code is invisible to semantic search",
+        f"Chunks: {', '.join(parts)}." if parts else "",
+        "Run the embedding backfill and wait for 100% coverage.",
         "/indexing",
     )
 
@@ -166,9 +162,9 @@ def _freshness_card(item: dict[str, Any]) -> _Card:
         if isinstance(entry, dict)
     ]
     return _Card(
-        "Индекс не совпадает с исходниками",
+        "Index does not match the source",
         "; ".join(repos),
-        "Переиндексировать репозиторий и проверить эмбеддинги.",
+        "Re-index the repository and check embeddings.",
         "/indexing",
     )
 
@@ -181,11 +177,11 @@ def _drift_card(item: dict[str, Any]) -> _Card:
     module = _evidence(item, "imported_module")
     detail = f"{where}:{line}" if where and line else str(where or "")
     if module:
-        detail = f"{detail} импортирует {module}".strip()
-    return _Card(f"Нарушена граница архитектуры: {rule}", detail, _text(item.get("recommended_action"), 300))
+        detail = f"{detail} imports {module}".strip()
+    return _Card(f"Architecture boundary violated: {rule}", detail, _text(item.get("recommended_action"), 300))
 
 
-def _count_card(title: str, label: str, noun: tuple[str, str, str], action: str, path: str) -> Callable:
+def _count_card(title: str, label: str, noun: tuple[str, str], action: str, path: str) -> Callable:
     def card(item: dict[str, Any]) -> _Card:
         try:
             n = int(_evidence(item, label) or 0)
@@ -211,81 +207,81 @@ _CARDS: list[tuple[str, Callable[[dict[str, Any]], _Card]]] = [
     (
         "worker_health:stale_durable_jobs",
         _static(
-            "Фоновые задачи зависли",
-            "Задачи в очереди не двигаются дольше окна восстановления.",
-            "Перезапустить воркер: при старте он сам вернёт задачи в очередь.",
+            "Background jobs are stuck",
+            "Queued jobs have not moved for longer than the recovery window.",
+            "Restart the worker: on start it returns the jobs to the queue.",
             "/logs",
         ),
     ),
     (
         "automation_health:scheduler_stale",
         lambda item: _Card(
-            "Плановые задачи не запускаются",
-            f"Просрочены: {_evidence(item, 'stale_jobs')}." if _evidence(item, "stale_jobs") else "",
-            "Проверить, что воркер запущен с SCHEDULER_ENABLED=true. Пока что — Run now в Settings → Scheduler.",
+            "Scheduled jobs are not running",
+            f"Overdue: {_evidence(item, 'stale_jobs')}." if _evidence(item, "stale_jobs") else "",
+            "Check that the worker runs with SCHEDULER_ENABLED=true. Meanwhile use Run now in Settings > Scheduler.",
             "/settings",
         ),
     ),
     (
         "harness_lifecycle:stale_tasks",
         _count_card(
-            "Задачи агентов зависли",
+            "Agent tasks are stuck",
             "stale_task_count",
-            ("задача вышла", "задачи вышли", "задач вышли"),
-            "Запустить сверку задач и закрыть осиротевшие.",
+            ("task timed out", "tasks timed out"),
+            "Run task reconciliation and close the orphaned ones.",
             "/runs",
         ),
     ),
     (
         "graph_identity:legacy_unscoped_nodes",
         _count_card(
-            "В графе остались узлы без репозитория",
+            "Graph nodes without a repository remain",
             "legacy_unscoped_nodes",
-            ("узел", "узла", "узлов"),
-            "Переиндексировать активные репозитории, затем удалить проверенный остаток.",
+            ("node", "nodes"),
+            "Re-index the active repositories, then delete the verified remainder.",
             "/graph",
         ),
     ),
     (
         "indexing_health:latest_failed:",
         lambda item: _Card(
-            "Последняя индексация упала",
-            f"Запуск {_evidence(item, 'run_id')}." if _evidence(item, "run_id") else "",
-            "Посмотреть ошибку в логах воркера и перезапустить индексацию (без clean).",
+            "Latest indexing run failed",
+            f"Run {_evidence(item, 'run_id')}." if _evidence(item, "run_id") else "",
+            "Check the error in the worker logs and re-run indexing (without clean).",
             "/indexing",
         ),
     ),
     (
         "indexing_health:no_source_inventory",
-        _static("Индекс пуст", "Brain не знает ни одного файла репозитория.", "Запустить индексацию.", "/indexing"),
+        _static("Index is empty", "Brain knows no files of the repository.", "Run indexing.", "/indexing"),
     ),
     (
         "retrieval_quality:evaluation_missing",
-        _static("Качество поиска не измерено", "Нет свежего отчёта бенчмарка.", "Прогнать бенчмарк поиска.", "/quality"),
+        _static("Search quality not measured", "No recent benchmark report.", "Run the search benchmark.", "/quality"),
     ),
     (
         "release_identity:unverifiable",
         _static(
-            "Нельзя проверить, какая версия в проде",
-            "API не сообщает ревизию и дайджест исходников.",
-            "Передеплоить через deploy/server_up.sh и проверить /api/version.",
+            "Cannot verify which version is in production",
+            "The API reports no source revision or digest.",
+            "Redeploy with deploy/server_up.sh and check /api/version.",
         ),
     ),
     (
         "llm_diagnostics:stage_unavailable",
         lambda item: _Card(
-            "LLM-диагностика не работает",
-            f"Ошибка: {_text(_evidence(item, 'error'), 200)}." if _evidence(item, "error") else "",
-            "Проверить провайдера LLM. Обычные проверки продолжают работать.",
+            "LLM diagnostics unavailable",
+            f"Error: {_text(_evidence(item, 'error'), 200)}." if _evidence(item, "error") else "",
+            "Check the LLM provider. Deterministic checks keep running.",
             "/settings",
         ),
     ),
     (
         "llm_diagnostics:truncated_output",
         _static(
-            "Ответ LLM-диагностики обрезан",
-            "Часть выводов модели отброшена.",
-            "Увеличить лимит вывода модели и повторить самодиагностику.",
+            "LLM diagnostics output truncated",
+            "Part of the model output was dropped.",
+            "Raise the model output limit and re-run self-diagnosis.",
             "/settings",
         ),
     ),
@@ -298,7 +294,7 @@ def _card(item: dict[str, Any]) -> _Card:
         if key.startswith(prefix):
             return build(item)
     return _Card(
-        _text(item.get("title") or "Проблема", 180),
+        _text(item.get("title") or "Problem", 180),
         _text(item.get("summary"), 300),
         _text(item.get("recommended_action"), 300),
     )
@@ -371,22 +367,22 @@ def _diagnosis_message(
     if new:
         n = len(new)
         worst = "🔴" if any(item.get("severity") == "critical" for item in new) else "🟠"
-        blocks.append(f"{worst} Project Brain: {n} {_plural(n, 'новая проблема', 'новые проблемы', 'новых проблем')}")
+        blocks.append(f"{worst} Project Brain: {n} {_plural(n, 'new problem', 'new problems')}")
         blocks.extend(_render(item) for item in new[:MAX_LISTED])
         if n > MAX_LISTED:
-            blocks.append(f"…и ещё {n - MAX_LISTED} в дашборде.")
+            blocks.append(f"…and {n - MAX_LISTED} more on the dashboard.")
     if reminders:
         if not new:
-            blocks.append("⏰ Project Brain: критичное всё ещё не решено")
+            blocks.append("⏰ Project Brain: critical problems still unresolved")
         for item, hours in reminders[:MAX_LISTED]:
-            blocks.append(_render(item, prefix=f"⏰ уже {round(hours)} ч ·"))
+            blocks.append(_render(item, prefix=f"⏰ open {round(hours)} h ·"))
     if fixed:
         if not new and not reminders:
-            blocks.append("✅ Project Brain: всё снова в порядке" if not still_open else "✅ Project Brain: исправлено")
-        blocks.append("\n".join(f"Решено: {title}" for title in fixed[:MAX_LISTED]))
+            blocks.append("✅ Project Brain: all clear again" if not still_open else "✅ Project Brain: fixed")
+        blocks.append("\n".join(f"Resolved: {title}" for title in fixed[:MAX_LISTED]))
     if still_open and (new or fixed):
         link = _link("/insights")
-        blocks.append(f"Ещё открыто, уже сообщал: {still_open}" + (f" — {link}" if link else ""))
+        blocks.append(f"Still open, already reported: {still_open}" + (f" - {link}" if link else ""))
     return "\n\n".join(blocks)[:TELEGRAM_MAX_TEXT]
 
 
@@ -437,17 +433,17 @@ async def deliver_maintenance_alert(
     problems = []
     if current < total:
         problems.append(
-            f"Без актуальных векторов {total - current} из {total} фрагментов — семантический поиск их не видит."
+            f"{total - current} of {total} chunks lack current embeddings; semantic search cannot see them."
         )
     if passed < len(quality_probes):
-        problems.append(f"Проверки релевантности: прошли {passed} из {len(quality_probes)}.")
+        problems.append(f"Relevance probes: {passed} of {len(quality_probes)} passed.")
     if not problems:
         return {"status": "quiet", "reason": "healthy", "repaired_embeddings": repaired_embeddings}
     link = _link("/indexing")
     lines = [
-        f"🟠 Ночное обслуживание {PurePosixPath(repo_path).name}: не всё в порядке",
+        f"🟠 Nightly maintenance of {PurePosixPath(repo_path).name}: needs attention",
         *problems,
-        "→ Запустить пересчёт эмбеддингов и проверить индекс.",
+        "→ Run the embedding backfill and check the index.",
     ]
     if link:
         lines.append(link)
@@ -471,13 +467,13 @@ async def deliver_deep_context_alert(
         return {"status": "disabled", "reason": "TELEGRAM_ALERTS_ENABLED=false"}
     pack = f"#{context_pack_id}" if context_pack_id is not None else ""
     lines = [
-        f"🧠 Глубокий контекст {pack} готов".replace("  ", " "),
+        f"🧠 Deep context {pack} ready".replace("  ", " "),
         f"{PurePosixPath(repo_path).name}: {retrieved_files} "
-        f"{_plural(retrieved_files, 'файл', 'файла', 'файлов')}",
+        f"{_plural(retrieved_files, 'file', 'files')}",
     ]
-    critic = {"PARTIAL_CONTEXT": "контекст неполный", "LOW_CONFIDENCE": "низкая уверенность"}.get(critic_status.upper())
+    critic = {"PARTIAL_CONTEXT": "context incomplete", "LOW_CONFIDENCE": "low confidence"}.get(critic_status.upper())
     if critic:
-        lines.append(f"Критик: {critic} — проверь пак перед использованием.")
+        lines.append(f"Critic: {critic}. Review the pack before use.")
     link = _link("/packs")
     if link:
         lines.append(link)
@@ -524,7 +520,7 @@ async def deliver_diagnosis_alert(
     fixed = [str(known[key].get("title") or "") for key in fixed_keys]
     fixed = [title for title in fixed if title]
     if fixed_keys and not fixed:
-        fixed = ["Ранее найденные проблемы больше не наблюдаются"]
+        fixed = ["Previously reported problems are no longer observed"]
     severity_rank = {"critical": 0, "warning": 1}
     new.sort(key=lambda item: severity_rank.get(str(item.get("severity")), 2))
     told = {str(item["dedupe_key"]) for item in new} | {str(item["dedupe_key"]) for item, _ in reminders}

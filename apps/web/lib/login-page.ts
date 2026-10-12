@@ -33,14 +33,17 @@ function ecg(period: number, width = 1200, base = 24) {
 const LIT = 13;
 const BRICKS = 20;
 
-export function loginPage({ action, next, failed, user = "" }: { action: string; next: string; failed: boolean | "throttled"; user?: string }) {
-  const tone = failed ? "bad" : "idle";
+type Notice = { eyebrow: string; title: string; detail: string };
+
+/** `notice`: the site is locked for a reason no password can fix — explain it, no form. */
+export function loginPage({ action, next, failed, user = "", notice }: { action: string; next: string; failed: boolean | "throttled"; user?: string; notice?: Notice }) {
+  const tone = failed || notice ? "bad" : "idle";
   const d = ecg(failed ? 92 : 0);
   const throttled = failed === "throttled";
-  const log = ["› waking up project brain", "› site is locked", throttled ? "› too many tries · paused" : failed ? "› sign-in refused · try again" : "› waiting for sign-in"];
-  const eyebrow = throttled ? "Paused" : failed ? "Access denied" : "Locked";
-  const title = throttled ? "Too many wrong tries." : failed ? "That didn’t match." : "This Brain is private.";
-  const detail = throttled
+  const log = ["› waking up project brain", "› site is locked", notice ? "› sign-in unavailable" : throttled ? "› too many tries · paused" : failed ? "› sign-in refused · try again" : "› waiting for sign-in"];
+  const eyebrow = notice ? escape(notice.eyebrow) : throttled ? "Paused" : failed ? "Access denied" : "Locked";
+  const title = notice ? escape(notice.title) : throttled ? "Too many wrong tries." : failed ? "That didn’t match." : "This Brain is private.";
+  const detail = notice ? escape(notice.detail) : throttled
     ? "Sign-in for this name is paused for a few minutes. Wait, then try again."
     : failed
       ? "Check the username and password and try again."
@@ -266,10 +269,10 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
   <section class="verdict verdict--${tone}" aria-labelledby="verdict">
     <div class="verdict__main">
       <p class="eyebrow" style="margin:0" data-decode>${eyebrow}</p>
-      <h1 id="verdict"${failed ? ' role="alert"' : ""}>${title}</h1>
+      <h1 id="verdict"${failed || notice ? ' role="alert"' : ""}>${title}</h1>
       <p class="detail">${detail}</p>
     </div>
-    <form method="post" action="${escape(action)}" id="login">
+    ${notice ? "" : `<form method="post" action="${escape(action)}" id="login">
       <input type="hidden" name="next" value="${escape(next)}">
       <label class="field"><span class="field__label">Username</span>
         <input id="username" name="username" value="${escape(user)}" autocomplete="username" autocapitalize="none" spellcheck="false" required${user ? "" : " autofocus"}>
@@ -281,7 +284,7 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
         </span>
       </label>
       <button class="btn" type="submit">Sign in</button>
-    </form>
+    </form>`}
     <svg class="pulse" viewBox="0 0 1200 40" preserveAspectRatio="none" aria-hidden="true">
       <defs>
         <linearGradient id="pulse-g"><stop offset="0" stop-color="#000"/><stop offset="0.85" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>
@@ -294,7 +297,7 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
     </svg>
   </section>
 
-  <div class="log${failed ? " log--bad" : ""}" aria-hidden="true">
+  <div class="log${failed || notice ? " log--bad" : ""}" aria-hidden="true">
     <ol>${log.map((l, i) => `<li style="--l:${i};--len:${l.length}">${l}</li>`).join("")}</ol>
     <div class="meter">${Array.from({ length: BRICKS }, (_, i) => `<span class="${i < LIT ? "on" : i === LIT ? "wait" : ""}" style="--i:${i}"></span>`).join("")}</div>
   </div>
@@ -316,7 +319,7 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
 
   var pw = document.getElementById("password");
   var reveal = document.querySelector(".reveal");
-  reveal.addEventListener("click", function () {
+  if (pw && reveal) reveal.addEventListener("click", function () {
     var show = pw.type === "password";
     pw.type = show ? "text" : "password";
     reveal.setAttribute("aria-pressed", String(show));
@@ -324,7 +327,8 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
     reveal.title = reveal.getAttribute("aria-label");
     pw.focus();
   });
-  document.getElementById("login").addEventListener("submit", function (e) {
+  var form = document.getElementById("login");
+  if (form) form.addEventListener("submit", function (e) {
     var b = e.target.querySelector(".btn");
     b.disabled = true; b.textContent = "Waking up…";
     root.setAttribute("data-going", "");

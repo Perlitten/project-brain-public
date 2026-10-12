@@ -94,8 +94,8 @@ async def check_health() -> Dict[str, Dict[str, Any]]:
             "pool": pool_info,
         }
     except Exception as e:
-        logger.error(f"PostgreSQL health check failed: {e}")
-        health_status["postgres"] = {"status": "unhealthy", "error": str(e)}
+        logger.exception(f"PostgreSQL health check failed: {e}")
+        health_status["postgres"] = {"status": "unhealthy", "error": type(e).__name__}
 
     # 2. Test Redis connection
     try:
@@ -111,16 +111,16 @@ async def check_health() -> Dict[str, Dict[str, Any]]:
         else:
             health_status["redis"] = {"status": "unhealthy", "error": "Redis ping returned unexpected result"}
     except Exception as e:
-        logger.error(f"Redis health check failed: {e}")
-        health_status["redis"] = {"status": "unhealthy", "error": str(e)}
+        logger.exception(f"Redis health check failed: {e}")
+        health_status["redis"] = {"status": "unhealthy", "error": type(e).__name__}
 
     # 3. Test Neo4j connection
     try:
         await neo4j_driver.verify_connectivity()
         health_status["neo4j"] = {"status": "healthy", "message": "Neo4j connection verified"}
     except Exception as e:
-        logger.error(f"Neo4j health check failed: {e}")
-        health_status["neo4j"] = {"status": "unhealthy", "error": str(e)}
+        logger.exception(f"Neo4j health check failed: {e}")
+        health_status["neo4j"] = {"status": "unhealthy", "error": type(e).__name__}
 
     return health_status
 

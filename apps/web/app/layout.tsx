@@ -29,10 +29,19 @@ const mono = localFont({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: { default: "Project Brain", template: "%s · Project Brain" },
-  description: "See what your AI agents know about your code, and whether it is up to date.",
-};
+const DESCRIPTION = "See what your AI agents know about your code, and whether it is up to date.";
+
+// A live dashboard (any Brain API setting present) is private: never indexed.
+// Pure demo data may be. Same rule as app/robots.ts.
+export async function generateMetadata(): Promise<Metadata> {
+  const demo = !process.env.BRAIN_API_URL?.trim() && !process.env.BRAIN_API_KEY?.trim();
+  return {
+    title: { default: "Project Brain", template: "%s · Project Brain" },
+    description: DESCRIPTION,
+    robots: demo ? { index: true, follow: true } : { index: false, follow: false },
+    openGraph: { title: "Project Brain", description: DESCRIPTION, type: "website", siteName: "Project Brain" },
+  };
+}
 
 export const viewport: Viewport = { themeColor: "#05080B", colorScheme: "dark" };
 
