@@ -142,7 +142,9 @@ Read public hosts from `.env`:
 
 ```bash
 set -a && . ./.env && set +a
-echo "Brain: https://${BRAIN_PUBLIC_HOST}/health"
+echo "Brain: https://${BRAIN_PUBLIC_HOST}/api/version"
+# /health and /ready answer publicly only with a valid X-API-Key (404 otherwise);
+# read them on the host via 127.0.0.1:${BRAIN_API_PORT:-8010}.
 ```
 
 ## Alerts and first response
@@ -263,7 +265,8 @@ then verify Overview, Activity, Reports, Get Started and a second repository's
 Indexing and Code Map. Check both desktop and mobile widths for overflow.
 The UI has no mutation controls; repair with the CLI commands in DEPLOYMENT.md.
 
-Check the self-hosted API's `/health` and `/api/version`, and confirm
+Check the self-hosted API's `/api/version` (public) and `/health` (on the host,
+or publicly with `X-API-Key`), and confirm
 `/dashboard/` redirects to the configured `BRAIN_WEB_URL`. The Vercel project
 Root Directory must be `apps/web`. A successful deployment must match the
 release commit; an older READY deployment is insufficient.
