@@ -13,10 +13,9 @@ import { KeyDialog } from "@/components/KeyDialog";
 import { AgentConfigurations } from "@/components/setup/AgentConfigurations";
 import { createAgentKey, type NewKey } from "@/lib/actions/admin";
 import { startHealthCheck, startReindex } from "@/lib/actions/jobs";
-import { indexedRepositories } from "@/lib/setup-copy";
 import { buildFirstPack, saveProvider, saveRepoPath, verifyAgent, verifyProviders, type ProviderInput } from "@/lib/actions/setup";
 import { shortRevision } from "@/lib/revision";
-import { STEP_COPY } from "@/lib/setup-copy";
+import { STEP_COPY, indexedRepositories } from "@/lib/setup-copy";
 import type { ProviderPreset, ProviderSlot, SetupView, StepView } from "@/lib/setup-view";
 
 type Json = Record<string, unknown>;
