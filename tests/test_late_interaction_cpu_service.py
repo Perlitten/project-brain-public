@@ -298,37 +298,3 @@ def test_service_config_rejects_unsafe_encoder_configuration(
 
     with pytest.raises(RuntimeError, match=message):
         config.validate_startup()
-
-
-def test_cpu_compose_is_bf16_private_authenticated_and_default_off():
-    compose = (
-        ROOT / "deploy" / "lfm-colbert-cpu" / "docker-compose.yml"
-    ).read_text(encoding="utf-8")
-    dockerfile = (
-        ROOT / "deploy" / "lfm-colbert-cpu" / "Dockerfile"
-    ).read_text(encoding="utf-8")
-    dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
-
-    assert "LFM2.5-ColBERT-350M-BF16.gguf" in compose
-    assert "c21d5cacc004cbc7746dbeeaee496c74b01f0f7bfdef1e1a57570d1744ef871b" in compose
-    assert "LATE_INTERACTION_SERVICE_ENCODER_BACKEND: llama_cpp" in compose
-    assert 'LATE_INTERACTION_SERVICE_LLAMA_CPP_MAX_CONCURRENCY: "1"' in compose
-    assert 'LATE_INTERACTION_SERVICE_MAX_DOCUMENTS: "1"' in compose
-    assert "LATE_INTERACTION_SERVICE_LLAMA_CPP_EXPECTED_MODEL_ALIAS:" in compose
-    assert "LATE_INTERACTION_SERVICE_TOKEN: ${LATE_INTERACTION_SERVICE_TOKEN:?" in compose
-    assert "LFM_LICENSE_ACKNOWLEDGED: ${LFM_LICENSE_ACKNOWLEDGED:?" in compose
-    assert "${LFM_CPU_SERVICE_BIND_ADDRESS:-127.0.0.1}" in compose
-    assert "${LFM_CPU_SERVICE_PORT:-8094}:8090" in compose
-    assert "internal: true" in compose
-    assert "name: brain_default" in compose
-    assert "requirements.lock" in dockerfile
-    assert (
-        "COPY scripts/validate_lfm_release_gate.py "
-        "./scripts/validate_lfm_release_gate.py"
-    ) in dockerfile
-    assert "!deploy/lfm-colbert-cpu/requirements.lock" in dockerignore
-    assert "io.project-brain.cutover: \"false\"" in compose
-    assert "LATE_INTERACTION_ENABLED" not in compose
-    assert "LATE_INTERACTION_SHADOW_ENABLED" not in compose
-    assert "LATE_INTERACTION_RERANK_ENABLED" not in compose
-    assert "@sha256:" in dockerfile

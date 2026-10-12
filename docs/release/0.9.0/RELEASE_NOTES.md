@@ -7,8 +7,6 @@ your own repositories and provider credentials.
 Tag: `v0.9.0`. Changes after the tag are tracked in
 [`CHANGELOG.md`](../../../CHANGELOG.md).
 
-Pull request and issue numbers below (`#NN`) refer to the pre-public private
-repository and do not resolve on GitHub.
 
 ## Highlights since 0.9.0 development
 
@@ -21,7 +19,7 @@ repository and do not resolve on GitHub.
   recorded truthfully, never as success.
 - Truthful backup/restore: real `pg_dump` + Neo4j export with per-artifact
   checksums; verification drill restores into a scratch database and reports
-  `verified`/`artifacts_validated`/`failed` honestly (live leg fixed in #95).
+  `verified`/`artifacts_validated`/`failed` honestly (live leg fixed before release).
 - Index completeness is recorded per run — discovered/indexed/unchanged/failed
   counts plus embedding coverage verification (`pgvector_coverage_pct`).
 - Job queue back-pressure: bounded queue depth → 429 + Retry-After; request
@@ -42,12 +40,12 @@ repository and do not resolve on GitHub.
 **Install & ops**
 
 - `brain doctor` preflight: python/.env/dirs/provider keys/service health with
-  actionable failures (#94).
+  actionable failures.
 - Hashed `pip-compile` locks (`--require-hashes`); wheel build + clean-install
   smoke in CI (GitHub Actions: Python 3.12, Node 22).
-- Test suite is hermetic to a configured `.env` (#96): 1508 tests, 0 failures
+- Test suite is hermetic to a configured `.env`: 1508 tests, 0 failures
   with services configured.
-- Dashboard: WCAG 2.2 AA pass (#91); admin page for principals/credentials (#92).
+- Dashboard: WCAG 2.2 AA pass; admin page for principals/credentials.
   The operator UI is now the separate Next.js app in `apps/web`.
 - Scheduling moved into the worker (`brain/workers/scheduler.py`,
   [ADR 013](../../adr/013-worker-scheduler.md)); n8n is no longer used or required.

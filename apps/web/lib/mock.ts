@@ -130,11 +130,12 @@ export const jobs: Job[] = [
 ];
 
 export const agentRuns: AgentRun[] = [
-  { id: "r-2291", agent: "claude-code", task: "Fix lease renewal in worker queue", status: "completed", tokens: 41230, packHit: true, startedAt: "13:41", duration: "6m 02s" },
-  { id: "r-2290", agent: "codex", task: "Split dashboard shell.js per feature", status: "completed", tokens: 88410, packHit: true, startedAt: "12:58", duration: "14m 40s" },
-  { id: "r-2289", agent: "cursor", task: "Add audit CSV export endpoint", status: "failed", tokens: 23004, packHit: false, startedAt: "12:31", duration: "3m 11s" },
-  { id: "r-2288", agent: "claude-code", task: "Explain drift in brain/graph", status: "completed", tokens: 12880, packHit: true, startedAt: "11:07", duration: "1m 48s" },
-  { id: "r-2287", agent: "devin", task: "Pin Flask corpus for eval", status: "running", tokens: 30512, packHit: true, startedAt: "10:55", duration: "—" },
+  { id: "r-2291", agent: "claude-code", task: "Fix lease renewal in worker queue", status: "completed", tokens: 41230, packHit: true, startedAt: "13:41", duration: "6m 02s", repo: "billing-service" },
+  { id: "r-2290", agent: "codex", task: "Split invoice PDF renderer per locale", status: "completed", tokens: 88410, packHit: true, startedAt: "12:58", duration: "14m 40s", repo: "billing-service" },
+  { id: "r-2289", agent: "cursor", task: "Add audit CSV export endpoint", status: "failed", tokens: 23004, packHit: false, startedAt: "12:31", duration: "3m 11s", repo: "billing-service" },
+  { id: "r-2288", agent: "claude-code", task: "Explain drift in sync engine", status: "completed", tokens: 12880, packHit: true, startedAt: "11:07", duration: "1m 48s", repo: "mobile-app" },
+  { id: "r-2287", agent: "devin", task: "Offline queue replay ordering", status: "running", tokens: 30512, packHit: true, startedAt: "10:55", duration: "—", repo: "mobile-app" },
+  { id: "r-2286", agent: "codex", task: "Versioned docs layout for v2", status: "timed_out", tokens: 61104, packHit: true, startedAt: "09:44", duration: "1h 00m", repo: "docs-site" },
 ];
 
 export const events: LedgerEvent[] = [
@@ -162,13 +163,23 @@ export const indexRuns: IndexRun[] = [
 ];
 
 export const contextPacks: ContextPack[] = [
-  { id: "pk-7f2a", task: "Fix lease renewal in worker queue", budget: "medium", tokens: 6120, files: 9, createdAt: "13:58", stale: true, consumer: "claude-code" },
-  { id: "pk-7f1c", task: "Split dashboard shell.js per feature", budget: "large", tokens: 14880, files: 21, createdAt: "12:57", stale: true, consumer: "codex" },
-  { id: "pk-7e90", task: "Explain drift in brain/graph", budget: "small", tokens: 2410, files: 4, createdAt: "11:06", stale: false, consumer: "claude-code" },
-  { id: "pk-7e41", task: "Pin Flask corpus for eval", budget: "medium", tokens: 7330, files: 11, createdAt: "10:54", stale: false, consumer: "devin" },
-  { id: "pk-7d02", task: "Principal and credential lifecycle endpoints", budget: "large", tokens: 15990, files: 26, createdAt: "Oct 1", stale: false, consumer: "codex" },
-  { id: "pk-7c77", task: "Backup restore drill via psql", budget: "small", tokens: 3102, files: 5, createdAt: "Oct 1", stale: false, consumer: "claude-code" },
+  { id: "1042", task: "Fix lease renewal in worker queue", budget: "medium", tokens: 6120, files: 9, createdAt: "13:58", stale: true, consumer: "claude-code", repo: "billing-service" },
+  { id: "1041", task: "Split invoice PDF renderer per locale", budget: "large", tokens: 14880, files: 21, createdAt: "12:57", stale: true, consumer: "codex", repo: "billing-service" },
+  { id: "1038", task: "Explain drift in sync engine", budget: "small", tokens: 2410, files: 4, createdAt: "11:06", stale: false, consumer: "claude-code", repo: "mobile-app" },
+  { id: "1037", task: "Offline queue replay ordering", budget: "medium", tokens: 7330, files: 11, createdAt: "10:54", stale: false, consumer: "devin", repo: "mobile-app" },
+  { id: "1031", task: "Versioned docs layout for v2", budget: "large", tokens: 15990, files: 26, createdAt: "Oct 1", stale: false, consumer: "codex", repo: "docs-site" },
+  { id: "1029", task: "Retry policy capped at three attempts", budget: "small", tokens: 3102, files: 5, createdAt: "Oct 1", stale: false, consumer: "claude-code", repo: "billing-service" },
 ];
+
+// Demo pack bodies, keyed by pack id above.
+export const packContents: Record<string, string> = {
+  "1042": `# Context pack — Fix lease renewal in worker queue\n\nDemo pack. Built for billing-service @ 9f949e9.\n\n## Files (9)\n\n- billing/workers/lease.py — lease token acquire/release\n- billing/workers/queue.py — job claim loop\n- billing/db/jobs.py — commit fencing\n- tests/test_lease.py — fencing regression tests\n- billing/payments/retry.py — uses the renewed lease\n- docs/runbooks/worker-ops.md — restart order\n- billing/config.py — lease TTL settings\n- migrations/0041_job_leases.sql — lease table\n- billing/workers/__init__.py — exports\n\n## Decisions carried\n\n- D-38 Invoice numbering moves to a DB sequence\n- D-41 Stripe webhooks handled out of the request path\n\n## Rules delivered\n\n- R-014 Payments code never touches the ORM session directly (block)\n- R-021 Every migration ships a matching down-revision (warn)\n\nBudget: medium · 6,120 tokens.`,
+  "1041": `# Context pack — Split invoice PDF renderer per locale\n\nDemo pack. Built for billing-service @ 9f949e9.\n\n## Files (21)\n\nRenderer, locale tables, templates and tests for invoice PDFs.\n\n## Rules delivered\n\n- R-021 Every migration ships a matching down-revision (warn)\n\nBudget: large · 14,880 tokens.`,
+  "1038": `# Context pack — Explain drift in sync engine\n\nDemo pack. Built for mobile-app @ bec759d.\n\n## Files (4)\n\n- mobile/sync/engine.kt\n- mobile/sync/conflict.kt\n- mobile/sync/queue.kt\n- docs/sync.md\n\nBudget: small · 2,410 tokens.`,
+  "1037": `# Context pack — Offline queue replay ordering\n\nDemo pack. Built for mobile-app @ bec759d.\n\n## Files (11)\n\nOffline mutation queue, replay scheduler, conflict resolver and their tests.\n\n## Decisions carried\n\n- D-27 Offline queue replays mutations in order\n\nBudget: medium · 7,330 tokens.`,
+  "1031": `# Context pack — Versioned docs layout for v2\n\nDemo pack. Built for docs-site @ b113aca.\n\n## Files (26)\n\nContent tree, locale overlays, nav builder and link checker.\n\n## Decisions carried\n\n- D-12 Docs versioning drops locale branches\n\nBudget: large · 15,990 tokens.`,
+  "1029": `# Context pack — Retry policy capped at three attempts\n\nDemo pack. Built for billing-service @ 9f949e9.\n\n## Files (5)\n\n- billing/payments/retry.py\n- billing/payments/gateway.py\n- tests/test_retry.py\n- billing/config.py\n- docs/payments.md\n\n## Decisions carried\n\n- D-35 Retry policy capped at three attempts\n\nBudget: small · 3,102 tokens.`,
+};
 
 export const decisions: Decision[] = [
   { id: "D-41", title: "Stripe webhooks handled out of the request path", status: "accepted", scope: "billing-service", recordedAt: "Oct 2", summary: "Webhook events land in a queue and a worker applies them. A slow Stripe retry can no longer stall checkout requests.", repo: "billing-service" },
@@ -187,10 +198,11 @@ export const rules: Rule[] = [
 ];
 
 export const insights: Insight[] = [
-  { id: "in-71", tone: "bad", kind: "drift", title: "brain/insights imports apps.api.helpers in a new place", evidence: "proactive.py:212 — 5th lazy import, rule R-014 allows 4", module: "brain/insights", detectedAt: "13:21" },
-  { id: "in-70", tone: "warn", kind: "coupling", title: "workers ↔ database co-change rose to 0.71", evidence: "17 of 24 commits touching workers/tasks.py also touched database/", module: "brain/workers", detectedAt: "11:40" },
-  { id: "in-69", tone: "warn", kind: "hotspot", title: "routers/dashboard.py is the top churn file this month", evidence: "38 commits, 2,140 lines changed, 3 authors", module: "apps/api/routers", detectedAt: "Oct 1" },
-  { id: "in-68", tone: "info", kind: "freshness", title: "4 context packs reference files changed since build", evidence: "pk-7f2a, pk-7f1c, pk-7b10, pk-7a44", module: "brain/context", detectedAt: "Oct 1" },
+  { id: "in-71", tone: "bad", kind: "drift", title: "payments/retry.py bypasses the ORM session rule in a new place", evidence: "retry.py:88 — direct session.commit(), rule R-014 forbids it", module: "billing-service/payments", detectedAt: "13:21" },
+  { id: "in-70", tone: "warn", kind: "coupling", title: "sync engine ↔ conflict resolver co-change rose to 0.71", evidence: "17 of 24 commits touching sync/engine.kt also touched sync/conflict.kt", module: "mobile-app/sync", detectedAt: "11:40" },
+  { id: "in-69", tone: "warn", kind: "hotspot", title: "gateway.py is the top churn file this month", evidence: "38 commits, 2,140 lines changed, 3 authors", module: "billing-service/payments", detectedAt: "Oct 1" },
+  { id: "in-67", tone: "warn", kind: "other", title: "Open PR touches payments and migrations in one diff", evidence: "PR #214 changes retry.py and adds migration 0042 — review flagged it as risky", module: "billing-service", detectedAt: "Oct 1" },
+  { id: "in-68", tone: "info", kind: "freshness", title: "4 context packs reference files changed since build", evidence: "pk-1042, pk-1041, pk-1030, pk-1028", module: "billing-service", detectedAt: "Oct 1" },
 ];
 
 export const moduleEdges: ModuleEdge[] = [
@@ -205,22 +217,36 @@ export const moduleEdges: ModuleEdge[] = [
   { from: "brain/graph", to: "brain/database", weight: 9, violation: false },
 ];
 
+// The same 13 tools apps/mcp_server/server.py registers. Names match one to
+// one so the demo screen reads like the real server.
 export const mcpTools: McpTool[] = [
-  { name: "brain.search", surface: "remote", calls24h: 4812, p95ms: 184, errorRate: 0.002, status: "ok" },
-  { name: "brain.prepare_task_context", surface: "remote", calls24h: 611, p95ms: 2310, errorRate: 0.011, status: "ok" },
-  { name: "brain.impact_analysis", surface: "remote", calls24h: 204, p95ms: 3920, errorRate: 0.034, status: "warn" },
-  { name: "brain.record_decision", surface: "remote", calls24h: 38, p95ms: 96, errorRate: 0, status: "ok" },
-  { name: "brain.review_diff", surface: "local", calls24h: 73, p95ms: 5140, errorRate: 0.081, status: "bad" },
-  { name: "brain.find_related_files", surface: "local", calls24h: 902, p95ms: 142, errorRate: 0.001, status: "ok" },
+  { name: "search_code", surface: "remote", calls24h: 4812, p95ms: 184, errorRate: 0.002, status: "ok" },
+  { name: "ask_project", surface: "remote", calls24h: 2140, p95ms: 4120, errorRate: 0.008, status: "ok" },
+  { name: "find_related_files", surface: "local", calls24h: 902, p95ms: 142, errorRate: 0.001, status: "ok" },
+  { name: "prepare_task_context", surface: "remote", calls24h: 611, p95ms: 2310, errorRate: 0.011, status: "ok" },
+  { name: "prepare_deep_context", surface: "remote", calls24h: 148, p95ms: 6840, errorRate: 0.020, status: "warn" },
+  { name: "impact_analysis", surface: "remote", calls24h: 204, p95ms: 3920, errorRate: 0.034, status: "warn" },
+  { name: "review_diff", surface: "local", calls24h: 73, p95ms: 5140, errorRate: 0.081, status: "bad" },
+  { name: "record_decision", surface: "remote", calls24h: 38, p95ms: 96, errorRate: 0, status: "ok" },
+  { name: "record_rule", surface: "remote", calls24h: 12, p95ms: 88, errorRate: 0, status: "ok" },
+  { name: "record_task_lesson", surface: "remote", calls24h: 61, p95ms: 112, errorRate: 0, status: "ok" },
+  { name: "record_task_observation", surface: "remote", calls24h: 55, p95ms: 104, errorRate: 0, status: "ok" },
+  { name: "record_procedure_outcome", surface: "remote", calls24h: 9, p95ms: 130, errorRate: 0, status: "ok" },
+  { name: "get_background_job", surface: "remote", calls24h: 264, p95ms: 74, errorRate: 0.004, status: "ok" },
 ];
 
 export const reports: Report[] = [
-  { id: "rp-88", title: "Golden task eval · 45/48", kind: "eval", createdAt: "Oct 2 · 13:20", size: "212 KB" },
-  { id: "rp-87", title: "Token economy A/B · 50-task corpus", kind: "benchmark", createdAt: "Sep 30", size: "1.4 MB" },
-  { id: "rp-86", title: "Nightly maintenance", kind: "maintenance", createdAt: "Oct 2 · 03:00", size: "18 KB" },
-  { id: "rp-85", title: "Restore drill", kind: "backup", createdAt: "Oct 2 · 11:02", size: "9 KB" },
-  { id: "rp-84", title: "Architecture drift · master vs HEAD", kind: "drift", createdAt: "Oct 1", size: "64 KB" },
+  { id: "golden-task-eval-2026-10-02.md", title: "Golden task eval · 45/48", kind: "eval", createdAt: "Oct 2 · 13:20", size: "212 KB" },
+  { id: "search-benchmark-2026-10-02.md", title: "Search benchmark · hit@5 87.4%", kind: "benchmark", createdAt: "Oct 2 · 03:00", size: "96 KB" },
+  { id: "restore-drill-2026-10-02.md", title: "Restore drill", kind: "backup", createdAt: "Oct 2 · 11:02", size: "9 KB" },
 ];
+
+// Demo report bodies, keyed by the report id above.
+export const reportContents: Record<string, string> = {
+  "golden-task-eval-2026-10-02.md": `# Golden task eval — 45/48\n\nDemo report. A fixed set of 48 real tasks with known right answers, re-run after each change.\n\n## Result\n\n- Passed: **45 of 48**\n- Regressed since last run: **3**\n\n## Regressions\n\n| Task | Expected | Got |\n|---|---|---|\n| Move retry policy into workers | brain/workers/tasks.py | brain/jobs (old layout) |\n| Where are rules enforced? | brain/memory/rule_store.py | apps/api/routers/web.py |\n| OAuth consent page | apps/api/mcp_oauth.py | missed |\n\nRun again after the index on commit \`5cb365c\` finishes.`,
+  "search-benchmark-2026-10-02.md": `# Search benchmark — hit@5 87.4%\n\nDemo report. 96 questions with known right answers against the indexed projects.\n\n| Metric | Value |\n|---|---|\n| Right file first | 61.5% |\n| Right file in top 3 | 78.1% |\n| Right file in top 5 | 87.4% |\n| MRR | 0.704 |\n\nMeasured on build \`d57f014\`, corpus sha \`9f2c…e811\`.`,
+  "restore-drill-2026-10-02.md": `# Restore drill\n\nDemo report. Nightly backup restored into a scratch database and verified.\n\n- Chunks restored and verified: **43,080**\n- Time to restore: **4m 12s**\n- Integrity check: **passed**\n\nNo action needed.`,
+};
 
 export const principals: Principal[] = [
   { id: "p-1", name: "admin", kind: "human", scopes: ["*"], lastSeen: "now", credentials: 1 },

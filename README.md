@@ -100,8 +100,9 @@ it Brain uses its own source as a sample. Then:
 
 The worker runs indexing and every other background job. Without it, jobs stay
 queued; the dashboard says so and shows how to start it.
-The step-by-step guide with measured timings and troubleshooting is
-[`docs/release/0.9.0/INSTALL.md`](docs/release/0.9.0/INSTALL.md).
+From clone to first agent answer through MCP: **~2 min** on a clean Ubuntu
+box (mock providers, measured 2026-10-12 — log in
+[`docs/release/0.9.0/INSTALL.md`](docs/release/0.9.0/INSTALL.md)).
 
 **Windows:** `scripts/bootstrap.sh` is POSIX-only. Run it inside WSL2, or use
 the manual steps below. Native Windows is not tested in CI.
@@ -124,7 +125,7 @@ the manual steps below. Native Windows is not tested in CI.
 * Python 3.12 — the only version CI tests (`pyproject.toml` declares
   `>=3.10`, but 3.10 and 3.11 are untested)
 * Docker with Docker Compose 2.24.0 or later (optional `.env` support)
-* ~2 GB free RAM for the services
+* ~2 GB free RAM and ~2.5 GB free disk (service images ~1.2 GB + venv ~1 GB)
 * Optional: Node.js 22 for the web UI (the version CI tests);
   `postgresql-client` (pg15) only for `scripts/backup_runner.py` backups
 

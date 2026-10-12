@@ -118,9 +118,9 @@ production flag and cannot be used as release evidence.
 `late_interaction_runtime_parity.py` compares PyLate BF16 and remote/GGUF
 rankings using top-k overlap, Spearman, Kendall and NDCG delta. Precomputed-file
 mode has no heavy dependencies. PyLate and torch are imported only when
-`--pylate-model` is explicitly requested; see
-`docs/runbooks/lfm-colbert-cutover.md` for the GPU and deterministic replay
-commands. `runtime_parity_corpus.schema.json` defines its fixed query/document
+`--pylate-model` is explicitly requested; run
+`python eval/late_interaction_runtime_parity.py --help` for runtime and replay
+options. `runtime_parity_corpus.schema.json` defines its fixed query/document
 corpus.
 
 ## Files

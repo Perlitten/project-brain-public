@@ -88,7 +88,7 @@ FROZEN_TASKS = [
     {
         "id": "task_05_historical_decisions",
         "category": "historical_decisions",
-        "question": "What is the recorded architectural decision for SQLite locking in n8n integration?",
+        "question": "What is the recorded architectural decision for scheduled maintenance jobs?",
         "expected_files": ["brain/memory/decision_store.py", "brain/database/models.py"],
         "expected_symbols": ["DecisionStore", "list_decisions"],
         "required_evidence": ["DecisionStore", "active"],

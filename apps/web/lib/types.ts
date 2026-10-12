@@ -76,6 +76,8 @@ export interface AgentRun {
   packHit?: boolean;
   startedAt: string;
   duration: string;
+  /** Demo data only: repository slug this task ran on. */
+  repo?: string;
 }
 
 export interface LedgerEvent {
@@ -110,6 +112,8 @@ export interface ContextPack {
   /** null: Brain can't tell (the pack doesn't record which commit it was built from). */
   stale: boolean | null;
   consumer: string;
+  /** Demo data only: repository slug this pack was built for. */
+  repo?: string;
 }
 
 export interface Decision {

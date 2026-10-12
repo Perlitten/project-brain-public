@@ -288,7 +288,7 @@ class Settings(BaseSettings):
     RETRIEVAL_TIMEOUT_LEXICAL_S: float = 5.0
     # Optional ColBERT late-interaction channel.  Every gate is false/zero by
     # default: the NVIDIA dense path remains authoritative until a measured
-    # canary satisfies the cutover gates in docs/runbooks/lfm-colbert-cutover.md.
+    # paired evaluation demonstrates retrieval quality and runtime parity.
     LATE_INTERACTION_ENABLED: bool = False
     LATE_INTERACTION_DUAL_WRITE_ENABLED: bool = False
     LATE_INTERACTION_SHADOW_ENABLED: bool = False
@@ -441,7 +441,7 @@ class Settings(BaseSettings):
     # Post-merge reindex webhook (POST /webhooks/git-merge, called by GitHub Actions).
     PROJECT_BRAIN_WEBHOOK_TOKEN: Optional[str] = None
     # Only merges onto this ref enqueue a reindex. Default matches the branch
-    # project-brain-reindex.yml triggers on; the workflow posts $GITHUB_REF, so
+    # the reindex-on-push example triggers on; it posts $GITHUB_REF, so
     # changing the trigger branch alone is enough unless the workflow is
     # pinned to a different ref.
     PROJECT_BRAIN_WEBHOOK_REF: str = "refs/heads/main"

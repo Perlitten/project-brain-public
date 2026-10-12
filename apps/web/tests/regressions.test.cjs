@@ -91,6 +91,55 @@ test('dashboard request scope fails closed and distinguishes unavailable measure
   assert.equal(dashboard.dashboardPeriod('unsupported'), '7d');
 });
 
+test('demo dashboard intervals are valid, cover the selected period, and reconcile to totals', async () => {
+  const dashboard = load('lib/dashboard.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: false, brainFetch: async () => { throw new Error('demo must not call the API'); } },
+  });
+  const expectedLengths = { '24h': 8, '7d': 7, '30d': 30 };
+  for (const period of Object.keys(expectedLengths)) {
+    const telemetry = await dashboard.getRequestTelemetry(period);
+    assert.equal(telemetry.buckets.length, expectedLengths[period]);
+    const times = telemetry.buckets.map(bucket => {
+      assert.match(bucket.at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      const time = Date.parse(bucket.at);
+      assert.ok(Number.isFinite(time));
+      assert.ok(time <= Date.parse(telemetry.observed_at));
+      return time;
+    });
+    const expectedStep = period === '24h' ? 3 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    assert.ok(times.every((time, i) => i === 0 || time - times[i - 1] === expectedStep));
+    assert.equal(telemetry.buckets.reduce((sum, bucket) => sum + bucket.total, 0), telemetry.total);
+    assert.equal(telemetry.buckets.reduce((sum, bucket) => sum + bucket.failed, 0), telemetry.failed);
+  }
+});
+
+test('demo repository telemetry and agents stay scoped, and unknown repositories fail closed', async () => {
+  const dashboard = load('lib/dashboard.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: false, brainFetch: async () => { throw new Error('demo must not call the API'); } },
+  });
+  const globalTelemetry = await dashboard.getRequestTelemetry('7d');
+  const scopedTelemetry = await dashboard.getRequestTelemetry('7d', 3);
+  assert.equal(scopedTelemetry.total, 3300);
+  assert.notEqual(scopedTelemetry.total, globalTelemetry.total);
+  assert.ok(scopedTelemetry.recent_requests.length > 0);
+  assert.ok(scopedTelemetry.recent_requests.every(request => request.repository_id === 3));
+
+  const scopedAgents = await dashboard.getAgentValue('7d', 3);
+  assert.equal(scopedAgents.packs, null);
+  assert.equal(scopedAgents.rules, null);
+  assert.equal(scopedAgents.agents.map(agent => agent.agent).join(','), 'codex');
+  assert.equal(scopedAgents.agents[0].requests, scopedTelemetry.total);
+  assert.equal(scopedAgents.agents[0].failures, scopedTelemetry.failed);
+  assert.notEqual(scopedAgents.agents[0].requests, (await dashboard.getAgentValue('7d')).agents[0].requests);
+
+  for (const id of [0, -1, 5, 1.5, NaN]) {
+    assert.equal(await dashboard.getRequestTelemetry('7d', id), null);
+    assert.equal(await dashboard.getAgentValue('7d', id), null);
+  }
+});
+
 test('agent value reports absence as absence rather than as a zero score', async () => {
   const calls = [];
   let answer;
