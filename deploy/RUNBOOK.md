@@ -148,8 +148,8 @@ one message, not a stream.
 
 | Signal | Source | Severity | First response |
 |---|---|---|---|
-| `/ready` returns `not_ready` or no answer | `deploy/brain_watchdog.sh` → Telegram | high | Read `checks` in the payload — it names the failing dependency (below). `curl $API/ready` then check `docker compose ps` + `logs` for that service. |
-| Repository freshness `stale`/`source_missing`/`behind` | `deploy/brain_watchdog.sh` → Telegram | medium | `/app` or `.` reporting `unverifiable` is the app indexing itself — expected on first boot. Otherwise re-index: `POST /jobs/reindex` for the listed repo. |
+| `/ready` returns `not_ready` or no answer | `brain/alerts/telegram.py` → Telegram | high | Read `checks` in the payload — it names the failing dependency (below). `curl $API/ready` then check `docker compose ps` + `logs` for that service. |
+| Repository freshness `stale`/`source_missing`/`behind` | `brain/alerts/telegram.py` → Telegram | medium | `/app` or `.` reporting `unverifiable` is the app indexing itself — expected on first boot. Otherwise re-index: `POST /jobs/reindex` for the listed repo. |
 | Maintenance / deep-context / self-diagnosis insights | `brain/alerts/telegram.py` (`deliver_maintenance_alert`, `deliver_deep_context_alert`, `deliver_diagnosis_alert`) | low-medium | Insights are informational digests of failed checks found during scheduled jobs. Open the linked report; treat repeated identical fingerprints as an unresolved incident. |
 | Scheduled job overdue (`/health` → `degraded`, `scheduler.stale`) | `brain/workers/scheduler.py` via `/health`; optional `DEADMAN_URL_*` pings | medium | Is a worker running with `SCHEDULER_ENABLED=true`? Read worker logs for `Scheduler fired`; run it now from Settings → Scheduler or `POST /jobs/*`. Final failures enqueue `self_diagnosis` (`trigger.source=job_failure`). |
 
@@ -163,7 +163,7 @@ one message, not a stream.
 | `llm_provider` | production on nvidia provider without `NVIDIA_API_KEY` | configure the provider key or switch `DEFAULT_LLM_PROVIDER` |
 | `worker_heartbeat` | no worker heartbeat within TTL | `docker compose logs worker`; worker crashed or Redis unreachable |
 | `worker_capacity` | pools alive but all queues non-empty with `available_capacity: 0` | worker saturated or deadlocked — restart worker, inspect oldest job via `/jobs` |
-| `late_interaction_release` | remote ColBERT sidecar not `ready` | `docker compose logs lfm-colbert`; retrieval continues on baseline (fail-open) |
+| `late_interaction_release` | remote ColBERT sidecar not `ready` | `docker compose logs` on the reranker service; retrieval continues on baseline (fail-open) |
 
 ### Autonomic incidents
 
@@ -275,7 +275,7 @@ release commit; an older READY deployment is insufficient.
 ## Scheduler
 
 Recurring jobs are fired by the worker itself (`brain/workers/scheduler.py`,
-[ADR 013](../docs/adr/013-worker-scheduler.md)); there is no n8n and no watchdog.
+[ADR 013](../docs/adr/013-worker-scheduler.md)); the worker scheduler covers all jobs.
 
 | Job | Cron (UTC) | Pool |
 |---|---|---|

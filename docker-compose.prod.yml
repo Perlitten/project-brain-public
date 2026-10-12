@@ -6,7 +6,7 @@
 #   - API binds to 127.0.0.1:${BRAIN_API_PORT} only; nginx terminates TLS in front.
 #   - all secrets come from .env (no hardcoded passwords).
 #   - per-service memory limits so brain is a good neighbour on the shared host.
-#   - scheduling runs inside the worker (brain/workers/scheduler.py); no n8n.
+#   - scheduling runs inside the worker (brain/workers/scheduler.py).
 #
 # Usage:  bash deploy/server_up.sh
 name: brain

@@ -47,36 +47,6 @@ ROOT = Path(__file__).resolve().parents[1]
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-
-def test_gpu_deployment_is_pinned_private_and_default_off():
-    dockerfile = (ROOT / "deploy" / "lfm-colbert-gpu" / "Dockerfile").read_text(encoding="utf-8")
-    compose = (ROOT / "deploy" / "lfm-colbert-gpu" / "docker-compose.yml").read_text(encoding="utf-8")
-    env_example = (ROOT / "deploy" / "lfm-colbert-gpu" / ".env.example").read_text(encoding="utf-8")
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-
-    assert (
-        "pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime"
-        "@sha256:417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385" in dockerfile
-    )
-    assert "pylate==1.6.0" in pyproject
-    assert '".[late-interaction-gpu]"' in dockerfile
-    assert "pylate-1.6.0" in compose
-
-    runtime_pin = re.search(r"pylate==([0-9]+\.[0-9]+\.[0-9]+)", pyproject)
-    image_tag = re.search(r"LFM_GPU_IMAGE_TAG:-pylate-([0-9]+\.[0-9]+\.[0-9]+)", compose)
-    env_tag = re.search(r"LFM_GPU_IMAGE_TAG=pylate-([0-9]+\.[0-9]+\.[0-9]+)", env_example)
-    assert runtime_pin is not None
-    assert image_tag is not None
-    assert env_tag is not None
-    assert runtime_pin.group(1) == image_tag.group(1)
-    assert runtime_pin.group(1) == env_tag.group(1)
-    assert "${LFM_SERVICE_BIND_ADDRESS:-127.0.0.1}" in compose
-    assert "LATE_INTERACTION_SERVICE_TOKEN: ${LATE_INTERACTION_SERVICE_TOKEN:?" in compose
-    assert "LFM_LICENSE_ACKNOWLEDGED: ${LFM_LICENSE_ACKNOWLEDGED:?" in compose
-    assert "gpus: all" in compose
-    assert 'io.project-brain.cutover: "false"' in compose
-
-
 class FakeEncoder:
     model_revision = MODEL_REVISION
     dimension = 2

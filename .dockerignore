@@ -24,8 +24,6 @@
 !scripts/validate_lfm_release_gate.py
 !deploy/
 !deploy/server_up.sh
-!deploy/lfm-colbert-cpu/
-!deploy/lfm-colbert-cpu/requirements.lock
 **/__pycache__/
 **/__pycache__/**
 **/*.py[cod]
