@@ -1,4 +1,4 @@
-# Owner dashboard and measurement contract
+# Operator dashboard and measurement contract
 
 The daily navigation is Dashboard, Projects, Memory, Quality, Activity and Settings.
 Existing routes remain valid. Project tools are secondary navigation; global reports,

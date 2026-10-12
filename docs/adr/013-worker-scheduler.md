@@ -2,20 +2,20 @@
 
 ## Status
 
-Accepted — 2026-10-06. Supersedes [ADR 009](009-n8n-orchestration-layer.md).
+Accepted — 2026-10-06. Supersedes [ADR 009](009-external-orchestration-layer.md).
 
 ## Context
 
-n8n only did cron → `POST /jobs/*` → poll, plus an error workflow that queued
+The external orchestrator only did cron → `POST /jobs/*` → poll, plus an error workflow that queued
 `self_diagnosis` and a webhook that turned a GitHub push into a reindex. All logic
-already lived in the worker. n8n still needed its own container, volume,
+already lived in the worker. it still needed its own container, volume,
 encryption key, nginx vhost, Basic Auth and a systemd watchdog to stay alive,
-and a dead n8n silently stopped every schedule.
+and a dead orchestrator silently stopped every schedule.
 
 ## Decision
 
 - `brain/workers/scheduler.py` runs inside every worker process. Schedules are
-  code (same UTC cron times as the n8n exports); each tick enqueues due slots via
+  code (same UTC cron times as the orchestrator exports); each tick enqueues due slots via
   `queue_for_job`, so jobs land in their pool.
 - Exactly once per slot: Redis `SET NX` on `{prefix}:scheduler:slot:{job}:{slot}`.
   A missed slot fires once if within `SCHEDULER_CATCHUP_WINDOW_S`.
@@ -42,5 +42,5 @@ manual `POST /jobs/*`.
 - One less service, volume, vhost and watchdog; schedules ship and roll back with
   the code.
 - Schedules can no longer be edited without a deploy (by design for now).
-- With no worker running nothing fires — the same failure the n8n watchdog
+- With no worker running nothing fires — the same failure the external watchdog
   covered, now visible as `/health` → `degraded` and via dead-man pings.

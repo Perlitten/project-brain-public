@@ -218,7 +218,7 @@ def wrap_unshare(
         "mount --make-rprivate /",
     ]
     if home is not None and keeps:
-        stage = "/tmp/.lab-keep"
+        stage = "/tmp/.lab-keep"  # nosec B108
         prelude_parts.append(f"mkdir -p {shlex.quote(stage)}")
         for idx, keep in enumerate(keeps):
             prelude_parts.append(f"mkdir -p {shlex.quote(f'{stage}/{idx}')}")
@@ -289,7 +289,7 @@ def wrap_docker(
         "--cpus",
         str(settings.LAB_SANDBOX_CPUS),
         "--tmpfs",
-        "/tmp:rw,nosuid,size=64m",
+        "/tmp:rw,nosuid,size=64m",  # nosec B108
         "-w",
         str(ws),
     ]

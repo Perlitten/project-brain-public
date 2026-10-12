@@ -1,4 +1,4 @@
-"""Read-only scheduler state and the post-merge reindex webhook (replaces n8n)."""
+"""Read-only scheduler state and the post-merge reindex webhook (replaces the retired external orchestrator)."""
 
 from __future__ import annotations
 

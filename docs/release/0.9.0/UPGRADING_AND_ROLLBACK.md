@@ -11,7 +11,7 @@ re-apply must be a no-op and exits 1 otherwise.
 
 The example uses the default Compose service credentials. Replace connection
 values with your configured credentials. Backups contain two artifacts,
-`postgres` and `neo4j`; n8n is no longer part of the stack, so there is no n8n
+`postgres` and `neo4j`; an external orchestrator is no longer part of the stack, so there is no orchestrator
 artifact and `--allow-missing` only accepts `postgres` or `neo4j`. The backup
 script reads process environment variables; it does not load `.env`. It needs
 `pg_dump` on PATH, and the live restore leg of the drill needs `psql`

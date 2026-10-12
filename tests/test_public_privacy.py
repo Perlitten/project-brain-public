@@ -56,47 +56,83 @@ def test_personal_email_footer_fails_without_echoing_address(tmp_path):
     assert address not in str(report)
 
 
-"""Tracked-content scan: banned strings must not come back.
+"""Tracked-content scan: banned phrases must not come back.
 
-The launch scrub removed the owner's infrastructure and project names from the
-public tree. This test keeps it that way — any reintroduction fails the gate.
+The denylist is stored as SHA-256 digests of normalized (lowercase,
+alnum-tokenized) phrases — the private names themselves never appear in the
+repo, not even as "banned" literals. Scanner tokenizes each file the same way
+and hashes word 1..3-grams, so separators (``-``, ``_``, ``/``, ``.``) cannot
+dodge it. Extra phrases can be injected via the ``PRIVACY_DENYLIST`` env var
+(a path to a file with one phrase per line, or a comma/newline-separated
+inline list) so CI can extend the list from a secret without committing it.
 """
 
+import hashlib
 import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# name -> pattern (case-insensitive where it is a project/person name)
-BANNED_PATTERNS: dict[str, str] = {
-    "private_repo_brain": r"Perlitten/Brain\b",
-    "old_repo_name": r"project-brain-public",
-    "owner_host_paths": r"/home/(hatch|ubuntu)\b",
-    "owner_project_nostia": r"nostia",
-    "owner_project_mycelium": r"MYCELIUM",
-    "owner_project_forex": r"forex-bot",
-    "owner_project_bpmn": r"bpmn-builder",
-    "owner_watchdog": r"brain_watchdog",
-    "owner_lfm_sidecars": r"deploy/lfm-colbert",
-    "owner_dashboard_doc": r"OWNER_DASHBOARD",
-}
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_MAX_GRAM = 3
 
-# Files allowed to carry a banned string by design (never an owner leak).
-ALLOWLIST: dict[str, tuple[str, ...]] = {
-    # The gate's own definitions and this test's pattern list.
-    "owner_project_nostia": ("tests/test_public_privacy.py",),
-    "owner_project_mycelium": ("tests/test_public_privacy.py",),
-    "owner_project_forex": ("tests/test_public_privacy.py",),
-    "owner_project_bpmn": ("tests/test_public_privacy.py",),
-    "private_repo_brain": ("tests/test_public_privacy.py",),
-    "old_repo_name": ("tests/test_public_privacy.py", ".github/workflows/ci.yml", "THIRD_PARTY_NOTICES.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "README.md"),
-    "owner_host_paths": ("tests/test_public_privacy.py", "eval/harness_benchmark/tasks/memory_004_many_learnings.json"),
-    "owner_watchdog": ("tests/test_public_privacy.py",),
-    "owner_lfm_sidecars": ("tests/test_public_privacy.py",),
-    "owner_dashboard_doc": ("tests/test_public_privacy.py",),
-}
+# sha256 digests of normalized banned phrases (e.g. "foo-bar" -> "foo bar").
+# Digests only: the phrases they stand for are private by definition.
+_HASHED_DENYLIST = frozenset(
+    [
+        "f9ae6029616303ab8986bb9e032d0f4d6fe9364e1d5b98633b224de3d0c25556",
+        "5b5a0738deda6137430dfb995213df2e410b300af405a134809b0f22f33836fa",
+        "fe4b58fe2c7f3aa98f98446e7703e4ba0a53600661ebc0767cb220c9e8933b0a",
+        "156dfb7de8e57b949606c76233aa183cb06b6cd856fcd212778179e78c58dfcf",
+        "59e4a42b6dafb7f7fb6fffdb07065929fc1ecbaafc1871f0a69160d09c0e02cc",
+        "c99f9097fa6bc5aa4b12830201aa7a312d6dc8ac43930989574ce235a4797429",
+        "2bd86d1eb4193599fdf236c17f65e52ef6b47b8077f07e1ed35f8c7cc830badc",
+        "e835aab906a853fc2fc2bf37b2c599dd6cd215c314a1b5980e1b7ce2fbfccc90",
+        "738ce83102b9af780be97f1aa9a910e2977fd951a14e7651ce9984c5744bf571",
+        "40b33da52694aac15056649fea999eae410fed5628485030c93ed4e5b6ea46c7",
+        "089e0eaea163722756c931fc9ee8bf795f8f14ccfc00d519fbfa5ae8abfe72c5",
+        "636396f02b6571e40d8fe91cba550515c0cdc0e7d314c210e00b02256375a796",
+    ]
+)
 
-_COMPILED = {name: re.compile(pat, re.IGNORECASE) for name, pat in BANNED_PATTERNS.items()}
+
+def _tokens(text: str) -> list[str]:
+    return _TOKEN_RE.findall(text.lower())
+
+
+def _digest_tokens(tokens: list[str]) -> str:
+    return hashlib.sha256(" ".join(tokens).encode()).hexdigest()
+
+
+def _denylist_hashes() -> frozenset[str]:
+    hashes = set(_HASHED_DENYLIST)
+    raw = os.environ.get("PRIVACY_DENYLIST", "").strip()
+    if raw:
+        if Path(raw).is_file():
+            raw = Path(raw).read_text(encoding="utf-8")
+        for phrase in re.split(r"[\n,;]", raw):
+            phrase = phrase.strip()
+            if phrase:
+                hashes.add(_digest_tokens(_tokens(phrase)))
+    return frozenset(hashes)
+
+
+# digest -> tracked files allowed to carry it (never an owner leak there).
+_ALLOWLIST: dict[str, tuple[str, ...]] = {
+    # this repository's own name (README badges, CI, notices)
+    "089e0eaea163722756c931fc9ee8bf795f8f14ccfc00d519fbfa5ae8abfe72c5": (
+        ".github/workflows/ci.yml",
+        "THIRD_PARTY_NOTICES.md",
+        "CONTRIBUTING.md",
+        "SECURITY.md",
+        "CODE_OF_CONDUCT.md",
+        "README.md",
+    ),
+    # eval fixture that legitimately demonstrates a generic home path
+    "2bd86d1eb4193599fdf236c17f65e52ef6b47b8077f07e1ed35f8c7cc830badc": (
+        "eval/harness_benchmark/tasks/memory_004_many_learnings.json",
+    ),
+}
 
 
 def _tracked_files() -> list[str]:
@@ -107,29 +143,41 @@ def _tracked_files() -> list[str]:
     return out.stdout.split()
 
 
-def _scan_file(path: str):
+def _scan_file(path: str, denylist: frozenset[str] | None = None):
+    deny = denylist if denylist is not None else _denylist_hashes()
     try:
         text = (REPO_ROOT / path).read_text(encoding="utf-8", errors="strict")
     except (UnicodeDecodeError, OSError):
         return  # binary or unreadable — nothing text-shaped to leak
+    allowed = {h for h, files in _ALLOWLIST.items() if path in files}
     for lineno, line in enumerate(text.splitlines(), start=1):
-        for name, rx in _COMPILED.items():
-            if path in ALLOWLIST.get(name, ()):
-                continue
-            if rx.search(line):
-                yield f"{path}:{lineno}: {name}"
+        tokens = _tokens(line)
+        for n in range(1, min(_MAX_GRAM, len(tokens)) + 1):
+            for i in range(len(tokens) - n + 1):
+                d = _digest_tokens(tokens[i : i + n])
+                if d in deny and d not in allowed:
+                    yield f"{path}:{lineno}: denylist_hit_{d[:8]}"
 
 
 def test_tree_has_no_banned_patterns():
-    hits = [hit for path in _tracked_files() for hit in _scan_file(path)]
-    assert hits == [], "banned pattern found:\n" + "\n".join(hits[:20])
+    deny = _denylist_hashes()
+    hits = [hit for path in _tracked_files() for hit in _scan_file(path, deny)]
+    assert hits == [], "denylist hit:\n" + "\n".join(hits[:20])
 
 
 def test_scanner_catches_banned_text(tmp_path):
+    synthetic = "zzsynthetic banned-phrase"
+    deny = frozenset({_digest_tokens(_tokens(synthetic))})
     sample = REPO_ROOT / "tests" / "_banned_probe.tmp"
-    sample.write_text("see /home/ubuntu/repos for details", encoding="utf-8")
+    sample.write_text("see zzSynthetic BANNED phrase for details", encoding="utf-8")
     try:
-        hits = list(_scan_file(sample.relative_to(REPO_ROOT).as_posix()))
-        assert hits and "owner_host_paths" in hits[0]
+        hits = list(_scan_file(sample.relative_to(REPO_ROOT).as_posix(), deny))
+        assert hits and hits[0].startswith("tests/_banned_probe.tmp:")
     finally:
         sample.unlink(missing_ok=True)
+
+
+def test_env_denylist_extension(tmp_path, monkeypatch):
+    monkeypatch.setenv("PRIVACY_DENYLIST", "another-synthetic phrase")
+    deny = _denylist_hashes()
+    assert _digest_tokens(["another", "synthetic", "phrase"]) in deny
