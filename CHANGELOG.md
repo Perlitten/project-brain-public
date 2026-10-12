@@ -109,7 +109,7 @@ First public release of the single-user distribution. Full notes:
 ### Changed
 
 - Scheduled jobs run inside the worker
-  ([ADR 013](docs/adr/013-worker-scheduler.md)); n8n is no longer used.
+  ([ADR 013](docs/adr/013-worker-scheduler.md)); the external orchestrator is no longer used.
 - The operator UI is the separate Next.js app in `apps/web`; the legacy
   server-rendered dashboard was removed.
 - API docs (`/docs`, `/redoc`, `/openapi.json`) are disabled in production

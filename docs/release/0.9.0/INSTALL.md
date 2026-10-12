@@ -80,7 +80,7 @@ docker compose up -d postgres redis neo4j   # healthy in ~16s
 Postgres `pgvector/pgvector:pg15` on host :5433, Redis on :6379, Neo4j on
 :7474/:7687, all bound to `127.0.0.1`. No separate scheduler service is needed:
 scheduled jobs run inside the worker process (`brain/workers/scheduler.py`,
-ADR 013); n8n is no longer used.
+ADR 013); no external orchestrator is used.
 
 For the change-lab sandbox (optional): `docker pull debian:bookworm-slim`.
 Without it `LAB_SANDBOX_MODE=auto` degrades to `unshare`/`off` — safe, but

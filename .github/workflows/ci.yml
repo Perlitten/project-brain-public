@@ -117,9 +117,8 @@ jobs:
       - name: Run tests (with coverage)
         run: pytest -q --cov=brain --cov=apps --cov-report=term-missing --cov-report=xml:coverage.xml
         env:
-          # Optional extra banned phrases (repo secret) for the privacy denylist
-          # test — same semantics as the privacy-gate PR; kept identical here so
-          # the two branches' ci.yml hunks resolve to the same final text.
+          # Optional comma/newline-separated extra banned phrases (repo secret),
+          # hashed on the fly by the privacy denylist test. Empty is fine.
           PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
 
       - name: Coverage summary

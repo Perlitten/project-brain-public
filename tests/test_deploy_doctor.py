@@ -9,7 +9,7 @@ import pytest
 
 
 @pytest.mark.skipif(os.name == "nt", reason="deployment doctor runs on Linux hosts")
-def test_public_check_needs_no_n8n_host(
+def test_public_check_needs_no_orchestrator_host(
     tmp_path: Path,
 ) -> None:
     source = Path(__file__).resolve().parents[1] / "deploy" / "doctor.sh"
@@ -44,4 +44,4 @@ def test_public_check_needs_no_n8n_host(
     )
     assert result.returncode == 0, result.stderr
     assert "public API reachable" in result.stdout
-    assert "n8n" not in result.stdout.lower()
+    assert "orchestrator" not in result.stdout.lower()

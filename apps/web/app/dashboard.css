@@ -1,4 +1,4 @@
-/* Owner dashboard: status line, project memory rows, then usage and recent work. */
+/* Operator dashboard: status line, project memory rows, then usage and recent work. */
 .dashboard { display: flex; flex-direction: column; gap: var(--s-6); min-width: 0; }
 .dashboard > .callout { margin-top: calc(-1 * var(--s-2)); }
 
