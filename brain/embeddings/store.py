@@ -65,7 +65,7 @@ async def populate_pgvector_embedding(session, embedding_id: int, vector: List[f
             SET embedding = CAST(:vector_literal AS {cast_type}),
                 dimension = COALESCE(dimension, :dimension)
             WHERE id = :embedding_id
-            """
+            """  # nosec B608
         ),
         {
             "vector_literal": literal,

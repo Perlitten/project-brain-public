@@ -16,7 +16,7 @@ with (
 
 from fastapi.testclient import TestClient
 
-import apps.api.helpers as api_helpers
+import brain.dashboard.helpers as api_helpers
 import apps.api.routers.setup as api_setup
 from brain.database.models import ContextPack, IndexingRun, Repository
 from brain.onboarding import envfile, provider_check, readiness, setup_state

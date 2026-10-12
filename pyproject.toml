@@ -51,6 +51,7 @@ Security = "https://github.com/Perlitten/project-brain/blob/main/SECURITY.md"
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-cov",
     "pytest-asyncio",
     "ruff",
     "mypy",

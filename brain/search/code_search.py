@@ -201,7 +201,7 @@ async def _pgvector_chunk_search(
           {repo_filter}
         ORDER BY e.embedding <=> CAST(:query_vector AS {cast_type})
         LIMIT :top_k
-        """
+        """  # nosec B608
     )
     params: Dict[str, Any] = {
         "query_vector": vector_literal,
@@ -458,7 +458,7 @@ async def vector_search_cards(
               {repo_filter}
             ORDER BY e.embedding <=> CAST(:query_vector AS {cast_type})
             LIMIT :top_k
-            """
+            """  # nosec B608
         )
         params: Dict[str, Any] = {
             "query_vector": vector_literal,

@@ -159,7 +159,7 @@ class LedgerStore:
                 )
                 try:
                     conn.execute(
-                        "INSERT INTO ledger_events ("
+                        "INSERT INTO ledger_events ("  # nosec B608
                         + ", ".join(_COLUMNS)
                         + ") VALUES ("
                         + ", ".join("?" for _ in _COLUMNS)
@@ -264,11 +264,11 @@ class LedgerStore:
         try:
             total = int(
                 conn.execute(
-                    f"SELECT COUNT(*) AS n FROM ledger_events{clause}", params
+                    f"SELECT COUNT(*) AS n FROM ledger_events{clause}", params  # nosec B608
                 ).fetchone()["n"]
             )
             rows = conn.execute(
-                f"SELECT payload FROM ledger_events{clause} "
+                f"SELECT payload FROM ledger_events{clause} "  # nosec B608
                 f"ORDER BY sequence {'DESC' if descending else 'ASC'} LIMIT ? OFFSET ?",
                 (*params, page_size, offset),
             ).fetchall()

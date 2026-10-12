@@ -114,8 +114,21 @@ jobs:
       - name: Migration check (fresh init + idempotent re-apply)
         run: python scripts/check_migrations.py
 
-      - name: Run tests
-        run: pytest -q
+      - name: Run tests (with coverage)
+        run: pytest -q --cov=brain --cov=apps --cov-report=term-missing --cov-report=xml:coverage.xml
+
+      - name: Coverage summary
+        run: |
+          COVERAGE=$(python -c "import xml.etree.ElementTree as ET; print(round(float(ET.parse('coverage.xml').getroot().attrib['line-rate'])*100))")
+          echo "### Test coverage: ${COVERAGE}%" >> "$GITHUB_STEP_SUMMARY"
+          echo "coverage_pct=$COVERAGE" >> "$GITHUB_OUTPUT"
+        id: coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-xml
+          path: coverage.xml
 
       - name: Build wheel + clean-install smoke
         run: |

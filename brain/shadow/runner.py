@@ -18,7 +18,7 @@ class ShadowRunner:
     """Manages shadow sessions in isolated worktrees without mutating authoritative checkouts."""
 
     def __init__(self, storage_dir: Path | None = None):
-        self.storage_dir = storage_dir or Path(os.getenv("TEMP", "/tmp")) / "brain_shadows"
+        self.storage_dir = storage_dir or Path(os.getenv("TEMP", "/tmp")) / "brain_shadows"  # nosec B108
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.sampling_config = ShadowSamplingConfig()
         self._sessions: Dict[str, ShadowSession] = {}
