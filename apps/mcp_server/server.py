@@ -10,12 +10,19 @@ from uuid import uuid4
 from loguru import logger
 
 import mcp.types as _mcp_types
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 from apps.mcp_server.deferred_payload import (
     DeferredPayloadStore,
     compact_payload,
     register_payload_resource,
+)
+from apps.mcp_server.protocol import (
+    confirm_memory_write,
+    register_memory_resources,
+    register_prompts,
+    sample_answer,
+    tool_meta,
 )
 
 from brain.config.paths import get_repo_root, resolve_repo_path
@@ -50,7 +57,33 @@ _PAYLOADS = DeferredPayloadStore()
 register_payload_resource(mcp, _PAYLOADS)
 
 
-@mcp.tool()
+def _row_dict(row: object) -> dict:
+    """An ORM row as JSON-ready columns; vectors are noise to an agent and dropped."""
+    table = getattr(row, "__table__", None)
+    if table is None:
+        return {}
+    return {column.name: getattr(row, column.name) for column in table.columns if column.name != "embedding"}
+
+
+async def _active_rules() -> list[dict]:
+    # Every repository's rules, like the remote server's GET /rules: the
+    # resource has no repo argument, and a global-only view would hide most.
+    return [_row_dict(rule) for rule in await RuleStore.list_rules() if (rule.status or "").lower() == "active"]
+
+
+async def _active_decisions() -> list[dict]:
+    return [
+        _row_dict(decision)
+        for decision in await DecisionStore.list_decisions()
+        if (decision.status or "active").lower() == "active"
+    ]
+
+
+register_memory_resources(mcp, list_rules=_active_rules, list_decisions=_active_decisions)
+register_prompts(mcp)
+
+
+@mcp.tool(**tool_meta("record_task_lesson"))
 async def record_task_lesson(task_id: str, statement: str, category: str, validation_id: int,
                              artifact_ids: list[int], source_refs: list[str], idempotency_key: str) -> dict:
     """Capture task-owned reported evidence as L1; L3 still needs human approval."""
@@ -60,7 +93,7 @@ async def record_task_lesson(task_id: str, statement: str, category: str, valida
         source_refs=source_refs, idempotency_key=idempotency_key))
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("record_task_observation"))
 async def record_task_observation(task_id: str, statement: str, category: str, idempotency_key: str,
                                   outcome: Literal["learning", "failure_lesson"] = "learning") -> dict:
     """Capture an unvalidated L1 observation for a task (no validation/artifact needed).
@@ -73,7 +106,7 @@ async def record_task_observation(task_id: str, statement: str, category: str, i
         statement=statement, category=category, idempotency_key=idempotency_key, outcome=outcome))
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("record_procedure_outcome"))
 async def record_procedure_outcome(skill_id: int, task_id: str, validation_id: int,
                                     outcome: Literal["success", "failure"], artifact_ids: list[int], source_refs: list[str]) -> dict:
     """Record a reported outcome once per task/skill, never on retrieval."""
@@ -202,8 +235,8 @@ def _install_client_activity_recording() -> None:
 _install_client_activity_recording()
 
 
-@mcp.tool()
-async def ask_project(query: str, repo_path: Optional[str] = None) -> str:
+@mcp.tool(**tool_meta("ask_project"))
+async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> str:
     """Asks the project LLM assistant a question about the project code,
 
     leveraging database code searches and active rules.
@@ -259,16 +292,22 @@ async def ask_project(query: str, repo_path: Optional[str] = None) -> str:
             f"Provide a thorough, direct, and technically accurate response."
         )
 
-        llm = get_model_router().llm(TaskKind.SYNTHESIS)
-        response = await llm.generate(
-            prompt=prompt, system_instruction="You are an expert software developer working on Project Brain."
-        )
-        return response
+        system = "You are an expert software developer working on Project Brain."
+        try:
+            llm = get_model_router().llm(TaskKind.SYNTHESIS)
+            return await llm.generate(prompt=prompt, system_instruction=system)
+        except Exception as exc:
+            # Retrieval already succeeded; only the server-side model failed. A
+            # client that can sample answers from the same grounded context.
+            sampled = await sample_answer(ctx, prompt, system=system)
+            if sampled is not None:
+                return sampled
+            raise exc
     except Exception as e:
         return f"Error answering project query: {str(e)}"
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("prepare_task_context"))
 @_mcp_telemetry("context")
 async def prepare_task_context(task_description: str, repo_path: Optional[str] = None) -> dict:
     """Returns bounded runtime slices; durable packs are an explicit deep job."""
@@ -283,7 +322,7 @@ async def prepare_task_context(task_description: str, repo_path: Optional[str] =
         return {"error": f"Failed to prepare task context: {str(e)}", "status": "failed"}
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("prepare_deep_context"))
 async def prepare_deep_context(
     task_description: str,
     repo_path: Optional[str] = None,
@@ -316,7 +355,7 @@ async def prepare_deep_context(
     }
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("get_background_job"))
 async def get_background_job(job_id: str) -> dict:
     """Read the status and result of an asynchronous Brain job."""
     queues = [JobQueue(redis_client, prefix=settings.WORKER_REDIS_PREFIX)]
@@ -340,7 +379,7 @@ async def get_background_job(job_id: str) -> dict:
     return {"status": "failed", "error": "Job not found"}
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("impact_analysis"))
 async def impact_analysis(change_request: str, repo_path: Optional[str] = None) -> dict:
     """Affected components and risks for a change; long tails move to a brain:// resource."""
     try:
@@ -353,7 +392,7 @@ async def impact_analysis(change_request: str, repo_path: Optional[str] = None) 
         return {"error": f"Failed to perform impact analysis: {str(e)}", "status": "failed"}
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("record_decision"))
 async def record_decision(
     title: str,
     repo_path: Optional[str] = None,
@@ -364,8 +403,12 @@ async def record_decision(
     affected_features: Optional[List[str]] = None,
     affected_modules: Optional[List[str]] = None,
     affected_files: Optional[List[str]] = None,
+    ctx: Optional[Context] = None,
 ) -> dict:
     """Records an architectural or design decision to the database."""
+    declined = await confirm_memory_write(ctx, f"Record decision: {title}. {description or ''}".strip())
+    if declined is not None:
+        return declined
     try:
         decision_id = await DecisionStore.add_decision(
             title=title,
@@ -387,7 +430,7 @@ async def record_decision(
         return {"error": f"Failed to record decision: {str(e)}", "status": "failed"}
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("record_rule"))
 async def record_rule(
     name: str,
     repo_path: Optional[str] = None,
@@ -397,8 +440,12 @@ async def record_rule(
     status: Optional[str] = "active",
     applies_to: Optional[dict] = None,
     rule_id: Optional[str] = None,
+    ctx: Optional[Context] = None,
 ) -> dict:
     """Record a repository-scoped normative rule in the database."""
+    declined = await confirm_memory_write(ctx, f"Record {severity} rule: {name}. {description or ''}".strip())
+    if declined is not None:
+        return declined
     try:
         recorded_id = await RuleStore.add_rule(
             name=name,
@@ -419,7 +466,7 @@ async def record_rule(
         return {"error": f"Failed to record rule: {str(e)}", "status": "failed"}
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("search_code"))
 @_mcp_telemetry("search")
 async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
     """Compact paths/symbols/ranges locator; known files can be read locally."""
@@ -446,7 +493,7 @@ async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
         return {"error": f"Failed to search code: {str(e)}", "status": "failed"}
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("find_related_files"))
 async def find_related_files(file_path: str, repo_path: Optional[str] = None) -> dict:
     """Graph neighbours of a path, direct then indirect; long tails move to a brain:// resource."""
     try:
@@ -488,7 +535,7 @@ async def find_related_files(file_path: str, repo_path: Optional[str] = None) ->
         return {"error": f"Failed to find related files: {str(e)}", "status": "failed"}
 
 
-@mcp.tool()
+@mcp.tool(**tool_meta("review_diff"))
 async def review_diff(
     base: Optional[str] = None,
     head: Optional[str] = "current",

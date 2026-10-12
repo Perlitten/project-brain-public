@@ -49,6 +49,9 @@
 | Ретривал L3 в контекст/ask (гибрид pgvector + лексика) | `brain/memory/learning_retrieval.py`, `brain/context/runtime_context_builder.py` |
 | Скоуп репозитория и свежесть индекса | `brain/memory/repo_scope.py`, `repo_freshness.py`, `source_manifest.py` |
 | MCP-инструменты | `apps/mcp_server/server.py` (локальный), `remote_server.py` (удалённый), `tests/test_mcp.py` |
+| MCP-протокол сверх tools: аннотации, ресурсы `brain://rules`/`brain://decisions`, промпты, elicitation (`BRAIN_MCP_CONFIRM_WRITES`), sampling-фоллбэк `ask_project` | `apps/mcp_server/protocol.py` (не импортирует `brain/`), `tests/test_mcp_protocol.py` |
+| Нативный Streamable HTTP `/mcp` в API (in-process вызовы с ключом вызывающего, сессии привязаны к принципалу) | `apps/api/mcp_http.py`, `remote_server.py` (`use_asgi_backend`, `_request`), `tests/test_mcp_http.py` |
+| OAuth 2.1 для `/mcp` (DCR, PKCE, consent `/oauth/consent`, access = `pbk_` ключ на 1 ч, refresh `pbr_` с ротацией); включается `BRAIN_PUBLIC_URL`/`BRAIN_PUBLIC_HOST` | `apps/api/mcp_oauth.py`, `brain/auth/oauth_store.py`, `tests/test_mcp_oauth_db.py` (нужен Postgres) |
 | Размер MCP-ответа в контексте агента | `apps/mcp_server/deferred_payload.py` (голова инлайн, хвост — ресурс `brain://payload/<token>`; `BRAIN_MCP_INLINE_MAX_BYTES`), `tests/test_mcp_deferred_payload.py` |
 | Фоновые задачи | `brain/workers/tasks.py`, `queue.py`, `worker.py` |
 | Схема БД, миграции | `brain/database/models.py`, `harness_models.py`, `migrations.py` |

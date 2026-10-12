@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 
 from fastapi import FastAPI, Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from apps.api import mcp_http
 from apps.api.audit_middleware import AuditLogMiddleware
 from apps.api.request_id_middleware import RequestIdMiddleware
 from apps.api.request_size_middleware import RequestSizeLimitMiddleware
@@ -81,7 +82,9 @@ async def lifespan(app: FastAPI):
                 validated_index.repository_id,
                 validated_index.index_revision,
             )
-    yield
+    # Native MCP sessions live as long as the app does (apps/api/mcp_http.py).
+    async with _mcp_endpoint.serving() if _mcp_endpoint is not None else nullcontext():
+        yield
     if late_warmup_task is not None and not late_warmup_task.done():
         late_warmup_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -215,3 +218,12 @@ app.include_router(autonomy.router)
 app.include_router(admin.router)
 # v0.7.0 enterprise admin: audit log read/export for operator + SIEM review.
 app.include_router(audit.router)
+
+# Native MCP over Streamable HTTP at /mcp, plus OAuth when the public URL is known.
+_mcp_endpoint = (
+    mcp_http.install(
+        app, public_url=mcp_http.public_base_url(settings.BRAIN_PUBLIC_URL, settings.BRAIN_PUBLIC_HOST)
+    )
+    if settings.BRAIN_MCP_HTTP_ENABLED
+    else None
+)
