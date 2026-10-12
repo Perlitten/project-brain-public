@@ -186,13 +186,10 @@ unmodified service.
 
 | Component | Where | License / terms |
 |---|---|---|
-| `python:3.11-slim` (Debian base) | `Dockerfile`, `deploy/lfm-colbert-*` | Python: PSF-2.0; Debian packages: their own (mostly GPL/LGPL/BSD) |
-| `debian:bookworm-slim` | `deploy/lfm-colbert-cpu` | Debian packages: their own |
+| `python:3.11-slim` (Debian base) | `Dockerfile` | Python: PSF-2.0; Debian packages: their own (mostly GPL/LGPL/BSD) |
 | `pgvector/pgvector:pg15` | compose | PostgreSQL License (PostgreSQL and pgvector) |
 | `redis:7-alpine` | compose | Redis 7.4+: dual RSALv2 / SSPLv1. Self-hosting as a private backing store is permitted; offering Redis itself as a managed service is not. Earlier 7.x: BSD-3-Clause |
 | `neo4j:5.12-community` | compose | GPL-3.0 (Neo4j Community Edition), run as a separate server process; Brain talks to it over the network via the Apache-2.0 `neo4j` driver |
-| `pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime` | `deploy/lfm-colbert-gpu` | PyTorch: BSD-3-Clause; bundled CUDA/cuDNN: NVIDIA license agreements |
-| llama.cpp (cloned and built at image build time) | `deploy/lfm-colbert-cpu` | MIT — https://github.com/ggml-org/llama.cpp |
 | nginx | `deploy/nginx` (config only) | BSD-2-Clause |
 
 ---
@@ -206,7 +203,7 @@ and terms of use.
 
 | Model / service | How it is used | License / terms |
 |---|---|---|
-| `LiquidAI/LFM2.5-ColBERT-350M` (and `-GGUF`) | Optional late-interaction reranker, downloaded from Hugging Face by the `deploy/lfm-colbert-*` sidecars | **LFM Open License v1.0** — free use, including commercial, for entities under USD 10M annual revenue; larger commercial users need a separate license from Liquid AI. See `docs/runbooks/lfm-colbert-cutover.md` |
+| `LiquidAI/LFM2.5-ColBERT-350M` (and `-GGUF`) | Optional late-interaction reranker, downloaded from Hugging Face when the late-interaction reranker is enabled | **LFM Open License v1.0** — free use, including commercial, for entities under USD 10M annual revenue; larger commercial users need a separate license from Liquid AI.  |
 | `meta/llama-3.1-70b-instruct`, `meta/llama-3.1-8b-instruct` | Default LLMs in `.env.example`, called through the NVIDIA API | Llama 3.1 Community License (Meta) and NVIDIA API terms. Weights are not distributed here |
 | `nvidia/nv-embedcode-7b-v1` | Default embedding model in `.env.example`, called through the NVIDIA API | NVIDIA API / model terms |
 | OpenAI, Anthropic, Google, NVIDIA | Configurable LLM providers in `brain/llm`; embedding support varies by adapter (Anthropic embeddings are unsupported). `mock` is local test data | Each provider's terms of service / model license |

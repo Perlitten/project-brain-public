@@ -30,7 +30,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MARKER_PREFIXES = (
     "-- pg_dump backup fallback marker",
     "-- pg_dump not found on host",
-    "-- n8n sqlite backup marker",
+    "-- external orchestrator backup marker",
 )
 
 # DDL/DML markers that a real pg_dump output always contains

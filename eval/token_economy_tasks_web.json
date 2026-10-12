@@ -3527,7 +3527,7 @@
     },
     {
       "id": "q047",
-      "question": "Where are the nightly and weekly maintenance jobs scheduled now that n8n is gone, and which API route reports their status and receives the git-merge reindex trigger?",
+      "question": "Where are the nightly and weekly maintenance jobs scheduled and which API route reports their status and receives the git-merge reindex trigger?",
       "expect_files": [
         "brain/workers/scheduler.py",
         "apps/api/routers/scheduler.py"
@@ -3572,15 +3572,15 @@
       "language": "en",
       "provenance": {
         "kind": "curated",
-        "source": "Repointed to the in-process scheduler that replaced n8n",
+        "source": "In-process worker scheduler",
         "production_real": false,
         "original_provenance": {
           "kind": "curated_synthetic",
-          "source": "n8n orchestration ADR",
+          "source": "worker scheduler ADR",
           "production_real": false
         },
         "enrichment": "AST-enriched expect_* ground truth; curated question origin preserved",
-        "corpus_revision": "n8n-removal-2026-10-06"
+        "corpus_revision": "scheduler-2026-10-06"
       }
     },
     {
@@ -3798,7 +3798,7 @@
   "repository": {
     "name": "project-brain",
     "pinned_commit": "8a71f8d62a73d3e112280a90d42d76c29fab747a",
-    "pinned_ref": "n8n-removal source"
+    "pinned_ref": "scheduler source"
   },
   "category_split": {
     "unknown_location": 15,

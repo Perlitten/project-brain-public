@@ -42,8 +42,9 @@ enters the instrumented handler and is outside this denominator.
 Fixed hourly buckets (24h) or daily buckets (7d/30d) retain time gaps. Buckets before
 collection have null counts; zero after collection means no recorded attempts, subject to the skipped-write limitation below.
 Partially observed edge buckets are marked. No samples means null latency, never
-zero milliseconds. An unavailable table/state returns unavailable metrics, never
-demo values. Dashboard aggregation fails honestly above 100,000 observations in a
+zero milliseconds. An unavailable table/state returns unavailable metrics, never silent
+zeros. Demo values appear only when no API is configured (demo mode) and are
+always labelled as demo. Dashboard aggregation fails honestly above 100,000 observations in a
 window instead of silently sampling totals. A SQL aggregate store is the next step
 if measured volume reaches that limit. Telemetry persistence has a 500ms budget and
 cannot replace the tool result; skipped writes are logged and may leave gaps.

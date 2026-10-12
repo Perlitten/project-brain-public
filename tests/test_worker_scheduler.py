@@ -437,7 +437,7 @@ def test_git_merge_webhook_ignores_other_refs(webhook_env):
 
 def test_git_merge_webhook_ref_is_configurable(webhook_env, monkeypatch):
     """PROJECT_BRAIN_WEBHOOK_REF picks the accepted ref; the default matches
-    the branch project-brain-reindex.yml triggers on."""
+    the branch the reindex-on-push example triggers on."""
     monkeypatch.setattr(settings, "PROJECT_BRAIN_WEBHOOK_REF", "refs/heads/staging")
 
     queued = _signed_post({"ref": "refs/heads/staging", "sha": "abc"})

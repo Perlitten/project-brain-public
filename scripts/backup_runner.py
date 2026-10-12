@@ -22,7 +22,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# 2.1.0: n8n artifact removed — the orchestration layer is gone (ADR 013).
 BACKUP_VERSION = "2.1.0"
 ARTIFACT_POSTGRES = "postgres"
 ARTIFACT_NEO4J = "neo4j"

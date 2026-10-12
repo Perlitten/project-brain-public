@@ -612,6 +612,10 @@ export const getEvents = async (limit = 50, slug?: string | null): Promise<Ledge
 
 export const getPagedAgentRuns = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<AgentRun>> => {
   const q = getListQuery(input);
+  if (!apiConfigured) {
+    const rows = mock.agentRuns.filter((r) => !slug || r.repo === slug);
+    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets: {} }, available: true };
+  }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
     if (slug && !repo) return null;
@@ -861,6 +865,15 @@ export const getPagedIndexRuns = async (slug: string | null | undefined, input: 
 
 export const getPagedContextPacks = async (input: Partial<ListQuery> = {}, slug?: string | null): Promise<Paged<ContextPack>> => {
   const q = getListQuery(input);
+  if (!apiConfigured) {
+    const rows = mock.contextPacks.filter((p) => !slug || p.repo === slug);
+    const facets = {
+      outdated: rows.filter((p) => p.stale === true).length,
+      fresh: rows.filter((p) => p.stale === false).length,
+      unknown: rows.filter((p) => p.stale === null).length,
+    };
+    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets }, available: true };
+  }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
     if (slug && !repo) return null;
@@ -871,6 +884,10 @@ export const getPagedContextPacks = async (input: Partial<ListQuery> = {}, slug?
 
 export const getPagedReports = async (input: Partial<ListQuery> = {}): Promise<Paged<Report>> => {
   const q = getListQuery(input);
+  if (!apiConfigured) {
+    const rows = mock.reports;
+    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets: {} }, available: true };
+  }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const data = await brainFetch<Json>(`/api/web/reports?${queryString(q)}`);
     return data ? pageResult(data, "reports", q, (r) => ({ id: str(r.id), title: str(r.title) || str(r.id) || "Untitled report", kind: str(r.kind) || "report", createdAt: fmtWhen(r.created_at), size: fmtBytes(num(r.size_bytes)) })) : null;
@@ -879,6 +896,10 @@ export const getPagedReports = async (input: Partial<ListQuery> = {}): Promise<P
 
 export const getPagedInsights = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<Insight>> => {
   const q = getListQuery(input);
+  if (!apiConfigured) {
+    const rows = mock.insights;
+    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets: {} }, available: true };
+  }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const params = new URLSearchParams(queryString({ ...q, status: "" }));
     if (q.status) params.set("severity", q.status);

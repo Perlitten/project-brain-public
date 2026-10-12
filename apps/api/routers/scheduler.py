@@ -66,7 +66,7 @@ async def _api_key_valid(request: Request) -> bool:
 
 @router.post("/webhooks/git-merge")
 async def git_merge_webhook(request: Request, body: GitMergeWebhook):
-    """Post-merge reindex trigger for .github/workflows/project-brain-reindex.yml.
+    """Post-merge reindex trigger for docs/examples/reindex-on-push.yml.
 
     Accepts a GitHub ``X-Hub-Signature-256`` HMAC over the raw body (secret
     ``PROJECT_BRAIN_WEBHOOK_TOKEN``) or the standard ``X-API-Key``; everything
