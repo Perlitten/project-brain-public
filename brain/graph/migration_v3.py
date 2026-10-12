@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Neo4j Graph v3 Migration & Rebuild CLI for Project Brain (Gate 6).
+"""LEGACY one-shot migration — Neo4j Graph v3 rebuild CLI (Gate 6).
+
+This script ran once when the graph schema moved to v3. It is kept for
+operational archaeology and for installs that still carry a pre-v3 graph;
+it is NOT part of the indexing or query path. Do not extend it — new schema
+work belongs in ``brain/graph/graph_client.ensure_graph_schema``.
+
+Historical docstring follows.
+
+Neo4j Graph v3 Migration & Rebuild CLI for Project Brain (Gate 6).
 
 Runs ensure_graph_schema() for real, then verifies the result against the
 live database: per-label node counts and a degree-distribution sample are

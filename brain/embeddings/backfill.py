@@ -104,7 +104,7 @@ async def sync_pgvector_from_json(config: Optional[EmbeddingConfig] = None) -> i
                     WHERE embedding IS NULL
                       AND vector_data IS NOT NULL
                       AND jsonb_array_length(vector_data::jsonb) = :dimension
-                    """
+                    """  # nosec B608
                 ),
                 {
                     "provider": cfg.provider,
