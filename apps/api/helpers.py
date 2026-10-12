@@ -8,3 +8,5 @@ without a repo-wide import rewrite. New code should import from
 from brain.dashboard.helpers import *  # noqa: F401,F403
 
 from brain.dashboard.helpers import _short_commit_ref  # noqa: F401
+
+from apps.api.mcp_status import *  # noqa: F401,F403
