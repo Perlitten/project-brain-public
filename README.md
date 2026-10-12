@@ -71,6 +71,24 @@ rules and decisions.
 
 ---
 
+## How it works
+
+```mermaid
+flowchart LR
+    A[AI agent<br/>Claude Code / Codex / Cursor / Devin] -->|MCP: stdio or Streamable HTTP| M[apps.mcp_server]
+    M -->|13 tools| API[FastAPI + worker<br/>apps/api, brain/workers]
+    CLI[brain CLI] --> API
+    WEB[Web UI<br/>apps/web] -->|JSON, server-side key| API
+    API --> PG[(Postgres + pgvector<br/>chunks, memory, jobs)]
+    API --> NEO[(Neo4j<br/>code graph)]
+    API --> R[(Redis<br/>queue + cache)]
+    API -.->|index / reindex| REPO[Your repositories]
+```
+
+The agent never reads the repo itself: it asks Brain tools, which answer from
+indexed chunks, the code graph and recorded memory — in a bounded token
+budget.
+
 ## 3. Quickstart (local, single user)
 
 Runs on one machine with your own repositories. **No API keys are needed** to
@@ -310,125 +328,13 @@ old `/dashboard` links redirect there. Any Node host works the same way with
 
 ---
 
-## 5. CLI Usage
+## CLI, memory and eval
 
-Once the package is installed in editable mode, the `brain` command-line executable is registered and available.
+- [`docs/CLI.md`](docs/CLI.md) — `brain` commands: index, health, audit, doctor, backup.
+- [`docs/MEMORY.md`](docs/MEMORY.md) — L1–L4 memory semantics, consolidation gates, lesson protocol.
+- [`docs/EVAL.md`](docs/EVAL.md) — golden tasks, benchmarks, adversarial verification, external imports.
 
-Version check without CLI dependencies:
-
-```bash
-python -m brain.version
-```
-
-### Health Checks
-To verify connection health across all local or remote database dependencies (PostgreSQL, Redis, Neo4j):
-```bash
-brain health
-```
-
-### Auditing a Repository
-To scan a target repository structure and compile the initial read-only codebase audit:
-```bash
-brain audit --repo <path_to_repository>
-```
-* **Default behavior**: If `--repo` is omitted, it uses `REPO_ROOT` from `.env` (defaults to the current project directory).
-* **Output**: The scan generates a structured report at `reports/initial-audit.md` relative to the Project Brain root.
-
----
-
-## 6. Memory Semantics
-
-Explicitly historical Markdown remains searchable but is tagged as historical
-evidence and heavily demoted in ordinary current-state retrieval. A query that
-explicitly asks for history or archived context restores its normal retrieval
-weight. Decision memory is canonical by normalized title within an optional
-`repo_path`: recording the same title in the same scope updates that decision
-instead of creating another active instruction. Context packs include global
-decisions plus decisions owned by the requested repository, so one project's
-normative memory cannot leak into another project's task.
-Rules and decisions are read fresh for each context pack; only repository files
-and symbols use the process cache, so a write or revocation takes effect on the
-next delegated task without an API restart.
-Time-bound audit snapshots, archived design sources, and repository Task
-Contracts receive the same non-current authority treatment automatically; the
-live harness injects its exact active contract separately.
-
-**Brain Insights** is a proactive inbox backed by the worker queue and the `insights` database table, shown in the web UI. Manual scans enqueue `proactive_insights`; recurring jobs (nightly maintenance, health, self-diagnosis, weekly benchmark) are fired by the scheduler inside the worker — see Settings → Scheduler and [ADR 013](docs/adr/013-worker-scheduler.md).
-
----
-
-## 7. Eval & Adversarial Verification
-
-```bash
-# Golden tasks against your target repository.
-brain eval --repo <path-to-target-repo> --golden rules/golden_tasks.yaml
-
-# Validate a golden task YAML file.
-brain eval --repo <path-to-target-repo> --golden rules/golden_tasks.yaml --validate
-```
-
-### Embedding integrity
-
-```bash
-brain embeddings status
-brain embeddings verify --json
-brain embeddings backfill              # sync pgvector + regenerate incompatible
-brain embeddings backfill --pgvector-only  # JSON -> pgvector only
-```
-
-### Proactive insights
-
-```bash
-# Queue a deterministic insight scan through the API.
-curl -X POST http://localhost:8000/jobs/proactive-insights \
-  -H "X-API-Key: $PROJECT_BRAIN_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{}'
-
-# List stored insights.
-curl http://localhost:8000/insights -H "X-API-Key: $PROJECT_BRAIN_API_KEY"
-```
-
-By default, insight scans use deterministic checks only. To let the low-latency
-NVIDIA NIM route synthesize additional evidence-bound insights:
-
-```text
-DEFAULT_LLM_PROVIDER=nvidia
-NVIDIA_API_KEY=<secret>
-LLM_TASK_INSIGHT_MODEL=meta/llama-3.1-8b-instruct
-PROACTIVE_INSIGHTS_LLM_ENABLED=true
-```
-
-The LLM stage is bounded by `PROACTIVE_INSIGHTS_MAX_SNAPSHOT_CHARS` and `PROACTIVE_INSIGHTS_TIMEOUT_S`. If the model fails or times out, deterministic insights still run and the failure is reported in the job result.
-
-### External imports
-
-```bash
-# Grafify graph JSON -> Neo4j (uses GRAFIFY_OUTPUT_PATH or ../graphify-out/graph.json)
-brain import grafify
-brain import grafify --path ../graphify-out/graph.json
-
-# Obsidian vault -> rules/decisions (requires OBSIDIAN_VAULT_PATH or --vault)
-brain import obsidian --vault /path/to/vault
-```
-
-### Browser automation (optional)
-
-Project Brain does **not** control Cursor's embedded Simple Browser or the OS desktop. For
-optional local browser checks, a Playwright eval scaffold lives under `eval/browser_automation/`.
-
-```bash
-pip install -e ".[dev]"
-playwright install chromium
-python eval/browser_automation/smoke_test.py
-```
-
-Set `BROWSER_HEADLESS=false` in `.env` to watch the browser window. Platform limits (Computer
-Use, Cursor UI, Puppeteer vs Playwright) are documented in [`docs/tooling-gaps.md`](docs/tooling-gaps.md).
-
----
-
-## 8. Production Deployment
+## 5. Production Deployment
 
 Use [`DEPLOYMENT.md`](DEPLOYMENT.md) for the full git-safe self-host guide. It
 covers a fresh Ubuntu VPS, Docker Compose, nginx/TLS, the worker scheduler, repository mounts,
@@ -471,7 +377,7 @@ shared secret (`scripts/mint_api_credential.py --name <agent> --scopes core:writ
 
 ---
 
-## 9. MCP Server
+## 6. MCP Server
 
 Project Brain ships two Model Context Protocol (MCP) servers: the local stdio
 server `apps.mcp_server.server` exposes **13 tools**, and the remote HTTP-backed
@@ -563,38 +469,8 @@ for a principal named `oauth:<client>:<id>`. Whoever clicks **Allow** signs in t
 web dashboard or enters an API key that already holds the requested scopes, so a
 client never gets more than its approver could do directly.
 
-### Protocol features
-
-Besides tools, both servers implement:
-
-* **Tool annotations.** Every tool carries a title and read-only, destructive,
-  idempotent and open-world hints, so clients can auto-approve the read-only ones.
-* **Resources.** `brain://rules` and `brain://decisions` list the active rules and
-  decisions; `brain://payload/{token}` holds the tail of oversized tool results.
-* **Prompts.** `plan_change`, `review_changes` and `capture_lesson` encode the
-  intended tool sequence for common jobs.
-* **Elicitation.** With `BRAIN_MCP_CONFIRM_WRITES=true`, `record_decision` and
-  `record_rule` ask the human to approve the write when the client supports
-  elicitation. It is opt-in, because an unattended agent would stall on the prompt.
-* **Sampling.** When the server-side model fails, the remote `ask_project` asks the
-  client's own model to answer from the Brain's context pack instead of returning
-  an error.
-
-### MCP stdio E2E verification
-
-```bash
-python eval/mcp_stdio_e2e.py
-# writes reports/mcp-stdio-e2e.json
-```
-
-### Protocol rules for AI Agents (Antigravity / Claude Code / Codex)
-Agents must respect these rules prior to modifying the main repository:
-1. **Before writing code**: Invoke `prepare_task_context` to request the relevant files, tests, and architectural constraints.
-2. **Read the Context Pack**: Analyze the generated context pack before initiating changes.
-3. **Minimize footprint**: Do not modify files outside the context pack scope.
-4. **After editing**: Invoke `review_diff` to run checks on generated diffs, checking for rule violations or untested files.
-
----
+Protocol details (annotations, resources, prompts, elicitation, deferred
+payloads) and agent-side rules: [`docs/MCP.md`](docs/MCP.md).
 
 ## Contributing, security and changes
 

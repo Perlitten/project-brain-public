@@ -1,0 +1,4 @@
+# ~/.codex/config.toml — remote Streamable HTTP with a scoped pbk_ key.
+[mcp_servers.project-brain]
+url = "https://brain.example.com/mcp"
+bearer_token = "pbk_your_scoped_key"

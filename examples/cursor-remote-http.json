@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "project-brain": {
+      "url": "https://brain.example.com/mcp",
+      "headers": { "Authorization": "Bearer pbk_your_scoped_key" }
+    }
+  }
+}
