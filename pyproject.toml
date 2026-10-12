@@ -72,6 +72,9 @@ brain-mcp = "apps.mcp_server.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["brain", "apps"]
+# A wheel may be built after the separate web app. Never ship its generated
+# cache, npm dependencies, or local credentials with the Python runtime.
+exclude = ["**/.next/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.env", "**/.env.*", "**/.deploy.env"]
 
 [tool.hatch.build.targets.editable]
 dev-mode-dirs = ["."]
