@@ -99,7 +99,7 @@ curl -fsS -H "X-Late-Interaction-Token: $LATE_INTERACTION_SERVICE_TOKEN" \
 `/ready` deliberately loads the pinned BF16 model
 `LiquidAI/LFM2.5-ColBERT-350M@59633c2e31717b3502343ff566bee9fda3261943`;
 the first call may download the model into the persistent cache volume. The
-container runs PyLate 1.4.0 on the digest-pinned PyTorch/CUDA base image.
+container runs PyLate 1.6.0 on the digest-pinned PyTorch/CUDA base image.
 
 Require a real NVIDIA device, exact 32/512-token × 128 output, no restart/OOM,
 and the end-to-end latency gates below before continuing. Capture GPU model,
