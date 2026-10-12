@@ -116,6 +116,10 @@ jobs:
 
       - name: Run tests
         run: pytest -q
+        env:
+          # Optional comma/newline-separated extra banned phrases (repo secret),
+          # hashed on the fly by the privacy denylist test. Empty is fine.
+          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
 
       - name: Build wheel + clean-install smoke
         run: |

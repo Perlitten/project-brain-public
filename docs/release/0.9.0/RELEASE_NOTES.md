@@ -48,7 +48,7 @@ Tag: `v0.9.0`. Changes after the tag are tracked in
 - Dashboard: WCAG 2.2 AA pass; admin page for principals/credentials.
   The operator UI is now the separate Next.js app in `apps/web`.
 - Scheduling moved into the worker (`brain/workers/scheduler.py`,
-  [ADR 013](../../adr/013-worker-scheduler.md)); n8n is no longer used or required.
+  [ADR 013](../../adr/013-worker-scheduler.md)); no external orchestrator is used or required.
 
 **Quality bar**
 
