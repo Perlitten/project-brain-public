@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Term } from "@/components/Term";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, JobChip, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
@@ -49,7 +50,7 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
       </div>
       <Panel id="runs" title="Recent tasks" flush>
         {runs.length === 0 && !hasQuery ? (
-          <EmptyState title="No agent tasks yet" body="No agent has run a task through Brain recently." />
+          <EmptyState title="No agent tasks yet" body="No agent has run a task through Brain recently. Connect an agent in Setup and give it a task — it will show up here." action={<Link className="btn btn--neutral" href="/setup">Connect an agent</Link>} />
         ) : (
         <Table
           caption="Agent runs"

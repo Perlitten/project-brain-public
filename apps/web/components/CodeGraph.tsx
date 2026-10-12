@@ -93,7 +93,7 @@ export function CodeGraph({ edges }: { edges: ModuleEdge[] }) {
     <svg
       className={`graph${hot ? " graph--focus" : ""}`}
       viewBox={`0 0 ${W} ${H}`}
-      style={{ minWidth: Math.round(W * 0.66) }}
+      style={{ minWidth: Math.max(Math.round(W * 0.8), 720) }}
       role="group"
       aria-label="Module dependency map"
     >

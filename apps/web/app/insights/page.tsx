@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import Link from "next/link";
 import { Term } from "@/components/Term";
 import { ClampText } from "@/components/ClampText";
 import { ListFrame } from "@/components/ListFrame";
@@ -32,7 +33,7 @@ export default async function Insights({ searchParams }: { searchParams: Promise
       />
       <SectionTabs section="projects" active="/insights" />
       {insights.length === 0 && !hasQuery && (
-        <EmptyState title="No findings yet" body="Brain hasn’t flagged anything in this code. Findings appear here as Brain notices risky changes." />
+        <EmptyState title="No findings yet" body="Brain hasn’t flagged anything in this code. Findings appear after a repository is indexed — run `brain index` or connect a project in Setup." action={<Link className="btn btn--neutral" href="/setup">Set up indexing</Link>} />
       )}
       {(insights.length > 0 || hasQuery) && (
       <ListFrame
