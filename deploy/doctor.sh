@@ -379,7 +379,7 @@ check_public() {
         fail "DNS does not resolve: BRAIN_PUBLIC_HOST"
     fi
 
-    if curl -fsS "https://${brain_host}/health" >/dev/null; then
+    if curl -fsS "https://${brain_host}/api/version" >/dev/null; then
         pass "public API reachable"
     else
         fail "public API not reachable"
