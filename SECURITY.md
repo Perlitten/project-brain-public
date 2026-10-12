@@ -12,7 +12,7 @@
 Please **do not open a public issue** for security problems.
 
 Report privately through GitHub Security Advisories:
-<https://github.com/Perlitten/project-brain-public/security/advisories/new>
+<https://github.com/Perlitten/project-brain/security/advisories/new>
 
 Include the affected version or commit, the steps to reproduce, and the impact
 you expect. We aim to acknowledge reports within **7 days** and will keep you

@@ -11,7 +11,7 @@ requests, discussions and any other project space.
 
 Report unacceptable behaviour privately to the maintainer,
 [@Perlitten](https://github.com/Perlitten), through a private GitHub Security
-Advisory (<https://github.com/Perlitten/project-brain-public/security/advisories/new>)
+Advisory (<https://github.com/Perlitten/project-brain/security/advisories/new>)
 or by contacting them through their GitHub profile. Reports are handled
 confidentially. The maintainer may remove content, or warn, suspend or ban
 participants, as described in the enforcement guidelines of the Contributor

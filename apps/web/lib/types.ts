@@ -119,6 +119,8 @@ export interface Decision {
   scope: string;
   recordedAt: string;
   summary: string;
+  /** Demo data only: repository slug this decision belongs to. */
+  repo?: string;
 }
 
 export interface Rule {
@@ -130,6 +132,8 @@ export interface Rule {
   delivered30d?: number;
   /** Diff reviews that cited this rule over the same window: did it catch anything. */
   caught30d?: number;
+  /** Demo data only: repository slug this rule belongs to. */
+  repo?: string;
 }
 
 export interface Insight {

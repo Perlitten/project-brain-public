@@ -17,6 +17,10 @@ jobs:
   enqueue:
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    # Only fires where a Brain server is configured to receive the webhook.
+    # Forks and fresh clones have no PROJECT_BRAIN_WEBHOOK_URL, so they skip
+    # this job instead of failing on every push to main.
+    if: ${{ vars.PROJECT_BRAIN_WEBHOOK_URL != '' }}
     steps:
       - name: Enqueue durable Project Brain reindex
         env:

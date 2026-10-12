@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-12
+
 ### Security
 
 - Production startup (`ENVIRONMENT=production`) now also rejects the
@@ -121,5 +123,6 @@ First public release of the single-user distribution. Full notes:
   its lease cannot commit, and interrupted jobs are requeued.
 - Job queue back-pressure (429 with `Retry-After`) and an in-app request body cap.
 
-[Unreleased]: https://github.com/Perlitten/project-brain-public/compare/v0.9.0...HEAD
-[0.9.0]: https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.0
+[Unreleased]: https://github.com/Perlitten/project-brain/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/Perlitten/project-brain/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/Perlitten/project-brain/releases/tag/v0.9.0

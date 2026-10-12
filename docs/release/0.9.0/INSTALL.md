@@ -30,7 +30,7 @@ Optional, only for the web UI (`apps/web`): Node.js 22 (the version CI uses).
 ## Install
 
 ```bash
-git clone https://github.com/Perlitten/project-brain-public.git project-brain && cd project-brain
+git clone https://github.com/Perlitten/project-brain.git project-brain && cd project-brain
 
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"          # ~45s

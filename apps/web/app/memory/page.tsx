@@ -43,7 +43,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
     <>
       <PageHead
         title="Memory"
-        lede={`Decisions and rules your team recorded${repo ? " for this project" : " across all projects"}. Agents get the relevant ones with their context.`}
+        lede={`Decisions and rules you and your agents recorded${repo ? " for this project" : " across all projects"}. Agents get the relevant ones with their context.`}
       />
       <SectionTabs section="memory" active="/memory" />
         <PageTabs

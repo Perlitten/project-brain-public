@@ -9,7 +9,7 @@ export const glossary = {
   agent: "An AI coding assistant (Claude Code, Codex, Cursor, Devin) that asks Brain for context before changing code.",
   principal: "Anyone or anything that can sign in to Brain — a person, an AI agent or a service — each with its own revocable key.",
   scope: "What a key is allowed to do, e.g. read code (core:read) or record decisions (memory:write).",
-  drift: "The code structure moving away from the architecture the team agreed on.",
+  drift: "The code structure moving away from the architecture you agreed on.",
   coupling: "Two parts of the code that keep changing together — a sign they are more tangled than they look.",
   hotspot: "A file that changes far more often than the rest. Bugs cluster here.",
   golden: "A fixed set of real tasks with known right answers. Brain is re-tested on them after every change.",

@@ -34,7 +34,7 @@ def generate_slsa_provenance(
     artifact_name: str,
     artifact_bytes: bytes,
     git_sha: str = "96dba8285bd5e27a726715f5c3a3efd85c8eef86",
-    builder_id: str = "https://github.com/Perlitten/project-brain-public/actions/runs/v0.6.0",
+    builder_id: str = "https://github.com/Perlitten/project-brain/actions/runs/v0.6.0",
 ) -> SLSAStatement:
     """Constructs SLSA v1.0 Level 3 provenance statement for release artifacts and images."""
     sha256_hash = hashlib.sha256(artifact_bytes).hexdigest()
@@ -43,12 +43,12 @@ def generate_slsa_provenance(
 
     build_def = SLSABuildDefinition(
         externalParameters={
-            "repository": "https://github.com/Perlitten/project-brain-public",
+            "repository": "https://github.com/Perlitten/project-brain",
             "ref": "refs/tags/v0.6.0-rc1",
             "revision": git_sha,
         },
         resolvedDependencies=[
-            {"uri": "git+https://github.com/Perlitten/project-brain-public.git", "digest": {"sha256": git_sha}}
+            {"uri": "git+https://github.com/Perlitten/project-brain.git", "digest": {"sha256": git_sha}}
         ]
     )
 

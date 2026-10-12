@@ -416,7 +416,7 @@ function deriveCondition(
       ...base,
       tone: "warn",
       headline: "Brain is up to date, but found problems worth a look",
-      detail: `${serious} finding${serious > 1 ? "s break" : " breaks"} a rule your team set. See Findings for what changed and where.`,
+      detail: `${serious} finding${serious > 1 ? "s break" : " breaks"} a rule you set. See Findings for what changed and where.`,
     };
   }
   if (status !== "current") {
@@ -892,6 +892,10 @@ export const getPagedInsights = async (slug: string | null | undefined, input: P
 
 export const getPagedDecisions = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<Decision>> => {
   const q = getListQuery(input);
+  if (!apiConfigured) {
+    const rows = mock.decisions.filter((d) => !slug || d.repo === slug);
+    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets: {} }, available: true };
+  }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
     const scope = repo ? `&repository_id=${repo.id}` : "";
@@ -902,6 +906,10 @@ export const getPagedDecisions = async (slug: string | null | undefined, input: 
 
 export const getPagedRules = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<Rule>> => {
   const q = getListQuery(input);
+  if (!apiConfigured) {
+    const rows = mock.rules.filter((r) => !slug || r.repo === slug);
+    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets: {} }, available: true };
+  }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
     const scope = repo ? `&repository_id=${repo.id}` : "";

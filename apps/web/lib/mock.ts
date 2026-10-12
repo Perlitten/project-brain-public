@@ -78,16 +78,26 @@ export function condition(repo: Repository): Condition {
   };
 }
 
+// Per-repository corpus sizes so each project in the demo shows plausible,
+// distinct totals instead of one shared number.
+const corpusStats: Record<string, { files: number; eligible: number; symbols: number; excluded: number }> = {
+  "project-brain": { files: 1284, eligible: 18903, symbols: 9412, excluded: 1180 },
+  "docs-site": { files: 342, eligible: 4150, symbols: 1860, excluded: 260 },
+  "mobile-app": { files: 968, eligible: 12340, symbols: 6710, excluded: 890 },
+  "billing-service": { files: 742, eligible: 9687, symbols: 5230, excluded: 640 },
+};
+
 export function corpus(repo: Repository): Corpus {
   const behind = repo.behind ?? 0;
-  const eligible = 18903;
+  const stats = corpusStats[repo.slug] ?? corpusStats["project-brain"];
+  const eligible = stats.eligible;
   const missing = behind > 20 ? 2960 : behind > 0 ? 412 : 0;
   const outdated = behind > 20 ? 4120 : behind > 0 ? 640 : 0;
-  const excluded = 1180;
+  const excluded = stats.excluded;
   return {
-    files: 1284,
+    files: stats.files,
     chunks: eligible + excluded,
-    symbols: 9412,
+    symbols: stats.symbols,
     embeddings: eligible - missing,
     meters: [
       {
@@ -133,9 +143,9 @@ export const events: LedgerEvent[] = [
   { at: "13:51:02", tone: "warn", source: "graph", text: "Neo4j write timed out after 30s, job will retry", ref: "j-8838" },
   { at: "13:42:19", tone: "ok", source: "mcp", text: "brain.search served 212 calls in the last hour, p95 184ms" },
   { at: "13:20:47", tone: "bad", source: "eval", text: "Golden tasks regressed: 45/48 (was 48/48) after #106", ref: "eval 88" },
-  { at: "12:58:03", tone: "ok", source: "memory", text: "Decision recorded: “Dashboard shell split per feature module”", ref: "ADR-0011" },
+  { at: "12:58:03", tone: "ok", source: "memory", text: "Decision recorded: “Stripe webhooks handled out of the request path”", ref: "D-41" },
   { at: "12:31:40", tone: "warn", source: "agent", text: "cursor run ended without a context pack — answered from cold search", ref: "r-2289" },
-  { at: "11:02:15", tone: "ok", source: "backup", text: "Nightly restore drill passed — 18,903 chunks restored and verified" },
+  { at: "11:02:15", tone: "ok", source: "backup", text: "Nightly restore drill passed — 43,080 chunks restored and verified" },
   { at: "10:40:00", tone: "info", source: "auth", text: "Scoped credential issued to principal “ci-bridge” (core:read)" },
   { at: "09:12:33", tone: "ok", source: "indexer", text: "Index run 411 complete — 1,284 files, 0 errors", ref: "run 411" },
   { at: "03:00:02", tone: "info", source: "maintenance", text: "Nightly maintenance: 4 repositories checked, 1 reindexed" },
@@ -161,19 +171,19 @@ export const contextPacks: ContextPack[] = [
 ];
 
 export const decisions: Decision[] = [
-  { id: "ADR-0011", title: "Dashboard shell split per feature module", status: "accepted", scope: "apps/api/static", recordedAt: "Oct 2", summary: "One module per shell feature; no cross-module globals. Keeps each file under 300 lines and independently cacheable." },
-  { id: "ADR-0010", title: "Scoped, revocable credentials for every principal", status: "accepted", scope: "apps/api/auth", recordedAt: "Sep 24", summary: "API keys become principals with domain scopes. The single shared key is retired after 0.9." },
-  { id: "ADR-0009", title: "Postgres fencing for job commits", status: "accepted", scope: "brain/workers", recordedAt: "Sep 19", summary: "A job commits only while it holds the lease token. Stale workers cannot overwrite a newer result." },
-  { id: "ADR-0008", title: "Frontend on Vercel behind a server-side proxy", status: "proposed", scope: "apps/web", recordedAt: "Oct 2", summary: "Next.js app talks to the VPS API only from route handlers; the API key never reaches the browser." },
-  { id: "ADR-0003", title: "Graph schema v2 identity", status: "superseded", scope: "brain/graph", recordedAt: "Jul 30", summary: "Replaced by v3 identity: stable symbol ids across renames." },
+  { id: "D-41", title: "Stripe webhooks handled out of the request path", status: "accepted", scope: "billing-service", recordedAt: "Oct 2", summary: "Webhook events land in a queue and a worker applies them. A slow Stripe retry can no longer stall checkout requests.", repo: "billing-service" },
+  { id: "D-38", title: "Invoice numbering moves to a DB sequence", status: "accepted", scope: "billing-service", recordedAt: "Sep 24", summary: "Replaces the app-side counter that produced duplicates under concurrent workers.", repo: "billing-service" },
+  { id: "D-35", title: "Retry policy capped at three attempts", status: "proposed", scope: "billing-service", recordedAt: "Oct 2", summary: "Unbounded retries on declined payments were generating duplicate charge attempts during outages.", repo: "billing-service" },
+  { id: "D-29", title: "Session tokens live in Keychain, not AsyncStorage", status: "accepted", scope: "mobile-app", recordedAt: "Sep 19", summary: "AsyncStorage is plain text on rooted devices; Keychain keeps tokens behind the OS keystore.", repo: "mobile-app" },
+  { id: "D-27", title: "Offline queue replays mutations in order", status: "accepted", scope: "mobile-app", recordedAt: "Sep 12", summary: "Edits made offline replay oldest-first on reconnect so a rename never lands before its create.", repo: "mobile-app" },
+  { id: "D-12", title: "Docs versioning drops locale branches", status: "superseded", scope: "docs-site", recordedAt: "Jul 30", summary: "Replaced by a single content tree with per-page locale overlays; per-locale git branches were unmergeable.", repo: "docs-site" },
 ];
 
 export const rules: Rule[] = [
-  { id: "R-014", rule: "brain/ must not import apps/", severity: "block", scope: "brain/**", delivered30d: 18, caught30d: 2 },
-  { id: "R-021", rule: "Tests raise settings before importing app modules", severity: "warn", scope: "tests/**", delivered30d: 11, caught30d: 0 },
-  { id: "R-009", rule: "rules/golden_tasks.yaml changes with every module move", severity: "warn", scope: "brain/**", delivered30d: 9, caught30d: 3 },
-  { id: "R-030", rule: "No raw colour or length literals in templates", severity: "advise", scope: "apps/api/templates/**", delivered30d: 24, caught30d: 7 },
-  { id: "R-031", rule: "Secrets never enter a field value", severity: "block", scope: "apps/**", delivered30d: 0, caught30d: 0 },
+  { id: "R-014", rule: "Payments code never touches the ORM session directly", severity: "block", scope: "billing-service/payments/**", delivered30d: 18, caught30d: 2, repo: "billing-service" },
+  { id: "R-021", rule: "Every migration ships a matching down-revision", severity: "warn", scope: "billing-service/migrations/**", delivered30d: 11, caught30d: 0, repo: "billing-service" },
+  { id: "R-009", rule: "No network calls on the main thread", severity: "warn", scope: "mobile-app/**", delivered30d: 9, caught30d: 3, repo: "mobile-app" },
+  { id: "R-030", rule: "Public pages keep headings in sentence case", severity: "advise", scope: "docs-site/content/**", delivered30d: 24, caught30d: 7, repo: "docs-site" },
 ];
 
 export const insights: Insight[] = [

@@ -30,7 +30,7 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
         lede={
           <>
             Each box is a part of your project; each line means one part uses another. Thicker lines mean more
-            connections. A red, moving line breaks a rule your team agreed on — <Term k="coupling">tangled modules</Term>.
+            connections. A red, moving line breaks a rule you agreed on — <Term k="coupling">tangled modules</Term>.
           </>
         }
       />
