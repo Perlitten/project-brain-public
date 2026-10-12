@@ -40,7 +40,7 @@ dependencies = [
     "mcp==1.29.0",
     "pgvector",
     "cryptography>=42.0.0",
-    "numpy>=1.26,<3",
+    "numpy>=2.2.6,<3",
 ]
 
 [project.urls]
