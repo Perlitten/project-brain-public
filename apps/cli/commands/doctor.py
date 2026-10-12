@@ -23,6 +23,7 @@ from brain.llm.presets import (
     resolve_llm_endpoint,
     supported_provider_names,
 )
+from brain.onboarding.provider_check import FREE_PROVIDER_HINT, MOCK_LABEL
 from brain.version import build_info
 
 _FAIL = "FAIL"
@@ -177,8 +178,8 @@ def _check_provider(failures: list[str]) -> None:
         if provider == "mock":
             _report(
                 _WARN,
-                f"DEFAULT_{'LLM' if kind == 'LLM' else 'EMBEDDING'}_PROVIDER=mock — "
-                "real answers/embeddings need a real provider key",
+                f"DEFAULT_{'LLM' if kind == 'LLM' else 'EMBEDDING'}_PROVIDER={MOCK_LABEL}; "
+                f"{FREE_PROVIDER_HINT}",
                 failures,
             )
             continue

@@ -281,14 +281,14 @@ const STATE_TONE: Record<string, "ok" | "warn" | "bad" | "idle" | "info"> = {
   configured: "warn",
   missing: "bad",
   failed: "bad",
-  demo: "idle",
+  demo: "warn",
 };
 const STATE_WORD: Record<string, string> = {
   verified: "works",
   configured: "saved, not verified",
   missing: "key missing",
   failed: "failed",
-  demo: "demo mode",
+  demo: "mock — smoke test only",
 };
 
 function Providers({ step, view }: { step: StepView; view: SetupView }) {

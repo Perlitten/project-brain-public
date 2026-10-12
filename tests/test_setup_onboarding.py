@@ -369,12 +369,25 @@ def test_readiness_unindexed_repo_guides_to_index():
     assert steps["first_task"]["status"] == "blocked"
 
 
-def test_readiness_mock_providers_need_no_keys():
+def test_readiness_mock_providers_need_no_keys_but_stay_a_warning():
+    """Mock runs without keys, but its results mean nothing — the step must not
+    read as finished, and it must name the free way to real results."""
     status = _collect()
     provider = next(s for s in status["steps"] if s["id"] == "provider")
-    assert provider["status"] == "done"
-    assert "mock" in provider["detail"]
+    assert provider["status"] == "action"
+    assert provider["mock"] is True
+    assert "smoke test only, results not meaningful" in provider["detail"]
+    assert "ollama pull nomic-embed-text" in provider["hint"]
     assert provider["llm"]["state"] == "demo"
+
+
+def test_readiness_verified_providers_are_done(monkeypatch):
+    verified = {"provider": "openai", "state": "verified", "detail": "openai — verified"}
+    monkeypatch.setattr(readiness, "provider_state", lambda *_: dict(verified))
+    provider = readiness._provider_step()
+    assert provider["status"] == "done"
+    assert provider["mock"] is False
+    assert provider["hint"] == ""
 
 
 def test_readiness_agent_step_needs_a_self_check():

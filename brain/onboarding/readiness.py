@@ -30,7 +30,7 @@ from brain.config.settings import settings
 from brain.database.models import ContextPack, IndexingRun, Repository
 from brain.database.repository_utils import get_repository_by_path
 from brain.database.session import async_session_factory, check_health, redis_client
-from brain.onboarding.provider_check import provider_state
+from brain.onboarding.provider_check import FREE_PROVIDER_HINT, provider_state
 from brain.workers.queue import WORKER_START_HINT, worker_liveness
 from brain.onboarding.setup_state import (
     first_pack_milestone,
@@ -137,10 +137,15 @@ def _repo_step(
 def _provider_step() -> Dict[str, Any]:
     llm = _provider_status(settings.DEFAULT_LLM_PROVIDER, "LLM")
     emb = _provider_status(settings.DEFAULT_EMBEDDING_PROVIDER, "embedding")
-    ok = all(s["state"] in ("demo", "verified") for s in (llm, emb))
+    # Mock is a warning, not a finished step: it runs, but nothing it returns
+    # is meaningful, so the step stays open with the free way out.
+    mock = any(s["state"] == "demo" for s in (llm, emb))
+    ok = all(s["state"] == "verified" for s in (llm, emb))
     unverified = any(s["state"] == "configured" for s in (llm, emb))
     hint = ""
-    if unverified:
+    if mock:
+        hint = FREE_PROVIDER_HINT
+    elif unverified:
         hint = "run Verify provider credentials below — a key present is not a key verified"
     elif not ok:
         hint = "export the provider key in your environment, then restart"
@@ -152,6 +157,7 @@ def _provider_step() -> Dict[str, Any]:
         "hint": hint,
         "llm": llm,
         "embedding": emb,
+        "mock": mock,
     }
 
 

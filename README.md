@@ -31,6 +31,10 @@ Instead of replacing execution tools, Project Brain operates as a reasoning and 
 
 Runs on one machine with your own repositories. **No API keys are needed** to
 try it: the shipped `.env.example` uses mock LLM and embedding providers.
+The mock is a **smoke test only — its results are not meaningful** (search
+ranks by noise). For real results without a key, run
+`ollama pull nomic-embed-text` and set `DEFAULT_EMBEDDING_PROVIDER=ollama`
+before indexing; see [Real models](#real-models).
 
 One command:
 
@@ -154,7 +158,8 @@ Pick providers in `.env`, set the matching key, then re-index:
 
 | Provider | `.env` |
 |---|---|
-| Mock (default, offline) | `DEFAULT_LLM_PROVIDER=mock`, `DEFAULT_EMBEDDING_PROVIDER=mock` |
+| Mock (default, offline) — smoke test only, results not meaningful | `DEFAULT_LLM_PROVIDER=mock`, `DEFAULT_EMBEDDING_PROVIDER=mock` |
+| Ollama (local, free, no key) | `ollama pull nomic-embed-text`, then `DEFAULT_EMBEDDING_PROVIDER=ollama` (add `ollama pull llama3.1` and `DEFAULT_LLM_PROVIDER=ollama` for summaries) |
 | NVIDIA NIM (production default) | `DEFAULT_LLM_PROVIDER=nvidia`, `DEFAULT_EMBEDDING_PROVIDER=nvidia`, `NVIDIA_API_KEY=nvapi-…` |
 | OpenAI / Anthropic / Google | `DEFAULT_LLM_PROVIDER=openai` (or `anthropic`, `google`) and the matching `*_API_KEY` |
 

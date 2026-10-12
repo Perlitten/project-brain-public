@@ -33,6 +33,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The mock provider is labelled "smoke test only, results not meaningful" in
+  Setup, `brain doctor`, `.env.example` and the README, each with the one-line
+  keyless path to real results (Ollama `nomic-embed-text`). Setup's "Connect
+  AI models" step stays a warning on mock instead of turning green.
+
 - Setup's "Choose the code to read" step lists the repositories Brain has
   actually indexed and makes one the active repository in a click. When
   `TARGET_REPO_PATH` was never indexed but another repository was (for example

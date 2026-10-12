@@ -29,6 +29,14 @@ _PROVIDER_KEY_ENV = {
 
 _TIMEOUT_SECONDS = 20.0
 
+# The built-in mock answers instantly and offline, but its vectors and answers
+# carry no meaning: search ranks by noise. Every surface says so in these words.
+MOCK_LABEL = "mock — smoke test only, results not meaningful"
+FREE_PROVIDER_HINT = (
+    "for real results without a key: install Ollama, run `ollama pull nomic-embed-text`, "
+    "set DEFAULT_EMBEDDING_PROVIDER=ollama, then re-index"
+)
+
 
 def key_fingerprint(value: Optional[str]) -> Optional[str]:
     """Truncated SHA-256 of the credential — identity without the secret."""
@@ -116,7 +124,7 @@ def provider_state(provider: str, kind: str) -> Dict[str, Any]:
         return {
             "provider": name,
             "state": "demo",
-            "detail": "built-in mock — demo mode, not real-provider readiness",
+            "detail": MOCK_LABEL,
         }
     if _env_key(name) is None:
         return {"provider": name, "state": "missing", "detail": f"unknown {kind} provider"}
@@ -186,7 +194,7 @@ async def verify_provider(provider: str, kind: str) -> Dict[str, Any]:
         return observed
     if name == "mock":
         setup_state.record_provider_verification(slot_name, name, None, "demo")
-        return {"provider": name, "state": "demo", "detail": "mock — demo mode"}
+        return {"provider": name, "state": "demo", "detail": MOCK_LABEL}
     if _env_key(name) is None:
         return provider_state(name, kind)
     slot = _slot(name, kind)

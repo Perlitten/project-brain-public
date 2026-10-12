@@ -601,6 +601,14 @@ test('robots and metadata: only pure demo may be indexed', () => {
   assert.match(layout, /openGraph: \{ title: "Project Brain", description: DESCRIPTION/);
 });
 
+test('setup shows the mock provider as a warning, never as a finished step', () => {
+  const steps = fs.readFileSync(path.join(root, 'components/setup/SetupSteps.tsx'), 'utf8');
+  assert.match(steps, /demo: "warn"/);
+  assert.match(steps, /demo: "mock — smoke test only"/);
+  const actions = fs.readFileSync(path.join(root, 'lib/actions/setup.ts'), 'utf8');
+  assert.match(actions, /smoke test only, results not meaningful/);
+});
+
 test('selected repository scopes indexing and graph requests, and unknown freshness stays unknown', async () => {
   const calls = [];
   const data = load('lib/data.ts', {
