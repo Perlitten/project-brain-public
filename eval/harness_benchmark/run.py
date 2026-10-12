@@ -244,8 +244,8 @@ async def _l2_lifecycle(api_url, api_key, repo):
     try:
         episode_id = await conn.fetchval(
             "INSERT INTO memory_episodes "
-            "(source_event_ids, distilled_summary, topic, status, confidence, repo_scope) "
-            "VALUES ('[]'::jsonb, $1, $2, 'pending', 0.7, $3) RETURNING id",
+            "(source_event_ids, gate_reasons, distilled_summary, topic, status, confidence, repo_scope) "
+            "VALUES ('[]'::jsonb, '[]'::jsonb, $1, $2, 'pending', 0.7, $3) RETURNING id",
             summary,
             BENCH_EPISODE_TOPIC,
             repo,
@@ -300,8 +300,8 @@ async def _l2_semantic_search(api_url, api_key, repo, task):
             vec = await _embed_for_api(summary)
             row = await conn.fetchval(
                 "INSERT INTO memory_episodes "
-                "(source_event_ids, distilled_summary, topic, status, confidence, embedding, repo_scope) "
-                "VALUES ('[]'::jsonb, $1, $2, 'promoted', 0.7, $3::vector, $4) RETURNING id",
+                "(source_event_ids, gate_reasons, distilled_summary, topic, status, confidence, embedding, repo_scope) "
+                "VALUES ('[]'::jsonb, '[]'::jsonb, $1, $2, 'promoted', 0.7, $3::vector, $4) RETURNING id",
                 summary,
                 BENCH_EPISODE_TOPIC,
                 _pgvector_literal(vec),
