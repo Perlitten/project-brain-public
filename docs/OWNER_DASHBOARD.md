@@ -50,13 +50,14 @@ cannot replace the tool result; skipped writes are logged and may leave gaps.
 
 ## Quality
 
-`/api/web/quality` reads the fixed, versioned `eval/quality/owner-benchmark-20261008.json`
-archive. It includes SHA256 source provenance, separately measured search/context
-release identities, the golden corpus hash, sample counts and limitations. It is
-historical evidence, independently of the dashboard period. It is packaged through
-the existing Docker `eval/` copy and source-manifest inputs. Missing or malformed
-artifacts return HTTP 503. This initial archive is a snapshot, not an automatically
-refreshed benchmark history. Saved reports remain available for further evaluations.
+`/api/web/quality` reads `eval/quality/quality-evidence.json` if you have produced one
+from your own benchmark run (schema version 1; see `tests/fixtures/quality_evidence.json`
+for the shape). It carries SHA256 source provenance, the measured search/context build
+identities, the golden corpus hash, sample counts and limitations. It is historical
+evidence, independent of the dashboard period. Nothing ships by default: until the file
+exists the endpoint returns HTTP 503 and the dashboard shows "Benchmark measurements
+unavailable". Malformed files also return 503. Saved reports remain available for
+further evaluations.
 
 Usefulness and token/time/cost savings remain not measured until comparable task
 outcomes with and without Brain are captured. Coverage, saved pack counts and 200

@@ -19,7 +19,7 @@ router = APIRouter(
     dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))],
 )
 
-_ARTIFACT = "eval/quality/owner-benchmark-20261008.json"
+_ARTIFACT = "eval/quality/quality-evidence.json"
 _REQUIRED = ("schema_version", "generated_at", "source", "search", "context", "acceptance")
 
 

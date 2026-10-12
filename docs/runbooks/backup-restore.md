@@ -11,7 +11,7 @@ mkdir -p ~/workspace/backups
 Crontab (runs daily at 03:00, keeps the 7 newest):
 
 ```cron
-0 3 * * * cd /home/hatch/workspace/projects/brain && /home/hatch/workspace/brain-env.sh .venv/bin/python scripts/backup_runner.py --output /home/hatch/workspace/backups/brain_backup_$(date +\%Y\%m\%d_\%H\%M\%S) >> /home/hatch/workspace/backups/backup.log 2>&1 && ls -dt /home/hatch/workspace/backups/brain_backup_* | tail -n +8 | xargs -r rm -rf
+0 3 * * * cd "$HOME/project-brain" && .venv/bin/python scripts/backup_runner.py --output "$HOME/workspace/backups/brain_backup_$(date +\%Y\%m\%d_\%H\%M\%S)" >> "$HOME/workspace/backups/backup.log" 2>&1 && ls -dt "$HOME"/workspace/backups/brain_backup_* | tail -n +8 | xargs -r rm -rf
 ```
 
 Each run writes `backup_manifest.json` with SHA-256 checksums and per-artifact

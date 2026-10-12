@@ -36,7 +36,7 @@ All notable changes to this project are documented here. The format follows
 - Telegram alert messages are in English.
 - The web proxy returns a JSON 503 when the Brain API is unreachable.
 - Release docs moved from `docs/release/0.9.0-rc1/` to `docs/release/0.9.0/`;
-  historical design docs moved to `docs/archive/`.
+  historical design docs, benchmark results and pre-release reports removed.
 
 ### Fixed
 

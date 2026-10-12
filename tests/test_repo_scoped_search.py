@@ -53,8 +53,8 @@ async def test_search_code_returns_repository_index_provenance():
         (),
         {
             "id": 9,
-            "path": "/indexed/Eunoia",
-            "name": "Eunoia",
+            "path": "/indexed/docs-site",
+            "name": "docs-site",
             "last_indexed_commit": "41b3a10b2675afea0ce7316485b9a72bf86d9725",
             "indexing_status": "completed",
         },
@@ -83,14 +83,14 @@ async def test_search_code_returns_repository_index_provenance():
             ),
         ),
     ):
-        result = await search_code("journal capture", repo_path="/indexed/Eunoia")
+        result = await search_code("journal capture", repo_path="/indexed/docs-site")
 
     assert result["repository_scope"] == {
-        "requested_path": "/indexed/Eunoia",
+        "requested_path": "/indexed/docs-site",
         "found": True,
         "repository_id": 9,
-        "repository_path": "/indexed/Eunoia",
-        "repository_name": "Eunoia",
+        "repository_path": "/indexed/docs-site",
+        "repository_name": "docs-site",
         "last_indexed_commit": "41b3a10b2675afea0ce7316485b9a72bf86d9725",
         "indexing_status": "completed",
         "freshness": {"status": "current"},
@@ -190,7 +190,7 @@ async def test_remote_diff_review_forwards_explicit_repo_scope():
         await remote_server.review_diff(
             base="origin/main",
             head="current",
-            repo_path="/indexed/Eunoia",
+            repo_path="/indexed/docs-site",
         )
 
     post_mock.assert_awaited_once_with(
@@ -198,7 +198,7 @@ async def test_remote_diff_review_forwards_explicit_repo_scope():
         {
             "base": "origin/main",
             "head": "current",
-            "repo_path": "/indexed/Eunoia",
+            "repo_path": "/indexed/docs-site",
         },
     )
 
@@ -211,12 +211,12 @@ async def test_remote_record_decision_forwards_repo_scope():
     with patch.object(remote_server, "_post", post_mock):
         await remote_server.record_decision(
             "Scoped decision",
-            repo_path="/indexed/Eunoia",
+            repo_path="/indexed/docs-site",
         )
 
     payload = post_mock.await_args.args[1]
     assert payload["title"] == "Scoped decision"
-    assert payload["repo_path"] == "/indexed/Eunoia"
+    assert payload["repo_path"] == "/indexed/docs-site"
 
 
 @pytest.mark.asyncio
@@ -227,11 +227,11 @@ async def test_remote_record_rule_forwards_repo_scope():
     with patch.object(remote_server, "_post", post_mock):
         await remote_server.record_rule(
             "Scoped rule",
-            repo_path="/indexed/Eunoia",
+            repo_path="/indexed/docs-site",
         )
 
     post_mock.assert_awaited_once()
     assert post_mock.await_args.args[0] == "/rules"
     payload = post_mock.await_args.args[1]
     assert payload["name"] == "Scoped rule"
-    assert payload["repo_path"] == "/indexed/Eunoia"
+    assert payload["repo_path"] == "/indexed/docs-site"

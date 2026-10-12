@@ -3796,7 +3796,7 @@
     }
   ],
   "repository": {
-    "name": "Perlitten/Brain",
+    "name": "project-brain",
     "pinned_commit": "8a71f8d62a73d3e112280a90d42d76c29fab747a",
     "pinned_ref": "n8n-removal source"
   },

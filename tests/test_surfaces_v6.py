@@ -22,7 +22,7 @@ def test_classify_surface_basic():
     assert classify_surface("src/db/models.py") == "database"
     assert classify_surface("alembic/versions/001.py") == "database"
     assert classify_surface("extension/src/options/core.ts") == "extension"
-    assert classify_surface("scripts/sync_hermes_rag.py") == "scripts"
+    assert classify_surface("scripts/sync_wiki_rag.py") == "scripts"
     assert classify_surface("run_backend.py") == "scripts"
     assert classify_surface("tests/test_engine.py") == "tests"
     assert classify_surface("README.md") == "docs"

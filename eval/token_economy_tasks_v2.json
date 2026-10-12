@@ -3893,7 +3893,7 @@
   }
  ],
  "repository": {
-  "name": "Perlitten/Brain",
+  "name": "project-brain",
   "pinned_commit": "2f2e08e5c8a6b8c4ed18473098d2bb056d25643b",
   "pinned_ref": "master@2026-10-02"
  },

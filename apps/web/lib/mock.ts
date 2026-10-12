@@ -213,7 +213,7 @@ export const reports: Report[] = [
 ];
 
 export const principals: Principal[] = [
-  { id: "p-1", name: "andrei", kind: "human", scopes: ["*"], lastSeen: "now", credentials: 1 },
+  { id: "p-1", name: "admin", kind: "human", scopes: ["*"], lastSeen: "now", credentials: 1 },
   { id: "p-2", name: "claude-code", kind: "agent", scopes: ["core:read", "memory:write"], lastSeen: "13:41", credentials: 2 },
   { id: "p-3", name: "codex", kind: "agent", scopes: ["core:read"], lastSeen: "12:58", credentials: 1 },
   { id: "p-4", name: "ci-bridge", kind: "service", scopes: ["core:read"], lastSeen: "10:40", credentials: 1 },
@@ -222,7 +222,7 @@ export const principals: Principal[] = [
 
 export const identities: Identity[] = [
   {
-    id: 1, name: "andrei", kind: "human", disabled: false, createdAt: "Sep 24", activeKeys: 1, scopes: ["principals:write", "setup:write"], lastSeen: "13:58",
+    id: 1, name: "admin", kind: "human", disabled: false, createdAt: "Sep 24", activeKeys: 1, scopes: ["principals:write", "setup:write"], lastSeen: "13:58",
     keys: [
       { id: 1, scopes: ["principals:write", "setup:write"], status: "active", created: "Sep 24 · 09:12", expires: "never", lastUsed: "13:58", expiringSoon: false, neverUsed: false },
     ],

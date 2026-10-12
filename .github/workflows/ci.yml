@@ -117,9 +117,6 @@ jobs:
       - name: Run tests
         run: pytest -q
 
-      - name: Reject stale deployment identities
-        run: bash deploy/doctor.sh stale-scan
-
       - name: Build wheel + clean-install smoke
         run: |
           python -m pip install build

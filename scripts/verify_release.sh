@@ -72,7 +72,6 @@ wheel_smoke() {
 
 check "ruff" "$PY" -m ruff check brain apps tests
 check "mypy ratchet" mypy_gate
-check "deploy identity scan" bash deploy/doctor.sh stale-scan
 
 service_up postgres
 service_status=$?

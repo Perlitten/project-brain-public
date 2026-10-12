@@ -41,7 +41,7 @@ This is not hypothetical. Several extra source trees under `/repos/` were once
 staged into the worker with `docker cp`, so they lived in the **container's
 writable layer**. Any `docker compose up -d --build worker` erased them while the
 Postgres index rows survived — an index pointing at a source that no longer
-exists. A clean re-index over that list would have destroyed ~6800 chunks.
+exists. A clean re-index over that list would have destroyed thousands of chunks.
 
 Before enqueuing a clean re-index:
 
@@ -95,7 +95,7 @@ nor partial provider success bypasses the completed/exact-commit harness gate.
 ## Earlier operational consequences
 
 - Repository rows whose path cannot exist inside the container (e.g. Windows
-  paths such as `D:/projects/...`) can never be refreshed from the server. They
+  paths such as `C:/work/...`) can never be refreshed from the server. They
   are stale by construction and should be deleted rather than re-indexed, after
   a fresh index of the same source lands under an `/indexed/...` path.
 - During bulk indexing, `/ask` times out: LLM synthesis queues behind embedding

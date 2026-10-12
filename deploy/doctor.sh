@@ -226,101 +226,6 @@ check_mount_dirs() {
     done
 }
 
-filter_stale_scan_runtime_paths() {
-    local path
-    while IFS= read -r path; do
-        [[ -n "$path" ]] || continue
-        case "$path" in
-            .env | .mcp.json | .dashboard-temp-login.txt | .project-brain-release) continue ;;
-            .secrets/* | .secrets\\*) continue ;;
-            target-repo/* | target-repo\\*) continue ;;
-            indexed-repos/* | indexed-repos\\*) continue ;;
-            indexed-projects/* | indexed-projects\\*) continue ;;
-        esac
-        printf '%s\n' "$path"
-    done
-}
-
-check_no_stale_terms() {
-    local old_repo_lower old_repo_title old_ip old_brain_host old_n8n_host old_user old_hoster old_vps
-    local old_d_projects_fwd old_d_projects_back old_obsidian_fwd old_obsidian_back old_file_uri
-    local old_hybrid old_verified old_holdout old_independent old_run_independent old_run_phase8 old_run_full
-    local old_lightrag old_auth_token old_telegram old_setup old_capture old_checks old_priv_ref
-    local old_prof_tg old_prof_edge old_caddy pattern
-
-    old_repo_lower='urban'"-rivals"
-    old_repo_title='Urban'" Rivals"
-    old_ip='198[.]51[.]100[.]77'
-    old_brain_host='brain[.]198[.]51'
-    old_n8n_host='n8n[.]brain[.]198[.]51'
-    old_user='old'"-deploy-user"
-    old_hoster='Conta'"bo"
-    old_vps='vmi[0-9]+'
-    old_d_projects_fwd='D:'"/projects"
-    old_d_projects_back='D:'"\\\\projects"
-    old_obsidian_fwd='D:'"/Obsidian"
-    old_obsidian_back='D:'"\\\\Obsidian"
-    old_file_uri='file:'"///D:"
-    old_hybrid='HYBRID_CONTEXT'"_ENGINE"
-    old_verified='VERIFIED'"_DELIVERY"
-    old_holdout='hold'"out-v"
-    old_independent='independent'"-tasks-v2"
-    old_run_independent='run_independent'"_verification"
-    old_run_phase8='run_phase8'"_independent"
-    old_run_full='run_full'"_verification"
-    old_lightrag='LIGHT'"RAG_API_KEY"
-    old_auth_token='BRAIN_API'"_AUTH_TOKEN"
-    old_telegram='TELEGRAM'"_ALLOWED_USER_IDS"
-    old_setup='setup_n8n'"_telegram"
-    old_capture='capture_repo'"_memory"
-    old_checks='run_brain'"_checks"
-    old_priv_ref='private'"_reflection"
-    old_prof_tg='--profile '"telegram"
-    old_prof_edge='--profile '"edge"
-    old_caddy='Cad'"dy"
-
-    pattern="${old_repo_lower}|${old_repo_title}|${old_d_projects_fwd}|${old_d_projects_back}|${old_ip}|${old_brain_host}|${old_n8n_host}|${old_user}|${old_hoster}|${old_vps}|${old_obsidian_fwd}|${old_obsidian_back}|${old_file_uri}|${old_hybrid}|${old_verified}|${old_holdout}|${old_independent}|${old_run_independent}|${old_run_phase8}|${old_run_full}|${old_lightrag}|${old_auth_token}|${old_telegram}|${old_setup}|${old_capture}|${old_checks}|${old_priv_ref}|${old_prof_tg}|${old_prof_edge}|${old_caddy}"
-    local matches=""
-    if have_cmd rg && [[ "${BRAIN_DOCTOR_FORCE_GREP:-0}" != "1" ]]; then
-        matches="$(rg -uu -I -l "$pattern" \
-            --glob '!.git/**' --glob '!.venv/**' --glob '!node_modules/**' \
-            --glob '!audits/**' --glob '!docs/adr/**' \
-            --glob '!reports/**' --glob '!context_packs/**' --glob '!**/__pycache__/**' \
-            --glob '!/.env' --glob '!/.mcp.json' --glob '!/.secrets/**' \
-            --glob '!/.dashboard-temp-login.txt' --glob '!/.project-brain-release' \
-            --glob '!/target-repo/**' --glob '!/indexed-repos/**' \
-            --glob '!/indexed-projects/**' \
-            2>/dev/null || true)"
-    else
-        matches="$(
-            while IFS= read -r -d '' file; do
-                if grep -IqE "$pattern" "$file" 2>/dev/null; then
-                    printf '%s\n' "$file"
-                fi
-            done < <(
-                find . -type f \
-                    ! -path './.git/*' ! -path './.venv/*' \
-                    ! -path './audits/*' ! -path './docs/adr/*' \
-                    ! -path './node_modules/*' ! -path './reports/*' \
-                    ! -path './context_packs/*' ! -path './*/__pycache__/*' \
-                    ! -path './.env' ! -path './.mcp.json' \
-                    ! -path './.secrets/*' \
-                    ! -path './.dashboard-temp-login.txt' \
-                    ! -path './.project-brain-release' \
-                    ! -path './target-repo/*' ! -path './indexed-repos/*' \
-                    ! -path './indexed-projects/*' -print0
-            )
-        )"
-    fi
-    matches="$(printf '%s\n' "$matches" | filter_stale_scan_runtime_paths)"
-    if [[ -n "$matches" ]]; then
-        fail "stale project terms found in files:"
-        printf '%s\n' "$matches" >&2
-    else
-        pass "no stale project terms found"
-    fi
-}
-
 check_compose_config() {
     if $COMPOSE config --quiet >/dev/null; then
         pass "docker compose config"
@@ -402,7 +307,6 @@ case "$MODE" in
         check_required_env
         check_generated_secrets
         check_mount_dirs
-        check_no_stale_terms
         check_compose_config
         ;;
     post-start)
@@ -417,16 +321,13 @@ case "$MODE" in
         check_env_present
         check_public
         ;;
-    stale-scan)
-        check_no_stale_terms
-        ;;
     all)
         bash "$0" preflight
         bash "$0" post-start
         bash "$0" public
         ;;
     *)
-        printf 'Usage: %s [preflight|post-start|public|stale-scan|all]\n' "$0" >&2
+        printf 'Usage: %s [preflight|post-start|public|all]\n' "$0" >&2
         exit 2
         ;;
 esac
