@@ -59,10 +59,10 @@ dev = [
     "tiktoken",
 ]
 late-interaction-gpu = [
-    "pylate==1.4.0",
+    "pylate==1.6.0",
 ]
 gpu = [
-    "pylate>=1.5,<2",
+    "pylate>=1.6.0,<2",
 ]
 
 [tool.ruff]
