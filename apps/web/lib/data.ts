@@ -725,6 +725,7 @@ export const getIndexRuns = async (slug?: string | null): Promise<IndexRun[]> =>
         chunks: int(r.chunks),
         startedAt: fmtWhen(r.started_at),
         duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration),
+        uncommitted: int(r.uncommitted_changes) || undefined,
       };
     });
   });
@@ -892,7 +893,7 @@ export const getPagedIndexRuns = async (slug: string | null | undefined, input: 
     const data = await brainFetch<Json>(`/api/web/index-runs?repository_id=${repo.id}&${queryString(q)}`, { fresh: true });
     return data ? { ...pageResult(data, "runs", q, (r) => {
       const status = jobStatus(r.status), rev = str(r.revision);
-      return { id: int(r.id), revision: shortRevision(rev), trigger: indexTrigger(r.trigger), status, completeness: completeness(r.completeness, status), files: int(r.files), changed: int(r.changed), chunks: int(r.chunks), startedAt: fmtWhen(r.started_at), duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration) };
+      return { id: int(r.id), revision: shortRevision(rev), trigger: indexTrigger(r.trigger), status, completeness: completeness(r.completeness, status), files: int(r.files), changed: int(r.changed), chunks: int(r.chunks), startedAt: fmtWhen(r.started_at), duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration), uncommitted: int(r.uncommitted_changes) || undefined };
     }), available: true } : null;
   });
 };

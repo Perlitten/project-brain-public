@@ -101,6 +101,8 @@ export interface IndexRun {
   chunks: number;
   startedAt: string;
   duration: string;
+  /** Edited-but-uncommitted files the run left out (it indexed the committed HEAD). */
+  uncommitted?: number;
 }
 
 export interface ContextPack {

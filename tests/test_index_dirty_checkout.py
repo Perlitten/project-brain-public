@@ -45,3 +45,15 @@ def test_head_snapshot_has_committed_content_and_is_clean(tmp_path):
     assert git_source_is_clean(snapshot, files)
     # The user's checkout is untouched.
     assert (repo / "app.py").read_text() == "VERSION = 2  # work in progress\n"
+
+
+def test_index_run_shape_reports_uncommitted_changes():
+    from types import SimpleNamespace
+
+    from apps.api.routers.web import shape_index_run
+
+    run = SimpleNamespace(id=1, repository_id=1, commit_hash="abc", status="completed", progress={}, file_counts={},
+                          verification={"indexed_from": "HEAD", "uncommitted_changes": 3}, started_at=None, completed_at=None)
+    assert shape_index_run(run)["uncommitted_changes"] == 3
+    run.verification = {}
+    assert shape_index_run(run)["uncommitted_changes"] == 0
