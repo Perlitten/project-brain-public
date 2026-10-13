@@ -230,6 +230,12 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
       </header>
 
       <main id="main" className="main" inert={mobile && drawer}>
+        {demo && process.env.NEXT_PUBLIC_DEMO_SITE === "1" && (
+          <p className="public-demo-note">
+            <strong>Demo data.</strong> All projects and numbers are examples.{' '}
+            <a href="https://github.com/Perlitten/project-brain-public#readme">Install your own Brain</a>
+          </p>
+        )}
         {children}
       </main>
 
