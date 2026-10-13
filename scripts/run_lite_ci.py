@@ -22,7 +22,7 @@ def run(command: list[str]) -> int:
     output = result.stdout + result.stderr
     print(output)
     if result.returncode and os.environ.get("GITHUB_ACTIONS"):
-        diagnostic = output[-6000:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        diagnostic = output[-2500:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
         print("::error title=Lite verification failed::" + diagnostic)
     return result.returncode
 
