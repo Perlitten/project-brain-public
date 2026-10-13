@@ -32,6 +32,9 @@ Latest published release: **[v0.9.0](https://github.com/Perlitten/project-brain-
 The **main branch contains 0.9.1 development code**, not a published v0.9.1 release.
 The source quickstart below installs main; release assets and their checksums are
 on the v0.9.0 release page. Early, single-user software.
+Published v0.9.0 artifacts predate these launch repairs and retain older bundled
+documentation/metadata. The supported launch installation is the corrected source
+quickstart on main; do not assume the old release contains unreleased fixes.
 
 ---
 
@@ -42,7 +45,7 @@ on the v0.9.0 release page. Early, single-user software.
 | **What it is** | A memory and navigation layer for coding agents: code index (pgvector), dependency graph (Neo4j), scoped decisions and rules, a reviewed L1–L4 lesson memory, impact analysis and diff review. |
 | **Who it is for** | One developer running AI agents across one or many repositories. One user, one instance. Not a team SaaS. |
 | **Where it runs** | Locally (Docker + a Python venv, one bootstrap script) or on your own VPS (one compose file, TLS, OAuth for remote MCP clients). |
-| **How agents use it** | 13 MCP tools over stdio or Streamable HTTP, plus resources, prompts, elicitation and sampling. Also a REST API, a CLI and a web dashboard. |
+| **How agents use it** | 13 local stdio MCP tools; the HTTP-backed server exposes 14. Also resources, prompts, a REST API, a CLI and a web dashboard. |
 | **Your data** | Index and memory storage are self-hosted. Cloud model providers receive selected source text and prompts; use local models for local inference. See [data flows](docs/FAQ.md#where-does-my-data-go). |
 
 ## Why not just an Obsidian vault?

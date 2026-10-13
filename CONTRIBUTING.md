@@ -39,6 +39,8 @@ cd apps/web
 npm ci
 npm test
 npm run typecheck
+npm run build
+npm run test:production
 ```
 
 ## Commit identity and privacy check

@@ -3,6 +3,9 @@
 These are the v0.9.0 release instructions. Main contains 0.9.1 development code;
 use the root README for main's source workflow. Public v0.9.0 artifacts and
 checksums are on the [release page](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.0).
+This is a historical release guide, not the supported launch quickstart. The
+v0.9.0 tag and artifacts do not contain main's unreleased launch repairs; their
+bundled links and generated-file reindexing behavior may still be outdated.
 
 One instance per user, on a machine you control, with your own repositories and
 your own provider credentials. Verified commands below were run end-to-end on a
