@@ -63,6 +63,15 @@ async def test_bounded_impact_uses_one_graph_query_and_no_llm():
     assert result["affected"][0]["name"] == "apps/api/routers/core.py"
 
 
+def test_deterministic_keywords_drops_action_verbs_and_generic_nouns():
+    from brain.analyzers.impact_analyzer import _deterministic_keywords
+
+    kws = _deterministic_keywords(
+        "Rename the function resolve_embedding_dimension to get_embedding_dims across the codebase"
+    )
+    assert kws == ["resolve_embedding_dimension", "get_embedding_dims"]
+
+
 from brain.analyzers.impact_analyzer import _is_noise_node
 
 

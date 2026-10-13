@@ -284,11 +284,13 @@ async def _ask_v2(body: AskRequest) -> dict:
     if answer != response:
         status = "partial"
         degraded.append("answer_output_cap")
+    learnings_used = (runtime.get("memory") or {}).get("learnings") or []
     builder = BudgetedPayloadBuilder(
         settings.AGENT_ASK_OUTPUT_MAX_BYTES,
         metadata={"status": status, "degraded": degraded, **generation_meta},
     )
     builder.add("answer", answer, priority=2)
+    builder.add("learnings_used", learnings_used, priority=2)
     builder.add("evidence", runtime.get("candidates", []), priority=1)
     built = builder.build()
     if built.get("answer") != response and status == "ok":
@@ -297,6 +299,7 @@ async def _ask_v2(body: AskRequest) -> dict:
         return (BudgetedPayloadBuilder(settings.AGENT_ASK_OUTPUT_MAX_BYTES,
                     metadata={"status": "partial", "degraded": built["degraded"], **generation_meta})
                 .add("answer", built.get("answer", ""), priority=2)
+                .add("learnings_used", learnings_used, priority=2)
                 .add("evidence", built.get("evidence", []), priority=1).build())
     return built
 
