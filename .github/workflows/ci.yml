@@ -21,9 +21,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install hash-locked dependencies
-        run: |
-          pip install --require-hashes -r requirements-dev.lock
-          pip install --no-deps -e .
+        run: python scripts/run_lite_ci.py --install
       - name: Zero-service SQLite acceptance
         run: python scripts/run_lite_ci.py
 
