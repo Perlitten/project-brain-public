@@ -17,7 +17,8 @@ from urllib.parse import unquote, urlsplit
 CURRENT_PAGES = (
     "README.md", "CONTRIBUTING.md", "docs/README.md", "docs/FAQ.md",
     "docs/GETTING_STARTED.md", "docs/ARCHITECTURE.md", "docs/MODEL_PROVIDERS.md",
-    "docs/MCP.md", "docs/historical/README.md", "docs/release/README.md",
+    "docs/MCP.md", "docs/DEMO.md", "docs/historical/README.md", "docs/release/README.md",
+    "docs/release/FINAL_PRODUCTIZATION_REPORT.md",
 )
 PUBLISHED_PAGES = ("README.md", "docs/FAQ.md", "docs/GETTING_STARTED.md")
 PUBLISHED = re.compile(r"Latest published release: \*\*\[v(\d+\.\d+\.\d+)\]\(([^)]+)\)\*\*")

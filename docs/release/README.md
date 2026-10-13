@@ -86,8 +86,9 @@ configuration, data and cost evidence.
 ## Publish through the verified pipeline
 
 The release workflow is [`.github/workflows/release.yml`](../../.github/workflows/release.yml).
-It verifies distributions, checks tests, generates an SPDX SBOM and computes
-SHA-256 checksums. Publication builds from the immutable tag directly.
+It verifies distributions, generates an SPDX SBOM and computes SHA-256 checksums.
+CI and CodeQL verify the reviewed commit before tagging; the release workflow
+does not rerun those suites. Publication builds from the immutable tag directly.
 
 Merge the reviewed candidate only with green required CI and CodeQL. Set a new
 version/tag that matches package metadata and changelog; use the existing

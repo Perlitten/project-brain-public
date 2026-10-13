@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 No changes recorded.
 
-## [0.9.2] - release candidate
+## [0.9.2] - 2026-10-13
 
 ### Productization
 
