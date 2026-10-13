@@ -555,7 +555,12 @@ def test_image_manifest_digest_matches_canonical_build_input_digest(tmp_path):
         destination = copied_root / value
         destination.parent.mkdir(parents=True, exist_ok=True)
         if source.is_dir():
-            shutil.copytree(source, destination)
+            # These generated directories are excluded by the canonical source
+            # manifest. Copying installed npm/Python dependencies adds hundreds
+            # of MB to this fixture without exercising another build input.
+            shutil.copytree(source, destination, ignore=shutil.ignore_patterns(
+                "node_modules", ".next", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache",
+            ))
         else:
             shutil.copy2(source, destination)
 

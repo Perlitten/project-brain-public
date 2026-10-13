@@ -76,6 +76,18 @@ The worker must run for queued jobs and scheduled maintenance. API health
 reports its heartbeat. A green installation check does not establish useful
 semantic retrieval or production suitability.
 
+### Moving checkouts (unreleased `main`)
+
+Runtime context defaults to `BRAIN_STALE_CONTEXT_POLICY=warn_and_serve` on
+`main`. An older index triggers a throttled background reindex and a
+`freshness_warning` with a bounded changed-file list. Changed candidates use
+current on-disk slices; code from deleted or escaping paths is not returned as
+live evidence. Rules, decisions and eligible learnings remain fresh. Commit
+source changes so the queued index can complete its clean-tree verification.
+
+Use `BRAIN_STALE_CONTEXT_POLICY=strict_block` when a workflow requires an exact
+indexed revision. The published v0.9.2 runtime retains its original behavior.
+
 ## Configure meaningful models
 
 The shipped defaults use `mock` for both roles. Mocks require no provider keys
