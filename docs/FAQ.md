@@ -2,7 +2,7 @@
 
 Latest published release: **[v0.9.2](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.2)**.
 Use the [current getting-started guide](GETTING_STARTED.md) for installation.
-The [dashboard](DASHBOARD.md) has the same practical answers under **Help**.
+The dashboard repeats these practical answers on its [Help screen](DASHBOARD.md).
 
 - [Using Brain](#using-brain) — problems people run into first, and how to fix them.
 - [Limits and evidence](#limits-and-evidence) — what Brain does and does not establish.
@@ -26,8 +26,8 @@ same absolute path.
 ### Brain says it is behind the code
 
 Brain answers from the last commit it indexed. Re-index from the dashboard (or
-run `brain index --repo` with the same path); later runs re-read only what
-changed. Brain indexes committed source only: if a re-index refuses the tree,
+run `.venv/bin/brain index --repo /absolute/path` from the Brain checkout);
+later runs re-read only what changed. Brain indexes committed source only: if a re-index refuses the tree,
 commit your source edits first. Ignored build output such as `node_modules` and
 `.next` does not count, so do not delete it to make re-indexing work.
 
@@ -43,8 +43,10 @@ dashboard together.
 The shipped defaults use `mock` models. They test the plumbing without provider
 keys, but their semantic rankings and generated answers are not meaningful.
 Configure real embedding and language models (see
-[Getting started](GETTING_STARTED.md#configure-meaningful-models)) and re-index;
-vectors from different embedding models are not interchangeable.
+[Getting started](GETTING_STARTED.md#configure-meaningful-models)), restart the
+API and worker, then run `.venv/bin/brain embeddings verify --repo /absolute/path`
+and `.venv/bin/brain embeddings backfill --repo /absolute/path`. Verify again;
+an incremental re-index alone leaves unchanged files on their old vectors.
 
 ### The dashboard shows example numbers
 
@@ -54,9 +56,11 @@ credential. A web app started on its own stays a demo.
 
 ### How do I update Brain?
 
-Back up `.env` and your data first. On a local checkout, pull the new release,
-re-run `./scripts/bootstrap.sh` (it preserves `.env` and the database volumes)
-and restart with `./scripts/start.sh`. Restart MCP clients afterwards. On a
+Back up `.env` and your data first. A release checkout is normally on a detached
+tag, so update it with `git fetch --tags origin` and `git checkout vX.Y.Z`, using
+the new release tag. Re-run `./scripts/bootstrap.sh`, refresh dashboard packages
+with `(cd apps/web && npm ci)`, and restart with `./scripts/start.sh`; these steps
+preserve `.env` and the database volumes. Restart MCP clients afterwards. On a
 server, follow [Start or Update](../deploy/RUNBOOK.md#start-or-update) in the
 runbook. Never run `docker compose down --volumes` on data you need to keep; see
 the [backup and restore runbook](runbooks/backup-restore.md).
