@@ -124,6 +124,16 @@ class SQLiteJobQueue:
             return {**json.loads(row[0]), "status": row[1]} if row else None
         return await asyncio.to_thread(read)
 
+    async def recent_job_ids(self, *, limit=50, offset=0):
+        def read():
+            with self.redis.connection() as db:
+                rows = db.execute(
+                    "SELECT id FROM jobs WHERE prefix=? ORDER BY created DESC,id DESC LIMIT ? OFFSET ?",
+                    (self.prefix, max(1, int(limit)), max(0, int(offset))),
+                ).fetchall()
+            return [row[0] for row in rows]
+        return await asyncio.to_thread(read)
+
     async def get_capacity_stats(self):
         def read():
             with self.redis.connection() as db:
@@ -154,17 +164,25 @@ async def serve_worker():
             acquired = await claim_db_lease(session, job_id=job_id, fencing_token=token, worker_id=worker_id, ttl_seconds=60)
         if not acquired:
             continue
-        owner = asyncio.current_task()
+        ownership_lost = False
+        execution = None
 
         async def renew():
+            nonlocal ownership_lost
             while True:
                 await asyncio.sleep(10)
-                good = await queue.renew(job_id, token)
-                async with async_session_factory() as session, session.begin():
-                    good = good and await renew_db_lease(session, job_id=job_id, fencing_token=token, ttl_seconds=60)
+                try:
+                    good = await queue.renew(job_id, token)
+                    async with async_session_factory() as session, session.begin():
+                        good = good and await renew_db_lease(
+                            session, job_id=job_id, fencing_token=token, ttl_seconds=60
+                        )
+                except Exception:
+                    good = False
                 if not good:
-                    if owner:
-                        owner.cancel()
+                    ownership_lost = True
+                    if execution:
+                        execution.cancel()
                     return
                 await redis_client.set(queue.heartbeat_key, json.dumps({"available_capacity":1,"worker_id":worker_id}), ex=45)
 
@@ -181,14 +199,20 @@ async def serve_worker():
         fence_ctx = current_job_fence.set(DbFence(job_id, token))
         runtime_ctx = current_job.set(JobRuntime(job_id, report, check, repair))
         heartbeat = asyncio.create_task(renew())
+        execution = asyncio.create_task(execute_job(job["type"], job["params"]))
         try:
-            result = await asyncio.wait_for(execute_job(job["type"], job["params"]), job["timeout_seconds"])
+            result = await asyncio.wait_for(execution, job["timeout_seconds"])
             await queue.finish(job_id, token, "completed", result)
+        except asyncio.CancelledError:
+            if not ownership_lost:
+                raise
         except Exception as exc:
-            await queue.finish(job_id, token, "failed", {"error": type(exc).__name__})
+            status = "queued" if job["attempt"] < job["max_attempts"] else "failed"
+            await queue.finish(job_id, token, status, {"error": type(exc).__name__})
         finally:
             heartbeat.cancel()
-            await asyncio.gather(heartbeat, return_exceptions=True)
+            execution.cancel()
+            await asyncio.gather(heartbeat, execution, return_exceptions=True)
             current_job.reset(runtime_ctx)
             current_job_fence.reset(fence_ctx)
             async with async_session_factory() as session, session.begin():
