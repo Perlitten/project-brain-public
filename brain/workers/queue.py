@@ -137,6 +137,11 @@ def _json_serializer(obj: Any) -> str:
 
 
 class JobQueue:
+    def __new__(cls, redis, prefix="brain:worker"):
+        if getattr(redis, "storage_mode", None) == "lite":
+            from brain.workers.lite_queue import SQLiteJobQueue
+            return SQLiteJobQueue(redis, prefix)
+        return super().__new__(cls)
     """Thin Redis queue over the worker prefix."""
 
     def __init__(self, redis: Redis, prefix: str = "brain:worker") -> None:

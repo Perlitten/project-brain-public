@@ -1,7 +1,8 @@
 from time import perf_counter
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, cast
 from brain.database.session import neo4j_driver
 from brain.graph.schema import VALID_NODE_TYPES, VALID_RELATIONSHIP_TYPES
+from brain.config.settings import settings
 
 GRAPH_SCHEMA_VERSION = 3
 
@@ -36,6 +37,8 @@ FOCUS_ANCHOR_LIMIT = 5
 async def ensure_graph_schema(driver=None) -> None:
     """Create the repository-identity indexes required by scoped graph reads."""
     graph_driver = driver or neo4j_driver
+    if settings.BRAIN_STORAGE_MODE == "lite":
+        return
     async with graph_driver.session() as session:
         for node_type in sorted(VALID_NODE_TYPES):
             index_name = f"graph_{node_type.lower()}_repository_id"
@@ -63,6 +66,12 @@ def build_qualified_symbol_identity(
 
 class GraphClient:
     """Client for interacting with the Neo4j graph database."""
+
+    def __new__(cls, repository_id: int, driver=None):
+        if settings.BRAIN_STORAGE_MODE == "lite":
+            from brain.graph.sqlite_graph import SQLiteGraph, SQLiteGraphClient
+            return SQLiteGraphClient(repository_id, cast(SQLiteGraph, driver or neo4j_driver))
+        return super().__new__(cls)
 
     def __init__(self, repository_id: int, driver=None):
         if repository_id is None:

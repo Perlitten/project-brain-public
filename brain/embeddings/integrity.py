@@ -12,6 +12,7 @@ from brain.database.models import Embedding, File, FileChunk
 from brain.database.session import async_session_factory
 from brain.embeddings.config import EmbeddingConfig, content_hash, get_embedding_config
 from brain.embeddings.pgvector_sql import pgvector_index_names
+from brain.config.settings import settings
 
 
 @dataclass
@@ -101,6 +102,8 @@ def _embedding_reason(
 
 
 async def _pgvector_health(session) -> tuple[bool, bool]:
+    if settings.BRAIN_STORAGE_MODE == "lite":
+        return False, False
     extension = False
     index_exists = False
     try:
@@ -180,7 +183,8 @@ async def collect_embedding_inventory(
         content_col = func.length(FileChunk.content).label("clen") if fast else FileChunk.content
         vec_len_col = (
             null().label("vec_len") if fast
-            else func.jsonb_array_length(cast(Embedding.vector_data, JSONB)).label("vec_len")
+            else (func.json_array_length(Embedding.vector_data) if settings.BRAIN_STORAGE_MODE == "lite"
+                  else func.jsonb_array_length(cast(Embedding.vector_data, JSONB))).label("vec_len")
         )
         stmt = (
             select(
@@ -245,6 +249,13 @@ async def verify_embeddings(
     inventory = await collect_embedding_inventory(repository_id, repository_path)
     config = inventory.configured
     issues: List[str] = []
+
+    if settings.BRAIN_STORAGE_MODE == "lite":
+        passed = (inventory.total_eligible_chunks > 0
+                  and inventory.chunks_with_current_embeddings == inventory.total_eligible_chunks
+                  and inventory.pgvector_populated == inventory.total_eligible_chunks)
+        return {**inventory.to_dict(), "pass": passed, "backend": "sqlite-float32-cosine",
+                "issues": [] if passed else ["SQLite embedding coverage or provenance is incomplete"]}
 
     if inventory.missing_embeddings:
         issues.append(f"{inventory.missing_embeddings} chunks missing embeddings")

@@ -16,13 +16,13 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
-    DateTime,
     UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
+from brain.database.portable_types import utc_datetime
 from brain.embeddings.constants import EMBEDDING_DIMENSION
 from brain.embeddings.pgvector_sql import pgvector_column_type
 
@@ -45,9 +45,9 @@ class Repository(Base):
     indexing_status: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )  # e.g., "pending", "indexing", "completed", "failed"
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     # Relationships
@@ -76,11 +76,11 @@ class File(Base):
     hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
-    last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_indexed_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
 
     # Relationships
     repository: Mapped["Repository"] = relationship("Repository", back_populates="files")
@@ -137,9 +137,9 @@ class Decision(Base):
     affected_features: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # List of strings
     affected_modules: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # List of strings
     affected_files: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # List of strings
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -156,9 +156,9 @@ class Rule(Base):
     applies_to: Mapped[dict[str, Any] | None] = mapped_column(
         JSON, nullable=True
     )  # e.g., dict mapping features/modules
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -176,7 +176,7 @@ class ContextPack(Base):
     # Commit the pack's evidence came from (latest completed index run at
     # build time); null when the repo had no completed index then.
     repo_commit: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
 
     # What the pack actually delivered, recorded at build time. These were
     # previously re-derived per request by parsing the markdown artifact, which
@@ -206,9 +206,9 @@ class IndexingRun(Base):
     )
     commit_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False)  # "running", "completed", "degraded", "failed"
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
     progress: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     verification: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Per-outcome file counters + bounded error samples written when the run
@@ -272,9 +272,9 @@ class LateInteractionEmbedding(Base):
     was_truncated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -332,7 +332,7 @@ class LateInteractionShadowEvent(Base):
     index_revision: Mapped[str] = mapped_column(String(255), nullable=False)
     skip_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        utc_datetime(),
         server_default=func.now(),
         nullable=False,
     )
@@ -365,9 +365,9 @@ class FileCard(Base):
     embedding_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("embeddings.id", ondelete="SET NULL"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     embedding: Mapped["Embedding | None"] = relationship("Embedding", foreign_keys="[FileCard.embedding_id]")
@@ -379,7 +379,7 @@ class Task(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., "pending", "in_progress", "completed"
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
 
 
 class DiffReview(Base):
@@ -389,7 +389,7 @@ class DiffReview(Base):
     commit_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     report_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., "approved", "needs_review", "blocked"
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
 
 
 class BrainInsight(Base):
@@ -411,11 +411,11 @@ class BrainInsight(Base):
     source_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     engine_version: Mapped[str] = mapped_column(String(64), nullable=False, default="p0.1")
     occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
 
 
 class Learning(Base):
@@ -429,7 +429,7 @@ class Learning(Base):
 
     __tablename__ = "memory_learnings"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True)
     statement: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
@@ -437,18 +437,18 @@ class Learning(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", index=True)
     # active | superseded | rejected
     superseded_by: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
+        BigInteger().with_variant(Integer, "sqlite"), ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
     )
-    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_until: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
     repo_scope: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     promoted_from: Mapped[str | None] = mapped_column(String(64), nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(
         pgvector_column_type(EMBEDDING_DIMENSION), nullable=True
     )
     embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -466,9 +466,9 @@ class WorkerJobLease(Base):
     job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     fencing_token: Mapped[str] = mapped_column(String(64), nullable=False)
     worker_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, index=True)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -485,8 +485,8 @@ class Principal(Base):
     name: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="service")  # service | human
     org_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
+    disabled_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
 
 
 class ApiCredential(Base):
@@ -504,10 +504,10 @@ class ApiCredential(Base):
     )
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
 
     principal: Mapped["Principal"] = relationship("Principal")
 
@@ -523,7 +523,7 @@ class OAuthClient(Base):
 
     client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     client_info: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
 
 
 class OAuthRefreshToken(Base):
@@ -546,9 +546,9 @@ class OAuthRefreshToken(Base):
     access_credential_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("api_credentials.id", ondelete="SET NULL"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
 
 
 class AuditEvent(Base):
@@ -560,9 +560,9 @@ class AuditEvent(Base):
 
     __tablename__ = "audit_events"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+        utc_datetime(), server_default=func.now(), nullable=False, index=True
     )
     principal_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -578,8 +578,8 @@ class BrainRequestTelemetry(Base):
     """Durable, payload-free telemetry for search/context requests."""
     __tablename__ = "brain_request_telemetry"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), index=True)
     operation: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     surface: Mapped[str] = mapped_column(String(16), nullable=False, default="http", server_default="http")
     repository_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
@@ -607,8 +607,8 @@ class RuleUsageEvent(Base):
 
     __tablename__ = "rule_usage_events"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), index=True)
     rule_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     kind: Mapped[str] = mapped_column(String(16), nullable=False, index=True)  # delivered | flagged
     repository_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
@@ -627,7 +627,7 @@ class MemoryEpisode(Base):
 
     __tablename__ = "memory_episodes"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True)
     # Cluster of L1 event IDs that form this episode
     source_event_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
     # LLM-distilled summary of the episode
@@ -638,11 +638,11 @@ class MemoryEpisode(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
     # If promoted, link to the L3 learning
     promoted_to_learning_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
+        BigInteger().with_variant(Integer, "sqlite"), ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
     )
     # G1 outcome: the active L3 learning this episode duplicates
     duplicate_of_learning_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
+        BigInteger().with_variant(Integer, "sqlite"), ForeignKey("memory_learnings.id", ondelete="SET NULL"), nullable=True
     )
     gate_reasons: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     # G3 outcome: active L3 learnings this episode corrects. Applied (status
@@ -650,16 +650,16 @@ class MemoryEpisode(Base):
     supersedes_learning_ids: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
     # If merged, link to the surviving episode
     merged_into_episode_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("memory_episodes.id", ondelete="SET NULL"), nullable=True
+        BigInteger().with_variant(Integer, "sqlite"), ForeignKey("memory_episodes.id", ondelete="SET NULL"), nullable=True
     )
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     embedding: Mapped[list[float] | None] = mapped_column(
         pgvector_column_type(EMBEDDING_DIMENSION), nullable=True
     )
     repo_scope: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -672,11 +672,11 @@ class MemoryEpisodeEvent(Base):
 
     __tablename__ = "memory_episode_events"
 
-    event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    event_id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
     episode_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("memory_episodes.id", ondelete="CASCADE"), nullable=False, index=True
+        BigInteger().with_variant(Integer, "sqlite"), ForeignKey("memory_episodes.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
 
 
 class MemorySkill(Base):
@@ -690,7 +690,7 @@ class MemorySkill(Base):
 
     __tablename__ = "memory_skills"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     # When to use this skill (keywords, patterns)
@@ -713,9 +713,9 @@ class MemorySkill(Base):
     # Explicit opt-in for prompt injection: a NULL scope is *not* global —
     # only is_global skills may be injected into contexts for any repo.
     is_global: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -725,11 +725,11 @@ class SkillOutcome(Base):
     __table_args__ = (UniqueConstraint("task_id", "skill_id", name="uq_memory_skill_outcome_task_skill"),
                       CheckConstraint("outcome IN ('success', 'failure')", name="ck_memory_skill_outcome"))
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    skill_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("memory_skills.id", ondelete="CASCADE"), nullable=False, index=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    skill_id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("memory_skills.id", ondelete="CASCADE"), nullable=False, index=True)
     task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("harness.agent_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
-    validation_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("harness.agent_validation_results.id", ondelete="RESTRICT"), nullable=False, index=True)
+    validation_id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("harness.agent_validation_results.id", ondelete="RESTRICT"), nullable=False, index=True)
     outcome: Mapped[str] = mapped_column(String(16), nullable=False)
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     reported_validation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)

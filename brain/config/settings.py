@@ -25,6 +25,9 @@ def _env_files() -> tuple[str, ...]:
     ``BRAIN_ENV_FILE`` path wins over everything — the supported way to point
     an installed wheel at its configuration."""
     files: list[str] = []
+    if os.getenv("BRAIN_STORAGE_MODE") == "lite":
+        explicit = os.getenv("BRAIN_ENV_FILE", "").strip()
+        return (explicit,) if explicit else ()
     package_env = Path(__file__).resolve().parents[2] / ".env"
     if package_env.is_file():
         files.append(str(package_env))
@@ -40,6 +43,9 @@ class Settings(BaseSettings):
 
     # General Settings
     ENVIRONMENT: str = "local"
+    BRAIN_STORAGE_MODE: Literal["full", "lite"] = "full"
+    BRAIN_LITE_DIR: str = ".brain"
+    BRAIN_LITE_MAX_CHUNKS: int = 50_000
     # Unset: documentation is available locally and disabled in production.
     API_DOCS_ENABLED: Optional[bool] = None
     BRAIN_BUILD_SHA: str = "unknown"
@@ -637,6 +643,9 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_db_connection(cls, v: Optional[str], info) -> str:
+        if info.data.get("BRAIN_STORAGE_MODE") == "lite":
+            directory = Path(info.data.get("BRAIN_LITE_DIR", ".brain")).expanduser().resolve()
+            return "sqlite+aiosqlite:///" + (directory / "brain.sqlite3").as_posix()
         if isinstance(v, str) and v:
             return v
         data = info.data
@@ -646,6 +655,17 @@ class Settings(BaseSettings):
         port = data.get("POSTGRES_PORT", 5433)
         db = data.get("POSTGRES_DB", "brain_db")
         return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
+
+    @model_validator(mode="after")
+    def _lite_defaults(self):
+        if self.BRAIN_STORAGE_MODE == "lite":
+            if "DEFAULT_EMBEDDING_PROVIDER" not in self.model_fields_set:
+                self.DEFAULT_EMBEDDING_PROVIDER = "local"
+            if "DEFAULT_LLM_PROVIDER" not in self.model_fields_set:
+                self.DEFAULT_LLM_PROVIDER = "disabled"
+            if "BRAIN_AGENT_CONTEXT_V2_MODE" not in self.model_fields_set:
+                self.BRAIN_AGENT_CONTEXT_V2_MODE = "on"
+        return self
 
     @field_validator("REDIS_URL", mode="before")
     @classmethod

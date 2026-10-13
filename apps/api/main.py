@@ -37,6 +37,7 @@ configure_file_log_sink()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     late_warmup_task: asyncio.Task | None = None
+    lite_worker_task: asyncio.Task | None = None
     # Sandbox misconfiguration is only visible at request time otherwise.
     logger.warning(
         "Repo path sandbox roots: {}",
@@ -83,8 +84,15 @@ async def lifespan(app: FastAPI):
                 validated_index.index_revision,
             )
     # Native MCP sessions live as long as the app does (apps/api/mcp_http.py).
+    if settings.BRAIN_STORAGE_MODE == "lite":
+        from brain.workers.lite_queue import serve_worker
+        lite_worker_task = asyncio.create_task(serve_worker())
     async with _mcp_endpoint.serving() if _mcp_endpoint is not None else nullcontext():
         yield
+    if lite_worker_task is not None:
+        lite_worker_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await lite_worker_task
     if late_warmup_task is not None and not late_warmup_task.done():
         late_warmup_task.cancel()
         with suppress(asyncio.CancelledError):

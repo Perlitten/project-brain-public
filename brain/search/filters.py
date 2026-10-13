@@ -120,6 +120,7 @@ def knowledge_authority_weight(summary: Optional[str], query: str) -> float:
 
 # Directories excluded from indexing and retrieval
 EXCLUDED_DIR_NAMES = {
+    ".brain",
     "node_modules", ".git", ".gradle", "build", "dist",
     ".next", "out", "coverage", ".idea", ".vscode",
     ".venv", "venv", "env", "__pycache__", ".pytest_cache",
@@ -182,6 +183,7 @@ EXCLUDED_FILE_GLOBS = (
 
 # Relative path prefixes excluded from retrieval (generated artifacts)
 EXCLUDED_PATH_PREFIXES = (
+    ".brain/",
     "reports/",
     "context_packs/",
     "artifacts/",

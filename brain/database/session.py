@@ -8,9 +8,17 @@ from neo4j import AsyncGraphDatabase, AsyncDriver
 from loguru import logger
 
 from brain.config.settings import settings
+from pathlib import Path
+from typing import cast
+from sqlalchemy import event
+from brain.database.lite_cache import SQLiteCache
+from brain.graph.sqlite_graph import SQLiteGraph
 
 # --- SQLAlchemy / PostgreSQL Setup ---
 assert settings.DATABASE_URL is not None, "DATABASE_URL is not configured"
+_lite = settings.BRAIN_STORAGE_MODE == "lite"
+if _lite:
+    Path(settings.BRAIN_LITE_DIR).expanduser().mkdir(parents=True, exist_ok=True)
 async_engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
@@ -19,7 +27,25 @@ async_engine = create_async_engine(
     pool_size=settings.POSTGRES_POOL_SIZE,
     max_overflow=settings.POSTGRES_MAX_OVERFLOW,
     pool_timeout=settings.POSTGRES_POOL_TIMEOUT_SECONDS,
+    **({"execution_options": {"schema_translate_map": {"harness": None}},
+        "connect_args": {"timeout": 30}} if _lite else {}),
 )
+
+if _lite:
+    @event.listens_for(async_engine.sync_engine, "connect")
+    def _sqlite_connect(connection, record):
+        connection.isolation_level = None
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+
+    @event.listens_for(async_engine.sync_engine, "begin")
+    def _sqlite_begin(connection):
+        # SQLite ignores FOR UPDATE. Serialize each transaction, including
+        # lease claims and fenced domain writes, to preserve compare-and-set.
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
 
 async_session_factory = async_sessionmaker(
     bind=async_engine, class_=AsyncSession, expire_on_commit=False, autocommit=False, autoflush=False
@@ -44,7 +70,8 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
 
 # --- Redis Setup ---
 assert settings.REDIS_URL is not None, "REDIS_URL is not configured"
-redis_client: Redis = redis_from_url(
+redis_client: Redis = cast(Redis, SQLiteCache(
+    Path(settings.BRAIN_LITE_DIR).expanduser())) if _lite else redis_from_url(
     settings.REDIS_URL,
     encoding="utf-8",
     decode_responses=True,
@@ -56,7 +83,8 @@ redis_client: Redis = redis_from_url(
 )
 
 # --- Neo4j Setup ---
-neo4j_driver: AsyncDriver = AsyncGraphDatabase.driver(
+neo4j_driver: AsyncDriver = cast(AsyncDriver, SQLiteGraph(
+    Path(settings.BRAIN_LITE_DIR).expanduser())) if _lite else AsyncGraphDatabase.driver(
     settings.NEO4J_URI, auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
 )
 
@@ -91,6 +119,7 @@ async def check_health() -> Dict[str, Dict[str, Any]]:
         health_status["postgres"] = {
             "status": "healthy",
             "message": "SQLAlchemy async engine connection successful",
+            "backend": "sqlite" if _lite else "postgresql",
             "pool": pool_info,
         }
     except Exception as e:
@@ -106,6 +135,7 @@ async def check_health() -> Dict[str, Dict[str, Any]]:
             health_status["redis"] = {
                 "status": "healthy",
                 "message": "Redis ping successful",
+                "backend": "sqlite-ttl-cache" if _lite else "redis",
                 "ping_ms": ping_ms,
             }
         else:
@@ -117,7 +147,8 @@ async def check_health() -> Dict[str, Dict[str, Any]]:
     # 3. Test Neo4j connection
     try:
         await neo4j_driver.verify_connectivity()
-        health_status["neo4j"] = {"status": "healthy", "message": "Neo4j connection verified"}
+        health_status["neo4j"] = {"status": "healthy", "message": "Graph storage verified",
+                                   "backend": "sqlite-adjacency" if _lite else "neo4j"}
     except Exception as e:
         logger.exception(f"Neo4j health check failed: {e}")
         health_status["neo4j"] = {"status": "unhealthy", "error": type(e).__name__}
@@ -152,6 +183,12 @@ async def _init_db_unlocked() -> None:
     from brain.database import Base
     from brain.database.migrations import apply_migrations
 
+    if _lite:
+        from brain.database import harness_models  # noqa: F401
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return
+
     # The `embeddings` table declares a pgvector column, so the `vector` extension
     # must exist BEFORE create_all — otherwise a fresh database fails with
     # "type vector does not exist". Idempotent; safe on every boot.
@@ -185,6 +222,8 @@ async def _init_db_unlocked() -> None:
 
 async def _initialize_graph_schema() -> bool:
     """Install graph indexes, returning false while Neo4j is still starting."""
+    if _lite:
+        return True
     from brain.graph.graph_client import ensure_graph_schema
 
     try:
@@ -199,6 +238,9 @@ async def _initialize_graph_schema() -> bool:
 
 async def _init_db_with_advisory_lock() -> None:
     """Serialize the complete API/worker startup schema path across processes."""
+    if _lite:
+        await _init_db_unlocked()
+        return
     from sqlalchemy import text
     from brain.database.migrations import SCHEMA_MIGRATION_LOCK_ID
 

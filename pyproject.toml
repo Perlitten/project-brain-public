@@ -30,6 +30,7 @@ dependencies = [
     # which is imported by the CLI entrypoint.
     "sqlalchemy[asyncio]>=2.0.54",
     "asyncpg",
+    "aiosqlite>=0.21,<1",
     "redis>=4.2.0",
     "neo4j",
     "loguru",
@@ -84,14 +85,14 @@ ignore = ["E501", "I001"]
 "scripts/**" = ["E402"]
 
 [project.scripts]
-brain = "apps.cli.main:cli"
-brain-mcp = "apps.mcp_server.server:main"
+brain = "apps.cli.entrypoint:main"
+brain-mcp = "apps.cli.entrypoint:mcp_main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["brain", "apps"]
 # A wheel may be built after the separate web app. Never ship its generated
 # cache, npm dependencies, or local credentials with the Python runtime.
-exclude = ["/apps/web/**", "**/__pycache__/**", "**/*.pyc", "**/.next/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.env", "**/.env.*", "**/.deploy.env"]
+exclude = ["**/.brain/**", "/apps/web/**", "**/__pycache__/**", "**/*.pyc", "**/.next/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.env", "**/.env.*", "**/.deploy.env"]
 
 [tool.hatch.build.targets.editable]
 dev-mode-dirs = ["."]
@@ -99,7 +100,7 @@ dev-mode-dirs = ["."]
 [tool.hatch.build.targets.sdist]
 # Source archives need the same protection as wheels, including when built
 # after frontend development or from an unpacked source distribution.
-exclude = ["**/__pycache__/**", "**/*.pyc", "**/.vercel/**", "**/.next/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.env", "**/.env.*", "**/.deploy.env", "**/.npmrc", "**/.venv/**", "**/.git/**", "/reports/**", "/context_packs/**", "!**/.env*.example"]
+exclude = ["**/.brain/**", "**/__pycache__/**", "**/*.pyc", "**/.vercel/**", "**/.next/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.env", "**/.env.*", "**/.deploy.env", "**/.npmrc", "**/.venv/**", "**/.git/**", "/reports/**", "/context_packs/**", "!**/.env*.example"]
 
 [tool.mypy]
 # 3.12 required: numpy's shipped stubs use the PEP 695 `type` statement, which

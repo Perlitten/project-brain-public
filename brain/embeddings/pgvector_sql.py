@@ -41,11 +41,12 @@ def pgvector_column_type(configured_dimension: int):
     autogenerate never disagree with the migrated schema.
     """
     from pgvector.sqlalchemy import HALFVEC, Vector
+    from brain.database.portable_types import Float32Vector
 
     index_dim = pgvector_index_dimension(configured_dimension)
     if configured_dimension <= PGVECTOR_VECTOR_MAX_DIM:
-        return Vector(index_dim)
-    return HALFVEC(index_dim)
+        return Vector(index_dim).with_variant(Float32Vector(), "sqlite")
+    return HALFVEC(index_dim).with_variant(Float32Vector(), "sqlite")
 
 
 def truncate_vector_for_index(vector: List[float], configured_dimension: int) -> List[float]:

@@ -112,6 +112,48 @@ compatibility verification and reindexing; vectors from different models are
 not interchangeable. See `brain embeddings verify` and the model guide.
 Restart API, worker and MCP clients after configuration changes.
 
+## Lite mode (unreleased main)
+
+Lite is available from the current source branch, not the published v0.9.2
+artifacts. Install that checkout with `python -m pip install -e /absolute/path/project-brain`.
+Then open a terminal in the repository you want to index:
+
+```bash
+brain init --lite
+brain index
+brain mcp
+# Optional loopback API with background indexing/enrichment:
+brain serve --lite --port 8000
+```
+
+The saved `.brain/config.json` selects SQLite relational/vector storage,
+SQLite graph adjacency and a durable SQLite maintenance queue/TTL cache.
+`brain init` creates a private API key and adds `.brain/` to Git's local
+exclude file; it does not modify your committed ignore rules. Use an absolute
+`BRAIN_LITE_DIR` to store state elsewhere. Explicit `BRAIN_STORAGE_MODE=full`
+selects the existing full profile; Compose deployments retain full mode.
+
+Configure an MCP client with the absolute `brain` executable, arguments `["mcp"]`,
+and your repository as its working directory. No API or backing services are
+needed for stdio search, task context, memory or bounded impact. `brain serve`
+runs one local maintenance worker; without it, queued reindex jobs wait safely
+until the API starts, or you can run `brain index` directly. Dirty Git source
+must be committed before verified reindexing.
+
+The default offline `local-token-hash-v1` embeddings are deterministic lexical
+features, not a trained semantic model. No chat provider is enabled by this
+profile. Configure providers explicitly before using model-generated answers
+or optional enrichment; external providers can send code off-machine and incur
+costs. Reindex into a separate store when changing embedding dimensions/models.
+
+Lite performs exact float32 cosine scans over at most 50,000 scoped chunks.
+SQLite serializes writers. It supports code indexing, scoped memory, locator,
+runtime context, direct neighbors and bounded two-hop impact; arbitrary Cypher,
+ANN indexes, advanced graph administration and deep/scheduled cloud operations
+require full mode. Back up the entire `.brain` directory with all processes stopped;
+the store contains project knowledge and source chunks. New tables initialize
+idempotently; future incompatible Lite schemas need explicit migration support.
+
 ## Connect MCP and run one task
 
 On unreleased `main`, initial indexing defaults to `INDEX_LLM_SUMMARIES_MODE=lazy`:

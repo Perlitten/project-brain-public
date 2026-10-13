@@ -6,7 +6,17 @@ from brain.graph.schema import (
     VALID_NODE_TYPES,
     VALID_RELATIONSHIP_TYPES,
 )
-from brain.graph.graph_client import GraphClient
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from brain.graph.graph_client import GraphClient as GraphClient
+
+
+def __getattr__(name):
+    if name == "GraphClient":
+        from brain.graph.graph_client import GraphClient
+        return GraphClient
+    raise AttributeError(name)
 
 __all__ = [
     "NodeType",

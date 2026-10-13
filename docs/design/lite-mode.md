@@ -1,81 +1,57 @@
-# Lite mode — design notes
+# Lite mode — implementation and limits
 
-**Status:** research only. Goal: decide whether a single-container (or
-single-binary) install is viable, what it costs, and whether a cheap
-intermediate step exists.
+**Status:** implemented on unreleased main. Published v0.9.2 still uses the
+full PostgreSQL, Neo4j and Redis installation.
 
-## The real barrier today
+## Runtime profile
 
-A first install pulls three backing services — Postgres+pgvector, Neo4j,
-Redis — via `docker-compose.yml`. That is ~2 GB RAM resident and three new
-concepts for someone who just wants `brain index` on their laptop.
+`brain init --lite` saves a private repository-local profile; `brain index`,
+`brain mcp` and `brain serve --lite` select it before importing database engines.
+`BRAIN_STORAGE_MODE=lite` and `BRAIN_LITE_DIR` also select the SQLite backend.
+Full mode remains the default for existing Compose deployments.
 
-What each service actually does:
-
-| Service | Used for | Touch points |
+| Responsibility | Lite implementation | Limit |
 |---|---|---|
-| Postgres + pgvector | All relational state (jobs, memory, repos, chunks) **and** vector search (`vector(N)`/`halfvec(N)` columns, HNSW indexes) | `brain/database/` (async SQLAlchemy + asyncpg), `brain/embeddings/pgvector_sql.py` |
-| Neo4j | Code graph: modules/imports/dependents for `impact`, couplings, architecture rules | `brain/graph/graph_client.py`, `builder_v2.py`, `extractors_v2.py` |
-| Redis | Job queue for worker (`brain/workers/queue.py`), freshness/caches | `brain/workers/`, `brain/config/settings.py` (`REDIS_URL` is derived from host/port when omitted) |
+| Relational memory and indexing | SQLAlchemy + aiosqlite, UTC timestamps, integer identities, foreign keys, WAL | Serialized transactions; local single-operator use |
+| Vector search | Stored float32 blobs, scoped streaming NumPy exact cosine | 50,000 chunks; no ANN index |
+| Graph | SQLite adjacency, scoped identity merges, neighbors and two-hop impact | Arbitrary Cypher requires full mode |
+| Maintenance | SQLite queue with expiring ownership; SQL lease fences; API-owned worker | One maintenance worker; supported indexing/health/embedding jobs |
+| Cache | SQLite TTL cache with atomic NX claims | Local cache, no Redis service |
+| Default embeddings | Offline token-feature hashing | Lexical similarity, not learned semantic retrieval |
 
-Important: Redis is currently required at runtime. Although `REDIS_URL` is
-typed as optional, the settings validator derives a URL from `REDIS_HOST` and
-`REDIS_PORT`; `brain/database/session.py` asserts the resulting URL and the job
-queue is Redis-backed. There is no in-process fallback today, so lite mode must
-either retain Redis or implement and test a replacement queue/scheduler path.
+The selected Lite profile ignores the full checkout's dotenv configuration;
+explicit process variables or `BRAIN_ENV_FILE` configure optional providers.
+Chat synthesis is disabled by default. Foreground indexing uses deterministic
+summaries plus embeddings; optional chat enrichment requires explicit opt-in.
 
-## Option A — SQLite + sqlite-vec, in-process everything (the "single file")
+## Persistence and concurrency
 
-Replace Postgres with SQLite + `sqlite-vec` for embeddings, replace Neo4j
-with edge tables in the same SQLite, drop Redis entirely (in-process queue
-+ `asyncio` scheduler).
+State lives under `.brain` (or an explicit directory). The profile is created
+with private permissions and its API binds to loopback. Git's local exclude
+file ignores the state directory, and source scans and release packaging
+exclude it. No source history or released archives are rewritten.
 
-**What you lose:**
-- pgvector `halfvec` + HNSW tuning knobs; sqlite-vec is brute-force per
-  partition — fine under ~100k chunks, degrades after.
-- Concurrent writers: single-writer SQLite blocks the worker during API
-  writes. Mitigable with WAL + a write queue, but that IS Redis by another
-  name.
-- Neo4j graph queries (variable-length traversals) become recursive CTEs —
-  the v2 extractor/builder SQL is written in Cypher; every query path needs
-  a second implementation or an abstraction layer.
-- Test matrix doubles unless lite is a separate supported dialect
-  (`brain/database/session.py`, `migrations.py` are asyncpg/SQLAlchemy —
-  SQLAlchemy covers most of it, raw `pgvector_sql.py` doesn't).
-- The public claim "production-ready self-host" forks into "lite" vs "real"
-  with different limits — doc and support surface grows.
+SQLite uses `BEGIN IMMEDIATE` to serialize transactions, including lease
+claims and fenced writes; SQLite ignores `FOR UPDATE`, so normal PostgreSQL
+lease code requires this transaction boundary. Repository indexing additionally
+uses an OS file lock, released on process exit, to prevent overlapping runs.
+Queue results require an unexpired matching ownership token. Interrupted jobs
+can be reclaimed after expiry; source verification remains authoritative.
 
-**Effort estimate:** 3–5 days for a *working* spike (SQLite dialect +
-sqlite-vec DDL + Cypher→CTE port for the two hottest graph queries), 2+
-weeks to make it supportable (test matrix, migrations parity, docs). This
-is a product line, not a flag.
+The API lifespan owns the maintenance worker. Stdio MCP needs no daemon;
+queued work waits until `brain serve --lite` runs. Direct `brain index` works
+without a worker. Graph administration/deep operations requiring Cypher are
+explicitly unavailable, not simulated by empty query results.
 
-## Option B — all-in-one container (the cheap step)
+## Acceptance
 
-One image that bundles Postgres+Neo4j+Redis via a process supervisor, with
-named volumes. User runs `docker run -p 8000:8000 project-brain`.
+A separate CI job provisions no database services. The smoke test rejects
+external client construction, indexes a two-file repository, writes scoped
+decisions/rules/learnings, calls MCP search/context/impact, checks adjacency,
+executes a queued reindex under SQL fencing, and repeats in a new process.
+Full-stack tests continue against the original PostgreSQL/Redis/Neo4j profile.
 
-- **What you lose:** almost nothing — same binaries, just orchestrated
-  inside one container instead of compose. RAM footprint identical; the win
-  is "one command" UX.
-- **Effort:** ~half a day (supervisord/s6 config, health gating, docs).
-  Builds on the existing Dockerfile; CI gets a `brain-all-in-one` image tag
-  in the release workflow — trivially additive.
-- **Honest verdict:** this removes the *cognitive* barrier (three services,
-  compose file, mounts) but not the *resource* one (~2 GB RAM stays).
-
-## Option C — hosted-lite (no local services at all)
-
-`brain` CLI talks to a hosted Brain API. Zero local infra; needs a hosted
-service that doesn't exist yet — roadmap item, not an install fix.
-
-## Recommendation
-
-1. **Now:** Option B (all-in-one image) as the "docker pull and run" path —
-  half a day, no product fork.
-2. **Later, only if single-binary is a stated goal:** Option A as a real
-   project with a lite dialect — do NOT sneak it in as a config flag; it
-   needs its own test matrix and doc.
-3. Treat removing Redis as explicit implementation work: add an in-process
-   queue/scheduler path with its own concurrency, durability, and test limits,
-   or keep Redis in the supported lite topology.
+This is local single-operator storage, not a new multi-tenant production claim.
+Back up all state with writers stopped. Initial schemas initialize idempotently;
+future incompatible schema changes need explicit versioned Lite migrations.
+No semantic benchmark improvement or fixed speedup follows from this profile.

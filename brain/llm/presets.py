@@ -37,7 +37,7 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 OPENAI_COMPATIBLE = "openai_compatible"
-NATIVE_PROVIDERS = frozenset({"mock", "anthropic", "google"})
+NATIVE_PROVIDERS = frozenset({"mock", "anthropic", "google", "local"})
 _ALIASES = {
     "custom": OPENAI_COMPATIBLE,
     "openai-compatible": OPENAI_COMPATIBLE,

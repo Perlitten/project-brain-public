@@ -32,6 +32,11 @@ def git_source_is_clean(path, files) -> bool:
 
 @asynccontextmanager
 async def repository_index_lock(path: str):
+    if settings.BRAIN_STORAGE_MODE == "lite":
+        from brain.workers.lite_queue import repository_lock
+        async with repository_lock(path):
+            yield
+        return
     # Session advisory locks survive short transactions, but disappear on a
     # worker crash. One dedicated connection prevents pool reuse of the lock.
     key = int.from_bytes(hashlib.sha256(path.encode()).digest()[:8], "big", signed=True)

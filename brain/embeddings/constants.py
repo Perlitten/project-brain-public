@@ -7,6 +7,7 @@ from typing import Optional
 from brain.config.settings import settings
 
 _PROVIDER_DIMENSIONS: dict[str, int] = {
+    "local": 384,
     "mock": 1536,
     "openai": 1536,
     "anthropic": 1536,

@@ -63,6 +63,16 @@ async def _semantic_rows(
     session, query_vec: list[float], model: str, repo_scope: str | None,
 ) -> tuple[dict[int, float], dict[int, Learning]]:
     """(id → cosine similarity, id → row) for the nearest stored learnings of the current model."""
+    if settings.BRAIN_STORAGE_MODE == "lite":
+        from brain.search.similarity import cosine_similarity
+        lite_rows = list((await session.scalars(select(Learning).where(
+            *_live_scoped(repo_scope), Learning.embedding.isnot(None), Learning.embedding_model == model
+        ).order_by(Learning.id).limit(50_001))).all())
+        if len(lite_rows) > 50_000:
+            raise ValueError("Lite memory vector limit exceeded")
+        ranked = sorted(((max(0.0, cosine_similarity(query_vec, row.embedding)), row) for row in lite_rows
+                         if len(row.embedding) == len(query_vec)), key=lambda item: (-item[0], item[1].id))[:SEMANTIC_CANDIDATES]
+        return {row.id: score for score, row in ranked}, {row.id: row for _, row in ranked}
     distance = Learning.embedding.cosine_distance(query_vec)
     stmt = (
         select(Learning, distance.label("distance"))

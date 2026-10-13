@@ -15,7 +15,6 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
-    DateTime,
     ForeignKey,
     Integer,
     JSON,
@@ -28,6 +27,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from brain.database.models import Base
+from brain.database.portable_types import utc_datetime
 
 HARNESS_SCHEMA = "harness"
 
@@ -50,10 +50,10 @@ class AgentTask(Base):
     timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=900)
     retry_budget: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    cancellation_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
 
@@ -68,7 +68,7 @@ class AgentTaskEvent(Base):
         {"schema": HARNESS_SCHEMA},
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     task_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(f"{HARNESS_SCHEMA}.agent_tasks.id", ondelete="CASCADE"),
@@ -79,18 +79,18 @@ class AgentTaskEvent(Base):
     actor: Mapped[str] = mapped_column(String(100), nullable=False)
     classification: Mapped[str] = mapped_column(String(32), nullable=False, default="observation")
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    causal_parent_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    causal_parent_id: Mapped[int | None] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), nullable=True)
     expected_task_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     task_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     payload_json: Mapped[Any | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
 
 
 class AgentTaskArtifact(Base):
     __tablename__ = "agent_task_artifacts"
     __table_args__ = {"schema": HARNESS_SCHEMA}
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     task_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(f"{HARNESS_SCHEMA}.agent_tasks.id", ondelete="CASCADE"),
@@ -101,19 +101,19 @@ class AgentTaskArtifact(Base):
     path_or_uri: Mapped[str] = mapped_column(String(2048), nullable=False)
     checksum: Mapped[str | None] = mapped_column(String(128), nullable=True)
     content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    compressed_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    bytes: Mapped[int | None] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), nullable=True)
+    compressed_bytes: Mapped[int | None] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), nullable=True)
     redaction_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="unknown"
     )  # clean|redacted|unknown
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
 
 
 class AgentValidationResult(Base):
     __tablename__ = "agent_validation_results"
     __table_args__ = {"schema": HARNESS_SCHEMA}
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     task_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(f"{HARNESS_SCHEMA}.agent_tasks.id", ondelete="CASCADE"),
@@ -125,19 +125,19 @@ class AgentValidationResult(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)  # pass|fail|error
     exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     artifact_id: Mapped[int | None] = mapped_column(
-        BigInteger,
+        BigInteger().with_variant(Integer, "sqlite"),
         ForeignKey(f"{HARNESS_SCHEMA}.agent_task_artifacts.id", ondelete="SET NULL"),
         nullable=True,
     )
     metrics_json: Mapped[Any | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
 
 
 class MemoryHandoff(Base):
     __tablename__ = "memory_handoffs"
     __table_args__ = {"schema": HARNESS_SCHEMA}
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     task_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(f"{HARNESS_SCHEMA}.agent_tasks.id", ondelete="SET NULL"),
@@ -148,7 +148,7 @@ class MemoryHandoff(Base):
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     memory_ref: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     artifact_refs: Mapped[Any | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
 
 
 class WorkerLease(Base):
@@ -158,7 +158,7 @@ class WorkerLease(Base):
         {"schema": HARNESS_SCHEMA},
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     task_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(f"{HARNESS_SCHEMA}.agent_tasks.id", ondelete="CASCADE"),
@@ -167,11 +167,11 @@ class WorkerLease(Base):
     )
     worker_name: Mapped[str] = mapped_column(String(100), nullable=False)
     lease_started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        utc_datetime(), server_default=func.now(), nullable=False
     )
-    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    fencing_token: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
+    lease_expires_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    fencing_token: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), nullable=False, default=1)
 
 
 # Valid state-machine transitions. Enforced in brain.memory.harness_store,

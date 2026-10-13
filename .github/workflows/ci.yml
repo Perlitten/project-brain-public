@@ -10,6 +10,23 @@ permissions:
   contents: read
 
 jobs:
+  lite:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install hash-locked dependencies
+        run: |
+          pip install --require-hashes -r requirements-dev.lock
+          pip install --no-deps -e .
+      - name: Zero-service SQLite acceptance
+        run: pytest tests/test_lite_mode.py -q
+
   public-privacy:
     runs-on: ubuntu-latest
     steps:
