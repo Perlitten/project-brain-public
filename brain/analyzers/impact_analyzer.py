@@ -33,7 +33,8 @@ _SQL_NOISE_WORDS = frozenset(
 
 _ENGLISH_NOISE_WORDS = frozenset(
     """
-    the a an in on of to for with ok width know
+    the a an in on of to for with ok width know all any every each some
+    how are is was were be been what when where why which who built run
     """.split()
 )
 
@@ -47,6 +48,8 @@ def _is_noise_node(name: str | None) -> bool:
     low = name.strip().lower()
     if low in ("unknown", ""):
         return True
+    if len(low) > 4 and low.startswith("__") and low.endswith("__"):
+        return True  # dunder symbols (__init__, __all__) say nothing about a change
     return low in _SQL_NOISE_WORDS or low in _ENGLISH_NOISE_WORDS
 
 
@@ -120,7 +123,10 @@ _KEYWORD_STOPWORDS = frozenset(
     the and for that this with from should would could about change update
     request across codebase new add rename move remove replace delete refactor
     function method class module variable field parameter argument into over
-    improve system performance
+    improve system performance how are is was were be been being what when
+    where why which who whom onto our your their its can will does did not any
+    some make made get use using via per after before then than also only just
+    more most very so such there here them they it we you
     """.split()
 )
 

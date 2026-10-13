@@ -47,3 +47,14 @@ async def test_traversal_is_bounded_and_registers_by_distance(tmp_path):
     assert "apps/api/routers/web_login.py" in result["directly_affected"]
     assert "tests/test_web_login.py" in result["directly_affected"]
     assert "apps/api/main.py" in result["indirectly_affected"]
+
+
+def test_noise_filters_drop_dunders_and_function_words():
+    assert ia._is_noise_node("__init__")
+    assert ia._is_noise_node("all")
+    assert not ia._is_noise_node("run_scheduler")
+    assert not ia._is_noise_node("brain/workers/scheduler.py")
+    keywords = ia._deterministic_keywords("Change how context packs are built for agents")
+    assert "how" not in [k.lower() for k in keywords]
+    assert "are" not in [k.lower() for k in keywords]
+    assert "context" in [k.lower() for k in keywords]
