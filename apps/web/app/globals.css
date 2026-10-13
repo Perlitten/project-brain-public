@@ -637,6 +637,18 @@ code, .mono { font-family: var(--mono); }
 .more > summary:focus-visible { outline: 2px solid var(--teal-fg); outline-offset: -2px; }
 .more .table tbody tr { animation: none; }
 
+/* ---------- help ---------- */
+.help__about { margin: 0 0 var(--s-4); max-width: 68ch; line-height: var(--lh-prose); }
+.help__item:first-child { border-top: 0; }
+.help__item > summary { color: var(--text-1); }
+.help__answer { display: grid; gap: var(--s-2); padding: 0 var(--s-5) var(--s-4) calc(var(--s-5) + 1ch + var(--s-2)); max-width: 76ch; line-height: var(--lh-prose); color: var(--text-2); }
+.help__answer p { margin: 0; }
+.help__terms { row-gap: var(--s-2); }
+.help__term { display: contents; }
+.help__docs { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--s-2); }
+/* .link is sized for captions; inside running text it takes the text's size. */
+.help__about + .kv .link, .help__answer .link, .help__docs .link { font-size: inherit; }
+
 /* ---------- palette ---------- */
 .palette { position: fixed; inset: 0; z-index: 60; display: grid; justify-items: center; align-items: start; padding: 12vh var(--s-4) var(--s-4); }
 .palette { margin: 0; width: 100%; height: 100%; max-width: none; max-height: none; border: 0; color: inherit; background: transparent; }

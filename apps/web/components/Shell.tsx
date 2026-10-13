@@ -148,6 +148,10 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
           ) : (
             <RailPulse withRepo={withRepo} repoSlug={allowsAllRepos && !repoSlug ? "" : repoSlug} />
           )}
+          <Link className="rail__help" href={withRepo("/help")} aria-current={path === "/help" ? "page" : undefined} title="Help — about this server, common problems and the glossary">
+            <Icon name="help" size={16} />
+            <span className="rail__help-text">Help</span>
+          </Link>
           <button
             type="button"
             className="rail__toggle"
