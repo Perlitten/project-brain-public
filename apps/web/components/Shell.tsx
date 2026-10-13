@@ -238,6 +238,7 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
             </div>
             <a className="link" href="https://github.com/Perlitten/project-brain-public#readme">Install your own →</a>
           </aside>
+
         )}
         {children}
       </main>
