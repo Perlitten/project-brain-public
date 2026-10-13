@@ -1,10 +1,10 @@
 # Final productization report
 
-Verification date: 2026-10-13. Compatible patch candidate: **v0.9.2**.
+Verification date: 2026-10-13. Published compatible patch: **v0.9.2**.
 Base: `1a2adbc8540548281279ebbbf8a8eda131b0cb8a`.
-This preparation snapshot separates completed validation from pending public
-publication. The [current verified report](https://github.com/Perlitten/project-brain-public/blob/main/docs/release/FINAL_PRODUCTIZATION_REPORT.md)
-records the subsequent publication and download checks.
+This record reports completed publication and acceptance checks. The source
+archive retains its dated release-preparation snapshot; this current report adds
+the subsequent anonymous download and installed-distribution evidence.
 
 ## Initial state and cleanup
 
@@ -21,6 +21,7 @@ lack of a literal reference alone was insufficient evidence of dead code.
 
 | Area | Before | Result |
 |---|---|---|
+| Tracked source tree | 932 files | 949 files: focused guides, safety helpers, regressions and review evidence added |
 | Public onboarding | Long mixed-purpose README and old release guides | Concise README; focused getting-started, architecture, provider and MCP guides |
 | Historical evidence | Synthetic demonstrations alongside current evaluation | Historical catalogs; synthetic fixture explicitly warns that it executes no code |
 | Runtime wheel | Next.js development tree and Python caches | Python runtime/resources only; frontend retained in source distribution |
@@ -72,7 +73,9 @@ synthetic data. They are neither hosted-deployment proof nor benchmark evidence.
 | Production-mode integration | 2 passed, including fail-closed demo isolation |
 | Local browser routes | 22 desktop/mobile cases; no page errors or horizontal overflow |
 | Local browser interactions | 8 keyboard, navigation, filtering, repository and state checks passed |
-| Candidate distributions | Wheel/source archive checks and clean wheel install passed |
+| Published distributions | Archive checks, clean wheel/sdist installs, CLI/API version and real MCP passed |
+| GitHub CI / CodeQL | Green on the runtime merge and exact reviewed release-tag commit |
+| Release pipeline | All six jobs passed: distributions, three images, SBOM and publication |
 
 The 11 Python skips concern optional sandbox/native-client/legacy-helper/API-key
 fixtures; they are not counted as passed integrations. Full-suite verification
@@ -92,7 +95,10 @@ desktop/mobile verification on all ten primary routes: 200 responses, visible
 synthetic labels, no observed console/page errors or horizontal overflow, correct
 GitHub links and working mobile navigation. The API setup/health bridge returns
 503 `not_configured`, and privileged controls are disabled. Deployment
-`7043354121` points to `1c537e01e8d61a298ac2a2c17fe94d2056446d6f`.
+`7043828560` points to merged runtime SHA
+`566d985464bb6200b67779eaf3d431d0129d4eb2`. The post-merge deployment was
+rechecked on desktop/mobile with the new global synthetic/read-only notice.
+The protected operator dashboard still returns 401.
 This verifies the tested runtime; Vercel administration and secrets in other
 deployment scopes were not inspected. See [demo acceptance](../DEMO.md).
 
@@ -112,8 +118,17 @@ Tested source `9da8f12ee16305fa02c3039d7591b0e039572846` has the same tree as
 the final reviewed PR head `7b22d620414b7491a8d26f707f8861954bbafae7` and merged
 runtime commit `566d985464bb6200b67779eaf3d431d0129d4eb2`.
 [PR #61](https://github.com/Perlitten/project-brain-public/pull/61) merged only
-after all CI/CodeQL and deployment checks passed. Publication/download
-verification for v0.9.2 remains pending in this preparation snapshot.
+after all CI/CodeQL and deployment checks passed. The separately reviewed
+release-marker commit passed CI and CodeQL before tagging.
+
+The actual public `v0.9.2` checkout was subsequently verified at
+`ceffe3a2d5ad6b4fa330b2d972442bd58c6f7a49`: clean tree, doctor, successful
+873-file reindex, exact indexed tag SHA and real MCP search/context.
+Downloaded wheel and source archive were installed into separate fresh virtual
+environments. Both exposed version 0.9.2, CLI/API modules and 13 MCP tools; both
+returned the expected source and five-file task context while running outside
+the checkout with source imports excluded. The mock critic reported
+`PARTIAL_CONTEXT`; these remain functional smoke checks.
 
 Repository metadata writes currently return `Resource not accessible by
 integration`. Content, pull-request and release permissions are available;
@@ -121,12 +136,56 @@ those permissions do not confer Vercel or repository-settings administration.
 The protected operator homepage must be replaced with a verified public
 destination by a repository owner if that restriction remains.
 
-Planned release: [v0.9.2](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.2).
-This link names the intended publication; the candidate is not yet declared
-publicly released or externally accepted. This section will be updated with
-actual tag, artifact, source-install and GitHub check evidence after publication.
+## Published release and artifacts
 
-Current assessment: **NO-GO for declaring the complete productization finished**
-until the remaining public acceptance and release gates complete.
-Coding correctness, task completion, time savings and total token-cost benefits
-remain unproven and require controlled task-level measurement.
+Release: [v0.9.2](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.2),
+published 2026-10-13 at 16:31:51 UTC. Immutable source commit:
+`ceffe3a2d5ad6b4fa330b2d972442bd58c6f7a49`.
+[Release pipeline](https://github.com/Perlitten/project-brain-public/actions/runs/38430923075)
+and all prerequisite CI/CodeQL checks passed. Existing v0.9.1 remains untouched.
+
+Wheel, source archive, SPDX SBOM and `SHA256SUMS` were downloaded without target
+authentication, with curl configuration disabled and TLS verification enabled.
+Every listed SHA-256 matched; the SBOM parsed successfully. The 834,493-byte
+wheel contains Python runtime/resources and no frontend tree or Python caches.
+The source archive retains Compose, bootstrap, frontend source/lockfile and
+public environment templates. Source archives carry no Git revision metadata.
+
+| Asset | Verified SHA-256 |
+|---|---|
+| `project_brain-0.9.2-py3-none-any.whl` | `14384aec569b8caafe11236458d4636393aa3ebc32a4bda918dd9705200df7c9` |
+| `project_brain-0.9.2.tar.gz` | `1c954fecc0d543dccea8f8a7c58601f5395b64c261fc6a31303e59142e701783` |
+| `sbom.spdx.json` | `a91dca5db9b7d265634e8138048ea0b1e6f042e8ab840f9c4056b8d7df39e7db` |
+
+Compared with the prior local v0.9.1 gate, Python regressions increased from
+1,965 to 1,976 passing tests, web unit tests from 36 to 39, and production
+integration cases from one to two. Optional skips remained 11. These are
+coverage-of-behavior counts, not performance or effectiveness measurements.
+
+## External visitor acceptance
+
+| Visitor | Demonstrated result / remaining friction |
+|---|---|
+| New developer | Tagged public source, bootstrap, index, actual start/restart, clean reinstall and first MCP task passed; cloud cache/plugin adaptations are documented above |
+| AI infrastructure engineer | Current architecture documents storage/MCP/model trust boundaries; migrations, scoped source references and distribution checks passed; mocks and partial context limit retrieval conclusions |
+| Technical hiring manager | Concise landing page, genuine labeled desktop/mobile visuals, public demo and reproducible release evidence; repository header homepage/topics still need owner administration |
+
+## Outstanding limitation and assessment
+
+**CONDITIONAL GO.** Runtime cleanup, documentation, interface fixes, public demo,
+CI/CodeQL and the verified public release are complete. GitHub's integration
+refuses repository-settings changes with `Resource not accessible by
+integration`; the header homepage still points to the protected operator and
+no discovery topics are configured. This prevents an unconditional GO for the
+entire public presentation. A repository owner can complete the remaining edit:
+
+```bash
+gh repo edit Perlitten/project-brain-public --homepage https://project-brain-demo.vercel.app/ --add-topic mcp,ai-agents,self-hosted,developer-tools,project-memory,code-search
+```
+
+No account-wide Vercel configuration or security-alert inventory was certified.
+Current tested runtime isolation, operator protection and passing CodeQL are
+separate evidence. macOS/WSL2/native Windows, native-agent automatic tool use,
+public-container installation and real-model task outcomes remain outside the
+verified scope. Coding correctness, completion, time savings and total token
+cost benefits require controlled task-level measurement.
