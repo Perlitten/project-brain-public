@@ -1,9 +1,30 @@
 # Synthetic product demonstration
 
-The current hosted operator dashboard requires authentication. It is not a
-public synthetic demonstration and is not linked from the product landing page.
-Its protection remains intact. Current, genuine interface captures are available
-in the [README](../README.md) and [showcase assets](assets/).
+[Open the public, read-only demo](https://project-brain-demo.vercel.app/).
+It is a separate synthetic showcase. The operator dashboard remains protected.
+Current, genuine local interface captures are available in the
+[README](../README.md) and [showcase assets](assets/).
+
+## Verified hosted behavior
+
+On 2026-10-13 an unauthenticated browser verified Dashboard, Projects, Code map,
+Context packs, Memory, Indexing, Runs, Setup, Quality and Settings at desktop
+1440×1000 and mobile 390×844. All returned 200; an unknown route returned 404.
+Every screen showed the example-data notice. There were no observed page or
+console errors or horizontal overflow. Mobile navigation and its Escape action
+worked, and installation links pointed to the public repository.
+
+The setup/health API bridge returned 503 `not_configured`; privileged controls
+were disabled. Browser requests carried no API credential and remained on the
+demo host. The deployed source serves fallback synthetic data when unbound and
+fails closed for partial API bindings. These observations establish the tested
+runtime's isolation; they do not inspect secrets in other deployment scopes.
+Quality-screen percentages are synthetic illustrations, not measured benchmarks.
+
+GitHub deployment `7043354121` reports successful production deployment of
+`1c537e01e8d61a298ac2a2c17fe94d2056446d6f` from the public demo-label branch.
+The showcase can lag the latest release. Deployment status alone does not reveal
+Vercel's configured production branch or prove later automatic promotion.
 
 ## A separate, safe deployment
 
@@ -57,20 +78,21 @@ does not establish anonymous availability.
 7. Record deployed commit, anonymous responses, desktop/mobile captures and the
    configuration review. Add the URL to GitHub only after these checks pass.
 
-## Current external access limitation
+## Administration limits
 
 This execution environment has no Vercel token, project binding, CLI session or
 outbound deployment identity. The existing integration reports a completed
-production deployment, but its anonymous response is application-level 401.
+production deployment. The supplied separate demo has passed the anonymous
+checks above; the operator dashboard returns application-level 401.
 GitHub repository-settings writes also return `Resource not accessible by
 integration`. Content, pull requests and release operations have separate usable
 permissions; those do not grant Vercel project administration.
 
-A Vercel account owner must grant access to create/configure the separate project
-and review its SSO/environment settings. No production environment was inspected
-for secret values or modified. Until that access exists, screenshots and the
-local synthetic walkthrough are the working example; the protected domain is
-excluded from promotional links.
+Vercel environment/SSO settings require account-owner access. No production
+environment was inspected for secret values or modified. The new source profile
+adds a guard against accidentally binding a demo to an operator backend; its
+configuration must be reviewed when deploying it. The protected operator domain
+is excluded from promotional links.
 
 ## Hosting requirements
 

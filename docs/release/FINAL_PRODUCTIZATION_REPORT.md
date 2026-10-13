@@ -84,11 +84,17 @@ Prebuilt images remain experimental and outside the primary newcomer route.
 
 ## Public acceptance and release status
 
-Public-demo route/browser verification, fresh public-source visitor workflows,
-PR CI/CodeQL and the v0.9.2 publication/download verification are pending.
-The supplied new demo responds anonymously with HTTP 200; this alone does not
-establish safe backend isolation. Its URL will be promoted after acceptance.
-See [demo configuration and acceptance](../DEMO.md).
+The [public demo](https://project-brain-demo.vercel.app/) passed anonymous
+desktop/mobile verification on all ten primary routes: 200 responses, visible
+synthetic labels, no observed console/page errors or horizontal overflow, correct
+GitHub links and working mobile navigation. The API setup/health bridge returns
+503 `not_configured`, and privileged controls are disabled. Deployment
+`7043354121` points to `1c537e01e8d61a298ac2a2c17fe94d2056446d6f`.
+This verifies the tested runtime; Vercel administration and secrets in other
+deployment scopes were not inspected. See [demo acceptance](../DEMO.md).
+
+Fresh public-source visitor workflows, [PR CI/CodeQL](https://github.com/Perlitten/project-brain-public/pull/61)
+and the v0.9.2 publication/download verification are pending.
 
 Repository metadata writes currently return `Resource not accessible by
 integration`. Content, pull-request and release permissions are available;

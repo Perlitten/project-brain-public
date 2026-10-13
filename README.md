@@ -10,6 +10,7 @@ You run the storage and inspect what it remembers.
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [Get started](#quickstart) · [Connect your agent](#connect-your-agent) ·
+[Try the demo](https://project-brain-demo.vercel.app/) ·
 [Documentation](docs/README.md) · [Evidence and limitations](#evidence-and-limitations)
 
 ![Project Brain dashboard showing repository status and inspectable project knowledge](docs/assets/dashboard.png)
@@ -121,17 +122,17 @@ agents automatically call Brain in every session: configure your client workflow
 
 ## See the product
 
-The dashboard screenshot above and the code map below show the running product
-with explicitly synthetic data. You can inspect the same screens locally after
-starting the app; [Dashboard guide](docs/DASHBOARD.md) explains the views.
+[Open the public, read-only demo](https://project-brain-demo.vercel.app/).
+It contains synthetic projects and numbers, with no connected Brain API in the
+verified deployment. You can also inspect the screens locally after starting
+the app; [Dashboard guide](docs/DASHBOARD.md) explains the views.
 
 ![Project Brain code map showing module relationships in synthetic example data](docs/assets/code-map.png)
 
 *Code-map screenshot: synthetic example data, not a measured impact analysis.*
 
-See [Demo safety and verification](docs/DEMO.md) for the public showcase policy.
-An external demo link is promoted only after anonymous access and isolation
-from operator infrastructure have been verified.
+See [Demo safety and verification](docs/DEMO.md) for the tested routes, deployment
+provenance, isolation checks and limits of the verification.
 
 ## Architecture at a glance
 
