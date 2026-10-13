@@ -17,7 +17,7 @@ cd project-brain
 ```
 
 Linux is verified. macOS and WSL2 are not equivalently verified; native Windows
-is unverified. Read the [current setup guide](docs/GETTING_STARTED.md) for model
+is unverified. Read the [current setup guide](../docs/GETTING_STARTED.md) for model
 configuration and the complete API/worker/dashboard workflow.
 
 ## Checks to run before a pull request
@@ -66,13 +66,13 @@ Never commit `.env` files, API keys or other secrets.
 - Keep each pull request focused on one change and describe what changed, why,
   and how you tested it (the PR template has a checklist).
 - Add or update tests for behaviour changes.
-- Add a line to the `Unreleased` section of [`CHANGELOG.md`](CHANGELOG.md) for
+- Add a line to the `Unreleased` section of [`CHANGELOG.md`](../CHANGELOG.md) for
   user-visible changes.
 
 By contributing, you agree that your contributions are licensed under the
-[MIT License](LICENSE) and that you follow the
+[MIT License](../LICENSE) and that you follow the
 [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues as described in
-[`SECURITY.md`](SECURITY.md), not in public issues.
+[`SECURITY.md`](../SECURITY.md), not in public issues.
 
 New to the project? Prepared starter tasks live in
-[`docs/good-first-issues.md`](docs/good-first-issues.md).
+[`docs/good-first-issues.md`](../docs/good-first-issues.md).

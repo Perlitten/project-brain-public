@@ -13,8 +13,8 @@ COPY eval ./eval
 COPY tests ./tests
 COPY scripts/write_source_manifest.py ./scripts/write_source_manifest.py
 COPY scripts/validate_lfm_release_gate.py ./scripts/validate_lfm_release_gate.py
-COPY Dockerfile docker-compose.prod.yml /release-inputs/
-COPY deploy/server_up.sh /release-inputs/deploy/
+COPY Dockerfile /release-inputs/
+COPY deploy/docker-compose.prod.yml deploy/server_up.sh /release-inputs/deploy/
 COPY scripts/write_source_manifest.py scripts/validate_lfm_release_gate.py /release-inputs/scripts/
 
 ARG BRAIN_BUILD_SHA=unknown

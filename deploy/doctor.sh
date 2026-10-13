@@ -7,9 +7,9 @@ cd "$(dirname "$0")/.."
 
 MODE="${1:-preflight}"
 ENV_FILE=".env"
-COMPOSE="docker compose -f docker-compose.prod.yml"
+COMPOSE="docker compose --project-directory . -f deploy/docker-compose.prod.yml"
 # Optional host-local additions (extra read-only source mounts and the like),
-# kept out of git. See DEPLOYMENT.md, "Indexing more source trees".
+# kept out of git. See docs/operations/DEPLOYMENT.md, "Indexing more source trees".
 if [[ -f docker-compose.local.yml ]]; then
     COMPOSE="$COMPOSE -f docker-compose.local.yml"
 fi

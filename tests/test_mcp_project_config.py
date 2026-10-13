@@ -9,7 +9,10 @@ careless `git add -A` and a committed API key.
 """
 
 import json
+import importlib.util
 from pathlib import Path
+
+import pytest
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / ".mcp.json"
 MUST_BE_REFERENCES = ("BRAIN_API_URL", "BRAIN_API_KEY")
@@ -33,3 +36,23 @@ def test_project_mcp_config_holds_no_literal_secret():
             f"{name} in .mcp.json must stay a ${{VAR}} reference resolved from the "
             f"environment, never a literal value, but it is {value!r}"
         )
+
+
+@pytest.mark.parametrize("name", ["claude-code-stdio.mcp.json", "claude-desktop-stdio.json"])
+def test_advertised_stdio_example_has_a_runnable_module(name):
+    config = json.loads((CONFIG_PATH.parent / "examples" / name).read_text())
+    args = config["mcpServers"]["project-brain"]["args"]
+    assert args[0] == "-m"
+    spec = importlib.util.find_spec(args[1])
+    assert spec is not None
+    # Running a package with -m needs __main__; a concrete module does not.
+    if spec.submodule_search_locations is not None:
+        assert importlib.util.find_spec(args[1] + ".__main__") is not None
+
+
+def test_canonical_remote_stdio_template_keeps_credential_references():
+    config = json.loads((CONFIG_PATH.parent / "examples/claude-code-stdio.mcp.json").read_text())
+    server = config["mcpServers"]["project-brain"]
+    assert server["args"] == ["-m", "apps.mcp_server.remote_server"]
+    for name in MUST_BE_REFERENCES:
+        assert server["env"][name].startswith("${") and server["env"][name].endswith("}")

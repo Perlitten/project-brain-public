@@ -1,7 +1,7 @@
 // The brand sprite, ported 1:1 from apps/api/templates/base.html.
 // 24x24 grid, stroke 1.75, round caps and joins, never filled.
 // layers, zap, code, key and flag reuse Feather Icons geometry
-// (MIT, (c) 2013-2023 Cole Bemis) — see THIRD_PARTY_NOTICES.md.
+// (MIT, (c) 2013-2023 Cole Bemis) — see docs/legal/THIRD_PARTY_NOTICES.md.
 const paths = {
   layers: <><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></>,
   database: <><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" /><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" /></>,

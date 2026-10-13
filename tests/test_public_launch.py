@@ -43,7 +43,7 @@ def _compose(tmp_path, **values):
     empty_env.write_text("", encoding="utf-8")
     return subprocess.run(
         ["docker", "compose", "--env-file", str(empty_env), "--project-directory", str(tmp_path),
-         "-f", str(ROOT / "docker-compose.quickstart.yml"), "config", "--format", "json"],
+         "-f", str(ROOT / "deploy/experimental/docker-compose.quickstart.yml"), "config", "--format", "json"],
         capture_output=True, text=True, env=env,
     )
 

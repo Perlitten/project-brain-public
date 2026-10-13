@@ -49,7 +49,7 @@ Before enqueuing a clean re-index:
 docker exec brain-worker test -d <repo_path> || echo "REFUSE: clean would wipe this index"
 ```
 
-**Follow-up (done):** extra trees are mounted read-only (see DEPLOYMENT.md,
+**Follow-up (done):** extra trees are mounted read-only (see docs/operations/DEPLOYMENT.md,
 host-local `docker-compose.local.yml`), the way `BRAIN_INDEXED_PROJECTS_DIR`
 already backs `/indexed`, so a rebuild cannot erase them. `docker cp` staging
 was the underlying defect.

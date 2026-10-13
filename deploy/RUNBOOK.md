@@ -9,14 +9,14 @@ tags:
 # Project Brain - Production Runbook
 
 This runbook is intentionally server-neutral. For first-time installation, use
-the complete guide in `DEPLOYMENT.md`. This file is the shorter day-2 operations
+the complete guide in `docs/operations/DEPLOYMENT.md`. This file is the shorter day-2 operations
 checklist for an already deployed self-hosted instance.
 
 Default production layout (use the actual release root for the host):
 
 ```text
 ${PROJECT_BRAIN_RELEASE_ROOT:-/opt/project-brain}/
-  docker-compose.prod.yml
+  deploy/docker-compose.prod.yml
   .env                         # secrets, chmod 600, never committed
   deploy/server_up.sh
   deploy/nginx/brain.conf
@@ -125,7 +125,7 @@ and remains valid for offline sync/eval.
 
 ```bash
 cd /opt/project-brain
-docker compose -f docker-compose.prod.yml ps
+docker compose --project-directory . -f deploy/docker-compose.prod.yml ps
 curl -fsS http://127.0.0.1:${BRAIN_API_PORT:-8010}/health
 ```
 
@@ -196,17 +196,17 @@ Rate limiting itself is *not* applied when uvicorn is exposed directly
 
 ```bash
 cd /opt/project-brain
-docker compose -f docker-compose.prod.yml logs -f api
-docker compose -f docker-compose.prod.yml logs -f worker
-docker compose -f docker-compose.prod.yml logs -f postgres
-docker compose -f docker-compose.prod.yml logs -f neo4j
+docker compose --project-directory . -f deploy/docker-compose.prod.yml logs -f api
+docker compose --project-directory . -f deploy/docker-compose.prod.yml logs -f worker
+docker compose --project-directory . -f deploy/docker-compose.prod.yml logs -f postgres
+docker compose --project-directory . -f deploy/docker-compose.prod.yml logs -f neo4j
 ```
 
 ## Restart
 
 ```bash
 cd /opt/project-brain
-docker compose -f docker-compose.prod.yml restart api worker
+docker compose --project-directory . -f deploy/docker-compose.prod.yml restart api worker
 bash deploy/server_up.sh
 ```
 
@@ -264,7 +264,7 @@ and `/api/brain/web/reports` returns 401. A 503 means live authentication is
 missing or malformed. Enter the configured Basic credentials in the browser,
 then verify Overview, Activity, Reports, Get Started and a second repository's
 Indexing and Code Map. Check both desktop and mobile widths for overflow.
-The UI has no mutation controls; repair with the CLI commands in DEPLOYMENT.md.
+The UI has no mutation controls; repair with the CLI commands in docs/operations/DEPLOYMENT.md.
 
 Check the self-hosted API's `/api/version` (public) and `/health` (on the host,
 or publicly with `X-API-Key`), and confirm
@@ -299,7 +299,7 @@ Recurring jobs are fired by the worker itself (`brain/workers/scheduler.py`,
 Verify it is firing:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs worker | grep -E "Scheduler (started|fired)"
+docker compose --project-directory . -f deploy/docker-compose.prod.yml logs worker | grep -E "Scheduler (started|fired)"
 curl -fsS -H "X-API-Key: $PROJECT_BRAIN_API_KEY" http://127.0.0.1:${BRAIN_API_PORT:-8010}/scheduler/jobs
 ```
 
@@ -310,21 +310,21 @@ can be mounted under `/indexed`.
 
 ```bash
 cd /opt/project-brain
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main index --repo /repo
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main index --repo /repo
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
 ```
 
 Repair missing or stale embeddings:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embeddings backfill --repo /repo --json
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main embeddings backfill --repo /repo --json
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
 ```
 
 Optional file cards:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec api python -c \
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -c \
   "import asyncio; from brain.indexers.file_indexer import FileIndexer; asyncio.run(FileIndexer().build_file_cards('/repo'))"
 ```
 
@@ -361,7 +361,7 @@ Postgres dump:
 ```bash
 cd /opt/project-brain
 set -a && . ./.env && set +a
-docker compose -f docker-compose.prod.yml exec postgres \
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec postgres \
   pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > /tmp/project-brain.sql
 ```
 
@@ -385,7 +385,7 @@ the restored `.project-brain-release`. A host-side `git checkout` is not a
 valid rollback there because the release root intentionally contains no
 `.git`.
 
-`docker compose -f docker-compose.prod.yml down` stops the stack but keeps named
+`docker compose --project-directory . -f deploy/docker-compose.prod.yml down` stops the stack but keeps named
 volumes. Remove volumes only after taking backups.
 
 ### Release image retention

@@ -141,7 +141,7 @@ Claude Code / Cursor config:
 `record_decision`; the full list is in the [README](../../../README.md#9-mcp-server).
 
 Remote HTTP variant (`apps.mcp_server.remote_server`) exists for agents on
-other machines; see [`DEPLOYMENT.md`](../../../DEPLOYMENT.md) — not covered by this guide.
+other machines; see [`DEPLOYMENT.md`](../../operations/DEPLOYMENT.md) — not covered by this guide.
 
 ## Verify
 

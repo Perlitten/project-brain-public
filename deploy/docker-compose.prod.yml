@@ -9,6 +9,9 @@
 #   - scheduling runs inside the worker (brain/workers/scheduler.py).
 #
 # Usage:  bash deploy/server_up.sh
+# Direct commands run from the repository root with:
+# docker compose --project-directory . -f deploy/docker-compose.prod.yml ...
+# Keep root-relative contexts, env files and mounts, including local overrides.
 name: brain
 
 services:
