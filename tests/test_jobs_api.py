@@ -215,7 +215,7 @@ def test_enqueue_nightly_maintenance_has_long_quality_budget(
     )
 
 
-def test_enqueue_deep_context_is_authenticated_and_explicitly_gated(
+def test_enqueue_deep_context_is_authenticated_and_degrades_without_lfm(
     mock_queue,
     api_key_env,
 ):
@@ -233,8 +233,11 @@ def test_enqueue_deep_context_is_authenticated_and_explicitly_gated(
             json=body,
             headers={"X-API-Key": "test-secret-key"},
         )
-    assert disabled.status_code == 503
-    mock_queue.enqueue.assert_not_awaited()
+    # Without the late-interaction lane the job still queues: the worker builds
+    # a durable pack with the default retrieval instead of refusing.
+    assert disabled.status_code == 200
+    mock_queue.enqueue.assert_awaited_once()
+    mock_queue.enqueue.reset_mock()
 
     with (
         patch(

@@ -330,9 +330,7 @@ async def prepare_deep_context(
     repo_path: Optional[str] = None,
     notify: bool = True,
 ) -> dict:
-    """Queue a quality-first context pack using exact CPU LFM reranking."""
-    if not settings.LATE_INTERACTION_DEEP_ENABLED:
-        return {"status": "failed", "error": "LFM deep lane is disabled"}
+    """Queue a durable, quality-first context pack (late-interaction reranking when configured)."""
     queue = queue_for_job(
         redis_client,
         settings.WORKER_REDIS_PREFIX,

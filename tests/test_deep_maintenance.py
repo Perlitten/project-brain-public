@@ -362,3 +362,21 @@ async def test_deep_context_returns_only_after_applied_exact_lfm(monkeypatch):
         # not attributed to the worker that happened to run it.
         consumer=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_deep_context_without_lfm_builds_standard_durable_pack(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "LATE_INTERACTION_DEEP_ENABLED", False)
+    builder = SimpleNamespace(build_context_pack=AsyncMock(return_value={"id": 42, "markdown_content": "x", "files": []}))
+    with (
+        patch("brain.workers.tasks.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.get_repository_by_path", new=AsyncMock(return_value=_repository())),
+        patch("brain.context.context_pack_builder.ContextPackBuilder", return_value=builder),
+    ):
+        result = await run_deep_context({"task_description": "add rate limiting", "repo_path": str(tmp_path), "consumer": "mcp:test"})
+
+    assert result["status"] == "completed"
+    assert result["mode"] == "standard"
+    assert result["context_pack"]["id"] == 42
+    assert "markdown_content" not in result["context_pack"]
+    assert builder.build_context_pack.await_args.kwargs["consumer"] == "mcp:test"

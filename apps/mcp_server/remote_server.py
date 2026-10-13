@@ -303,7 +303,7 @@ async def prepare_deep_context(
     repo_path: Optional[str] = None,
     notify: bool = True,
 ) -> dict:
-    """Queue a quality-first context pack that uses exact CPU LFM reranking."""
+    """Queue a durable, quality-first context pack (late-interaction reranking when configured)."""
     return await _post(
         "/jobs/deep-context",
         {

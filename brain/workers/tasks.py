@@ -710,13 +710,40 @@ async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-async def run_deep_context(params: Dict[str, Any]) -> Dict[str, Any]:
-    if not settings.LATE_INTERACTION_DEEP_ENABLED:
-        raise PermanentJobError("LFM deep lane is disabled")
+async def _standard_deep_context(task_description: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Durable context pack with the default retrieval, for installs without the
+    late-interaction model service. The agent still gets a full, persisted pack."""
+    from brain.context.context_pack_builder import ContextPackBuilder
 
+    await init_db()
+    repo_path = resolve_repo_path(params.get("repo_path") or settings.TARGET_REPO_PATH)
+    if await get_repository_by_path(repo_path) is None:
+        raise PermanentJobError(
+            f"Repository is not indexed yet: {repo_path.as_posix()}. Run `brain index --repo {repo_path.as_posix()}` first."
+        )
+    context_pack = await ContextPackBuilder().build_context_pack(
+        task_description=task_description,
+        repo_path=repo_path,
+        budget="deep",
+        consumer=str(params.get("consumer") or "") or None,
+    )
+    context_pack.pop("markdown_content", None)
+    context_pack = json.loads(json.dumps(context_pack, ensure_ascii=False, default=str))
+    return {
+        "status": "completed",
+        "mode": "standard",
+        "note": "Late-interaction reranking is not configured; built with the default retrieval.",
+        "context_pack": context_pack,
+    }
+
+
+async def run_deep_context(params: Dict[str, Any]) -> Dict[str, Any]:
     task_description = str(params.get("task_description") or "").strip()
     if not task_description:
         raise PermanentJobError("Deep context task_description is required")
+
+    if not settings.LATE_INTERACTION_DEEP_ENABLED:
+        return await _standard_deep_context(task_description, params)
 
     await init_db()
     repo_path = _deep_repo_path(params)
