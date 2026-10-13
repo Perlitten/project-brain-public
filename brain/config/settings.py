@@ -1,7 +1,7 @@
 import os
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import urlparse
 
 from pydantic import field_validator, model_validator
@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     WORKER_REDIS_PREFIX: str = "brain:worker"
     # Minimum seconds between automatic reindexes of one repo triggered by stale_blocked context.
     AUTO_REINDEX_MIN_INTERVAL_S: int = 3600
+    BRAIN_STALE_CONTEXT_POLICY: Literal["warn_and_serve", "strict_block"] = "warn_and_serve"
+    BRAIN_STALE_DIFF_MAX_FILES: int = 64
+    BRAIN_STALE_DIFF_TIMEOUT_S: float = 1.0
+    BRAIN_STALE_SOURCE_MAX_BYTES: int = 256_000
     WORKER_POOL_NAME: str = "maintenance"
     WORKER_JOB_LEASE_SECONDS: int = 60
     WORKER_JOB_TIMEOUT_SECONDS: int = 60 * 60

@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import or_, select
 
 from brain.config.settings import settings
+from brain.memory.source_overlay import SourceDelta, collect_source_delta, current_ranges, read_live_source
 from brain.context.budget import BudgetedPayloadBuilder, truncate_utf8
 from brain.context.evidence_support import should_abstain_for_unsupported_query
 from brain.database.models import File, FileChunk, Symbol
@@ -180,16 +181,25 @@ class RuntimeContextBuilder:
         repo = self._repo_projection(result)
         freshness = repo["freshness"]
         metadata: dict[str, Any] = {"status": "ok", "repo": repo, "missing": list(result.degraded)}
-        # A code-changing task cannot use an unprovably current index as edit
-        # context. This is fail-closed, not a cosmetic warning.
-        # A background reindex is queued (at most once per repo per
-        # AUTO_REINDEX_MIN_INTERVAL_S) so a later request can be fresh.
-        if freshness != "current":
-            metadata["status"] = "stale_blocked"
-            metadata["missing"].append("current_source_required_for_code_change")
+        delta = await asyncio.to_thread(
+            collect_source_delta, Path(repo_str), repo.get("indexed_revision"),
+            limit=settings.BRAIN_STALE_DIFF_MAX_FILES, timeout=settings.BRAIN_STALE_DIFF_TIMEOUT_S,
+        )
+        unverified_diff = (delta.source_present and not delta.complete
+                           and bool(re.fullmatch(r"[0-9a-fA-F]{40,64}", repo.get("indexed_revision") or "")))
+        stale = freshness != "current" or bool(delta.changed_files) or delta.dirty or unverified_diff
+        if stale:
             if await _queue_auto_reindex(str(repo_path)):
                 metadata["missing"].append("auto_reindex_queued")
-            return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
+            if settings.BRAIN_STALE_CONTEXT_POLICY == "strict_block":
+                metadata["status"] = "stale_blocked"
+                metadata["missing"].append("current_source_required_for_code_change")
+                return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
+            metadata["freshness"] = "stale_served"
+            repo["freshness"] = "stale_served"
+            if delta.head:
+                repo["source_revision"] = delta.head
+            metadata["freshness_warning"] = delta.warning(min(1000, max_bytes // 10))
 
         # A current index with no retrieval evidence is not a usable context.
         # In particular, /ask must not silently turn an empty candidate list
@@ -202,16 +212,23 @@ class RuntimeContextBuilder:
         # Bind cache reads to the same revision used for writes, after the
         # current-source/evidence guards. Cache must fit this request's budget.
         cached = get_cached_context(repo_str, task_description, repo.get("source_revision"), max_bytes)
-        cache_hit = (cached is not None and cached.get("evidence_cache_version") == 1
+        cache_hit = (not stale and cached is not None and cached.get("evidence_cache_version") == 1
                      and not include_debug and not result.degraded)
         await self._include_style_companion(result)
         if cache_hit and cached is not None:
             slices = cached["slices"]
         else:
             slices = await self._load_slices(result, max_bytes)
+        if stale and delta.source_present:
+            slices, unavailable = await self._overlay_current_slices(result, slices, delta, Path(repo_str), max_bytes)
+            if unavailable:
+                metadata["missing"].append("live_source_unavailable_for_some_candidates")
         if not slices:
             metadata["status"] = "partial"
             metadata["missing"].append("no_code_slices")
+            if stale:
+                memory = await self._load_memory(task_description, result, repo, max_bytes, metadata)
+                return BudgetedPayloadBuilder(max_bytes, metadata=metadata).add("memory", memory, priority=5).build()
             return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
 
         # Keep public locators aligned with the selected code on cache hits as
@@ -226,24 +243,7 @@ class RuntimeContextBuilder:
             metadata["missing"].append("no_relevant_candidates")
             return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
 
-        memory = await select_relevant_normative_memory(
-            task_description,
-            [candidate.path for candidate in result.candidates],
-            repo.get("path"),
-        )
-        # Normative and learned guidance is always live: rejecting, expiring or
-        # superseding a record must apply even on a code-evidence cache hit.
-        memory_cap = min(3000, max_bytes // 5)
-        try:
-            learnings = await asyncio.wait_for(select_learnings_for_context(
-                task_description, repo.get("path"), max_bytes=min(1200, memory_cap // 2),
-            ), timeout=2.0)
-        except Exception as exc:
-            from loguru import logger
-            logger.warning("L3 runtime retrieval skipped: {}", type(exc).__name__)
-            metadata["missing"].append("learning_retrieval_unavailable")
-            learnings = []
-        memory = _bounded_memory(memory, learnings, memory_cap)
+        memory = await self._load_memory(task_description, result, repo, max_bytes, metadata)
         if cache_hit:
             metadata["_cache_hit"] = True
         builder = BudgetedPayloadBuilder(max_bytes, metadata=metadata)
@@ -294,11 +294,80 @@ class RuntimeContextBuilder:
                 .add("candidates", built.get("candidates", []), priority=1)
                 .build()
             )
-        if freshness == "current":
+        if not stale:
             put_cached_context(repo_str, task_description, {"evidence_cache_version": 1, "slices": slices},
                                source_revision=repo.get("source_revision"),
                                max_bytes=max_bytes)
         return built
+
+    @staticmethod
+    async def _load_memory(
+        task_description: str, result: RetrievalResult, repo: dict[str, Any],
+        max_bytes: int, metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        # Keep constraints and learned guidance live, even on cache hits or
+        # when a deleted file leaves a stale request with only memory evidence.
+        memory = await select_relevant_normative_memory(
+            task_description, [candidate.path for candidate in result.candidates], repo.get("path"),
+        )
+        memory_cap = min(3000, max_bytes // 5)
+        try:
+            learnings = await asyncio.wait_for(select_learnings_for_context(
+                task_description, repo.get("path"), max_bytes=min(1200, memory_cap // 2),
+            ), timeout=2.0)
+        except Exception as exc:
+            from loguru import logger
+
+            logger.warning("L3 runtime retrieval skipped: {}", type(exc).__name__)
+            metadata["missing"].append("learning_retrieval_unavailable")
+            learnings = []
+        return _bounded_memory(memory, learnings, memory_cap)
+
+    @staticmethod
+    async def _overlay_current_slices(
+        result: RetrievalResult, indexed: list[dict[str, Any]], delta: SourceDelta,
+        root: Path, max_bytes: int,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Replace changed-file evidence, including shifted Python symbol ranges.
+
+        Unknown/truncated diffs require checking every candidate. Deleted,
+        unreadable and escaping files contribute no old code under a live label.
+        The existing payload builder remains the final byte-budget authority.
+        """
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for item in indexed:
+            grouped.setdefault(item["path"], []).append(item)
+        changed = set(delta.changed_files)
+        output = []
+        unavailable = False
+        for candidate in result.candidates[:12]:
+            if delta.complete and candidate.path not in changed:
+                output.extend(grouped.get(candidate.path, []))
+                continue
+            source = await asyncio.to_thread(
+                read_live_source, root, candidate.path, settings.BRAIN_STALE_SOURCE_MAX_BYTES,
+            )
+            if source is None:
+                unavailable = True
+                continue
+            fallback = list(candidate.ranges) or [tuple(item["range"]) for item in grouped.get(candidate.path, [])
+                                                  if item.get("range") and all(isinstance(v, int) for v in item["range"])]
+            ranges = current_ranges(source, candidate.symbols, fallback)
+            candidate.ranges = ranges
+            for start, end in ranges:
+                content = truncate_utf8("".join(source.lines[start - 1:end]), min(2200, max_bytes // 4))
+                if not content.strip():
+                    continue
+                output.append({
+                    "path": candidate.path, "range": [start, min(end, start + len(content.splitlines()) - 1)],
+                    "content": content, "source": "live_disk",
+                    "source_read_hash": source.digest, "source_read_truncated": source.truncated,
+                })
+            if len(output) >= 22:
+                break
+        paths = {item["path"] for item in output}
+        result.candidates = [candidate for candidate in result.candidates if candidate.path in paths]
+        return output[:22], unavailable
 
     @staticmethod
     def _named_style_components(result: RetrievalResult) -> list[str]:

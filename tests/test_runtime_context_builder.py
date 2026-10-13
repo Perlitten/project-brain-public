@@ -152,6 +152,9 @@ async def test_small_successful_context_does_not_replace_full_budget_cache(monke
 
 @pytest.mark.asyncio
 async def test_runtime_cache_uses_verified_revision_and_respects_smaller_budget(monkeypatch):
+    from brain.config.settings import settings
+
+    monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "strict_block")
     from brain.context.context_cache import clear_context_cache
 
     clear_context_cache()
@@ -186,7 +189,10 @@ async def test_runtime_cache_uses_verified_revision_and_respects_smaller_budget(
 
 
 @pytest.mark.asyncio
-async def test_runtime_context_fails_closed_before_loading_slices_when_index_is_stale():
+async def test_runtime_context_fails_closed_before_loading_slices_when_index_is_stale(monkeypatch):
+    from brain.config.settings import settings
+
+    monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "strict_block")
     result = RetrievalResult(
         query="change search endpoint",
         intent="runtime_context",
