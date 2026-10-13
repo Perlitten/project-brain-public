@@ -130,12 +130,11 @@ returned the expected source and five-file task context while running outside
 the checkout with source imports excluded. The mock critic reported
 `PARTIAL_CONTEXT`; these remain functional smoke checks.
 
-Repository metadata writes from integration tokens return `Resource not accessible by
-integration`. Content, pull-request and release permissions are available;
-those permissions do not confer Vercel or repository-settings administration.
-The repository owner subsequently configured the public homepage
-(`https://project-brain-demo.vercel.app/`) and discovery topics (`ai-agents`,
-`code-search`, `developer-tools`, `mcp`, `project-memory`, `self-hosted`).
+The integration initially returned `Resource not accessible by integration`
+for repository-settings writes. The repository owner subsequently configured
+the public homepage, https://project-brain-demo.vercel.app/, and discovery topics:
+`ai-agents`, `code-search`, `developer-tools`, `mcp`, `project-memory`, `self-hosted`.
+GitHub now reports those settings on the public repository.
 
 ## Published release and artifacts
 
@@ -169,19 +168,15 @@ coverage-of-behavior counts, not performance or effectiveness measurements.
 |---|---|
 | New developer | Tagged public source, bootstrap, index, actual start/restart, clean reinstall and first MCP task passed; cloud cache/plugin adaptations are documented above |
 | AI infrastructure engineer | Current architecture documents storage/MCP/model trust boundaries; migrations, scoped source references and distribution checks passed; mocks and partial context limit retrieval conclusions |
-| Technical hiring manager | Concise landing page, genuine labeled desktop/mobile visuals, public demo, configured homepage/topics and reproducible release evidence |
+| Technical hiring manager | Concise landing page, genuine labeled desktop/mobile visuals, public demo and reproducible release evidence; public homepage and discovery topics are configured |
 
 ## Outstanding limitation and assessment
 
 **GO.** Runtime cleanup, documentation, interface fixes, public demo,
-CI/CodeQL, the verified public release and repository homepage/topic metadata
-are complete (`homepageUrl` set to `https://project-brain-demo.vercel.app/` and
-topics `ai-agents`, `code-search`, `developer-tools`, `mcp`, `project-memory`,
-`self-hosted` configured by the repository owner):
-
-```bash
-gh repo edit Perlitten/project-brain-public --homepage https://project-brain-demo.vercel.app/ --add-topic mcp,ai-agents,self-hosted,developer-tools,project-memory,code-search
-```
+CI/CodeQL and the verified public release are complete. The repository owner
+completed the `gh repo edit` metadata step: the header links to the public demo
+and all six discovery topics are configured. Live GitHub metadata verification
+confirms that the remaining public-presentation blocker is resolved.
 
 No account-wide Vercel configuration or security-alert inventory was certified.
 Current tested runtime isolation, operator protection and passing CodeQL are
