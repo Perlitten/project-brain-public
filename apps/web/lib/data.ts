@@ -1145,8 +1145,12 @@ export const getReranker = async (slug?: string | null): Promise<RerankerStatus>
     const approvedRevision = str(approval.approved_index_revision);
     const approvedDocs = int(approval.approved_document_count);
 
+    // Never set up: nothing switched on and nothing encoded. That is a normal,
+    // fully working install (search uses the first pass), not a fault.
+    const notSetUp = traffic.enabled !== true && traffic.remote_enabled !== true && !current && !docs;
+
     const offReasons: string[] = [];
-    if (!on) {
+    if (!on && !notSetUp) {
       if (traffic.enabled !== true) offReasons.push("Switched off in the server settings (LATE_INTERACTION_ENABLED).");
       else if (traffic.rerank !== true) offReasons.push("Re-ranking itself is switched off (LATE_INTERACTION_RERANK_ENABLED).");
       if (int(traffic.canary_percent) <= 0) offReasons.push("0% of searches are routed to it (LATE_INTERACTION_CANARY_PERCENT).");
@@ -1156,12 +1160,12 @@ export const getReranker = async (slug?: string | null): Promise<RerankerStatus>
         );
       if (approval.production_gates_passed === false) offReasons.push("Its quality checks for live traffic haven’t passed yet.");
     }
-    if (!serviceUp && pStatus) offReasons.push(`The model service reports “${pStatus}”${str(provider.reason) ? `: ${str(provider.reason)}` : ""}.`);
+    if (!serviceUp && pStatus && !notSetUp) offReasons.push(`The model service reports “${pStatus}”${str(provider.reason) ? `: ${str(provider.reason)}` : ""}.`);
 
     return {
       model: str(inv.model) || str(provider.model_revision).slice(0, 12) || "—",
       state,
-      stateText,
+      stateText: notSetUp ? "Not set up" : stateText,
       coverage: {
         label: "Ready for precise ranking",
         value: total ? `${pct.toFixed(1)}%` : docs ? fmtN(docs) : "—",
@@ -1179,7 +1183,8 @@ export const getReranker = async (slug?: string | null): Promise<RerankerStatus>
       ndcgLift: "—",
       queries24h: int(metrics.rerank_requests),
       queriesWindow: "since the API last restarted",
-      service: pStatus ? (serviceUp ? { tone: "ok", text: "Model service ready" } : { tone: "bad", text: `Model service ${pStatus}` }) : undefined,
+      service: pStatus && !notSetUp ? (serviceUp ? { tone: "ok", text: "Model service ready" } : { tone: "bad", text: `Model service ${pStatus}` }) : undefined,
+      notSetUp,
       offReasons,
       index: revision
         ? { revision, documents: docs, updated: inv.last_update ? fmtShort(inv.last_update) : undefined, approvedRevision: approvedRevision || undefined, approvedDocuments: approvedDocs || undefined }
