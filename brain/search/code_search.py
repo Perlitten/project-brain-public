@@ -28,7 +28,7 @@ from brain.search.filters import (
     HISTORICAL_AUTHORITY_NOTE,
     HISTORICAL_SUMMARY_PREFIX,
     KNOWLEDGE_STATUS_HISTORICAL,
-    get_file_type_weight,
+    query_file_type_weight,
     knowledge_authority_weight,
     knowledge_status_from_summary,
     query_requests_historical_context,
@@ -244,7 +244,7 @@ async def _pgvector_chunk_search(
         chunk = chunks_by_id.get(row["chunk_id"])
         if not chunk:
             continue
-        weight = get_file_type_weight(file_obj.file_type) if file_obj else 0.7
+        weight = query_file_type_weight(file_obj.file_type, query, file_obj.path) if file_obj else 0.7
         authority_weight = (
             knowledge_authority_weight(file_obj.summary, query) if file_obj else 1.0
         )
@@ -296,7 +296,7 @@ async def _python_vector_chunk_search(
             continue
         if file_obj and should_exclude_from_retrieval(file_obj.path):
             continue
-        weight = get_file_type_weight(file_obj.file_type) if file_obj else 0.7
+        weight = query_file_type_weight(file_obj.file_type, query, file_obj.path) if file_obj else 0.7
         authority_weight = (
             knowledge_authority_weight(file_obj.summary, query) if file_obj else 1.0
         )
@@ -590,7 +590,7 @@ async def search_code(
             def _file_item(file_record) -> Dict[str, Any]:
                 status = knowledge_status_from_summary(file_record.summary)
                 weight = (
-                    get_file_type_weight(file_record.file_type)
+                    query_file_type_weight(file_record.file_type, query, file_record.path)
                     if apply_file_weights
                     else 1.0
                 )

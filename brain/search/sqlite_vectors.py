@@ -7,7 +7,7 @@ from sqlalchemy import select
 from brain.config.settings import settings
 from brain.database.models import File, FileChunk, Embedding
 from brain.embeddings.config import get_embedding_config, content_hash
-from brain.search.filters import should_exclude_from_retrieval, get_file_type_weight, knowledge_authority_weight
+from brain.search.filters import should_exclude_from_retrieval, query_file_type_weight, knowledge_authority_weight
 
 
 async def sqlite_vector_search(session, query, query_vector, top_k, repository_id):
@@ -34,7 +34,7 @@ async def sqlite_vector_search(session, query, query_vector, top_k, repository_i
             continue
         denominator = norm * float(np.linalg.norm(array))
         score = float(np.dot(query_array, array)) / denominator if denominator else 0.0
-        score *= get_file_type_weight(file.file_type) * knowledge_authority_weight(file.summary, query)
+        score *= query_file_type_weight(file.file_type, query, file.path) * knowledge_authority_weight(file.summary, query)
         record = (score, -chunk.id, chunk, file)
         if len(heap) < top_k:
             heapq.heappush(heap, record)

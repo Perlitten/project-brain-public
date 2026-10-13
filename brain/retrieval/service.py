@@ -16,6 +16,7 @@ from brain.database.session import async_session_factory
 from brain.memory.repo_freshness import assess_repository_freshness
 from brain.search.code_search import search_code
 from brain.search.symbol_ranking import symbol_relevance_order
+from brain.config.settings import settings
 
 
 RetrievalIntent = Literal["locator", "runtime_context", "ask", "impact", "deep"]
@@ -188,7 +189,7 @@ class RetrievalService:
         vector_status = raw.get("vector_status")
         if vector_status is not None and str(vector_status).strip().casefold() != "ok":
             degraded.append(f"vector:{vector_status}")
-        vector_candidates = self._normalize(raw, recall_budget)
+        vector_candidates = self._normalize(raw, recall_budget, query)
         # Extract query identifiers for file-name bonus in merge.
         _STOP = {
             "the", "and", "for", "with", "from", "that", "this", "what", "why",
@@ -206,7 +207,11 @@ class RetrievalService:
             i for i in _IDENTIFIER_RE.findall(query)
             if len(i) >= 4 and i.lower() not in _STOP
         ][:12]
-        candidates = self._merge_candidates(vector_candidates, symbol_candidates, candidate_budget, query_identifiers)
+        if settings.RETRIEVAL_V2_ENABLED:
+            from brain.retrieval.locator_fusion import merge_linear
+            candidates = merge_linear(vector_candidates, symbol_candidates, query, candidate_budget)
+        else:
+            candidates = self._merge_candidates(vector_candidates, symbol_candidates, candidate_budget, query_identifiers)
         return RetrievalResult(
             query=query,
             intent=intent,
@@ -368,6 +373,8 @@ class RetrievalService:
             candidate.add_range(symbol.start_line, symbol.end_line)
             # Exact matches rank higher than substring matches
             is_exact = symbol.name in identifiers
+            if is_exact:
+                candidate.channel_scores["identifier"] = 1.0
             score = (1.0 / rank) * (1.5 if is_exact else 0.8)
             candidate.channel_scores["symbol"] = max(candidate.channel_scores.get("symbol", 0.0), score)
             candidate.score = max(candidate.score, score)
@@ -390,10 +397,13 @@ class RetrievalService:
             parent_dir = parts[-2].lower() if len(parts) > 1 else ""
             if any(ident.lower() in file_basename or ident.lower() in parent_dir for ident in file_name_idents):
                 candidate.score += 0.5
+        if settings.RETRIEVAL_V2_ENABLED:
+            from brain.retrieval.locator_fusion import linear_locator
+            return linear_locator(list(grouped.values()), query, candidate_budget)
         return sorted(grouped.values(), key=lambda item: (-item.score, item.path))[:candidate_budget]
 
     @staticmethod
-    def _normalize(raw: dict[str, Any], candidate_budget: int) -> list[RetrievalCandidate]:
+    def _normalize(raw: dict[str, Any], candidate_budget: int, query: str = "") -> list[RetrievalCandidate]:
         grouped: dict[str, RetrievalCandidate] = {}
 
         def candidate_for(path: str) -> RetrievalCandidate:
@@ -419,7 +429,10 @@ class RetrievalService:
                 continue
             candidate = candidate_for(str(item["file_path"]))
             candidate.add_range(item.get("start_line"), item.get("end_line"))
-            score = float(item.get("similarity") or 1.0 / rank)
+            score = float(item["similarity"]) if item.get("similarity") is not None else 1.0 / rank
             candidate.channel_scores["vector"] = max(candidate.channel_scores.get("vector", 0.0), score)
             candidate.score += score
+        if settings.RETRIEVAL_V2_ENABLED:
+            from brain.retrieval.locator_fusion import linear_locator
+            return linear_locator(list(grouped.values()), query, candidate_budget)
         return sorted(grouped.values(), key=lambda item: (-item.score, item.path))[:candidate_budget]

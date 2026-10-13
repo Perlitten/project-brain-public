@@ -206,6 +206,16 @@ FILE_TYPE_WEIGHTS = {
     "asset": 0.1,
 }
 
+
+def query_file_type_weight(file_type: str | None, query: str, path: str) -> float:
+    """Requested test/template work must not inherit the generic type penalty."""
+    from brain.config.settings import settings
+    if settings.RETRIEVAL_V2_ENABLED and file_type in {"test", "template"}:
+        from brain.retrieval.locator_fusion import surface_weight
+        if surface_weight(path, query) == 1.0:
+            return 1.0
+    return get_file_type_weight(file_type)
+
 # Extension surfaces that pollute server/engine retrieval unless task is UI-focused
 EXTENSION_NOISE_PATHS = (
     "extension/src/content/injected.js",

@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     CONTEXT_PACK_OUTPUT_DIR: Optional[str] = None
     # One rollback switch for all agent-facing v2 contracts. ``shadow`` computes
     # bounded v2 metrics but keeps the byte-compatible v1 response client-side.
-    BRAIN_AGENT_CONTEXT_V2_MODE: str = "off"
+    BRAIN_AGENT_CONTEXT_V2_MODE: str = "on"
     BRAIN_WORKER_POOLS_V2_ENABLED: bool = False
     AGENT_LOCATOR_MAX_BYTES: int = 2_400
     AGENT_RUNTIME_CONTEXT_MAX_BYTES: int = 26_000
@@ -268,7 +268,7 @@ class Settings(BaseSettings):
     # empty-channel BM25 fallback, identifier query extraction, vector chunk->file
     # aggregation mode. All legacy defaults — pipeline is byte-identical to v5
     # unless RETRIEVAL_V2_ENABLED is set.
-    RETRIEVAL_V2_ENABLED: bool = False
+    RETRIEVAL_V2_ENABLED: bool = True
     # Fusion formula: "rrf" (prod), "wrrf" (weighted RRF, vector weight amplified),
     # "linear" (score-normalized weighted sum; empty channels contribute 0).
     # Frozen on dev150 (A7): linear — wrrf still dilutes the vector channel.
