@@ -78,6 +78,7 @@ test("one production build serves demo or actual API data from runtime configura
     assert.equal(response.status, 200);
     const liveHtml = await response.text();
     assert.match(liveHtml, new RegExp(marker), "Must render the runtime backend, not the build-time demo");
+    assert.ok(!liveHtml.includes(key), "Server-side API credentials must not enter the page");
     assert.doesNotMatch(liveHtml, /Numbers are examples until the API is connected/);
     assert.ok(calls.some((c) => c.path === "/repositories" && c.key === key));
     assert.match(await (await fetch(`${live.base}/robots.txt`)).text(), /Disallow: \//);

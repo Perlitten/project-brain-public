@@ -17,6 +17,8 @@ All notable changes to this project are documented here. The format follows
   source or weakening clean-commit provenance checks; skip symlink targets.
 - Render dashboard data mode and robots policy from runtime API bindings instead
   of serving a build-time demo snapshot in live container installations.
+- Keep local credentials, npm dependencies and generated Next.js outputs out of
+  the web Docker build context.
 
 ## [0.9.1] - development on main, not yet published
 
