@@ -40,6 +40,7 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+      - run: npm run test:production
 
   test:
     runs-on: ubuntu-latest

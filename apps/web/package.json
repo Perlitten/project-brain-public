@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "node scripts/serve.mjs start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "test:production": "node --test tests/production-mode.integration.cjs"
   },
   "dependencies": {
     "next": "^16.4.0",
