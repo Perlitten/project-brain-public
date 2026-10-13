@@ -61,7 +61,7 @@ async def run_enrich_summaries(params: Dict[str, Any]) -> Dict[str, Any]:
         raise PermanentJobError("Summary enrichment repository scope does not match")
     if settings.INDEX_LLM_SUMMARIES_MODE != "lazy" or not settings.INDEX_LLM_SUMMARIES_BACKGROUND:
         return {"skipped": "summary enrichment is disabled"}
-    return await enrich_summaries(repository.id, path)
+    return await enrich_summaries(repository.id, path, params.get("paths"))
 
 
 async def validate_task_fencing(redis_cli, prefix: str, job_id: str, fencing_token: Optional[str]) -> None:
