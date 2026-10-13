@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { PageHead, Panel } from "@/components/ui";
 import { getPulse } from "@/lib/actions/pulse";
 import { glossary, type GlossaryKey } from "@/lib/glossary";
+import { withProject } from "@/lib/nav";
 
 export const metadata = { title: "Help" };
 
@@ -23,7 +24,8 @@ const termName = (k: GlossaryKey) => TERM_NAMES[k] ?? k.charAt(0).toUpperCase() 
 // rather than guessing them for whatever tag the API reports.
 const doc = (path: string) => `${REPO}/blob/main/${path}`;
 
-function faq(): { q: string; a: ReactNode }[] {
+function faq(repo?: string): { q: string; a: ReactNode }[] {
+  const link = (path: string) => withProject(path, repo);
   return [
     {
       q: "My agent isn’t using Brain",
@@ -31,11 +33,12 @@ function faq(): { q: string; a: ReactNode }[] {
         <>
           <p>
             Connecting Brain makes its tools available; it doesn’t make an agent call them. Check that the agent is connected in{" "}
-            <Link className="link" href="/setup#agent">Setup</Link>, then ask it in its instructions to call <code>prepare_task_context</code> before
+            <Link className="link" href={link("/setup#agent")}>Setup</Link>, then ask it in its instructions to call <code>prepare_task_context</code> before
             planning a change and <code>review_diff</code> before finishing.
           </p>
           <p>
-            Work agents ran through Brain appears under <Link className="link" href="/runs">Agent tasks</Link>. See the{" "}
+            MCP calls appear under <Link className="link" href={link("/logs")}>Activity</Link>, and prepared task context appears under{" "}
+            <Link className="link" href={link("/packs")}>Context packs</Link>. Agent tasks only lists work explicitly started through the harness. See the{" "}
             <a className="link" href={doc("docs/MCP.md#suggested-agent-workflow")}>suggested agent workflow</a>.
           </p>
         </>
@@ -46,12 +49,12 @@ function faq(): { q: string; a: ReactNode }[] {
       a: (
         <>
           <p>
-            Brain answers from the last commit it read. Re-index from the <Link className="link" href="/">Dashboard</Link>, or press{" "}
+            Brain answers from the last commit it read. Re-index from the <Link className="link" href={link("/")}>Dashboard</Link>, or press{" "}
             <kbd>Ctrl</kbd> <kbd>K</kbd> and choose “Re-index the repository”. Later runs only re-read what changed.
           </p>
           <p>
             Brain reads committed source only. If a re-index refuses the repository, commit your source edits first; ignored build output such as{" "}
-            <code>node_modules</code> doesn’t count. Past runs are under <Link className="link" href="/indexing">Index runs</Link>.
+            <code>node_modules</code> doesn’t count. Past runs are under <Link className="link" href={link("/indexing")}>Index runs</Link>.
           </p>
         </>
       ),
@@ -59,10 +62,14 @@ function faq(): { q: string; a: ReactNode }[] {
     {
       q: "A job is queued and never finishes",
       a: (
-        <p>
-          Jobs run in a background worker, not in the API. If the menu footer says the worker isn’t running, start it: <code>./scripts/start.sh</code>{" "}
-          runs the API, the worker and this dashboard together. <Link className="link" href="/logs">Activity</Link> shows each job and where it stopped.
-        </p>
+        <>
+          <p>
+            Jobs run in a background worker, not in the API. For a source checkout, <code>./scripts/start.sh</code> starts the API, worker and dashboard.
+            For a Docker server, use <code>./deploy/server_up.sh</code> and follow the{" "}
+            <a className="link" href={doc("deploy/RUNBOOK.md#start-or-update")}>deployment runbook</a> rather than starting a second local stack.
+          </p>
+          <p><Link className="link" href={link("/logs")}>Activity</Link> shows each job and where it stopped.</p>
+        </>
       ),
     },
     {
@@ -84,8 +91,9 @@ function faq(): { q: string; a: ReactNode }[] {
             Connected agents receive tool results under their own service’s policy.
           </p>
           <p>
-            To keep it local, point both the language model and embeddings at local models in <Link className="link" href="/settings">Settings</Link>.
-            Details are in the <a className="link" href={doc("docs/FAQ.md#where-does-my-data-go")}>FAQ</a>.
+            For local-only operation, point both model roles and their endpoints at local models in{" "}
+            <Link className="link" href={link("/settings")}>Settings</Link>, disable external notifications, webhooks and remote integrations, and use a
+            local agent connection. Details are in the <a className="link" href={doc("docs/FAQ.md#where-does-my-data-go")}>FAQ</a>.
           </p>
         </>
       ),
@@ -95,7 +103,7 @@ function faq(): { q: string; a: ReactNode }[] {
       a: (
         <p>
           Treat it as a starting point. A context pack selects files, rules and decisions for one task; it can miss evidence or lag behind the latest
-          edits, so the agent should still read current source and run tests. <Link className="link" href="/quality">Quality</Link> shows how well
+          edits, so the agent should still read current source and run tests. <Link className="link" href={link("/quality")}>Quality</Link> shows how well
           search finds the right code on a fixed test set, which isn’t a measure of coding results.
         </p>
       ),
@@ -104,8 +112,9 @@ function faq(): { q: string; a: ReactNode }[] {
       q: "How do I update Brain?",
       a: (
         <p>
-          Back up <code>.env</code> and your data first. On a local checkout, pull the new release, run <code>./scripts/bootstrap.sh</code> (it keeps{" "}
-          <code>.env</code> and the databases) and restart with <code>./scripts/start.sh</code>. On a server, follow the{" "}
+          Back up <code>.env</code> and your data first. On a local checkout, fetch tags and check out the new release tag, run{" "}
+          <code>./scripts/bootstrap.sh</code>, refresh web packages with <code>cd apps/web &amp;&amp; npm ci</code>, and restart with{" "}
+          <code>./scripts/start.sh</code>. On a server, follow the{" "}
           <a className="link" href={doc("deploy/RUNBOOK.md#start-or-update")}>runbook</a> and the{" "}
           <a className="link" href={doc("docs/runbooks/backup-restore.md")}>backup guide</a>.
         </p>
@@ -114,7 +123,8 @@ function faq(): { q: string; a: ReactNode }[] {
   ];
 }
 
-export default async function Help() {
+export default async function Help({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
+  const { repo } = await searchParams;
   const pulse = await getPulse("");
   const docs: { label: string; path: string; note: string }[] = [
     { label: "Getting started", path: "docs/GETTING_STARTED.md", note: "Install, index a repository and run a first task" },
@@ -159,7 +169,17 @@ export default async function Help() {
           {pulse && (
             <>
               <dt>Server</dt>
-              <dd>{!pulse.reachable ? "Not answering" : pulse.healthy ? "Answering, all services healthy" : `Answering, ${pulse.down.join(", ") || "some services"} not healthy`}</dd>
+              <dd>
+                {!pulse.reachable
+                  ? "Not answering"
+                  : pulse.healthy
+                    ? "Answering, all services healthy"
+                    : pulse.down.length
+                      ? `Answering, ${pulse.down.join(", ")} not healthy`
+                      : pulse.warnings?.length
+                        ? `Answering; overdue scheduled jobs: ${pulse.warnings.join(", ")}`
+                        : "Answering with a server warning"}
+              </dd>
               <dt>Models</dt>
               <dd>
                 {pulse.llm || pulse.embedding
@@ -177,7 +197,7 @@ export default async function Help() {
       </Panel>
 
       <Panel id="faq" title="Common questions" desc="Problems people run into first, and where to fix them." flush>
-        {faq().map((item) => (
+        {faq(repo).map((item) => (
           <details className="more help__item" key={item.q}>
             <summary>{item.q}</summary>
             <div className="help__answer">{item.a}</div>

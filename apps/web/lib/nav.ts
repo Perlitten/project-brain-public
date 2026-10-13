@@ -50,8 +50,11 @@ export function activeSection(path: string): string | undefined {
 
 /** Keep project context through global evidence/settings without claiming a filter. */
 export function withProject(href: string, slug?: string): string {
-  const [pathname, query = ""] = href.split("?");
+  const hashAt = href.indexOf("#");
+  const fragment = hashAt >= 0 ? href.slice(hashAt) : "";
+  const withoutFragment = hashAt >= 0 ? href.slice(0, hashAt) : href;
+  const [pathname, query = ""] = withoutFragment.split("?");
   const params = new URLSearchParams(query);
   if (slug) params.set("repo", slug); else params.delete("repo");
-  return `${pathname}${params.size ? `?${params}` : ""}`;
+  return `${pathname}${params.size ? `?${params}` : ""}${fragment}`;
 }
