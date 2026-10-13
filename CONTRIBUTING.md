@@ -10,15 +10,15 @@ Requirements: Docker with Compose, Python 3.12 (the version CI tests), and
 Node 22 if you work on the web UI in `apps/web`.
 
 ```bash
-git clone https://github.com/Perlitten/project-brain-public.git
+git clone https://github.com/Perlitten/project-brain-public.git project-brain
 cd project-brain
-cp .env.example .env              # or run scripts/bootstrap.sh (POSIX shells)
-docker compose up -d postgres redis neo4j
-python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
+./scripts/bootstrap.sh
+. .venv/bin/activate
 ```
 
-On Windows, use WSL2 or run the equivalent commands in PowerShell.
+Linux is verified. macOS and WSL2 are not equivalently verified; native Windows
+is unverified. Read the [current setup guide](docs/GETTING_STARTED.md) for model
+configuration and the complete API/worker/dashboard workflow.
 
 ## Checks to run before a pull request
 

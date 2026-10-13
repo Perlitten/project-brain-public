@@ -1,5 +1,12 @@
 # Project Brain v0.5.0 Utility Benchmark Pilot
 
+> Historical research framework. The entry points below reproduce version-pinned
+> experiments; they are not the recommended onboarding path or evidence that the
+> current release improves coding outcomes. Shared evaluators remain imported by
+> active regression tests, so their original Python module paths are retained.
+> The scripts may invoke external agents or providers; review their configuration
+> and cost implications before running an experiment.
+
 ## Overview
 This package implements an empirical product evaluation framework for **Project Brain v0.5.0-rc1**.
 The objective is to measure whether Project Brain's Knowledge Graph, Context Packs, Impact Engine, and Remediation services provide measurable utility to autonomous coding agents across real-world engineering tasks.
@@ -29,10 +36,22 @@ The objective is to measure whether Project Brain's Knowledge Graph, Context Pac
 ## Reproduction
 Run full benchmark execution:
 ```bash
-py -3 -m benchmarks.utility_pilot.run_pilot
+python -m benchmarks.utility_pilot.run_pilot
 ```
 
 Run benchmark unit tests:
 ```bash
-py -3 -m pytest tests/test_utility_benchmark_pilot.py -v
+python -m pytest tests/test_utility_benchmark_pilot.py -v
 ```
+
+## Retention map
+
+| Material | Status |
+| --- | --- |
+| `harness/`, `evaluators/`, `schemas/`, `gold/`, `tasks/`, `oracle/` | Preserved experiment infrastructure; shared components have active regression tests. |
+| `run_*.py`, `live_cell_worker.py` | Historical experiment entry points, retained with their original module names and output contracts. |
+| Version-specific task definitions | Frozen experiment inputs; do not tune these to improve a result. |
+
+Current evaluation tooling and evidence limits are documented in
+[`eval/README.md`](../../eval/README.md). The broader historical catalog is in
+[`eval/historical/README.md`](../../eval/historical/README.md).

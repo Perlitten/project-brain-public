@@ -3,8 +3,9 @@
 What the system does and how to run it locally is in [README.md](README.md). This file only
 covers what saves steps: **where to go for a given task**, layer boundaries, and pitfalls.
 
-Rough scale: ~660 files, ~80k lines of Python (`brain/` ~35k, `tests/` ~23k, `apps/` ~11k).
-There is no need to read it all — aim to land on the right 2–3 files in one step.
+Use the [current architecture guide](docs/ARCHITECTURE.md) to find the relevant runtime layers.
+Historical research and replay tools are cataloged separately in [docs/historical](docs/historical/README.md).
+Start with the files for the task rather than relying on a stale repository size estimate.
 
 ## Navigation spine: router ↔ package
 

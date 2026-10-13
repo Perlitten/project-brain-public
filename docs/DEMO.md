@@ -1,48 +1,80 @@
-# Public demo site
+# Synthetic product demonstration
 
-The hosted demo is **not independently verified for the public launch**. Launch
-announcements must omit its URL until the checklist below is completed from an
-external, unauthenticated browser. Local screenshots and mock metrics do not
-establish hosted availability, real usage, coding quality or efficiency gains.
+The current hosted operator dashboard requires authentication. It is not a
+public synthetic demonstration and is not linked from the product landing page.
+Its protection remains intact. Current, genuine interface captures are available
+in the [README](../README.md) and [showcase assets](assets/).
 
-## External verification required before promotion
+## A separate, safe deployment
 
-Use the maintainer-supplied candidate URL for this checklist. It is a
-verification target, not a supported launch link yet; do not add an unverified
-deployment hostname to public launch material.
+Use a separate Vercel project, with Root Directory `apps/web`. Give it an
+independent public URL and no connection to the operator's environment.
+The reviewed configuration is [`.env.demo.example`](../apps/web/.env.demo.example):
 
-1. Open it signed out, on desktop and a phone; confirm HTTPS and successful load.
-2. Visit Dashboard, Projects/Code map, Memory, Context packs and Setup; check
-   navigation, mobile menu, console/runtime errors, missing assets and error states.
-3. Confirm every synthetic-data surface is labeled **Demo data**; do not present
-   example counts or quality scores as measured product results.
-4. Confirm no live API binding, real repository data or credentials are present.
-   Demo actions must refuse mutations; direct `/api/brain/*` requests must not
-   reach a privileged backend. Do not test destructive operations on a live API.
-5. Follow the install CTA and confirm it reaches
-   `https://github.com/Perlitten/project-brain-public#readme`, then follow the
-   public source quickstart and security/release links.
-6. Record date, deployed revision, desktop/mobile screenshots and outcomes.
-   Promote the URL only after all checks pass; otherwise keep it out of launch
-   material and report the exact failure.
+| Variable | Synthetic deployment value |
+|---|---|
+| `BRAIN_DEMO_MODE` | `1` |
+| `NEXT_PUBLIC_DEMO_SITE` | `1` at build time and runtime |
+| `BRAIN_API_URL`, `BRAIN_API_KEY` | Unset |
+| `WEB_BASIC_AUTH` | Unset |
+| `BRAIN_WEB_ACTIONS` | `0` |
 
-`apps/web` renders **demo data** whenever no `BRAIN_API_URL`/`BRAIN_API_KEY`
-is configured — the same mock corpus labeled "Demo data" throughout the UI.
-A public demo is therefore a plain deployment with those variables unset.
+`BRAIN_DEMO_MODE` is a server-side safety guard. If a backend binding or operator
+sign-in credential is present, requests fail closed with 503 before any backend
+read or mutation. It never removes authentication from an operator deployment.
+With both API bindings absent, the existing data adapters serve synthetic
+examples, which are visibly labeled on every page, including mobile. Server
+actions refuse mutations, and the API bridge has no upstream credentials.
 
-## Vercel (recommended)
+For a local walkthrough, from `apps/web` with no backend or sign-in bindings:
 
-1. Import the repository, set **Root Directory** to `apps/web`.
-2. Set only `NEXT_PUBLIC_DEMO_SITE=1` **at build time and runtime** — this adds the
-   "Live demo with example data → install your own" banner in the rail that
-   links back to the README quickstart.
-3. Deploy. With no API env, every page serves demo data server-side; downloads,
-   pack/report readers and robots.txt (allow-all in pure demo) all work.
+```bash
+npm ci
+BRAIN_DEMO_MODE=1 NEXT_PUBLIC_DEMO_SITE=1 npm run build
+BRAIN_DEMO_MODE=1 NEXT_PUBLIC_DEMO_SITE=1 npm run start
+```
 
-## Why not GitHub Pages / static export
+The server listens on loopback. A public deployment additionally needs the host's
+account/project configuration to allow anonymous access. Vercel SSO protection
+and application authentication are separate checks; a READY deployment alone
+does not establish anonymous availability.
 
-The app uses Server Actions and route handlers (the `/api/brain/*` proxy,
-artifact downloads, env-evaluated `robots.ts`) — Next.js `output: "export"`
-does not support them. A static export would need a feature-reduced build
-subset; until that's worth maintaining, the demo is a Node host (Vercel or
-any `npm run start`).
+## Acceptance before promotion
+
+1. Confirm the separate project's environment contains no backend credentials,
+   private repository bindings or operator secrets, in any deployment scope.
+2. Open its URL signed out on desktop and mobile. Every primary route must return
+   200 and show the synthetic-data notice; screenshots must retain that label.
+3. Check Dashboard, Projects, Code map, Memory, Context packs, Indexing, Setup,
+   Quality and Settings, including filtering, empty results and navigation.
+4. Check keyboard focus, the mobile menu, reduced-motion settings, asset loading
+   and browser console errors.
+5. Confirm demo controls refuse privileged actions and `/api/brain/setup/status`
+   returns 503 without contacting a backend. Inspect the visible HTML for
+   credentials. An operator deployment with live data must retain sign-in.
+6. Follow the install CTA to the public repository and complete the recommended
+   [source installation](GETTING_STARTED.md).
+7. Record deployed commit, anonymous responses, desktop/mobile captures and the
+   configuration review. Add the URL to GitHub only after these checks pass.
+
+## Current external access limitation
+
+This execution environment has no Vercel token, project binding, CLI session or
+outbound deployment identity. The existing integration reports a completed
+production deployment, but its anonymous response is application-level 401.
+GitHub repository-settings writes also return `Resource not accessible by
+integration`. Content, pull requests and release operations have separate usable
+permissions; those do not grant Vercel project administration.
+
+A Vercel account owner must grant access to create/configure the separate project
+and review its SSO/environment settings. No production environment was inspected
+for secret values or modified. Until that access exists, screenshots and the
+local synthetic walkthrough are the working example; the protected domain is
+excluded from promotional links.
+
+## Hosting requirements
+
+Use Vercel or a Node host running `npm run start`. The application uses Server
+Actions and route handlers, so Next.js static export does not support the complete
+experience. A feature-reduced static clone would duplicate implementation and is
+not maintained as a substitute.

@@ -35,8 +35,8 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
         title="Index runs"
         lede={
           <>
-            Each time Brain read your code. Its <Term k="index">index</Term> is its own copy of the code, cut into searchable pieces; it is refreshed
-            after every commit and once a night, re-reading only what changed.
+            Each time Brain read your code. Its <Term k="index">index</Term> is its own copy of committed source, cut into searchable pieces.
+            Reindex after source changes; later runs re-read what changed. Scheduled or event-triggered runs depend on your configuration.
           </>
         }
       />

@@ -80,6 +80,7 @@ export function MemoryMap({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   const live = useRef<Live>({ active: null, origin: 0, focusAt: 0, pointer: null });
+  const redraw = useRef<(() => void) | null>(null);
 
   const cells = useMemo(() => {
     const perModule = split(
@@ -106,6 +107,7 @@ export function MemoryMap({
     l.origin = cell ?? (module === null ? 0 : Math.max(0, cells.findIndex((c) => c.module === module)));
     l.focusAt = performance.now();
     setActive(module);
+    redraw.current?.();
   };
 
   useEffect(() => {
@@ -162,7 +164,7 @@ export function MemoryMap({
       canvas.style.height = `${height}px`;
     };
     layout();
-    const ro = new ResizeObserver(layout);
+    const ro = new ResizeObserver(() => { layout(); redraw.current?.(); });
     ro.observe(stage);
 
     const cellAt = (x: number, y: number) => {
@@ -286,12 +288,16 @@ export function MemoryMap({
         ctx.fillRect(sx - 1, -4, 2, height + 8);
       }
 
-      if (visible && !document.hidden) raf = requestAnimationFrame(frame);
+      if (!reduced && visible && !document.hidden) raf = requestAnimationFrame(frame);
     };
 
     const kick = () => {
       if (!raf && visible) raf = requestAnimationFrame(frame);
     };
+    redraw.current = reduced ? () => frame(performance.now()) : kick;
+    // Draw a static map immediately for reduced motion, including below the
+    // fold. Focus and resize redraw it without a perpetual animation loop.
+    if (reduced) redraw.current();
     // Starts (and replays the intro) only once the map is actually on screen,
     // e.g. after the start-up overlay, and sleeps while it is scrolled away.
     const io = new IntersectionObserver(([e]) => {
@@ -330,6 +336,7 @@ export function MemoryMap({
     canvas.addEventListener("pointerleave", onLeave);
 
     return () => {
+      redraw.current = null;
       cancelAnimationFrame(raf);
       ro.disconnect();
       io.disconnect();

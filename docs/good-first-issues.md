@@ -1,41 +1,26 @@
-# Good first issues — prepared texts
+# Starter contribution ideas
 
-Owner: copy these into GitHub issues when ready. Each is scoped to be done in
-one PR and verified locally.
+Choose a small, reproducible improvement and open an issue before a larger
+change. These are contribution directions, not claims of confirmed defects or
+already-published GitHub issues. Check current code and existing issues first.
 
-1. **`brain doctor` should check Neo4j auth, not just connectivity.**
-   Today a wrong password surfaces as an index-time failure. Repro: set a bad
-   `NEO4J_PASSWORD`, run `brain doctor` → it passes. Expected: doctor fails
-   with a pointer to `.env`. Files: `apps/cli/commands/doctor.py` (or wherever
-   the neo4j probe lives), `tests/test_doctor*.py`.
+1. **Platform verification.** Run the complete [source setup](GETTING_STARTED.md)
+   on macOS or WSL2 in a clean environment. Record versions, actual commands,
+   failures and MCP results. Update support claims only with evidence; native
+   Windows needs a separate installation design and verification.
+2. **Keyboard and assistive-technology checks.** Exercise setup, navigation,
+   forms and the code map using keyboard-only navigation and a screen reader.
+   Report concrete focus/label problems and add focused regression coverage.
+   Use the [brand and interaction contract](BRAND.md).
+3. **Evaluation onboarding.** Improve a narrow portion of [Evaluation](EVAL.md)
+   with a verified, repeatable example. Keep mock smoke checks separate from
+   real model relevance and coding-outcome measurements; preserve baselines.
+4. **MCP client examples.** Reproduce the [first MCP task](GETTING_STARTED.md#connect-mcp-and-run-one-task)
+   in a client not yet verified. Record the client version and actual tool calls;
+   keep configuration secret-free and use canonical repository scope.
+5. **Failure recovery documentation.** Reproduce a safe service interruption in
+   a disposable instance, then improve the relevant troubleshooting example.
+   Avoid operator data and verify restart plus a representative tool request.
 
-2. **Web UI: empty-state CTA on `/quality`.**
-   Other empty pages link to `/setup`; `/quality` doesn't. Copy the pattern
-   from `apps/web/app/runs/page.tsx` (`EmptyState` + CTA). Verify: demo mode
-   off → page shows CTA; screenshot in PR.
-
-3. **`brain health` output should be valid JSON with `--json`.**
-   Add a `--json` flag emitting `{service: {ok, detail}}` for scripting.
-   Files: `apps/cli/commands/` health command + a test.
-
-4. **README quickstart: Windows path note for `TARGET_REPO_PATH`.**
-   Windows users hit `\` escaping issues in `.env`. Add a 3-line note +
-   quote the path. Docs-only change.
-
-5. **Migrate `apps/api/helpers.py` imports to the new locations.**
-   The shim re-exports `brain/dashboard/helpers.py` and
-   `apps/api/mcp_status.py`; switch direct importers and delete the shim.
-   Mechanical — grep `from apps.api.helpers` / `apps.api.helpers` and repoint.
-
-6. **Coverage report: fail CI below a floor.**
-   CI uploads `coverage.xml` but doesn't gate. Add `--cov-fail-under=70` to
-   the pytest step and pin the floor in `pyproject.toml`. May need a few
-   cheap tests or a lower floor first — measure, then set.
-
-7. **`docs/EVAL.md` is dense — add a 5-line "run it in 3 commands" header.**
-   New readers shouldn't have to parse the whole page to run one golden task.
-
-8. **MCP tool annotations audit.**
-   `apps/mcp_server/protocol.py` annotates destructive/idempotent flags;
-   check all 13 tools in `server.py` carry correct annotations and write a
-   test asserting the set stays complete.
+[Contribution guide](../CONTRIBUTING.md) describes checks and pull requests.
+Do not weaken authentication or quality gates to complete a starter task.

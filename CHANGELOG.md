@@ -8,12 +8,29 @@ All notable changes to this project are documented here. The format follows
 
 No changes recorded.
 
-## [0.9.1]
+## [0.9.2] - release candidate
+
+### Productization
+
+- Shorten the public README and separate source installation, MCP setup, model
+  providers, architecture, release verification and historical research.
+- Validate current documentation versions, local links, anchors and supported
+  installation commands automatically in CI.
+- Keep synthetic example labels visible on desktop and mobile; restore panels
+  and the memory map under reduced-motion preferences and improve keyboard access.
+- Provide an isolated synthetic deployment guard that rejects backend bindings
+  or operator credentials instead of exposing a live dashboard as a demo.
+- Remove the separately deployed Next.js app and Python bytecode from runtime
+  wheels while retaining frontend source and public templates in source archives.
+- Archive unreferenced synthetic demonstrations, label historical evaluation and
+  release tooling, and retain compatibility imports and frozen evidence.
+
+## [0.9.1] - 2026-10-13
 
 ### Launch remediation
 
 - Correct public repository, installation, CI, security and dashboard links.
-- Distinguish main's 0.9.1 development code from the published v0.9.0 release.
+- Publish the launch repairs in v0.9.1 with Python artifacts, checksums and an SBOM.
 - Correct privacy, memory approval and unproven efficiency claims.
 - Require explicit credentials and image tags in the experimental image compose
   configuration; fix Neo4j credential propagation and health-gated startup.
@@ -140,6 +157,6 @@ First public release of the single-user distribution. Full notes:
   its lease cannot commit, and interrupted jobs are requeued.
 - Job queue back-pressure (429 with `Retry-After`) and an in-app request body cap.
 
-[Unreleased]: https://github.com/Perlitten/project-brain-public/compare/v0.9.0...main
-[0.9.1]: https://github.com/Perlitten/project-brain-public/compare/v0.9.0...main
+[Unreleased]: https://github.com/Perlitten/project-brain-public/compare/v0.9.1...main
+[0.9.1]: https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.0

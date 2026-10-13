@@ -11,7 +11,7 @@ from scripts.check_release_archives import check_archive, unsafe_member
 
 @pytest.mark.parametrize("name", ["apps/web/.next/server/index.js", "apps/web/node_modules/pkg/index.js",
     "apps/web/tsconfig.tsbuildinfo", ".env", "apps/web/.env.local", "deploy/.deploy.env", ".npmrc",
-    ".venv/bin/python", ".git/config", "../escape", "/absolute"])
+    ".venv/bin/python", ".git/config", "brain/__pycache__/module.pyc", ".vercel/project.json", "../escape", "/absolute"])
 def test_local_and_generated_members_rejected(name):
     assert unsafe_member(name)
 
@@ -24,7 +24,7 @@ def test_source_and_public_templates_allowed(name):
 def test_wheel_and_sdist_scanned(tmp_path: Path):
     wheel = tmp_path / "bad.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
-        archive.writestr("apps/web/.env.local", "test sentinel")
+        archive.writestr("brain/.env.local", "test sentinel")
     with pytest.raises(ValueError, match="1 unsafe archive members"):
         check_archive(wheel)
     source = tmp_path / "bad.tar.gz"
@@ -33,3 +33,15 @@ def test_wheel_and_sdist_scanned(tmp_path: Path):
         archive.addfile(info)
     with pytest.raises(ValueError, match="1 unsafe archive members"):
         check_archive(source)
+
+
+def test_frontend_only_in_source_archive(tmp_path: Path):
+    wheel = tmp_path / "frontend.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("apps/web/app/layout.tsx", "fixture")
+    with pytest.raises(ValueError, match="frontend must not ship"):
+        check_archive(wheel)
+    source = tmp_path / "frontend.tar.gz"
+    with tarfile.open(source, "w:gz") as archive:
+        archive.addfile(tarfile.TarInfo("source/apps/web/app/layout.tsx"))
+    check_archive(source)

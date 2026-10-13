@@ -11,6 +11,7 @@ import pytest
 
 from brain import __version__
 from scripts.check_public_launch import obsolete_references
+from scripts.check_docs_consistency import documentation_findings
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,19 +25,10 @@ def test_public_identity_guard_detects_old_links_but_keeps_local_names(tmp_path)
     assert not obsolete_references(tmp_path, ["README.md"])
 
 
-def test_package_docs_separate_source_version_from_release_availability():
+def test_package_docs_agree_on_published_release_and_source_contracts():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     assert project["version"] == __version__
-    readme = (ROOT / "README.md").read_text()
-    assert f"Source version: **{__version__}**" in readme
-    assert "release availability, downloads and checksums" in readme
-    assert "a version in source does not by itself establish publication" in readme
-    assert "https://github.com/Perlitten/project-brain-public/releases)" in readme
-    changelog = (ROOT / "CHANGELOG.md").read_text()
-    assert f"## [{__version__}]" in changelog
-    assert "not yet published" not in changelog
-    assert "compare/v0.9.1" not in changelog
-    assert "...v0.9.1" not in changelog
+    assert documentation_findings(ROOT) == []
 
 
 def _compose(tmp_path, **values):

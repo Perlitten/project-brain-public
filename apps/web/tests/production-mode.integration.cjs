@@ -23,7 +23,7 @@ async function startWeb(bindings) {
   const child = spawn(process.execPath, ["scripts/serve.mjs", "start"], {
     cwd: root,
     env: { ...process.env, PORT: String(port), WEB_HOST: "127.0.0.1", WEB_BASIC_AUTH: "",
-      WEB_OPEN_MODE: "", BRAIN_WEB_ACTIONS: "", BRAIN_API_URL: "", BRAIN_API_KEY: "", ...bindings },
+      WEB_OPEN_MODE: "", BRAIN_WEB_ACTIONS: "", BRAIN_DEMO_MODE: "", BRAIN_API_URL: "", BRAIN_API_KEY: "", ...bindings },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let log = "";
@@ -68,7 +68,7 @@ test("one production build serves demo or actual API data from runtime configura
     let response = await fetch(`${demo.base}/projects`);
     assert.equal(response.status, 200);
     const demoHtml = await response.text();
-    assert.match(demoHtml, /Demo data/);
+    assert.match(demoHtml, /Demo data · synthetic examples/);
     assert.doesNotMatch(demoHtml, new RegExp(marker));
     assert.match(await (await fetch(`${demo.base}/robots.txt`)).text(), /Allow: \//);
     await stopWeb(demo); demo = null;
@@ -78,6 +78,7 @@ test("one production build serves demo or actual API data from runtime configura
     assert.equal(response.status, 200);
     const liveHtml = await response.text();
     assert.match(liveHtml, new RegExp(marker), "Must render the runtime backend, not the build-time demo");
+    assert.doesNotMatch(liveHtml, /Demo data · synthetic examples/);
     assert.ok(!liveHtml.includes(key), "Server-side API credentials must not enter the page");
     assert.doesNotMatch(liveHtml, /Numbers are examples until the API is connected/);
     assert.ok(calls.some((c) => c.path === "/repositories" && c.key === key));
@@ -85,6 +86,28 @@ test("one production build serves demo or actual API data from runtime configura
   } finally {
     if (demo) await stopWeb(demo);
     if (live) await stopWeb(live);
+    await new Promise((resolve) => backend.close(resolve));
+  }
+});
+
+
+test("isolated demo misconfiguration cannot read from a backend even with valid operator auth", { timeout: 60000 }, async () => {
+  let calls = 0;
+  const backend = http.createServer((req, res) => { calls++; res.end("{}"); });
+  const port = await listen(backend);
+  let server;
+  try {
+    server = await startWeb({ BRAIN_DEMO_MODE: "1", BRAIN_API_URL: `http://127.0.0.1:${port}`,
+      BRAIN_API_KEY: "demo-safety-fixture", WEB_BASIC_AUTH: "fixture:fixture" });
+    const headers = { Authorization: `Basic ${Buffer.from("fixture:fixture").toString("base64")}` };
+    for (const route of ["/projects", "/api/brain/setup/status"]) {
+      const response = await fetch(server.base + route, { headers });
+      assert.equal(response.status, 503);
+      assert.doesNotMatch(await response.text(), /demo-safety-fixture/);
+    }
+    assert.equal(calls, 0, "No operator API request is permitted in isolated demo mode");
+  } finally {
+    if (server) await stopWeb(server);
     await new Promise((resolve) => backend.close(resolve));
   }
 });

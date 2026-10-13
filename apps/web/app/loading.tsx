@@ -3,6 +3,7 @@
 export default function Loading() {
   return (
     <div className="loading" aria-busy="true" aria-label="Loading">
+      <p role="status" className="text-dim">Loading this screen…</p>
       <span className="skeleton" style={{ width: "18%" }} />
       <span className="skeleton skeleton--title" />
       <span className="skeleton" style={{ width: "56%" }} />

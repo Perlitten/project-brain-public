@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
-"""Standalone Retrieval Evaluation Runner for Project Brain.
+"""Historical synthetic ranking demonstration; not a retrieval benchmark.
 
-Runs retrieval channel evaluation against golden_set.json and outputs
-complete query-level breakdown and aggregate metrics (Hit@1, Hit@3, Hit@5, Hit@10, MRR, nDCG@5, nDCG@10).
+The before/after rankings are constructed in this script. No API, index,
+retrieval pipeline or model is exercised, so the output cannot establish
+retrieval quality or improvements. Retained to explain the historical RRF
+tie-breaker demonstration; current regressions live in
+tests/test_retrieval_fusion_remediation.py.
 """
 
 from __future__ import annotations
 
 import json
+import sys
 import time
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PROJECT_ROOT))
+
 from eval.run_golden_eval import _evaluate_question, _metrics
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GOLDEN_SET_PATH = PROJECT_ROOT / "eval" / "golden_set.json"
 
 
@@ -49,6 +55,9 @@ def evaluate_mock_pipeline_remediation(golden_path: Path = GOLDEN_SET_PATH) -> d
     metrics_after = _metrics(results_after)
 
     output = {
+        "evidence_kind": "synthetic_ranking_demonstration",
+        "eligible_for_product_claims": False,
+        "warning": "Rankings are constructed; no retrieval system was evaluated.",
         "evaluation_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "query_count": len(questions),
         "before_remediation_metrics": metrics_before,
@@ -56,13 +65,14 @@ def evaluate_mock_pipeline_remediation(golden_path: Path = GOLDEN_SET_PATH) -> d
         "sample_query_result": results_after[0] if results_after else {},
     }
 
-    out_file = PROJECT_ROOT / "reports" / "audit-verification" / "retrieval" / "retrieval_benchmark_results.json"
+    out_file = PROJECT_ROOT / "reports" / "historical" / "synthetic-retrieval" / "ranking-demonstration.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)
 
-    print(f"Before Remediation: Hit@3={metrics_before['hit_3_pct']}%, MRR={metrics_before['mrr']}")
-    print(f"After Remediation: Hit@3={metrics_after['hit_3_pct']}%, MRR={metrics_after['mrr']}")
+    print("SYNTHETIC DEMONSTRATION ONLY: rankings are constructed, not retrieved.")
+    print(f"Constructed before: Hit@3={metrics_before['hit_3_pct']}%, MRR={metrics_before['mrr']}")
+    print(f"Constructed after: Hit@3={metrics_after['hit_3_pct']}%, MRR={metrics_after['mrr']}")
     return output
 
 

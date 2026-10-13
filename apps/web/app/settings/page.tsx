@@ -21,12 +21,6 @@ export default async function SettingsPage() {
         </div>
       ) : (
         <>
-          {view.mode === "demo" && (
-            <div className="callout tone-info">
-              <b>Demo data.</b>
-              <span>Connect the dashboard to a Brain server (BRAIN_API_URL) to make these live.</span>
-            </div>
-          )}
           {view.mode === "legacy" && (
             <div className="callout tone-warn">
               <b>This server{view.version ? ` (${view.version})` : ""} can’t edit settings from here yet.</b>

@@ -1,12 +1,16 @@
-"""Release identity consistency tests for Project Brain v0.9.1."""
+"""Package metadata and API must agree on the release identity."""
+
+from pathlib import Path
+import tomllib
 
 from brain._version import RELEASE_CODENAME, __version__
 
 
 def test_release_identity_consistency():
     """Verify package version, brain._version, and pyproject.toml match."""
-    assert __version__ == "0.9.1"
-    assert "v0.9.1" in RELEASE_CODENAME or "0.9.1" in RELEASE_CODENAME
+    project = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())["project"]
+    assert __version__ == project["version"]
+    assert __version__ in RELEASE_CODENAME
 
 
 def test_api_version_endpoint():
@@ -18,5 +22,5 @@ def test_api_version_endpoint():
     res = client.get("/api/version")
     assert res.status_code == 200
     data = res.json()
-    assert data["version"] == "0.9.1"
-    assert data["release_codename"] == "tournament-sandbox-v0.9.1"
+    assert data["version"] == __version__
+    assert data["release_codename"] == RELEASE_CODENAME

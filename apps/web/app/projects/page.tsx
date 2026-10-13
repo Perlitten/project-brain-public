@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, Table } from "@/components/ui";
-import { getCorpus, getPagedIndexRuns, getRepositories, getRepository } from "@/lib/data";
+import { getCorpus, getPagedIndexRuns, getRepositories } from "@/lib/data";
 import { repositoryStatus } from "@/lib/repository-status";
 
 export const metadata = { title: "Projects" };
@@ -9,7 +9,7 @@ export const metadata = { title: "Projects" };
 export default async function Projects({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
   const { repo: selected } = await searchParams;
   const repositories = await getRepositories();
-  const current = selected ? await getRepository(selected) : null;
+  const current = selected ? repositories.find((r) => r.slug === selected || String(r.id) === selected) : null;
   const detail = current && current.id > 0 ? current : null;
   const scope = detail ? `?repo=${encodeURIComponent(detail.slug)}` : "";
   const [corpus, history] = detail ? await Promise.all([getCorpus(detail.slug), getPagedIndexRuns(detail.slug, { size: 5 })]) : [null, null];
