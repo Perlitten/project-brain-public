@@ -5,6 +5,10 @@ Existing routes remain valid. Project tools are secondary navigation; global rep
 settings and findings keep project context for the return trip but explicitly show
 service-wide evidence. Reranker diagnostics query the selected project.
 
+`/help`, linked from the rail footer and the command palette, shows the server's
+version and models, practical answers to common problems, the glossary behind
+the dotted-underlined terms, and links to these guides.
+
 ## Dashboard
 
 The landing page separates latest index coverage from requests in 24h/7d/30d UTC

@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 - Split the FAQ into "Using Brain" (agents not calling Brain, wrong repository,
   stale index, stuck jobs, mock models, demo data, updating) and "Limits and evidence".
+- Add a dashboard Help screen (`/help`): server version and models, common
+  problems with links to the screens that fix them, the glossary and guides.
 - Consolidate deployment and agent operations guides under `docs/operations/`,
   legal notices under `docs/legal/`, and contributor policies under `.github/`.
 - Move production and experimental Compose configurations into `deploy/`;
