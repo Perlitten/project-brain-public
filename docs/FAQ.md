@@ -73,5 +73,5 @@ partially available service is not equivalent to a verified full installation.
 It is early single-user, self-hosted software for a trusted operator, not a
 multi-tenant team service. The published release has installation, indexing and
 MCP smoke coverage. Public exposure requires TLS and the scoped-key
-discipline in [Deployment](../DEPLOYMENT.md). Production operation and useful coding outcomes
+discipline in [Deployment](operations/DEPLOYMENT.md). Production operation and useful coding outcomes
 must be evaluated for your own workflow; passing tests do not establish them.

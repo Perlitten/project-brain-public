@@ -26,9 +26,9 @@ if ! flock -n 9; then
 fi
 
 cd "$(dirname "$0")/.."
-COMPOSE="docker compose -f docker-compose.prod.yml"
+COMPOSE="docker compose --project-directory . -f deploy/docker-compose.prod.yml"
 # Optional host-local additions (extra read-only source mounts and the like),
-# kept out of git. See DEPLOYMENT.md, "Indexing more source trees".
+# kept out of git. See docs/operations/DEPLOYMENT.md, "Indexing more source trees".
 if [[ -f docker-compose.local.yml ]]; then
     COMPOSE="$COMPOSE -f docker-compose.local.yml"
 fi
@@ -279,7 +279,7 @@ python3 scripts/write_source_manifest.py . \
     --source-revision "$BRAIN_BUILD_SHA" \
     --output "$deploy_manifest_temp" \
     --include Dockerfile \
-    --include docker-compose.prod.yml \
+    --include deploy/docker-compose.prod.yml \
     --include deploy/server_up.sh \
     --include scripts/write_source_manifest.py \
     --include scripts/validate_lfm_release_gate.py \

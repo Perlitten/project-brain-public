@@ -34,7 +34,7 @@ invoke them automatically; add an appropriate task workflow to its instructions.
 The HTTP-backed stdio bridge runs `apps.mcp_server.remote_server` with
 `BRAIN_API_URL`, `BRAIN_API_KEY` and `BRAIN_REPO` configured. It needs no local
 datastores. Prefer a revocable scoped `pbk_` credential to a shared operator key.
-Tracked `.mcp.json` and `.mcp.json.example` use environment references, never
+Tracked `.mcp.json` and `examples/claude-code-stdio.mcp.json` use environment references, never
 literal credentials.
 
 The API also serves native Streamable HTTP at `/mcp`:
@@ -47,7 +47,7 @@ claude mcp add --transport http project-brain https://brain.example.com/mcp \
 It accepts a Bearer or `X-API-Key` credential and enforces caller scopes. With
 `BRAIN_PUBLIC_URL` or `BRAIN_PUBLIC_HOST` configured, it advertises OAuth 2.1
 with PKCE and human consent for clients that need OAuth. The approver must
-already hold the requested scopes. See [Deployment](../DEPLOYMENT.md) for TLS,
+already hold the requested scopes. See [Deployment](operations/DEPLOYMENT.md) for TLS,
 credential creation, public routing and the single-worker session requirement.
 `BRAIN_MCP_HTTP_ENABLED=false` disables the native endpoint.
 

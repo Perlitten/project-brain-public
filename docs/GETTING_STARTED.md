@@ -24,7 +24,7 @@ RAM and disk beyond a small smoke test. Check Docker resources before indexing.
 
 The local defaults bind datastore ports and the app to loopback. Avoid exposing
 this development setup through a tunnel or public reverse proxy; use the
-[deployment guide](../DEPLOYMENT.md) for an authenticated server.
+[deployment guide](operations/DEPLOYMENT.md) for an authenticated server.
 
 ## Install and choose a repository
 
@@ -164,4 +164,4 @@ See [release verification](release/README.md) for the verification procedure.
 
 Prebuilt GHCR images are experimental and not a supported newcomer route.
 For remote servers, scoped credentials, TLS and operational controls, read
-[Deployment](../DEPLOYMENT.md). Return to the [documentation index](README.md).
+[Deployment](operations/DEPLOYMENT.md). Return to the [documentation index](README.md).

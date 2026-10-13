@@ -63,7 +63,7 @@ See [memory semantics](MEMORY.md) and the [lesson protocol](MEMORY_LESSON_PROTOC
 For local model execution, configure both embedding and LLM providers plus
 endpoint overrides to local services. Disable unwanted external integrations.
 For a remote operator instance, use scoped revocable credentials, protected
-storage networks and the [deployment guide](../DEPLOYMENT.md).
+storage networks and the [deployment guide](operations/DEPLOYMENT.md).
 
 A public showcase must contain only synthetic data and have no backend
 credential or privileged connectivity. It must not share the operator

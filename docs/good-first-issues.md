@@ -22,5 +22,5 @@ already-published GitHub issues. Check current code and existing issues first.
    a disposable instance, then improve the relevant troubleshooting example.
    Avoid operator data and verify restart plus a representative tool request.
 
-[Contribution guide](../CONTRIBUTING.md) describes checks and pull requests.
+[Contribution guide](../.github/CONTRIBUTING.md) describes checks and pull requests.
 Do not weaken authentication or quality gates to complete a starter task.

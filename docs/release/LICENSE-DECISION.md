@@ -6,7 +6,7 @@ Status: **decided 2026-10-02 — MIT.**
 |---|---|
 | Intended distribution | Public, non-commercial portfolio / reference project |
 | License | MIT — [`LICENSE`](../../LICENSE), copyright Andrei Damashkevich; matches `pyproject.toml` metadata |
-| Third-party notices | [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md) — bundled fonts and icons (license texts included), Python and npm dependencies, container images, models and hosted services, trademarks |
+| Third-party notices | [`docs/legal/THIRD_PARTY_NOTICES.md`](../legal/THIRD_PARTY_NOTICES.md) — bundled fonts and icons (license texts included), Python and npm dependencies, container images, models and hosted services, trademarks |
 | Repo visibility | **Public** on GitHub ([Perlitten/project-brain-public](https://github.com/Perlitten/project-brain-public)) under the MIT license; first public release tag `v0.9.0` |
 
 ## Why MIT
@@ -24,6 +24,6 @@ Status: **decided 2026-10-02 — MIT.**
 ## Keep it true
 
 - A new committed asset (font, icon set, vendored code, image) needs its
-  license text and a row in section 1 of `THIRD_PARTY_NOTICES.md`.
+  license text and a row in section 1 of `docs/legal/THIRD_PARTY_NOTICES.md`.
 - Regenerate the dependency tables when `requirements*.lock` or
   `apps/web/package-lock.json` change.

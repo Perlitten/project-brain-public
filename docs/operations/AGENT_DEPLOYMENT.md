@@ -1,8 +1,12 @@
 # Project Brain Agent Deployment Contract
 
+These instructions follow the current repository layout. Older published tags
+retain their original root paths; use the [v0.9.2 guide](https://github.com/Perlitten/project-brain-public/blob/v0.9.2/AGENT_DEPLOYMENT.md)
+with a v0.9.2 checkout. Run current commands from the repository root.
+
 This file is the deployment contract for an AI coding agent such as Claude,
 Cursor, Codex, or another autonomous shell operator. Human-friendly background
-lives in `DEPLOYMENT.md`; this file is stricter and should be followed literally.
+lives in `docs/operations/DEPLOYMENT.md`; this file is stricter and should be followed literally.
 
 ## Mission
 
@@ -91,8 +95,8 @@ Run the secret-shape scan. Placeholder/test hits are acceptable only in
 
 ```bash
 rg -n "(nvapi-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}|BRAIN_DASHBOARD_PASSWORD=\\S{8,}|PROJECT_BRAIN_WEBHOOK_TOKEN=\\S{8,}|NEO4J_PASSWORD=\\S{8,}|POSTGRES_PASSWORD=\\S{8,}|PROJECT_BRAIN_API_KEY=\\S{8,})" \
-  README.md AGENT_DEPLOYMENT.md DEPLOYMENT.md deploy .env.example .mcp.json.example \
-  docker-compose.prod.yml apps brain scripts tests pyproject.toml
+  README.md docs/operations/AGENT_DEPLOYMENT.md docs/operations/DEPLOYMENT.md deploy .env.example examples/claude-code-stdio.mcp.json \
+  deploy/docker-compose.prod.yml apps brain scripts tests pyproject.toml
 ```
 
 ## Phase 1: Server Bootstrap
@@ -228,15 +232,15 @@ required and the workflow fails closed when either is absent.
 ## Phase 6: Index Repository
 
 ```bash
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main index --repo /repo
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main index --repo /repo
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
 ```
 
 If verify fails because embeddings are missing or stale:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embeddings backfill --repo /repo --json
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main embeddings backfill --repo /repo --json
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
 ```
 
 Gate: final verify exits `0`.
@@ -283,8 +287,8 @@ The API serves JSON only. The human UI is the separate Next.js app in
 
 The repository ships a tracked, secret-free `.mcp.json` declaring the
 `project-brain` server, so Claude Code needs environment values rather than a new
-file. Do not overwrite that file from `.mcp.json.example`: it would commit a live
-key. Set on the client machine (or on the cloud environment for web sessions):
+file. Keep its `${VAR}` references intact; client-specific configuration belongs
+outside the checkout. Set on the client machine (or cloud environment):
 
 ```bash
 BRAIN_API_URL="https://brain.<server-ip>.nip.io"
@@ -292,8 +296,9 @@ BRAIN_API_KEY="<PROJECT_BRAIN_API_KEY from server .env>"
 BRAIN_REPO="/repo"
 ```
 
-Clients that keep their MCP config outside the repository, such as Cursor, still
-build it from `.mcp.json.example`.
+Clients that keep their MCP config outside the repository can use
+`examples/claude-code-stdio.mcp.json` for the HTTP-backed stdio bridge or
+`examples/cursor-remote-http.json` for Cursor's native HTTP transport.
 
 Do not paste the actual API key into chat. The owner should copy it through the
 client's secure secret mechanism when available.
@@ -314,13 +319,13 @@ Docker compose config fails:
 
 API health fails:
 
-- Run `docker compose -f docker-compose.prod.yml logs --tail 100 api`.
+- Run `docker compose --project-directory . -f deploy/docker-compose.prod.yml logs --tail 100 api`.
 - Check Postgres, Redis, and Neo4j container health.
 - Do not expose database ports to debug.
 
 Scheduled jobs overdue (`/health` → `degraded`):
 
-- Run `docker compose -f docker-compose.prod.yml logs --tail 100 worker | grep Scheduler`.
+- Run `docker compose --project-directory . -f deploy/docker-compose.prod.yml logs --tail 100 worker | grep Scheduler`.
 - Check `SCHEDULER_ENABLED` and `GET /scheduler/jobs` for `last_error`.
 
 Raw nginx 401 appears on the API host:
@@ -375,10 +380,10 @@ Notes:
 
 ```text
 You are deploying Project Brain on a fresh Ubuntu VPS.
-Read AGENT_DEPLOYMENT.md first and follow it literally.
+Read docs/operations/AGENT_DEPLOYMENT.md first and follow it literally.
 Do not print or commit secrets.
 Do not use stale paths, old IPs, or another owner's repo data.
-Use DEPLOYMENT.md only as background; AGENT_DEPLOYMENT.md is the authority.
+Use docs/operations/DEPLOYMENT.md only as background; docs/operations/AGENT_DEPLOYMENT.md is the authority.
 Run deploy/doctor.sh at every gate.
 Stop on any failed gate and report the exact failing command and sanitized error.
 Final answer must use the Final Report Template from AGENT_DEPLOYMENT.md.

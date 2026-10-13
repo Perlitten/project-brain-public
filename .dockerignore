@@ -1,6 +1,5 @@
 **
 !Dockerfile
-!docker-compose.prod.yml
 !pyproject.toml
 !README.md
 !brain/
@@ -23,6 +22,7 @@
 !scripts/write_source_manifest.py
 !scripts/validate_lfm_release_gate.py
 !deploy/
+!deploy/docker-compose.prod.yml
 !deploy/server_up.sh
 **/__pycache__/
 **/__pycache__/**

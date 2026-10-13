@@ -100,7 +100,7 @@ claude mcp add project-brain -- /absolute/path/project-brain/.venv/bin/python -m
 Other MCP clients use the same command and arguments; see the
 [client configuration and tool reference](docs/MCP.md).
 For a separately hosted instance, authenticated Streamable HTTP and the
-HTTP-backed stdio bridge are documented there and in [Deployment](DEPLOYMENT.md).
+HTTP-backed stdio bridge are documented there and in [Deployment](docs/operations/DEPLOYMENT.md).
 
 ### A concrete first task
 
@@ -182,13 +182,13 @@ Start with the [documentation index](docs/README.md). It separates current
 installation and operating guides from historical research and release records.
 
 - [Getting started](docs/GETTING_STARTED.md) and [MCP](docs/MCP.md)
-- [FAQ](docs/FAQ.md), [Memory](docs/MEMORY.md) and [Roadmap](ROADMAP.md)
-- [Deployment](DEPLOYMENT.md) and [backup / restore](docs/runbooks/backup-restore.md)
-- [Contributing](CONTRIBUTING.md), [issues](https://github.com/Perlitten/project-brain-public/issues) and [Code of conduct](CODE_OF_CONDUCT.md)
+- [FAQ](docs/FAQ.md), [Memory](docs/MEMORY.md) and [Roadmap](docs/ROADMAP.md)
+- [Deployment](docs/operations/DEPLOYMENT.md) and [backup / restore](docs/runbooks/backup-restore.md)
+- [Contributing](.github/CONTRIBUTING.md), [issues](https://github.com/Perlitten/project-brain-public/issues) and [Code of conduct](.github/CODE_OF_CONDUCT.md)
 - [Security reporting](SECURITY.md) and [Changelog](CHANGELOG.md)
 
 ## License
 
 [MIT](LICENSE). Third-party libraries, fonts, container images and models keep
-their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
+their own licenses; see [Third-party notices](docs/legal/THIRD_PARTY_NOTICES.md).
 This is an independent project, unaffiliated with the coding tools mentioned.

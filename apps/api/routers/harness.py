@@ -1,6 +1,6 @@
 """Task-ledger API for the Claude Code harness (P1 hardening, 2026-07-07).
 
-Source of truth for orchestration state — see AGENT_DEPLOYMENT.md sibling
+Source of truth for orchestration state — see docs/operations/AGENT_DEPLOYMENT.md sibling
 doc ~/.claude/harness/README.md on the harness side for the dispatcher CLI
 that calls these endpoints.
 """

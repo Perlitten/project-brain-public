@@ -1,6 +1,9 @@
 import hashlib
 import json
 import shutil
+import shlex
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -17,8 +20,49 @@ from scripts.write_source_manifest import build_manifest, validate_release_ident
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_relocated_production_compose_preserves_repository_paths_and_overrides(tmp_path):
+    if not shutil.which("docker"):
+        pytest.skip("Docker Compose is unavailable")
+    repo = tmp_path / "repository"
+    (repo / "deploy").mkdir(parents=True)
+    config = repo / "deploy/docker-compose.prod.yml"
+    shutil.copy2(ROOT / "deploy/docker-compose.prod.yml", config)
+    (repo / ".env").write_text("PROJECT_BRAIN_API_KEY=test-only-key\n", encoding="utf-8")
+    override = repo / "docker-compose.local.yml"
+    override.write_text("services:\n  api:\n    volumes:\n      - ./extra:/repos/extra:ro\n", encoding="utf-8")
+    values = {
+        "POSTGRES_PASSWORD": "test-only-db", "NEO4J_PASSWORD": "test-only-graph",
+        "BRAIN_BUILD_SHA": "reviewed-test-sha", "BRAIN_SOURCE_DIGEST": "a" * 64,
+        "BRAIN_DEPLOY_DIGEST": "b" * 64,
+        "BRAIN_TARGET_REPO_DIR": str(repo / "target"),
+        "BRAIN_INDEXED_PROJECTS_DIR": str(repo / "indexed"),
+    }
+    env = {k: v for k, v in os.environ.items() if k not in {"COMPOSE_FILE", "COMPOSE_PROJECT_NAME"}}
+    env.update(values)
+    result = subprocess.run(
+        ["docker", "compose", "--env-file", str(repo / ".env"), "--project-directory", str(repo),
+         "-f", str(config), "-f", str(override), "config", "--format", "json"],
+        cwd=tmp_path, env=env, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    services = json.loads(result.stdout)["services"]
+    for name in ("api", "worker"):
+        assert Path(services[name]["build"]["context"]) == repo
+        assert services[name]["environment"]["PROJECT_BRAIN_API_KEY"] == "test-only-key"
+        mounts = {v["target"]: v for v in services[name]["volumes"]}
+        assert Path(mounts["/app/reports"]["source"]) == repo / "reports"
+        assert Path(mounts["/app/context_packs"]["source"]) == repo / "context_packs"
+        assert Path(mounts["/repo"]["source"]) == repo / "target"
+        assert mounts["/repo"]["read_only"] is True
+    mounts = {v["target"]: v for v in services["api"]["volumes"]}
+    assert Path(mounts["/repos/extra"]["source"]) == repo / "extra"
+    assert mounts["/repos/extra"]["read_only"] is True
+    assert services["api"]["ports"][0]["host_ip"] == "127.0.0.1"
+    assert all("ports" not in services[name] for name in ("postgres", "redis", "neo4j"))
+
+
 def test_production_image_is_immutable_and_ui_is_baked_into_it():
-    compose = (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    compose = (ROOT / "deploy/docker-compose.prod.yml").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
     assert compose.count("image: brain-api:${BRAIN_IMAGE_TAG:-latest}") == 2
@@ -58,7 +102,7 @@ def test_release_script_refuses_dirty_git_and_uses_sha_image_tag():
 def test_production_release_script_refuses_missing_or_red_github_ci_before_building():
     script = (ROOT / "deploy" / "server_up.sh").read_text(encoding="utf-8")
     production_example = (ROOT / "deploy" / ".env.prod.example").read_text(encoding="utf-8")
-    deploy_example = (ROOT / ".deploy.env.example").read_text(encoding="utf-8")
+    deploy_example = (ROOT / "deploy/.deploy.env.example").read_text(encoding="utf-8")
 
     assert "verify_production_ci() {" in script
     assert "/actions/workflows/${workflow}/runs?head_sha=${BRAIN_BUILD_SHA}" in script
@@ -86,7 +130,7 @@ def test_github_ci_token_is_excluded_from_compose_runtime_env_file_contract():
 
 
 def test_production_compose_requires_verified_baked_release_identity():
-    compose = (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    compose = (ROOT / "deploy/docker-compose.prod.yml").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
     assert compose.count("${BRAIN_BUILD_SHA:?BRAIN_BUILD_SHA must be set for production}") == 2
@@ -532,18 +576,27 @@ def test_image_manifest_digest_matches_canonical_build_input_digest(tmp_path):
 def test_deployment_control_files_have_a_separate_verified_digest(tmp_path):
     includes = [
         "Dockerfile",
-        "docker-compose.prod.yml",
+        "deploy/docker-compose.prod.yml",
         "deploy/server_up.sh",
         "scripts/write_source_manifest.py",
         "scripts/validate_lfm_release_gate.py",
     ]
     copied_root = tmp_path / "release-inputs"
     copied_root.mkdir()
-    for value in includes:
-        source = ROOT / value
-        destination = copied_root / value
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
+    # Reproduce the Dockerfile's actual control-input COPY destinations. A
+    # moved file copied at the wrong depth must fail the production digest.
+    for line in (ROOT / "Dockerfile").read_text().splitlines():
+        if not line.lstrip().startswith("COPY "):
+            continue
+        parts = shlex.split(line)
+        if not parts or parts[0] != "COPY" or not parts[-1].startswith("/release-inputs/"):
+            continue
+        directory = copied_root / parts[-1].removeprefix("/release-inputs/")
+        directory.mkdir(parents=True, exist_ok=True)
+        for value in parts[1:-1]:
+            source = ROOT / value
+            assert source.is_file()
+            shutil.copy2(source, directory / source.name)
     host_manifest = build_manifest(ROOT, "build-r1", includes=includes)
     image_manifest = build_manifest(copied_root, "build-r1")
     assert host_manifest["content_digest"] == image_manifest["content_digest"]
@@ -628,7 +681,7 @@ def test_lfm_release_preflight_rejects_parent_path_escape(tmp_path):
 
 
 def test_worker_and_deploy_doctor_use_closed_loop_readiness():
-    compose = (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    compose = (ROOT / "deploy/docker-compose.prod.yml").read_text(encoding="utf-8")
     doctor = (ROOT / "deploy" / "doctor.sh").read_text(encoding="utf-8")
     assert "WORKER_REDIS_PREFIX" in compose
     assert ":heartbeat" in compose

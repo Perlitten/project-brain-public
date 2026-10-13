@@ -6,7 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-No changes recorded.
+- Consolidate deployment and agent operations guides under `docs/operations/`,
+  legal notices under `docs/legal/`, and contributor policies under `.github/`.
+- Move production and experimental Compose configurations into `deploy/`;
+  production commands use `--project-directory .` from the repository root to
+  preserve `.env`, build contexts, bind mounts and host-local override semantics.
+- Consolidate the remote stdio client template under `examples/`, retain root
+  MCP discovery and repair deployment build-input manifests and navigation.
+- Reconcile the live repository metadata with the productization GO assessment
+  and use a portable empty env file in Compose tests.
 
 ## [0.9.2] - 2026-10-13
 

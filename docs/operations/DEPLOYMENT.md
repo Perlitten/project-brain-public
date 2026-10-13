@@ -1,10 +1,14 @@
 # Project Brain Deployment Guide
 
+These instructions follow the current repository layout. Older published tags
+retain their original root paths; use the [v0.9.2 guide](https://github.com/Perlitten/project-brain-public/blob/v0.9.2/DEPLOYMENT.md)
+with a v0.9.2 checkout. Run current commands from the repository root.
+
 This guide is the git-safe path for deploying a fresh Project Brain instance on a
 new VPS. It does not use any existing private keys, passwords, or server-specific
 paths from the original deployment.
 
-If an AI coding agent is doing the work, use `AGENT_DEPLOYMENT.md` as the
+If an AI coding agent is doing the work, use `docs/operations/AGENT_DEPLOYMENT.md` as the
 authoritative checklist and this file as background.
 
 The production stack runs:
@@ -132,8 +136,8 @@ Any additional source tree you want indexed must reach the containers through a
 container's writable layer, so the next `up --build` deletes them while their
 rows in Postgres survive — and a clean re-index clears the index *before* it
 rebuilds, so the following run destroys the index instead of refreshing it.
-Put extra mounts in a host-local `docker-compose.local.yml` next to
-`docker-compose.prod.yml` (it is git-ignored, and `deploy/server_up.sh` and
+Put extra mounts in a host-local `docker-compose.local.yml` in the repository
+root (it is git-ignored, and `deploy/server_up.sh` and
 `deploy/doctor.sh` pick it up automatically). Mount such trees individually
 rather than mounting a shared parent, so a home directory holding backups or
 ssh keys is never exposed to a container:
@@ -177,7 +181,7 @@ GitHub Actions workflow `BRAIN_GITHUB_CI_WORKFLOW` (default `ci.yml`) has a
    repository and put it in a host-only file that Docker never sees:
 
 ```bash
-cp .deploy.env.example .deploy.env
+cp deploy/.deploy.env.example .deploy.env
 chmod 600 .deploy.env
 read -rsp "BRAIN_GITHUB_TOKEN: " T; echo
 sed -i "s|^BRAIN_GITHUB_TOKEN=.*|BRAIN_GITHUB_TOKEN=${T}|" .deploy.env; unset T
@@ -205,7 +209,7 @@ Expected:
 Useful checks:
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
+docker compose --project-directory . -f deploy/docker-compose.prod.yml ps
 curl -fsS http://127.0.0.1:8010/health
 curl -fsS http://127.0.0.1:5680/healthz
 ```
@@ -249,10 +253,10 @@ The API host serves JSON only. The web UI is the separate Next.js app in
 
 Recurring jobs (nightly maintenance 00:30, health 02:00, self-diagnosis 03:30,
 weekly benchmark Mon 06:00, all UTC) are fired by the worker itself — see
-[ADR 013](docs/adr/013-worker-scheduler.md). Check it after the stack is up:
+[ADR 013](../adr/013-worker-scheduler.md). Check it after the stack is up:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs worker | grep -E "Scheduler (started|fired)"
+docker compose --project-directory . -f deploy/docker-compose.prod.yml logs worker | grep -E "Scheduler (started|fired)"
 curl -fsS -H "X-API-Key: $PROJECT_BRAIN_API_KEY" "http://127.0.0.1:${BRAIN_API_PORT:-8010}/scheduler/jobs"
 ```
 
@@ -266,15 +270,15 @@ Run from the VPS:
 
 ```bash
 cd /opt/project-brain
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main index --repo /repo
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main index --repo /repo
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
 ```
 
 If embeddings are missing/stale:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embeddings backfill --repo /repo --json
-docker compose -f docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main embeddings backfill --repo /repo --json
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -m apps.cli.main embeddings verify --repo /repo
 ```
 
 The web UI (`apps/web/`) displays index history. Run the CLI commands above
@@ -283,7 +287,7 @@ to reindex or repair embeddings; the web UI currently has no repair actions.
 Optional file cards:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec api python -c \
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec api python -c \
   "import asyncio; from brain.indexers.file_indexer import FileIndexer; asyncio.run(FileIndexer().build_file_cards('/repo'))"
 ```
 
@@ -350,8 +354,8 @@ The web UI (`apps/web/`) has its own checks and deploy pipeline.
 
 Claude Code needs no per-machine file: the repository ships a tracked `.mcp.json`
 that declares the `project-brain` server and resolves its settings from the
-environment. Do not overwrite it with `.mcp.json.example` — that would put a live
-key into a tracked file. Instead export the values where the client runs:
+environment. Keep its `${VAR}` references intact; put any client-specific
+configuration outside the checkout. Export the values where the client runs:
 
 ```bash
 export BRAIN_API_URL="https://brain.<server-ip>.nip.io"
@@ -364,8 +368,8 @@ cloud environment; a session otherwise starts with the server declared but
 unconfigured. `BRAIN_MCP_PYTHON` overrides the interpreter when `python3` is not
 the right one for that machine.
 
-For Cursor, which reads its own config outside the repository, copy
-`.mcp.json.example` and put the `mcpServers` block in:
+For Cursor, which reads its own config outside the repository, use
+`examples/cursor-remote-http.json` and put its `mcpServers` block in:
 
 ```text
 %USERPROFILE%/.cursor/mcp.json
@@ -377,12 +381,12 @@ For Claude Desktop/Code, use that client's MCP config location.
 
 ```bash
 cd /opt/project-brain
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f api
-docker compose -f docker-compose.prod.yml logs -f worker
-docker compose -f docker-compose.prod.yml restart api worker
+docker compose --project-directory . -f deploy/docker-compose.prod.yml ps
+docker compose --project-directory . -f deploy/docker-compose.prod.yml logs -f api
+docker compose --project-directory . -f deploy/docker-compose.prod.yml logs -f worker
+docker compose --project-directory . -f deploy/docker-compose.prod.yml restart api worker
 bash deploy/server_up.sh
-docker compose -f docker-compose.prod.yml down
+docker compose --project-directory . -f deploy/docker-compose.prod.yml down
 ```
 
 `down` stops the stack but keeps named volumes. To wipe data, remove named volumes
@@ -400,7 +404,7 @@ At minimum, back up:
 Example Postgres dump:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec postgres \
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec postgres \
   pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > /tmp/project-brain.sql
 ```
 

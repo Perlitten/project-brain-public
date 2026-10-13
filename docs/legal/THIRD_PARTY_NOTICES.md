@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Project Brain is released under the MIT License (see [`LICENSE`](LICENSE)).
+Project Brain is released under the MIT License (see [`LICENSE`](../../LICENSE)).
 It builds on third-party software, fonts, container images, models and
 hosted services that remain under their own licenses and terms. This file
 lists them and the obligations that apply.
@@ -26,8 +26,8 @@ it. Their license texts are kept next to them.
 
 | Asset | Files | Copyright | License |
 |---|---|---|---|
-| JetBrains Mono (font) | `apps/web/public/fonts/JetBrainsMono-*.woff2` | Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) | SIL Open Font License 1.1 — [`apps/web/public/fonts/OFL-JetBrainsMono.txt`](apps/web/public/fonts/OFL-JetBrainsMono.txt) |
-| Outfit (font) | `apps/web/public/fonts/Outfit-*.woff2` | Copyright 2021 The Outfit Project Authors (https://github.com/Outfitio/Outfit-Fonts) | SIL Open Font License 1.1 — [`apps/web/public/fonts/OFL-Outfit.txt`](apps/web/public/fonts/OFL-Outfit.txt) |
+| JetBrains Mono (font) | `apps/web/public/fonts/JetBrainsMono-*.woff2` | Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) | SIL Open Font License 1.1 — [`apps/web/public/fonts/OFL-JetBrainsMono.txt`](../../apps/web/public/fonts/OFL-JetBrainsMono.txt) |
+| Outfit (font) | `apps/web/public/fonts/Outfit-*.woff2` | Copyright 2021 The Outfit Project Authors (https://github.com/Outfitio/Outfit-Fonts) | SIL Open Font License 1.1 — [`apps/web/public/fonts/OFL-Outfit.txt`](../../apps/web/public/fonts/OFL-Outfit.txt) |
 | Feather Icons (SVG geometry of the `layers`, `zap`, `code`, `key` and `flag` glyphs) | `apps/web/components/Icon.tsx` | Copyright (c) 2013-2023 Cole Bemis | MIT — full text below |
 
 The bundled fonts are Latin subsets converted to WOFF2 and are not sold on

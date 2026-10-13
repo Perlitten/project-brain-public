@@ -18,8 +18,8 @@ Release-specific and experimental records are separated at the end.
 
 - [Model providers](MODEL_PROVIDERS.md): mock smoke tests, local models and cloud endpoints.
 - [CLI reference](CLI.md): indexing, context, health, backups and evaluation commands.
-- [Deployment](../DEPLOYMENT.md): authenticated remote installation, TLS and scoped keys.
-- [Agent deployment](../AGENT_DEPLOYMENT.md): operational gates for an agent running deployment.
+- [Deployment](operations/DEPLOYMENT.md): authenticated remote installation, TLS and scoped keys.
+- [Agent deployment](operations/AGENT_DEPLOYMENT.md): operational gates for an agent running deployment.
 - [Operator runbook](../deploy/RUNBOOK.md) and [backup / restore](runbooks/backup-restore.md).
 - [Example client configs](../examples/) and [reindex-on-push helper](examples/reindex-on-push.yml).
 - [Demo policy](DEMO.md): isolated synthetic showcases and anonymous verification.
@@ -33,8 +33,8 @@ Release-specific and experimental records are separated at the end.
 
 ## Contribute
 
-[Contribution guide](../CONTRIBUTING.md) · [Good first issues](good-first-issues.md) ·
-[Roadmap](../ROADMAP.md) · [Brand system](BRAND.md) · [Security](../SECURITY.md) ·
+[Contribution guide](../.github/CONTRIBUTING.md) · [Good first issues](good-first-issues.md) ·
+[Roadmap](ROADMAP.md) · [Brand system](BRAND.md) · [Security](../SECURITY.md) ·
 [Changelog](../CHANGELOG.md) · [License](../LICENSE)
 
 ## Release and historical records
