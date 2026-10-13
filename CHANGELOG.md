@@ -157,6 +157,7 @@ First public release of the single-user distribution. Full notes:
   its lease cannot commit, and interrupted jobs are requeued.
 - Job queue back-pressure (429 with `Retry-After`) and an in-app request body cap.
 
-[Unreleased]: https://github.com/Perlitten/project-brain-public/compare/v0.9.1...main
+[Unreleased]: https://github.com/Perlitten/project-brain-public/compare/v0.9.2...main
+[0.9.2]: https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.2
 [0.9.1]: https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.0

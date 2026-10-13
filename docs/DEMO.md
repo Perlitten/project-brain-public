@@ -21,10 +21,12 @@ fails closed for partial API bindings. These observations establish the tested
 runtime's isolation; they do not inspect secrets in other deployment scopes.
 Quality-screen percentages are synthetic illustrations, not measured benchmarks.
 
-GitHub deployment `7043354121` reports successful production deployment of
-`1c537e01e8d61a298ac2a2c17fe94d2056446d6f` from the public demo-label branch.
-The showcase can lag the latest release. Deployment status alone does not reveal
-Vercel's configured production branch or prove later automatic promotion.
+GitHub deployment `7043828560` reports successful production deployment of
+merged runtime commit `566d985464bb6200b67779eaf3d431d0129d4eb2`. The same
+desktop/mobile route checks passed again with the new global read-only notice;
+the protected operator dashboard still returned 401.
+The showcase can lag the latest release. This update was observed after the main merge; deployment metadata still does
+not certify account settings or guarantee future promotion.
 
 ## A separate, safe deployment
 
