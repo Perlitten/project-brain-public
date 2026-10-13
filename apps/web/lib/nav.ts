@@ -31,6 +31,8 @@ const nested: NavItem[] = [
   { key: "runs", href: "/runs", label: "Agent tasks", icon: "automation", hint: "Tasks agents ran with Brain's help", repoScoped: true, section: "logs" },
   { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "The tools agents can call and how they perform", section: "settings" },
   { key: "admin", href: "/admin", label: "Access", icon: "key", hint: "API keys and what each one may do", section: "settings" },
+  // Reached from the rail footer and the palette, not a daily destination.
+  { key: "help", href: "/help", label: "Help", icon: "help", hint: "About this server, common problems, glossary and guides" },
 ];
 export const primaryNavItems = navGroups.flatMap((g) => g.items);
 export const allNavItems = [...primaryNavItems, ...nested];
@@ -48,8 +50,11 @@ export function activeSection(path: string): string | undefined {
 
 /** Keep project context through global evidence/settings without claiming a filter. */
 export function withProject(href: string, slug?: string): string {
-  const [pathname, query = ""] = href.split("?");
+  const hashAt = href.indexOf("#");
+  const fragment = hashAt >= 0 ? href.slice(hashAt) : "";
+  const withoutFragment = hashAt >= 0 ? href.slice(0, hashAt) : href;
+  const [pathname, query = ""] = withoutFragment.split("?");
   const params = new URLSearchParams(query);
   if (slug) params.set("repo", slug); else params.delete("repo");
-  return `${pathname}${params.size ? `?${params}` : ""}`;
+  return `${pathname}${params.size ? `?${params}` : ""}${fragment}`;
 }

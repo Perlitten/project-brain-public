@@ -101,8 +101,12 @@ test('owner navigation has seven destinations and nested deep links activate the
   assert.equal(nav.activeSection('/admin'), 'settings');
   assert.equal(nav.locate('/memory-other'), null);
   assert.ok(nav.allNavItems.some(item => item.href === '/setup'));
+  // Help sits in the rail footer and the palette, outside the seven daily destinations.
+  assert.ok(!nav.primaryNavItems.some(item => item.href === '/help'));
+  assert.equal(nav.activeSection('/help'), 'help');
   assert.equal(nav.withProject('/quality', '3'), '/quality?repo=3');
   assert.equal(nav.withProject('/packs?view=fresh', '3'), '/packs?view=fresh&repo=3');
+  assert.equal(nav.withProject('/setup#agent', '3'), '/setup?repo=3#agent');
   assert.equal(nav.withProject('/?repo=3&period=30d', ''), '/?period=30d');
 });
 
@@ -813,6 +817,7 @@ test('missing worker heartbeat: the rail says the worker is down and a queued jo
     '/health': () => ({ status: 'ok', details: { postgres: { status: 'healthy' } }, scheduler: {}, worker }),
     '/api/version': () => ({ version: '1.0.0' }),
     '/api/setup/status': () => ({ steps: [] }),
+    '/api/setup/providers': () => ({ current: { llm: { provider: 'openai', model: 'gpt-5' }, embedding: { provider: 'openai', model: 'text-embedding-3-small' } } }),
     '/jobs/job-1': () => ({ status: 'queued', progress: {} }),
   };
   const api = { apiConfigured: true, brainFetch: async (url) => (replies[url] ? replies[url]() : null), brainSend: async () => ({ ok: true, data: {} }) };
@@ -821,6 +826,8 @@ test('missing worker heartbeat: the rail says the worker is down and a queued jo
   assert.equal(down.healthy, false);
   assert.deepEqual([...down.down], ['worker']);
   assert.equal(down.workerHint, hint);
+  assert.equal(down.llm, 'openai / gpt-5');
+  assert.equal(down.embedding, 'openai / text-embedding-3-small');
 
   const jobs = load('lib/actions/jobs.ts', { '../api': api, './gate': { guard: async () => null, mutate: async () => ({ ok: true }) } });
   const stalled = await jobs.getJob('job-1');
