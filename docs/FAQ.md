@@ -2,8 +2,68 @@
 
 Latest published release: **[v0.9.2](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.2)**.
 Use the [current getting-started guide](GETTING_STARTED.md) for installation.
+The [dashboard](DASHBOARD.md) has the same practical answers under **Help**.
 
-## How is this different from Obsidian / Mem0 / Letta / plain RAG?
+- [Using Brain](#using-brain) — problems people run into first, and how to fix them.
+- [Limits and evidence](#limits-and-evidence) — what Brain does and does not establish.
+
+## Using Brain
+
+### My agent isn't using Brain
+
+Connecting Brain makes its MCP tools available; it does not make an agent call
+them. Check that the client lists Brain's tools, then add the
+[suggested agent workflow](MCP.md#suggested-agent-workflow) to the agent's
+instructions: call `prepare_task_context` before planning a change and
+`review_diff` before finishing. Pass the absolute indexed checkout as `repo_path`.
+
+### Brain answers about the wrong repository
+
+Brain scopes answers to one indexed checkout. Align `TARGET_REPO_PATH` in `.env`,
+the CLI `--repo` option and the `repo_path` your agent sends; they must name the
+same absolute path.
+
+### Brain says it is behind the code
+
+Brain answers from the last commit it indexed. Re-index from the dashboard (or
+run `brain index --repo` with the same path); later runs re-read only what
+changed. Brain indexes committed source only: if a re-index refuses the tree,
+commit your source edits first. Ignored build output such as `node_modules` and
+`.next` does not count, so do not delete it to make re-indexing work.
+
+### A job is queued and never finishes
+
+Jobs run in the background worker, not in the API. Check worker health on the
+dashboard's Setup screen or in `curl http://127.0.0.1:8000/health`, and read the
+`start.sh` terminal. `./scripts/start.sh` runs the API, the worker and the
+dashboard together.
+
+### Search results look random
+
+The shipped defaults use `mock` models. They test the plumbing without provider
+keys, but their semantic rankings and generated answers are not meaningful.
+Configure real embedding and language models (see
+[Getting started](GETTING_STARTED.md#configure-meaningful-models)) and re-index;
+vectors from different embedding models are not interchangeable.
+
+### The dashboard shows example numbers
+
+The dashboard is not connected to a Brain server, so it shows demo data. Start
+Brain with `./scripts/start.sh`, which gives the dashboard its server address and
+credential. A web app started on its own stays a demo.
+
+### How do I update Brain?
+
+Back up `.env` and your data first. On a local checkout, pull the new release,
+re-run `./scripts/bootstrap.sh` (it preserves `.env` and the database volumes)
+and restart with `./scripts/start.sh`. Restart MCP clients afterwards. On a
+server, follow [Start or Update](../deploy/RUNBOOK.md#start-or-update) in the
+runbook. Never run `docker compose down --volumes` on data you need to keep; see
+the [backup and restore runbook](runbooks/backup-restore.md).
+
+## Limits and evidence
+
+### How is this different from Obsidian / Mem0 / Letta / plain RAG?
 
 - **vs Obsidian** — Brain is not a notes app: it indexes *code* (chunks +
   dependency graph), and its memory is written by agents, for agents, through
@@ -17,7 +77,7 @@ Use the [current getting-started guide](GETTING_STARTED.md) for installation.
   impact analysis, drift detection and recorded decisions answer questions a
   vector store cannot ("what breaks if I change X").
 
-## What does it cost in tokens?
+### What does it cost in tokens?
 
 Costs depend on the selected models, indexing, retrieval, follow-up source reads
 and maintenance. Payload limits differ between tools and rollout modes; the
@@ -25,7 +85,7 @@ compact v2 locator is opt-in and is not the default legacy search response.
 Brain adds no per-call fee, but provider and infrastructure costs remain yours.
 Net coding token, time or cost savings have **not been established**.
 
-## Does it work offline?
+### Does it work offline?
 
 After downloading models and dependencies, configure **both** LLM and embedding
 providers as local Ollama endpoints for local model execution. For example,
@@ -35,7 +95,7 @@ overrides are local, disable external notifications/integrations, and use a loca
 agent connection. Mock providers also run offline, but their results are only a
 smoke test. Changing embedding models requires compatibility checks/reindexing.
 
-## Where does my data go?
+### Where does my data go?
 
 The code index and memory are stored in the databases you operate. This does
 **not** mean source code always stays on that machine:
@@ -52,7 +112,7 @@ local-only guarantee. Review provider retention policies before indexing private
 code. Keep server-side credentials and `.env` files private; scoped keys and OAuth
 control access but do not prevent an authorized recipient from receiving context.
 
-## Do learned lessons always require approval?
+### Do learned lessons always require approval?
 
 No. L1 observations/lessons record reported evidence, not proof Brain executed
 the validation. Eligible L3 clusters can promote automatically by default,
@@ -62,13 +122,13 @@ duplicate reinforcement has separate behavior. Distilled L4 procedures default
 to pending approval. Direct rules, decisions and curated procedures are distinct
 write paths. See the [complete policy](MEMORY_LESSON_PROTOCOL.md).
 
-## Do I need Neo4j?
+### Do I need Neo4j?
 
 Graph-dependent tools require Neo4j. Some search/API paths can operate without
 it, but the recommended source setup includes it and checks its health. A
 partially available service is not equivalent to a verified full installation.
 
-## Is this production-ready?
+### Is this production-ready?
 
 It is early single-user, self-hosted software for a trusted operator, not a
 multi-tenant team service. The published release has installation, indexing and
