@@ -46,6 +46,7 @@ Start with the files for the task rather than relying on a stale repository size
 | Embeddings, pgvector | `brain/embeddings/store.py`, `pgvector_sql.py`, `integrity.py` |
 | ColBERT / late interaction | `brain/late_interaction/provider.py`, `store.py`, `client.py` |
 | Memory, decisions, rules | `brain/memory/decision_store.py`, `rule_store.py`, `relevance.py` |
+| Proactive snapshot checks | `brain/insights/detectors.py` (pure checks), `candidates.py` (records); `proactive.py` orchestrates drift, models and persistence |
 | Memory consolidation L1→L2→L3→L4 (gates G1–G4, evidence levels, supersede, skills) | `brain/memory/consolidation.py`, `skill_distiller.py`, `learning_store.py`; input — `routers/harness.py` (`/lessons`, `/observations`); protocol — `docs/MEMORY_LESSON_PROTOCOL.md` |
 | L3 retrieval into context/ask (hybrid pgvector + lexical) | `brain/memory/learning_retrieval.py`, `brain/context/runtime_context_builder.py` |
 | Repository scope and index freshness | `brain/memory/repo_scope.py`, `repo_freshness.py`, `source_manifest.py` |

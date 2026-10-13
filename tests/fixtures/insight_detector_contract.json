@@ -1,0 +1,1370 @@
+[
+  {
+    "name": "healthy",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      },
+      "services": {
+        "postgres": {
+          "status": "healthy"
+        },
+        "redis": {
+          "status": "healthy"
+        },
+        "neo4j": {
+          "status": "healthy"
+        }
+      },
+      "counts": {
+        "files": 12,
+        "chunks": 40,
+        "rules": 2,
+        "decisions": 1
+      },
+      "embeddings": {
+        "missing_embeddings": 0,
+        "stale_embeddings": 0,
+        "incompatible_embeddings": 0,
+        "pgvector_coverage_pct": 100.0
+      },
+      "recent_indexing_runs": [
+        {
+          "id": 5,
+          "status": "completed"
+        }
+      ],
+      "repositories": [
+        {
+          "name": "example",
+          "path": "/synthetic/repo",
+          "freshness": {
+            "status": "current"
+          }
+        }
+      ],
+      "evaluation": {
+        "avg_recall": 0.9
+      },
+      "project": {
+        "build_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "environment": "development",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "operational_readiness",
+        "severity": "ready",
+        "title": "Project Brain is ready for operator review",
+        "summary": "Core services, embeddings, source inventory, and recent job signals do not show an active issue.",
+        "evidence": [
+          {
+            "label": "services",
+            "value": "healthy"
+          },
+          {
+            "label": "files",
+            "value": "12"
+          },
+          {
+            "label": "pgvector_coverage_pct",
+            "value": "100.0"
+          }
+        ],
+        "recommended_action": "Review recent context packs and automation before a deploy or handoff.",
+        "confidence": "medium",
+        "dedupe_key": "operational_readiness:ready_review",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  },
+  {
+    "name": "empty",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      }
+    },
+    "environment": "development",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "service_health",
+        "severity": "critical",
+        "title": "Core service requires attention",
+        "summary": "Core services are not all healthy: postgres, redis, neo4j.",
+        "evidence": [
+          {
+            "label": "postgres",
+            "value": "unhealthy"
+          },
+          {
+            "label": "redis",
+            "value": "unhealthy"
+          },
+          {
+            "label": "neo4j",
+            "value": "unhealthy"
+          }
+        ],
+        "recommended_action": "Open dashboard logs and restore the unhealthy datastore before relying on retrieval or automation.",
+        "confidence": "high",
+        "dedupe_key": "service_health:core_unhealthy",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "indexing_health",
+        "severity": "critical",
+        "title": "No indexed source inventory is available",
+        "summary": "Project Brain has no useful file/chunk inventory for the target repository.",
+        "evidence": [
+          {
+            "label": "repo_path",
+            "value": "/synthetic/repo"
+          }
+        ],
+        "recommended_action": "Run a repository index job and verify embeddings after it completes.",
+        "confidence": "high",
+        "dedupe_key": "indexing_health:no_source_inventory",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "indexing_health",
+        "severity": "info",
+        "title": "Indexing history is empty",
+        "summary": "No indexing run is recorded yet, so operators cannot tell when this repo was last scanned.",
+        "evidence": [
+          {
+            "label": "recent_indexing_runs",
+            "value": "0"
+          }
+        ],
+        "recommended_action": "Run an initial index job or confirm the target repository path is correct.",
+        "confidence": "medium",
+        "dedupe_key": "indexing_health:no_indexing_history",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "architecture_memory",
+        "severity": "info",
+        "title": "Architecture memory is sparse",
+        "summary": "Rules or decisions are empty, so Brain has fewer constraints to enforce during code work.",
+        "evidence": [],
+        "recommended_action": "Import or create the key ADRs and operating rules for this codebase.",
+        "confidence": "medium",
+        "dedupe_key": "architecture_memory:sparse_rules_or_decisions",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  },
+  {
+    "name": "all_failures",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      },
+      "services": {
+        "postgres": {
+          "status": "failed",
+          "error": "connection unavailable"
+        }
+      },
+      "counts": {
+        "files": 0,
+        "chunks": 0,
+        "rules": 0,
+        "decisions": 0
+      },
+      "embeddings": {
+        "missing_embeddings": 1,
+        "stale_embeddings": 2,
+        "incompatible_embeddings": 3,
+        "pgvector_coverage_pct": 100.0
+      },
+      "recent_indexing_runs": [
+        {
+          "id": 6,
+          "status": "FAILED",
+          "started_at": "2026-10-01T00:00:00Z"
+        }
+      ],
+      "repositories": [
+        {
+          "name": "example",
+          "path": "/synthetic/repo",
+          "freshness": {
+            "status": "source_missing"
+          }
+        }
+      ],
+      "evaluation": {
+        "avg_recall": 0.3
+      },
+      "project": {
+        "build_sha": "unknown",
+        "source_digest": ""
+      },
+      "trigger": {
+        "source": "worker_failure",
+        "reference": "job-1",
+        "summary": "Failure\u0000  detail"
+      },
+      "scheduler": {
+        "stale": [
+          "nightly",
+          "benchmark"
+        ]
+      },
+      "alerting": {
+        "self_diagnosis_enabled": true,
+        "telegram_enabled": false,
+        "telegram_credentials_present": false
+      },
+      "graph_identity": {
+        "legacy_unscoped_nodes": 4
+      },
+      "harness": {
+        "stale_task_count": 3,
+        "status_counts": {
+          "running": 3
+        },
+        "expired_lease_count": 2
+      },
+      "worker_queue": {
+        "stale_job_count": 2,
+        "queued": 1,
+        "processing": 1,
+        "retrying": 0,
+        "stale_jobs": [
+          "job-1"
+        ]
+      },
+      "recent_jobs": [
+        {
+          "id": "job-1",
+          "type": "index",
+          "status": "FAILED",
+          "error": "interrupted"
+        }
+      ]
+    },
+    "environment": "production",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "automation_trigger",
+        "severity": "warning",
+        "title": "An automation failure triggered self-diagnosis",
+        "summary": "Failure detail",
+        "evidence": [
+          {
+            "label": "source",
+            "value": "worker_failure"
+          },
+          {
+            "label": "reference",
+            "value": "job-1"
+          }
+        ],
+        "recommended_action": "Correlate the trigger reference with the worker logs and GET /jobs/<id>, then re-run the job after remediation.",
+        "confidence": "high",
+        "dedupe_key": "automation_trigger:worker_failure:job-1",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "service_health",
+        "severity": "critical",
+        "title": "Core service requires attention",
+        "summary": "Core services are not all healthy: postgres, redis, neo4j.",
+        "evidence": [
+          {
+            "label": "postgres",
+            "value": "connection unavailable"
+          },
+          {
+            "label": "redis",
+            "value": "unhealthy"
+          },
+          {
+            "label": "neo4j",
+            "value": "unhealthy"
+          }
+        ],
+        "recommended_action": "Open dashboard logs and restore the unhealthy datastore before relying on retrieval or automation.",
+        "confidence": "high",
+        "dedupe_key": "service_health:core_unhealthy",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "automation_health",
+        "severity": "warning",
+        "title": "Scheduled jobs are overdue",
+        "summary": "No successful run within the expected interval for: nightly, benchmark.",
+        "evidence": [
+          {
+            "label": "stale_jobs",
+            "value": "nightly, benchmark"
+          }
+        ],
+        "recommended_action": "Check that a worker is running (SCHEDULER_ENABLED=true) and its logs; use Run now on Settings \u2192 Scheduler or POST /jobs/* meanwhile.",
+        "confidence": "high",
+        "dedupe_key": "automation_health:scheduler_stale",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "release_identity",
+        "severity": "critical",
+        "title": "Production build identity is unverifiable",
+        "summary": "The running API does not expose both a source revision and source digest.",
+        "evidence": [
+          {
+            "label": "build_sha",
+            "value": "unknown"
+          },
+          {
+            "label": "source_digest",
+            "value": "unknown"
+          }
+        ],
+        "recommended_action": "Redeploy through deploy/server_up.sh with a valid release marker and verify /api/version.",
+        "confidence": "high",
+        "dedupe_key": "release_identity:unverifiable",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "alert_delivery",
+        "severity": "critical",
+        "title": "Self-diagnosis has no usable Telegram channel",
+        "summary": "Autonomous diagnosis is enabled but its owner alert channel is disabled or missing credentials.",
+        "evidence": [
+          {
+            "label": "telegram_enabled",
+            "value": "False"
+          },
+          {
+            "label": "telegram_credentials_present",
+            "value": "False"
+          }
+        ],
+        "recommended_action": "Configure the Telegram bot token and chat id, enable alerts, then run a delivery smoke test.",
+        "confidence": "high",
+        "dedupe_key": "alert_delivery:telegram_unavailable",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "graph_identity",
+        "severity": "warning",
+        "title": "Legacy unscoped graph nodes remain",
+        "summary": "Strict repository reads ignore legacy Neo4j nodes that have no repository identity.",
+        "evidence": [
+          {
+            "label": "legacy_unscoped_nodes",
+            "value": "4"
+          }
+        ],
+        "recommended_action": "Reindex each active repository under graph schema v2, then remove only the verified legacy residue.",
+        "confidence": "high",
+        "dedupe_key": "graph_identity:legacy_unscoped_nodes",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "repository_freshness",
+        "severity": "critical",
+        "title": "Repository freshness is not fully verified",
+        "summary": "1 indexed repositories are not in a proven current state.",
+        "evidence": [
+          {
+            "label": "/synthetic/repo",
+            "value": "source_missing"
+          }
+        ],
+        "recommended_action": "Restore the source or manifest lineage, then reindex and verify embeddings.",
+        "confidence": "high",
+        "dedupe_key": "repository_freshness:not_current",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "harness_lifecycle",
+        "severity": "warning",
+        "title": "Harness tasks are stuck beyond their timeout",
+        "summary": "3 non-terminal tasks have exceeded their configured timeout.",
+        "evidence": [
+          {
+            "label": "stale_task_count",
+            "value": "3"
+          },
+          {
+            "label": "status_counts",
+            "value": "{\"running\": 3}"
+          },
+          {
+            "label": "expired_lease_count",
+            "value": "2"
+          }
+        ],
+        "recommended_action": "Run task reconciliation, inspect expired leases, and route or close orphaned tasks.",
+        "confidence": "high",
+        "dedupe_key": "harness_lifecycle:stale_tasks",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "worker_health",
+        "severity": "critical",
+        "title": "Durable worker jobs are stuck",
+        "summary": "2 queued, running, or retrying jobs exceeded their recovery window.",
+        "evidence": [
+          {
+            "label": "queue_state",
+            "value": "{\"processing\": 1, \"queued\": 1, \"retrying\": 0}"
+          },
+          {
+            "label": "stale_jobs",
+            "value": "[\"job-1\"]"
+          }
+        ],
+        "recommended_action": "Inspect worker liveness and processing/retry lists, then restart the worker so its crash recovery can requeue the jobs.",
+        "confidence": "high",
+        "dedupe_key": "worker_health:stale_durable_jobs",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "retrieval_quality",
+        "severity": "critical",
+        "title": "Retrieval recall is below the production floor",
+        "summary": "The latest golden evaluation does not meet the configured minimum average recall.",
+        "evidence": [
+          {
+            "label": "avg_recall",
+            "value": "0.3"
+          },
+          {
+            "label": "minimum_avg_recall",
+            "value": "0.7"
+          }
+        ],
+        "recommended_action": "Inspect missing expected files, repair indexing/routing, and rerun the benchmark before claiming readiness.",
+        "confidence": "high",
+        "dedupe_key": "retrieval_quality:recall_below_floor",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "retrieval_health",
+        "severity": "critical",
+        "title": "Semantic retrieval coverage needs repair",
+        "summary": "Some eligible chunks are missing current vectors, so retrieval can silently miss relevant code.",
+        "evidence": [
+          {
+            "label": "missing_embeddings",
+            "value": "1"
+          },
+          {
+            "label": "stale_embeddings",
+            "value": "2"
+          },
+          {
+            "label": "incompatible_embeddings",
+            "value": "3"
+          },
+          {
+            "label": "pgvector_coverage_pct",
+            "value": "99.9"
+          }
+        ],
+        "recommended_action": "Run the embedding backfill job, then verify embeddings before trusting context packs.",
+        "confidence": "high",
+        "dedupe_key": "retrieval_health:embedding_inventory_not_clean",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "indexing_health",
+        "severity": "critical",
+        "title": "No indexed source inventory is available",
+        "summary": "Project Brain has no useful file/chunk inventory for the target repository.",
+        "evidence": [
+          {
+            "label": "files",
+            "value": "0"
+          },
+          {
+            "label": "chunks",
+            "value": "0"
+          },
+          {
+            "label": "repo_path",
+            "value": "/synthetic/repo"
+          }
+        ],
+        "recommended_action": "Run a repository index job and verify embeddings after it completes.",
+        "confidence": "high",
+        "dedupe_key": "indexing_health:no_source_inventory",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "indexing_health",
+        "severity": "warning",
+        "title": "Latest indexing run failed",
+        "summary": "The newest repository scan did not complete successfully.",
+        "evidence": [
+          {
+            "label": "run_id",
+            "value": "6"
+          },
+          {
+            "label": "status",
+            "value": "FAILED"
+          },
+          {
+            "label": "started_at",
+            "value": "2026-10-01T00:00:00Z"
+          }
+        ],
+        "recommended_action": "Inspect worker logs, fix the indexing error, and rerun indexing without clean mode first.",
+        "confidence": "high",
+        "dedupe_key": "indexing_health:latest_failed:6",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "worker_health",
+        "severity": "warning",
+        "title": "Recent background job failed",
+        "summary": "A recent index job failed and may require operator follow-up.",
+        "evidence": [
+          {
+            "label": "job_id",
+            "value": "job-1"
+          },
+          {
+            "label": "job_type",
+            "value": "index"
+          },
+          {
+            "label": "error",
+            "value": "interrupted"
+          }
+        ],
+        "recommended_action": "Open the recent job status and worker logs before scheduling more dependent work.",
+        "confidence": "medium",
+        "dedupe_key": "worker_health:failed_job:job-1",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "architecture_memory",
+        "severity": "info",
+        "title": "Architecture memory is sparse",
+        "summary": "Rules or decisions are empty, so Brain has fewer constraints to enforce during code work.",
+        "evidence": [
+          {
+            "label": "rules",
+            "value": "0"
+          },
+          {
+            "label": "decisions",
+            "value": "0"
+          }
+        ],
+        "recommended_action": "Import or create the key ADRs and operating rules for this codebase.",
+        "confidence": "medium",
+        "dedupe_key": "architecture_memory:sparse_rules_or_decisions",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  },
+  {
+    "name": "warning_freshness",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      },
+      "services": {
+        "postgres": {
+          "status": "healthy"
+        },
+        "redis": {
+          "status": "healthy"
+        },
+        "neo4j": {
+          "status": "healthy"
+        }
+      },
+      "counts": {
+        "files": 12,
+        "chunks": 40,
+        "rules": 2,
+        "decisions": 1
+      },
+      "embeddings": {
+        "missing_embeddings": 0,
+        "stale_embeddings": 0,
+        "incompatible_embeddings": 0,
+        "pgvector_coverage_pct": 100.0
+      },
+      "recent_indexing_runs": [
+        {
+          "id": 5,
+          "status": "completed"
+        }
+      ],
+      "repositories": [
+        {
+          "name": "example",
+          "freshness": {
+            "status": "behind"
+          }
+        }
+      ],
+      "evaluation": {
+        "avg_recall": 0.9
+      },
+      "project": {
+        "build_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "environment": "development",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "repository_freshness",
+        "severity": "warning",
+        "title": "Repository freshness is not fully verified",
+        "summary": "1 indexed repositories are not in a proven current state.",
+        "evidence": [
+          {
+            "label": "example",
+            "value": "behind"
+          }
+        ],
+        "recommended_action": "Restore the source or manifest lineage, then reindex and verify embeddings.",
+        "confidence": "high",
+        "dedupe_key": "repository_freshness:not_current",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  },
+  {
+    "name": "missing_quality",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      },
+      "services": {
+        "postgres": {
+          "status": "healthy"
+        },
+        "redis": {
+          "status": "healthy"
+        },
+        "neo4j": {
+          "status": "healthy"
+        }
+      },
+      "counts": {
+        "files": 12,
+        "chunks": 40,
+        "rules": 2,
+        "decisions": 1
+      },
+      "embeddings": {
+        "missing_embeddings": 0,
+        "stale_embeddings": 0,
+        "incompatible_embeddings": 0,
+        "pgvector_coverage_pct": 100.0
+      },
+      "recent_indexing_runs": [
+        {
+          "id": 5,
+          "status": "completed"
+        }
+      ],
+      "repositories": [
+        {
+          "name": "example",
+          "path": "/synthetic/repo",
+          "freshness": {
+            "status": "current"
+          }
+        }
+      ],
+      "evaluation": {},
+      "project": {
+        "build_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "environment": "development",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "retrieval_quality",
+        "severity": "warning",
+        "title": "Retrieval quality has no current measurement",
+        "summary": "No parseable golden evaluation report is available to prove retrieval quality.",
+        "evidence": [
+          {
+            "label": "avg_recall",
+            "value": "missing"
+          }
+        ],
+        "recommended_action": "Run the weekly benchmark and retain its eval-report.md in the configured report store.",
+        "confidence": "high",
+        "dedupe_key": "retrieval_quality:evaluation_missing",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  },
+  {
+    "name": "invalid_numbers",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      },
+      "services": {
+        "postgres": {
+          "status": "healthy"
+        },
+        "redis": {
+          "status": "healthy"
+        },
+        "neo4j": {
+          "status": "healthy"
+        }
+      },
+      "counts": {
+        "files": "bad",
+        "chunks": "4",
+        "rules": null,
+        "decisions": "1"
+      },
+      "embeddings": {
+        "missing_embeddings": "invalid",
+        "stale_embeddings": null,
+        "incompatible_embeddings": 0,
+        "pgvector_coverage_pct": "invalid"
+      },
+      "recent_indexing_runs": [
+        {
+          "id": 5,
+          "status": "completed"
+        }
+      ],
+      "repositories": [
+        {
+          "name": "example",
+          "path": "/synthetic/repo",
+          "freshness": {
+            "status": "current"
+          }
+        }
+      ],
+      "evaluation": {
+        "avg_recall": "invalid"
+      },
+      "project": {
+        "build_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "environment": "development",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "retrieval_quality",
+        "severity": "critical",
+        "title": "Retrieval recall is below the production floor",
+        "summary": "The latest golden evaluation does not meet the configured minimum average recall.",
+        "evidence": [
+          {
+            "label": "avg_recall",
+            "value": "0.0"
+          },
+          {
+            "label": "minimum_avg_recall",
+            "value": "0.7"
+          }
+        ],
+        "recommended_action": "Inspect missing expected files, repair indexing/routing, and rerun the benchmark before claiming readiness.",
+        "confidence": "high",
+        "dedupe_key": "retrieval_quality:recall_below_floor",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "indexing_health",
+        "severity": "critical",
+        "title": "No indexed source inventory is available",
+        "summary": "Project Brain has no useful file/chunk inventory for the target repository.",
+        "evidence": [
+          {
+            "label": "files",
+            "value": "bad"
+          },
+          {
+            "label": "chunks",
+            "value": "4"
+          },
+          {
+            "label": "repo_path",
+            "value": "/synthetic/repo"
+          }
+        ],
+        "recommended_action": "Run a repository index job and verify embeddings after it completes.",
+        "confidence": "high",
+        "dedupe_key": "indexing_health:no_source_inventory",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      },
+      {
+        "insight_type": "architecture_memory",
+        "severity": "info",
+        "title": "Architecture memory is sparse",
+        "summary": "Rules or decisions are empty, so Brain has fewer constraints to enforce during code work.",
+        "evidence": [
+          {
+            "label": "decisions",
+            "value": "1"
+          }
+        ],
+        "recommended_action": "Import or create the key ADRs and operating rules for this codebase.",
+        "confidence": "medium",
+        "dedupe_key": "architecture_memory:sparse_rules_or_decisions",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  },
+  {
+    "name": "rounded_incomplete_coverage",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      },
+      "services": {
+        "postgres": {
+          "status": "healthy"
+        },
+        "redis": {
+          "status": "healthy"
+        },
+        "neo4j": {
+          "status": "healthy"
+        }
+      },
+      "counts": {
+        "files": 12,
+        "chunks": 40,
+        "rules": 2,
+        "decisions": 1
+      },
+      "embeddings": {
+        "missing_embeddings": "1",
+        "stale_embeddings": 0,
+        "incompatible_embeddings": 0,
+        "pgvector_coverage_pct": 100.0
+      },
+      "recent_indexing_runs": [
+        {
+          "id": 5,
+          "status": "completed"
+        }
+      ],
+      "repositories": [
+        {
+          "name": "example",
+          "path": "/synthetic/repo",
+          "freshness": {
+            "status": "current"
+          }
+        }
+      ],
+      "evaluation": {
+        "avg_recall": 0.9
+      },
+      "project": {
+        "build_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "environment": "development",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "retrieval_health",
+        "severity": "warning",
+        "title": "Semantic retrieval coverage needs repair",
+        "summary": "Some eligible chunks are missing current vectors, so retrieval can silently miss relevant code.",
+        "evidence": [
+          {
+            "label": "missing_embeddings",
+            "value": "1"
+          },
+          {
+            "label": "stale_embeddings",
+            "value": "0"
+          },
+          {
+            "label": "incompatible_embeddings",
+            "value": "0"
+          },
+          {
+            "label": "pgvector_coverage_pct",
+            "value": "99.9"
+          }
+        ],
+        "recommended_action": "Run the embedding backfill job, then verify embeddings before trusting context packs.",
+        "confidence": "high",
+        "dedupe_key": "retrieval_health:embedding_inventory_not_clean",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  },
+  {
+    "name": "threshold_equal",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      },
+      "services": {
+        "postgres": {
+          "status": "healthy"
+        },
+        "redis": {
+          "status": "healthy"
+        },
+        "neo4j": {
+          "status": "healthy"
+        }
+      },
+      "counts": {
+        "files": 12,
+        "chunks": 40,
+        "rules": 2,
+        "decisions": 1
+      },
+      "embeddings": {
+        "missing_embeddings": 0,
+        "stale_embeddings": 0,
+        "incompatible_embeddings": 0,
+        "pgvector_coverage_pct": 100.0
+      },
+      "recent_indexing_runs": [
+        {
+          "id": 5,
+          "status": "completed"
+        }
+      ],
+      "repositories": [
+        {
+          "name": "example",
+          "path": "/synthetic/repo",
+          "freshness": {
+            "status": "current"
+          }
+        }
+      ],
+      "evaluation": {
+        "avg_recall": 0.7
+      },
+      "project": {
+        "build_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "environment": "development",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "operational_readiness",
+        "severity": "ready",
+        "title": "Project Brain is ready for operator review",
+        "summary": "Core services, embeddings, source inventory, and recent job signals do not show an active issue.",
+        "evidence": [
+          {
+            "label": "services",
+            "value": "healthy"
+          },
+          {
+            "label": "files",
+            "value": "12"
+          },
+          {
+            "label": "pgvector_coverage_pct",
+            "value": "100.0"
+          }
+        ],
+        "recommended_action": "Review recent context packs and automation before a deploy or handoff.",
+        "confidence": "medium",
+        "dedupe_key": "operational_readiness:ready_review",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  },
+  {
+    "name": "successful_trigger",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      },
+      "services": {
+        "postgres": {
+          "status": "healthy"
+        },
+        "redis": {
+          "status": "healthy"
+        },
+        "neo4j": {
+          "status": "healthy"
+        }
+      },
+      "counts": {
+        "files": 12,
+        "chunks": 40,
+        "rules": 2,
+        "decisions": 1
+      },
+      "embeddings": {
+        "missing_embeddings": 0,
+        "stale_embeddings": 0,
+        "incompatible_embeddings": 0,
+        "pgvector_coverage_pct": 100.0
+      },
+      "recent_indexing_runs": [
+        {
+          "id": 5,
+          "status": "completed"
+        }
+      ],
+      "repositories": [
+        {
+          "name": "example",
+          "path": "/synthetic/repo",
+          "freshness": {
+            "status": "current"
+          }
+        }
+      ],
+      "evaluation": {
+        "avg_recall": 0.9
+      },
+      "project": {
+        "build_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "trigger": {
+        "source": "workflow_success",
+        "reference": "job-2"
+      }
+    },
+    "environment": "development",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "operational_readiness",
+        "severity": "ready",
+        "title": "Project Brain is ready for operator review",
+        "summary": "Core services, embeddings, source inventory, and recent job signals do not show an active issue.",
+        "evidence": [
+          {
+            "label": "services",
+            "value": "healthy"
+          },
+          {
+            "label": "files",
+            "value": "12"
+          },
+          {
+            "label": "pgvector_coverage_pct",
+            "value": "100.0"
+          }
+        ],
+        "recommended_action": "Review recent context packs and automation before a deploy or handoff.",
+        "confidence": "medium",
+        "dedupe_key": "operational_readiness:ready_review",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  },
+  {
+    "name": "first_failed_job_only",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      },
+      "services": {
+        "postgres": {
+          "status": "healthy"
+        },
+        "redis": {
+          "status": "healthy"
+        },
+        "neo4j": {
+          "status": "healthy"
+        }
+      },
+      "counts": {
+        "files": 12,
+        "chunks": 40,
+        "rules": 2,
+        "decisions": 1
+      },
+      "embeddings": {
+        "missing_embeddings": 0,
+        "stale_embeddings": 0,
+        "incompatible_embeddings": 0,
+        "pgvector_coverage_pct": 100.0
+      },
+      "recent_indexing_runs": [
+        {
+          "id": 5,
+          "status": "completed"
+        }
+      ],
+      "repositories": [
+        {
+          "name": "example",
+          "path": "/synthetic/repo",
+          "freshness": {
+            "status": "current"
+          }
+        }
+      ],
+      "evaluation": {
+        "avg_recall": 0.9
+      },
+      "project": {
+        "build_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "recent_jobs": [
+        {
+          "id": "one",
+          "status": "failed"
+        },
+        {
+          "id": "two",
+          "status": "failed"
+        }
+      ]
+    },
+    "environment": "development",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "worker_health",
+        "severity": "warning",
+        "title": "Recent background job failed",
+        "summary": "A recent worker job failed and may require operator follow-up.",
+        "evidence": [
+          {
+            "label": "job_id",
+            "value": "one"
+          },
+          {
+            "label": "error",
+            "value": "failed"
+          }
+        ],
+        "recommended_action": "Open the recent job status and worker logs before scheduling more dependent work.",
+        "confidence": "medium",
+        "dedupe_key": "worker_health:failed_job:one",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  },
+  {
+    "name": "quality_omitted",
+    "snapshot": {
+      "repo": {
+        "path": "/synthetic/repo"
+      },
+      "services": {
+        "postgres": {
+          "status": "healthy"
+        },
+        "redis": {
+          "status": "healthy"
+        },
+        "neo4j": {
+          "status": "healthy"
+        }
+      },
+      "counts": {
+        "files": 12,
+        "chunks": 40,
+        "rules": 2,
+        "decisions": 1
+      },
+      "embeddings": {
+        "missing_embeddings": 0,
+        "stale_embeddings": 0,
+        "incompatible_embeddings": 0,
+        "pgvector_coverage_pct": 100.0
+      },
+      "recent_indexing_runs": [
+        {
+          "id": 5,
+          "status": "completed"
+        }
+      ],
+      "repositories": [
+        {
+          "name": "example",
+          "path": "/synthetic/repo",
+          "freshness": {
+            "status": "current"
+          }
+        }
+      ],
+      "project": {
+        "build_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "environment": "development",
+    "minimum_recall": 0.7,
+    "expected": [
+      {
+        "insight_type": "operational_readiness",
+        "severity": "ready",
+        "title": "Project Brain is ready for operator review",
+        "summary": "Core services, embeddings, source inventory, and recent job signals do not show an active issue.",
+        "evidence": [
+          {
+            "label": "services",
+            "value": "healthy"
+          },
+          {
+            "label": "files",
+            "value": "12"
+          },
+          {
+            "label": "pgvector_coverage_pct",
+            "value": "100.0"
+          }
+        ],
+        "recommended_action": "Review recent context packs and automation before a deploy or handoff.",
+        "confidence": "medium",
+        "dedupe_key": "operational_readiness:ready_review",
+        "source": "deterministic",
+        "source_model": null,
+        "engine_version": "p0.1",
+        "id": null,
+        "status": "new"
+      }
+    ]
+  }
+]
