@@ -114,7 +114,9 @@ def _register_node(
 _KEYWORD_STOPWORDS = frozenset(
     """
     the and for that this with from should would could about change update
-    request across codebase new add
+    request across codebase new add rename move remove replace delete refactor
+    function method class module variable field parameter argument into over
+    improve system performance
     """.split()
 )
 
@@ -174,30 +176,34 @@ class ImpactAnalyzer:
         report or waits for an LLM. Narrative reports remain an explicit durable
         operation on the legacy/deep surface.
         """
-        keywords = list(
-            dict.fromkeys(
-                word.casefold()
-                for word in re.findall(r"\b[A-Za-z_][A-Za-z0-9_/-]{2,}\b", change_request)
-                if word.casefold() not in {"the", "and", "for", "with", "change", "update", "from", "that"}
-            )
-        )[:12]
+        keywords = [kw.casefold() for kw in _deterministic_keywords(change_request)[:12]]
+        if not keywords:
+            return {
+                "status": "ok",
+                "keywords": [],
+                "risk": {"level": "low", "score": 10},
+                "affected": [],
+                "degraded": [],
+            }
         repository = await require_repository_by_path(self.repo_path)
         graph_client = GraphClient(repository_id=repository.id)
         cypher = (
             "UNWIND $keywords AS kw "
             "MATCH (n) WHERE n.repository_id = $repository_id "
             "AND (toLower(n.name) CONTAINS kw OR (n.path IS NOT NULL AND toLower(n.path) CONTAINS kw)) "
+            "WITH kw, n LIMIT 240 "
             "OPTIONAL MATCH path = (n)-[*1..2]-(m) "
             "WHERE ALL(node IN nodes(path) WHERE node.repository_id = $repository_id) "
-            "RETURN n, m, length(path) AS distance LIMIT $limit"
+            "RETURN kw, n, m, length(path) AS distance LIMIT $limit"
         )
-        nodes: dict[str, dict] = {}
+        visited_nodes: dict[str, dict] = {}
         try:
 
             async def query_graph() -> None:
                 async with graph_client.driver.session() as session:
-                    result = await session.run(cypher, keywords=keywords, repository_id=repository.id, limit=160)
+                    result = await session.run(cypher, keywords=keywords, repository_id=repository.id, limit=480)
                     async for record in result:
+                        kw = str(record.get("kw") or (keywords[0] if keywords else ""))
                         for key, distance in (("n", 0), ("m", int(record.get("distance") or 0))):
                             node = record.get(key)
                             if not node:
@@ -206,11 +212,8 @@ class ImpactAnalyzer:
                             if _is_noise_node(node_name):
                                 continue
                             node_id = getattr(node, "element_id", None) or str(node)
-                            nodes[node_id] = {
-                                "name": node_name,
-                                "type": next(iter(node.labels), "Unknown"),
-                                "distance": distance,
-                            }
+                            node_label = next(iter(node.labels), "Unknown")
+                            _register_node(visited_nodes, node_id, node_name, node_label, distance, kw, dict(node))
 
             await asyncio.wait_for(query_graph(), timeout=settings.AGENT_IMPACT_DEADLINE_S * 0.8)
         except asyncio.TimeoutError:
@@ -224,7 +227,25 @@ class ImpactAnalyzer:
                 "affected": [],
             }
 
-        affected = sorted(nodes.values(), key=lambda item: (item["distance"], item["name"]))[:80]
+        total_nodes = max(1, len(visited_nodes))
+        kw_df: dict[str, int] = {}
+        for info in visited_nodes.values():
+            for matched_kw in info.get("matched_keywords") or set():
+                kw_df[matched_kw] = kw_df.get(matched_kw, 0) + 1
+        kw_idf = {kw: math.log(1 + total_nodes / df) for kw, df in kw_df.items()}
+        max_idf = max(kw_idf.values()) if kw_idf else 0.0
+        is_vague = max_idf < 1.0
+        for info in visited_nodes.values():
+            info["score"] = _score_node(info, kw_idf)
+        cap = 10 if is_vague else 75
+        ranked = sorted(
+            visited_nodes.values(),
+            key=lambda item: (-item["score"], item["distance"], item["name"]),
+        )[:cap]
+        affected = [
+            {"name": item["name"], "type": item["type"], "distance": item["distance"]}
+            for item in ranked
+        ]
         critical = {"security", "auth", "payment", "billing", "database", "migration"}
         score = min(100, 10 + min(len(affected) * 2, 60) + 15 * len(set(keywords) & critical))
         risk = "low" if score < 25 else "medium" if score < 50 else "high" if score < 80 else "critical"

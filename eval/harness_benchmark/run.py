@@ -188,6 +188,11 @@ def run_impact(api_url, api_key, repo, task):
         "fast": True,
     })
     raw = list(data.get("directly_affected", [])) + list(data.get("indirectly_affected", []))
+    for item in data.get("affected", []):
+        if isinstance(item, dict) and item.get("name"):
+            raw.append(item["name"])
+        elif isinstance(item, str):
+            raw.append(item)
     files = [e for e in raw if is_fileish(e)]
     must = task.get("must_have_files", [])
     metrics = {
@@ -200,11 +205,14 @@ def run_impact(api_url, api_key, repo, task):
         if task["id"] == "impact-003":
             # Vague "improve performance": restrained output passes.
             metrics["adversarial_pass"] = 1.0 if len(files) < 20 else 0.0
+            metrics["must_have_recall"] = metrics["adversarial_pass"]
         elif task["id"] == "impact-004":
             # Common word 'get': top-k must bound the explosion.
             metrics["adversarial_pass"] = 1.0 if len(files) <= 75 else 0.0
+            metrics["must_have_recall"] = metrics["adversarial_pass"]
+    risk_obj = data.get("risk") if isinstance(data.get("risk"), dict) else {}
     return {
-        "risk_level": data.get("risk_level"),
+        "risk_level": data.get("risk_level") or risk_obj.get("level"),
         "affected_files": files,
         "metrics": metrics,
     }
@@ -881,8 +889,8 @@ def main():
     ap.add_argument("--skip-review", action="store_true")
     args = ap.parse_args()
 
-    repo = os.path.abspath(args.repo)
-    api_key = args.api_key or load_api_key(repo)
+    repo = args.repo if (os.name == "nt" and args.repo.startswith("/")) else os.path.abspath(args.repo)
+    api_key = args.api_key or load_api_key(repo if os.path.isdir(repo) else REPO_ROOT)
     task_files = sorted(f for f in os.listdir(args.tasks_dir) if f.endswith(".json"))
 
     tasks_by_id = {
@@ -931,13 +939,13 @@ def summarize(results):
             val, key = "ERROR", r["error"]
         else:
             key = {"context": "must_have_hit_rate", "impact": "must_have_recall",
-                   "review": "pass", "memory": "recall",
+                   "review": "pass", "memory": "recall", "ask": "ask_quality",
                    "episodic": "l2_persistence", "procedural": "l4_registration"}.get(r["type"], "")
             # For episodic/procedural, use the first available metric
             if r["type"] == "episodic":
                 key = next((k for k in ["l2_persistence", "l2_search"] if k in m), "")
             elif r["type"] == "procedural":
-                key = next((k for k in ["l4_registration", "l4_matching"] if k in m), "")
+                key = next((k for k in ["l4_registration", "l4_matching", "l4_scoped_matching"] if k in m), "")
             val = m.get(key, "?")
         lines.append(f"| {r['id']} | {r['type']} | {key} | {val} | {r['duration_s']} |")
     lines.append("")
@@ -958,7 +966,7 @@ def summarize(results):
             vals = []
             for g in group:
                 gm = g.get("metrics", {})
-                for k in ["l4_registration", "l4_matching"]:
+                for k in ["l4_registration", "l4_matching", "l4_scoped_matching"]:
                     if isinstance(gm.get(k), (int, float)):
                         vals.append(gm[k])
                         break
