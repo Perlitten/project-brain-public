@@ -854,6 +854,8 @@ export const getMcpTools = async (): Promise<McpTool[]> => {
             ? "bad"
             : errorRate === undefined && num(t.calls_24h) === undefined
               ? "info"
+              : num(t.calls_24h) === 0
+                ? "idle"
               : errorRate !== undefined && errorRate > 0.05
                 ? "bad"
                 : errorRate !== undefined && errorRate > 0.02

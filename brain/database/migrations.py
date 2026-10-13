@@ -49,6 +49,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_repository_and_symbol_indexes(conn)
     await _ensure_audit_request_id_column(conn)
     await _ensure_request_telemetry_table(conn)
+    await _ensure_mcp_tool_calls_table(conn)
     await _ensure_skill_outcomes_table(conn)
     await _ensure_telemetry_state_table(conn)
     await _ensure_memory_learnings_table(conn)
@@ -698,6 +699,21 @@ async def _ensure_request_telemetry_table(conn: AsyncConnection) -> None:
     await conn.execute(text("ALTER TABLE brain_request_telemetry ADD COLUMN IF NOT EXISTS surface VARCHAR(16) NOT NULL DEFAULT 'http'"))
     await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brain_request_telemetry_repo_time ON brain_request_telemetry (repository_id, created_at)"))
 
+
+
+async def _ensure_mcp_tool_calls_table(conn: AsyncConnection) -> None:
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS mcp_tool_calls (
+            id BIGSERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            tool VARCHAR(64) NOT NULL,
+            surface VARCHAR(16) NOT NULL,
+            outcome VARCHAR(16) NOT NULL,
+            latency_ms DOUBLE PRECISION NOT NULL
+        )
+    """))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_mcp_tool_calls_created_at ON mcp_tool_calls (created_at)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_mcp_tool_calls_tool ON mcp_tool_calls (tool)"))
 
 async def _ensure_skill_outcomes_table(conn: AsyncConnection) -> None:
     await conn.execute(text("""

@@ -16,7 +16,7 @@ from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.types import InputRequiredResult
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
-from apps.mcp_server.client_activity import record_client_activity
+from apps.mcp_server.client_activity import record_client_activity, tool_call_observer
 from apps.mcp_server.deferred_payload import (
     DeferredPayloadStore,
     compact_payload,
@@ -235,6 +235,7 @@ async def _record_client_initialize(ctx: ServerRequestContext, call_next: CallNe
     return result
 
 mcp.middleware.append(_record_client_initialize)
+mcp.middleware.append(tool_call_observer("stdio"))
 
 
 @mcp.tool(**tool_meta("ask_project"))
