@@ -17,6 +17,14 @@ from brain.context.context_pack_builder import StableMemoryCache
 from brain.database.models import File, FileChunk, Repository, Symbol
 from brain.database.session import async_session_factory
 from brain.graph.graph_client import GraphClient
+from brain.retrieval.fusion import (
+    FusionPolicy, fuse_candidates, prepare_channels, rank_channel_paths,
+    _v2_fused_scores as score_v2_channels,
+    _normalize_channel as _normalize_channel,
+    _content_match_bonus as _content_match_bonus,
+    _rank_paths_from_channel as _rank_paths_from_channel,
+    _is_strong_channel as _is_strong_channel,
+)
 from brain.retrieval.graph_extractors import retrieval_tab_core_boost
 from brain.late_interaction.application import (
     apply_late_interaction,
@@ -35,22 +43,17 @@ from brain.retrieval.types import (
 )
 from brain.search.code_search import vector_search_cards, vector_search_chunks
 from brain.search.filters import (
-    HISTORICAL_AUTHORITY_NOTE,
     HISTORICAL_SUMMARY_PREFIX,
-    KNOWLEDGE_STATUS_HISTORICAL,
     RRF_PIPELINE_WEIGHTS,
     enforce_precision_top_k,
     expand_protected_pairs,
-    get_contextual_retrieval_weight,
     is_extension_noise_path,
     is_extension_tab_path,
     is_root_config_path,
     is_test_path,
     knowledge_authority_weight,
-    knowledge_status_from_summary,
     paired_test_path,
     should_exclude_from_retrieval,
-    surface_fusion_weight,
     query_requests_historical_context,
     trim_ranked_files,
 )
@@ -86,15 +89,6 @@ def classify_query_route(task_type: str, keywords: List[str], task_description: 
     return QueryRoute.GENERAL
 
 
-def _normalize_channel(scores: List[Tuple[str, float]]) -> Dict[str, float]:
-    if not scores:
-        return {}
-    max_s = max(s for _, s in scores) or 1.0
-    min_s = min(s for _, s in scores)
-    span = max_s - min_s or 1.0
-    return {item_id: (score - min_s) / span for item_id, score in scores}
-
-
 def _channel_weight(route: QueryRoute, channel: str) -> float:
     if channel == "card":
         # Moderate card_vector weight (never card-first); route-neutral.
@@ -114,15 +108,6 @@ def _path_keyword_hits(path: str, keywords: List[str], task_description: str = "
     return score_path_for_keywords(path, keywords, task_description)
 
 
-def _content_match_bonus(path: str, summary: Optional[str], keywords: List[str]) -> float:
-    if not summary:
-        return 0.0
-    lower_summary = summary.lower()
-    hits = sum(1 for kw in keywords if len(kw) >= 3 and kw in lower_summary)
-    # Reduced from 0.04/0.2 to 0.002/0.008 so summary cards don't overpower RRF candidate scores.
-    return min(hits * 0.002, 0.008)
-
-
 def _channel_strength(
     paths: List[str],
     limit: int,
@@ -137,25 +122,6 @@ def _channel_strength(
         base = cand.normalized_score if cand else 0.5
         score += base / (idx + 1)
     return score
-
-
-def _rank_paths_from_channel(candidates: List[ChannelCandidate]) -> List[str]:
-    ranked = sorted(candidates, key=lambda c: (-c.normalized_score, c.rank))
-    ordered: List[str] = []
-    seen: set[str] = set()  # O(1) membership instead of scanning the list
-    for cand in ranked:
-        if cand.item_id in seen or should_exclude_from_retrieval(cand.item_id):
-            continue
-        seen.add(cand.item_id)
-        ordered.append(cand.item_id)
-    return ordered
-
-
-def _is_strong_channel(candidates: List[ChannelCandidate]) -> bool:
-    if not candidates:
-        return False
-    top = max(c.normalized_score for c in candidates)
-    return top >= 0.2 or any(c.rank <= 3 for c in candidates)
 
 
 def select_surface_balanced_pool(
@@ -576,36 +542,27 @@ _LIN_CHANNEL_WEIGHTS_ATTRS: Dict[str, str] = {
 }
 
 
+def _fusion_policy(
+    route: QueryRoute, *, v2_enabled: bool = False, v6_enabled: bool = False,
+    expected_surface: str = "",
+) -> FusionPolicy:
+    return FusionPolicy(
+        channel_weights={channel: _channel_weight(route, channel) for channel in _LIN_CHANNEL_WEIGHTS_ATTRS},
+        linear_weights={channel: float(getattr(settings, attr, 0.25))
+                        for channel, attr in _LIN_CHANNEL_WEIGHTS_ATTRS.items()},
+        vector_multiplier=float(getattr(settings, "RETRIEVAL_V2_WRRF_VEC_WEIGHT", 2.0)),
+        mode=getattr(settings, "RETRIEVAL_V2_FUSION", "wrrf"),
+        v2_enabled=v2_enabled, v6_enabled=v6_enabled, expected_surface=expected_surface,
+    )
+
+
 def _v2_fused_scores(
     file_ranks: Dict[str, Dict[str, int]],
     candidates_by_channel: Dict[str, List[ChannelCandidate]],
     route: QueryRoute,
 ) -> Dict[str, float]:
-    """Dense-primary fusion. Channels only contribute when they fired for that
-    path — empty channels neither dilute nor boost."""
-    mode = getattr(settings, "RETRIEVAL_V2_FUSION", "wrrf")
-    out: Dict[str, float] = {}
-    norm_by_channel: Dict[str, Dict[str, float]] = {}
-    if mode == "linear":
-        for ch, cands in candidates_by_channel.items():
-            norm_by_channel[ch] = {c.item_id: c.normalized_score for c in cands}
-    k_rrf = 60.0
-    for path, ranks in file_ranks.items():
-        score = 0.0
-        for channel, rank in ranks.items():
-            if mode == "linear":
-                w = float(getattr(settings, _LIN_CHANNEL_WEIGHTS_ATTRS.get(channel, ""), 0.25))
-                score += w * norm_by_channel.get(channel, {}).get(path, 0.0)
-            elif mode == "wrrf":
-                w = _channel_weight(route, channel)
-                if channel == "vector":
-                    w *= float(getattr(settings, "RETRIEVAL_V2_WRRF_VEC_WEIGHT", 2.0))
-                score += w / (k_rrf + rank)
-            else:  # rrf — legacy formula
-                w = _channel_weight(route, channel)
-                score += w / (k_rrf + rank)
-        out[path] = score
-    return out
+    """Compatibility entry point; policy reads remain in the orchestrator."""
+    return score_v2_channels(file_ranks, candidates_by_channel, _fusion_policy(route))
 
 
 def _should_abstain(
@@ -946,29 +903,8 @@ class HybridRetrievalPipeline:
 
         # Normalize per channel
         t_fusion = time.perf_counter()
-        for channel, cands in candidates_by_channel.items():
-            norm = _normalize_channel([(c.item_id, c.raw_score) for c in cands])
-            for c in cands:
-                c.normalized_score = norm.get(c.item_id, 0.0)
-
-        # RRF fusion with route-aware channel weights
-        k_rrf = 60.0
-        fused_scores: Dict[str, ChannelCandidate] = {}
-        file_ranks: Dict[str, Dict[str, int]] = {}
-        fusion_channels: tuple[str, ...] = ("lexical", "symbol", "hints", "vector", "graph")
-        if route == QueryRoute.DECISION_RULE:
-            fusion_channels = fusion_channels + ("memory",)
-        if card_recall and candidates_by_channel["card"]:
-            fusion_channels = fusion_channels + ("card",)
-        if candidates_by_channel.get("bm25"):
-            fusion_channels = fusion_channels + ("bm25",)
-        for channel, cands in candidates_by_channel.items():
-            if channel not in fusion_channels:
-                continue
-            if channel in {"graph", "memory"} and not _is_strong_channel(cands):
-                continue
-            for c in cands:
-                file_ranks.setdefault(c.item_id, {})[channel] = c.rank
+        prepared_fusion = prepare_channels(candidates_by_channel, route, card_recall=card_recall)
+        file_ranks = prepared_fusion.file_ranks
 
         path_to_file: Dict[str, File] = {f.path: f for f in lexical_files + hint_files}
         for f in chunk_files.values():
@@ -994,60 +930,15 @@ class HybridRetrievalPipeline:
         # v2 (a): dense-primary fusion — pure channel combination; the v5
         # post-RRF heuristics (contextual weight, content match, path-keyword
         # bonus, surface weight) are skipped so channels only boost what fired.
-        v2_scores = (
-            _v2_fused_scores(file_ranks, candidates_by_channel, route)
-            if v2_enabled
-            else {}
+        fused_ranking = fuse_candidates(
+            prepared_fusion, candidates_by_channel, path_to_file,
+            policy=_fusion_policy(route, v2_enabled=v2_enabled, v6_enabled=v6_enabled,
+                                  expected_surface=expected_surface),
+            task_type=task_type, task_description=task_description, keywords_lower=keywords_lower,
         )
-        for path, ranks in file_ranks.items():
-            if should_exclude_from_retrieval(path):
-                continue
-            file_rec = path_to_file.get(path)
-            summary = file_rec.summary if file_rec else None
-            if v2_enabled:
-                score = v2_scores.get(path, 0.0)
-            else:
-                score = 0.0
-                for channel, rank in ranks.items():
-                    w = _channel_weight(route, channel)
-                    contrib = w / (k_rrf + rank)
-                    score += contrib
-                score *= get_contextual_retrieval_weight(
-                    path,
-                    file_rec.file_type if file_rec else None,
-                    task_type,
-                    task_description,
-                )
-                score += _content_match_bonus(path, summary, keywords_lower)
-                score += _path_keyword_hits(path, keywords_lower, task_description) * 0.005
-                if v6_enabled and expected_surface:
-                    score *= surface_fusion_weight(classify_surface(path), expected_surface)
-            fused = ChannelCandidate(
-                channel="fused",
-                item_id=path,
-                raw_score=score,
-                normalized_score=score,
-                fusion_contribution=score,
-                metadata={
-                    "ranks": ranks,
-                    "knowledge_status": knowledge_status_from_summary(summary),
-                },
-            )
-            if fused.metadata["knowledge_status"] == KNOWLEDGE_STATUS_HISTORICAL:
-                fused.metadata["authority_note"] = HISTORICAL_AUTHORITY_NOTE
-            fused_scores[path] = fused
-
-        fused_ranking = sorted(fused_scores.values(), key=lambda c: c.normalized_score, reverse=True)
         timing.fusion_ms = (time.perf_counter() - t_fusion) * 1000
 
-        channel_paths: Dict[str, List[str]] = {}
-        for channel in fusion_channels:
-            cands = candidates_by_channel.get(channel, [])
-            if not cands:
-                continue
-            if channel in {"graph", "memory"} and not _is_strong_channel(cands):
-                continue
-            channel_paths[channel] = _rank_paths_from_channel(cands)
+        channel_paths = rank_channel_paths(prepared_fusion, candidates_by_channel)
 
         # Rerank: lexical + hint boosts for precision at top-k
         t_rerank = time.perf_counter()

@@ -41,7 +41,7 @@ Start with the files for the task rather than relying on a stale repository size
 | API response shape / DTOs | `apps/api/schemas.py`, `brain/database/models.py` |
 | Code search, ranking | `brain/search/code_search.py`, `lexical_ranking.py`, `similarity.py` |
 | Context pack assembly, budgets | `brain/context/context_pack_builder.py`, `budget.py`, `brain/search/code_search.py` |
-| Retrieval pipeline, rerank | `brain/retrieval/pipeline.py`, `service.py`, `reranker.py` |
+| Retrieval pipeline, rerank | `brain/retrieval/pipeline.py` (I/O orchestration), `fusion.py` (in-memory scoring), `service.py`, `reranker.py` |
 | Repository indexing | `brain/indexers/repo_indexer.py`, `file_indexer.py`, `symbol_extractors.py` |
 | Embeddings, pgvector | `brain/embeddings/store.py`, `pgvector_sql.py`, `integrity.py` |
 | ColBERT / late interaction | `brain/late_interaction/provider.py`, `store.py`, `client.py` |
