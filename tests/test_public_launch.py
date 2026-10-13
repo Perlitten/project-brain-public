@@ -39,8 +39,10 @@ def _compose(tmp_path, **values):
         "COMPOSE_FILE", "COMPOSE_PROJECT_NAME",
     }}
     env.update(values)
+    empty_env = tmp_path / ".env.empty"
+    empty_env.write_text("", encoding="utf-8")
     return subprocess.run(
-        ["docker", "compose", "--env-file", "/dev/null", "--project-directory", str(tmp_path),
+        ["docker", "compose", "--env-file", str(empty_env), "--project-directory", str(tmp_path),
          "-f", str(ROOT / "docker-compose.quickstart.yml"), "config", "--format", "json"],
         capture_output=True, text=True, env=env,
     )
