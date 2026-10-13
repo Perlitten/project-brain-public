@@ -64,6 +64,9 @@ def test_quickstart_propagates_credentials_and_waits_for_storage(tmp_path):
                       BRAIN_IMAGE_TAG="local-test")
     assert result.returncode == 0, result.stderr
     services = json.loads(result.stdout)["services"]
+    # Neo4j interprets NEO4J_* as configuration keys; a convenience PASSWORD
+    # variable breaks its entrypoint. Only its supported AUTH binding goes there.
+    assert "NEO4J_PASSWORD" not in services["neo4j"]["environment"]
     for name in ("api", "worker"):
         env = services[name]["environment"]
         assert env["NEO4J_USER"] == "neo4j"
