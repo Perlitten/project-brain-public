@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+No changes recorded.
+
+## [0.9.1]
+
 ### Launch remediation
 
 - Correct public repository, installation, CI, security and dashboard links.
@@ -20,8 +24,6 @@ All notable changes to this project are documented here. The format follows
   runtime robots policy and server-only credential handling.
 - Keep local credentials, npm dependencies and generated Next.js outputs out of
   the web Docker build context.
-
-## [0.9.1] - development on main, not yet published
 
 ### Security
 

@@ -28,13 +28,10 @@ adds a shared, inspectable code index and repository-scoped decisions, rules and
 lessons across sessions and tools. Connect an agent through MCP to request task
 context, then verify the returned evidence against current source.
 
-Latest published release: **[v0.9.0](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.0)**.
-The **main branch contains 0.9.1 development code**, not a published v0.9.1 release.
-The source quickstart below installs main; release assets and their checksums are
-on the v0.9.0 release page. Early, single-user software.
-Published v0.9.0 artifacts predate these launch repairs and retain older bundled
-documentation/metadata. The supported launch installation is the corrected source
-quickstart on main; do not assume the old release contains unreleased fixes.
+Source version: **0.9.1**. Check [release availability, downloads and checksums](https://github.com/Perlitten/project-brain-public/releases) before selecting an artifact; a version in source does not by itself establish publication.
+The supported launch installation is the source quickstart below. Early,
+single-user software. Historical v0.9.0 artifacts predate the launch repairs;
+do not assume they contain the current source fixes.
 
 ---
 

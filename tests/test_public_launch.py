@@ -24,15 +24,17 @@ def test_public_identity_guard_detects_old_links_but_keeps_local_names(tmp_path)
     assert not obsolete_references(tmp_path, ["README.md"])
 
 
-def test_package_and_docs_distinguish_main_from_published_release():
+def test_package_docs_separate_source_version_from_release_availability():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     assert project["version"] == __version__
     readme = (ROOT / "README.md").read_text()
-    assert f"main branch contains {__version__} development code" in readme
-    assert "Latest published release:" in readme
-    assert "releases/tag/v0.9.0" in readme
+    assert f"Source version: **{__version__}**" in readme
+    assert "release availability, downloads and checksums" in readme
+    assert "a version in source does not by itself establish publication" in readme
+    assert "https://github.com/Perlitten/project-brain-public/releases)" in readme
     changelog = (ROOT / "CHANGELOG.md").read_text()
-    assert "not yet published" in changelog
+    assert f"## [{__version__}]" in changelog
+    assert "not yet published" not in changelog
     assert "compare/v0.9.1" not in changelog
     assert "...v0.9.1" not in changelog
 
