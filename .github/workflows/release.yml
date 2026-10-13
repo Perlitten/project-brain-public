@@ -94,7 +94,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.RELEASE_TAG }}
-      - uses: actions/download-artifact@v4
+      # Publish from the immutable tag directly. Cross-job artifact transport
+      # can fail even when builds pass; do not make it a distribution source.
+      - name: Build distributions for publication
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          twine check dist/*
+          mkdir -p sbom
+      - name: Generate publication SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          output-file: sbom/sbom.spdx.json
       - name: Verify distributions and checksum every release asset
         run: |
           python scripts/check_release_archives.py dist/*.whl dist/*.tar.gz
