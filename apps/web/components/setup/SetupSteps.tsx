@@ -298,6 +298,7 @@ function Providers({ step, view }: { step: StepView; view: SetupView }) {
 
   return (
     <div className="form form--wide">
+      <p className="field__hint">Cloud embedding providers receive source chunks. Cloud LLM providers receive prompts that can include code and project memory. For local inference, configure both providers and endpoint overrides to local models; also review your agent and external integrations.</p>
       <div className="prov-status">
         {(["llm", "embedding"] as Slot[]).map((s) => {
           const p = probe(s);

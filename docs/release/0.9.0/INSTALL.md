@@ -1,4 +1,8 @@
-# Install — Brain 0.9.x (single-user)
+# Install — published Brain v0.9.0 (single-user)
+
+These are the v0.9.0 release instructions. Main contains 0.9.1 development code;
+use the root README for main's source workflow. Public v0.9.0 artifacts and
+checksums are on the [release page](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.0).
 
 One instance per user, on a machine you control, with your own repositories and
 your own provider credentials. Verified commands below were run end-to-end on a
@@ -46,7 +50,7 @@ Optional, only for the web UI (`apps/web`): Node.js 22 (the version CI uses).
 ## Install
 
 ```bash
-git clone https://github.com/Perlitten/project-brain.git project-brain && cd project-brain
+git clone --branch v0.9.0 https://github.com/Perlitten/project-brain-public.git project-brain && cd project-brain
 
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"          # ~45s

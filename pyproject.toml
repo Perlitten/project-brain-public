@@ -43,10 +43,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Perlitten/project-brain"
-Issues = "https://github.com/Perlitten/project-brain/issues"
-Changelog = "https://github.com/Perlitten/project-brain/blob/main/CHANGELOG.md"
-Security = "https://github.com/Perlitten/project-brain/blob/main/SECURITY.md"
+Homepage = "https://github.com/Perlitten/project-brain-public"
+Issues = "https://github.com/Perlitten/project-brain-public/issues"
+Changelog = "https://github.com/Perlitten/project-brain-public/blob/main/CHANGELOG.md"
+Security = "https://github.com/Perlitten/project-brain-public/blob/main/SECURITY.md"
 
 [project.optional-dependencies]
 dev = [

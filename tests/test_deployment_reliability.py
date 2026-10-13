@@ -70,7 +70,7 @@ def test_production_release_script_refuses_missing_or_red_github_ci_before_build
     assert script.index("verify_production_ci || exit 1") < script.index("$COMPOSE build")
     assert 'DEPLOY_ENV_FILE=".deploy.env"' in script
     assert "github_token=\"$(deploy_env_value BRAIN_GITHUB_TOKEN)\"" in script
-    assert "BRAIN_GITHUB_REPOSITORY=Perlitten/project-brain" in production_example
+    assert "BRAIN_GITHUB_REPOSITORY=Perlitten/project-brain-public" in production_example.splitlines()
     assert "BRAIN_GITHUB_CI_WORKFLOW=ci.yml" in production_example
     assert "BRAIN_GITHUB_TOKEN=" not in production_example
     assert "BRAIN_GITHUB_TOKEN=" in deploy_example

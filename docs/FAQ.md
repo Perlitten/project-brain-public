@@ -5,33 +5,59 @@
 - **vs Obsidian** — Brain is not a notes app: it indexes *code* (chunks +
   dependency graph), and its memory is written by agents, for agents, through
   MCP tools. You never open a vault; your agent queries it.
-- **vs Mem0 / Letta** — they store conversational memory for a persona. Brain's
-  L1–L4 memory (learnings, skills, rules, decisions) is project-scoped and
-  evidence-graded: a rule exists because a gate admitted it, not because the
-  model remembered.
+- **vs other memory systems** — Brain combines project-scoped memory with an
+  indexed code graph and task context. Other systems also offer memory and
+  scoping; no head-to-head performance advantage has been established. Explicit
+  rules and decisions can be recorded directly; learned guidance follows the
+  [L1–L4 evidence and approval policy](MEMORY_LESSON_PROTOCOL.md).
 - **vs plain RAG** — retrieval is only one tool of thirteen. The graph,
   impact analysis, drift detection and recorded decisions answer questions a
   vector store cannot ("what breaks if I change X").
 
 ## What does it cost in tokens?
 
-Context packs are budgeted (~47k tokens for a typical 10-file pack in the
-external eval). `brain_ask` returns a bounded answer, not a file dump. Costs
-are yours: your LLM/embedding provider keys — Brain itself adds no per-call
-fee. Fully local is possible with Ollama embeddings.
+Costs depend on the selected models, indexing, retrieval, follow-up source reads
+and maintenance. Payload limits differ between tools and rollout modes; the
+compact v2 locator is opt-in and is not the default legacy search response.
+Brain adds no per-call fee, but provider and infrastructure costs remain yours.
+Net coding token, time or cost savings have **not been established**.
 
 ## Does it work offline?
 
-Yes with Ollama (`nomic-embed-text`, 768-dim) — indexing, search and memory
-work without any provider key. LLM-dependent features (summarisation,
-reranking quality) degrade to local models you configure.
+After downloading models and dependencies, configure **both** LLM and embedding
+providers as local Ollama endpoints for local model execution. For example,
+use `DEFAULT_LLM_PROVIDER=ollama`, `DEFAULT_EMBEDDING_PROVIDER=ollama`,
+`LLM_MODEL=llama3.1` and `EMBEDDING_MODEL=nomic-embed-text`. Check that endpoint
+overrides are local, disable external notifications/integrations, and use a local
+agent connection. Mock providers also run offline, but their results are only a
+smoke test. Changing embedding models requires compatibility checks/reindexing.
 
 ## Where does my data go?
 
-Nowhere. Postgres, Neo4j and Redis run in your Docker network; the API binds
-loopback unless you expose it. Keys stay in `.env`, never logged. Remote
-agents reach the MCP endpoint through scoped `pbk_` credentials or OAuth that
-you mint and can revoke.
+The code index and memory are stored in the databases you operate. This does
+**not** mean source code always stays on that machine:
+
+- External embedding providers receive text chunks selected for embedding.
+- External LLM providers receive prompts that can include retrieved source,
+  decisions, rules, lessons and task descriptions.
+- Connected agents receive tool results; their own model/service policies apply.
+- Optional notifications, webhooks and remote services can transmit their payloads.
+
+For local model execution, configure both provider roles and all endpoint
+overrides to locally hosted models. Cloud-provider configurations are not a
+local-only guarantee. Review provider retention policies before indexing private
+code. Keep server-side credentials and `.env` files private; scoped keys and OAuth
+control access but do not prevent an authorized recipient from receiving context.
+
+## Do learned lessons always require approval?
+
+No. L1 observations/lessons record reported evidence, not proof Brain executed
+the validation. Eligible L3 clusters can promote automatically by default,
+subject to evidence, severity and contradiction gates. Set
+`MEMORY_CONSOLIDATION_REQUIRE_APPROVAL=true` for approval of new promotions;
+duplicate reinforcement has separate behavior. Distilled L4 procedures default
+to pending approval. Direct rules, decisions and curated procedures are distinct
+write paths. See the [complete policy](MEMORY_LESSON_PROTOCOL.md).
 
 ## Do I need Neo4j?
 
@@ -40,6 +66,8 @@ without it; tools degrade gracefully.
 
 ## Is this production-ready?
 
-0.9.x: single-user / small-team self-host. The auth model assumes a trusted
-operator; don't expose the API publicly without nginx + the scoped-key
-discipline in DEPLOYMENT.md.
+It is early single-user, self-hosted software for a trusted operator, not a
+multi-tenant team service. Main contains 0.9.1 development code; the latest
+published release is v0.9.0. Public exposure requires TLS and the scoped-key
+discipline in DEPLOYMENT.md. Production operation and useful coding outcomes
+must be evaluated for your own workflow; passing tests do not establish them.

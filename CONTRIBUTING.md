@@ -10,7 +10,7 @@ Requirements: Docker with Compose, Python 3.12 (the version CI tests), and
 Node 22 if you work on the web UI in `apps/web`.
 
 ```bash
-git clone https://github.com/Perlitten/project-brain.git
+git clone https://github.com/Perlitten/project-brain-public.git
 cd project-brain
 cp .env.example .env              # or run scripts/bootstrap.sh (POSIX shells)
 docker compose up -d postgres redis neo4j
@@ -26,6 +26,7 @@ These are the same checks CI runs (`.github/workflows/ci.yml`):
 
 ```bash
 ruff check .
+python scripts/check_public_launch.py
 bash scripts/mypy_gate.sh
 python scripts/check_migrations.py
 pytest -q

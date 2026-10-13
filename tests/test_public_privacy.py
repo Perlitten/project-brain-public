@@ -76,6 +76,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _MAX_GRAM = 3
 
+# This exact owner/repository is publicly reachable. Recognize structured
+# references, not arbitrary occurrences of the same words or private URLs.
+_PUBLIC_REPOSITORY_REFERENCE = re.compile(
+    r"(?<![A-Za-z0-9_./-])(?:https://(?:github\.com|raw\.githubusercontent\.com)/)?"
+    r"Perlitten/project-brain-public(?![A-Za-z0-9_-])",
+    re.IGNORECASE,
+)
+
 # sha256 digests of normalized banned phrases (e.g. "foo-bar" -> "foo bar").
 # Digests only: the phrases they stand for are private by definition.
 _HASHED_DENYLIST = frozenset(
@@ -119,15 +127,6 @@ def _denylist_hashes() -> frozenset[str]:
 
 # digest -> tracked files allowed to carry it (never an owner leak there).
 _ALLOWLIST: dict[str, tuple[str, ...]] = {
-    # this repository's own name (README badges, CI, notices)
-    "089e0eaea163722756c931fc9ee8bf795f8f14ccfc00d519fbfa5ae8abfe72c5": (
-        ".github/workflows/ci.yml",
-        "THIRD_PARTY_NOTICES.md",
-        "CONTRIBUTING.md",
-        "SECURITY.md",
-        "CODE_OF_CONDUCT.md",
-        "README.md",
-    ),
     # eval fixture that legitimately demonstrates a generic home path
     "2bd86d1eb4193599fdf236c17f65e52ef6b47b8077f07e1ed35f8c7cc830badc": (
         "eval/harness_benchmark/tasks/memory_004_many_learnings.json",
@@ -151,7 +150,9 @@ def _scan_file(path: str, denylist: frozenset[str] | None = None):
         return  # binary or unreadable — nothing text-shaped to leak
     allowed = {h for h, files in _ALLOWLIST.items() if path in files}
     for lineno, line in enumerate(text.splitlines(), start=1):
-        tokens = _tokens(line)
+        # Replace only the canonical public reference. Keep every denylist
+        # digest and continue scanning the URL's remaining path/query text.
+        tokens = _tokens(_PUBLIC_REPOSITORY_REFERENCE.sub("public_repository", line))
         for n in range(1, min(_MAX_GRAM, len(tokens)) + 1):
             for i in range(len(tokens) - n + 1):
                 d = _digest_tokens(tokens[i : i + n])
@@ -181,3 +182,26 @@ def test_env_denylist_extension(tmp_path, monkeypatch):
     monkeypatch.setenv("PRIVACY_DENYLIST", "another-synthetic phrase")
     deny = _denylist_hashes()
     assert _digest_tokens(["another", "synthetic", "phrase"]) in deny
+
+
+def test_exact_public_identity_does_not_allow_private_or_unqualified_text(tmp_path, monkeypatch):
+    monkeypatch.setitem(globals(), "REPO_ROOT", tmp_path)
+    public_identity = "Perlitten/project-brain-public"
+    sample = tmp_path / "sample.md"
+    sample.write_text(f"https://github.com/{public_identity}/issues\nBRAIN_GITHUB_REPOSITORY={public_identity}\n")
+    assert not list(_scan_file("sample.md"))
+    # Previously README's file-wide exemption would admit this too. It now
+    # remains banned outside an exact, known-public owner/repository reference.
+    (tmp_path / "README.md").write_text(public_identity.split("/", 1)[1])
+    assert list(_scan_file("README.md"))
+    sample.write_text("https://example.invalid/" + public_identity)
+    assert list(_scan_file("sample.md"))
+
+
+def test_public_reference_does_not_hide_banned_url_suffix(tmp_path, monkeypatch):
+    monkeypatch.setitem(globals(), "REPO_ROOT", tmp_path)
+    public_url = "https://github.com/Perlitten/project-brain-public"
+    synthetic = "zzsynthetic banned phrase"
+    deny = frozenset({_digest_tokens(_tokens(synthetic))})
+    (tmp_path / "sample.md").write_text(public_url + "/zzsynthetic-banned-phrase")
+    assert list(_scan_file("sample.md", deny))

@@ -7,7 +7,7 @@ Status: **decided 2026-10-02 — MIT.**
 | Intended distribution | Public, non-commercial portfolio / reference project |
 | License | MIT — [`LICENSE`](../../LICENSE), copyright Andrei Damashkevich; matches `pyproject.toml` metadata |
 | Third-party notices | [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md) — bundled fonts and icons (license texts included), Python and npm dependencies, container images, models and hosted services, trademarks |
-| Repo visibility | **Public** on GitHub ([Perlitten/project-brain](https://github.com/Perlitten/project-brain)) under the MIT license; first public release tag `v0.9.0` |
+| Repo visibility | **Public** on GitHub ([Perlitten/project-brain-public](https://github.com/Perlitten/project-brain-public)) under the MIT license; first public release tag `v0.9.0` |
 
 ## Why MIT
 

@@ -26,11 +26,11 @@ export const STEP_COPY: Record<string, StepCopy> = {
   },
   agent: {
     title: "Connect your agent",
-    why: "Your coding agent (Claude Code, Cursor, Codex…) gets a key and a config, then asks Brain for context through its tools instead of reading the whole repository.",
+    why: "Your coding agent (Claude Code, Cursor, Codex…) gets a key and a config, then can ask Brain for context through its tools. It still needs to inspect source and validate changes.",
   },
   first_task: {
     title: "Try it on a real task",
-    why: "Describe a task the way you would give it to an agent. Brain answers with a context pack — the handful of files, rules and past decisions that task needs — so the agent reads those instead of the whole repository. A pack describes the code at the moment it is built, so you build a new one per task; that is the normal way to use Brain, and this step just proves it works once.",
+    why: "Describe a task the way you would give it to an agent. Brain selects files, rules and decisions for a context pack; the selection may be incomplete or noisy. Verify it against current source. Build a new pack for each task and reindex committed source changes. This step checks that a pack can be returned; it does not establish coding or cost improvements.",
   },
 };
 
