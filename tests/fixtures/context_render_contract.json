@@ -1,0 +1,450 @@
+[
+  {
+    "name": "empty",
+    "input": {
+      "repo_posix": "/synthetic/repo",
+      "task_description": "Explain indexing & freshness!",
+      "task_type": "refactor",
+      "features": [
+        "indexing"
+      ],
+      "budget": "small",
+      "critic_res": {
+        "status": "PASS",
+        "warnings": []
+      },
+      "files": [],
+      "symbols": [],
+      "rules": [],
+      "decisions": [],
+      "learnings": [],
+      "graph_md": "*No relevant graph neighbors found.*\n",
+      "risks": [],
+      "checklist": [],
+      "plan_content": "Review the source."
+    },
+    "expected": "# Context Pack: Explain indexing  freshness\n\n## Critic Evaluation Status: **PASS**\n\n## Task Details\n- **Task Type**: refactor\n- **Description**: Explain indexing & freshness!\n- **Features**: indexing\n- **Token Budget Mode**: small\n\n## Relevant Features & Files\n### Files\n*No files found matching the task keywords.*\n\n\n### Symbols\n*No symbols found matching the task keywords.*\n\n\n## Graph Neighbors (Context)\n*No relevant graph neighbors found.*\n\n\n## Active Rules & Decisions\n### Rules\n*No active rules defined.*\n\n\n### Decisions\n*No active decisions recorded.*\n\n\n### Consolidated Learnings\n*No consolidated learnings yet.*\n\n\n## Known Risks\n*No specific risks identified.*\n\n\n## Suggested Implementation Plan\nReview the source.\n\n## Verification Checklist\n- [ ] Verify that implementation changes are correct.\n\n"
+  },
+  {
+    "name": "populated",
+    "input": {
+      "repo_posix": "/synthetic/repo",
+      "task_description": "Explain indexing & freshness!",
+      "task_type": "refactor",
+      "features": [
+        "indexing",
+        "memory"
+      ],
+      "budget": "small",
+      "critic_res": {
+        "status": "PARTIAL_CONTEXT",
+        "warnings": [
+          "Missing boundary evidence.",
+          "Inspect source."
+        ]
+      },
+      "files": [
+        {
+          "record": {
+            "path": "brain/indexers/file_indexer.py",
+            "summary": "Indexes source."
+          },
+          "trace": {
+            "final_score": 0.1234,
+            "lexical_match": true,
+            "vector_similarity": 0.925,
+            "graph_relation": false,
+            "cache_match": true
+          }
+        }
+      ],
+      "symbols": [
+        {
+          "record": {
+            "name": "FileIndexer",
+            "kind": "class",
+            "summary": null
+          },
+          "trace": {
+            "final_score": 0.1234,
+            "lexical_match": true,
+            "vector_similarity": 0.925,
+            "graph_relation": false,
+            "cache_match": true
+          }
+        }
+      ],
+      "rules": [
+        {
+          "id": "R-1",
+          "severity": null,
+          "description": "Keep core independent."
+        }
+      ],
+      "decisions": [
+        {
+          "title": "Database ownership",
+          "status": "accepted",
+          "description": null
+        }
+      ],
+      "learnings": [
+        {
+          "statement": "Retain evidence provenance.",
+          "confidence": 0.875
+        }
+      ],
+      "graph_md": "- (File: `index.py`) -[IMPORTS]-> (File: `storage.py`)\n",
+      "risks": [
+        "Schema compatibility"
+      ],
+      "checklist": [
+        "Run migrations"
+      ],
+      "plan_content": "Review the source."
+    },
+    "expected": "# Context Pack: Explain indexing  freshness\n\n## Critic Evaluation Status: **PARTIAL_CONTEXT**\n### Critic Warnings\n> [!WARNING]\n> Missing boundary evidence.\n\n> [!WARNING]\n> Inspect source.\n\n\n## Task Details\n- **Task Type**: refactor\n- **Description**: Explain indexing & freshness!\n- **Features**: indexing, memory\n- **Token Budget Mode**: small\n\n## Relevant Features & Files\n### Files\n- [brain/indexers/file_indexer.py](file:////synthetic/repo/brain/indexers/file_indexer.py) - Indexes source.\n  * *Trace*: RRF Score: 0.1234 [Lexical: True, Vector: 0.93, Graph: False, Cache: True]\n\n\n### Symbols\n- `FileIndexer` (class) - No summary\n  * *Trace*: RRF Score: 0.1234 [Lexical: True, Graph: False, Cache: True]\n\n\n## Graph Neighbors (Context)\n- (File: `index.py`) -[IMPORTS]-> (File: `storage.py`)\n\n\n## Active Rules & Decisions\n### Rules\n- **R-1** (medium severity): Keep core independent.\n\n\n### Decisions\n- **Database ownership** (accepted): No description\n\n\n### Consolidated Learnings\n- Retain evidence provenance. _(confidence 0.88)_\n\n\n## Known Risks\n- Schema compatibility\n\n\n## Suggested Implementation Plan\nReview the source.\n\n## Verification Checklist\n- [ ] Run migrations\n\n"
+  },
+  {
+    "name": "title_unicode",
+    "input": {
+      "repo_posix": "/synthetic/repo",
+      "task_description": "Révise — ownership: fix #42 / indexer (unsafe?) Révise — ownership: fix #42 / indexer (unsafe?) Révise — ownership: fix #42 / indexer (unsafe?) ",
+      "task_type": "refactor",
+      "features": [
+        "indexing",
+        "memory"
+      ],
+      "budget": "small",
+      "critic_res": {
+        "status": "PARTIAL_CONTEXT",
+        "warnings": [
+          "Missing boundary evidence.",
+          "Inspect source."
+        ]
+      },
+      "files": [
+        {
+          "record": {
+            "path": "brain/indexers/file_indexer.py",
+            "summary": "Indexes source."
+          },
+          "trace": {
+            "final_score": 0.1234,
+            "lexical_match": true,
+            "vector_similarity": 0.925,
+            "graph_relation": false,
+            "cache_match": true
+          }
+        }
+      ],
+      "symbols": [
+        {
+          "record": {
+            "name": "FileIndexer",
+            "kind": "class",
+            "summary": null
+          },
+          "trace": {
+            "final_score": 0.1234,
+            "lexical_match": true,
+            "vector_similarity": 0.925,
+            "graph_relation": false,
+            "cache_match": true
+          }
+        }
+      ],
+      "rules": [
+        {
+          "id": "R-1",
+          "severity": null,
+          "description": "Keep core independent."
+        }
+      ],
+      "decisions": [
+        {
+          "title": "Database ownership",
+          "status": "accepted",
+          "description": null
+        }
+      ],
+      "learnings": [
+        {
+          "statement": "Retain evidence provenance.",
+          "confidence": 0.875
+        }
+      ],
+      "graph_md": "- (File: `index.py`) -[IMPORTS]-> (File: `storage.py`)\n",
+      "risks": [
+        "Schema compatibility"
+      ],
+      "checklist": [
+        "Run migrations"
+      ],
+      "plan_content": "Review the source."
+    },
+    "expected": "# Context Pack: Rvise  ownership fix 42  indexer unsafe R\n\n## Critic Evaluation Status: **PARTIAL_CONTEXT**\n### Critic Warnings\n> [!WARNING]\n> Missing boundary evidence.\n\n> [!WARNING]\n> Inspect source.\n\n\n## Task Details\n- **Task Type**: refactor\n- **Description**: Révise — ownership: fix #42 / indexer (unsafe?) Révise — ownership: fix #42 / indexer (unsafe?) Révise — ownership: fix #42 / indexer (unsafe?) \n- **Features**: indexing, memory\n- **Token Budget Mode**: small\n\n## Relevant Features & Files\n### Files\n- [brain/indexers/file_indexer.py](file:////synthetic/repo/brain/indexers/file_indexer.py) - Indexes source.\n  * *Trace*: RRF Score: 0.1234 [Lexical: True, Vector: 0.93, Graph: False, Cache: True]\n\n\n### Symbols\n- `FileIndexer` (class) - No summary\n  * *Trace*: RRF Score: 0.1234 [Lexical: True, Graph: False, Cache: True]\n\n\n## Graph Neighbors (Context)\n- (File: `index.py`) -[IMPORTS]-> (File: `storage.py`)\n\n\n## Active Rules & Decisions\n### Rules\n- **R-1** (medium severity): Keep core independent.\n\n\n### Decisions\n- **Database ownership** (accepted): No description\n\n\n### Consolidated Learnings\n- Retain evidence provenance. _(confidence 0.88)_\n\n\n## Known Risks\n- Schema compatibility\n\n\n## Suggested Implementation Plan\nReview the source.\n\n## Verification Checklist\n- [ ] Run migrations\n\n"
+  },
+  {
+    "name": "learning_limit",
+    "input": {
+      "repo_posix": "/synthetic/repo",
+      "task_description": "Explain indexing & freshness!",
+      "task_type": "refactor",
+      "features": [
+        "indexing",
+        "memory"
+      ],
+      "budget": "small",
+      "critic_res": {
+        "status": "PARTIAL_CONTEXT",
+        "warnings": [
+          "Missing boundary evidence.",
+          "Inspect source."
+        ]
+      },
+      "files": [
+        {
+          "record": {
+            "path": "brain/indexers/file_indexer.py",
+            "summary": "Indexes source."
+          },
+          "trace": {
+            "final_score": 0.1234,
+            "lexical_match": true,
+            "vector_similarity": 0.925,
+            "graph_relation": false,
+            "cache_match": true
+          }
+        }
+      ],
+      "symbols": [
+        {
+          "record": {
+            "name": "FileIndexer",
+            "kind": "class",
+            "summary": null
+          },
+          "trace": {
+            "final_score": 0.1234,
+            "lexical_match": true,
+            "vector_similarity": 0.925,
+            "graph_relation": false,
+            "cache_match": true
+          }
+        }
+      ],
+      "rules": [
+        {
+          "id": "R-1",
+          "severity": null,
+          "description": "Keep core independent."
+        }
+      ],
+      "decisions": [
+        {
+          "title": "Database ownership",
+          "status": "accepted",
+          "description": null
+        }
+      ],
+      "learnings": [
+        {
+          "statement": "Lesson 0",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 1",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 2",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 3",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 4",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 5",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 6",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 7",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 8",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 9",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 10",
+          "confidence": 0.5
+        },
+        {
+          "statement": "Lesson 11",
+          "confidence": 0.5
+        }
+      ],
+      "graph_md": "- (File: `index.py`) -[IMPORTS]-> (File: `storage.py`)\n",
+      "risks": [
+        "Schema compatibility"
+      ],
+      "checklist": [
+        "Run migrations"
+      ],
+      "plan_content": "Review the source."
+    },
+    "expected": "# Context Pack: Explain indexing  freshness\n\n## Critic Evaluation Status: **PARTIAL_CONTEXT**\n### Critic Warnings\n> [!WARNING]\n> Missing boundary evidence.\n\n> [!WARNING]\n> Inspect source.\n\n\n## Task Details\n- **Task Type**: refactor\n- **Description**: Explain indexing & freshness!\n- **Features**: indexing, memory\n- **Token Budget Mode**: small\n\n## Relevant Features & Files\n### Files\n- [brain/indexers/file_indexer.py](file:////synthetic/repo/brain/indexers/file_indexer.py) - Indexes source.\n  * *Trace*: RRF Score: 0.1234 [Lexical: True, Vector: 0.93, Graph: False, Cache: True]\n\n\n### Symbols\n- `FileIndexer` (class) - No summary\n  * *Trace*: RRF Score: 0.1234 [Lexical: True, Graph: False, Cache: True]\n\n\n## Graph Neighbors (Context)\n- (File: `index.py`) -[IMPORTS]-> (File: `storage.py`)\n\n\n## Active Rules & Decisions\n### Rules\n- **R-1** (medium severity): Keep core independent.\n\n\n### Decisions\n- **Database ownership** (accepted): No description\n\n\n### Consolidated Learnings\n- Lesson 0 _(confidence 0.50)_\n- Lesson 1 _(confidence 0.50)_\n- Lesson 2 _(confidence 0.50)_\n- Lesson 3 _(confidence 0.50)_\n- Lesson 4 _(confidence 0.50)_\n- Lesson 5 _(confidence 0.50)_\n- Lesson 6 _(confidence 0.50)_\n- Lesson 7 _(confidence 0.50)_\n- Lesson 8 _(confidence 0.50)_\n- Lesson 9 _(confidence 0.50)_\n\n\n## Known Risks\n- Schema compatibility\n\n\n## Suggested Implementation Plan\nReview the source.\n\n## Verification Checklist\n- [ ] Run migrations\n\n"
+  },
+  {
+    "name": "memory_fallbacks",
+    "input": {
+      "repo_posix": "/synthetic/repo",
+      "task_description": "Explain indexing & freshness!",
+      "task_type": "refactor",
+      "features": [
+        "indexing",
+        "memory"
+      ],
+      "budget": "deep",
+      "critic_res": {
+        "status": "PARTIAL_CONTEXT",
+        "warnings": [
+          "Missing boundary evidence.",
+          "Inspect source."
+        ]
+      },
+      "files": [
+        {
+          "record": {
+            "path": "brain/indexers/file_indexer.py",
+            "summary": "Indexes source."
+          },
+          "trace": {
+            "final_score": 0.1234,
+            "lexical_match": true,
+            "vector_similarity": 0.925,
+            "graph_relation": false,
+            "cache_match": true
+          }
+        }
+      ],
+      "symbols": [
+        {
+          "record": {
+            "name": "FileIndexer",
+            "kind": "class",
+            "summary": null
+          },
+          "trace": {
+            "final_score": 0.1234,
+            "lexical_match": true,
+            "vector_similarity": 0.925,
+            "graph_relation": false,
+            "cache_match": true
+          }
+        }
+      ],
+      "rules": [
+        {
+          "id": "R-2",
+          "description": null,
+          "severity": "high"
+        }
+      ],
+      "decisions": [
+        {
+          "title": "Blank",
+          "status": null,
+          "description": ""
+        }
+      ],
+      "learnings": [
+        {
+          "statement": "Retain evidence provenance.",
+          "confidence": 0.875
+        }
+      ],
+      "graph_md": "- (File: `index.py`) -[IMPORTS]-> (File: `storage.py`)\n",
+      "risks": [
+        "Schema compatibility"
+      ],
+      "checklist": [
+        "Run migrations"
+      ],
+      "plan_content": "Review the source."
+    },
+    "expected": "# Context Pack: Explain indexing  freshness\n\n## Critic Evaluation Status: **PARTIAL_CONTEXT**\n### Critic Warnings\n> [!WARNING]\n> Missing boundary evidence.\n\n> [!WARNING]\n> Inspect source.\n\n\n## Task Details\n- **Task Type**: refactor\n- **Description**: Explain indexing & freshness!\n- **Features**: indexing, memory\n- **Token Budget Mode**: deep\n\n## Relevant Features & Files\n### Files\n- [brain/indexers/file_indexer.py](file:////synthetic/repo/brain/indexers/file_indexer.py) - Indexes source.\n  * *Trace*: RRF Score: 0.1234 [Lexical: True, Vector: 0.93, Graph: False, Cache: True]\n\n\n### Symbols\n- `FileIndexer` (class) - No summary\n  * *Trace*: RRF Score: 0.1234 [Lexical: True, Graph: False, Cache: True]\n\n\n## Graph Neighbors (Context)\n- (File: `index.py`) -[IMPORTS]-> (File: `storage.py`)\n\n\n## Active Rules & Decisions\n### Rules\n- **R-2** (high severity): No description\n\n\n### Decisions\n- **Blank** (None): No description\n\n\n### Consolidated Learnings\n- Retain evidence provenance. _(confidence 0.88)_\n\n\n## Known Risks\n- Schema compatibility\n\n\n## Suggested Implementation Plan\nReview the source.\n\n## Verification Checklist\n- [ ] Run migrations\n\n"
+  },
+  {
+    "name": "file_defaults",
+    "input": {
+      "repo_posix": "/synthetic/repo",
+      "task_description": "Explain indexing & freshness!",
+      "task_type": "refactor",
+      "features": [
+        "indexing",
+        "memory"
+      ],
+      "budget": "small",
+      "critic_res": {
+        "status": "FAIL",
+        "warnings": [
+          "No constraints"
+        ]
+      },
+      "files": [
+        {
+          "record": {
+            "path": "README.md",
+            "summary": null
+          },
+          "trace": {}
+        }
+      ],
+      "symbols": [],
+      "rules": [
+        {
+          "id": "R-1",
+          "severity": null,
+          "description": "Keep core independent."
+        }
+      ],
+      "decisions": [
+        {
+          "title": "Database ownership",
+          "status": "accepted",
+          "description": null
+        }
+      ],
+      "learnings": [
+        {
+          "statement": "Retain evidence provenance.",
+          "confidence": 0.875
+        }
+      ],
+      "graph_md": "- (File: `index.py`) -[IMPORTS]-> (File: `storage.py`)\n",
+      "risks": [
+        "Schema compatibility"
+      ],
+      "checklist": [
+        "Run migrations"
+      ],
+      "plan_content": "Review the source."
+    },
+    "expected": "# Context Pack: Explain indexing  freshness\n\n## Critic Evaluation Status: **FAIL**\n### Critic Warnings\n> [!WARNING]\n> No constraints\n\n\n## Task Details\n- **Task Type**: refactor\n- **Description**: Explain indexing & freshness!\n- **Features**: indexing, memory\n- **Token Budget Mode**: small\n\n## Relevant Features & Files\n### Files\n- [README.md](file:////synthetic/repo/README.md) - No summary\n  * *Trace*: RRF Score: 0 [Lexical: False, Vector: 0.00, Graph: False, Cache: False]\n\n\n### Symbols\n*No symbols found matching the task keywords.*\n\n\n## Graph Neighbors (Context)\n- (File: `index.py`) -[IMPORTS]-> (File: `storage.py`)\n\n\n## Active Rules & Decisions\n### Rules\n- **R-1** (medium severity): Keep core independent.\n\n\n### Decisions\n- **Database ownership** (accepted): No description\n\n\n### Consolidated Learnings\n- Retain evidence provenance. _(confidence 0.88)_\n\n\n## Known Risks\n- Schema compatibility\n\n\n## Suggested Implementation Plan\nReview the source.\n\n## Verification Checklist\n- [ ] Run migrations\n\n"
+  }
+]
