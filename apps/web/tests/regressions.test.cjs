@@ -101,6 +101,9 @@ test('owner navigation has seven destinations and nested deep links activate the
   assert.equal(nav.activeSection('/admin'), 'settings');
   assert.equal(nav.locate('/memory-other'), null);
   assert.ok(nav.allNavItems.some(item => item.href === '/setup'));
+  // Help sits in the rail footer and the palette, outside the seven daily destinations.
+  assert.ok(!nav.primaryNavItems.some(item => item.href === '/help'));
+  assert.equal(nav.activeSection('/help'), 'help');
   assert.equal(nav.withProject('/quality', '3'), '/quality?repo=3');
   assert.equal(nav.withProject('/packs?view=fresh', '3'), '/packs?view=fresh&repo=3');
   assert.equal(nav.withProject('/?repo=3&period=30d', ''), '/?period=30d');
