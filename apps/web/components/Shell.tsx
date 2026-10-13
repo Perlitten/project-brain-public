@@ -132,7 +132,7 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
         <div className="rail__foot">
           {demo && process.env.NEXT_PUBLIC_DEMO_SITE === "1" && (
           <p className="rail__note">
-            <a href="https://github.com/Perlitten/project-brain#readme">
+            <a href="https://github.com/Perlitten/project-brain-public#readme">
               Live demo with example data → install your own
             </a>
           </p>

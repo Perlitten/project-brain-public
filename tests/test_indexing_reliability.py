@@ -158,6 +158,37 @@ async def indexing_db(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_git_reindex_after_frontend_outputs_and_committed_source_change(indexing_db, tmp_path):
+    sessions, _, _ = indexing_db
+    def git(*args):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True)
+
+    git("init")
+    web = tmp_path / "apps" / "web"
+    web.mkdir(parents=True)
+    source = web / "source.ts"
+    source.write_text("export const launchMarker = 'before';\n")
+    (web / ".gitignore").write_text("AGENTS.md\nnext-env.d.ts\n*.tsbuildinfo\n.next/\n")
+    git("add", ".")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "initial")
+    await FileIndexer().index_repository(tmp_path)
+    for name in ("AGENTS.md", "next-env.d.ts", "tsconfig.tsbuildinfo"):
+        (web / name).write_text("generated\n")
+    await FileIndexer().index_repository(tmp_path)
+    source.write_text("export const launchMarker = 'after';\n")
+    git("add", "apps/web/source.ts")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "changed")
+    await FileIndexer().index_repository(tmp_path)
+    async with sessions() as session:
+        file = (await session.execute(select(File).where(File.path == "apps/web/source.ts"))).scalar_one()
+        chunks = (await session.execute(select(FileChunk).where(FileChunk.file_id == file.id))).scalars().all()
+        assert any("'after'" in c.content for c in chunks)
+        assert not any("'before'" in c.content for c in chunks)
+        paths = (await session.execute(select(File.path).where(File.repository_id == file.repository_id))).scalars().all()
+        assert not any(p.endswith(("AGENTS.md", "next-env.d.ts", ".tsbuildinfo")) for p in paths)
+
+
+@pytest.mark.asyncio
 async def test_unchanged_file_with_legacy_oversized_chunk_is_rebuilt(indexing_db, tmp_path):
     sessions, _, _ = indexing_db
     content = "x" * (MAX_CHUNK_CHARS + 17)

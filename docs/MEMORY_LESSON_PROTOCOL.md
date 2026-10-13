@@ -58,8 +58,10 @@ Gates run in order and the first failure decides:
   either both or neither). An unresolved one goes to approval. A failed check
   fails open.
 - **G4 approval**. MEMORY_CONSOLIDATION_REQUIRE_APPROVAL=false (default) lets
-  low-severity validated clusters promote automatically; set it to true to keep
-  every episode pending for POST /episodes/{id}/approve. Regardless of the
+  eligible low-severity clusters promote automatically once their validated or
+  unvalidated evidence threshold is met; set it to true to require approval for
+  new promotions through POST /episodes/{id}/approve. Duplicate reinforcement
+  follows G1 instead of creating a new promotion. Regardless of the
   flag these stay pending: high severity; medium severity backed only by
   unvalidated evidence; a supersede backed only by unvalidated evidence; an
   unresolved contradiction. Approving a pending correction applies its

@@ -21,6 +21,8 @@ jobs:
           python-version: '3.12'
       - name: Verify public commit identity and messages
         run: python scripts/check_public_privacy.py --allow-github-identities
+      - name: Verify public launch links
+        run: python scripts/check_public_launch.py
 
   web:
     runs-on: ubuntu-latest
@@ -38,6 +40,7 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+      - run: npm run test:production
 
   test:
     runs-on: ubuntu-latest

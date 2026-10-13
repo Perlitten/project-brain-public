@@ -62,6 +62,7 @@ npm ci && npm run dev     # http://localhost:3100
 npm test                  # unit and regression tests (node:test)
 npm run typecheck         # tsc --noEmit
 npm run build             # production build
+npm run test:production   # runtime demo/live binding regression (after build)
 ```
 
 ## Deploy (Vercel)

@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.vercel/
+.git/
+.env
+.env.*
+.deploy.env
+.npmrc
+*.tsbuildinfo
+AGENTS.md

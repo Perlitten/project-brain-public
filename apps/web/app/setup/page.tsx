@@ -19,8 +19,8 @@ export default async function Setup() {
         status={steps.length === 0 ? { tone: "idle", text: "Setup status unavailable" } : next ? { tone: "info", text: <>{done} of {steps.length} steps done<small>Next: {stepTitle(next.id, next.title)}</small></> } : { tone: "ok", text: "Brain is fully set up" }}
         lede={
           <>
-            Brain reads your repository once and then answers your coding <Term k="agent">agents</Term>’ questions about it, so they don’t have to read the
-            whole codebase every time. These six steps get it there. Open a step to finish it; changes go straight to the Brain server.
+            Brain indexes committed repository source and offers context to your coding <Term k="agent">agents</Term>.
+            Reindex when source changes, and verify retrieved evidence in the code. These six steps configure it; changes go straight to the Brain server.
           </>
         }
       />

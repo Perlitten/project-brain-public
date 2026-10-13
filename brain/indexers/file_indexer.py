@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -443,22 +444,56 @@ def compute_run_status(*, processed: int, unchanged: int, failed: int,
 
 
 def _scan_repo_files(path_obj: Path) -> List[Path]:
-    """Walk the repo (blocking os.walk/listdir) and return the includable files.
-    Runs in a worker thread so the scan doesn't stall the event loop."""
+    """Select tracked Git source, or walk a non-Git snapshot without symlinks.
+
+    The index's revision contract requires committed source. Git's index is the
+    authoritative checkout file list: ignored/untracked build outputs must not
+    enter it, while tracked files remain eligible even under a gitignore rule.
+    Runs in a worker thread so blocking Git/filesystem work doesn't stall asyncio.
+    """
+    path_obj = path_obj.resolve()
+    command = ["git", "-c", f"safe.directory={path_obj}", "-C", str(path_obj)]
+    try:
+        probe = subprocess.run([*command, "rev-parse", "--is-inside-work-tree"], capture_output=True)
+    except FileNotFoundError:
+        if (path_obj / ".git").exists():
+            raise RuntimeError("Git is required to enumerate checkout source") from None
+        probe = None
+
+    candidates: List[Path] = []
+    if probe is not None and probe.returncode == 0 and probe.stdout.strip() == b"true":
+        tracked = subprocess.run([*command, "ls-files", "--cached", "-z"], capture_output=True)
+        if tracked.returncode:
+            raise RuntimeError("Unable to enumerate tracked Git source")
+        for raw_path in tracked.stdout.split(b"\0"):
+            if not raw_path:
+                continue
+            relative = Path(os.fsdecode(raw_path))
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError("Git source path escapes the repository")
+            candidates.append(path_obj / relative)
+    else:
+        if (path_obj / ".git").exists():
+            raise RuntimeError("Unable to inspect Git checkout metadata")
+        for root, dirs, files in os.walk(str(path_obj), followlinks=False):
+            dirs[:] = [d for d in dirs if not should_ignore_dir(d) and not (Path(root) / d).is_symlink()]
+            candidates.extend(Path(root) / name for name in files)
+
     scanned: List[Path] = []
-    for root, dirs, files in os.walk(str(path_obj)):
-        for d in list(dirs):
-            if should_ignore_dir(d):
-                dirs.remove(d)
-        for f in files:
-            if should_ignore_file(f):
-                continue
-            full_path = Path(root) / f
-            rel_path = full_path.relative_to(path_obj).as_posix()
-            if should_exclude_from_indexing(rel_path):
-                continue
-            scanned.append(full_path)
-    return scanned
+    for full_path in candidates:
+        relative = full_path.relative_to(path_obj)
+        if any(should_ignore_dir(part) for part in relative.parts[:-1]):
+            continue
+        if should_ignore_file(full_path.name) or should_exclude_from_indexing(relative.as_posix()):
+            continue
+        # Never index a symlink's target, a submodule directory, or a deleted
+        # tracked file. Resolving parent components also blocks directory escapes.
+        if full_path.is_symlink() or not full_path.is_file():
+            continue
+        if not full_path.resolve().is_relative_to(path_obj):
+            continue
+        scanned.append(full_path)
+    return sorted(set(scanned))
 
 
 def _source_content_snapshot(path_obj: Path, files: List[Path]) -> dict:

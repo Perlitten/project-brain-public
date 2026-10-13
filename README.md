@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Perlitten/project-brain/actions/workflows/ci.yml"><img src="https://github.com/Perlitten/project-brain/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Perlitten/project-brain-public/actions/workflows/ci.yml"><img src="https://github.com/Perlitten/project-brain-public/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
   <img src="https://img.shields.io/badge/python-3.12-blue.svg" alt="Python 3.12">
   <img src="https://img.shields.io/badge/MCP-stdio%20%7C%20Streamable%20HTTP-6f42c1.svg" alt="MCP: stdio and Streamable HTTP">
@@ -18,18 +18,23 @@
 
 <p align="center">
   <a href="#3-quickstart-local-single-user">Quickstart</a> ·
-  <a href="#9-mcp-server">Connect your agent</a> ·
+  <a href="#6-mcp-server">Connect your agent</a> ·
   <a href="#why-not-just-an-obsidian-vault">Why not Obsidian</a> ·
   <a href="#evidence-and-limitations">Limitations</a>
 </p>
 
-Claude Code, Codex and other agents start every session from zero. They re-read
-the same files, forget the decision you made last week and break the web app
-while fixing the API. Project Brain sits next to your repositories, indexes the
-code, keeps the decisions, rules and lessons your agents record, and hands every
-new task a compact, evidence-backed context pack over MCP.
+Coding agents have their own context and instruction mechanisms. Project Brain
+adds a shared, inspectable code index and repository-scoped decisions, rules and
+lessons across sessions and tools. Connect an agent through MCP to request task
+context, then verify the returned evidence against current source.
 
-Current release: **0.9.1**. Early, but used daily by its author.
+Latest published release: **[v0.9.0](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.0)**.
+The **main branch contains 0.9.1 development code**, not a published v0.9.1 release.
+The source quickstart below installs main; release assets and their checksums are
+on the v0.9.0 release page. Early, single-user software.
+Published v0.9.0 artifacts predate these launch repairs and retain older bundled
+documentation/metadata. The supported launch installation is the corrected source
+quickstart on main; do not assume the old release contains unreleased fixes.
 
 ---
 
@@ -40,8 +45,8 @@ Current release: **0.9.1**. Early, but used daily by its author.
 | **What it is** | A memory and navigation layer for coding agents: code index (pgvector), dependency graph (Neo4j), scoped decisions and rules, a reviewed L1–L4 lesson memory, impact analysis and diff review. |
 | **Who it is for** | One developer running AI agents across one or many repositories. One user, one instance. Not a team SaaS. |
 | **Where it runs** | Locally (Docker + a Python venv, one bootstrap script) or on your own VPS (one compose file, TLS, OAuth for remote MCP clients). |
-| **How agents use it** | 13 MCP tools over stdio or Streamable HTTP, plus resources, prompts, elicitation and sampling. Also a REST API, a CLI and a web dashboard. |
-| **Your data** | Stays on your machine or your server. Models come from any OpenAI-compatible provider, or run fully local with Ollama. |
+| **How agents use it** | 13 local stdio MCP tools; the HTTP-backed server exposes 14. Also resources, prompts, a REST API, a CLI and a web dashboard. |
+| **Your data** | Index and memory storage are self-hosted. Cloud model providers receive selected source text and prompts; use local models for local inference. See [data flows](docs/FAQ.md#where-does-my-data-go). |
 
 ## Why not just an Obsidian vault?
 
@@ -53,11 +58,11 @@ code they describe.
 | | Obsidian vault as agent memory | Project Brain |
 |---|---|---|
 | Who writes memory | You, by hand | Agents record decisions, rules and lessons through MCP; lessons need evidence and review before they become trusted |
-| Who reads it | You, or an agent you paste notes into | Every agent task gets a context pack automatically |
+| Who reads it | You, or an agent you paste notes into | Connected agents can request scoped context packs through MCP |
 | Knows the code | No | Indexes files, symbols and the dependency graph; answers "what breaks if I change this?" |
 | Stale knowledge | Stays until you delete it | Superseded decisions are replaced; historical docs are demoted in retrieval |
 | Several projects | One vault, mixed notes | Rules and decisions are scoped per repository, so one project's rules never leak into another |
-| Token cost | Whole notes in the prompt | Retrieval under a byte budget; oversized results are deferred, not dumped |
+| Context size | Depends on what you include | Context packs select evidence; limits depend on the tool and rollout mode. Net token or cost savings are not established. |
 
 Already have a vault? `brain import obsidian --vault /path/to/vault` turns it into
 rules and decisions.
@@ -85,9 +90,9 @@ flowchart LR
     API -.->|index / reindex| REPO[Your repositories]
 ```
 
-The agent never reads the repo itself: it asks Brain tools, which answer from
-indexed chunks, the code graph and recorded memory — in a bounded token
-budget.
+Brain tools answer from indexed chunks, the code graph and recorded memory.
+Agents still need to inspect current source and run appropriate checks; retrieved
+context is guidance, not a replacement for source verification.
 
 ## 3. Quickstart (local, single user)
 
@@ -101,7 +106,7 @@ before indexing; see [Real models](#real-models).
 One command:
 
 ```bash
-git clone https://github.com/Perlitten/project-brain.git project-brain
+git clone https://github.com/Perlitten/project-brain-public.git project-brain
 cd project-brain
 ./scripts/bootstrap.sh
 ```
@@ -147,18 +152,18 @@ the manual steps below. Native Windows is not tested in CI.
 * Optional: Node.js 22 for the web UI (the version CI tests);
   `postgresql-client` (pg15) only for `scripts/backup_runner.py` backups
 
-### Alternative: pre-built images (after the first tagged release)
+### Pre-built images: not a supported public installation yet
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/Perlitten/project-brain/main/docker-compose.quickstart.yml -o docker-compose.yml
-docker compose up -d   # postgres+pgvector, neo4j, redis, api, worker, web from GHCR
-```
+Anonymous GHCR access and a complete public image install have not been verified.
+Use the source quickstart above. `docker-compose.quickstart.yml` is an experimental
+configuration requiring an explicitly selected image tag and operator-supplied
+credentials; it is not an advertised working public download-and-run path.
 
 ### Steps
 
 ```bash
 # 1. Get the code and install the package (registers the `brain` command)
-git clone https://github.com/Perlitten/project-brain.git project-brain
+git clone https://github.com/Perlitten/project-brain-public.git project-brain
 cd project-brain
 python3 -m venv .venv
 source .venv/bin/activate            # Windows PowerShell: .\.venv\Scripts\Activate.ps1
@@ -187,6 +192,11 @@ python -m brain.workers.worker
 jobs, web UI, `brain embeddings`, `brain doctor`). `REPO_ROOT` is only the
 fallback for the CLI's `--repo` option (`brain index`, `audit`, `context`,
 `eval`, `review-diff`; default `.`), so pass `--repo` explicitly as above.
+
+Indexing a Git checkout uses tracked files and requires a clean committed tree.
+Commit legitimate source changes before reindexing so the stored revision matches
+the evidence. Ignored frontend outputs are not indexed; running or building the
+dashboard must not require deleting generated files to reindex.
 
 Check it:
 
@@ -364,7 +374,7 @@ Minimal server flow:
 ```bash
 sudo mkdir -p /opt/project-brain
 sudo chown -R "$USER:$USER" /opt/project-brain
-git clone https://github.com/Perlitten/project-brain.git /opt/project-brain
+git clone https://github.com/Perlitten/project-brain-public.git /opt/project-brain
 cd /opt/project-brain
 
 cp deploy/.env.prod.example .env
@@ -405,7 +415,7 @@ server `apps.mcp_server.remote_server` exposes the same 13 plus
 | `review_diff` | Review git diff for rule violations (remote server: queues a job, poll with `get_diff_review`) |
 | `get_diff_review` | Remote server only: poll a diff review queued by `review_diff` |
 | `record_task_observation` | Record an unvalidated observation for a task (weak evidence for memory consolidation) |
-| `record_task_lesson` | Record a task lesson backed by a validation and artifacts; durable memory still needs human approval |
+| `record_task_lesson` | Record evidence-linked, reported validation; eligible L3 lessons can auto-promote, while high-risk cases and distilled L4 procedures require approval by default |
 | `record_procedure_outcome` | Record the success/failure outcome of a procedure (skill) once per task |
 
 `search_code` and `ask_project` accept an optional `repo_path` argument. Use it when

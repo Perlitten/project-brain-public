@@ -84,4 +84,4 @@ startup; there are no down-migrations — rollback restores from backup.
 
 MIT — see `LICENSE`. Third-party components keep their own licenses; see
 `THIRD_PARTY_NOTICES.md`. The repository is public on GitHub
-(Perlitten/project-brain).
+(Perlitten/project-brain-public).

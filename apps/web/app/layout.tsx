@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { BOOT_SCRIPT, Boot } from "@/components/Boot";
 import { Shell, type ShellRepo } from "@/components/Shell";
 import { actionsMode } from "@/lib/actions/gate";
@@ -46,6 +47,9 @@ export async function generateMetadata(): Promise<Metadata> {
 export const viewport: Viewport = { themeColor: "#05080B", colorScheme: "dark" };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // API bindings are runtime configuration (including pre-built containers).
+  // Do not persist a build-time demo shell as the live dashboard's HTML.
+  await connection();
   const repos: ShellRepo[] = (await getRepositories()).map((r) => ({
     slug: r.slug,
     name: r.name,

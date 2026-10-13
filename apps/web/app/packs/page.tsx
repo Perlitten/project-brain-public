@@ -28,8 +28,8 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
         title="Context packs"
         lede={
           <>
-            Before an agent starts a task, Brain hands it a <Term k="pack">context pack</Term>: only the files, decisions and
-            rules that matter. {repo ? "Packs built for this project." : "Packs built across all projects."}
+            Agents can request a <Term k="pack">context pack</Term> with selected files, decisions and
+            rules for a task. Verify the selection against current source. {repo ? "Packs built for this project." : "Packs built across all projects."}
           </>
         }
       />

@@ -1,5 +1,14 @@
 # Memory Semantics
 
+L1 reports, L2 episodes, L3 guidance and L4 procedures have different admission
+and approval rules. Evidence-linked lessons record **reported validation**;
+they do not prove that Brain ran a test. Eligible L3 clusters can promote
+automatically by default, including low-severity unvalidated clusters that meet
+the stricter evidence threshold. High-risk cases require approval; distilled L4
+procedures default to pending approval. Direct rule/decision writes and curated
+procedures are separate paths. The complete policy, including contradiction
+failure behavior, is in [MEMORY_LESSON_PROTOCOL.md](MEMORY_LESSON_PROTOCOL.md).
+
 Explicitly historical Markdown remains searchable but is tagged as historical
 evidence and heavily demoted in ordinary current-state retrieval. A query that
 explicitly asks for history or archived context restores its normal retrieval
