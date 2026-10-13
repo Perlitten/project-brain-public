@@ -79,8 +79,9 @@ fixtures; they are not counted as passed integrations. Full-suite verification
 exposed a stale exact-version assertion; it now checks the feature's minimum
 release while preserving its behavior regressions.
 
-Linux/Python 3.12/Node.js 22 is the verification platform. macOS, WSL2 and native
-Windows have not received equivalent validation. Mock providers establish
+Linux/Python 3.12 is the verification platform; web CI uses Node.js 22 and the
+managed local installation used Node.js 24. macOS, WSL2 and native Windows have
+not received equivalent validation. Mock providers establish
 functional wiring, not meaningful semantic rankings or coding improvements.
 Prebuilt images remain experimental and outside the primary newcomer route.
 
@@ -103,7 +104,7 @@ with Ctrl+C and passed again after restart. Generated paths stayed absent; a
 legitimate disposable source function was indexed and retrieved, then removed
 and reindexed. Both model roles were mocks; context was marked partial.
 An isolated Compose overlay selected independent ports, volumes and credentials
-to preserve the existing development services. A verified cached APOC plugin
+to preserve the existing development services. A cached APOC plugin with a recorded SHA-256
 and an owned npm cache accommodated this cloud runtime. No private data or
 production configuration was copied into the public source.
 
