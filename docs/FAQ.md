@@ -1,6 +1,6 @@
 # FAQ
 
-Latest published release: **[v0.9.1](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.1)**.
+Latest published release: **[v0.9.2](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.2)**.
 Use the [current getting-started guide](GETTING_STARTED.md) for installation.
 
 ## How is this different from Obsidian / Mem0 / Letta / plain RAG?

@@ -3,7 +3,7 @@
 This is the current source installation guide for a local, single-user instance.
 It replaces release-specific instructions as the primary onboarding route.
 
-Latest published release: **[v0.9.1](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.1)**.
+Latest published release: **[v0.9.2](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.2)**.
 The commands pin that published version. Development on `main` can be newer;
 use a reviewed commit if deliberately testing unreleased changes.
 
@@ -31,7 +31,7 @@ this development setup through a tunnel or public reverse proxy; use the
 For a self-contained first run, index Brain's own source:
 
 ```bash
-git clone --branch v0.9.1 https://github.com/Perlitten/project-brain-public.git project-brain
+git clone --branch v0.9.2 https://github.com/Perlitten/project-brain-public.git project-brain
 cd project-brain
 ./scripts/bootstrap.sh
 .venv/bin/brain index --repo "$PWD"

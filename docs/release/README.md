@@ -5,8 +5,11 @@ installation verification. The recommended newcomer path is the tagged source
 checkout in [Getting started](../GETTING_STARTED.md).
 
 The source version may be a newer candidate than the latest published release.
-Update public release markers only after anonymous download and installation
-verification. Never retag an existing version or replace its artifacts.
+Prepare consistent next-version markers in a reviewed release PR, so the
+immutable source archive agrees with its own release. Keep the current `main`
+markers until anonymous download and installation verification; merge the
+release documentation after that verification. Never retag an existing version
+or replace its artifacts.
 
 ## Verify a candidate locally
 
@@ -90,9 +93,11 @@ It verifies distributions, generates an SPDX SBOM and computes SHA-256 checksums
 CI and CodeQL verify the reviewed commit before tagging; the release workflow
 does not rerun those suites. Publication builds from the immutable tag directly.
 
-Merge the reviewed candidate only with green required CI and CodeQL. Set a new
-version/tag that matches package metadata and changelog; use the existing
-release workflow for that exact commit. Do not rewrite a tag to recover a
+Merge the runtime candidate only with green required CI and CodeQL. Prepare
+final version markers in the release-documentation PR and require green CI and
+CodeQL on that head too. Tag that reviewed commit, matching package metadata
+and changelog, and use the existing release workflow. Merge the documentation
+after public download/install verification. Do not rewrite a tag to recover a
 failed job. Recover by rerunning the authorized pipeline or a new version,
 preserving existing public evidence.
 

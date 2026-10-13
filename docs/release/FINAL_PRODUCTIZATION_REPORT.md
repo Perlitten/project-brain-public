@@ -2,7 +2,9 @@
 
 Verification date: 2026-10-13. Compatible patch candidate: **v0.9.2**.
 Base: `1a2adbc8540548281279ebbbf8a8eda131b0cb8a`.
-This record separates completed local validation from pending public publication.
+This preparation snapshot separates completed validation from pending public
+publication. The [current verified report](https://github.com/Perlitten/project-brain-public/blob/main/docs/release/FINAL_PRODUCTIZATION_REPORT.md)
+records the subsequent publication and download checks.
 
 ## Initial state and cleanup
 
@@ -93,8 +95,24 @@ GitHub links and working mobile navigation. The API setup/health bridge returns
 This verifies the tested runtime; Vercel administration and secrets in other
 deployment scopes were not inspected. See [demo acceptance](../DEMO.md).
 
-Fresh public-source visitor workflows, [PR CI/CodeQL](https://github.com/Perlitten/project-brain-public/pull/61)
-and the v0.9.2 publication/download verification are pending.
+The fresh public Linux clone passed bootstrap, storage startup, four completed
+index/reindex runs, an actual stdio MCP search and task-context call, API/worker
+and dashboard health, queued-job execution and a clean dependency reinstall.
+The actual `start.sh` ran on its documented ports, stopped live descendants
+with Ctrl+C and passed again after restart. Generated paths stayed absent; a
+legitimate disposable source function was indexed and retrieved, then removed
+and reindexed. Both model roles were mocks; context was marked partial.
+An isolated Compose overlay selected independent ports, volumes and credentials
+to preserve the existing development services. A verified cached APOC plugin
+and an owned npm cache accommodated this cloud runtime. No private data or
+production configuration was copied into the public source.
+
+Tested source `9da8f12ee16305fa02c3039d7591b0e039572846` has the same tree as
+the final reviewed PR head `7b22d620414b7491a8d26f707f8861954bbafae7` and merged
+runtime commit `566d985464bb6200b67779eaf3d431d0129d4eb2`.
+[PR #61](https://github.com/Perlitten/project-brain-public/pull/61) merged only
+after all CI/CodeQL and deployment checks passed. Publication/download
+verification for v0.9.2 remains pending in this preparation snapshot.
 
 Repository metadata writes currently return `Resource not accessible by
 integration`. Content, pull-request and release permissions are available;

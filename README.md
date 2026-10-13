@@ -18,7 +18,7 @@ You run the storage and inspect what it remembers.
 *Real interface with synthetic example data. Screenshot values are illustrative,
 not benchmark results or measurements from your repositories.*
 
-Latest published release: **[v0.9.1](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.1)**.
+Latest published release: **[v0.9.2](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.2)**.
 Downloadable Python artifacts include checksums and an SBOM. For the complete
 API, worker, dashboard and datastore setup, use the source workflow below.
 
@@ -58,7 +58,7 @@ see [platform support](docs/GETTING_STARTED.md#requirements-and-platform-support
 Run from a terminal on the machine that will host Brain:
 
 ```bash
-git clone --branch v0.9.1 https://github.com/Perlitten/project-brain-public.git project-brain
+git clone --branch v0.9.2 https://github.com/Perlitten/project-brain-public.git project-brain
 cd project-brain
 ./scripts/bootstrap.sh
 .venv/bin/brain index --repo "$PWD"
