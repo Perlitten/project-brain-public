@@ -758,6 +758,8 @@ class FileIndexer:
                 self.file_counts["discovered"] = len(scanned_files)
                 await self._publish_progress()
 
+                indexed_paths: list[str] = []
+
                 async def process(filepath):
                     try:
                         outcome = await self.index_file(repo_id, path_obj, filepath)
@@ -767,6 +769,7 @@ class FileIndexer:
                         else:
                             self.progress["files"]["processed"] += 1
                             self.file_counts["graph_failed" if outcome == "indexed_graph_failed" else "indexed"] += 1
+                            indexed_paths.append(filepath.relative_to(path_obj).as_posix())
                     except Exception as exc:
                         self.progress["files"]["failed"] += 1
                         self.file_counts["failed"] += 1
@@ -831,7 +834,7 @@ class FileIndexer:
                     run_obj.completed_at = datetime.now(timezone.utc)
                 if (status == "completed" and settings.INDEX_LLM_SUMMARIES_MODE == "lazy"
                         and settings.INDEX_LLM_SUMMARIES_BACKGROUND):
-                    await self._queue_summary_enrichment(repo_id, path_obj, commit_hash)
+                    await self._queue_summary_enrichment(repo_id, path_obj, commit_hash, indexed_paths)
                 return repo
             except BaseException as exc:
                 self.progress["phase"] = "interrupted"
@@ -1216,15 +1219,29 @@ class FileIndexer:
 
         return PreparedFile(symbols, prepared_chunks, file_summary, late_provider, remote_late_write)
 
-    async def _queue_summary_enrichment(self, repo_id: int, path: Path, revision: str | None) -> None:
+    async def _queue_summary_enrichment(
+        self,
+        repo_id: int,
+        path: Path,
+        revision: str | None,
+        indexed_paths: list[str],
+    ) -> None:
         from brain.database.session import redis_client
         from brain.workers.queue import queue_for_job
 
         try:
             queue = queue_for_job(redis_client, settings.WORKER_REDIS_PREFIX, "enrich_summaries",
                                   pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED)
-            await queue.enqueue("enrich_summaries", {"repo_path": path.as_posix(), "repository_id": repo_id},
-                                idempotency_key=f"{repo_id}:{revision}:{self.verification.get('source_content_digest')}")
+            await queue.enqueue(
+                "enrich_summaries",
+                {
+                    "repo_path": path.as_posix(),
+                    "repository_id": repo_id,
+                    "paths": sorted(indexed_paths),
+                },
+                idempotency_key=f"{repo_id}:{revision}:{self.verification.get('source_content_digest')}",
+                max_attempts=3,
+            )
         except Exception as exc:
             logger.warning("Optional summary enrichment enqueue failed: {}", type(exc).__name__)
 
