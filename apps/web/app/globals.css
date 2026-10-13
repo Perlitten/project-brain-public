@@ -231,6 +231,9 @@ code, .mono { font-family: var(--mono); }
 .search-btn:hover { color: var(--text-1); border-color: var(--border-default); }
 
 .main { padding: var(--s-6) var(--gutter) var(--s-10); min-width: 0; }
+.public-demo-note { margin: 0 0 var(--s-6); padding: var(--s-3) var(--s-4); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-rail); color: var(--text-2); font-size: var(--fs-12); }
+.public-demo-note strong, .public-demo-note a { color: var(--text-1); }
+.public-demo-note a { text-decoration: underline; }
 .scrim { display: none; }
 
 /* ---------- route choreography ---------- */
