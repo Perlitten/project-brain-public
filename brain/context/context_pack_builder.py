@@ -24,6 +24,7 @@ from brain.database.repository_utils import get_repository_by_path
 from brain.memory.repo_scope import normalize_repo_scope, repository_scope_clause
 from brain.memory.rule_usage import record_rules_delivered
 from brain.context.budget import estimated_tokens
+from brain.context.rendering import PackDocument, render_document, render_evidence
 
 
 def _learning_scope_clause(repo_scope: Optional[str]):
@@ -886,28 +887,7 @@ class ContextPackBuilder:
 
         # 9. Format Markdown Report with RetrievalTraces
         repo_posix = repo_path.resolve().as_posix()
-        files_md = ""
-        if final_files:
-            for f, t in final_files:
-                trace_str = (
-                    f"RRF Score: {t.get('final_score', 0)} "
-                    f"[Lexical: {t.get('lexical_match', False)}, Vector: {t.get('vector_similarity', 0):.2f}, "
-                    f"Graph: {t.get('graph_relation', False)}, Cache: {t.get('cache_match', False)}]"
-                )
-                files_md += f"- [{f.path}](file:///{repo_posix}/{f.path}) - {f.summary or 'No summary'}\n  * *Trace*: {trace_str}\n"
-        else:
-            files_md = "*No files found matching the task keywords.*\n"
-
-        symbols_md = ""
-        if final_symbols:
-            for s, t in final_symbols:
-                trace_str = (
-                    f"RRF Score: {t['final_score']} "
-                    f"[Lexical: {t['lexical_match']}, Graph: {t['graph_relation']}, Cache: {t['cache_match']}]"
-                )
-                symbols_md += f"- `{s.name}` ({s.kind}) - {s.summary or 'No summary'}\n  * *Trace*: {trace_str}\n"
-        else:
-            symbols_md = "*No symbols found matching the task keywords.*\n"
+        evidence = render_evidence(final_files, final_symbols, repo_posix)
 
         # Format Graph neighborhood relationships from cypher results
         graph_md = ""
@@ -949,89 +929,13 @@ class ContextPackBuilder:
         if not graph_md:
             graph_md = "*No relevant graph neighbors found.*\n"
 
-        rules_md = ""
-        if active_rules:
-            for r in active_rules:
-                rules_md += f"- **{r.id}** ({r.severity or 'medium'} severity): {r.description or 'No description'}\n"
-        else:
-            rules_md = "*No active rules defined.*\n"
-
-        decisions_md = ""
-        if active_decisions:
-            for d in active_decisions:
-                decisions_md += f"- **{d.title}** ({d.status}): {d.description or 'No description'}\n"
-        else:
-            decisions_md = "*No active decisions recorded.*\n"
-
-        learnings_md = ""
-        if active_learnings:
-            for lrng in active_learnings[:10]:
-                learnings_md += f"- {lrng.statement} _(confidence {lrng.confidence:.2f})_\n"
-        else:
-            learnings_md = "*No consolidated learnings yet.*\n"
-
-        risks_md = ""
-        if risks:
-            for risk in risks:
-                risks_md += f"- {risk}\n"
-        else:
-            risks_md = "*No specific risks identified.*\n"
-
-        checklist_md = ""
-        if checklist:
-            for item in checklist:
-                checklist_md += f"- [ ] {item}\n"
-        else:
-            checklist_md = "- [ ] Verify that implementation changes are correct.\n"
-
-        # Format warnings/critic status
         critic_status = critic_res["status"]
-        critic_warnings_md = ""
-        if critic_res["warnings"]:
-            critic_warnings_md = "### Critic Warnings\n"
-            for w in critic_res["warnings"]:
-                critic_warnings_md += f"> [!WARNING]\n> {w}\n\n"
-
-        title_snippet = re.sub(r"[^a-zA-Z0-9\s]", "", task_description[:50]).strip()
-        markdown_content = f"""# Context Pack: {title_snippet}
-
-## Critic Evaluation Status: **{critic_status}**
-{critic_warnings_md}
-## Task Details
-- **Task Type**: {task_type}
-- **Description**: {task_description}
-- **Features**: {", ".join(features) if features else "None"}
-- **Token Budget Mode**: {budget}
-
-## Relevant Features & Files
-### Files
-{files_md}
-
-### Symbols
-{symbols_md}
-
-## Graph Neighbors (Context)
-{graph_md}
-
-## Active Rules & Decisions
-### Rules
-{rules_md}
-
-### Decisions
-{decisions_md}
-
-### Consolidated Learnings
-{learnings_md}
-
-## Known Risks
-{risks_md}
-
-## Suggested Implementation Plan
-{plan_content}
-
-## Verification Checklist
-{checklist_md}
-"""
+        markdown_content = render_document(PackDocument(
+            task_description=task_description, task_type=task_type, features=features, budget=budget,
+            evidence=evidence, graph_md=graph_md, rules=active_rules, decisions=active_decisions,
+            learnings=active_learnings, risks=risks, checklist=checklist, plan_content=plan_content,
+            critic_status=critic_status, critic_warnings=critic_res["warnings"],
+        ))
 
         # 10. Persist the generated artifact outside the indexed repository.
         # Production repositories are intentionally mounted read-only; the

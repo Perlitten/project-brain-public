@@ -40,7 +40,7 @@ Start with the files for the task rather than relying on a stale repository size
 | Health check, behaviour when the DB is down | `apps/api/main.py`, `brain/database/session.py`, `tests/test_health.py` |
 | API response shape / DTOs | `apps/api/schemas.py`, `brain/database/models.py` |
 | Code search, ranking | `brain/search/code_search.py`, `lexical_ranking.py`, `similarity.py` |
-| Context pack assembly, budgets | `brain/context/context_pack_builder.py`, `budget.py`, `brain/search/code_search.py` |
+| Context pack assembly, budgets | `brain/context/context_pack_builder.py` (selection and storage), `rendering.py` (artifact contract), `budget.py`, `brain/search/code_search.py` |
 | Retrieval pipeline, rerank | `brain/retrieval/pipeline.py` (I/O orchestration), `fusion.py` (in-memory scoring), `service.py`, `reranker.py` |
 | Repository indexing | `brain/indexers/repo_indexer.py`, `file_indexer.py`, `symbol_extractors.py` |
 | Embeddings, pgvector | `brain/embeddings/store.py`, `pgvector_sql.py`, `integrity.py` |
