@@ -95,7 +95,8 @@ async def test_dirty_tree_overrides_cached_current_freshness(repository, monkeyp
     assert payload["freshness_warning"]["working_tree_dirty"]
     assert "dirty-live" in payload["slices"][0]["content"]
     assert len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()) <= 1600
-    queued.assert_awaited_once()
+    assert "auto_reindex_deferred_until_clean" in payload["missing"]
+    queued.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -124,21 +125,47 @@ async def test_deleted_candidate_retains_memory_without_returning_deleted_code(r
     assert payload["memory"]["decisions"]
 
 
+@pytest.mark.asyncio
+async def test_missing_source_remains_blocked_in_warn_mode(tmp_path, monkeypatch):
+    root = tmp_path / "missing"
+    builder, queued = context_builder(root, "a" * 40, "behind", monkeypatch)
+    payload = await builder.build("Explain feature", root)
+
+    assert payload["status"] == "stale_blocked"
+    assert "live_source_unavailable" in payload["missing"]
+    assert not payload.get("slices")
+    queued.assert_not_awaited()
+
+
 def test_source_overlay_rejects_escaping_paths_symlinks_binary_and_bounds_reads(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
     outside = tmp_path / "private.py"
     outside.write_text("private_value = 'outside'\n")
     (root / "escape.py").symlink_to(outside)
+    (root / ".env").write_text("API_KEY=private\n")
+    (root / "alias.py").symlink_to(root / ".env")
     (root / "binary.py").write_bytes(b"zero\0binary")
     (root / "large.py").write_text("abcdefghij" * 100)
 
     assert read_live_source(root, "../private.py", 100) is None
     assert read_live_source(root, "escape.py", 100) is None
+    assert read_live_source(root, "alias.py", 100) is None
     assert read_live_source(root, "binary.py", 100) is None
     bounded = read_live_source(root, "large.py", 100)
     assert bounded is not None and bounded.truncated
     assert len("".join(bounded.lines).encode()) == 100
+
+
+def test_current_ranges_relocates_javascript_and_rejects_missing_symbols():
+    from brain.memory.source_overlay import LiveSource, current_ranges
+
+    text = "\n".join(["// shifted"] * 12 + ["export function feature() {", "  return 'live';", "}"])
+    source = LiveSource(tuple(f"{line}\n" for line in text.splitlines()), "digest", False)
+    ranges = current_ranges(source, ["feature"])
+
+    assert ranges and ranges[0][0] <= 13 <= ranges[0][1]
+    assert current_ranges(source, ["deleted_symbol"]) == []
 
 
 def test_diff_is_nul_safe_and_bounded(repository):

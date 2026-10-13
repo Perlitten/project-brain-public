@@ -187,9 +187,20 @@ class RuntimeContextBuilder:
         )
         unverified_diff = (delta.source_present and not delta.complete
                            and bool(re.fullmatch(r"[0-9a-fA-F]{40,64}", repo.get("indexed_revision") or "")))
+        source_unavailable = freshness != "current" and not delta.source_present
         stale = freshness != "current" or bool(delta.changed_files) or delta.dirty or unverified_diff
         if stale:
-            if await _queue_auto_reindex(str(repo_path)):
+            if source_unavailable:
+                metadata["status"] = "stale_blocked"
+                metadata["missing"].extend([
+                    "live_source_unavailable", "current_source_required_for_code_change",
+                ])
+                return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
+            reindex_queued = False
+            if delta.dirty:
+                metadata["missing"].append("auto_reindex_deferred_until_clean")
+            elif await _queue_auto_reindex(str(repo_path)):
+                reindex_queued = True
                 metadata["missing"].append("auto_reindex_queued")
             if settings.BRAIN_STALE_CONTEXT_POLICY == "strict_block":
                 metadata["status"] = "stale_blocked"
@@ -199,7 +210,9 @@ class RuntimeContextBuilder:
             repo["freshness"] = "stale_served"
             if delta.head:
                 repo["source_revision"] = delta.head
-            metadata["freshness_warning"] = delta.warning(min(1000, max_bytes // 10))
+            metadata["freshness_warning"] = delta.warning(
+                min(1000, max_bytes // 10), reindex_queued=reindex_queued,
+            )
 
         # A current index with no retrieval evidence is not a usable context.
         # In particular, /ask must not silently turn an empty candidate list
@@ -350,9 +363,10 @@ class RuntimeContextBuilder:
             if source is None:
                 unavailable = True
                 continue
-            fallback = list(candidate.ranges) or [tuple(item["range"]) for item in grouped.get(candidate.path, [])
-                                                  if item.get("range") and all(isinstance(v, int) for v in item["range"])]
-            ranges = current_ranges(source, candidate.symbols, fallback)
+            ranges = current_ranges(source, candidate.symbols)
+            if not ranges:
+                unavailable = True
+                continue
             candidate.ranges = ranges
             for start, end in ranges:
                 content = truncate_utf8("".join(source.lines[start - 1:end]), min(2200, max_bytes // 4))

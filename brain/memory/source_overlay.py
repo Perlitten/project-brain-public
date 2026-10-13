@@ -30,7 +30,7 @@ class SourceDelta:
     source_present: bool = False
     reason: str | None = None
 
-    def warning(self, max_bytes: int) -> dict[str, Any]:
+    def warning(self, max_bytes: int, *, reindex_queued: bool = False) -> dict[str, Any]:
         names = []
         used = 0
         for name in self.changed_files:
@@ -39,8 +39,14 @@ class SourceDelta:
                 break
             names.append(name)
             used += cost
+        if reindex_queued:
+            message = "Indexed context may lag the working tree; background reindex requested."
+        elif self.dirty:
+            message = "Indexed context may lag the working tree; commit source changes before reindexing."
+        else:
+            message = "Indexed context may lag the working tree; automatic reindex was not queued."
         return {
-            "message": "Indexed context may lag the working tree; background reindex requested.",
+            "message": message,
             "changed_files": names,
             "changed_files_truncated": len(names) < len(self.changed_files) or not self.complete,
             "working_tree_dirty": self.dirty,
@@ -119,8 +125,14 @@ def read_live_source(root: Path, relative: str, max_bytes: int) -> LiveSource | 
         return None
     root = root.resolve()
     try:
-        resolved = (root / path).resolve(strict=True)
+        requested = root / path
+        resolved = requested.resolve(strict=True)
         if not resolved.is_relative_to(root) or not resolved.is_file():
+            return None
+        # The requested name can be harmless while an in-repository symlink
+        # resolves to .env, credentials or another excluded retrieval target.
+        resolved_relative = resolved.relative_to(root).as_posix()
+        if should_exclude_from_retrieval(resolved_relative):
             return None
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         descriptor = os.open(resolved, flags)
@@ -144,9 +156,13 @@ def read_live_source(root: Path, relative: str, max_bytes: int) -> LiveSource | 
         return None
 
 
-def current_ranges(source: LiveSource, names: list[str], fallback: list[tuple[int, int]]) -> list[tuple[int, int]]:
-    """Prefer current Python symbol locations when edits shifted indexed ranges."""
-    wanted = {name.rsplit(".", 1)[-1] for name in names}
+def current_ranges(source: LiveSource, names: list[str]) -> list[tuple[int, int]]:
+    """Find current symbol locations without trusting indexed line numbers."""
+    wanted = {
+        re.split(r"[.:#]+", name)[-1]
+        for name in names
+        if name and re.fullmatch(r"[A-Za-z_$][\w$]*(?:[.:#]+[A-Za-z_$][\w$]*)*", name)
+    }
     ranges = []
     if wanted and not source.truncated:
         try:
@@ -155,8 +171,24 @@ def current_ranges(source: LiveSource, names: list[str], fallback: list[tuple[in
                     ranges.append((node.lineno, node.end_lineno or node.lineno))
         except (SyntaxError, ValueError):
             pass
-    if not ranges:
-        ranges = fallback or [(1, min(50, len(source.lines)))]
     total = len(source.lines)
+    if not ranges and wanted:
+        for line_number, line in enumerate(source.lines, start=1):
+            for name in wanted:
+                escaped = re.escape(name)
+                declaration = re.search(
+                    rf"\b(?:def|class|function|fn|interface|type|struct|enum|const|let|var)\s+{escaped}\b",
+                    line,
+                )
+                go_method = re.search(rf"^\s*func\s+(?:\([^)]*\)\s*)?{escaped}\b", line)
+                brace_method = re.search(
+                    rf"^\s*(?:(?:export|public|private|protected|static|async|final|virtual|override)\s+)*"
+                    rf"(?:[\w.<>,\[\]?]+\s+)*{escaped}\s*\([^)]*\)\s*(?::[^={{]+)?\s*{{",
+                    line,
+                )
+                if declaration or go_method or brace_method:
+                    ranges.append((max(1, line_number - 3), min(total, line_number + 40)))
+    if not ranges and not names:
+        ranges = [(1, min(80, total))]
     return list(dict.fromkeys((max(1, min(start, total)), min(total, max(start, end)))
                              for start, end in ranges if total and end >= 1))[:4]

@@ -368,6 +368,7 @@ def _stale_result():
 @pytest.fixture
 def auto_reindex_env(monkeypatch):
     from brain.config.settings import settings
+    from brain.memory.source_overlay import SourceDelta
 
     redis = _FakeRedis()
     queue = SimpleNamespace(enqueue=AsyncMock(return_value="job-1"))
@@ -381,6 +382,11 @@ def auto_reindex_env(monkeypatch):
     monkeypatch.setattr("brain.workers.queue.queue_for_job", fake_queue_for_job)
     monkeypatch.setattr(settings, "BRAIN_WORKER_POOLS_V2_ENABLED", True)
     monkeypatch.setattr(settings, "AUTO_REINDEX_MIN_INTERVAL_S", 3600)
+    monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "strict_block")
+    monkeypatch.setattr(
+        "brain.context.runtime_context_builder.collect_source_delta",
+        lambda *_args, **_kwargs: SourceDelta(head="f" * 40, complete=True, source_present=True),
+    )
     return SimpleNamespace(redis=redis, queue=queue, calls=calls)
 
 
