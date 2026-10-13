@@ -1,0 +1,4093 @@
+[
+  {
+    "name": "success",
+    "expected": {
+      "calls": [
+        {
+          "kind": "node",
+          "node_type": "Repository",
+          "name": "fixture",
+          "properties": {
+            "path": "$repo"
+          }
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "engine",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "api",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "brain",
+          "properties": {
+            "folder_name": "brain"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "TESTED_BY",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "convention:stem_match",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps",
+          "properties": {
+            "folder_name": "apps"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "apps",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api",
+          "properties": {
+            "folder_name": "api"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps",
+          "to_node_type": "Module",
+          "to_name": "apps/api",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api/routers",
+          "properties": {
+            "folder_name": "routers"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api/routers",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "api",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "get",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "list_items",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:apps/api/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "ApiEndpoint",
+          "to_name": "/items",
+          "rel_type": "ROUTE",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "regex:route:GET"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "tests",
+          "properties": {
+            "folder_name": "tests"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "tests",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "test_run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "TESTS",
+          "properties": {
+            "confidence": 0.8,
+            "provenance": "regex:test_imports_source"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "scripts",
+          "properties": {
+            "folder_name": "scripts"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "scripts",
+          "to_node_type": "File",
+          "to_name": "scripts/check_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "File",
+          "to_name": "README.md",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        }
+      ],
+      "progress": {
+        "graph": {
+          "discovered": 6,
+          "processed": 6,
+          "failed": 0
+        }
+      },
+      "failures": [],
+      "published": [
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 1,
+            "failed": 0
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 2,
+            "failed": 0
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 3,
+            "failed": 0
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 4,
+            "failed": 0
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 5,
+            "failed": 0
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 6,
+            "failed": 0
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "name": "fallback_feature_map",
+    "fallback": true,
+    "expected": {
+      "calls": [
+        {
+          "kind": "node",
+          "node_type": "Repository",
+          "name": "fixture",
+          "properties": {
+            "path": "$repo"
+          }
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "engine",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "api",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "brain",
+          "properties": {
+            "folder_name": "brain"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "TESTED_BY",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "convention:stem_match",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps",
+          "properties": {
+            "folder_name": "apps"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "apps",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api",
+          "properties": {
+            "folder_name": "api"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps",
+          "to_node_type": "Module",
+          "to_name": "apps/api",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api/routers",
+          "properties": {
+            "folder_name": "routers"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api/routers",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "api",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "get",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "list_items",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:apps/api/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "ApiEndpoint",
+          "to_name": "/items",
+          "rel_type": "ROUTE",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "regex:route:GET"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "tests",
+          "properties": {
+            "folder_name": "tests"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "tests",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "test_run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "TESTS",
+          "properties": {
+            "confidence": 0.8,
+            "provenance": "regex:test_imports_source"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "scripts",
+          "properties": {
+            "folder_name": "scripts"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "scripts",
+          "to_node_type": "File",
+          "to_name": "scripts/check_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "File",
+          "to_name": "README.md",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        }
+      ],
+      "progress": {
+        "graph": {
+          "discovered": 6,
+          "processed": 6,
+          "failed": 0
+        }
+      },
+      "failures": [],
+      "published": [
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 1,
+            "failed": 0
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 2,
+            "failed": 0
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 3,
+            "failed": 0
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 4,
+            "failed": 0
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 5,
+            "failed": 0
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 6,
+            "failed": 0
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "name": "repository_failure",
+    "failure": {
+      "kind": "node",
+      "node_type": "Repository"
+    },
+    "expected": {
+      "calls": [
+        {
+          "kind": "node",
+          "node_type": "Repository",
+          "name": "fixture",
+          "properties": {
+            "path": "$repo"
+          }
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "engine",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "api",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "brain",
+          "properties": {
+            "folder_name": "brain"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "TESTED_BY",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "convention:stem_match",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps",
+          "properties": {
+            "folder_name": "apps"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "apps",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api",
+          "properties": {
+            "folder_name": "api"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps",
+          "to_node_type": "Module",
+          "to_name": "apps/api",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api/routers",
+          "properties": {
+            "folder_name": "routers"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api/routers",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "api",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "get",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "list_items",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:apps/api/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "ApiEndpoint",
+          "to_name": "/items",
+          "rel_type": "ROUTE",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "regex:route:GET"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "tests",
+          "properties": {
+            "folder_name": "tests"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "tests",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "test_run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "TESTS",
+          "properties": {
+            "confidence": 0.8,
+            "provenance": "regex:test_imports_source"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "scripts",
+          "properties": {
+            "folder_name": "scripts"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "scripts",
+          "to_node_type": "File",
+          "to_name": "scripts/check_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "File",
+          "to_name": "README.md",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        }
+      ],
+      "progress": {
+        "graph": {
+          "discovered": 6,
+          "processed": 6,
+          "failed": 1
+        }
+      },
+      "failures": [
+        {
+          "phase": "graph_repository",
+          "error": "RuntimeError",
+          "message": "write rejected",
+          "path": "",
+          "chunk_index": null
+        }
+      ],
+      "published": [
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 1,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 2,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 3,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 4,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 5,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 6,
+            "failed": 1
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "name": "feature_failure",
+    "failure": {
+      "kind": "node",
+      "node_type": "Feature"
+    },
+    "expected": {
+      "calls": [
+        {
+          "kind": "node",
+          "node_type": "Repository",
+          "name": "fixture",
+          "properties": {
+            "path": "$repo"
+          }
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "engine",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "api",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "brain",
+          "properties": {
+            "folder_name": "brain"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "TESTED_BY",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "convention:stem_match",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps",
+          "properties": {
+            "folder_name": "apps"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "apps",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api",
+          "properties": {
+            "folder_name": "api"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps",
+          "to_node_type": "Module",
+          "to_name": "apps/api",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api/routers",
+          "properties": {
+            "folder_name": "routers"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api/routers",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "api",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "get",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "list_items",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:apps/api/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "ApiEndpoint",
+          "to_name": "/items",
+          "rel_type": "ROUTE",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "regex:route:GET"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "tests",
+          "properties": {
+            "folder_name": "tests"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "tests",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "test_run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "TESTS",
+          "properties": {
+            "confidence": 0.8,
+            "provenance": "regex:test_imports_source"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "scripts",
+          "properties": {
+            "folder_name": "scripts"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "scripts",
+          "to_node_type": "File",
+          "to_name": "scripts/check_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "File",
+          "to_name": "README.md",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        }
+      ],
+      "progress": {
+        "graph": {
+          "discovered": 6,
+          "processed": 6,
+          "failed": 1
+        }
+      },
+      "failures": [
+        {
+          "phase": "graph_feature",
+          "error": "RuntimeError",
+          "message": "write rejected",
+          "path": "",
+          "chunk_index": null
+        }
+      ],
+      "published": [
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 1,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 2,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 3,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 4,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 5,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 6,
+            "failed": 1
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "name": "import_failure",
+    "failure": {
+      "kind": "relationship",
+      "rel_type": "IMPORTS"
+    },
+    "expected": {
+      "calls": [
+        {
+          "kind": "node",
+          "node_type": "Repository",
+          "name": "fixture",
+          "properties": {
+            "path": "$repo"
+          }
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "engine",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "api",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "brain",
+          "properties": {
+            "folder_name": "brain"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "TESTED_BY",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "convention:stem_match",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps",
+          "properties": {
+            "folder_name": "apps"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "apps",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api",
+          "properties": {
+            "folder_name": "api"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps",
+          "to_node_type": "Module",
+          "to_name": "apps/api",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api/routers",
+          "properties": {
+            "folder_name": "routers"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api/routers",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "api",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "get",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "list_items",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:apps/api/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "ApiEndpoint",
+          "to_name": "/items",
+          "rel_type": "ROUTE",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "regex:route:GET"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "tests",
+          "properties": {
+            "folder_name": "tests"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "tests",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "test_run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "TESTS",
+          "properties": {
+            "confidence": 0.8,
+            "provenance": "regex:test_imports_source"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "scripts",
+          "properties": {
+            "folder_name": "scripts"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "scripts",
+          "to_node_type": "File",
+          "to_name": "scripts/check_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "File",
+          "to_name": "README.md",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        }
+      ],
+      "progress": {
+        "graph": {
+          "discovered": 6,
+          "processed": 6,
+          "failed": 1
+        }
+      },
+      "failures": [
+        {
+          "phase": "graph_import",
+          "error": "RuntimeError",
+          "message": "write rejected",
+          "path": "brain/engine.py",
+          "chunk_index": null
+        }
+      ],
+      "published": [
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 1,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 2,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 3,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 4,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 5,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 6,
+            "failed": 1
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "name": "flush_failure",
+    "failure": {
+      "kind": "flush"
+    },
+    "expected": {
+      "calls": [
+        {
+          "kind": "node",
+          "node_type": "Repository",
+          "name": "fixture",
+          "properties": {
+            "path": "$repo"
+          }
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "engine",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "api",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "brain",
+          "properties": {
+            "folder_name": "brain"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "TESTED_BY",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "convention:stem_match",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps",
+          "properties": {
+            "folder_name": "apps"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "apps",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api",
+          "properties": {
+            "folder_name": "api"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps",
+          "to_node_type": "Module",
+          "to_name": "apps/api",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api/routers",
+          "properties": {
+            "folder_name": "routers"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api/routers",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "api",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "get",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "list_items",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:apps/api/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "ApiEndpoint",
+          "to_name": "/items",
+          "rel_type": "ROUTE",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "regex:route:GET"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "tests",
+          "properties": {
+            "folder_name": "tests"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "tests",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "test_run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "TESTS",
+          "properties": {
+            "confidence": 0.8,
+            "provenance": "regex:test_imports_source"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "scripts",
+          "properties": {
+            "folder_name": "scripts"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "scripts",
+          "to_node_type": "File",
+          "to_name": "scripts/check_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "File",
+          "to_name": "README.md",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        }
+      ],
+      "progress": {
+        "graph": {
+          "discovered": 6,
+          "processed": 5,
+          "failed": 1
+        }
+      },
+      "failures": [
+        {
+          "phase": "graph_post_process",
+          "error": "RuntimeError",
+          "message": "write rejected",
+          "path": "brain/engine.py",
+          "chunk_index": null
+        }
+      ],
+      "published": [
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 0,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 1,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 2,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 3,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 4,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 5,
+            "failed": 1
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "name": "read_failure",
+    "read_failure": true,
+    "expected": {
+      "calls": [
+        {
+          "kind": "node",
+          "node_type": "Repository",
+          "name": "fixture",
+          "properties": {
+            "path": "$repo"
+          }
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "engine",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "api",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "brain",
+          "properties": {
+            "folder_name": "brain"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "TESTED_BY",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "convention:stem_match",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/engine.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "brain",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "engine",
+          "to_node_type": "File",
+          "to_name": "brain/store.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Symbol",
+          "to_name": "write",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "brain/store.py",
+          "to_node_type": "Feature",
+          "to_name": "engine",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:brain/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps",
+          "properties": {
+            "folder_name": "apps"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "apps",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api",
+          "properties": {
+            "folder_name": "api"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps",
+          "to_node_type": "Module",
+          "to_name": "apps/api",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "apps/api/routers",
+          "properties": {
+            "folder_name": "routers"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "apps/api/routers",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Module",
+          "to_name": "apps/api/routers",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Feature",
+          "from_name": "api",
+          "to_node_type": "File",
+          "to_name": "apps/api/routers/items.py",
+          "rel_type": "RELATED_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "get",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "list_items",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "Feature",
+          "to_name": "api",
+          "rel_type": "AFFECTS",
+          "properties": {
+            "confidence": 0.95,
+            "provenance": "feature_map:apps/api/*",
+            "inferred": false
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "apps/api/routers/items.py",
+          "to_node_type": "ApiEndpoint",
+          "to_name": "/items",
+          "rel_type": "ROUTE",
+          "properties": {
+            "confidence": 0.9,
+            "provenance": "regex:route:GET"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "tests",
+          "properties": {
+            "folder_name": "tests"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "tests",
+          "to_node_type": "File",
+          "to_name": "tests/test_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Module",
+          "to_name": "tests",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "test_run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "tests/test_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "TESTS",
+          "properties": {
+            "confidence": 0.8,
+            "provenance": "regex:test_imports_source"
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "scripts",
+          "properties": {
+            "folder_name": "scripts"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Module",
+          "from_name": "scripts",
+          "to_node_type": "File",
+          "to_name": "scripts/check_engine.py",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Module",
+          "to_name": "scripts",
+          "rel_type": "BELONGS_TO"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "File",
+          "to_name": "brain/engine.py",
+          "rel_type": "IMPORTS"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "File",
+          "from_name": "scripts/check_engine.py",
+          "to_node_type": "Symbol",
+          "to_name": "run",
+          "rel_type": "CALLS",
+          "properties": {
+            "confidence": 0.75,
+            "provenance": "regex:call:\\b([a-zA-Z_][\\w]*)\\s*\\(",
+            "inferred": true
+          }
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "File",
+          "to_name": "README.md",
+          "rel_type": "CONTAINS"
+        },
+        {
+          "kind": "flush"
+        },
+        {
+          "kind": "clear_buffer"
+        }
+      ],
+      "progress": {
+        "graph": {
+          "discovered": 6,
+          "processed": 6,
+          "failed": 1
+        }
+      },
+      "failures": [
+        {
+          "phase": "graph_import",
+          "error": "OSError",
+          "message": "read rejected",
+          "path": "brain/engine.py",
+          "chunk_index": null
+        }
+      ],
+      "published": [
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 1,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 2,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 3,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 4,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 5,
+            "failed": 1
+          }
+        },
+        {
+          "graph": {
+            "discovered": 6,
+            "processed": 6,
+            "failed": 1
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "name": "cancellation",
+    "failure": {
+      "kind": "relationship"
+    },
+    "cancel": true,
+    "expected": {
+      "calls": [
+        {
+          "kind": "node",
+          "node_type": "Repository",
+          "name": "fixture",
+          "properties": {
+            "path": "$repo"
+          }
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "engine",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Feature",
+          "name": "api",
+          "properties": {}
+        },
+        {
+          "kind": "node",
+          "node_type": "Module",
+          "name": "brain",
+          "properties": {
+            "folder_name": "brain"
+          }
+        },
+        {
+          "kind": "relationship",
+          "from_node_type": "Repository",
+          "from_name": "fixture",
+          "to_node_type": "Module",
+          "to_name": "brain",
+          "rel_type": "CONTAINS"
+        }
+      ],
+      "progress": {
+        "graph": {
+          "discovered": 6,
+          "processed": 0,
+          "failed": 0
+        }
+      },
+      "failures": [],
+      "published": [],
+      "error": "CancelledError"
+    }
+  }
+]
