@@ -58,11 +58,12 @@ mypy_gate() {
 }
 
 web_checks() {
-  (cd apps/web && npm ci && npm test && npm run typecheck && npm run build)
+  (cd apps/web && npm ci && npm test && npm run typecheck && npm run build && npm run test:production)
 }
 
 wheel_smoke() {
-  "$PY" -m build --wheel --outdir "$verify_tmp/dist" &&
+  "$PY" -m build --outdir "$verify_tmp/dist" &&
+  "$PY" scripts/check_release_archives.py "$verify_tmp"/dist/*.whl "$verify_tmp"/dist/*.tar.gz &&
   "$PY" -m venv "$verify_tmp/venv" &&
   "$verify_tmp/venv/bin/python" -m pip install --require-hashes -r requirements.lock &&
   "$verify_tmp/venv/bin/python" -m pip install --no-deps "$verify_tmp"/dist/*.whl &&

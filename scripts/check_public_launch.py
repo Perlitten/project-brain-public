@@ -34,7 +34,7 @@ def main() -> int:
         print("\n".join(findings), file=sys.stderr)
         return 1
     print("Public repository identity check passed")
-    return 0
+    return subprocess.run([sys.executable, str(root / "scripts/check_docs_consistency.py")], check=False).returncode
 
 
 if __name__ == "__main__":

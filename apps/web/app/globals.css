@@ -73,6 +73,14 @@ kbd {
 code, .mono { font-family: var(--mono); }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 :focus-visible { outline: 2px solid var(--teal-fg); outline-offset: 2px; }
+
+/* Keep synthetic data labelled in the content area, including on mobile where
+   the navigation rail is closed. This notice is absent from live dashboards. */
+.demo-notice { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); padding: var(--s-3) var(--s-4); margin-bottom: var(--s-6); border: 1px solid var(--info-line); border-radius: var(--r-md); background: var(--surface-rail); font-size: var(--fs-12); }
+.demo-notice strong { color: var(--info-fg); font-weight: 500; }
+.demo-notice p { margin-top: var(--s-1); color: var(--text-2); line-height: var(--lh-prose); }
+.demo-notice > a { flex-shrink: 0; }
+@media (max-width: 560px) { .demo-notice { align-items: flex-start; flex-direction: column; gap: var(--s-2); } }
 ::selection { background: var(--teal-soft); color: var(--text-1); }
 
 .skip {
@@ -231,9 +239,6 @@ code, .mono { font-family: var(--mono); }
 .search-btn:hover { color: var(--text-1); border-color: var(--border-default); }
 
 .main { padding: var(--s-6) var(--gutter) var(--s-10); min-width: 0; }
-.public-demo-note { margin: 0 0 var(--s-6); padding: var(--s-3) var(--s-4); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-rail); color: var(--text-2); font-size: var(--fs-12); }
-.public-demo-note strong, .public-demo-note a { color: var(--text-1); }
-.public-demo-note a { text-decoration: underline; }
 .scrim { display: none; }
 
 /* ---------- route choreography ---------- */
@@ -600,6 +605,8 @@ code, .mono { font-family: var(--mono); }
 
 /* ---------- code graph ---------- */
 .graph-wrap { padding: 16px 20px; overflow-x: auto; }
+.graph-scroll-hint { display: none; }
+@media (max-width: 760px) { .graph-scroll-hint { display: block; padding: var(--s-3) var(--s-4) 0; font-size: var(--fs-12); line-height: var(--lh-prose); } }
 .graph { width: 100%; min-width: 640px; height: auto; display: block; }
 /* On its own tab the map takes the whole screen below the head and tabs. */
 .graph-wrap--full { display: grid; place-items: center; min-height: calc(100vh - var(--plate-h) - 300px); }
@@ -847,6 +854,9 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
     transition-duration: 1ms !important;
     transition-delay: 0ms !important;
   }
+  /* A short duration still follows a scroll timeline and leaves off-screen
+     panels transparent. Reduced motion means immediate, visible content. */
+  .panel { animation: none !important; }
   .graph__flow, .graph__sparks, .pulse__trace { display: none; }
 }
 

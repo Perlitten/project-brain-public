@@ -34,12 +34,6 @@ export default async function Setup() {
         </div>
       ) : (
         <>
-          {view.mode === "demo" && (
-            <div className="callout tone-info">
-              <b>Demo data.</b>
-              <span>Connect the dashboard to a Brain server (BRAIN_API_URL) to make these steps live.</span>
-            </div>
-          )}
           <SetupSteps view={view} clients={clients} />
         </>
       )}

@@ -10,7 +10,7 @@ export default function ScreenError({ error, reset }: { error: Error & { digest?
         <p className="eyebrow">Something broke</p>
         <h1 className="page-head__title">This screen couldn’t load</h1>
         <p className="text-dim">
-          The dashboard hit an error while building this page. Brain itself is probably fine — try again, and if it keeps
+          The dashboard hit an error while building this page. Its data is unavailable. Try again, and if it keeps
           happening, check the dashboard server logs{error.digest ? ` for error ${error.digest}` : ""}.
         </p>
         <div className="btn-row">

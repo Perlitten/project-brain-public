@@ -133,7 +133,7 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
           {demo && process.env.NEXT_PUBLIC_DEMO_SITE === "1" && (
           <p className="rail__note">
             <a href="https://github.com/Perlitten/project-brain-public#readme">
-              Live demo with example data → install your own
+              Read-only example → install your own
             </a>
           </p>
         )}
@@ -230,11 +230,15 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
       </header>
 
       <main id="main" className="main" inert={mobile && drawer}>
-        {demo && process.env.NEXT_PUBLIC_DEMO_SITE === "1" && (
-          <p className="public-demo-note">
-            <strong>Demo data.</strong> All projects and numbers are examples.{' '}
-            <a href="https://github.com/Perlitten/project-brain-public#readme">Install your own Brain</a>
-          </p>
+        {demo && (
+          <aside className="demo-notice" aria-label="Demo mode">
+            <div>
+              <strong>Demo data · synthetic examples</strong>
+              <p>Read-only preview. No repository or model is connected; the numbers and project knowledge are examples.</p>
+            </div>
+            <a className="link" href="https://github.com/Perlitten/project-brain-public#readme">Install your own →</a>
+          </aside>
+
         )}
         {children}
       </main>

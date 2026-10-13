@@ -6,7 +6,7 @@ import tarfile
 import zipfile
 
 
-FORBIDDEN_DIRECTORIES = {".git", ".venv", "node_modules", ".next"}
+FORBIDDEN_DIRECTORIES = {".git", ".venv", ".vercel", "__pycache__", "node_modules", ".next"}
 
 
 def unsafe_member(name: str) -> bool:
@@ -18,6 +18,7 @@ def unsafe_member(name: str) -> bool:
         or path.name in {".env", ".deploy.env", ".npmrc"}
         or (path.name.startswith(".env.") and not path.name.endswith(".example"))
         or path.name.endswith(".tsbuildinfo")
+        or path.name.endswith(".pyc")
     )
 
 
@@ -25,6 +26,8 @@ def check_archive(path: Path) -> None:
     if path.suffix == ".whl":
         with zipfile.ZipFile(path) as archive:
             names = archive.namelist()
+        if any(name.startswith("apps/web/") for name in names):
+            raise ValueError(f"{path.name}: separately deployed frontend must not ship in runtime wheel")
     else:
         with tarfile.open(path) as archive:
             names = archive.getnames()

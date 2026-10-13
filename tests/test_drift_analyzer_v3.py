@@ -4,8 +4,9 @@ from brain.insights.drift_analyzer import ArchitecturalDriftAnalyzer
 from brain.insights.proactive import deterministic_insights
 from brain._version import __version__
 
-def test_version_is_bumped_to_v0_9_1():
-    assert __version__ == "0.9.1"
+def test_drift_v3_release_floor():
+    # Drift v3 shipped in 0.9.1; compatible patch releases retain this contract.
+    assert tuple(map(int, __version__.split("."))) >= (0, 9, 1)
 
 def test_drift_analyzer_detects_api_layer_raw_orm_bypass():
     analyzer = ArchitecturalDriftAnalyzer(Path("."))

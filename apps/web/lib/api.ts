@@ -2,9 +2,12 @@
 // server environment and attached here; nothing in this module may be
 // imported by a client component.
 import "server-only";
+import { publicDemoProblem } from "./public-demo";
 
-const base = process.env.BRAIN_API_URL?.trim();
-const key = process.env.BRAIN_API_KEY?.trim();
+// Block reads as well as mutations if an isolated public demo is misconfigured.
+const blocked = publicDemoProblem();
+const base = blocked ? undefined : process.env.BRAIN_API_URL?.trim();
+const key = blocked ? undefined : process.env.BRAIN_API_KEY?.trim();
 
 export const apiConfigured = Boolean(base && key);
 

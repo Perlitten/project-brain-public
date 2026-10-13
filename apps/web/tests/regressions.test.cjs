@@ -43,6 +43,44 @@ function withEnv(values, run) {
 
 const basic = value => `Basic ${Buffer.from(value).toString('base64')}`;
 
+test('demo history search and facets filter before paging without calling a backend', async () => {
+  const overrides = {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': { apiConfigured: false, brainFetch: async () => { throw new Error('demo must not call a backend'); } },
+  };
+  const data = load('lib/data.ts', overrides);
+  for (const result of await Promise.all([
+    data.getPagedAgentRuns(undefined, { q: 'no-matching-example' }),
+    data.getPagedIndexRuns(undefined, { q: 'no-matching-example' }),
+    data.getPagedContextPacks({ q: 'no-matching-example' }),
+    data.getPagedReports({ q: 'no-matching-example' }),
+    data.getPagedInsights(undefined, { q: 'no-matching-example' }),
+    data.getPagedDecisions(undefined, { q: 'no-matching-example' }),
+    data.getPagedRules(undefined, { q: 'no-matching-example' }),
+  ])) {
+    assert.equal(result.items.length, 0);
+    assert.equal(result.paging.total, 0);
+  }
+  const packs = await data.getPagedContextPacks({ status: 'outdated' }, 'billing-service');
+  assert.equal(packs.items.length, 2);
+  assert.ok(packs.items.every(pack => pack.repo === 'billing-service' && pack.stale));
+  assert.equal(packs.paging.facets.fresh, 1);
+  assert.equal((await data.getPagedIndexRuns('missing')).items.length, 0);
+
+  const decisions = Array.from({ length: 45 }, (_, i) => ({
+    id: `D-${i}`, title: i < 35 ? 'Matching example' : 'Other entry',
+    summary: '', scope: 'repo', repo: 'repo', status: i < 30 ? 'accepted' : 'proposed',
+  }));
+  const fixture = load('lib/data.ts', { ...overrides, './mock': { decisions } });
+  const page = await fixture.getPagedDecisions('repo', { q: 'MATCHING example', status: 'accepted', page: 2 });
+  assert.equal(page.items.length, 10);
+  assert.equal(page.items[0].id, 'D-20');
+  assert.equal(page.paging.total, 30);
+  assert.equal(page.paging.facets.proposed, 5);
+  assert.equal((await fixture.getPagedDecisions('missing')).paging.total, 0);
+});
+
 test('scheduler degradation is a warning rather than an empty service outage', () => {
   const { pulseHeadline } = load('lib/pulse-presentation.ts');
   assert.equal(pulseHeadline({ reachable: true, healthy: false, down: [] }), 'Needs attention');

@@ -45,7 +45,7 @@ browser tab. Agents in chat cannot "attach" to that window from code in this rep
 - **`playwright`** in the `pyproject.toml` dev dependencies (`pip install -e ".[dev]"`).
 - **`eval/browser_automation/`** — README and smoke test (`smoke_test.py`), configured through the
   optional `BROWSER_HEADLESS` and `BROWSER_SMOKE_URL` environment variables.
-- **README § Browser automation (optional)** — how to install and run the smoke test.
+- **[Browser automation guide](../eval/browser_automation/README.md)** — how to install and run the smoke test.
 
 This scaffold is for **optional local** browser automation and future E2E experiments. It does
 **not** grant agents control over Cursor's UI or the host desktop.

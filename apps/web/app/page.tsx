@@ -24,6 +24,8 @@ export default async function Dashboard({ searchParams }: Props) {
   const repositories = await getRepositories();
   const selected = slug ? repositories.find((r) => r.slug === slug) : undefined;
   const projects = slug ? selected ? [selected] : [] : repositories;
+  // The map describes one repository; cross-project totals remain in the rows.
+  const mapRepository = selected ?? (dataSource === "demo" ? repositories.reduce((a, b) => ((b.behind ?? 0) > (a.behind ?? 0) ? b : a), repositories[0]) : undefined);
   const [telemetry, worthData, snapshots, modules, evidence] = await Promise.all([
     getRequestTelemetry(period, slug ? selected?.id ?? 0 : undefined),
     getAgentValue(period, slug ? selected?.id ?? 0 : undefined),
@@ -31,7 +33,7 @@ export default async function Dashboard({ searchParams }: Props) {
       const [corpus, jobs] = await Promise.all([getCorpus(repo.slug), getJobs(repo.slug)]);
       return { repo, corpus, jobs };
     })),
-    selected ? getCodeModules(selected.slug) : dataSource === "demo" ? getCodeModules((repositories.reduce((a, b) => ((b.behind ?? 0) > (a.behind ?? 0) ? b : a), repositories[0]) ?? repositories[0]).slug) : Promise.resolve([]),
+    mapRepository ? getCodeModules(mapRepository.slug) : Promise.resolve([]),
     getQualityEvidence(),
   ]);
   const jobs = [...new Map(snapshots.flatMap((s) => s.jobs.slice(0, 3)).map((j) => [j.id, j])).values()].slice(0, 6);
@@ -106,9 +108,7 @@ export default async function Dashboard({ searchParams }: Props) {
 
   return <div className="dashboard">
     <PageHead title="Dashboard" lede="Whether your agents get current project memory, and what to fix next." status={status} />
-    {dataSource === "demo" && <p className="callout tone-info"><span><b>Demo data.</b> Everything on this page is an example. Connect your Brain server to see your own.</span></p>}
-
-    {(selected || dataSource === "demo") && modules.some((m) => m.chunks > 0) && <div className="dashboard__map"><MemoryMap modules={modules} repoName={selected?.name ?? "all projects"} scanning={jobs.some((j) => j.status === "running" && j.kind.startsWith("index"))} /></div>}
+    {mapRepository && modules.some((m) => m.chunks > 0) && <div className="dashboard__map"><MemoryMap modules={modules} repoName={mapRepository.name} scanning={snapshots.find((s) => s.repo.id === mapRepository.id)?.jobs.some((j) => j.status === "running" && j.kind.startsWith("index")) ?? false} /></div>}
 
     {projects.length > 0 && <Panel id="projects" title="Project memory" desc="How much of each project's code Brain can hand to agents right now." actions={<Link className="link" href={withRepo("/projects")}>Projects</Link>} flush>
       <div className="memory-rows" role="table" aria-label="Project memory">

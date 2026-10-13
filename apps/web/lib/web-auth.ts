@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { publicDemoProblem } from "./public-demo";
 
 export const SESSION_COOKIE = "pb_session";
 
@@ -102,6 +103,11 @@ export function forgetLoginState() {
 }
 
 export async function loginState({ fresh = false } = {}): Promise<LoginState> {
+  const demoProblem = publicDemoProblem();
+  if (demoProblem) {
+    warnOnce(demoProblem);
+    return { kind: "misconfigured", reason: demoProblem };
+  }
   const expected = process.env.WEB_BASIC_AUTH?.trim();
   if (expected) {
     const separator = expected.indexOf(":");

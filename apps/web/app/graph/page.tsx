@@ -56,7 +56,8 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
           />
           {tab === "map" ? (
             <Panel id="map" title="Module map" desc="Read left to right: entry points, then core logic, then storage." flush>
-              <div className="graph-wrap graph-wrap--full">
+              <p className="graph-scroll-hint text-dim">Scroll the map sideways on small screens, or open Connections for the full list.</p>
+              <div className="graph-wrap graph-wrap--full" tabIndex={0} role="region" aria-label="Scrollable module map">
                 <CodeGraph edges={edges} />
               </div>
               <p className="graph-legend">

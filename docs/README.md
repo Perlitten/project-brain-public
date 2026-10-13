@@ -1,21 +1,48 @@
-# Documentation index
+# Project Brain documentation
 
-| Doc | What it covers |
+Start with a working instance, then inspect how its evidence and access controls
+fit your workflow. Current guides below describe the maintained source product.
+Release-specific and experimental records are separated at the end.
+
+## Start here
+
+| Guide | Read it to… |
 |---|---|
-| [CLI.md](CLI.md) | `brain` command reference |
-| [MEMORY.md](MEMORY.md) | L1–L4 memory semantics and consolidation |
-| [EVAL.md](EVAL.md) | Golden tasks, benchmarks, adversarial verification, external imports |
-| [MCP.md](MCP.md) | MCP protocol details: annotations, resources, prompts, elicitation, deferred payloads, agent rules |
-| [FAQ.md](FAQ.md) | Positioning, token costs, offline mode, data privacy |
-| [BRAND.md](BRAND.md) | Voice and tone for public docs |
-| [DASHBOARD.md](DASHBOARD.md) | Operator dashboard guide |
-| [MEMORY_LESSON_PROTOCOL.md](MEMORY_LESSON_PROTOCOL.md) | Lesson/observation write protocol |
-| [adr/](adr/) | Architecture decision records |
-| [examples/](examples/) | Deploy helpers (reindex-on-push webhook) |
-| [good-first-issues.md](good-first-issues.md) | Prepared newcomer issues |
-| [runbooks/](runbooks/) | Operations runbooks |
+| [Getting started](GETTING_STARTED.md) | Install, index a repository and complete your first MCP task |
+| [Architecture](ARCHITECTURE.md) | Understand components, source integrity and trust boundaries |
+| [MCP](MCP.md) | Configure clients, inspect tools and understand protocol behavior |
+| [Dashboard](DASHBOARD.md) | Inspect projects, code maps, memory and service state |
+| [FAQ](FAQ.md) | Understand privacy, model costs, maturity and evidence limits |
 
-Root level: [README](../README.md) quickstart, [DEPLOYMENT](../DEPLOYMENT.md),
-[AGENT_DEPLOYMENT](../AGENT_DEPLOYMENT.md), [CONTRIBUTING](../CONTRIBUTING.md),
-[SECURITY](../SECURITY.md), [ROADMAP](../ROADMAP.md), [CHANGELOG](../CHANGELOG.md),
-[examples/](../examples/) client configs.
+## Configure and operate
+
+- [Model providers](MODEL_PROVIDERS.md): mock smoke tests, local models and cloud endpoints.
+- [CLI reference](CLI.md): indexing, context, health, backups and evaluation commands.
+- [Deployment](../DEPLOYMENT.md): authenticated remote installation, TLS and scoped keys.
+- [Agent deployment](../AGENT_DEPLOYMENT.md): operational gates for an agent running deployment.
+- [Operator runbook](../deploy/RUNBOOK.md) and [backup / restore](runbooks/backup-restore.md).
+- [Example client configs](../examples/) and [reindex-on-push helper](examples/reindex-on-push.yml).
+- [Demo policy](DEMO.md): isolated synthetic showcases and anonymous verification.
+
+## Understand memory and evidence
+
+- [Memory semantics](MEMORY.md): layers, consolidation and retrieval.
+- [Lesson protocol](MEMORY_LESSON_PROTOCOL.md): evidence and promotion approval rules.
+- [Evaluation](EVAL.md): functional gates, benchmark scope and limits.
+- [Architecture decision records](adr/): recorded design decisions and their status.
+
+## Contribute
+
+[Contribution guide](../CONTRIBUTING.md) · [Good first issues](good-first-issues.md) ·
+[Roadmap](../ROADMAP.md) · [Brand system](BRAND.md) · [Security](../SECURITY.md) ·
+[Changelog](../CHANGELOG.md) · [License](../LICENSE)
+
+## Release and historical records
+
+[Release documentation](release/README.md) contains the current release
+verification procedure and links to version-specific records.
+[Historical research and experiments](historical/README.md) is a catalog of
+retained designs, evaluation evidence and old workflows. Historical pages are
+not current installation instructions or proof of present performance.
+
+Return to the [product overview](../README.md).

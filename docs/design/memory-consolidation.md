@@ -1,5 +1,7 @@
 # Memory Consolidation Layer — Design Proposal
 
+> Historical design record: the early gap/draft sections below describe the system before consolidation shipped. For supported behavior and approval boundaries, use [MEMORY.md](../MEMORY.md) and [MEMORY_LESSON_PROTOCOL.md](../MEMORY_LESSON_PROTOCOL.md). Preserve this record for design provenance, not as current onboarding.
+
 **Status:** implemented (taxonomy updated 2026-10-06) · **Date:** 2026-10-05 · **Author:** Muse (for Andrey)
 
 > **Memory tiers (canonical, used everywhere in code and docs):**

@@ -1,5 +1,8 @@
 # FAQ
 
+Latest published release: **[v0.9.1](https://github.com/Perlitten/project-brain-public/releases/tag/v0.9.1)**.
+Use the [current getting-started guide](GETTING_STARTED.md) for installation.
+
 ## How is this different from Obsidian / Mem0 / Letta / plain RAG?
 
 - **vs Obsidian** — Brain is not a notes app: it indexes *code* (chunks +
@@ -61,13 +64,14 @@ write paths. See the [complete policy](MEMORY_LESSON_PROTOCOL.md).
 
 ## Do I need Neo4j?
 
-Only for graph-dependent tools (impact, couplings). The API and search run
-without it; tools degrade gracefully.
+Graph-dependent tools require Neo4j. Some search/API paths can operate without
+it, but the recommended source setup includes it and checks its health. A
+partially available service is not equivalent to a verified full installation.
 
 ## Is this production-ready?
 
 It is early single-user, self-hosted software for a trusted operator, not a
-multi-tenant team service. Main contains 0.9.1 development code; the latest
-published release is v0.9.0. Public exposure requires TLS and the scoped-key
-discipline in DEPLOYMENT.md. Production operation and useful coding outcomes
+multi-tenant team service. The published release has installation, indexing and
+MCP smoke coverage. Public exposure requires TLS and the scoped-key
+discipline in [Deployment](../DEPLOYMENT.md). Production operation and useful coding outcomes
 must be evaluated for your own workflow; passing tests do not establish them.

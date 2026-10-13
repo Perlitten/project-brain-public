@@ -204,6 +204,17 @@ const pickRepo = (repos: RawRepo[] | null, slug?: string | null) =>
   slug ? repos?.find((r) => String(r.id) === slug) ?? null : repos?.[0] ?? null;
 
 export type Paged<T> = { items: T[]; paging: ListPaging; available?: boolean };
+
+// Demo screens use the same URL-based search, facets and paging as live lists.
+// Filter before slicing; otherwise a typed search still shows every example.
+function demoPage<T>(rows: T[], q: ListQuery, text: (row: T) => string, status?: (row: T) => string): Paged<T> {
+  const words = q.q.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = rows.filter((row) => words.every((word) => text(row).toLowerCase().includes(word)));
+  const facets: Record<string, number> = {};
+  if (status) for (const row of matches) { const key = status(row); facets[key] = (facets[key] ?? 0) + 1; }
+  const filtered = q.status && status ? matches.filter((row) => status(row) === q.status) : matches;
+  return { items: filtered.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: filtered.length, facets }, available: true };
+}
 const queryString = (q: ListQuery) => {
   const p = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
   if (q.q) p.set("q", q.q);
@@ -614,7 +625,7 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
   const q = getListQuery(input);
   if (!apiConfigured) {
     const rows = mock.agentRuns.filter((r) => !slug || r.repo === slug);
-    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets: {} }, available: true };
+    return demoPage(rows, q, (r) => `${r.task} ${r.id} ${r.agent}`, (r) => r.status);
   }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
@@ -851,7 +862,7 @@ export const getReports = async (): Promise<Report[]> => {
  * remain available for compact dashboard widgets. */
 export const getPagedIndexRuns = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<IndexRun>> => {
   const q = getListQuery(input);
-  if (!apiConfigured) return { items: mock.indexRuns.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: mock.indexRuns.length, facets: {} }, available: true };
+  if (!apiConfigured) return demoPage(slug && !mock.repositories.some((r) => r.slug === slug) ? [] : mock.indexRuns, q, (r) => `#${r.id} ${r.revision} ${r.startedAt} ${r.trigger}`, (r) => r.status);
   return live<Paged<IndexRun>>({ items: [], paging: { ...q, total: 0, facets: {} }, available: false }, async () => {
     const repo = pickRepo(await fetchRepos(), slug);
     if (!repo) return null;
@@ -867,12 +878,7 @@ export const getPagedContextPacks = async (input: Partial<ListQuery> = {}, slug?
   const q = getListQuery(input);
   if (!apiConfigured) {
     const rows = mock.contextPacks.filter((p) => !slug || p.repo === slug);
-    const facets = {
-      outdated: rows.filter((p) => p.stale === true).length,
-      fresh: rows.filter((p) => p.stale === false).length,
-      unknown: rows.filter((p) => p.stale === null).length,
-    };
-    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets }, available: true };
+    return demoPage(rows, q, (p) => `${p.task} ${p.id} ${p.consumer}`, (p) => p.stale === true ? "outdated" : p.stale === false ? "fresh" : "unknown");
   }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
@@ -886,7 +892,7 @@ export const getPagedReports = async (input: Partial<ListQuery> = {}): Promise<P
   const q = getListQuery(input);
   if (!apiConfigured) {
     const rows = mock.reports;
-    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets: {} }, available: true };
+    return demoPage(rows, q, (r) => `${r.title} ${r.id}`);
   }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const data = await brainFetch<Json>(`/api/web/reports?${queryString(q)}`);
@@ -898,7 +904,7 @@ export const getPagedInsights = async (slug: string | null | undefined, input: P
   const q = getListQuery(input);
   if (!apiConfigured) {
     const rows = mock.insights;
-    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets: {} }, available: true };
+    return demoPage(rows, q, (i) => `${i.title} ${i.evidence} ${i.module} ${i.kind}`, (i) => i.tone);
   }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const params = new URLSearchParams(queryString({ ...q, status: "" }));
@@ -915,7 +921,7 @@ export const getPagedDecisions = async (slug: string | null | undefined, input: 
   const q = getListQuery(input);
   if (!apiConfigured) {
     const rows = mock.decisions.filter((d) => !slug || d.repo === slug);
-    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets: {} }, available: true };
+    return demoPage(rows, q, (d) => `${d.title} ${d.summary} ${d.scope} ${d.id}`, (d) => d.status);
   }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
@@ -929,7 +935,7 @@ export const getPagedRules = async (slug: string | null | undefined, input: Part
   const q = getListQuery(input);
   if (!apiConfigured) {
     const rows = mock.rules.filter((r) => !slug || r.repo === slug);
-    return { items: rows.slice((q.page - 1) * q.size, q.page * q.size), paging: { ...q, total: rows.length, facets: {} }, available: true };
+    return demoPage(rows, q, (r) => `${r.rule} ${r.id} ${r.scope}`, (r) => r.severity);
   }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
