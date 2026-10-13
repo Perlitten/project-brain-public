@@ -25,7 +25,7 @@ jobs:
           pip install --require-hashes -r requirements-dev.lock
           pip install --no-deps -e .
       - name: Zero-service SQLite acceptance
-        run: pytest tests/test_lite_mode.py -q
+        run: python scripts/run_lite_ci.py
 
   public-privacy:
     runs-on: ubuntu-latest
