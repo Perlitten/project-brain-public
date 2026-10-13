@@ -96,6 +96,11 @@ exclude = ["**/.next/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.env", "
 [tool.hatch.build.targets.editable]
 dev-mode-dirs = ["."]
 
+[tool.hatch.build.targets.sdist]
+# Source archives need the same protection as wheels, including when built
+# after frontend development or from an unpacked source distribution.
+exclude = ["**/.next/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.env", "**/.env.*", "**/.deploy.env", "**/.npmrc", "**/.venv/**", "**/.git/**", "/reports/**", "/context_packs/**", "!**/.env*.example"]
+
 [tool.mypy]
 # 3.12 required: numpy's shipped stubs use the PEP 695 `type` statement, which
 # mypy rejects under an older --python-version target. The >=3.10 support floor
