@@ -10,8 +10,26 @@ from eval.product_upgrade_gate import compare
 
 def captures():
     evidence = Path(__file__).resolve().parents[1] / "docs/release/evidence/pr75-hotfix"
-    return tuple(json.loads((evidence / f"{phase}-{'validated' if phase == 'before' else 'final'}.json").read_text(encoding="utf-8"))
+    return tuple(json.loads((evidence / f"{phase}-{'validated' if phase == 'before' else 'review3'}.json").read_text(encoding="utf-8"))
                  for phase in ("before", "after"))
+
+
+@pytest.mark.parametrize("kind,field,marker", [
+    ("context", "missing", "context_error:RuntimeError"),
+    ("impact", "degraded", "impact_error:RuntimeError"),
+    ("impact", "degraded", "impact_deadline_exceeded"),
+    ("context", "missing", "context_deadline_exceeded"),
+    ("search", "degraded", "search_error:RuntimeError"),
+])
+def test_http_200_runtime_failure_envelopes_cannot_be_captured(kind, field, marker):
+    from eval.product_upgrade_capture import validate_response
+    with pytest.raises(ValueError, match="response failed"):
+        validate_response({"status": "partial", field: [marker]}, kind, "synthetic")
+
+
+def test_legitimate_unsupported_context_abstention_remains_valid():
+    from eval.product_upgrade_capture import validate_response
+    validate_response({"status": "partial", "missing": ["insufficient_evidence"], "candidates": []}, "context", "context-007")
 
 
 def test_captured_nonregression_preserves_individual_misses():

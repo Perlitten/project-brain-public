@@ -30,7 +30,7 @@ query-time path classification is corrected immediately.
 
 ## Offline verification
 
-- Full default-profile Python suite: **2155 passed, 11 optional skips**.
+- Full default-profile Python suite: **2163 passed, 11 optional skips**.
 - Ruff passes; mypy reports **zero errors**; public launch and docs guards pass.
 - Wheel/sdist archive checks pass. The candidate wheel is installed without
   dependency downloads into an isolated copy of the hash-locked baseline
@@ -43,14 +43,14 @@ query-time path classification is corrected immediately.
   learned semantic or coding benefit.
 
 New [before](evidence/pr75-hotfix/before-validated.json) and
-[after](evidence/pr75-hotfix/after-final.json) captures execute all 20 unchanged goldens,
+[after](evidence/pr75-hotfix/after-review3.json) captures execute all 20 unchanged goldens,
 seven context tasks and four impact tasks against the same frozen source
 (`2a7e66819c60b6eeb19edbb2cc9c2a082184fe57`), verified index and offline provider.
 The baseline package's six changed runtime modules byte-match pre-hotfix main;
 each arm runs in a fresh process, so the context cache starts empty. Chat is
 disabled and API calls use an in-process ASGI transport.
 
-The strengthened [gate](evidence/pr75-hotfix/gate-final.json) passes:
+The strengthened [gate](evidence/pr75-hotfix/gate-review3.json) passes:
 
 | Metric | Before → hotfix |
 |---|---|
@@ -62,7 +62,7 @@ The strengthened [gate](evidence/pr75-hotfix/gate-final.json) passes:
 ```bash
 python -m eval.product_upgrade_gate \
   docs/release/evidence/pr75-hotfix/before-validated.json \
-  docs/release/evidence/pr75-hotfix/after-final.json
+  docs/release/evidence/pr75-hotfix/after-review3.json
 ```
 
 Existing golden inputs, task definitions, baseline captures and historical
@@ -107,3 +107,11 @@ Historical retrieval-default evidence independently shows Hit@5 **80% → 75%**.
 The stricter gate flags this historical loss; it is not relabelled as passing.
 The matched-contract pre-hotfix/current comparison shows no additional loss.
 Token-hash results do not establish learned semantic quality.
+
+PR #78's first review additionally found v2 HTTP-200 failure envelopes and
+unused adjacency capacity. Captures now reject endpoint error markers and
+deadline failures before saving evidence, while legitimate unsupported-feature
+abstention remains valid. Traversal backfills unused incoming capacity from
+outgoing edges without exceeding 128 total edge reads or losing the incoming
+reservation. Six failure-envelope/abstention cases and two unbalanced-degree
+regressions pass. All 31 tasks were freshly captured after these corrections.
