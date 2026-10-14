@@ -1,0 +1,1315 @@
+{
+  "phase": "before",
+  "provider": "local-token-hash-v1",
+  "corpus_source": "2a7e66819c60b6eeb19edbb2cc9c2a082184fe57",
+  "input_hash": "92818fedc09401c54ea04bbcea82be4f59fe1df16ba62bc7f8efd3d4e7ec99ab",
+  "golden_metrics": {
+    "hit_1_count": 9,
+    "hit_3_count": 13,
+    "hit_5_count": 16,
+    "hit_3_any_count": 13,
+    "hit_1_pct": 45.0,
+    "hit_3_pct": 65.0,
+    "hit_5_pct": 80.0,
+    "hit_3_any_pct": 65.0,
+    "mrr": 0.5746
+  },
+  "goldens": [
+    {
+      "id": "q001",
+      "question": "How are files chunked during indexing (line window, overlap, and symbol-aware behavior), and where are the chunk-size defaults sourced?",
+      "rank": 4,
+      "rank_chunks": 2,
+      "rank_any": 2,
+      "hit_at_1": false,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": true,
+      "hit_at_3_any": true,
+      "mrr": 0.5,
+      "status": "PASS",
+      "expected_files": [
+        "brain/indexers/file_indexer.py",
+        "brain/indexers/repo_indexer.py"
+      ],
+      "response_files": [
+        "tests/test_index_chunk_bounds.py",
+        "tests/test_indexing_reliability.py",
+        "tests/test_retrieval_service.py",
+        "brain/indexers/file_indexer.py",
+        "brain/database/migrations.py",
+        "brain/database/models.py",
+        "apps/api/audit_middleware.py",
+        "apps/api/auth.py",
+        "apps/api/dependencies.py",
+        "apps/api/harness_schemas.py"
+      ],
+      "response_chunk_files": [
+        "brain/graph/extractors_v2.py",
+        "brain/indexers/file_indexer.py",
+        "brain/context/context_pack_builder.py",
+        "brain/experiments/orchestrator.py",
+        "brain/graph/extractors_v2.py",
+        "brain/insights/drift_waivers.py",
+        "brain/context/runtime_context_builder.py",
+        "brain/lab/engine.py",
+        "brain/improvement/registry/registry.py",
+        "brain/insights/coupling_metrics.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q002",
+      "question": "How does the hybrid search pipeline combine lexical/symbol/vector/graph/memory surfaces and apply Reciprocal Rank Fusion weights and query caps?",
+      "rank": 1,
+      "rank_chunks": 1,
+      "rank_any": 1,
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": true,
+      "hit_at_3_any": true,
+      "mrr": 1.0,
+      "status": "PASS",
+      "expected_files": [
+        "brain/retrieval/pipeline.py",
+        "brain/search/filters.py",
+        "brain/retrieval/reranker.py"
+      ],
+      "response_files": [
+        "brain/search/filters.py",
+        "tests/test_surfaces_v6.py",
+        "tests/test_retrieval_deadlines.py",
+        "tests/test_retrieval_quality_fixes.py",
+        "brain/graph/generation_manager.py",
+        "brain/retrieval/pipeline.py",
+        "brain/search/code_search.py",
+        "apps/api/routers/app_settings.py",
+        "apps/api/routers/audit.py",
+        "apps/api/routers/control.py"
+      ],
+      "response_chunk_files": [
+        "brain/retrieval/pipeline.py",
+        "brain/retrieval/pipeline.py",
+        "brain/retrieval/fusion.py",
+        "brain/improvement/weekly_factory.py",
+        "tests/test_utility_benchmark_pilot.py",
+        "brain/insights/drift_baseline.py",
+        "brain/retrieval/pipeline.py",
+        "brain/graph/schema_v2.py",
+        "brain/insights/drift_waivers.py",
+        "brain/llm/providers/mock_provider.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q003",
+      "question": "Which embedding providers are supported through configuration, and what fallback/error behavior occurs on unknown provider names?",
+      "rank": 0,
+      "rank_chunks": 3,
+      "rank_any": 3,
+      "hit_at_1": false,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": true,
+      "hit_at_3_any": true,
+      "mrr": 0.3333333333333333,
+      "status": "PASS",
+      "expected_files": [
+        "brain/llm/__init__.py",
+        "brain/embeddings/config.py",
+        "brain/config/settings.py"
+      ],
+      "response_files": [
+        "brain/llm/presets.py",
+        "brain/late_interaction/provider.py",
+        "brain/llm/providers/anthropic_provider.py",
+        "brain/llm/providers/base.py",
+        "brain/llm/providers/google_provider.py",
+        "brain/llm/providers/mock_provider.py",
+        "brain/llm/providers/nvidia_provider.py",
+        "brain/llm/providers/openai_compatible.py",
+        "brain/llm/providers/openai_provider.py",
+        "brain/embeddings/card_embeddings.py"
+      ],
+      "response_chunk_files": [
+        "brain/llm/providers/base.py",
+        "brain/llm/providers/anthropic_provider.py",
+        "brain/embeddings/config.py",
+        "brain/llm/router.py",
+        "brain/llm/__init__.py",
+        "brain/llm/providers/base.py",
+        "brain/onboarding/envfile.py",
+        "brain/llm/providers/base.py",
+        "brain/llm/providers/__init__.py",
+        "tests/test_llm_providers.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q004",
+      "question": "What hard caps exist for embedding input size, and where are truncation or warning behaviors implemented for oversized text?",
+      "rank": 1,
+      "rank_chunks": 5,
+      "rank_any": 1,
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": true,
+      "mrr": 1.0,
+      "status": "PASS",
+      "expected_files": [
+        "brain/llm/providers/nvidia_provider.py",
+        "brain/indexers/file_indexer.py"
+      ],
+      "response_files": [
+        "brain/indexers/file_indexer.py",
+        "tests/test_agent_payload_contracts.py",
+        "tests/test_change_laboratory.py",
+        "tests/test_deployment_reliability.py",
+        "tests/test_index_chunk_bounds.py",
+        "tests/test_indexing_reliability.py",
+        "tests/test_memory_episode_endpoints.py",
+        "tests/test_openai_compatible.py",
+        "apps/api/auth.py",
+        "apps/api/helpers.py"
+      ],
+      "response_chunk_files": [
+        "brain/embeddings/__init__.py",
+        "apps/web/lib/data.ts",
+        "brain/retrieval/service.py",
+        "brain/embeddings/backfill.py",
+        "brain/indexers/file_indexer.py",
+        "brain/indexers/file_indexer.py",
+        "brain/auth/oauth_store.py",
+        "apps/api/routers/core_retrieval.py",
+        "brain/config/settings.py",
+        "brain/search/code_search.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q005",
+      "question": "How does POST /search parse query options and translate them into retrieval behavior?",
+      "rank": 0,
+      "rank_chunks": 8,
+      "rank_any": 8,
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": false,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": false,
+      "mrr": 0.125,
+      "status": "FAIL",
+      "expected_files": [
+        "apps/api/routers/core.py",
+        "apps/api/schemas.py",
+        "brain/search/code_search.py"
+      ],
+      "response_files": [
+        "tests/test_repo_scoped_search.py",
+        "tests/test_retrieval_quality_fixes.py",
+        "tests/test_context_pack_pagination.py",
+        "tests/test_late_interaction_gpu_service.py",
+        "tests/test_proactive_insights.py",
+        "tests/test_remediation_experiments.py",
+        "eval/run_golden_eval.py",
+        "apps/api/routers/core_retrieval.py",
+        "apps/api/audit_middleware.py",
+        "apps/api/routers/app_settings.py"
+      ],
+      "response_chunk_files": [
+        "brain/integrations/obsidian.py",
+        "brain/memory/decision_store.py",
+        "apps/api/routers/core_retrieval.py",
+        "tests/test_runtime_context_builder.py",
+        "apps/api/routers/telegram_bridge.py",
+        "brain/retrieval/service.py",
+        "brain/late_interaction/application.py",
+        "brain/search/code_search.py",
+        "apps/web/lib/glossary.ts",
+        "apps/mcp_server/protocol.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q006",
+      "question": "Where and how are decisions/rules injected into /ask (or synthesis) prompts, and what precedence or formatting is applied?",
+      "rank": 0,
+      "rank_chunks": 0,
+      "rank_any": 0,
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": false,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": false,
+      "mrr": 0.0,
+      "status": "FAIL",
+      "expected_files": [
+        "apps/api/routers/core.py",
+        "brain/memory/decision_store.py",
+        "brain/memory/rule_store.py"
+      ],
+      "response_files": [
+        "tests/test_ask_budget_deadline.py",
+        "tests/test_ask_compact_generation.py",
+        "tests/test_normative_memory_relevance.py",
+        "apps/cli/commands/decision.py",
+        "apps/cli/commands/rules.py",
+        "brain/insights/coupling_rules.py",
+        "brain/insights/drift_rules.py",
+        "apps/api/harness_schemas.py",
+        "apps/api/request_observation.py",
+        "apps/api/routers/control.py"
+      ],
+      "response_chunk_files": [
+        "apps/mcp_server/server.py",
+        "apps/api/routers/core_retrieval.py",
+        "apps/web/components/Shell.tsx",
+        "apps/api/routers/telegram_bridge.py",
+        "tests/test_portfolio_fixture_scenarios.py",
+        "brain/context/rendering.py",
+        "apps/mcp_server/protocol.py",
+        "brain/integrations/obsidian.py",
+        "apps/mcp_server/server.py",
+        "apps/mcp_server/protocol.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q007",
+      "question": "What are the authoritative task states and transition matrix for harness tasks, and how are terminal states enforced?",
+      "rank": 0,
+      "rank_chunks": 0,
+      "rank_any": 0,
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": false,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": false,
+      "mrr": 0.0,
+      "status": "FAIL",
+      "expected_files": [
+        "brain/database/harness_models.py",
+        "brain/memory/harness_store.py"
+      ],
+      "response_files": [
+        "apps/api/routers/harness.py",
+        "apps/api/harness_schemas.py",
+        "apps/api/routers/control.py",
+        "apps/api/routers/execution.py",
+        "apps/api/routers/experiments.py",
+        "apps/api/routers/lab.py",
+        "apps/mcp_server/remote_server.py",
+        "apps/mcp_server/server.py",
+        "apps/web/app/loading.tsx",
+        "apps/web/components/KeyDialog.tsx"
+      ],
+      "response_chunk_files": [
+        "brain/llm/router.py",
+        "apps/mcp_server/server.py",
+        "brain/workspace/path_sandbox.py",
+        "brain/evidence/builder.py",
+        "apps/api/routers/telegram_bridge.py",
+        "brain/execution/journal.py",
+        "brain/insights/detectors.py",
+        "tests/test_utility_benchmark_pilot.py",
+        "brain/llm/providers/base.py",
+        "brain/llm/router.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q008",
+      "question": "How is optimistic concurrency implemented for task updates (version checks, expected_task_version, and lease/version race handling)?",
+      "rank": 0,
+      "rank_chunks": 1,
+      "rank_any": 1,
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": true,
+      "hit_at_3_any": true,
+      "mrr": 1.0,
+      "status": "PASS",
+      "expected_files": [
+        "brain/memory/harness_store.py",
+        "brain/database/harness_models.py",
+        "brain/database/session.py"
+      ],
+      "response_files": [
+        "apps/api/harness_schemas.py",
+        "apps/api/routers/harness.py",
+        "brain/workers/runtime.py",
+        "brain/workers/worker.py",
+        "tests/test_harness_api.py",
+        "tests/test_harness_store.py",
+        "apps/api/routers/core_lifecycle.py",
+        "apps/api/routers/execution.py",
+        "apps/api/routers/remediation.py",
+        "apps/api/routers/web_login.py"
+      ],
+      "response_chunk_files": [
+        "brain/memory/harness_store.py",
+        "brain/memory/harness_store.py",
+        "apps/web/lib/web-auth.ts",
+        "brain/memory/harness_store.py",
+        "brain/workspace/path_sandbox.py",
+        "brain/memory/harness_store.py",
+        "brain/search/filters.py",
+        "brain/memory/harness_store.py",
+        "brain/portfolio/store.py",
+        "tests/test_web_login.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q009",
+      "question": "How does DecisionStore implement canonical upsert behavior for decision entries and avoid duplicates?",
+      "rank": 1,
+      "rank_chunks": 1,
+      "rank_any": 1,
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": true,
+      "hit_at_3_any": true,
+      "mrr": 1.0,
+      "status": "PASS",
+      "expected_files": [
+        "brain/memory/decision_store.py",
+        "brain/database/repository_utils.py",
+        "brain/database/models.py"
+      ],
+      "response_files": [
+        "brain/memory/decision_store.py",
+        "tests/test_dashboard_telemetry.py",
+        "tests/test_freshness_incremental.py",
+        "tests/test_graph_and_memory.py",
+        "tests/test_retrieval_pipeline.py",
+        "apps/api/helpers.py",
+        "apps/api/mcp_oauth.py",
+        "apps/api/request_id_middleware.py",
+        "apps/api/routers/control.py",
+        "apps/api/routers/core_memory.py"
+      ],
+      "response_chunk_files": [
+        "brain/memory/decision_store.py",
+        "brain/improvement/report_generator.py",
+        "brain/insights/coupling_metrics.py",
+        "apps/cli/commands/decision.py",
+        "brain/memory/rule_store.py",
+        "brain/retrieval/service.py",
+        "brain/late_interaction/codec.py",
+        "brain/lab/engine.py",
+        "tests/test_canonical_memory_security.py",
+        "brain/experiments/orchestrator.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q010",
+      "question": "How does RuleStore retrieve active rules scoped by repository and evaluate effective precedence for a repository path?",
+      "rank": 1,
+      "rank_chunks": 3,
+      "rank_any": 1,
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": true,
+      "hit_at_3_any": true,
+      "mrr": 1.0,
+      "status": "PASS",
+      "expected_files": [
+        "brain/memory/rule_store.py",
+        "brain/database/repository_utils.py",
+        "brain/database/models.py"
+      ],
+      "response_files": [
+        "brain/memory/rule_store.py",
+        "tests/test_normative_memory_relevance.py",
+        "brain/insights/drift_rules.py",
+        "apps/mcp_server/protocol.py",
+        "apps/mcp_server/remote_server.py",
+        "apps/mcp_server/server.py",
+        "tests/test_diff_review_llm_fallback.py",
+        "tests/test_graph_and_memory.py",
+        "apps/api/main.py",
+        "apps/api/mcp_oauth.py"
+      ],
+      "response_chunk_files": [
+        "apps/mcp_server/server.py",
+        "brain/workspace/__init__.py",
+        "brain/memory/rule_store.py",
+        "apps/mcp_server/server.py",
+        "apps/api/routers/core_lifecycle.py",
+        "brain/workspace/path_sandbox.py",
+        "tests/test_runtime_context_builder.py",
+        "apps/mcp_server/remote_server.py",
+        "brain/context/context_pack_builder.py",
+        "brain/context/context_pack_builder.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q011",
+      "question": "What does API auth require in production versus development, and how are missing/invalid X-API-Key requests handled?",
+      "rank": 3,
+      "rank_chunks": 1,
+      "rank_any": 1,
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": true,
+      "hit_at_3_any": true,
+      "mrr": 1.0,
+      "status": "PASS",
+      "expected_files": [
+        "apps/api/auth.py",
+        "apps/api/dependencies.py",
+        "apps/api/main.py"
+      ],
+      "response_files": [
+        "tests/test_doctor.py",
+        "tests/test_telegram_alerts.py",
+        "apps/api/auth.py",
+        "tests/test_harness_api.py",
+        "tests/test_jobs_api.py",
+        "tests/test_telegram_bridge_auth.py",
+        "tests/test_v050_api_contracts.py",
+        "tests/test_web_router.py",
+        "tests/test_worker_scheduler.py",
+        "apps/api/audit_middleware.py"
+      ],
+      "response_chunk_files": [
+        "apps/api/auth.py",
+        "apps/api/auth.py",
+        "apps/api/routers/freshness.py",
+        "tests/test_api_scope_coverage.py",
+        "apps/api/routers/operations.py",
+        "apps/api/routers/routing.py",
+        "apps/api/routers/impact.py",
+        "brain/improvement/replay/runner.py",
+        "apps/api/routers/admin.py",
+        "tests/test_evidence_ledger.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q012",
+      "question": "How does the Next.js dashboard fail closed for live data and authenticate its API bridge?",
+      "rank": 0,
+      "rank_chunks": 5,
+      "rank_any": 5,
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": true,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": false,
+      "mrr": 0.2,
+      "status": "FAIL",
+      "expected_files": [
+        "apps/web/lib/web-auth.ts",
+        "apps/web/proxy.ts",
+        "apps/web/app/api/brain/[...path]/route.ts"
+      ],
+      "response_files": [
+        "tests/test_telegram_alerts.py",
+        "tests/test_backup_restore.py",
+        "tests/test_context_budget.py",
+        "tests/test_control_plane.py",
+        "tests/test_repo_freshness.py",
+        "apps/api/routers/web.py",
+        "tests/test_dashboard_telemetry.py",
+        "tests/test_harness_api.py",
+        "apps/api/audit_middleware.py",
+        "apps/api/auth.py"
+      ],
+      "response_chunk_files": [
+        "brain/graph/extractors_v2.py",
+        "brain/experiments/orchestrator.py",
+        "brain/memory/rule_store.py",
+        "brain/memory/decision_store.py",
+        "apps/web/lib/web-auth.ts",
+        "apps/web/app/not-found.tsx",
+        "apps/web/components/access/SignIn.tsx",
+        "brain/llm/providers/google_provider.py",
+        "brain/insights/review_queue.py",
+        "apps/web/lib/actions/types.ts"
+      ],
+      "error": null
+    },
+    {
+      "id": "q013",
+      "question": "Which read-only web APIs expose repository and usage analytics, and how are overview metrics shaped?",
+      "rank": 1,
+      "rank_chunks": 0,
+      "rank_any": 1,
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": true,
+      "mrr": 1.0,
+      "status": "PASS",
+      "expected_files": [
+        "apps/api/routers/web.py",
+        "apps/api/helpers.py",
+        "apps/web/lib/data.ts"
+      ],
+      "response_files": [
+        "apps/api/routers/web.py",
+        "tests/test_control_plane.py",
+        "tests/test_dashboard_telemetry.py",
+        "tests/test_setup_onboarding.py",
+        "apps/web/components/ArtifactReader.tsx",
+        "apps/web/lib/repository-status.ts",
+        "apps/api/audit_middleware.py",
+        "apps/api/main.py",
+        "apps/api/mcp_oauth.py",
+        "apps/api/mcp_status.py"
+      ],
+      "response_chunk_files": [
+        "brain/routing/complexity.py",
+        "brain/improvement/replay/historical_fixture.py",
+        "apps/web/components/RailPulse.tsx",
+        "apps/web/lib/actions/pulse.ts",
+        "brain/portfolio/__init__.py",
+        "apps/mcp_server/protocol.py",
+        "apps/web/app/api/brain/[...path]/route.ts",
+        "apps/web/proxy.ts",
+        "apps/api/routers/web_login.py",
+        "brain/workspace/__init__.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q014",
+      "question": "How does the web UI display job status, and which authenticated API and worker modules execute job actions?",
+      "rank": 0,
+      "rank_chunks": 3,
+      "rank_any": 3,
+      "hit_at_1": false,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": true,
+      "hit_at_3_any": true,
+      "mrr": 0.3333333333333333,
+      "status": "PASS",
+      "expected_files": [
+        "apps/web/lib/data.ts",
+        "apps/api/routers/jobs.py",
+        "brain/workers/queue.py"
+      ],
+      "response_files": [
+        "apps/api/routers/web.py",
+        "tests/test_jobs_api.py",
+        "tests/test_worker_liveness.py",
+        "apps/api/routers/core_status.py",
+        "apps/api/audit_middleware.py",
+        "apps/api/auth.py",
+        "apps/api/dependencies.py",
+        "apps/api/harness_schemas.py",
+        "apps/api/helpers.py",
+        "apps/api/__init__.py"
+      ],
+      "response_chunk_files": [
+        "apps/web/lib/actions/types.ts",
+        "apps/web/components/settings/Scheduler.tsx",
+        "brain/workers/queue.py",
+        "apps/web/lib/sign-in-view.ts",
+        "apps/web/components/settings/Settings.tsx",
+        "brain/database/session.py",
+        "apps/api/routers/core_retrieval.py",
+        "apps/api/routers/web.py",
+        "apps/web/app/packs/[id]/download/route.ts",
+        "apps/web/lib/actions/login.ts"
+      ],
+      "error": null
+    },
+    {
+      "id": "q015",
+      "question": "What node and relationship types are allowed in graph ingestion, and how is validation normalized before write?",
+      "rank": 4,
+      "rank_chunks": 5,
+      "rank_any": 4,
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": true,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": false,
+      "mrr": 0.25,
+      "status": "FAIL",
+      "expected_files": [
+        "brain/graph/schema.py",
+        "brain/graph/graph_client.py"
+      ],
+      "response_files": [
+        "brain/graph/write_buffer.py",
+        "brain/graph/generation_manager.py",
+        "brain/graph/quality_gate.py",
+        "brain/graph/schema.py",
+        "brain/graph/schema_v2.py",
+        "brain/freshness/generation_deriver.py",
+        "apps/api/harness_schemas.py",
+        "apps/api/helpers.py",
+        "apps/api/logging_setup.py",
+        "apps/api/routers/admin.py"
+      ],
+      "response_chunk_files": [
+        "brain/graph/__init__.py",
+        "brain/graph/generation_manager.py",
+        "brain/search/filters.py",
+        "brain/freshness/generation_deriver.py",
+        "brain/graph/graph_client.py",
+        "apps/mcp_server/protocol.py",
+        "brain/control/__init__.py",
+        "brain/lab/engine.py",
+        "brain/freshness/generation_deriver.py",
+        "brain/memory/decision_store.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q016",
+      "question": "How does graph cleanup behave for repository-level deletions and stale file-node pruning?",
+      "rank": 3,
+      "rank_chunks": 4,
+      "rank_any": 3,
+      "hit_at_1": false,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": true,
+      "mrr": 0.3333333333333333,
+      "status": "PASS",
+      "expected_files": [
+        "brain/graph/graph_client.py",
+        "brain/indexers/repo_indexer.py",
+        "brain/indexers/file_indexer.py"
+      ],
+      "response_files": [
+        "tests/test_portfolio_fixture_scenarios.py",
+        "brain/database/repository_utils.py",
+        "brain/graph/graph_client.py",
+        "brain/graph/schema_v2.py",
+        "brain/indexers/file_indexer.py",
+        "brain/indexers/graph_enrichment.py",
+        "tests/test_graph_repository_isolation.py",
+        "apps/api/audit_middleware.py",
+        "apps/api/auth.py",
+        "apps/api/dependencies.py"
+      ],
+      "response_chunk_files": [
+        "brain/freshness/generation_deriver.py",
+        "apps/web/lib/data.ts",
+        "apps/api/routers/core_lifecycle.py",
+        "brain/indexers/file_indexer.py",
+        "apps/api/routers/web.py",
+        "brain/routing/complexity.py",
+        "brain/freshness/generation_deriver.py",
+        "brain/workspace/audit_events.py",
+        "brain/context/context_pack_builder.py",
+        "brain/context/runtime_context_builder.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q017",
+      "question": "What is the queue contract for background jobs (storage schema, dequeuing semantics, and recovery of crashed workers)?",
+      "rank": 6,
+      "rank_chunks": 0,
+      "rank_any": 6,
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": false,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": false,
+      "mrr": 0.16666666666666666,
+      "status": "FAIL",
+      "expected_files": [
+        "brain/workers/queue.py"
+      ],
+      "response_files": [
+        "apps/web/components/BackgroundJobs.tsx",
+        "tests/test_worker_queue.py",
+        "tests/test_worker_queue_routing.py",
+        "tests/test_deployment_reliability.py",
+        "tests/test_portfolio_fixture_scenarios.py",
+        "brain/workers/queue.py",
+        "apps/api/harness_schemas.py",
+        "apps/api/main.py",
+        "apps/api/routers/app_settings.py",
+        "apps/api/routers/control.py"
+      ],
+      "response_chunk_files": [
+        "brain/insights/review_queue.py",
+        "tests/test_mcp.py",
+        "brain/insights/subsystem_config.py",
+        "brain/database/models.py",
+        "brain/context/context_pack_builder.py",
+        "brain/search/code_search.py",
+        "brain/search/filters.py",
+        "brain/workers/scheduler.py",
+        "brain/memory/harness_store.py",
+        "brain/alerts/telegram.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q018",
+      "question": "Which job types are supported and which services/modules do they execute when run?",
+      "rank": 4,
+      "rank_chunks": 6,
+      "rank_any": 4,
+      "hit_at_1": false,
+      "hit_at_3": false,
+      "hit_at_5": true,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": false,
+      "mrr": 0.25,
+      "status": "FAIL",
+      "expected_files": [
+        "brain/workers/tasks.py",
+        "brain/workers/worker.py"
+      ],
+      "response_files": [
+        "brain/autonomy/goal_run.py",
+        "brain/workers/runtime.py",
+        "apps/web/lib/actions/scheduler.ts",
+        "brain/workers/tasks.py",
+        "brain/workers/worker.py",
+        "tests/test_runtime_context_builder.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_insight_detector_contract.py",
+        "apps/api/logging_setup.py",
+        "apps/api/mcp_http.py"
+      ],
+      "response_chunk_files": [
+        "brain/memory/consolidation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_mcp_client_configs.py",
+        "brain/onboarding/envfile.py",
+        "brain/insights/detectors.py",
+        "brain/workers/tasks.py",
+        "tests/test_late_interaction_surfaces.py",
+        "apps/web/lib/actions/types.ts",
+        "brain/database/models.py",
+        "brain/alerts/telegram.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q019",
+      "question": "How does the model router choose models per task kind, and how does it cache provider instances?",
+      "rank": 2,
+      "rank_chunks": 1,
+      "rank_any": 1,
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": true,
+      "hit_at_3_any": true,
+      "mrr": 1.0,
+      "status": "PASS",
+      "expected_files": [
+        "brain/llm/router.py",
+        "brain/llm/__init__.py",
+        "brain/embeddings/config.py"
+      ],
+      "response_files": [
+        "tests/test_model_router.py",
+        "brain/llm/router.py",
+        "brain/llm/presets.py",
+        "tests/test_late_interaction.py",
+        "tests/test_openai_compatible.py",
+        "tests/test_path_hints.py",
+        "apps/api/auth.py",
+        "apps/api/harness_schemas.py",
+        "apps/api/helpers.py",
+        "apps/api/mcp_http.py"
+      ],
+      "response_chunk_files": [
+        "brain/llm/router.py",
+        "brain/late_interaction/codec.py",
+        "brain/context/context_pack_builder.py",
+        "brain/execution/cancellation.py",
+        "brain/workspace/capabilities.py",
+        "brain/improvement/comparison.py",
+        "tests/test_proactive_insights.py",
+        "brain/improvement/report_generator.py",
+        "apps/web/app/help/page.tsx",
+        "brain/insights/coupling_metrics.py"
+      ],
+      "error": null
+    },
+    {
+      "id": "q020",
+      "question": "What provider-specific implementations exist for LLM, embedding, and summarizer interfaces, and how are unsupported operations (e.g., Anthropic embeddings) handled?",
+      "rank": 1,
+      "rank_chunks": 0,
+      "rank_any": 1,
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "hit_at_5": true,
+      "hit_at_3_chunks": false,
+      "hit_at_3_any": true,
+      "mrr": 1.0,
+      "status": "PASS",
+      "expected_files": [
+        "brain/llm/providers/base.py",
+        "brain/llm/providers/anthropic_provider.py",
+        "brain/llm/providers/openai_provider.py",
+        "brain/llm/providers/google_provider.py",
+        "brain/llm/providers/nvidia_provider.py",
+        "brain/llm/providers/mock_provider.py"
+      ],
+      "response_files": [
+        "brain/llm/providers/anthropic_provider.py",
+        "tests/test_openai_compatible.py",
+        "brain/embeddings/card_embeddings.py",
+        "brain/llm/providers/base.py",
+        "brain/llm/providers/google_provider.py",
+        "brain/llm/providers/mock_provider.py",
+        "apps/api/auth.py",
+        "apps/api/helpers.py",
+        "apps/api/mcp_oauth.py",
+        "apps/api/mcp_status.py"
+      ],
+      "response_chunk_files": [
+        "brain/llm/router.py",
+        "brain/llm/providers/__init__.py",
+        "brain/llm/__init__.py",
+        "brain/indexers/file_indexer.py",
+        "brain/embeddings/config.py",
+        "tests/test_llm_providers.py",
+        "apps/web/lib/actions/setup.ts",
+        "brain/embeddings/card_embeddings.py",
+        "brain/llm/factory.py",
+        "tests/test_runtime_context_builder.py"
+      ],
+      "error": null
+    }
+  ],
+  "tasks": [
+    {
+      "id": "context-001",
+      "type": "context",
+      "input": {
+        "id": "context-001",
+        "type": "context",
+        "task_description": "Add a new LLM provider preset for a fictional provider called AcmeAI with OpenAI-compatible API",
+        "must_have_files": [
+          "brain/llm/presets.py"
+        ],
+        "nice_to_have_files": [
+          "brain/llm/providers/openai_compatible.py",
+          "brain/llm/providers/openai_provider.py"
+        ],
+        "base_commit": "d30a11bf68ed9b706c81169b4f525f3908b5d143",
+        "provenance": {
+          "kind": "curated",
+          "source": "manual harness evaluation 2026-10-05",
+          "note": "Verified: /context returned presets.py among 6 candidates."
+        }
+      },
+      "paths": [
+        "brain/llm/providers/openai_compatible.py",
+        "brain/llm/providers/openai_provider.py",
+        "brain/llm/presets.py",
+        "tests/test_openai_compatible.py",
+        "brain/llm/providers/anthropic_provider.py",
+        "brain/llm/providers/google_provider.py"
+      ],
+      "expected": [
+        "brain/llm/presets.py"
+      ],
+      "hit1": false,
+      "hit3": true,
+      "mrr": 0.3333333333333333,
+      "recall": 1.0,
+      "adversarial_pass": null
+    },
+    {
+      "id": "context-002",
+      "type": "context",
+      "input": {
+        "id": "context-002",
+        "type": "context",
+        "task_description": "How does the embedding backfill work and how is it triggered? Which files implement it?",
+        "must_have_files": [
+          "brain/embeddings/backfill.py"
+        ],
+        "nice_to_have_files": [
+          "apps/cli/commands/embeddings.py",
+          "brain/embeddings/__init__.py"
+        ],
+        "base_commit": "682ea7c53179964823785f5591b20e3d2a430226",
+        "provenance": {
+          "kind": "curated",
+          "source": "benchmark expansion 2026-10-05",
+          "note": "backfill.py is the core implementation; CLI command triggers it."
+        }
+      },
+      "paths": [
+        "brain/embeddings/backfill.py",
+        "brain/indexers/file_indexer.py",
+        "apps/cli/commands/embeddings.py",
+        "brain/workers/tasks.py",
+        "brain/routing/cli.py",
+        "apps/api/routers/jobs.py"
+      ],
+      "expected": [
+        "brain/embeddings/backfill.py"
+      ],
+      "hit1": true,
+      "hit3": true,
+      "mrr": 1.0,
+      "recall": 1.0,
+      "adversarial_pass": null
+    },
+    {
+      "id": "context-003",
+      "type": "context",
+      "input": {
+        "id": "context-003",
+        "type": "context",
+        "task_description": "Where is the git diff review implemented and how does the LLM fallback behave when the review cannot run?",
+        "must_have_files": [
+          "brain/analyzers/diff_analyzer.py"
+        ],
+        "nice_to_have_files": [
+          "tests/test_diff_review_llm_fallback.py"
+        ],
+        "base_commit": "682ea7c53179964823785f5591b20e3d2a430226",
+        "provenance": {
+          "kind": "curated",
+          "source": "benchmark expansion 2026-10-05",
+          "note": "diff_analyzer.py owns review_diff; fallback behavior fixed 2026-10-05."
+        }
+      },
+      "paths": [
+        "apps/cli/commands/review_diff.py",
+        "tests/test_p0_worker_and_diff_review.py",
+        "brain/analyzers/diff_analyzer.py",
+        "brain/insights/git_diff.py",
+        "apps/api/routers/core_retrieval.py",
+        "brain/memory/harness_store.py"
+      ],
+      "expected": [
+        "brain/analyzers/diff_analyzer.py"
+      ],
+      "hit1": false,
+      "hit3": true,
+      "mrr": 0.3333333333333333,
+      "recall": 1.0,
+      "adversarial_pass": null
+    },
+    {
+      "id": "context-004",
+      "type": "context",
+      "input": {
+        "id": "context-004",
+        "must_have_files": [
+          "apps/api/auth.py",
+          "apps/api/audit_middleware.py"
+        ],
+        "nice_to_have_files": [
+          "apps/api/dependencies.py"
+        ],
+        "provenance": {
+          "kind": "curated",
+          "note": "Multi-hop task: neither file contains the other's keywords. 'API key' appears in auth.py (require_api_key), 'audit' in audit_middleware.py (AuditLogMiddleware). The answer requires connecting validation (auth.py) with audit writing (audit_middleware.py) via the request pipeline, not keyword matching.",
+          "source": "manual harness evaluation 2026-10-05"
+        },
+        "task_description": "Where is the caller's API key validated before the request is written to the audit log?",
+        "type": "context"
+      },
+      "paths": [
+        "apps/api/audit_middleware.py",
+        "eval/audit_corpus.py",
+        "apps/api/routers/web_login.py",
+        "apps/api/routers/audit.py",
+        "apps/mcp_server/remote_server.py",
+        "apps/cli/commands/audit.py"
+      ],
+      "expected": [
+        "apps/api/auth.py",
+        "apps/api/audit_middleware.py"
+      ],
+      "hit1": true,
+      "hit3": true,
+      "mrr": 1.0,
+      "recall": 0.5,
+      "adversarial_pass": null
+    },
+    {
+      "id": "context-005",
+      "type": "context",
+      "input": {
+        "id": "context-005",
+        "must_have_files": [
+          "brain/llm/providers/openai_compatible.py"
+        ],
+        "nice_to_have_files": [
+          "brain/config/settings.py"
+        ],
+        "provenance": {
+          "kind": "curated",
+          "note": "Misleading-terms task: the word 'backoff' appears only in a settings.py comment (LLM_RETRY_BASE_DELAY_S description). The actual retry loop lives in openai_compatible.py and uses different terminology: 'attempt', 'retries', 'wait_time = delay * (2 ** attempt)'. Keyword search for 'backoff' leads to the wrong file.",
+          "source": "manual harness evaluation 2026-10-05"
+        },
+        "task_description": "How does the LLM client implement exponential backoff when API requests fail?",
+        "type": "context"
+      },
+      "paths": [],
+      "expected": [
+        "brain/llm/providers/openai_compatible.py"
+      ],
+      "hit1": false,
+      "hit3": false,
+      "mrr": 0,
+      "recall": 0.0,
+      "adversarial_pass": null
+    },
+    {
+      "id": "context-006",
+      "type": "context",
+      "input": {
+        "id": "context-006",
+        "must_have_files": [
+          "apps/api/auth.py"
+        ],
+        "nice_to_have_files": [
+          "brain/auth/principals.py"
+        ],
+        "provenance": {
+          "kind": "curated",
+          "note": "Ambiguous task: 'verify identity' plausibly points to two subsets \u2014 the per-request check (auth.py: require_api_key) and the identity/principal data model (brain/auth/principals.py). The intended answer is the verification logic in auth.py; principals.py is a plausible but secondary hit.",
+          "source": "manual harness evaluation 2026-10-05"
+        },
+        "task_description": "How does the API verify the caller's identity on each request?",
+        "type": "context"
+      },
+      "paths": [
+        "apps/api/routers/setup.py",
+        "apps/cli/commands/embeddings.py",
+        "apps/api/routers/web_login.py",
+        "brain/execution/verifier.py",
+        "apps/api/schemas.py",
+        "tests/test_graph_v3_identity.py"
+      ],
+      "expected": [
+        "apps/api/auth.py"
+      ],
+      "hit1": false,
+      "hit3": false,
+      "mrr": 0,
+      "recall": 0.0,
+      "adversarial_pass": null
+    },
+    {
+      "id": "context-007",
+      "type": "context",
+      "input": {
+        "id": "context-007",
+        "type": "context",
+        "task_description": "How do I configure the Kubernetes deployment for the mobile app?",
+        "must_have_files": [],
+        "nice_to_have_files": [],
+        "adversarial": true,
+        "expectation": "No Kubernetes or mobile app code exists. A good harness should return empty/minimal results or explicitly state no relevant files found, NOT hallucinate.",
+        "provenance": {
+          "kind": "adversarial",
+          "source": "harsh benchmark 2026-10-05",
+          "note": "Tests honest 'don't know' behavior vs hallucination."
+        }
+      },
+      "paths": [],
+      "expected": [],
+      "hit1": false,
+      "hit3": false,
+      "mrr": 0,
+      "recall": null,
+      "adversarial_pass": true
+    },
+    {
+      "id": "impact-001",
+      "type": "impact",
+      "input": {
+        "id": "impact-001",
+        "type": "impact",
+        "change_request": "Rename the function resolve_embedding_dimension to get_embedding_dims across the codebase",
+        "must_have_files": [
+          "brain/embeddings/constants.py",
+          "brain/embeddings/config.py",
+          "brain/embeddings/store.py"
+        ],
+        "nice_to_have_files": [
+          "brain/search/code_search.py"
+        ],
+        "base_commit": "d30a11bf68ed9b706c81169b4f525f3908b5d143",
+        "provenance": {
+          "kind": "curated",
+          "source": "manual harness evaluation 2026-10-05",
+          "note": "Verified: /impact flagged the function, constants.py, config.py, store.py as affected."
+        }
+      },
+      "paths": [
+        "brain/database/migrations.py",
+        "brain/embeddings/config.py",
+        "brain/embeddings/constants.py",
+        "brain/embeddings/store.py",
+        "tests/test_memory_consolidation_db.py",
+        "tests/test_late_interaction_surfaces.py",
+        "tests/test_lexical_identifiers.py",
+        "tests/test_openai_compatible.py"
+      ],
+      "expected": [
+        "brain/embeddings/constants.py",
+        "brain/embeddings/config.py",
+        "brain/embeddings/store.py"
+      ],
+      "hit1": false,
+      "hit3": true,
+      "mrr": 0.5,
+      "recall": 1.0,
+      "adversarial_pass": null
+    },
+    {
+      "id": "impact-002",
+      "type": "impact",
+      "input": {
+        "id": "impact-002",
+        "type": "impact",
+        "change_request": "Add a new nullable column to the File database model for tracking the indexing source",
+        "must_have_files": [
+          "brain/database/models.py",
+          "brain/database/migrations.py"
+        ],
+        "nice_to_have_files": [
+          "brain/indexers/file_indexer.py"
+        ],
+        "base_commit": "682ea7c53179964823785f5591b20e3d2a430226",
+        "provenance": {
+          "kind": "curated",
+          "source": "benchmark expansion 2026-10-05",
+          "note": "Model change requires migration; indexer consumes the model."
+        }
+      },
+      "paths": [
+        "brain/database/models.py",
+        "brain/database/__init__.py",
+        "brain/database/harness_models.py",
+        "brain/database/migrations.py",
+        "brain/database/repository_utils.py",
+        "brain/database/session.py",
+        "brain/indexers/file_indexer.py",
+        "tests/test_files_path_uniqueness.py",
+        "tests/test_indexing_reliability.py",
+        "brain/config/settings.py",
+        "brain/embeddings/constants.py",
+        "brain/late_interaction/shadow.py",
+        "brain/memory/skill_store.py",
+        "brain/retrieval/pipeline.py",
+        "brain/search/code_search.py",
+        "tests/test_late_interaction_surfaces.py",
+        "brain/late_interaction/application.py",
+        "brain/retrieval/reranker.py",
+        "tests/test_skill_distiller.py",
+        "apps/api/audit_middleware.py",
+        "apps/api/request_id_middleware.py",
+        "apps/api/request_observation.py",
+        "apps/api/request_size_middleware.py",
+        "apps/api/routers/control.py",
+        "apps/cli/commands/cache.py"
+      ],
+      "expected": [
+        "brain/database/models.py",
+        "brain/database/migrations.py"
+      ],
+      "hit1": true,
+      "hit3": true,
+      "mrr": 1.0,
+      "recall": 1.0,
+      "adversarial_pass": null
+    },
+    {
+      "id": "impact-003",
+      "type": "impact",
+      "input": {
+        "id": "impact-003",
+        "type": "impact",
+        "change_request": "Improve the performance of the system",
+        "must_have_files": [],
+        "nice_to_have_files": [],
+        "adversarial": true,
+        "expectation": "Vague request with no specific technical terms. A good harness should return few/no results or low-confidence results, NOT hallucinate a huge impact list. Pass criteria: affected_file_count < 20 OR risk_level in ['Low'].",
+        "provenance": {
+          "kind": "adversarial",
+          "source": "harsh benchmark 2026-10-05",
+          "note": "Tests if /impact hallucinates impact for vague requests."
+        }
+      },
+      "paths": [],
+      "expected": [],
+      "hit1": false,
+      "hit3": false,
+      "mrr": 0,
+      "recall": null,
+      "adversarial_pass": true
+    },
+    {
+      "id": "impact-004",
+      "type": "impact",
+      "input": {
+        "id": "impact-004",
+        "type": "impact",
+        "change_request": "Rename the function get to fetch across the codebase",
+        "must_have_files": [],
+        "nice_to_have_files": [],
+        "adversarial": true,
+        "expectation": "Extremely common word 'get' matches thousands of nodes. Tests if IDF ranking prevents noise explosion. Pass criteria: affected_file_count <= 75 (respects top-k) AND noise is bounded.",
+        "provenance": {
+          "kind": "adversarial",
+          "source": "harsh benchmark 2026-10-05",
+          "note": "Tests IDF robustness against ultra-common keywords."
+        }
+      },
+      "paths": [
+        "apps/api/auth.py",
+        "apps/api/routers/audit.py",
+        "apps/api/routers/ledger.py",
+        "apps/web/app/api/brain/[...path]/route.ts",
+        "apps/web/lib/actions/gate.ts",
+        "apps/web/lib/actions/jobs.ts",
+        "apps/web/lib/actions/login.ts",
+        "apps/web/lib/actions/pulse.ts",
+        "apps/web/lib/api.ts",
+        "apps/web/lib/artifact-download.ts",
+        "apps/web/lib/artifacts.ts",
+        "apps/web/lib/dashboard.ts",
+        "apps/web/lib/data.ts",
+        "apps/web/lib/scheduler-view.ts",
+        "brain/audit/events.py",
+        "brain/database/models.py",
+        "brain/late_interaction/codec.py",
+        "brain/late_interaction/pylate_encoder.py",
+        "brain/ledger/__init__.py",
+        "brain/ledger/models.py",
+        "brain/workspace/models.py",
+        "tests/test_late_interaction_cpu_service.py",
+        "tests/test_late_interaction_service_policy.py",
+        "apps/web/lib/public-demo.ts"
+      ],
+      "expected": [],
+      "hit1": false,
+      "hit3": false,
+      "mrr": 0,
+      "recall": null,
+      "adversarial_pass": true
+    }
+  ],
+  "limits": "Retrieval comparison; not learned semantic/SWE/coding-benefit evidence"
+}

@@ -189,12 +189,16 @@ class ImpactAnalyzer:
         graph_client = GraphClient(repository_id=repository.id)
         cypher = (
             "UNWIND $keywords AS kw "
+            "CALL { WITH kw "
             "MATCH (n) WHERE n.repository_id = $repository_id "
             "AND (toLower(n.name) CONTAINS kw OR (n.path IS NOT NULL AND toLower(n.path) CONTAINS kw)) "
-            "WITH kw, n LIMIT 240 "
+            "RETURN n ORDER BY CASE WHEN toLower(n.name) = kw THEN 0 WHEN n:File THEN 1 ELSE 2 END, n.name LIMIT 5 } "
+            "CALL { WITH n "
             "OPTIONAL MATCH path = (n)-[*1..2]-(m) "
             "WHERE ALL(node IN nodes(path) WHERE node.repository_id = $repository_id) "
-            "RETURN kw, n, m, length(path) AS distance LIMIT $limit"
+            "WITH m, min(length(path)) AS distance "
+            "RETURN m, distance ORDER BY CASE WHEN m:File THEN 0 ELSE 1 END, distance, m.name LIMIT 8 } "
+            "RETURN kw, n, m, distance LIMIT $limit"
         )
         visited_nodes: dict[str, dict] = {}
         try:
@@ -248,6 +252,9 @@ class ImpactAnalyzer:
         is_vague = max_idf < 1.0
         for info in visited_nodes.values():
             info["score"] = _score_node(info, kw_idf)
+            if settings.RETRIEVAL_V2_ENABLED:
+                from brain.retrieval.locator_fusion import surface_weight
+                info["score"] *= surface_weight(info["name"], change_request)
         cap = 10 if is_vague else 75
         ranked = sorted(
             visited_nodes.values(),
