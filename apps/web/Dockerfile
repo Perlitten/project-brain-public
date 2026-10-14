@@ -1,5 +1,5 @@
 # --- Builder ---
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -8,7 +8,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # --- Runtime ---
-FROM node:20-alpine
+FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3100 WEB_HOST=0.0.0.0
 COPY --from=builder /app/.next ./.next

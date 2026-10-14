@@ -41,6 +41,10 @@ step "Checking prerequisites"
 command -v python3 >/dev/null || { echo "python3 not found" >&2; exit 1; }
 PYV=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 echo "  python $PYV"
+python3 -c 'import sys; raise SystemExit(not ((3, 12) <= sys.version_info[:2] < (3, 13)))' || {
+  echo "Python 3.12 is required by the reviewed dependency locks; found $PYV." >&2
+  exit 1
+}
 command -v docker >/dev/null || { echo "docker not found — install Docker Engine first" >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "docker compose plugin not found" >&2; exit 1; }
 echo "  $(docker compose version --short)"
@@ -50,8 +54,12 @@ step "Setting up virtualenv"
 if [[ ! -x .venv/bin/python ]]; then
   python3 -m venv .venv
 fi
-.venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -e ".[dev]"
+.venv/bin/python -c 'import sys; raise SystemExit(not ((3, 12) <= sys.version_info[:2] < (3, 13)))' || {
+  echo "Existing .venv is not Python 3.12; migrate it before retrying (no environment removed)." >&2
+  exit 1
+}
+.venv/bin/pip install -q --require-hashes -r requirements-dev.lock
+.venv/bin/pip install -q --no-deps -e .
 echo "  package installed"
 
 # 3. .env
