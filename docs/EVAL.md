@@ -65,8 +65,7 @@ python eval/browser_automation/smoke_test.py
 ```
 
 Set `BROWSER_HEADLESS=false` in `.env` to watch the browser window. Platform limits (Computer
-Use, Cursor UI, Puppeteer vs Playwright) are documented in [`docs/tooling-gaps.md`](docs/tooling-gaps.md).
+Use, Cursor UI, Puppeteer vs Playwright) are documented in [tooling gaps](tooling-gaps.md).
 
 ---
-
 
