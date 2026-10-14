@@ -1,5 +1,7 @@
+import asyncio
 import contextlib
 import json
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -18,6 +20,30 @@ from tests.test_mcp_http import _free_port, _serve
 from tests.test_team_foundations import caller, create_task, task_payload, team_db as team_fixture
 
 team_db = team_fixture
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("remote", [False, True])
+async def test_team_lifespan_never_starts_personal_retrieval(monkeypatch, remote):
+    from apps.api import main
+
+    for name, value in {"BRAIN_TEAM_MODE": True, "LATE_INTERACTION_ENABLED": True,
+                        "LATE_INTERACTION_SHADOW_ENABLED": True,
+                        "LATE_INTERACTION_REMOTE_ENABLED": remote}.items():
+        monkeypatch.setattr(settings, name, value)
+    for name in ("init_db", "close_database_connections", "close_late_interaction_client",
+                 "close_lfm_colbert_provider"):
+        monkeypatch.setattr(main, name, AsyncMock())
+    monkeypatch.setattr(main, "_mcp_endpoint", None)
+    warmup = AsyncMock()
+    validate_remote = AsyncMock(return_value=None)
+    monkeypatch.setattr(main, "warmup_lfm_colbert_provider", warmup)
+    monkeypatch.setattr(main, "validate_remote_late_interaction_release", validate_remote)
+
+    async with main.lifespan(main.app):
+        await asyncio.sleep(0)
+    warmup.assert_not_called()
+    validate_remote.assert_not_called()
 
 
 def team_app(factory, monkeypatch):

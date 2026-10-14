@@ -46,6 +46,8 @@ stored by a trusted operator is not evidence that OIDC has been integrated.
   search, context, memory, logs, downloads, notifications and provider routes
   are **not adapted**: team mode refuses them. Its `/health` returns only a
   non-project-specific experimental marker, not legacy worker/queue details.
+  Personal retrieval warmup and remote-release validation also stay disabled
+  during API startup, even when those settings are inherited.
   No team executor, artifact download, approval, merge or provider call exists.
 
 The SQL upgrade was rehearsed from the current main schema in a disposable
