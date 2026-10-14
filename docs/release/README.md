@@ -89,9 +89,22 @@ configuration, data and cost evidence.
 ## Publish through the verified pipeline
 
 The release workflow is [`.github/workflows/release.yml`](../../.github/workflows/release.yml).
-It verifies distributions, generates an SPDX SBOM and computes SHA-256 checksums.
-CI and CodeQL verify the reviewed commit before tagging; the release workflow
-does not rerun those suites. Publication builds from the immutable tag directly.
+Its preflight rejects arbitrary dispatch refs, tag/package-version mismatches,
+missing, pending or failed main-push CI for the exact tagged commit, and tags
+with an existing GitHub Release. CI and CodeQL still run separately before
+tagging; publication does not rerun those suites or itself enforce CodeQL.
+All build jobs check out the verified commit, not a mutable tag lookup.
+
+The wheel and source archive are built once and passed to publication as
+checksum-verified artifacts. Image builds require commit/source/deployment
+identity; images are inventoried and their revision labels checked before
+registry push. Four SPDX inventories cover source, installed API packages,
+installed worker packages and the web image. Missing backend dependencies fail
+the release. Download failures or byte changes fail closed instead of causing
+a second build. Registry image pushes precede the final GitHub Release step;
+an interrupted run can leave GHCR tags without a matching Release. Do not
+rewrite a published tag or claim atomic cross-registry publication. None of
+these checks establishes real-provider usefulness.
 
 Merge the runtime candidate only with green required CI and CodeQL. Prepare
 final version markers in the release-documentation PR and require green CI and
