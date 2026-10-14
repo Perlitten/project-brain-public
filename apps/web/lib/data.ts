@@ -5,7 +5,7 @@
 // value — never demo numbers. Components never import mock.ts directly.
 import { connection } from "next/server";
 import { cache } from "react";
-import { apiConfigured, brainFetch } from "./api";
+import { apiConfigured, brainFetch, brainRead, readFailureNote, type ReadFailure } from "./api";
 import * as mock from "./mock";
 import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./list-query";
 import { shortRevision } from "./revision";
@@ -177,11 +177,15 @@ type RawRepo = {
   freshness?: RawFreshness | null;
 };
 
-const fetchRepos = cache(async (): Promise<RawRepo[] | null> => {
-  const data = await brainFetch<{ repositories?: RawRepo[] }>("/repositories");
-  if (!data) return null;
-  return list(data, "repositories").filter((r) => num(r.id) !== undefined) as unknown as RawRepo[];
+const fetchRepositoryFeed = cache(async (): Promise<{ repos: RawRepo[] | null; reason?: ReadFailure }> => {
+  const result = await brainRead<unknown>("/repositories", { fresh: true, timeoutMs: 2000 });
+  if (!result.ok) return { repos: null, reason: result.reason };
+  if (!Array.isArray(result.data) && !Array.isArray(obj(result.data).repositories)) {
+    return { repos: null, reason: "invalid_response" };
+  }
+  return { repos: list(result.data, "repositories").filter((r) => num(r.id) !== undefined) as unknown as RawRepo[] };
 });
+const fetchRepos = cache(async () => (await fetchRepositoryFeed()).repos);
 
 function toRepository(r: RawRepo): Repository {
   const f = obj(r.freshness);
@@ -234,28 +238,16 @@ const pageResult = <T>(data: Json, key: string, q: ListQuery, map: (v: Json) => 
 // Overview (new /api/web router; may be missing on older APIs)
 
 type RawOverview = Json;
-// One overview per repository; on a slow or unreachable API each one can
-// eat the whole fetch budget while the page waits. Half of it is enough:
-// the screens already render an honest "not measured" on timeout.
-// When the endpoint just timed out once, the next dozen per-repo calls
-// will too — hold a short breaker so navigations stay fast and degraded.
-let overviewDeadUntil = 0;
-let overviewFails = 0;
-const fetchOverview = cache(
-  (repositoryId?: number): Promise<RawOverview | null> => {
-    if (Date.now() < overviewDeadUntil) return Promise.resolve(null);
-    return brainFetch<RawOverview>(`/api/web/overview${repositoryId ? `?repository_id=${repositoryId}` : ""}`, { fresh: true, timeoutMs: 4000 }).then(
-      (r) => {
-        // Trip only on a wave of failures — a single repo with no overview
-        // (404 on an older API) must not blank the others.
-        if (r === null) {
-          if (++overviewFails >= 3) overviewDeadUntil = Date.now() + 30_000;
-        } else overviewFails = 0;
-        return r;
-      },
-    );
-  },
+// React cache deduplicates reads within the render. A failed repository never
+// suppresses another one or a new request after the backend recovers.
+const fetchOverviewResult = cache((repositoryId?: number) =>
+  brainRead<RawOverview>(`/api/web/overview${repositoryId ? `?repository_id=${repositoryId}` : ""}`,
+    { fresh: true, timeoutMs: 2000 }),
 );
+const fetchOverview = cache(async (repositoryId?: number): Promise<RawOverview | null> => {
+  const result = await fetchOverviewResult(repositoryId);
+  return result.ok ? result.data : null;
+});
 
 function toJob(j: Json, repoName: string): Job {
   return {
@@ -550,10 +542,15 @@ async function loadEvents(limit = 50, repositoryPath?: string): Promise<LedgerEv
 // ---------------------------------------------------------------------------
 // Getters (same signatures as before; demo branch unchanged)
 
-export const getRepositories = async (): Promise<Repository[]> => {
-  if (!apiConfigured) return mock.repositories;
-  return live<Repository[]>([], async () => (await fetchRepos())?.map(toRepository) ?? null);
+export const getRepositoryFeed = async (): Promise<{ repositories: Repository[]; available: boolean; note?: string }> => {
+  if (!apiConfigured) return { repositories: mock.repositories, available: true };
+  return live({ repositories: [], available: false }, async () => {
+    const { repos, reason } = await fetchRepositoryFeed();
+    return { repositories: repos?.map(toRepository) ?? [], available: repos !== null,
+      ...(reason ? { note: readFailureNote(reason) } : {}) };
+  });
 };
+export const getRepositories = async (): Promise<Repository[]> => (await getRepositoryFeed()).repositories;
 
 export const getRepository = async (slug?: string | null): Promise<Repository> => {
   if (!apiConfigured) return mock.findRepository(slug);
@@ -579,11 +576,13 @@ export const getCondition = async (slug?: string | null): Promise<Condition> => 
 export const getCorpus = async (slug?: string | null): Promise<Corpus> => {
   if (!apiConfigured) return { ...mock.corpus(mock.findRepository(slug)), available: true };
   const empty: Corpus = { files: 0, chunks: 0, symbols: 0, embeddings: 0, meters: [], available: false };
-  return live(empty, async () => {
+  return live<Corpus>(empty, async () => {
     const repo = pickRepo(await fetchRepos(), slug);
-    const overview = repo ? await fetchOverview(repo.id) : null;
     if (!repo) return null;
-    if (!overview) return null;
+    const result = await fetchOverviewResult(repo.id);
+    if (!result.ok) return { ...empty, availabilityNote: readFailureNote(result.reason) };
+    const overview = result.data;
+    if (!overview) return { ...empty, availabilityNote: "Brain returned an unreadable response" };
     // The default repository is scoped too. Missing scoped counts must never
     // expand into global totals, including during an API timeout.
     const counts = obj(overview.counts);

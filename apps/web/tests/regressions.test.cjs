@@ -15,18 +15,29 @@ function load(file, overrides = {}) {
   }).outputText;
   const module = { exports: {} };
   const requireModule = (name) => {
-    if (Object.hasOwn(overrides, name)) return overrides[name];
+    if (Object.hasOwn(overrides, name)) {
+      const boundary = overrides[name];
+      if (name === './api' && boundary.brainFetch && !boundary.brainRead) return {
+        ...boundary,
+        readFailureNote: load('lib/api.ts').readFailureNote,
+        brainRead: async (...args) => {
+          const data = await boundary.brainFetch(...args);
+          return data === null ? { ok: false, status: 404, reason: 'not_found' } : { ok: true, status: 200, data };
+        },
+      };
+      return boundary;
+    }
     if (name === 'server-only') return {};
     if (name.startsWith('./')) return load(path.relative(root, path.resolve(path.dirname(filename), `${name}.ts`)), overrides);
     return require(name);
   };
   vm.runInNewContext(output, { module, exports: module.exports, require: requireModule,
-    process, Buffer, Response, URL, URLSearchParams, AbortSignal, console, performance, fetch: global.fetch }, { filename });
+    process, Buffer, Response, URL, URLSearchParams, AbortSignal, console, performance, fetch: (...args) => global.fetch(...args) }, { filename });
   return module.exports;
 }
 
 function withEnv(values, run) {
-  const names = ['WEB_BASIC_AUTH', 'BRAIN_API_URL', 'BRAIN_API_KEY', 'WEB_OPEN_MODE', 'WEB_LOOPBACK_BIND'];
+  const names = ['WEB_BASIC_AUTH', 'BRAIN_API_URL', 'BRAIN_API_KEY', 'BRAIN_DEMO_MODE', 'WEB_OPEN_MODE', 'WEB_LOOPBACK_BIND'];
   const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
   for (const name of names) {
     if (values[name] === undefined) delete process.env[name];
@@ -42,6 +53,70 @@ function withEnv(values, run) {
 }
 
 const basic = value => `Basic ${Buffer.from(value).toString('base64')}`;
+
+test('overview failures cannot suppress another repository or a recovered request', async () => {
+  let recovered = false;
+  const calls = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async path => {
+      calls.push(path);
+      if (path === '/repositories') return { repositories: [1, 2, 3, 4].map(id => ({ id, name: `repo${id}` })) };
+      if (path.startsWith('/api/web/overview')) {
+        if (!recovered && !path.endsWith('=4')) return null;
+        return { counts: { files: 8, chunks: 10, symbols: 12, embeddings: 10 }, jobs: [] };
+      }
+      return null;
+    } },
+  });
+  for (const id of [1, 2, 3]) assert.equal((await data.getCorpus(String(id))).available, false);
+  assert.equal((await data.getCorpus('4')).files, 8);
+  recovered = true;
+  assert.equal((await data.getCorpus('1')).available, true);
+  assert.ok(calls.includes('/api/web/overview?repository_id=4'));
+});
+
+test('repository feed distinguishes empty success, malformed payload and an outage', async () => {
+  let response = { repositories: [] };
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => response },
+  });
+  assert.equal((await data.getRepositoryFeed()).available, true);
+  assert.equal((await data.getRepositoryFeed()).repositories.length, 0);
+  response = null;
+  assert.equal((await data.getRepositoryFeed()).available, false);
+  response = { unexpected: true };
+  const invalid = await data.getRepositoryFeed();
+  assert.equal(invalid.available, false);
+  assert.match(invalid.note, /unreadable/);
+});
+
+test('API reads preserve missing, HTTP failure, invalid JSON and timeout reasons and recover immediately', async () => {
+  await withEnv({ BRAIN_API_URL: 'http://127.0.0.1:9999', BRAIN_API_KEY: 'synthetic-server-key' }, async () => {
+    const previous = global.fetch;
+    try {
+      global.fetch = async () => new Response('{}', { status: 404 });
+      const api = load('lib/api.ts');
+      assert.equal((await api.brainRead('/fixture')).reason, 'not_found');
+      global.fetch = async () => new Response('{}', { status: 500 });
+      assert.equal((await api.brainRead('/fixture')).reason, 'http_error');
+      global.fetch = async () => new Response('invalid JSON');
+      assert.equal((await api.brainRead('/fixture')).reason, 'invalid_response');
+      global.fetch = async (url, options) => new Promise((resolve, reject) => {
+        const keepAlive = setTimeout(() => reject(new Error('deadline was not enforced')), 200);
+        options.signal.addEventListener('abort', () => { clearTimeout(keepAlive); reject(options.signal.reason); }, { once: true });
+      });
+      const hanging = load('lib/api.ts');
+      assert.equal((await hanging.brainRead('/fixture', { timeoutMs: 20 })).reason, 'timeout');
+      global.fetch = async () => new Response('{"results":[]}');
+      const recovered = load('lib/api.ts');
+      assert.equal((await recovered.brainRead('/fixture')).ok, true);
+      assert.equal((await recovered.brainFetch('/fixture')).results.length, 0);
+    } finally { global.fetch = previous; }
+  });
+});
 
 test('demo history search and facets filter before paging without calling a backend', async () => {
   const overrides = {

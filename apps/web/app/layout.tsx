@@ -6,7 +6,7 @@ import { BOOT_SCRIPT, Boot } from "@/components/Boot";
 import { Shell, type ShellRepo } from "@/components/Shell";
 import { actionsMode } from "@/lib/actions/gate";
 import { signInMode } from "@/lib/sign-in-view";
-import { dataSource, getRepositories } from "@/lib/data";
+import { dataSource, getRepositoryFeed } from "@/lib/data";
 import { repositoryStatus } from "@/lib/repository-status";
 import "./globals.css";
 import "./actions.css";
@@ -50,19 +50,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // API bindings are runtime configuration (including pre-built containers).
   // Do not persist a build-time demo shell as the live dashboard's HTML.
   await connection();
-  const repos: ShellRepo[] = (await getRepositories()).map((r) => ({
+  const [feed, mode, access] = await Promise.all([getRepositoryFeed(), actionsMode(), signInMode()]);
+  const repos: ShellRepo[] = feed.repositories.map((r) => ({
     slug: r.slug,
     name: r.name,
     path: r.path,
     ...repositoryStatus(r),
   }));
-  const [mode, access] = await Promise.all([actionsMode(), signInMode()]);
   const live = dataSource !== "demo";
   const first = repos[0];
   const bootLines = [
     "› waking up project brain",
-    live ? `› memory online · ${repos.length} repositor${repos.length === 1 ? "y" : "ies"}` : "› demo data · api not connected",
-    first ? `› ${first.name} · ${first.status.toLowerCase()}` : "› no repositories yet",
+    live ? feed.available ? `› repositories connected · ${repos.length} repositor${repos.length === 1 ? "y" : "ies"}` : "› repository data unavailable" : "› demo data · api not connected",
+    first ? `› ${first.name} · ${first.status.toLowerCase()}` : feed.available ? "› no repositories yet" : "› check the Brain connection",
     "› ready",
   ];
   return (

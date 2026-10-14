@@ -5,7 +5,7 @@ import { QualityEvidence } from "@/components/QualityEvidence";
 import { RequestChart } from "@/components/RequestCharts";
 import { Chip, EmptyState, Meter, PageHead, Panel, type PageStatus } from "@/components/ui";
 import { dashboardPeriod, getAgentValue, getQualityEvidence, getRequestTelemetry, measuredNumber, measuredShare } from "@/lib/dashboard";
-import { dataSource, getCodeModules, getCorpus, getJobs, getRepositories } from "@/lib/data";
+import { dataSource, getCodeModules, getCorpus, getJobs, getRepositoryFeed } from "@/lib/data";
 import { repositoryStatus } from "@/lib/repository-status";
 import type { Tone } from "@/lib/types";
 import "./dashboard.css";
@@ -21,7 +21,8 @@ const severity: Record<Tone, number> = { bad: 3, warn: 2, info: 1, idle: 1, ok: 
 export default async function Dashboard({ searchParams }: Props) {
   const { repo: slug, period: inputPeriod } = await searchParams;
   const period = dashboardPeriod(inputPeriod);
-  const repositories = await getRepositories();
+  const feed = await getRepositoryFeed();
+  const repositories = feed.repositories;
   const selected = slug ? repositories.find((r) => r.slug === slug || r.name.toLowerCase() === slug.toLowerCase()) : undefined;
   const projects = slug ? selected ? [selected] : [] : repositories;
   // The map describes one repository; cross-project totals remain in the rows.
@@ -51,7 +52,9 @@ export default async function Dashboard({ searchParams }: Props) {
   const contextRate = telemetry?.context_total ? telemetry.context_success / telemetry.context_total * 100 : null;
 
   const first = attention[0];
-  const status: PageStatus = slug && !selected
+  const status: PageStatus = !feed.available
+    ? { tone: "idle", text: <>Repository data is unavailable<small>{feed.note}. Check the Brain connection and retry.</small></>, action: <Link className="btn btn--neutral" href="/setup">Check connection</Link> }
+    : slug && !selected
     ? { tone: "warn", text: <>This project is not connected to Brain<small>Nothing below is shown for another project in its place.</small></>, action: <Link className="btn btn--neutral" href="/projects">Choose a project</Link> }
     : !projects.length
       ? { tone: "idle", text: <>No projects connected yet<small>Brain has nothing to give agents until a repository is indexed.</small></>, action: <Link className="btn btn--primary" href="/setup">Connect a project</Link> }
@@ -124,13 +127,13 @@ export default async function Dashboard({ searchParams }: Props) {
           // freshness check can't run, calling it "current" would be a lie.
           const snapshotNote = repo.freshness === "source_missing"
             ? "From the last copy Brain read — the source is unavailable now"
-            : state.tone === "ok" || state.tone === "warn"
+            : state.tone === "ok"
               ? "All indexed code is current"
               : "Last known snapshot — freshness couldn’t be verified";
           return <div key={repo.id} className="memory-rows__row" role="row">
             <span role="cell" className="memory-rows__name"><Link href={`/projects?repo=${encodeURIComponent(repo.slug)}`}>{repo.name}</Link><span className="sub mono">{[repo.branch, repo.head].filter(Boolean).join(" · ") || "revision not recorded"}</span></span>
             <span role="cell"><Chip tone={state.tone}>{state.status}</Chip></span>
-            <span role="cell" data-label="Usable now" className="memory-rows__ready">{ready ? <><Meter meter={ready} compact stale={repo.freshness === "source_missing" || repo.freshness === "freshness_error"} /><span className="sub">{behind || snapshotNote}</span></> : <span className="text-faint">{corpus.available === false ? "No answer — try reloading" : "Not measured"}</span>}</span>
+            <span role="cell" data-label="Usable now" className="memory-rows__ready">{ready ? <><Meter meter={ready} compact stale={repo.freshness === "source_missing" || repo.freshness === "freshness_error"} /><span className="sub">{behind || snapshotNote}</span></> : <span className="text-faint">{corpus.available === false ? corpus.availabilityNote ?? "Measurement unavailable" : "Not measured"}</span>}</span>
           </div>;
         })}
       </div>
