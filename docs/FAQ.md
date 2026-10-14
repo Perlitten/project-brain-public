@@ -4,6 +4,11 @@ Latest published release: **[v0.9.2](https://github.com/Perlitten/project-brain-
 Use the [current getting-started guide](GETTING_STARTED.md) for installation.
 The dashboard repeats these practical answers on its [Help screen](DASHBOARD.md).
 
+**Scope:** the recommended tagged install is v0.9.2. Features explicitly labelled
+unreleased `main` below are not in that release, even while source metadata still
+says 0.9.2. See [main-only setup](GETTING_STARTED.md#lite-mode-unreleased-main)
+and the [Unreleased changelog](../CHANGELOG.md#unreleased).
+
 - [Using Brain](#using-brain) — problems people run into first, and how to fix them.
 - [Limits and evidence](#limits-and-evidence) — what Brain does and does not establish.
 
@@ -31,12 +36,22 @@ later runs re-read only what changed. Brain indexes committed source only: if a 
 commit your source edits first. Ignored build output such as `node_modules` and
 `.next` does not count, so do not delete it to make re-indexing work.
 
+On unreleased `main`, `BRAIN_STALE_CONTEXT_POLICY=warn_and_serve` is the default:
+runtime context reports a freshness warning, schedules a throttled reindex and
+uses bounded current source slices for changed candidates. `strict_block` restores
+blocking. This policy is absent from v0.9.2; its v2 runtime context blocks stale
+indexes. See [moving checkouts](GETTING_STARTED.md#moving-checkouts-unreleased-main).
+
 ### A job is queued and never finishes
 
 Jobs run in the background worker, not in the API. Check worker health on the
 dashboard's Setup screen or in `curl http://127.0.0.1:8000/health`, and read the
 `start.sh` terminal. `./scripts/start.sh` runs the API, the worker and the
 dashboard together.
+
+Unreleased `main` Lite mode is different: `brain serve --lite` owns its local
+maintenance worker; stdio-only `brain mcp` does not start one. Lite defaults to
+token-hash local embeddings and a disabled LLM, not the full profile's mocks.
 
 ### Search results look random
 
@@ -85,7 +100,12 @@ the [backup and restore runbook](runbooks/backup-restore.md).
 
 Costs depend on the selected models, indexing, retrieval, follow-up source reads
 and maintenance. Payload limits differ between tools and rollout modes; the
-compact v2 locator is opt-in and is not the default legacy search response.
+compact v2 locator is opt-in on v0.9.2 (`BRAIN_AGENT_CONTEXT_V2_MODE=off`).
+On unreleased `main`, `BRAIN_AGENT_CONTEXT_V2_MODE=on` and
+`RETRIEVAL_V2_ENABLED=true` are defaults. Turn both off for legacy responses;
+bounded runtime context is not a promise about every tool's payload size.
+Main also supplies deterministic source summaries before optional asynchronous
+LLM enrichment, so a successful initial index is not proof of generated summaries.
 Brain adds no per-call fee, but provider and infrastructure costs remain yours.
 Net coding token, time or cost savings have **not been established**.
 
@@ -131,6 +151,10 @@ write paths. See the [complete policy](MEMORY_LESSON_PROTOCOL.md).
 Graph-dependent tools require Neo4j. Some search/API paths can operate without
 it, but the recommended source setup includes it and checks its health. A
 partially available service is not equivalent to a verified full installation.
+
+Unreleased `main` also offers [Lite mode](GETTING_STARTED.md#lite-mode-unreleased-main)
+with SQLite graph adjacency and a reduced local capability set. That is not a
+claim of parity with the full Neo4j deployment or a published v0.9.2 feature.
 
 ### Is this production-ready?
 

@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Add opt-in Lite source profile with durable SQLite memory, maintenance queues,
+  local token-hash embeddings, SQLite graph adjacency and a disabled default LLM.
+  Lite commands and local state are not in published v0.9.2 artifacts.
+- Default agent context to `BRAIN_AGENT_CONTEXT_V2_MODE=on` and retrieval to
+  `RETRIEVAL_V2_ENABLED=true`: bounded locators/runtime slices, linear per-file
+  fusion, identifier/path handling and a bounded local BM25 companion. Both
+  switches can be disabled for the legacy contract; no useful coding savings
+  or learned semantic quality are established by the offline profile.
+- Default moving-checkout context to `warn_and_serve`, with freshness warnings,
+  bounded changed-source slices and throttled reindexing; retain `strict_block`.
+- Make initial indexing write deterministic source summaries before optional
+  asynchronous LLM enrichment. Summary availability is not evidence of model
+  execution. Existing response-summary trimming was already present in v0.9.2.
 - Gate releases on a matching immutable tag/package version and the latest
   successful main-push CI run for that revision. Pass verified identities to
   all images, inventory installed API/worker/web dependencies, and publish
