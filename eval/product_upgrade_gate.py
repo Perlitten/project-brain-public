@@ -55,6 +55,8 @@ def _compare(before: dict, after: dict) -> dict:
         if row["type"] in {"context", "impact"}:
             canonical_tasks[row["id"]] = row
     for phase, capture in (("before", before), ("after", after)):
+        if capture.get("requested_budgets") != {"search_limit": 10, "context_max_tokens": 3500, "impact_fast": True}:
+            failures.append(f"{phase} invalid or missing fixed capture budgets")
         allowed = {"search": {"locator-v2", "legacy-files-chunks"},
                    "context": {"runtime-v2", "legacy-context-pack"},
                    "impact": {"bounded-impact", "legacy-impact"}}
@@ -132,7 +134,7 @@ def _compare(before: dict, after: dict) -> dict:
 def compare(before: dict, after: dict) -> dict:
     try:
         return _compare(before, after)
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
         return {"pass": False, "failures": [f"incomplete or invalid evidence: {type(exc).__name__}"]}
 
 
