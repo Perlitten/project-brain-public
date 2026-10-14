@@ -21,7 +21,8 @@ import time
 
 SCOPE = {
     "brain/harness/attestation.py": {"calculate_hash", "verify_integrity", "verify_hmac_attestation"},
-    "brain/harness/nonce.py": {"__init__", "generate_nonce", "verify_and_consume"},
+    "brain/harness/nonce.py": {"_elapsed_time", "__init__", "generate_nonce", "verify_and_consume"},
+    "brain/harness/verifier.py": {"verify_claim", "_set_claim_status"},
     "brain/context/budget.py": {
         "utf8_bytes", "estimated_tokens", "truncate_utf8", "__post_init__", "remaining_bytes",
         "exclude", "add_text", "snapshot", "bounded_join",
@@ -69,7 +70,7 @@ def replacements(node: ast.AST, function: str) -> list[tuple[str, str]]:
     if isinstance(node, ast.Call):
         if isinstance(node.func, ast.Attribute) and node.func.attr == "startswith":
             return [("negate_prefix_check", f"not ({value})")]
-        if ast.unparse(node.func) in {"time.time", "time.monotonic"}:
+        if ast.unparse(node.func) in {"time.time", "time.monotonic", "time.clock_gettime", "_elapsed_time"}:
             return [("freeze_clock", "0.0")]
         if isinstance(node.func, ast.Name) and node.func.id in {"min", "max"}:
             return [("limit_operator", f"{'max' if node.func.id == 'min' else 'min'}({', '.join(ast.unparse(a) for a in node.args)})")]
@@ -99,7 +100,7 @@ def manifest(root: Path) -> dict:
     hashes = {}
     for relative, functions in SCOPE.items():
         source = (root / relative).read_text(encoding="utf-8")
-        hashes[relative] = hashlib.sha256(source.encode()).hexdigest()
+        hashes[relative] = hashlib.sha256((root / relative).read_bytes()).hexdigest()
         for function, shape, occurrence, node in sites(source, functions):
             for operator, replacement in replacements(node, function):
                 mutated = replace(source, node, replacement)
@@ -113,7 +114,14 @@ def manifest(root: Path) -> dict:
     return {"scope": {p: sorted(f) for p, f in SCOPE.items()}, "source_sha256": hashes, "mutations": mutations}
 
 
-def run(root: Path, frozen: dict, output: Path, extra_tests: list[str], workers: int, timeout: float) -> None:
+def run(
+    root: Path, frozen: dict, output: Path, extra_tests: list[str], workers: int,
+    timeout: float, replay: bool = False,
+) -> None:
+    tested_hashes = {p: hashlib.sha256((root / p).read_bytes()).hexdigest() for p in frozen["source_sha256"]}
+    mismatches = [p for p, actual in tested_hashes.items() if actual != frozen["source_sha256"][p]]
+    if mismatches and not replay:
+        raise ValueError("Manifest source hashes differ; generate a matching manifest or use explicit --replay: " + ", ".join(mismatches))
     output.mkdir(parents=True, exist_ok=True)
     # Contract tests first and stop on the first failure. A broken truncator
     # can otherwise hang a later builder test after already failing its contract.
@@ -142,6 +150,8 @@ def run(root: Path, frozen: dict, output: Path, extra_tests: list[str], workers:
                 node = next((node for function, shape, occurrence, node in sites(source, SCOPE[mutation["file"]])
                              if (function, shape, occurrence) == (mutation["function"], mutation["shape"], mutation["occurrence"])), None)
                 if node is None:
+                    if not replay:
+                        raise ValueError(f"Mutation site {mutation['id']} absent from validated source")
                     results.append({"id": mutation["id"], "status": "removed_by_source_change"})
                     continue
                 start = time.monotonic()
@@ -163,7 +173,11 @@ def run(root: Path, frozen: dict, output: Path, extra_tests: list[str], workers:
         batches = [frozen["mutations"][i::workers] for i in range(workers)]
         results = sorted([r for batch in executor.map(worker, batches) for r in batch], key=lambda r: r["id"])
     summary = {status: sum(r["status"] == status for r in results) for status in sorted({r["status"] for r in results})}
-    record = {"tests": tests, "command": command, "timeout_seconds": timeout, "results": results, "summary": summary}
+    record = {
+        "tests": tests, "command": ["python", *command[1:]], "timeout_seconds": timeout,
+        "results": results, "summary": summary, "replay": replay,
+        "tested_source_sha256": tested_hashes, "source_mismatches": mismatches,
+    }
     (output / "results.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(summary), flush=True)
 
@@ -173,6 +187,7 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--generate", action="store_true")
+    parser.add_argument("--replay", action="store_true", help="Allow explicit cross-version replay and record source mismatches")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--extra-test", action="append", default=[])
     parser.add_argument("--workers", type=int, default=4)
@@ -184,7 +199,7 @@ def main() -> None:
     else:
         if args.output is None or args.workers < 1 or args.timeout <= 0:
             parser.error("run requires --output, positive --workers and --timeout")
-        run(args.root, json.loads(args.manifest.read_text()), args.output, args.extra_test, args.workers, args.timeout)
+        run(args.root, json.loads(args.manifest.read_text()), args.output, args.extra_test, args.workers, args.timeout, args.replay)
 
 
 if __name__ == "__main__":

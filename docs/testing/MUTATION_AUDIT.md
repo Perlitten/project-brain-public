@@ -25,17 +25,24 @@ scenario names still exceed their assertions; the suite header explains its limi
    report claim `VERIFIED`. Signed integrity now requires an explicit key and
    expected challenge, followed by cryptographic verification. Ordinary self-hash
    checking and the existing signing/verification helper signatures remain usable.
+   The claim API accepts and passes through those explicit credentials.
 2. Non-ASCII signatures raised `TypeError` in `compare_digest`. Malformed signatures
    now fail closed before comparison.
 3. Wall-clock rollback extended nonce lifetime. Expiry now uses monotonic time;
-   the existing inclusive TTL boundary is preserved.
+   the existing inclusive TTL boundary is preserved. Linux uses `CLOCK_BOOTTIME`
+   to include suspend time; unavailable/unsupported clocks use monotonic fallback.
 4. A nonce issued at clock value zero was mistaken for an unknown nonce. Absence
    now checks `None` explicitly.
 5. Repeated section writes reset the allocation. Writes and ordered joins now
    use the remaining section allowance; joins retain whole admitted items.
+6. Failed re-verification left a claim's earlier `VERIFIED` status, confidence and
+   executive-summary permission intact. Every outcome now updates those fields.
 
 The new bug regressions produced **8 failures / 4 passes before fixes**, then all
 passed. Provider adapters, model selection and benchmark baselines are unchanged.
+The stale-claim regressions separately failed all four scenarios on the original
+base commit and passed after correction. Review also added successful signed-claim,
+suspend/fallback, manifest-mismatch and one-sided missing-evidence checks.
 
 ## Mutation evidence
 
@@ -43,55 +50,77 @@ The dependency-free runner changes comparison boundaries, Boolean decisions,
 arithmetic, min/max limits, rounding, clock reads, prefix checks, empty text
 returns and state updates in isolated temporary copies. It never mutates the
 working checkout. The manifests enumerate every generated site and replacement.
+Normal campaigns reject mismatched source hashes before any tests run. Cross-version
+replay requires `--replay` and records the actual hashes and mismatched source files.
+Published commands normalize the interpreter name rather than retaining host paths.
+Fingerprint generation and validation both hash raw bytes, including CRLF line
+endings; a regression caught their earlier normalization mismatch.
 
 | Source and tests | Usable mutants | Test failures | Survivors | Timeouts | Sites removed by fixes |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Original source, original tests | 53 | 17 | 34 | 2 | 0 |
 | Same original source, strengthened tests | 53 | 49 | 4 | 0 | 0 |
 | Fixed source, replay of original manifest | 53 | 41 | 3 | 0 | 9 |
-| Fixed source, fresh manifest including new guards | 63 | 60 | 3 | 0 | 0 |
+| Fixed source, fresh manifest including claim verification/new guards | 71 | 68 | 3 | 0 | 0 |
+| Same fixed source, explicit pending-nonce cleanup assertions | 71 | 70 | 1 | 0 | 0 |
 
-Raw manifests contain 54 / 64 mutations. One string-subtraction mutation is
+Raw manifests contain 54 / 72 mutations. One string-subtraction mutation is
 type-invalid and excluded from each behavioral comparison, with its raw outcome
 retained. Timeouts and removed sites are **not** counted as test failures.
 The strengthened runs put contract tests first and stop at the first failure;
 the two original timeout cases then fail promptly on truncation assertions.
 Fresh-manifest totals are separate from the comparable original-source pair.
+That pair mutates three modules; claim verification and the suspend-aware clock
+selector are added to the final fresh campaign, not retroactively scored.
 
 Concrete examples: original mutants 1/3 accepted wrong signature schemes or
 challenges; 22 changed rounding up to rounding down; 30 discarded exact-fit text;
 38 excluded an ordered join at its exact limit. All survived the original suite
 and failed the strengthened tests. A further repaired-code survivor allowed a
 missing key with a supplied challenge; the added case now detects that mutant.
+The expanded claim scope exposed acceptance when IDs were absent but attestations
+were supplied. Independent missing-ID / missing-attestation cases now detect it.
 
 ### Surviving mutations and remaining gaps
 
-- Original 27 / repaired 33: `<= 0` becomes `< 0`. At zero both paths return
+- Original 27 / repaired 41: `<= 0` becomes `< 0`. At zero both paths return
   empty text, even with arbitrary suffixes. This is equivalent.
-- Original 10/17 / repaired 15/23: omit deleting an issued entry after consumption
+- Original 10/17 / repaired 18/26: omit deleting an issued entry after consumption
   or expiry. Accept/reject behavior is preserved, including replay and repeated
   RNG output, but retained entries change memory use. Resource lifecycle is an
   explicit remaining coverage gap; these are not unconditional equivalents.
+  **Closed in PR #98 finalization:** `test_nonce_lifecycle.py` checks pending-record
+  eviction for both paths and kills both deletion mutants. Production already
+  contains those deletions; no runtime change was needed to close these two gaps.
+  The lifecycle pass achieved 70/71 detected, with zero timeouts. Full offline
+  verification passed 2,409 tests with 11 skips; Ruff and zero-error mypy passed.
 - The old HMAC `return True` survivor was unsafe behavior, not a missing assertion
   requiring acceptance of signed evidence without credentials. The fix removed it.
 
 ## Scope, verification and reproduction
 
 Mutation scope is **attestation integrity/HMAC verification, `RemoteNonceManager`,
-UTF-8/token helpers, `ContextBudget`, and `bounded_join`**. `BudgetedPayloadBuilder`
+claim verification/outcome flags, UTF-8/token helpers, `ContextBudget`, and
+`bounded_join`**. `BudgetedPayloadBuilder`
 is exercised by existing tests but is not mutated. Hash serialization, signing,
 authentication routes, filesystem containment, retrieval deadlines, ranking,
 provider behavior and concurrency were not mutation-audited. The explicit AST
 operators are bounded coverage, not a claim about all possible bugs or the whole
-repository. A valid self-hash does not establish a trusted issuer.
+repository. A valid self-hash does not establish a trusted issuer. Evidence-authority
+matching and trust provisioning are outside this patch. Suspend is simulated through
+clock readings; real OS suspend and suspend behavior without `CLOCK_BOOTTIME` are
+not certified by these tests.
 
-Final full Python regression: **2,394 passed, 11 skipped, one MCP deprecation
+Latest full local Python regression: **2,404 passed, 11 skipped, one MCP deprecation
 warning**. Skips comprise seven sandbox cases, missing Claude/Cursor CLIs,
 unavailable Neo4j integration and an API-key-dependent contract case. Ruff and
 the full mypy ratchet passed with zero errors; public-launch and documentation
 consistency checks passed. These results do not certify live providers or skipped
 integrations. See [machine-readable evidence](evidence/mutation-results.json) for
 commands, source hashes, per-mutant outcomes, failure witnesses and exact skips.
+Two missing-evidence cases and a CRLF fingerprint case were added after full-suite
+collection; the final focused run, including them, passed all 61 cases. The CI privacy failure from host
+paths in the first published evidence was corrected without changing its denylist.
 
 With the project's locked development environment installed, reproduce the final
 campaign without installing a mutation framework:
