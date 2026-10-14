@@ -2,7 +2,9 @@
 
 from enum import Enum
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
+
+from brain.concurrency import StateLock
 
 
 class EvidenceState(str, Enum):
@@ -59,6 +61,7 @@ class V06AttestationPayload(BaseModel):
 
 
 class ReportClaim(BaseModel):
+    _verification_lock: StateLock = PrivateAttr(default_factory=StateLock)
     claim_id: str
     claim_text: str
     claim_category: ClaimCategory

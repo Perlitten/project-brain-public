@@ -71,6 +71,8 @@ async def mint_credential(
     """Create (or reuse) a principal and attach a fresh credential.
 
     Returns the plaintext key — it is never persisted."""
+    if ttl_days is not None and ttl_days <= 0:
+        raise ValueError("ttl_days must be positive when specified")
     res = await session.execute(
         select(Principal).where(Principal.name == name)
     )
@@ -82,7 +84,7 @@ async def mint_credential(
     raw = generate_credential()
     expires_at = (
         datetime.now(timezone.utc) + timedelta(days=ttl_days)
-        if ttl_days
+        if ttl_days is not None
         else None
     )
     cred = ApiCredential(

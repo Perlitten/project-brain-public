@@ -29,7 +29,7 @@ async def test_known_symbol_route_is_not_dependent_on_vector_search(monkeypatch)
 
     monkeypatch.setattr(service, "_known_symbol_route", known_symbol)
     monkeypatch.setattr("brain.retrieval.service.search_code", unavailable_vector)
-    result = await service.retrieve("search_code", None, deadline_s=0.001)
+    result = await asyncio.wait_for(service.retrieve("search_code", None, deadline_s=0.001), 0.25)
     assert result.repository["fast_route"] == "symbol"
     assert result.candidates[0].path == "brain/search/code_search.py"
     assert result.degraded == ["deadline_exceeded"]

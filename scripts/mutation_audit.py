@@ -35,11 +35,25 @@ TESTS = [
     "tests/test_fault_injection.py", "tests/test_chaos_v06.py",
 ]
 
+BROAD_SCOPE = {
+    **SCOPE,
+    "brain/harness/nonce.py": SCOPE["brain/harness/nonce.py"] | {"_evict_expired"},
+    "apps/api/auth.py": {"dev_open", "resolve_api_key", "require_principal", "require_scope"},
+    "brain/auth/principals.py": {"has_scope", "mint_credential", "resolve_credential", "require_scopes"},
+    "brain/retrieval/service.py": {"retrieve", "_normalize", "add_range", "_finite_score"},
+}
+BROAD_TESTS = TESTS + [
+    "tests/test_principals.py", "tests/test_api_scope_coverage.py",
+    "tests/test_retrieval_service.py", "tests/test_retrieval_deadlines.py",
+    "tests/test_nonce_lifecycle.py", "tests/test_mutation_contracts.py",
+    "tests/test_mutation_bug_regressions.py",
+]
+
 
 def sites(source: str, functions: set[str]):
     """Stable identifiers bind each expression to its function and occurrence."""
     for function in ast.walk(ast.parse(source)):
-        if not isinstance(function, ast.FunctionDef) or function.name not in functions:
+        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)) or function.name not in functions:
             continue
         occurrences: dict[str, int] = {}
         for node in ast.walk(function):
@@ -70,7 +84,7 @@ def replacements(node: ast.AST, function: str) -> list[tuple[str, str]]:
     if isinstance(node, ast.Call):
         if isinstance(node.func, ast.Attribute) and node.func.attr == "startswith":
             return [("negate_prefix_check", f"not ({value})")]
-        if ast.unparse(node.func) in {"time.time", "time.monotonic", "time.clock_gettime", "_elapsed_time"}:
+        if ast.unparse(node.func) in {"time.time", "time.monotonic", "time.clock_gettime", "time.perf_counter", "_elapsed_time"}:
             return [("freeze_clock", "0.0")]
         if isinstance(node.func, ast.Name) and node.func.id in {"min", "max"}:
             return [("limit_operator", f"{'max' if node.func.id == 'min' else 'min'}({', '.join(ast.unparse(a) for a in node.args)})")]
@@ -78,9 +92,21 @@ def replacements(node: ast.AST, function: str) -> list[tuple[str, str]]:
             return [("rounding", f"math.floor({ast.unparse(node.args[0])})")]
     if isinstance(node, ast.Delete) or (
         isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
-        and isinstance(node.value.func, ast.Attribute) and node.value.func.attr in {"add", "append"}
+        and isinstance(node.value.func, ast.Attribute) and node.value.func.attr in {"add", "append", "cancel", "add_done_callback"}
     ):
         return [("remove_state_update", "pass")]
+    if isinstance(node, ast.Assign) and any(
+        isinstance(target, ast.Subscript) and isinstance(target.value, ast.Attribute)
+        and target.value.attr in {"_issued_nonces", "_consumed_nonces"}
+        for target in node.targets
+    ):
+        return [("remove_state_update", "pass")]
+    if isinstance(node, ast.With) and all(
+        isinstance(item.context_expr, ast.Attribute) and item.context_expr.attr.endswith("lock")
+        for item in node.items
+    ):
+        body = ast.unparse(ast.Module(body=node.body, type_ignores=[]))
+        return [("remove_lock", body.replace("\n", "\n" + " " * node.col_offset))]
     return []
 
 
@@ -95,10 +121,11 @@ def replace(source: str, node: ast.AST, replacement: str) -> str:
     return (raw[:start] + replacement.encode() + raw[end:]).decode()
 
 
-def manifest(root: Path) -> dict:
+def manifest(root: Path, scope: dict[str, set[str]] | None = None) -> dict:
     mutations: list[dict] = []
     hashes = {}
-    for relative, functions in SCOPE.items():
+    selected = SCOPE if scope is None else scope
+    for relative, functions in selected.items():
         source = (root / relative).read_text(encoding="utf-8")
         hashes[relative] = hashlib.sha256((root / relative).read_bytes()).hexdigest()
         for function, shape, occurrence, node in sites(source, functions):
@@ -111,7 +138,7 @@ def manifest(root: Path) -> dict:
                     "original": ast.get_source_segment(source, node),
                     "replacement": replacement, "operator": operator,
                 })
-    return {"scope": {p: sorted(f) for p, f in SCOPE.items()}, "source_sha256": hashes, "mutations": mutations}
+    return {"scope": {p: sorted(f) for p, f in selected.items()}, "source_sha256": hashes, "mutations": mutations}
 
 
 def run(
@@ -125,14 +152,16 @@ def run(
     output.mkdir(parents=True, exist_ok=True)
     # Contract tests first and stop on the first failure. A broken truncator
     # can otherwise hang a later builder test after already failing its contract.
-    tests = extra_tests + TESTS
+    tests = extra_tests + frozen.get("tests", TESTS)
     command = [sys.executable, "-m", "pytest", *tests, "-q", "-x", "--tb=short", "-p", "no:cacheprovider"]
 
     def worker(batch: list[dict]) -> list[dict]:
         with tempfile.TemporaryDirectory(prefix="brain-mutations-") as directory:
             sandbox = Path(directory)
             ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "node_modules", ".next", ".venv")
-            for name in ("brain", "apps", "tests", "rules", "eval"):
+            for name in ("brain", "apps", "tests", "rules", "eval", "scripts"):
+                if not (root / name).exists():
+                    continue
                 shutil.copytree(root / name, sandbox / name, ignore=ignore)
             shutil.copy(root / "pyproject.toml", sandbox / "pyproject.toml")
             env = dict(os.environ, PYTHONPATH=str(sandbox), PYTHONDONTWRITEBYTECODE="1")
@@ -147,7 +176,7 @@ def run(
             for mutation in batch:
                 path = sandbox / mutation["file"]
                 source = path.read_text(encoding="utf-8")
-                node = next((node for function, shape, occurrence, node in sites(source, SCOPE[mutation["file"]])
+                node = next((node for function, shape, occurrence, node in sites(source, set(frozen["scope"][mutation["file"]]))
                              if (function, shape, occurrence) == (mutation["function"], mutation["shape"], mutation["occurrence"])), None)
                 if node is None:
                     if not replay:
@@ -187,6 +216,7 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--generate", action="store_true")
+    parser.add_argument("--profile", choices=["bounded", "broad"], default="bounded")
     parser.add_argument("--replay", action="store_true", help="Allow explicit cross-version replay and record source mismatches")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--extra-test", action="append", default=[])
@@ -195,7 +225,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.generate:
         args.manifest.parent.mkdir(parents=True, exist_ok=True)
-        args.manifest.write_text(json.dumps(manifest(args.root), indent=2) + "\n", encoding="utf-8")
+        record = manifest(args.root, BROAD_SCOPE if args.profile == "broad" else None)
+        if args.profile == "broad":
+            record["tests"] = BROAD_TESTS
+        args.manifest.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     else:
         if args.output is None or args.workers < 1 or args.timeout <= 0:
             parser.error("run requires --output, positive --workers and --timeout")
