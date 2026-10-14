@@ -76,6 +76,8 @@ def _compare(before: dict, after: dict) -> dict:
                 failures.append(f"{phase} {row['id']} changed frozen golden input")
             if row.get("contract") not in (capture.get("retrieval_contract") or {}).get("search", []):
                 failures.append(f"{phase} {row['id']} missing or inconsistent retrieval contract")
+            if row.get("contract") == "locator-v2" and not isinstance(row.get("effective_max_bytes"), int):
+                failures.append(f"{phase} {row['id']} missing effective locator budget")
         for row in capture["tasks"]:
             canonical = canonical_tasks.get(row["id"], {})
             if row.get("input") != canonical or row["expected"] != canonical.get("must_have_files", []):
@@ -86,8 +88,13 @@ def _compare(before: dict, after: dict) -> dict:
                 computed = task_metrics([row])
                 if any(row.get(key) != computed[key] for key in ("hit1", "hit3", "mrr", "recall")):
                     failures.append(f"{phase} {row['id']} inconsistent saved task metrics")
-            if any(path not in row["paths"] for path in row.get("slice_paths", [])):
-                failures.append(f"{phase} {row['id']} slice/candidate mismatch")
+            # Runtime v2 deliberately publishes six locators while loading
+            # slices from a wider recall pool. Extra slice paths are valid;
+            # listed locators should have code in a complete default pack.
+            if row.get("contract") == "runtime-v2" and any(path not in row.get("slice_paths", []) for path in row["paths"]):
+                failures.append(f"{phase} {row['id']} locator without returned slice")
+            if row.get("contract") in {"runtime-v2", "bounded-impact"} and not isinstance(row.get("effective_max_bytes"), int):
+                failures.append(f"{phase} {row['id']} missing effective byte budget")
     for key, count in (("goldens",20),("tasks",11)):
         old_ids = {row["id"] for row in before[key]}
         new_ids = {row["id"] for row in after[key]}

@@ -42,11 +42,12 @@ async def capture(args: argparse.Namespace) -> dict:
             response = await client.post("/search", json={"query": item["question"], "repo_path": args.repo, "limit": 10})
             response.raise_for_status()
             data = response.json()
-            contract = "locator-v2" if "results" in data else "legacy-files-chunks"
+            contract = "locator-v2" if "results" in data or ("repo" in data and "budget" in data) else "legacy-files-chunks"
             contracts["search"].add(contract)
-            row = _evaluate_question(item, data, 10)
+            scored_data = {"results": data.get("results", [])} if contract == "locator-v2" else data
+            row = _evaluate_question(item, scored_data, 10)
             row.update(contract=contract, seconds=time.perf_counter() - started,
-                       effective_max_bytes=data.get("budget", {}).get("max_bytes"))
+                       effective_max_bytes=data.get("budget", {}).get("limit"))
             row.pop("response")  # Keep paths/ranks, not source slices or local runtime metadata.
             goldens.append(row)
         for path in sorted((ROOT / "eval/harness_benchmark/tasks").glob("*.json")):
@@ -67,7 +68,7 @@ async def capture(args: argparse.Namespace) -> dict:
                 contract = "runtime-v2" if "repo" in data else "legacy-context-pack"
                 paths = [row["path"] for row in data.get("candidates", data.get("retrieved_files", [])) if row.get("path")]
             else:
-                contract = "bounded-impact" if "affected" in data else "legacy-impact"
+                contract = "bounded-impact" if "budget" in data else "legacy-impact"
                 paths = [row["name"] for row in data.get("affected", []) if isinstance(row, dict) and row.get("name")]
                 paths += data.get("directly_affected", []) + data.get("indirectly_affected", [])
                 paths = [p for p in paths if isinstance(p, str) and "/" in p and p.endswith((".py", ".ts", ".js", ".tsx"))]
@@ -80,7 +81,7 @@ async def capture(args: argparse.Namespace) -> dict:
                           "recall": sum(p in paths for p in expected) / len(expected) if expected else None,
                           "adversarial_pass": adversarial.get(task["id"]), "contract": contract,
                           "slice_paths": [row["path"] for row in data.get("slices", []) if row.get("path")],
-                          "effective_max_bytes": data.get("budget", {}).get("max_bytes"),
+                          "effective_max_bytes": data.get("budget", {}).get("limit"),
                           "seconds": time.perf_counter() - started})
     return {"phase": args.phase, "provider": args.provider, "corpus_source": args.corpus_source,
             "input_hash": input_hash(), "golden_metrics": _metrics(goldens), "goldens": goldens, "tasks": tasks,

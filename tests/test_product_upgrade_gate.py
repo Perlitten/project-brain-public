@@ -10,7 +10,7 @@ from eval.product_upgrade_gate import compare
 
 def captures():
     evidence = Path(__file__).resolve().parents[1] / "docs/release/evidence/pr75-hotfix"
-    return tuple(json.loads((evidence / f"{phase}-integrity.json").read_text(encoding="utf-8"))
+    return tuple(json.loads((evidence / f"{phase}-validated.json").read_text(encoding="utf-8"))
                  for phase in ("before", "after"))
 
 
