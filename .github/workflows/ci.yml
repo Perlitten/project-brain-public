@@ -143,13 +143,13 @@ jobs:
           # hashed on the fly by the privacy denylist test. Empty is fine.
           PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
 
-      - name: Team authority PostgreSQL race and native MCP checks
+      - name: Team authority PostgreSQL race, native MCP and restore checks
         run: |
           PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
-            -c "CREATE USER fixture WITH PASSWORD 'fixture_local_only'" \
+            -c "CREATE USER fixture WITH CREATEDB PASSWORD 'fixture_local_only'" \
             -c "CREATE DATABASE brain_team_test OWNER fixture"
           TEST_TEAM_POSTGRES_URL="postgresql+asyncpg://fixture:fixture_local_only@127.0.0.1:$POSTGRES_PORT/brain_team_test" \
-            pytest tests/test_team_foundations.py tests/test_team_transport.py -q
+            pytest tests/test_team_foundations.py tests/test_team_transport.py tests/test_team_restore.py -q
 
       - name: Coverage summary
         run: |
