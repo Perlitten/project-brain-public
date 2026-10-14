@@ -43,9 +43,9 @@ def inventory_errors(root: Path, notice: str) -> list[str]:
     observed_web = rows(web_section)
     for name in sorted(packages.keys() | observed_web.keys()):
         installed = npm.get(f"node_modules/{name}", {})
-        expected = (installed.get("version"), installed.get("license"))
-        if name not in packages or observed_web.get(name) != expected:
-            errors.append(f"web: {name}: lock {expected}, notice {observed_web.get(name)}")
+        expected_web = (installed.get("version"), installed.get("license"))
+        if name not in packages or observed_web.get(name) != expected_web:
+            errors.append(f"web: {name}: lock {expected_web}, notice {observed_web.get(name)}")
 
     for filename in ("OFL-JetBrainsMono.txt", "OFL-Outfit.txt"):
         if not (root / "apps/web/public/fonts" / filename).is_file() or filename not in notice:
