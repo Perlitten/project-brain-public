@@ -70,7 +70,7 @@ class ContextBudget:
 
     def add_text(self, section: str, value: str, *, allocation: int | None = None) -> str:
         requested = utf8_bytes(value)
-        section_cap = self.allocations.get(section, self.max_bytes)
+        section_cap = max(0, self.allocations.get(section, self.max_bytes) - self.sections.get(section, 0))
         if allocation is not None:
             section_cap = min(section_cap, allocation)
         section_cap = min(section_cap, self.remaining_bytes)
@@ -234,7 +234,8 @@ def bounded_join(budget: ContextBudget, section: str, values: Iterable[str], sep
     accepted: list[str] = []
     for value in values:
         candidate = separator.join([*accepted, value])
-        if utf8_bytes(candidate) > min(budget.allocations.get(section, budget.max_bytes), budget.remaining_bytes):
+        section_remaining = max(0, budget.allocations.get(section, budget.max_bytes) - budget.sections.get(section, 0))
+        if utf8_bytes(candidate) > min(section_remaining, budget.remaining_bytes):
             budget.exclude(section, "byte_cap")
             break
         accepted.append(value)

@@ -48,10 +48,16 @@ class ExecutionAttestation(BaseModel):
         serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-    def verify_integrity(self) -> bool:
-        """Verifies internal self-hash match."""
+    def verify_integrity(self, *, secret_key: Optional[str] = None, expected_nonce: Optional[str] = None) -> bool:
+        """Check a self-hash, or authenticate HMAC evidence with explicit credentials.
+
+        A signature prefix is not proof of authentication. Callers without the
+        verifier's key and challenge cannot accept signed evidence.
+        """
         if self.attestation_hash.startswith("hmac-sha256:"):
-            return True  # Verified via HMAC signature handler
+            if not secret_key or not expected_nonce:
+                return False
+            return verify_hmac_attestation(self, expected_nonce, secret_key)
         return self.attestation_hash == self.calculate_hash()
 
     def to_v06_payload(self, hmac_sig: str = "") -> V06AttestationPayload:
@@ -180,6 +186,8 @@ def verify_hmac_attestation(
     if attestation.remote_nonce != expected_nonce:
         return False
     sig = attestation.attestation_hash.split("hmac-sha256:", 1)[1]
+    if len(sig) != 64 or any(character not in "0123456789abcdef" for character in sig):
+        return False
     expected_payload = f"{attestation.calculate_hash()}:{expected_nonce}"
     expected_sig = hmac.new(secret_key.encode("utf-8"), expected_payload.encode("utf-8"), hashlib.sha256).hexdigest()
     return hmac.compare_digest(sig, expected_sig)

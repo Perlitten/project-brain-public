@@ -16,17 +16,17 @@ class RemoteNonceManager:
     def generate_nonce(self) -> str:
         """Generates a cryptographically secure random nonce."""
         nonce = f"nonce-{secrets.token_hex(16)}"
-        self._issued_nonces[nonce] = time.time()
+        self._issued_nonces[nonce] = time.monotonic()
         return nonce
 
     def verify_and_consume(self, nonce: str) -> bool:
-        """Verifies nonce validity and ensures single-use consumption."""
+        """Consume once within the inclusive TTL, measured by a monotonic clock."""
         if not nonce or nonce in self._consumed_nonces:
             return False
         issued_at = self._issued_nonces.get(nonce)
-        if not issued_at:
+        if issued_at is None:
             return False
-        if time.time() - issued_at > self.ttl_seconds:
+        if time.monotonic() - issued_at > self.ttl_seconds:
             del self._issued_nonces[nonce]
             return False
 
