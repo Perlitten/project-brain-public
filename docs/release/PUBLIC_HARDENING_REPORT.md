@@ -35,3 +35,22 @@ data access, release publication or deployment was performed.
 Remaining assessment findings are tracked through separate core-memory, Lite
 queue, recovery, integration, distribution and dashboard corrections. Remote
 exact-head CI, CodeQL and independent review must pass before merge.
+
+### Safety review corrections
+
+The first independent review found four further boundary cases. Docker tools
+now resolve only inside the image; preflight checks required tools and declared
+project dependencies using isolated image Python without importing repository
+code. Incompatible images report `infrastructure_error`, execute no candidate
+commands and provide no experiment test evidence. Basic/other Authorization
+fields and incomplete PEM blocks are redacted; full output is redacted before
+snippet truncation. Six new cases pass, and the full suite passed **2,198 tests
+with 11 optional skips** on these corrections. Ruff and mypy pass.
+
+The [updated real container probe](evidence/public-hardening/docker-safety-review.json)
+confirms outside reads and writes fail. The cached bare Python image's standard
+pytest profile is rejected as infrastructure unavailable, while compile/code
+containment succeeds. Provision a trusted image with pytest and the candidate's
+declared dependencies for standard testing; a bare Python image is suitable
+only for compile-only profiles. No automatic download or host mounts supply
+missing tools.

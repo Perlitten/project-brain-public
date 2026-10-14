@@ -438,6 +438,10 @@ class ExperimentRunner:
         outcome = session.get("outcome")
         option.passed_required = outcome == "passed"
         validation = session.get("validation") or {}
+        if validation.get("infrastructure_error"):
+            option.executed = False
+            option.failure_reason = "; ".join(validation.get("rejected_reasons") or ["Validation infrastructure unavailable"])
+            option.unresolved_uncertainty.append("No candidate test evidence: validation infrastructure unavailable")
         option.passed_optional = bool(validation.get("passed")) and outcome == "passed"
 
         apply_result = session.get("apply") or {}
@@ -452,7 +456,7 @@ class ExperimentRunner:
             option.unresolved_uncertainty.append(
                 f"{len(unexpected)} file(s) changed outside the declared scope"
             )
-        if not option.passed_required:
+        if not option.passed_required and not validation.get("infrastructure_error"):
             reasons = session.get("rejected_reasons") or []
             option.failure_reason = (
                 "; ".join(str(r) for r in reasons)[:500] or f"Validation outcome: {outcome}"

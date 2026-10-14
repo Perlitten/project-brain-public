@@ -2,7 +2,7 @@
 
 import subprocess
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from mcp import Client
@@ -111,3 +111,43 @@ def test_compile_only_cannot_import_workspace_compileall(tmp_path, monkeypatch):
 def test_unfinished_autonomy_is_not_exposed_by_normal_api():
     from apps.api.main import app
     assert not any(getattr(route, "path", "").startswith("/autonomy") for route in app.routes)
+
+
+@pytest.mark.parametrize("scheme", ["Basic", "Digest", "Custom"])
+def test_non_bearer_authorization_redacts_whole_credential(scheme):
+    credential = "synthetic-authorization-value"
+    for raw in (f"Authorization: {scheme} {credential}", f'{{"authorization": "{scheme} {credential}"}}'):
+        assert credential not in redact_trajectory_content(raw)
+        assert credential not in ValidationRunner._redact(raw)
+
+
+def test_complete_and_truncated_private_key_blocks_are_redacted():
+    opening = "-----BEGIN " + "PRIVATE KEY-----"
+    closing = "-----END " + "PRIVATE KEY-----"
+    text = "safe preceding log\n" + opening + "\n" + "synthetic-key-material" * 500 + "\n" + closing
+    for raw in (text, text[:ValidationRunner.MAX_OUTPUT_CHARS]):
+        assert "synthetic-key-material" not in redact_trajectory_content(raw)
+        assert "synthetic-key-material" not in ValidationRunner._redact(raw)
+
+
+def test_container_tool_does_not_require_host_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(ValidationRunner, "_resolve_executable", lambda *a: pytest.fail("host PATH must not be consulted"))
+    process = Mock()
+    process.communicate.return_value = ("image-owned-tool", "")
+    process.returncode = 0
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: process)
+    result = ValidationRunner._run_one(tmp_path, ["ruff", "check", "."], {}, 5, 0, True, None, "docker")
+    assert result.exit_code == 0
+    assert result.stdout_snippet == "image-owned-tool"
+
+
+def test_incompatible_image_is_infrastructure_error_before_any_candidate_command(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "LAB_SANDBOX_MODE", "docker")
+    monkeypatch.setattr(sandbox, "_docker_available", lambda: True)
+    monkeypatch.setattr(sandbox, "validate_image_toolchain", lambda *a: False)
+    monkeypatch.setattr(ValidationRunner, "_run_one", lambda *a: pytest.fail("candidate must not run"))
+    report = ValidationRunner.run_profile(tmp_path, ValidationProfile(
+        profile_name="python-standard", commands=[CommandDef(argv=["python", "-m", "pytest", "-q"])],
+    ))
+    assert report.infrastructure_error and not report.passed
+    assert report.results == [] and report.rejected_reasons

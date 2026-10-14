@@ -8,6 +8,7 @@ Host execution is exclusively an explicit trusted-development opt-in.
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
 import uuid
@@ -25,7 +26,50 @@ _PROBE_TIMEOUT = 10
 
 # Host directories mounted read-only into the sandbox so allowlisted
 # executables resolve identically inside it.
-_SYSTEM_TOOLCHAIN_MOUNTS = ("/usr", "/bin", "/sbin", "/lib", "/lib64")
+def validate_image_toolchain(workspace: Path, commands: list, timeout: float) -> bool:
+    """Probe image-owned tools/dependencies without importing repository code."""
+    executables, modules, requirements = set(), set(), []
+    for command in commands:
+        name = command.argv[0].lower().removesuffix(".exe")
+        executables.add("python3" if name in {"python", "python3", "py"} else name)
+        if name in {"python", "python3", "py"} and "-m" in command.argv:
+            index = command.argv.index("-m")
+            if index + 1 < len(command.argv):
+                modules.add(command.argv[index + 1])
+    if "pytest" in executables or "pytest" in modules:
+        project = workspace / "pyproject.toml"
+        if project.exists():
+            import tomllib
+            from packaging.requirements import Requirement
+            config = tomllib.loads(project.read_text(encoding="utf-8"))
+            for spec in config.get("project", {}).get("dependencies", []):
+                requirement = Requirement(spec)
+                if requirement.marker is None or requirement.marker.evaluate():
+                    requirements.append((requirement.name, str(requirement.specifier)))
+    # -I keeps the mounted repository out of import resolution. Metadata reads
+    # installed distributions; it does not import their or the project's code.
+    probe = """import importlib.util, importlib.metadata, json, shutil, sys
+executables, modules, requirements = json.loads(sys.argv[1])
+ok = all(shutil.which(name) for name in executables)
+ok = ok and all(importlib.util.find_spec(name.split('.')[0]) for name in modules)
+for name, spec in requirements:
+    try:
+        version = importlib.metadata.version(name)
+        if spec:
+            from packaging.specifiers import SpecifierSet
+            ok = ok and version in SpecifierSet(spec)
+    except (ImportError, importlib.metadata.PackageNotFoundError):
+        ok = False
+sys.exit(0 if ok else 1)
+"""
+    argv, handle = wrap_docker(workspace=workspace, argv=["python3", "-I", "-c", probe,
+                               json.dumps([sorted(executables), sorted(modules), requirements])],
+                               env={}, resolved_exe=Path("python3"))
+    try:
+        return subprocess.run(argv, capture_output=True, timeout=max(.1, timeout)).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        handle.terminate()
+        return False
 
 
 def _docker_available() -> bool:
