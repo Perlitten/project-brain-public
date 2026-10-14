@@ -43,6 +43,7 @@ from mcp.types import (
 )
 from pydantic import BaseModel, Field
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
+from mcp.server.mcpserver.exceptions import ResourceError
 
 RULES_URI = "brain://rules"
 DECISIONS_URI = "brain://decisions"
@@ -248,6 +249,8 @@ def register_memory_resources(
 
 def only_active(rows: Any) -> list[dict[str, Any]]:
     """Keep active rows from an API list response; anything else becomes an error row."""
+    if isinstance(rows, dict) and rows.get("status") == "failed" and "error" in rows:
+        raise ResourceError(str(rows["error"]))
     if not isinstance(rows, list):
         return [rows] if isinstance(rows, dict) else []
     return [row for row in rows if isinstance(row, dict) and (row.get("status") or "active").lower() == "active"]

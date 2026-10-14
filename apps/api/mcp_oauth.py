@@ -19,11 +19,12 @@ import secrets
 import time
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Optional
+from typing import Optional, Literal
+from functools import partial
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -34,11 +35,15 @@ from mcp.server.auth.provider import (
     construct_redirect_uri,
 )
 from mcp.server.auth.handlers.metadata import MetadataHandler
+from mcp.server.auth.middleware.client_auth import ClientAuthenticator, AuthenticationError
+from mcp.server.transport_security import RequestBodyLimitMiddleware, DEFAULT_MAX_REQUEST_BODY_SIZE
 from mcp.server.auth.routes import build_metadata, cors_middleware, create_auth_routes, create_protected_resource_routes
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import AnyHttpUrl
-from starlette.routing import Route
+from pydantic import AnyHttpUrl, BaseModel, ValidationError
+from starlette.routing import Route, request_response
+from starlette.middleware.cors import CORSMiddleware
+from mcp.shared.inbound import MCP_PROTOCOL_VERSION_HEADER
 
 from apps.api.auth import dev_open, resolve_api_key
 from apps.api.routers.web_login import _configured as web_login_configured
@@ -337,6 +342,45 @@ def consent_router(provider: BrainOAuthProvider) -> APIRouter:
     return router
 
 
+class RevocationForm(BaseModel):
+    token: str
+    token_type_hint: Literal["access_token", "refresh_token"] | None = None
+    client_id: str
+    client_secret: str | None = None
+
+
+def revocation_route(provider: BrainOAuthProvider) -> Route:
+    """RFC 7009 public clients omit secrets; confidential auth stays mandatory."""
+    authenticator = ClientAuthenticator(provider)
+
+    async def revoke_request(request: Request) -> Response:
+        try:
+            client = await authenticator.authenticate_request(request)
+        except AuthenticationError:
+            return JSONResponse({"error": "unauthorized_client"}, status_code=401)
+        try:
+            form = RevocationForm.model_validate(dict(await request.form()))
+        except ValidationError:
+            return JSONResponse({"error": "invalid_request"}, status_code=400)
+        loaders = [provider.load_access_token, partial(provider.load_refresh_token, client)]
+        if form.token_type_hint == "refresh_token":
+            loaders.reverse()
+        for loader in loaders:
+            token = await loader(form.token)
+            if token is not None:
+                if token.client_id == client.client_id:
+                    await provider.revoke_token(token)
+                break
+        return Response(status_code=200, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
+
+    endpoint = CORSMiddleware(
+        RequestBodyLimitMiddleware(request_response(revoke_request), DEFAULT_MAX_REQUEST_BODY_SIZE),
+        allow_origins="*", allow_methods=["POST", "OPTIONS"],
+        allow_headers=[MCP_PROTOCOL_VERSION_HEADER, "Authorization"],
+    )
+    return Route("/revoke", endpoint=endpoint, methods=["POST", "OPTIONS"])
+
+
 def oauth_routes(provider: BrainOAuthProvider, *, issuer: str, resource: str) -> list:
     """Authorization server and protected-resource metadata routes."""
     routes = create_auth_routes(
@@ -358,7 +402,8 @@ def oauth_routes(provider: BrainOAuthProvider, *, issuer: str, resource: str) ->
     )
     metadata.token_endpoint_auth_methods_supported = ["none", "client_secret_post", "client_secret_basic"]
     metadata.revocation_endpoint_auth_methods_supported = ["none", "client_secret_post", "client_secret_basic"]
-    routes = [route for route in routes if route.path != "/.well-known/oauth-authorization-server"]
+    routes = [route for route in routes if route.path not in {"/.well-known/oauth-authorization-server", "/revoke"}]
+    routes.append(revocation_route(provider))
     routes.insert(0, Route(
         "/.well-known/oauth-authorization-server",
         endpoint=cors_middleware(MetadataHandler(metadata).handle, ["GET", "OPTIONS"]),
