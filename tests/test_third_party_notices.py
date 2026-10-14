@@ -8,6 +8,12 @@ def test_notice_matches_pinned_packages_and_bundled_fonts():
     assert inventory_errors(ROOT, NOTICE.read_text(encoding="utf-8")) == []
 
 
+def test_backend_builder_and_production_digest_include_canonical_notices():
+    assert "COPY docs/legal/THIRD_PARTY_NOTICES.md ./docs/legal/THIRD_PARTY_NOTICES.md" in (ROOT / "Dockerfile").read_text()
+    assert "--include docs/legal/THIRD_PARTY_NOTICES.md" in (ROOT / "deploy/server_up.sh").read_text()
+    assert "python scripts/check_third_party_notices.py dist/*.whl dist/*.tar.gz" in (ROOT / ".github/workflows/release.yml").read_text()
+
+
 def test_changed_direct_web_version_is_rejected(tmp_path):
     web = tmp_path / "apps/web"
     web.mkdir(parents=True)

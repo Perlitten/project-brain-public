@@ -29,6 +29,7 @@ jobs:
           python -m build
           twine check dist/*
           python scripts/check_release_archives.py dist/*.whl dist/*.tar.gz
+          python scripts/check_third_party_notices.py dist/*.whl dist/*.tar.gz
           (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS)
       - name: Upload distributions
         uses: actions/upload-artifact@v4
