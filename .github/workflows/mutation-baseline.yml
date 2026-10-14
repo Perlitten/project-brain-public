@@ -120,6 +120,15 @@ jobs:
           tail -n 60 .mutation-results/mutmut.log || true
           if test -f .mutation-results/report.json; then
             .venv/bin/python -c 'import json; print(json.dumps(json.load(open(".mutation-results/report.json"))["overall"], indent=2))' >> "$GITHUB_STEP_SUMMARY"
+            .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path(".mutation-results/report.json").read_text())
+          if report["measurement_exit_code"]:
+              reason = report.get("error") or "Incomplete mutation measurement: " + json.dumps(report["overall"])
+              reason = reason.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print("::error title=Mutation measurement incomplete::" + reason)
+          PY
           fi
       - uses: actions/cache/save@v6
         if: always()

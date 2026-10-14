@@ -1,10 +1,26 @@
 """The campaign must not turn partial runs, crashes or missing modules into a pass."""
 
+import ast
+import gzip
+import hashlib
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
-from eval.project_mutation import assign_shards, candidate_hash, outcome, summarize
+from eval.project_mutation import assign_shards, candidate_hash, outcome, subprocess_guard, summarize
+from eval.mutation_types import build_type_proof, read_type_exclusions
+
+
+def module_record(tmp_path, codes):
+    source = tmp_path / "example.py"
+    source.write_text("pass\n")
+    (tmp_path / "example.py.meta").write_text(json.dumps({"exit_code_by_key": codes}))
+    return {"module": "example.py", "candidates": len(codes), "candidate_keys_sha256": candidate_hash(codes),
+            "generated_sha256": hashlib.sha256(source.read_bytes()).hexdigest()}
 
 
 def test_sharding_preserves_the_entire_inventory_and_is_reproducible():
@@ -22,7 +38,7 @@ def test_sharding_preserves_the_entire_inventory_and_is_reproducible():
 def test_report_keeps_timeouts_in_denominator_and_rejects_incomplete_scores(tmp_path):
     codes = {f"brain.example.f__mutmut_{index}": code
              for index, code in enumerate((1, 1, 0, 36, 3, None))}
-    module = {"module": "example.py", "candidates": len(codes), "candidate_keys_sha256": candidate_hash(codes)}
+    module = module_record(tmp_path, codes)
     path = tmp_path / "example.py.meta"
     path.write_text(json.dumps({"exit_code_by_key": codes}))
     report = summarize([module], tmp_path)["overall"]
@@ -37,6 +53,9 @@ def test_report_keeps_timeouts_in_denominator_and_rejects_incomplete_scores(tmp_
     assert report["complete"] and report["score"] == 0.5
     assert report["total"] == 6 and report["timed_out"] == 1
     assert report["equivalent"] == report["type_invalid"] == 0
+    filtered = summarize([module], tmp_path, {"brain.example.f__mutmut_0": [{"code": "arg-type"}]})["overall"]
+    assert filtered["type_invalid"] == 1 and filtered["killed"] == 2
+    assert filtered["total"] == 6 and filtered["score"] == 0.4
 
     path.unlink()
     missing = summarize([module], tmp_path)["overall"]
@@ -46,12 +65,124 @@ def test_report_keeps_timeouts_in_denominator_and_rejects_incomplete_scores(tmp_
 
 def test_report_rejects_changed_candidate_identity_and_noninteger_exit_codes(tmp_path):
     codes = {"brain.example.f__mutmut_1": 1}
-    module = {"module": "example.py", "candidates": 1, "candidate_keys_sha256": candidate_hash(codes)}
+    module = module_record(tmp_path, codes)
     (tmp_path / "example.py.meta").write_text(json.dumps({"exit_code_by_key": {"different": 1}}))
     with pytest.raises(ValueError, match="identities changed"):
+        summarize([module], tmp_path)
+    (tmp_path / "example.py.meta").write_text(json.dumps({"exit_code_by_key": codes}))
+    (tmp_path / "example.py").write_text("different_body = True\n")
+    with pytest.raises(ValueError, match="Generated source changed"):
         summarize([module], tmp_path)
     with pytest.raises(ValueError, match="integers"):
         outcome(True)
     with pytest.raises(ValueError, match="integers"):
         outcome("1")
     assert outcome(37) == outcome(3) == outcome(-11) == "inconclusive"
+
+
+def test_type_proof_separates_compiler_errors_from_constructor_cloning(tmp_path):
+    generated = tmp_path / "generated"
+    (generated / "brain").mkdir(parents=True)
+    source = generated / "brain/example.py"
+    source.write_text('''class Example:
+    def __init__(self) -> None:
+        self.value: int = 1
+    def x_Example_init__mutmut_orig(self) -> None:
+        self.value: int = 1
+
+def x_length__mutmut_orig(text: str) -> int:
+    return len(text)
+
+def x_length__mutmut_1(text: str) -> int:
+    return len(None)
+''')
+    key = "brain.example.x_length__mutmut_1"
+    meta = Path(str(source) + ".meta")
+    meta.write_text(json.dumps({"exit_code_by_key": {key: None}}))
+    spans = {node.name: [node.lineno, node.end_lineno] for node in ast.walk(ast.parse(source.read_text()))
+             if isinstance(node, ast.FunctionDef) and "__mutmut_" in node.name}
+    Path(str(source) + ".spans").write_text(json.dumps({"spans": spans}))
+    inventory = {"base": "frozen-test-source", "modules": [{"module": "brain/example.py", "sha256": "original",
+                 "generated_sha256": hashlib.sha256(source.read_bytes()).hexdigest()}]}
+    checked = subprocess.run(
+        [sys.executable, "-m", "mypy", "--follow-imports=skip", "--output=json", "brain/example.py"],
+        cwd=generated, text=True, capture_output=True, timeout=30,
+    )
+    assert checked.returncode == 1, checked.stderr
+    diagnostics = tmp_path / "mypy.jsonl"
+    diagnostics.write_text(checked.stdout)
+    proof = build_type_proof(inventory, generated, diagnostics)
+    row = proof["modules"][0]
+    assert row["eligible"] and not row["unmapped_errors"]
+    assert row["ignored_clone_diagnostics"]
+    assert set(row["invalid_candidates"]) == {key}
+    saved = tmp_path / "proof.json.gz"
+    saved.write_bytes(gzip.compress(json.dumps(proof).encode()))
+    assert set(read_type_exclusions(saved, inventory["modules"])) == {key}
+    inventory["modules"][0]["generated_sha256"] = "changed"
+    with pytest.raises(ValueError, match="does not match source"):
+        read_type_exclusions(saved, inventory["modules"])
+
+
+def test_stats_follow_cli_subprocesses_without_changing_their_working_directory(tmp_path):
+    pytest.importorskip("mutmut", reason="optional mutation engine; exercised in the mutation workflow")
+    campaign = tmp_path / "campaign"
+    (campaign / "brain").mkdir(parents=True)
+    (campaign / "pyproject.toml").write_text('[tool.mutmut]\nsource_paths = ["brain"]\nmax_stack_depth = -1\n')
+    target = tmp_path / "another-repository"
+    target.mkdir()
+    stats = tmp_path / "child-stats"
+    support = Path(__file__).resolve().parents[1] / "eval/mutation_support"
+    package = campaign / "mutants/brain"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    code = '''
+import json
+import os
+from mutmut.mutation.trampoline import wrap_in_trampoline
+def x_value__mutmut_orig():
+    return 17
+def x_value__mutmut_1():
+    return 18
+@wrap_in_trampoline({"_mutmut_orig": x_value__mutmut_orig, "x_value__mutmut_1": x_value__mutmut_1})
+def value():
+    return 17
+print(json.dumps({"cwd": os.getcwd(), "value": value()}))
+'''
+    script = package / "example.py"
+    script.write_text(code)
+    env = {**os.environ, "PYTHONPATH": str(campaign / "mutants"),
+           "MUTANT_UNDER_TEST": "stats", "BRAIN_MUTATION_CONFIG_ROOT": str(campaign),
+           "BRAIN_MUTATION_SUPPORT_PATH": str(support),
+           "BRAIN_MUTATION_CHILD_STATS": str(stats), "PYTEST_CURRENT_TEST": "tests/test_cli.py::test_index (call)"}
+    env.pop("BRAIN_MUTATION_ORIGINAL_MUTANT", None)
+    with subprocess_guard():
+        result = subprocess.run(
+            [sys.executable, "-m", "brain.example"], cwd=target, text=True, capture_output=True, timeout=20, env=env,
+        )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"cwd": str(target), "value": 17}
+    records = [json.loads(path.read_text()) for path in stats.glob("*.json")]
+    assert len(records) == 1
+    assert records[0]["test"] == "tests/test_cli.py::test_index"
+    assert "brain.example.x_value" in records[0]["functions"]
+    # A directly invoked script runs as __main__. The named package mutant must
+    # still execute rather than falsely surviving because its module differs.
+    env["MUTANT_UNDER_TEST"] = "brain.example.x_value__mutmut_1"
+    with subprocess_guard():
+        mutated = subprocess.run(
+            [sys.executable, str(script)], cwd=target, text=True, capture_output=True, timeout=20, env=env,
+        )
+    assert mutated.returncode == 0, mutated.stderr
+    assert json.loads(mutated.stdout) == {"cwd": str(target), "value": 18}
+    # The installed hook must not alter a normal provider process. This uses a
+    # synthetic value and makes no provider request.
+    ordinary_env = {key: value for key, value in os.environ.items()
+                    if not key.startswith("BRAIN_MUTATION_") and key not in {"PYTHONPATH", "MUTANT_UNDER_TEST"}}
+    ordinary_env["NVIDIA_API_KEY"] = "synthetic-not-a-provider-key"
+    with subprocess_guard():
+        ordinary = subprocess.run(
+            [sys.executable, "-c", 'import os; assert os.environ["NVIDIA_API_KEY"] == "synthetic-not-a-provider-key"'],
+            cwd=target, env=ordinary_env, text=True, capture_output=True, timeout=20,
+        )
+    assert ordinary.returncode == 0, ordinary.stderr

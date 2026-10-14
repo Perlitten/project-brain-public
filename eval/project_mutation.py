@@ -8,14 +8,17 @@ time. No module is removed from the combined denominator by sharding.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import importlib.metadata
 import json
 import os
 import subprocess
 import sys
+import sysconfig
 import time
 from collections import Counter
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -55,7 +58,8 @@ def generate_inventory(workers: int) -> dict:
         data = json.loads((ROOT / "mutants" / (path + ".meta")).read_text(encoding="utf-8"))
         keys = data["exit_code_by_key"]
         rows.append({"module": path, "sha256": file_hash(ROOT / path),
-                     "candidates": len(keys), "candidate_keys_sha256": candidate_hash(keys)})
+                     "candidates": len(keys), "candidate_keys_sha256": candidate_hash(keys),
+                     "generated_sha256": file_hash(ROOT / "mutants" / path)})
     return {"base": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
             "tool": f"mutmut=={TOOL_VERSION}", "modules": rows, "module_count": len(rows),
             "candidate_count": sum(row["candidates"] for row in rows), "generation": vars(stats)}
@@ -113,13 +117,16 @@ def outcome(exit_code: int | None) -> str:
     return "inconclusive"
 
 
-def summarize(modules: list[dict], directory: Path) -> dict:
+def summarize(modules: list[dict], directory: Path, invalid: dict | None = None) -> dict:
+    invalid = invalid or {}
     rows = []
     total: Counter[str] = Counter()
     results = {}
     for item in modules:
         path = directory / (item["module"] + ".meta")
         if path.exists():
+            if file_hash(directory / item["module"]) != item["generated_sha256"]:
+                raise ValueError(f"Generated source changed: {item['module']}")
             meta = json.loads(path.read_text(encoding="utf-8"))
             codes = meta["exit_code_by_key"]
             if len(codes) != item["candidates"]:
@@ -128,27 +135,56 @@ def summarize(modules: list[dict], directory: Path) -> dict:
                 raise ValueError(f"Candidate identities changed: {item['module']}")
             if results.keys() & codes.keys():
                 raise ValueError("A candidate appears in multiple modules")
-            counts = Counter(outcome(code) for code in codes.values())
-            counts["no_tests"] = sum(code in (5, 33) for code in codes.values())
+            counts = Counter(outcome(code) for key, code in codes.items() if key not in invalid)
+            counts["type_invalid"] = sum(key in invalid for key in codes)
+            counts["no_tests"] = sum(code in (5, 33) for key, code in codes.items() if key not in invalid)
             results.update(codes)
         else:
             counts = Counter(pending=item["candidates"])
-        counts.update(total=item["candidates"], equivalent=0, type_invalid=0)
+        counts.update(total=item["candidates"], equivalent=0)
+        counts.setdefault("type_invalid", 0)
         complete = not (counts["pending"] or counts["inconclusive"])
-        denominator = item["candidates"]
-        rows.append({**item, **counts, "complete": complete,
-                     "score": counts["killed"] / denominator if complete and denominator else None})
+        denominator = item["candidates"] - counts["type_invalid"]
         for key in ("killed", "survived", "timed_out", "pending", "inconclusive", "no_tests"):
             counts.setdefault(key, 0)
+        rows.append({**item, **counts, "complete": complete,
+                     "score": counts["killed"] / denominator if complete and denominator else None})
         total.update(counts)
     complete = not (total["pending"] or total["inconclusive"])
+    denominator = total["total"] - total["type_invalid"]
     return {"overall": {**total, "complete": complete,
-                        "score": total["killed"] / total["total"] if complete and total["total"] else None},
+                        "score": total["killed"] / denominator if complete and denominator else None},
             "modules": rows, "exit_code_by_key": results,
             "formula": "killed / (total - equivalent - type_invalid)"}
 
 
-def run_shard(modules: list[dict]) -> None:
+@contextmanager
+def subprocess_guard():
+    """Keep the guard active when CLI tests replace PYTHONPATH.
+
+    The temporary startup hook acts only when campaign environment variables
+    are set. Normal provider execution in the same venv stays unaffected.
+    """
+    if sys.prefix == sys.base_prefix:
+        raise ValueError("Run the campaign in a dedicated virtual environment")
+    path = Path(sysconfig.get_path("purelib")) / "brain-mutation-session.pth"
+    content = ("import os,sys; os.getenv('BRAIN_MUTATION_CONFIG_ROOT') and "
+               "sys.path.insert(0, os.environ['BRAIN_MUTATION_SUPPORT_PATH'])\n")
+    existed = path.exists()
+    if existed and path.read_text(encoding="utf-8") != content:
+        raise ValueError("Refusing to overwrite an existing Python startup hook")
+    if not existed:
+        path.write_text(content, encoding="utf-8")
+    try:
+        yield
+    finally:
+        if not existed:
+            path.unlink(missing_ok=True)
+
+
+@subprocess_guard()
+def run_shard(modules: list[dict], invalid: dict | None = None) -> None:
+    invalid = invalid or {}
     if importlib.metadata.version("mutmut") != TOOL_VERSION:
         raise ValueError(f"This inventory requires mutmut=={TOOL_VERSION}")
     if os.getenv("NVIDIA_API_KEY"):
@@ -159,10 +195,36 @@ def run_shard(modules: list[dict]) -> None:
     from mutmut.__main__ import _run
 
     config().only_mutate = [item["module"] for item in modules]
+    os.environ["BRAIN_MUTATION_CONFIG_ROOT"] = str(ROOT)
+    os.environ["BRAIN_MUTATION_SUPPORT_PATH"] = str(ROOT / "eval/mutation_support")
+    child_stats = ROOT / ".mutation-results/subprocess-stats"
+    child_stats.mkdir(exist_ok=True, parents=True)
+    for path in child_stats.glob("*.json"):
+        path.unlink()
+    os.environ["BRAIN_MUTATION_CHILD_STATS"] = str(child_stats)
     control = ROOT / ".mutation-results/stats-control.json"
     control.parent.mkdir(exist_ok=True)
     control.unlink(missing_ok=True)
     os.environ["BRAIN_MUTATION_STATS_CONTROL"] = str(control)
+    if invalid:
+        from mutmut.__main__ import create_mutants
+        from mutmut.utils.file_utils import copy_also_copy_files, copy_src_dir
+
+        copy_src_dir()
+        copy_also_copy_files()
+        create_mutants(1)
+        for item in modules:
+            if file_hash(ROOT / "mutants" / item["module"]) != item["generated_sha256"]:
+                raise ValueError(f"Generated source changed: {item['module']}")
+            path = ROOT / "mutants" / (item["module"] + ".meta")
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if candidate_hash(data["exit_code_by_key"]) != item["candidate_keys_sha256"]:
+                raise ValueError(f"Candidate identities changed: {item['module']}")
+            for key in data["exit_code_by_key"]:
+                if key in invalid:
+                    data["exit_code_by_key"][key] = 37
+                    data["type_check_error_by_key"][key] = json.dumps(invalid[key], sort_keys=True)
+            path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     try:
         _run((), max_children=1)
     except SystemExit:
@@ -172,7 +234,8 @@ def run_shard(modules: list[dict]) -> None:
         if not control.exists():
             raise
         proof = json.loads(control.read_text(encoding="utf-8"))
-        if proof["exit_code"] != 0 or proof["collected"] < 1 or proof["associated_functions"] != 0:
+        if (proof.get("phase") != "stats" or proof["exit_code"] != 0
+                or proof["collected"] < 1 or proof["associated_functions"] != 0):
             raise
         for item in modules:
             path = ROOT / "mutants" / (item["module"] + ".meta")
@@ -180,16 +243,19 @@ def run_shard(modules: list[dict]) -> None:
             codes = data["exit_code_by_key"]
             if candidate_hash(codes) != item["candidate_keys_sha256"]:
                 raise ValueError(f"Candidate identities changed: {item['module']}")
-            data["exit_code_by_key"] = dict.fromkeys(codes, 33)
+            data["exit_code_by_key"] = {key: 37 if key in invalid else 33 for key in codes}
             path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         print("Completed clean suite with no associated tests; all shard candidates remain uncovered in the denominator")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("generate", "run", "report", "plan"))
+    parser.add_argument("action", choices=("generate", "types", "run", "report", "plan"))
     parser.add_argument("--inventory", type=Path)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--type-proof", type=Path, default=ROOT / "docs/testing/evidence/project-mutation-type-proof.json.gz")
+    parser.add_argument("--diagnostics", type=Path)
+    parser.add_argument("--generated-root", type=Path, default=ROOT / "mutants")
     parser.add_argument("--shards", type=int, default=32)
     parser.add_argument("--shard", type=int, default=0)
     parser.add_argument("--output", type=Path, required=True)
@@ -203,26 +269,40 @@ def main() -> None:
     if args.inventory is None:
         parser.error("--inventory is required for run, report and plan")
     inventory = load_inventory(args.inventory)
+    if args.action == "types":
+        if args.diagnostics is None:
+            parser.error("--diagnostics is required for types")
+        from eval.mutation_types import build_type_proof
+
+        proof = build_type_proof(inventory, args.generated_root, args.diagnostics)
+        args.output.write_bytes(gzip.compress((json.dumps(proof, indent=2) + "\n").encode(), mtime=0))
+        return
     shards = assign_shards(inventory["modules"], args.shards)
     if not 0 <= args.shard < len(shards):
         parser.error("Shard index must be in [0, shards)")
     if args.action == "plan":
         args.output.write_text(json.dumps({"base": inventory["base"], "shards": shards}, indent=2) + "\n")
         return
+    from eval.mutation_types import read_type_exclusions
+
+    invalid = read_type_exclusions(args.type_proof, inventory["modules"])
     started = datetime.now(timezone.utc).isoformat()
     timer = time.monotonic()
     exit_code = 0
     error = None
     try:
         if args.action == "run":
-            run_shard(shards[args.shard])
+            run_shard(shards[args.shard], invalid)
     except SystemExit as exc:
         exit_code = int(exc.code or 0)
+        control = ROOT / ".mutation-results/stats-control.json"
+        if exit_code and control.exists():
+            error = "Mutation runner control failure: " + control.read_text(encoding="utf-8").strip()
     except Exception as exc:
         exit_code = 1
         error = f"{type(exc).__name__}: {exc}"
     finally:
-        report = summarize(shards[args.shard], ROOT / "mutants")
+        report = summarize(shards[args.shard], ROOT / "mutants", invalid)
         verified = args.action == "run" and exit_code == 0
         if not verified:
             report["overall"]["complete"] = False
@@ -235,6 +315,7 @@ def main() -> None:
                       shard=args.shard, shard_count=args.shards, started_utc=started,
                       seconds=time.monotonic() - timer, runner_exit_code=exit_code, error=error,
                       verified=verified, measurement_exit_code=measurement_exit,
+                      type_proof_sha256=file_hash(args.type_proof),
                       test_sha256={str(path.relative_to(ROOT / "mutants")): file_hash(path)
                                    for path in sorted((ROOT / "mutants/tests").rglob("*.py"))})
         args.output.write_text(json.dumps(report, indent=2) + "\n")

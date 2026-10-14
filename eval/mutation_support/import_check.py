@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+_control_failures = []
+
 
 def pytest_configure(config):
     # mutmut's stats child otherwise buffers failure output into a child-only
@@ -40,12 +42,23 @@ def pytest_collection_finish(session):
 
 def pytest_sessionfinish(session, exitstatus):
     target = os.getenv("BRAIN_MUTATION_STATS_CONTROL")
-    if not target or os.getenv("MUTANT_UNDER_TEST") != "stats":
+    phase = os.getenv("MUTANT_UNDER_TEST")
+    if not target or phase not in {"stats", "", "fail"}:
         return
     from mutmut.state import state
 
-    data = {"exit_code": int(exitstatus), "collected": session.testscollected,
-            "associated_functions": len(state().tests_by_mangled_function_name)}
+    child_stats = os.getenv("BRAIN_MUTATION_CHILD_STATS")
+    known_tests = {item.nodeid for item in session.items}
+    if child_stats and phase == "stats":
+        for path in sorted(Path(child_stats).glob("*.json")):
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if record["test"] not in known_tests:
+                continue
+            for function in record["functions"]:
+                state().tests_by_mangled_function_name[function].add(record["test"])
+    data = {"phase": phase or "clean", "exit_code": int(exitstatus), "collected": session.testscollected,
+            "associated_functions": len(state().tests_by_mangled_function_name),
+            "failures": _control_failures}
     Path(target).write_text(json.dumps(data, sort_keys=True) + "\n", encoding="utf-8")
 
 
@@ -54,6 +67,9 @@ def pytest_runtest_makereport(item, call):
     result = yield
     report = result.get_result()
     mutant = os.getenv("MUTANT_UNDER_TEST", "")
+    if report.failed and mutant in {"stats", "", "fail"}:
+        _control_failures.append({"test": item.nodeid, "phase": report.when,
+                                  "exception": call.excinfo.typename if call.excinfo else None})
     if not report.failed or "__mutmut_" not in mutant:
         return
     directory = os.getenv("BRAIN_MUTATION_WITNESSES")
