@@ -35,3 +35,26 @@ data access, release publication or deployment was performed.
 Remaining assessment findings are tracked through separate core-memory, Lite
 queue, recovery, integration, distribution and dashboard corrections. Remote
 exact-head CI, CodeQL and independent review must pass before merge.
+
+## Repository memory and Lite recovery
+
+| Finding | Correction / real regression | Status |
+|---|---|---|
+| B07 rule overwrite | Scoped deterministic IDs for new rules; existing bare IDs preserved only in their original repository. Both API/library writes and YAML sync fence lookup by scope | Real SQLite and disposable PostgreSQL schema tests pass; other repository and global values survive edits/deletion |
+| C02 POSIX case collision | Case-sensitive POSIX equality in decision uniqueness, normative/learning/skill filters and context-cache keys; Windows drive/UNC identities retain case-insensitive equality | Case-distinct decisions remain separate; Windows identity and cache regressions pass |
+| C03 global decisions omitted | Authorized `system_global` and legacy NULL represent global scope consistently in runtime and legacy context selection; relevance still excludes unrelated policy | Relevant global policy reaches two repositories; private policy stays scoped |
+| B09 exhausted Lite leases | Recovery/claim atomically fail exhausted jobs and clear owner tokens; retries cannot exceed max_attempts | Real SQLite expiry, eight-way ownership contention and actual worker-kill/restart tests pass |
+| B12 Lite backpressure | Typed exception contains depth/limit; rejection rolls back without adding a job | Actual SQLite enqueue returns HTTP 429 and Retry-After via the production exception handler |
+
+Full default-profile suite after source corrections: **2,210 passed, 11 optional
+skips**. Eighteen storage/queue cases (including two subsequently added YAML
+regressions) also pass. Ruff, zero-error mypy and migration reapplication pass.
+PostgreSQL fixtures create/drop only UUID-named disposable schemas; Lite
+fixtures use temporary directories. The crash probe kills only its own child
+and waits for a real one-second lease expiry, rather than injecting expiry.
+Queue recovery regressions also run in Windows/Linux Lite CI.
+
+These fixes prevent future corruption. They cannot reconstruct repository
+memory already overwritten by the old implementation; recover such records
+from a trusted backup or their original evidence. No existing IDs are retagged,
+no production data is migrated here and no historical release asset is changed.
