@@ -97,7 +97,9 @@ async def test_search_code_returns_repository_index_provenance():
     }
 
 
-def test_search_endpoint_forwards_repo_path_to_hybrid_search(api_key_env):
+def test_search_endpoint_forwards_repo_path_to_hybrid_search(api_key_env, monkeypatch):
+    from brain.config.settings import settings
+    monkeypatch.setattr(settings, "BRAIN_AGENT_CONTEXT_V2_MODE", "off")
     search_result = {
         "files": [],
         "symbols": [],

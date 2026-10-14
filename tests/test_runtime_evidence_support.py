@@ -80,3 +80,10 @@ def test_quoted_prose_and_test_status_values_cannot_establish_a_feature():
     ]
     assert should_abstain_for_unsupported_query("Kubernetes native mobile deployment", candidates, slices)
 
+def test_existing_named_platform_requires_evidence_even_with_generic_support():
+    from brain.context.evidence_support import should_abstain_for_unsupported_query
+    from brain.retrieval.service import RetrievalCandidate
+    candidates = [RetrievalCandidate("apps/api/deployment.py",symbols=["deploy_application"])]
+    slices = [{"path":"apps/api/deployment.py","content":"def deploy_application(app): return app"}]
+    assert should_abstain_for_unsupported_query("How does ZebraCloud deploy the application?",candidates,slices)
+    assert not should_abstain_for_unsupported_query("Add ZebraCloud deployment support",candidates,slices)

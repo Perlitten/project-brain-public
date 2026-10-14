@@ -745,6 +745,7 @@ async def test_pipeline_counterfactual_never_reuses_baseline_cache_or_llm(
 
 @pytest.mark.asyncio
 async def test_api_ask_and_search_share_integrated_code_search(monkeypatch):
+    monkeypatch.setattr(settings, "BRAIN_AGENT_CONTEXT_V2_MODE", "off")
     from apps.api.routers import core, core_retrieval
     from apps.api.schemas import AskRequest, SearchRequest
 
@@ -802,6 +803,7 @@ async def test_api_ask_and_search_share_integrated_code_search(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_local_mcp_ask_and_search_share_integrated_code_search(monkeypatch):
+    monkeypatch.setattr(settings, "BRAIN_AGENT_CONTEXT_V2_MODE", "off")
     from apps.mcp_server import server
 
     payload = {

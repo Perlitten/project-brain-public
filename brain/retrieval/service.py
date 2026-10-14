@@ -209,6 +209,17 @@ class RetrievalService:
         ][:12]
         if settings.RETRIEVAL_V2_ENABLED:
             from brain.retrieval.locator_fusion import merge_linear
+            if settings.DEFAULT_EMBEDDING_PROVIDER == "local" and repo_record is not None:
+                from brain.search.local_lexical import local_lexical
+                try:
+                    lexical = await asyncio.wait_for(local_lexical(repo_record.id, query, recall_budget),
+                                                     timeout=max(0.05, deadline_s - (time.perf_counter() - started)))
+                    for item in lexical:
+                        candidate = RetrievalCandidate(path=item["path"], channel_scores={"bm25": item["score"]})
+                        candidate.add_range(item["start"], item["end"])
+                        vector_candidates.append(candidate)
+                except (TimeoutError, ValueError):
+                    degraded.append("offline_lexical_unavailable")
             candidates = merge_linear(vector_candidates, symbol_candidates, query, candidate_budget)
         else:
             candidates = self._merge_candidates(vector_candidates, symbol_candidates, candidate_budget, query_identifiers)
@@ -373,7 +384,8 @@ class RetrievalService:
             candidate.add_range(symbol.start_line, symbol.end_line)
             # Exact matches rank higher than substring matches
             is_exact = symbol.name in identifiers
-            if is_exact:
+            if is_exact and ("_" in symbol.name or any(letter.isupper() for letter in symbol.name)
+                             or f"`{symbol.name}`" in query):
                 candidate.channel_scores["identifier"] = 1.0
             score = (1.0 / rank) * (1.5 if is_exact else 0.8)
             candidate.channel_scores["symbol"] = max(candidate.channel_scores.get("symbol", 0.0), score)
@@ -413,7 +425,8 @@ class RetrievalService:
             if not isinstance(item, dict) or not item.get("path"):
                 continue
             candidate = candidate_for(str(item["path"]))
-            candidate.channel_scores["lexical"] = max(candidate.channel_scores.get("lexical", 0.0), 1.0 / rank)
+            candidate.channel_scores["lexical"] = max(candidate.channel_scores.get("lexical", 0.0),
+                                                       float(item.get("lexical_score", 1.0 / rank)))
             candidate.score += 1.0 / rank
         for rank, item in enumerate(raw.get("symbols") or [], 1):
             if not isinstance(item, dict) or not item.get("path"):

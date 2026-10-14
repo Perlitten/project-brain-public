@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
-from sqlalchemy import case, false, or_, select, text
+from sqlalchemy import case, false, or_, select, text, literal
 
 from brain.config.settings import settings
 from brain.database.models import Embedding, File, FileChunk, Symbol
@@ -572,6 +572,11 @@ async def search_code(
                 .order_by(historical_order, File.path)
                 .limit(limit * 10)
             )
+            if settings.RETRIEVAL_V2_ENABLED:
+                relevance = sum((case((File.path.ilike(f"%{kw}%"), 2), else_=0)
+                                 + case((File.summary.ilike(f"%{kw}%"), 1), else_=0)
+                                 for kw in keywords[:24]), literal(0))
+                stmt_files = stmt_files.order_by(None).order_by(historical_order, relevance.desc(), File.path)
             if repository_id is not None:
                 stmt_files = stmt_files.where(File.repository_id == repository_id)
             res_files = await session.execute(stmt_files)
@@ -603,6 +608,10 @@ async def search_code(
                     "weight": weight,
                     "knowledge_status": status,
                 }
+                if settings.RETRIEVAL_V2_ENABLED:
+                    path = file_record.path.casefold()
+                    summary = (file_record.summary or "").casefold()
+                    item["lexical_score"] = sum(2 * (kw in path) + (kw in summary) for kw in keywords[:24]) * weight
                 if status == KNOWLEDGE_STATUS_HISTORICAL:
                     item["authority_note"] = HISTORICAL_AUTHORITY_NOTE
                 return item
@@ -657,8 +666,10 @@ async def search_code(
                     continue
                 seen_paths.add(item["path"])
                 files_found.append(item)
-                if len(files_found) >= limit:
+                if not settings.RETRIEVAL_V2_ENABLED and len(files_found) >= limit:
                     break
+            if settings.RETRIEVAL_V2_ENABLED:
+                files_found.sort(key=lambda item: (-item.get("lexical_score", 0), item["path"]))
 
     # Release the lexical/symbol session before vector sessions, remote scoring,
     # and durable shadow writes. The authoritative baseline always uses the

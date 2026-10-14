@@ -63,19 +63,32 @@ class SQLiteGraph:
                 adjacency.setdefault(source, []).append(target)
                 adjacency.setdefault(target, []).append(source)
             output = []
-            seeds = [(kw, node_id) for kw in keywords for node_id, node in nodes.items()
-                     if kw in str(node.get("name", "")).lower() or kw in str(node.get("path", "")).lower()][:240]
+            seeds = []
+            for kw in keywords[:12]:
+                matching = [node_id for node_id, node in nodes.items() if kw in str(node.get("name", "")).lower()
+                            or kw in str(node.get("path", "")).lower()]
+                matching.sort(key=lambda node_id: (0 if str(nodes[node_id].get("name", "")).lower() == kw
+                              else 1 if "File" in nodes[node_id].labels else 2, str(nodes[node_id].get("name", ""))))
+                seeds.extend((kw,node_id) for node_id in matching[:5])
             for kw, seed in seeds:
                 queue = deque([(seed, 0)])
                 seen = {seed}
-                while queue and len(output) < limit:
+                neighbors = []
+                while queue:
                     node_id, distance = queue.popleft()
-                    output.append({"kw": kw, "n": nodes[seed], "m": nodes[node_id] if distance else None, "distance": distance})
+                    if distance:
+                        neighbors.append((node_id,distance))
                     if distance < 2:
                         for neighbor in adjacency.get(node_id, []):
                             if neighbor not in seen:
                                 seen.add(neighbor)
                                 queue.append((neighbor, distance + 1))
+                neighbors.sort(key=lambda item: (0 if "File" in nodes[item[0]].labels else 1,
+                                                item[1],str(nodes[item[0]].get("name", ""))))
+                for node_id,distance in neighbors[:8] or [(seed,0)]:
+                    if len(output) >= limit:
+                        return output
+                    output.append({"kw":kw,"n":nodes[seed],"m":nodes[node_id] if distance else None,"distance":distance})
             return output
         return await asyncio.to_thread(walk)
 

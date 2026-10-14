@@ -90,6 +90,14 @@ indexed revision. The published v0.9.2 runtime retains its original behavior.
 
 ## Configure meaningful models
 
+On unreleased `main`, `/search`, `/context` and `/ask` use the bounded locator
+and runtime slice budget by default. Linear fusion takes one maximum per file
+and channel; tests/templates are demoted only when the query does not request
+them. Set both `BRAIN_AGENT_CONTEXT_V2_MODE=off` and `RETRIEVAL_V2_ENABLED=false`
+to restore the legacy contract. The offline token-hash profile also uses a
+bounded BM25 companion (50,000 chunks / 8 MiB); learned providers retain dense
+primary scoring. See the [comparison and remaining misses](release/ARCHITECTURE_REFACTOR_REPORT.md#retrieval-comparison-and-honest-acceptance).
+
 The shipped defaults use `mock` for both roles. Mocks require no provider keys
 and test the plumbing; their semantic rankings and generated answers are not
 meaningful. Identifier-based lexical retrieval still makes a useful first smoke

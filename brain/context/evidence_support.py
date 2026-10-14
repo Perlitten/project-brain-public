@@ -143,12 +143,24 @@ def query_evidence_support(
     # domain. Require support for a substantial share of concrete anchors;
     # exact named identifiers are already weighted by the token split above.
     enough_support = bool(supported) and len(supported) * 2 >= len(terms)
+    # A question about an existing named technology needs evidence for that
+    # name. Incidental "app"/"deployment" matches do not establish support
+    # for an absent platform. Change requests may introduce new proper names.
+    named_missing: tuple[str, ...] = ()
+    if re.match(r"\s*(?:how|what|where|which|does|is|can|why)\b", query, re.I):
+        evidence_tokens = _identifier_tokens(path_or_symbol + " " + slice_content) if terms else set()
+        named_missing = tuple(match.group(0) for match in re.finditer(r"\b[A-Z][A-Za-z0-9_]{2,}\b", query)
+                              if match.start() > 0 and match.group(0).casefold() not in _STOPWORDS | _GENERIC
+                              and match.group(0).casefold() not in evidence_tokens)
+        if named_missing:
+            enough_support = False
     return {
         "terms": terms,
         "supported_terms": tuple(supported),
         "missing_terms": missing,
         "decided": decided,
         "authoritative_terms": tuple(authoritative),
+        "missing_named_anchors": named_missing,
         "should_abstain": bool(decided and not enough_support and candidates),
     }
 
