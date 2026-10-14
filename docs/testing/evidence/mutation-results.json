@@ -2310,7 +2310,7 @@
     "log": "mutation-audit-review-mypy.log"
   },
   "final_focused_regression": {
-    "passed": 60,
+    "passed": 61,
     "skipped": 0,
     "command": [
       "python",
@@ -2321,7 +2321,7 @@
       "tests/test_mutation_runner.py",
       "-q"
     ],
-    "note": "Includes two one-sided missing-evidence cases added after full-suite collection."
+    "note": "Includes two one-sided missing-evidence cases and a CRLF source-fingerprint case added after full-suite collection."
   },
   "additional_original_bug_reproduction": {
     "test": "test_failed_reverification_revokes_previous_success",

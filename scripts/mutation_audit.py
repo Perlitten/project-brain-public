@@ -100,7 +100,7 @@ def manifest(root: Path) -> dict:
     hashes = {}
     for relative, functions in SCOPE.items():
         source = (root / relative).read_text(encoding="utf-8")
-        hashes[relative] = hashlib.sha256(source.encode()).hexdigest()
+        hashes[relative] = hashlib.sha256((root / relative).read_bytes()).hexdigest()
         for function, shape, occurrence, node in sites(source, functions):
             for operator, replacement in replacements(node, function):
                 mutated = replace(source, node, replacement)

@@ -3,7 +3,17 @@ import hashlib
 
 import pytest
 
-from scripts.mutation_audit import run
+from scripts.mutation_audit import manifest, run
+
+
+def test_generated_manifest_fingerprints_actual_crlf_source_bytes(tmp_path, monkeypatch):
+    import scripts.mutation_audit as module
+
+    source = b"def choose():\r\n    return False\r\n"
+    (tmp_path / "source.py").write_bytes(source)
+    monkeypatch.setattr(module, "SCOPE", {"source.py": {"choose"}})
+    record = manifest(tmp_path)
+    assert record["source_sha256"]["source.py"] == hashlib.sha256(source).hexdigest()
 
 
 def test_wrong_source_manifest_fails_before_any_test_runs(tmp_path, monkeypatch):

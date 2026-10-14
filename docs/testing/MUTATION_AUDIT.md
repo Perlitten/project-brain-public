@@ -53,6 +53,8 @@ working checkout. The manifests enumerate every generated site and replacement.
 Normal campaigns reject mismatched source hashes before any tests run. Cross-version
 replay requires `--replay` and records the actual hashes and mismatched source files.
 Published commands normalize the interpreter name rather than retaining host paths.
+Fingerprint generation and validation both hash raw bytes, including CRLF line
+endings; a regression caught their earlier normalization mismatch.
 
 | Source and tests | Usable mutants | Test failures | Survivors | Timeouts | Sites removed by fixes |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -110,8 +112,8 @@ the full mypy ratchet passed with zero errors; public-launch and documentation
 consistency checks passed. These results do not certify live providers or skipped
 integrations. See [machine-readable evidence](evidence/mutation-results.json) for
 commands, source hashes, per-mutant outcomes, failure witnesses and exact skips.
-Two missing-evidence cases were added after full-suite collection; the final
-focused run, including them, passed all 60 cases. The CI privacy failure from host
+Two missing-evidence cases and a CRLF fingerprint case were added after full-suite
+collection; the final focused run, including them, passed all 61 cases. The CI privacy failure from host
 paths in the first published evidence was corrected without changing its denylist.
 
 With the project's locked development environment installed, reproduce the final
