@@ -87,3 +87,11 @@ def test_existing_named_platform_requires_evidence_even_with_generic_support():
     slices = [{"path":"apps/api/deployment.py","content":"def deploy_application(app): return app"}]
     assert should_abstain_for_unsupported_query("How does ZebraCloud deploy the application?",candidates,slices)
     assert not should_abstain_for_unsupported_query("Add ZebraCloud deployment support",candidates,slices)
+
+
+def test_question_prefix_with_long_whitespace_keeps_named_evidence_guard():
+    candidates = [Candidate("apps/api/deployment.py", ("deploy_application",))]
+    slices = [{"path": candidates[0].path, "content": "def deploy_application(app): return app"}]
+    prefix = " " * 100_000
+    assert should_abstain_for_unsupported_query(prefix + "How does ZebraCloud deploy the application?", candidates, slices)
+    assert not should_abstain_for_unsupported_query(prefix + "Add ZebraCloud deployment support", candidates, slices)

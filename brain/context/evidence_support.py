@@ -147,7 +147,8 @@ def query_evidence_support(
     # name. Incidental "app"/"deployment" matches do not establish support
     # for an absent platform. Change requests may introduce new proper names.
     named_missing: tuple[str, ...] = ()
-    if re.match(r"\s*(?:how|what|where|which|does|is|can|why)\b", query, re.I):
+    # Strip whitespace once; do not backtrack over an uncontrolled prefix.
+    if re.match(r"(?:how|what|where|which|does|is|can|why)\b", query.lstrip(), re.I):
         evidence_tokens = _identifier_tokens(path_or_symbol + " " + slice_content) if terms else set()
         named_missing = tuple(match.group(0) for match in re.finditer(r"\b[A-Z][A-Za-z0-9_]{2,}\b", query)
                               if match.start() > 0 and match.group(0).casefold() not in _STOPWORDS | _GENERIC
