@@ -71,7 +71,19 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
                 </>
               ),
             },
-            { head: "Code version", cell: (r) => <span className="mono text-dim">{r.revision}</span> },
+            {
+              head: "Code version",
+              cell: (r) => (
+                <>
+                  <span className="mono text-dim">{r.revision}</span>
+                  {r.uncommitted ? (
+                    <small className="text-faint" title="Brain indexed the last commit; commit these edits to include them.">
+                      {" "}· {r.uncommitted} uncommitted {r.uncommitted === 1 ? "change" : "changes"} not indexed
+                    </small>
+                  ) : null}
+                </>
+              ),
+            },
             { head: "Files changed", cell: (r) => fmt(r.changed), align: "right" },
             { head: "Took", cell: (r) => r.duration, align: "right" },
             {

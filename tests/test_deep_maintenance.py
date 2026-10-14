@@ -78,24 +78,47 @@ def _quality_probe(*, passed: bool = True):
 
 
 @pytest.mark.asyncio
-async def test_scheduled_nightly_job_respects_feature_gate(monkeypatch):
-    monkeypatch.setattr(
-        settings,
-        "NIGHTLY_DEEP_MAINTENANCE_ENABLED",
-        False,
-    )
+async def test_nightly_job_runs_standard_maintenance_without_deep_lane(monkeypatch):
+    """Without the LFM deep lane the nightly job still keeps the index healthy."""
+    monkeypatch.setattr(settings, "NIGHTLY_DEEP_MAINTENANCE_ENABLED", False)
+    record = _repository()
+    with (
+        patch("brain.workers.tasks.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.auto_heal_stale_repositories", new=AsyncMock(return_value={"healed": [], "skipped": []})),
+        patch("brain.workers.tasks._deep_repo_path", return_value=Path("/repo")),
+        patch("brain.workers.tasks.get_repository_by_path", new=AsyncMock(return_value=record)),
+        patch("brain.workers.tasks._approved_deep_repository", new=AsyncMock()) as approved,
+        patch("brain.workers.tasks._reconcile_exact_lfm", new=AsyncMock()) as lfm,
+        patch("brain.workers.tasks.run_reindex", new=AsyncMock(return_value={"status": "success", "commit_hash": "sha"})) as reindex,
+        patch("brain.workers.tasks.verify_embeddings", new=AsyncMock(return_value=_dense_result())),
+        patch("brain.workers.tasks.deliver_maintenance_alert", new=AsyncMock(return_value={"status": "disabled"})),
+        patch("brain.workers.tasks.redis_client", new=SimpleNamespace(set=AsyncMock())),
+    ):
+        result = await run_nightly_maintenance({"scheduled": True})
 
-    result = await run_nightly_maintenance({"scheduled": True})
-
-    assert result == {
-        "status": "skipped",
-        "reason": "NIGHTLY_DEEP_MAINTENANCE_ENABLED=false",
-        "scheduled": True,
-    }
+    assert result["status"] == "completed"
+    assert result["mode"] == "standard"
+    assert result["late_interaction"]["status"] == "skipped"
+    reindex.assert_awaited_once()
+    approved.assert_not_awaited()
+    lfm.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality():
+async def test_nightly_job_fails_cleanly_when_repo_is_not_indexed(monkeypatch):
+    monkeypatch.setattr(settings, "NIGHTLY_DEEP_MAINTENANCE_ENABLED", False)
+    with (
+        patch("brain.workers.tasks.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks._deep_repo_path", return_value=Path("/repo")),
+        patch("brain.workers.tasks.get_repository_by_path", new=AsyncMock(return_value=None)),
+    ):
+        with pytest.raises(PermanentJobError, match="not indexed yet"):
+            await run_nightly_maintenance({"scheduled": True})
+
+
+@pytest.mark.asyncio
+async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality(monkeypatch):
+    monkeypatch.setattr(settings, "NIGHTLY_DEEP_MAINTENANCE_ENABLED", True)
     record = _repository()
     exact_client = SimpleNamespace(aclose=AsyncMock())
     redis_set = AsyncMock()
@@ -185,7 +208,8 @@ async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality():
 
 
 @pytest.mark.asyncio
-async def test_nightly_job_fails_closed_on_relevance_probe_miss():
+async def test_nightly_job_fails_closed_on_relevance_probe_miss(monkeypatch):
+    monkeypatch.setattr(settings, "NIGHTLY_DEEP_MAINTENANCE_ENABLED", True)
     record = _repository()
     exact_client = SimpleNamespace(aclose=AsyncMock())
 
@@ -338,3 +362,21 @@ async def test_deep_context_returns_only_after_applied_exact_lfm(monkeypatch):
         # not attributed to the worker that happened to run it.
         consumer=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_deep_context_without_lfm_builds_standard_durable_pack(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "LATE_INTERACTION_DEEP_ENABLED", False)
+    builder = SimpleNamespace(build_context_pack=AsyncMock(return_value={"id": 42, "markdown_content": "x", "files": []}))
+    with (
+        patch("brain.workers.tasks.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.get_repository_by_path", new=AsyncMock(return_value=_repository())),
+        patch("brain.context.context_pack_builder.ContextPackBuilder", return_value=builder),
+    ):
+        result = await run_deep_context({"task_description": "add rate limiting", "repo_path": str(tmp_path), "consumer": "mcp:test"})
+
+    assert result["status"] == "completed"
+    assert result["mode"] == "standard"
+    assert result["context_pack"]["id"] == 42
+    assert "markdown_content" not in result["context_pack"]
+    assert builder.build_context_pack.await_args.kwargs["consumer"] == "mcp:test"

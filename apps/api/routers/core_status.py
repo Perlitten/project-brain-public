@@ -226,10 +226,25 @@ async def api_graph_status():
     }
 
 
+async def _tool_usage() -> dict | None:
+    """Per-tool call stats, or None when telemetry cannot be read (shown as 'not measured')."""
+    try:
+        from brain.telemetry.tool_calls import summarize_tool_calls
+
+        return await summarize_tool_calls()
+    except Exception:
+        return None
+
+
 @router.get("/api/status/mcp", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
 async def api_mcp_status():
     runtime = await get_mcp_runtime_status()
     tools = runtime.get("tools", [])
+    usage = await _tool_usage()
+    if usage is not None:
+        # Per-tool health over the last 24 hours; a tool nobody called reports 0 calls.
+        tools = [{**tool, **usage.get(str(tool.get("name")), {"calls_24h": 0, "errors_24h": 0, "error_rate": 0.0})}
+                 for tool in tools]
     available = bool(runtime.get("available"))
     server_status = runtime.get("server_status", "online" if available else "unavailable")
     return {
@@ -239,6 +254,7 @@ async def api_mcp_status():
         "tools": tools,
         "status": runtime.get("status", server_status),
         "diagnostics": runtime.get("diagnostics", {}),
+        "usage_measured": usage is not None,
     }
 
 

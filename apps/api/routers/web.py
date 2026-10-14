@@ -727,6 +727,8 @@ def shape_index_run(run: Any) -> dict[str, Any]:
         "chunks": chunks,
         "started_at": _iso(run.started_at),
         "duration_seconds": duration_seconds,
+        # Tracked files edited but not committed when the run read the committed HEAD.
+        "uncommitted_changes": _as_int(verification.get("uncommitted_changes")) or 0,
     }
 
 

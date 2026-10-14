@@ -33,7 +33,8 @@ _SQL_NOISE_WORDS = frozenset(
 
 _ENGLISH_NOISE_WORDS = frozenset(
     """
-    the a an in on of to for with ok width know
+    the a an in on of to for with ok width know all any every each some
+    how are is was were be been what when where why which who built run
     """.split()
 )
 
@@ -47,8 +48,14 @@ def _is_noise_node(name: str | None) -> bool:
     low = name.strip().lower()
     if low in ("unknown", ""):
         return True
+    if len(low) > 4 and low.startswith("__") and low.endswith("__"):
+        return True  # dunder symbols (__init__, __all__) say nothing about a change
     return low in _SQL_NOISE_WORDS or low in _ENGLISH_NOISE_WORDS
 
+
+# Traversal caps: start nodes per keyword and neighbours kept per hop.
+IMPACT_START_NODES_PER_KEYWORD = 25
+IMPACT_FANOUT_PER_HOP = 40
 
 # Default caps for the ranked impact lists. The graph traversal fans out
 # combinatorially (every keyword CONTAINS-match plus its 2-hop neighborhood),
@@ -116,7 +123,10 @@ _KEYWORD_STOPWORDS = frozenset(
     the and for that this with from should would could about change update
     request across codebase new add rename move remove replace delete refactor
     function method class module variable field parameter argument into over
-    improve system performance
+    improve system performance how are is was were be been being what when
+    where why which who whom onto our your their its can will does did not any
+    some make made get use using via per after before then than also only just
+    more most very so such there here them they it we you
     """.split()
 )
 
@@ -349,65 +359,58 @@ class ImpactAnalyzer:
             for kw in keywords:
                 if len(kw.strip()) < 3:
                     continue
+                # Bounded traversal: a handful of start nodes per keyword, a
+                # capped fan-out per hop, and only the few properties ranking
+                # needs. Returning whole paths with every node's properties made
+                # this query stream hundreds of thousands of records on a
+                # mid-sized repository (about a minute on 2 vCPU).
                 cypher = (
                     "MATCH (n) "
                     "WHERE n.repository_id = $repository_id "
                     "AND (toLower(n.name) CONTAINS toLower($kw) "
                     "OR toLower(n.path) CONTAINS toLower($kw)) "
-                    "OPTIONAL MATCH path = (n)-[r*1..2]-(m) "
-                    "WHERE ALL(node IN nodes(path) "
-                    "WHERE node.repository_id = $repository_id) "
-                    "RETURN n, path"
+                    "WITH n LIMIT $start_limit "
+                    "OPTIONAL MATCH (n)--(m1) WHERE m1.repository_id = $repository_id "
+                    "WITH n, collect(DISTINCT m1)[..$fanout] AS d1 "
+                    "UNWIND (CASE WHEN size(d1) = 0 THEN [null] ELSE d1 END) AS x "
+                    "OPTIONAL MATCH (x)--(m2) "
+                    "WHERE m2.repository_id = $repository_id AND m2 <> n "
+                    "WITH n, d1, x, collect(DISTINCT m2)[..$fanout] AS via_x "
+                    "WITH n, d1, collect(via_x) AS d2_lists "
+                    "RETURN "
+                    "{id: elementId(n), name: n.name, path: n.path, labels: labels(n)} AS n, "
+                    "[m IN d1 | {id: elementId(m), name: m.name, path: m.path, "
+                    "labels: labels(m)}] AS d1, "
+                    "[l IN d2_lists | [m IN l | {id: elementId(m), name: m.name, path: m.path, "
+                    "labels: labels(m)}]] AS d2"
                 )
                 try:
                     result = await session.run(
                         cypher,
                         kw=kw,
                         repository_id=repository.id,
+                        start_limit=IMPACT_START_NODES_PER_KEYWORD,
+                        fanout=IMPACT_FANOUT_PER_HOP,
                     )
+
+                    def _register(node: dict, distance: int) -> None:
+                        if not node:
+                            return
+                        name = node.get("name") or "Unknown"
+                        if _is_noise_node(name):
+                            return
+                        labels = node.get("labels") or []
+                        props = {k: node.get(k) for k in ("name", "path") if node.get(k) is not None}
+                        _register_node(visited_nodes, node["id"], name, labels[0] if labels else "Unknown",
+                                       distance, kw, props)
+
                     async for record in result:
-                        node_n = record["n"]
-                        if not node_n:
-                            continue
-
-                        # Register start node (accumulates evidence across keywords)
-                        n_id = node_n.element_id if hasattr(node_n, "element_id") else str(node_n)
-                        n_name = node_n.get("name", "Unknown")
-                        n_labels = list(node_n.labels)
-                        n_label = n_labels[0] if n_labels else "Unknown"
-
-                        if not _is_noise_node(n_name):
-                            _register_node(visited_nodes, n_id, n_name, n_label, 0, kw, dict(node_n))
-
-                        path = record["path"]
-                        if path:
-                            # Parse nodes in the path
-                            nodes_in_path = path.nodes
-                            # Directly affected are at distance 1
-                            if len(nodes_in_path) >= 2:
-                                direct_node = nodes_in_path[1]
-                                d_id = (
-                                    direct_node.element_id if hasattr(direct_node, "element_id") else str(direct_node)
-                                )
-                                d_name = direct_node.get("name", "Unknown")
-                                d_labels = list(direct_node.labels)
-                                d_label = d_labels[0] if d_labels else "Unknown"
-                                if not _is_noise_node(d_name):
-                                    _register_node(visited_nodes, d_id, d_name, d_label, 1, kw, dict(direct_node))
-
-                            # Indirectly affected are at distance 2
-                            if len(nodes_in_path) >= 3:
-                                indirect_node = nodes_in_path[2]
-                                i_id = (
-                                    indirect_node.element_id
-                                    if hasattr(indirect_node, "element_id")
-                                    else str(indirect_node)
-                                )
-                                i_name = indirect_node.get("name", "Unknown")
-                                i_labels = list(indirect_node.labels)
-                                i_label = i_labels[0] if i_labels else "Unknown"
-                                if not _is_noise_node(i_name):
-                                    _register_node(visited_nodes, i_id, i_name, i_label, 2, kw, dict(indirect_node))
+                        _register(record["n"], 0)
+                        for direct in record["d1"] or []:
+                            _register(direct, 1)
+                        for hop in record["d2"] or []:
+                            for indirect in hop or []:
+                                _register(indirect, 2)
                 except Exception as e:
                     logger.warning(f"Error executing Cypher for keyword '{kw}': {e}")
 
