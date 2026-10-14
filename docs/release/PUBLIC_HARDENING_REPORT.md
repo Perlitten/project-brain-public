@@ -77,3 +77,22 @@ containment succeeds. Provision a trusted image with pytest and the candidate's
 declared dependencies for standard testing; a bare Python image is suitable
 only for compile-only profiles. No automatic download or host mounts supply
 missing tools.
+
+### Memory and recovery review corrections
+
+Five review findings are corrected: global IDs cannot collide with legacy
+repository-owned IDs, generated IDs hash the complete rule key, queue and
+durable fence TTLs/renewal intervals agree, unexecuted claims refund their
+attempt when the durable fence is denied, and NULL/system-global decisions
+share one canonical uniqueness key. Duplicate decision history retains its
+original IDs and content, with a superseded pointer to the latest canonical
+record; it is not deleted. Both PostgreSQL and existing Lite databases gain the
+idempotent column/index migration, and migration checks require the column.
+
+The full combined suite passed **2,230 tests, 11 optional skips**; the additional
+old-Lite schema upgrade regression also passes. Real SQLite/PostgreSQL global
+collision, long-key and duplicate-history tests pass. The configured one-second
+lease stays alive during a 1.3-second synthetic task; an initial denied durable
+fence refunds the attempt and the job completes on its first execution. This
+renewal boundary test uses a real SQLite queue and substituted durable-fence
+calls; separate zero-service acceptance uses the actual SQLite SQL fence.

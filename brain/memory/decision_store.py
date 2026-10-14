@@ -54,6 +54,7 @@ class DecisionStore:
                 .where(
                     func.lower(func.trim(Decision.title)) == normalized_title.casefold(),
                     scope_equals(Decision.repo_path, normalized_repo_path),
+                    Decision.superseded_by_id.is_(None),
                 )
                 .order_by(Decision.id.desc())
                 .limit(1)

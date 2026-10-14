@@ -31,7 +31,7 @@ async def memory_store(request, tmp_path, monkeypatch):
         if os.environ.get("GITHUB_ACTIONS"):
             raise
         pytest.skip("PostgreSQL unavailable locally")
-    factory = async_sessionmaker(engine, expire_on_commit=False)
+    factory = async_sessionmaker(engine, expire_on_commit=False, info={"fixture_schema": schema})
     for module in (rule_store, decision_store, relevance):
         monkeypatch.setattr(module, "async_session_factory", factory)
     try:
@@ -83,6 +83,51 @@ async def test_yaml_rule_sync_cannot_overwrite_another_repository(memory_store, 
 
 
 @pytest.mark.asyncio
+async def test_global_rule_creation_survives_legacy_repo_owned_bare_id(memory_store):
+    async with memory_store() as session:
+        session.add(Rule(id="shared", name="Shared", repo_path="/RepoA", description="A", status="active"))
+        await session.commit()
+    global_id = await rule_store.RuleStore.add_rule("Shared", None, "global", rule_id="shared")
+    assert global_id != "shared"
+    assert {row.description for row in await rule_store.RuleStore.list_active_rules("/RepoA")} == {"A", "global"}
+
+
+@pytest.mark.asyncio
+async def test_long_rule_keys_with_common_prefix_remain_distinct(memory_store):
+    keys = ["x" * 221 + suffix for suffix in ("first", "second")]
+    ids = [await rule_store.RuleStore.add_rule("Policy", "/RepoA", key, rule_id=key) for key in keys]
+    assert len(set(ids)) == 2 and all(len(value) <= 255 for value in ids)
+    assert {row.description for row in await rule_store.RuleStore.list_active_rules("/RepoA")} == set(keys)
+
+
+@pytest.mark.asyncio
+async def test_global_alias_migration_retains_history_and_one_active_policy(memory_store):
+    from brain.database.migrations import _ensure_decision_title_uniqueness
+    async with memory_store() as session:
+        first = Decision(title="Payment policy", repo_path=None, description="Old original content", status="active")
+        second = Decision(title="Payment policy", repo_path="system_global", description="Current policy", status="active")
+        session.add_all([first, second])
+        await session.commit()
+        first_id, second_id = first.id, second.id
+    engine = memory_store.kw["bind"]
+    async with engine.begin() as connection:
+        if connection.dialect.name == "postgresql":
+            # Text SQL intentionally uses only this disposable schema; never
+            # include public as a fallback for DROP INDEX/table migration.
+            schema = memory_store.kw["info"]["fixture_schema"]
+            await connection.execute(text(f'SET LOCAL search_path TO "{schema}"'))
+        await _ensure_decision_title_uniqueness(connection)
+        await _ensure_decision_title_uniqueness(connection)
+    async with memory_store() as session:
+        history = await session.get(Decision, first_id)
+        assert history.description == "Old original content"
+        assert history.status == "superseded" and history.superseded_by_id == second_id
+    selected = await relevance.select_relevant_normative_memory("Payment policy", [], "/RepoA")
+    assert [row["id"] for row in selected["decisions"]] == [second_id]
+    assert await decision_store.DecisionStore.add_decision("Payment policy", None, caller_role="admin") == second_id
+
+
+@pytest.mark.asyncio
 async def test_case_distinct_posix_repositories_keep_independent_decisions(memory_store):
     first = await decision_store.DecisionStore.add_decision("Payment policy", "/CaseRepo", "A")
     second = await decision_store.DecisionStore.add_decision("Payment policy", "/caserepo", "B")
@@ -114,3 +159,19 @@ def test_windows_identity_normalizes_case_without_folding_posix_paths():
 def test_context_cache_does_not_share_case_distinct_repository_payloads():
     from brain.context.context_cache import _make_key
     assert _make_key("/CaseRepo", "payments", "same-sha") != _make_key("/caserepo", "payments", "same-sha")
+
+
+@pytest.mark.asyncio
+async def test_existing_lite_database_gains_canonical_column_without_losing_records(tmp_path):
+    from brain.database.migrations import _ensure_decision_title_uniqueness
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'old-lite.sqlite3'}")
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(text("CREATE TABLE decisions(id INTEGER PRIMARY KEY,title TEXT,repo_path TEXT,status TEXT,description TEXT)"))
+            await connection.execute(text("INSERT INTO decisions VALUES(7,'Payment policy',NULL,'active','Original')"))
+            await _ensure_decision_title_uniqueness(connection)
+            await _ensure_decision_title_uniqueness(connection)
+            row = (await connection.execute(text("SELECT id,description,superseded_by_id FROM decisions"))).one()
+            assert tuple(row) == (7, "Original", None)
+    finally:
+        await engine.dispose()

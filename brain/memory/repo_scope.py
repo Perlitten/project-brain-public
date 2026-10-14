@@ -22,7 +22,7 @@ def normalize_repo_scope(repo_path: Optional[str]) -> Optional[str]:
     # POSIX paths are case-sensitive. Windows drive/UNC identities retain
     # their case-insensitive semantics even when queried from a Linux server.
     if os.name == "nt" or ntpath.splitdrive(normalized)[0]:
-        normalized = normalized.casefold()
+        normalized = ntpath.normcase(normalized).replace("\\", "/")
     return normalized
 
 

@@ -1,6 +1,7 @@
 import re
 import os
 import hashlib
+import json
 import yaml
 from typing import List, Optional, Any, Dict
 from sqlalchemy import select
@@ -18,9 +19,8 @@ def slugify(text: str) -> str:
 
 def scoped_rule_id(rule_key: str, repo_path: Optional[str]) -> str:
     scope = normalize_repo_scope(repo_path)
-    if scope is None:
-        return rule_key
-    return f"{rule_key[:221]}--{hashlib.sha256(scope.encode()).hexdigest()[:32]}"
+    identity = json.dumps([scope, rule_key], ensure_ascii=False).encode()
+    return f"{rule_key[:221]}--{hashlib.sha256(identity).hexdigest()[:32]}"
 
 
 async def _find_rule(session, rule_key: str, scope: Optional[str]):

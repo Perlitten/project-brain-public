@@ -52,10 +52,14 @@ async def test_decision_title_uniqueness_uses_repo_scoped_normalized_index():
     await _ensure_decision_title_uniqueness(connection)
 
     statements = [str(call.args[0]) for call in connection.execute.await_args_list]
-    assert "DROP INDEX IF EXISTS uq_decisions_normalized_title" in statements[0]
-    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_decisions_normalized_title" in statements[1]
-    assert "lower(btrim(title))" in statements[1]
-    assert "COALESCE(btrim(repo_path), '')" in statements[1]
+    assert "ADD COLUMN IF NOT EXISTS superseded_by_id" in statements[0]
+    assert "DROP INDEX IF EXISTS uq_decisions_normalized_title" in statements[1]
+    assert "status='superseded'" in statements[2]
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_decisions_normalized_title" in statements[3]
+    assert "lower(trim(title))" in statements[3]
+    assert "repo_path IS NULL OR trim(repo_path)='system_global' THEN ''" in statements[3]
+    assert "ELSE trim(repo_path) END" in statements[3]
+    assert "WHERE superseded_by_id IS NULL" in statements[3]
 
 
 @pytest.mark.asyncio
