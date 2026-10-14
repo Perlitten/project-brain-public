@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # General Settings
     ENVIRONMENT: str = "local"
     BRAIN_STORAGE_MODE: Literal["full", "lite"] = "full"
+    BRAIN_TEAM_MODE: bool = False
     BRAIN_LITE_DIR: str = ".brain"
     BRAIN_LITE_MAX_CHUNKS: int = 50_000
     # Unset: documentation is available locally and disabled in production.
@@ -658,6 +659,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _lite_defaults(self):
+        if self.BRAIN_TEAM_MODE and self.BRAIN_STORAGE_MODE == "lite":
+            raise ValueError("Team mode requires full storage; personal Lite remains supported")
         if self.BRAIN_STORAGE_MODE == "lite":
             if "DEFAULT_EMBEDDING_PROVIDER" not in self.model_fields_set:
                 self.DEFAULT_EMBEDDING_PROVIDER = "local"

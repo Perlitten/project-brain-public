@@ -35,6 +35,8 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("context_packs", "rule_count"),
     ("context_packs", "consumer"),
     ("rule_usage_events", "kind"),
+    ("team_task_bindings", "request_digest"),
+    ("agent_runs", "initiator_credential_id"),
 ]
 
 

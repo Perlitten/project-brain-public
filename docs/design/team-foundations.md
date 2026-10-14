@@ -23,6 +23,39 @@ from design or green CI alone.
 | Product onboarding and board | `apps/web`, operations docs | States/fields specified in ADR; no invented UI | Invitation/task/conflict UX M5 |
 | Same-project/same-task MVP | Authoritative harness ledger | Multiple isolated run records per task | Actual coordinated runs M2/M3 before M6 |
 
+## Experimental M1 implementation in the foundation change
+
+`BRAIN_TEAM_MODE` defaults to `false`. Full-mode installations may explicitly
+enable the experimental boundary; Lite rejects it. Trusted operators must
+provision verified membership and named credentials in the database before use;
+there is no public invitation, SSO, or self-registration flow. An issuer/subject
+stored by a trusted operator is not evidence that OIDC has been integrated.
+
+- `brain/team/models.py` adds single-team/project/member/repository/task bindings
+  and per-run provenance in the existing database and harness schema. The task
+  ledger remains `harness.agent_tasks`; older rows are not silently adopted.
+- `brain/team/authorization.py` reloads the credential, human membership,
+  project policy, task authority and every parent run under transaction locks.
+  Roles and executor capabilities only narrow access; revocation and accepted
+  task cancellation fence later run requests. Run credentials are stored hashed.
+- Project task listing/creation and run **requests** are available at the team
+  API and native MCP transport. Idempotency keys bind the request content;
+  retries cannot recover a raw run credential. `declared_base_sha` and `branch`
+  are caller declarations, not verified Git ancestry or checked-out worktrees.
+- Personal API/web, remote/local personal MCP, unscoped worker/scheduler/jobs,
+  search, context, memory, logs, downloads, notifications and provider routes
+  are **not adapted**: team mode refuses them. Its `/health` returns only a
+  non-project-specific experimental marker, not legacy worker/queue details.
+  No team executor, artifact download, approval, merge or provider call exists.
+
+The SQL upgrade was rehearsed from the current main schema in a disposable
+PostgreSQL database: a preexisting repository, principal and harness task kept
+their exact values after repeated migration, while seven additive team tables
+appeared. The full personal Python and Lite regressions run with the flag off;
+PostgreSQL-only concurrency cases exercise simultaneous task/run retry and
+membership-version updates. This is migration preservation evidence, not a
+production restore, team deployment or working collaboration execution proof.
+
 ## Evidence requirements for each slice
 
 Record base/head SHAs, actual commands and return codes, before/after or denial

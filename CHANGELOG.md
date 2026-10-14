@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Add default-off single-team project/task/run authority foundations with live
+  verified-identity membership, narrowed delegation, stable repository references,
+  provenance and idempotency. In experimental team mode, unadapted personal
+  APIs/MCP resources and all execution are refused; this is not a team-ready MVP.
+  Personal/full and personal/Lite retain their existing defaults.
+
 - Clarify self-reported MCP telemetry labels versus authenticated principals,
   native OAuth discovery/TLS and single-worker restart limits, and full/Lite
   queue cancellation and idempotency retention without claiming hosted-client

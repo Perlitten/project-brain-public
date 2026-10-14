@@ -122,6 +122,12 @@ app = FastAPI(
     openapi_url="/openapi.json" if _api_docs_enabled else None,
 )
 
+from apps.api.team_boundary import TeamBoundary  # noqa: E402
+from apps.api.routers import team  # noqa: E402
+
+app.add_middleware(TeamBoundary)
+app.include_router(team.router)
+
 
 # --- Security headers middleware ---
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

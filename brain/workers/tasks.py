@@ -821,6 +821,8 @@ async def execute_job(
     transaction that opts into ``assert_current_db_fence``.
     """
     fence_token_ctx = None
+    if settings.BRAIN_TEAM_MODE:
+        raise PermissionError("Unscoped jobs are unavailable in team mode")
     if fencing_token and job_id:
         await validate_task_fencing(
             redis_client, lease_prefix or settings.WORKER_REDIS_PREFIX, job_id, fencing_token

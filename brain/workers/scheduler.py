@@ -231,6 +231,8 @@ async def tick(redis: Redis, now: Optional[datetime] = None) -> List[Dict[str, A
 
 
 async def run_scheduler(redis: Redis, stop: asyncio.Event) -> None:
+    if settings.BRAIN_TEAM_MODE:
+        raise RuntimeError("Unscoped scheduling is unavailable in team mode")
     if not settings.SCHEDULER_ENABLED:
         logger.info("Scheduler disabled (SCHEDULER_ENABLED=false)")
         return

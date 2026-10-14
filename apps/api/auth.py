@@ -40,7 +40,8 @@ DEV_PRINCIPAL = ResolvedPrincipal(
 
 def dev_open() -> bool:
     """No key configured outside production: keyless requests act as DEV_PRINCIPAL."""
-    return not settings.PROJECT_BRAIN_API_KEY and settings.ENVIRONMENT.lower() != "production"
+    return (not settings.BRAIN_TEAM_MODE and not settings.PROJECT_BRAIN_API_KEY
+            and settings.ENVIRONMENT.lower() != "production")
 
 
 async def resolve_api_key(raw_key: str) -> ResolvedPrincipal | None:
@@ -57,6 +58,8 @@ async def require_principal(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> ResolvedPrincipal:
     if not x_api_key:
+        if settings.BRAIN_TEAM_MODE:
+            raise HTTPException(status_code=401, detail="Named credential required in team mode")
         if settings.PROJECT_BRAIN_API_KEY:
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
         if settings.ENVIRONMENT.lower() == "production":
