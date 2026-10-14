@@ -2204,6 +2204,496 @@
         "killed": 68,
         "survived": 3
       }
+    },
+    "nonce_cleanup_assertions": {
+      "tests": [
+        "tests/test_mutation_contracts.py",
+        "tests/test_mutation_bug_regressions.py",
+        "tests/test_nonce_lifecycle.py",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py"
+      ],
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_mutation_contracts.py",
+        "tests/test_mutation_bug_regressions.py",
+        "tests/test_nonce_lifecycle.py",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py",
+        "-q",
+        "-x",
+        "--tb=short",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "timeout_seconds": 30,
+      "results": [
+        {
+          "id": 1,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.173
+        },
+        {
+          "id": 2,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.029
+        },
+        {
+          "id": 3,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.1
+        },
+        {
+          "id": 4,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.097
+        },
+        {
+          "id": 5,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.153
+        },
+        {
+          "id": 6,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.057
+        },
+        {
+          "id": 7,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.014
+        },
+        {
+          "id": 8,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.55
+        },
+        {
+          "id": 9,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.341
+        },
+        {
+          "id": 10,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.156
+        },
+        {
+          "id": 11,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.399
+        },
+        {
+          "id": 12,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.157
+        },
+        {
+          "id": 13,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.069
+        },
+        {
+          "id": 14,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.208
+        },
+        {
+          "id": 15,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.092
+        },
+        {
+          "id": 16,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.999
+        },
+        {
+          "id": 17,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.437
+        },
+        {
+          "id": 18,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.092
+        },
+        {
+          "id": 19,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.035
+        },
+        {
+          "id": 20,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.133
+        },
+        {
+          "id": 21,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.102
+        },
+        {
+          "id": 22,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.081
+        },
+        {
+          "id": 23,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.155
+        },
+        {
+          "id": 24,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.004
+        },
+        {
+          "id": 25,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.163
+        },
+        {
+          "id": 26,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.149
+        },
+        {
+          "id": 27,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.089
+        },
+        {
+          "id": 28,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.135
+        },
+        {
+          "id": 29,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.063
+        },
+        {
+          "id": 30,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.139
+        },
+        {
+          "id": 31,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.086
+        },
+        {
+          "id": 32,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.034
+        },
+        {
+          "id": 33,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.626
+        },
+        {
+          "id": 34,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.731
+        },
+        {
+          "id": 35,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.829
+        },
+        {
+          "id": 36,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.752
+        },
+        {
+          "id": 37,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.843
+        },
+        {
+          "id": 38,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.747
+        },
+        {
+          "id": 39,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.027
+        },
+        {
+          "id": 40,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.803
+        },
+        {
+          "id": 41,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 3.826
+        },
+        {
+          "id": 42,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.294
+        },
+        {
+          "id": 43,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.457
+        },
+        {
+          "id": 44,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.017
+        },
+        {
+          "id": 45,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.061
+        },
+        {
+          "id": 46,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.135
+        },
+        {
+          "id": 47,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.077
+        },
+        {
+          "id": 48,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.306
+        },
+        {
+          "id": 49,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.305
+        },
+        {
+          "id": 50,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.176
+        },
+        {
+          "id": 51,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.102
+        },
+        {
+          "id": 52,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.505
+        },
+        {
+          "id": 53,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.194
+        },
+        {
+          "id": 54,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.294
+        },
+        {
+          "id": 55,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.597
+        },
+        {
+          "id": 56,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.396
+        },
+        {
+          "id": 57,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.048
+        },
+        {
+          "id": 58,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.281
+        },
+        {
+          "id": 59,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.109
+        },
+        {
+          "id": 60,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.154
+        },
+        {
+          "id": 61,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.115
+        },
+        {
+          "id": 62,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.291
+        },
+        {
+          "id": 63,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.077
+        },
+        {
+          "id": 64,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.281
+        },
+        {
+          "id": 65,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.5
+        },
+        {
+          "id": 66,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.213
+        },
+        {
+          "id": 67,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.344
+        },
+        {
+          "id": 68,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.287
+        },
+        {
+          "id": 69,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.907
+        },
+        {
+          "id": 70,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.391
+        },
+        {
+          "id": 71,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.446
+        },
+        {
+          "id": 72,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.183
+        }
+      ],
+      "summary": {
+        "killed": 71,
+        "survived": 1
+      },
+      "replay": false,
+      "tested_source_sha256": {
+        "brain/harness/attestation.py": "881a99dccc4c865b78fdd50b1cb267d105649318bcc1561632570c086b1c6cf3",
+        "brain/harness/nonce.py": "addffed0968e5c4d11b60f9398c3f0b285372efb672ad67875c8cc9481026540",
+        "brain/harness/verifier.py": "c70be785d2cab4ca53d439ec26d9cbfd4006cf7ca3e8ccda99e67dd182ca8664",
+        "brain/context/budget.py": "0e329fccf2d650a0814642b94625f60bfb3c1f7a69f78cadbbc359b71d62ceae"
+      },
+      "source_mismatches": [],
+      "excluded_type_invalid_mutants": [
+        48
+      ],
+      "usable_summary": {
+        "killed": 70,
+        "survived": 1
+      }
     }
   },
   "survivor_classification": [
@@ -2328,5 +2818,15 @@
     "failed": 4,
     "passed": 0,
     "base_commit": "3c4449e37909541496a5d995b6035a6129c82c10"
+  },
+  "nonce_cleanup_verification": {
+    "full_python_passed": 2409,
+    "skipped": 11,
+    "ruff": "passed",
+    "mypy_errors": 0,
+    "new_tests": [
+      "test_consuming_nonce_evicts_its_pending_record",
+      "test_expired_nonce_evicts_its_pending_record"
+    ]
   }
 }

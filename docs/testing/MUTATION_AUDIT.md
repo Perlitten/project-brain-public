@@ -62,6 +62,7 @@ endings; a regression caught their earlier normalization mismatch.
 | Same original source, strengthened tests | 53 | 49 | 4 | 0 | 0 |
 | Fixed source, replay of original manifest | 53 | 41 | 3 | 0 | 9 |
 | Fixed source, fresh manifest including claim verification/new guards | 71 | 68 | 3 | 0 | 0 |
+| Same fixed source, explicit pending-nonce cleanup assertions | 71 | 70 | 1 | 0 | 0 |
 
 Raw manifests contain 54 / 72 mutations. One string-subtraction mutation is
 type-invalid and excluded from each behavioral comparison, with its raw outcome
@@ -88,6 +89,11 @@ were supplied. Independent missing-ID / missing-attestation cases now detect it.
   or expiry. Accept/reject behavior is preserved, including replay and repeated
   RNG output, but retained entries change memory use. Resource lifecycle is an
   explicit remaining coverage gap; these are not unconditional equivalents.
+  **Closed in PR #98 finalization:** `test_nonce_lifecycle.py` checks pending-record
+  eviction for both paths and kills both deletion mutants. Production already
+  contains those deletions; no runtime change was needed to close these two gaps.
+  The lifecycle pass achieved 70/71 detected, with zero timeouts. Full offline
+  verification passed 2,409 tests with 11 skips; Ruff and zero-error mypy passed.
 - The old HMAC `return True` survivor was unsafe behavior, not a missing assertion
   requiring acceptance of signed evidence without credentials. The fix removed it.
 
