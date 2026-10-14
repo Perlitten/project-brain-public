@@ -1,0 +1,23 @@
+{
+  "tests": ["tests/test_harness_attestation.py", "tests/test_property_and_mutation.py", "tests/test_adversarial_harness_suite.py", "tests/test_remote_observe_drill.py", "tests/test_context_budget.py", "tests/test_context_budget_evidence.py", "tests/test_fault_injection.py", "tests/test_chaos_v06.py", "tests/test_principals.py", "tests/test_api_scope_coverage.py", "tests/test_retrieval_service.py", "tests/test_retrieval_deadlines.py", "tests/test_nonce_lifecycle.py", "tests/test_mutation_contracts.py", "tests/test_mutation_bug_regressions.py"],
+  "command": ["python", "-m", "pytest", "tests/test_harness_attestation.py", "tests/test_property_and_mutation.py", "tests/test_adversarial_harness_suite.py", "tests/test_remote_observe_drill.py", "tests/test_context_budget.py", "tests/test_context_budget_evidence.py", "tests/test_fault_injection.py", "tests/test_chaos_v06.py", "tests/test_principals.py", "tests/test_api_scope_coverage.py", "tests/test_retrieval_service.py", "tests/test_retrieval_deadlines.py", "tests/test_nonce_lifecycle.py", "tests/test_mutation_contracts.py", "tests/test_mutation_bug_regressions.py", "-q", "-x", "--tb=short", "-p", "no:cacheprovider"],
+  "timeout_seconds": 30.0,
+  "results": [
+    {"id":152,"status":"timeout"},
+    {"id":155,"status":"timeout"}
+  ],
+  "summary": {
+    "timeout": 2
+  },
+  "replay": false,
+  "tested_source_sha256": {
+    "brain/harness/attestation.py": "881a99dccc4c865b78fdd50b1cb267d105649318bcc1561632570c086b1c6cf3",
+    "brain/harness/nonce.py": "addffed0968e5c4d11b60f9398c3f0b285372efb672ad67875c8cc9481026540",
+    "brain/harness/verifier.py": "c70be785d2cab4ca53d439ec26d9cbfd4006cf7ca3e8ccda99e67dd182ca8664",
+    "brain/context/budget.py": "0e329fccf2d650a0814642b94625f60bfb3c1f7a69f78cadbbc359b71d62ceae",
+    "apps/api/auth.py": "081fa278524088351637af8ec38b65d81af057c56626fd0182ab597dc6ab4bdb",
+    "brain/auth/principals.py": "c86d62b02983c9280e7ae3f70d710559e5481b24f1e63fde09d578ff751a5cef",
+    "brain/retrieval/service.py": "cbb035a1064d4b7a8b26555babc6666468a55f06365dc2d5950ee55f1add42ea"
+  },
+  "source_mismatches": []
+}

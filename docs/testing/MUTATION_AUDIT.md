@@ -1,5 +1,9 @@
 # Test quality and bounded mutation audit
 
+The subsequent authentication, retrieval and concurrency campaign is recorded in
+[the broader audit](BROAD_MUTATION_AUDIT.md). The results below retain this
+earlier campaign's scope and history.
+
 Audited from `main` commit `3c4449e37909541496a5d995b6035a6129c82c10`.
 Verification used Python 3.12.14, local fixtures and mock providers. No model
 downloads, remote inference, paid calls or NVIDIA credential dependency.

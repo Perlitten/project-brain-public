@@ -324,6 +324,7 @@ def test_parallel_exclusions_cannot_overflow_metadata_cap():
 def test_claim_copy_and_serialization_do_not_expose_or_share_locks():
     claim = ReportClaim(claim_id="copy", claim_text="run", claim_category=ClaimCategory.INTEGRITY,
                         required_evidence_types=[])
+    assert not any("lock" in name for name in ReportClaim.model_json_schema()["properties"])
     for copied in (claim.model_copy(deep=True), pickle.loads(pickle.dumps(claim))):
         assert copied.model_dump() == claim.model_dump()
         assert copied == claim
