@@ -86,13 +86,20 @@ async def test_worker_refunds_denied_fence_and_renews_short_configured_lease(tmp
 
     monkeypatch.setattr(session, "async_session_factory", factory)
     claim = AsyncMock(side_effect=[False, True])
-    renew = AsyncMock(return_value=True)
+    renewed = asyncio.Event()
+
+    async def renew_lease(*args, **kwargs):
+        if renew.await_count >= 3:
+            renewed.set()
+        return True
+
+    renew = AsyncMock(side_effect=renew_lease)
     monkeypatch.setattr(db_fencing, "claim_db_lease", claim)
     monkeypatch.setattr(db_fencing, "renew_db_lease", renew)
     monkeypatch.setattr(db_fencing, "release_db_lease", AsyncMock())
 
     async def execute(*args):
-        await asyncio.sleep(1.3)
+        await asyncio.wait_for(renewed.wait(), timeout=5)
         return {"ok": True}
 
     executor = AsyncMock(side_effect=execute)
@@ -142,12 +149,19 @@ async def claim():
 asyncio.run(claim())
 time.sleep(30)
 '''
-    env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
-           "DEFAULT_LLM_PROVIDER": "disabled", "DEFAULT_EMBEDDING_PROVIDER": "local"}
+    runtime_vars = ("PATH", "SYSTEMROOT", "WINDIR", "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+                    "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "TMP", "TEMP", "VIRTUAL_ENV", "PYTHONUTF8")
+    env = {key: os.environ[key] for key in runtime_vars if key in os.environ}
+    env.update(PYTHONPATH=str(Path(__file__).resolve().parents[1]),
+               DEFAULT_LLM_PROVIDER="disabled", DEFAULT_EMBEDDING_PROVIDER="local")
     process = subprocess.Popen([sys.executable, "-c", code, str(tmp_path)],
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     try:
-        row = json.loads(process.stdout.readline())
+        line = process.stdout.readline()
+        if not line:
+            _, stderr = process.communicate(timeout=5)
+            pytest.fail(f"Disposable Lite worker exited before creating a lease: {stderr[-2000:]}")
+        row = json.loads(line)
         assert row["attempt"] == 1
         process.kill()
         process.wait(timeout=5)
