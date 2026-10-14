@@ -27,6 +27,8 @@ IGNORED_DIRS = {
     ".next",
 }
 IGNORED_FILES = {MANIFEST_NAME, ".env", ".mcp.json"}
+DATABASE_EXTENSIONS = (".db", ".sqlite", ".sqlite3")
+DATABASE_SIDECARS = ("-wal", "-shm", "-journal")
 
 
 def _iter_files(root: Path, includes: list[str] | None = None):
@@ -43,6 +45,9 @@ def _iter_files(root: Path, includes: list[str] | None = None):
             current_path = Path(current)
             for name in sorted(files):
                 if name in IGNORED_FILES or name.startswith(".env."):
+                    continue
+                stem = next((name[:-len(suffix)] for suffix in DATABASE_SIDECARS if name.endswith(suffix)), name)
+                if stem.endswith(DATABASE_EXTENSIONS):
                     continue
                 path = current_path / name
                 if path.is_symlink() or not path.is_file():
