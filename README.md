@@ -193,6 +193,15 @@ Improvements in coding correctness, task completion, time and total token cost
 are **not established**. Mock-provider checks are functional smoke tests.
 Benchmark evidence has limited scope and does not establish general superiority.
 
+**MCP sampling — legacy fallback**, not a current feature: compatibility code
+may ask a sampling-capable client to answer from retrieved context when the
+server-side model fails. MCP sampling is deprecated by
+[SEP-2577](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2577),
+not removed from supported versions. Brain's newer-protocol path uses input
+requests instead. Configure a server-side
+model for normal operation. Client support, approval and billing vary; this
+fallback is not independently verified across external clients.
+
 Memory records reported validation; Brain does not prove every lesson's tests
 were executed. Eligible learned guidance can promote automatically, while
 higher-risk cases and distilled procedures have approval gates. Explicit rules
