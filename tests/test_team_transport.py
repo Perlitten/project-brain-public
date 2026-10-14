@@ -64,6 +64,35 @@ def team_app(factory, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("root_path", ["/brain", "/team/projects"])
+async def test_team_boundary_uses_routed_path_under_mounts(monkeypatch, root_path):
+    monkeypatch.setattr(settings, "BRAIN_TEAM_MODE", True)
+    app = FastAPI()
+    app.add_middleware(TeamBoundary)
+    called = []
+
+    @app.get("/health")
+    @app.get("/admin")
+    async def legacy():
+        called.append(True)
+        return {"private_worker_details": True}
+
+    @app.get("/team/projects/example/tasks")
+    async def allowed():
+        return {"team": True}
+
+    transport = httpx.ASGITransport(app, root_path=root_path)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        health = await client.get(f"{root_path}/health")
+        assert health.status_code == 200
+        assert health.json() == {"status": "experimental", "mode": "team-foundations",
+                                 "execution_available": False}
+        assert (await client.get(f"{root_path}/admin")).status_code == 403
+        assert not called
+        assert (await client.get(f"{root_path}/team/projects/example/tasks")).json() == {"team": True}
+
+
+@pytest.mark.asyncio
 async def test_api_uses_live_authenticated_author_and_project_scope(team_db, monkeypatch):
     factory, a, b = team_db
     app = team_app(factory, monkeypatch)

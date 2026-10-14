@@ -1,4 +1,5 @@
 from brain.config.settings import settings
+from starlette._utils import get_route_path
 from starlette.responses import JSONResponse
 
 
@@ -11,7 +12,7 @@ class TeamBoundary:
             await send({"type": "websocket.close", "code": 4403})
             return
         if scope["type"] == "http" and settings.BRAIN_TEAM_MODE:
-            path = scope.get("path", "")
+            path = get_route_path(scope)
             if path == "/health":
                 await JSONResponse({"status": "experimental", "mode": "team-foundations",
                                     "execution_available": False})(scope, receive, send)
