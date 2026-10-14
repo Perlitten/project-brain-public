@@ -746,5 +746,5 @@
     "codeql_pr_check": "No new alerts in code changed by this pull request",
     "historical_alert_inventory": "HTTP 403 integration permission limitation"
   },
-  "limits": ["Bounded AST operators and seven targeted modules; not a repository-wide mutation score", "One UTF-8-encodable zero-boundary equivalent; type-invalid string subtraction excluded", "No cross-process nonce or database transaction-isolation certification", "No live model/provider calls, model downloads or paid usage", "Final-head remote status recorded on PR #100 after evidence commit"]
+  "limits": ["Bounded AST operators and seven targeted modules; not a repository-wide mutation score", "One UTF-8-encodable zero-boundary equivalent; type-invalid string subtraction excluded", "No cross-process nonce or database transaction-isolation certification", "No live model/provider calls, model downloads or paid usage", "Final-head remote status recorded on the evidence follow-up PR"]
 }

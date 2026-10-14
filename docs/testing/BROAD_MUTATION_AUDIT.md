@@ -4,8 +4,11 @@ This follow-up starts at `15d549f899418ad9a369f5d0281eadce07498236`, the merge o
 [PR #98](https://github.com/Perlitten/project-brain-public/pull/98).
 That PR closed both pending-nonce cleanup assertion gaps: **70/71 usable mutants
 detected**, one equivalent boundary, no timeouts. Its full offline run passed
-2,409 tests. The broader changes are in
-[PR #100](https://github.com/Perlitten/project-brain-public/pull/100).
+2,409 tests. The broader runtime changes were merged by the owner in
+[PR #100](https://github.com/Perlitten/project-brain-public/pull/100), merge commit
+`5516a2d78634be8b05463e068cb424e46a86ee3b`, while final evidence was running.
+This follow-up contains the final fallback-deadline assertion and reproducible
+audit artifacts; it does not repeat or change those runtime fixes.
 
 ## Confirmed defects and changes
 
@@ -97,7 +100,7 @@ These claims apply to the enumerated operators and input contracts only.
   CodeQL succeeds for Python and JavaScript/TypeScript; its PR check reports
   **no new alerts in changed code**. The repository-wide alert API returns HTTP
   403 for the integration, so this does not certify the full historical alert inventory.
-  Final-head check status is reported on PR #100 after the evidence commit.
+  Final-head check status is reported on the evidence follow-up PR.
 
 The paired acceptance run uses 20 unchanged goldens and 11 context/impact tasks
 against the existing frozen corpus/index, offline token-hash embeddings and
@@ -151,5 +154,5 @@ python -m eval.product_upgrade_gate \
   docs/testing/evidence/broad-capture-after.json
 ```
 
-Release recommendation: hold a new release until PR #100 has been reviewed and
-merged with successful final checks. This work does not publish or retag a release.
+Release recommendation: hold a new release until this evidence/regression
+follow-up has been reviewed and merged with successful final checks. This work does not publish or retag a release.
