@@ -33,7 +33,7 @@ def input_hash() -> str:
 def validate_response(data: dict, kind: str, task_id: str) -> None:
     """HTTP success does not imply successful v2 retrieval execution."""
     markers = [str(value) for key in ("missing", "degraded") for value in data.get(key, [])]
-    fatal = any(value.startswith(("context_error:", "impact_error:", "search_error:"))
+    fatal = any("_error:" in value
                 or "deadline_exceeded" in value for value in markers)
     if "error" in data or data.get("status") in {"failed", "error", "unavailable"} or fatal:
         raise ValueError(f"{kind} response failed for {task_id}")
