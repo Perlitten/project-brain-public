@@ -39,6 +39,7 @@ def mock_queue():
 def api_key_env():
     with patch("apps.api.auth.settings") as mock_settings:
         mock_settings.PROJECT_BRAIN_API_KEY = "test-secret-key"
+        mock_settings.BRAIN_TEAM_MODE = False
         yield mock_settings
 
 
@@ -307,6 +308,7 @@ def test_get_job_not_found(mock_queue, api_key_env):
 def test_no_auth_when_api_key_unset(mock_queue):
     with patch("apps.api.auth.settings") as mock_settings:
         mock_settings.PROJECT_BRAIN_API_KEY = None
+        mock_settings.BRAIN_TEAM_MODE = False
         response = client.post("/jobs/reindex")
         assert response.status_code == 200
 

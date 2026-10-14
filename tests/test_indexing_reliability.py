@@ -133,6 +133,7 @@ async def indexing_db(monkeypatch, tmp_path):
     try:
         async with engine.begin() as connection:
             await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            await connection.execute(text("CREATE SCHEMA IF NOT EXISTS harness"))
             await connection.run_sync(Base.metadata.create_all)
     except (OSError, ConnectionError):
         await engine.dispose()

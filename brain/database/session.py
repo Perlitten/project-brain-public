@@ -215,6 +215,7 @@ async def _init_db_unlocked() -> None:
 
     async with async_engine.begin() as conn:
         from brain.database import harness_models  # noqa: F401 - registers models on Base
+        from brain.team import models as team_models  # noqa: F401 - additive scope/run tables
 
         await conn.run_sync(Base.metadata.create_all)
 
