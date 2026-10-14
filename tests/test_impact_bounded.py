@@ -90,3 +90,20 @@ def test_noise_filter_keeps_real_code():
         "get_db",
     ]:
         assert not _is_noise_node(real), real
+
+
+@pytest.mark.asyncio
+async def test_sqlite_impact_traversal_honors_per_seed_visit_cap(tmp_path, monkeypatch):
+    from brain.graph import sqlite_graph
+    from brain.graph.sqlite_graph import GraphNode, SQLiteGraph
+
+    graph = SQLiteGraph(tmp_path)
+    nodes = {1: GraphNode(1, "Function", {"name": "seed_handler"})}
+    nodes.update({index: GraphNode(index, "File", {"name": f"src/file_{index}.py"})
+                  for index in range(2, 22)})
+    edges = [(1, index, "CALLS", "{}") for index in range(2, 22)]
+    monkeypatch.setattr(graph, "_snapshot", lambda _repository_id: (nodes, edges))
+    monkeypatch.setattr(sqlite_graph, "_IMPACT_VISIT_LIMIT_PER_SEED", 4)
+
+    rows = await graph.bounded_impact(7, ["seed"], limit=480)
+    assert len(rows) == 3  # The seed itself consumes one slot in the visit cap.

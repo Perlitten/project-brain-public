@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 
 from brain.retrieval.service import RetrievalService
 from brain.retrieval.service import RetrievalCandidate
@@ -92,3 +93,28 @@ async def test_symbol_fallback_respects_response_budget(monkeypatch, error):
     assert len(result.candidates) == 3
     assert result.candidates == symbols[:3]
     assert result.degraded
+
+
+@pytest.mark.asyncio
+async def test_optional_local_lexical_failure_preserves_vector_results(monkeypatch):
+    from brain.config.settings import settings
+
+    service = RetrievalService()
+    repository = SimpleNamespace(id=7, path="/repo", last_indexed_commit="abc")
+    monkeypatch.setattr(settings, "RETRIEVAL_V2_ENABLED", True)
+    monkeypatch.setattr(settings, "DEFAULT_EMBEDDING_PROVIDER", "local")
+    monkeypatch.setattr(
+        "brain.retrieval.service.get_repository_by_path", AsyncMock(return_value=repository)
+    )
+    monkeypatch.setattr(
+        "brain.retrieval.service.search_code",
+        AsyncMock(return_value={"chunks": [{"file_path": "src/engine.py", "similarity": 0.9}]}),
+    )
+    monkeypatch.setattr(service, "_known_symbol_route", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        "brain.search.local_lexical.local_lexical", AsyncMock(side_effect=RuntimeError("offline"))
+    )
+
+    result = await service.retrieve("engine", "/repo")
+    assert result.candidates[0].path == "src/engine.py"
+    assert result.degraded == ["offline_lexical_error:RuntimeError"]

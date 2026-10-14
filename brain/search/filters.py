@@ -341,7 +341,8 @@ def get_file_type_weight(file_type: Optional[str]) -> float:
 def is_template_path(path: str) -> bool:
     """Return True for Jinja/HTML template files under a templates/ directory."""
     normalized = path.replace("\\", "/").lower()
-    return "/templates/" in normalized and normalized.endswith((".html", ".jinja", ".jinja2"))
+    in_template_dir = normalized.startswith("templates/") or "/templates/" in normalized
+    return in_template_dir and normalized.endswith((".html", ".jinja", ".jinja2"))
 
 
 def is_test_path(path: str) -> bool:
@@ -349,7 +350,15 @@ def is_test_path(path: str) -> bool:
     normalized = path.replace("\\", "/").lower()
     parts = normalized.split("/")
     name = parts[-1] if parts else normalized
-    return any("test" in part or "spec" in part for part in parts) or name.startswith("test_")
+    stem = name.rsplit(".", 1)[0]
+    test_directories = {"test", "tests", "spec", "specs", "__tests__"}
+    return (
+        any(part in test_directories for part in parts[:-1])
+        or name.startswith("test_")
+        or stem.endswith(("_test", "_spec"))
+        or ".test." in name
+        or ".spec." in name
+    )
 
 
 def is_readme_path(path: str) -> bool:

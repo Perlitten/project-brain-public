@@ -27,6 +27,14 @@ def test_removed_task_or_changed_expected_file_cannot_pass():
     assert not compare(before, after)["pass"]
 
 
+def test_invalid_or_swapped_phases_cannot_pass():
+    before, after = captures()
+    after["phase"] = "before"
+    report = compare(before, after)
+    assert not report["pass"]
+    assert "invalid comparison phases" in report["failures"]
+
+
 def test_context_regression_is_recomputed_from_paths():
     before, after = captures()
     for row in after["tasks"]:
@@ -35,3 +43,29 @@ def test_context_regression_is_recomputed_from_paths():
     report = compare(before, after)
     assert not report["pass"]
     assert "context mrr regressed" in report["failures"]
+
+
+def test_task_recall_regression_is_rejected_when_first_hit_is_unchanged():
+    before, after = captures()
+    before = copy.deepcopy(after)
+    before["phase"] = "before"
+    row = next(row for row in after["tasks"]
+               if row.get("type") == "context" and len(row.get("expected", [])) > 1)
+    before_row = next(item for item in before["tasks"] if item["id"] == row["id"])
+    before_row["paths"] = list(row["expected"])
+    row["paths"] = [row["expected"][0]]
+    report = compare(before, after)
+    assert not report["pass"]
+    assert "context recall regressed" in report["failures"]
+
+
+def test_golden_scores_are_recomputed_from_captured_paths():
+    before, after = captures()
+    before = copy.deepcopy(after)
+    before["phase"] = "before"
+    for row in after["goldens"]:
+        row["response_files"] = []
+        row["response_chunk_files"] = []
+    report = compare(before, after)
+    assert not report["pass"]
+    assert any(failure.startswith("golden ") for failure in report["failures"])

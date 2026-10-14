@@ -105,15 +105,34 @@ class RetrievalService:
             self._known_symbol_route(query, repo_record, recall_budget)
         )
 
+        async def collect_symbol_candidates() -> tuple[list[RetrievalCandidate], bool]:
+            """Return promptly when the request deadline expires.
+
+            ``asyncio.wait_for`` waits for cancellation cleanup and can exceed
+            its timeout.  A plain wait lets the locator return immediately;
+            cancellation still releases the optional symbol query.
+            """
+            if symbol_task.done():
+                return symbol_task.result(), False
+            remaining = deadline_s - (time.perf_counter() - started)
+            if remaining <= 0:
+                symbol_task.cancel()
+                return [], True
+            done, _ = await asyncio.wait({symbol_task}, timeout=remaining)
+            if not done:
+                symbol_task.cancel()
+                return [], True
+            return symbol_task.result(), False
+
         degraded: list[str] = []
         try:
             raw = await asyncio.wait_for(
                 search_code(query, limit=min(recall_budget, 10), repo_path=repo_value),
-                timeout=max(0.05, deadline_s),
+                timeout=max(0.001, deadline_s),
             )
         except asyncio.TimeoutError:
             # Fall back to symbol-only results if vector search times out
-            fast_candidates = await symbol_task
+            fast_candidates, _ = await collect_symbol_candidates()
             if fast_candidates:
                 repository_fast: dict[str, Any] = {
                     "requested_path": repo_value,
@@ -147,7 +166,7 @@ class RetrievalService:
                 timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)},
             )
         except Exception as exc:  # Keep optional retrieval failure typed and fail-open for locators.
-            fast_candidates = await symbol_task
+            fast_candidates, symbol_timed_out = await collect_symbol_candidates()
             if fast_candidates:
                 repository_fast = {
                     "requested_path": repo_value,
@@ -166,7 +185,7 @@ class RetrievalService:
                     intent=intent,
                     repository=repository_fast,
                     candidates=fast_candidates[:candidate_budget],
-                    degraded=[f"search_error:{type(exc).__name__}"],
+                    degraded=[f"search_error:{type(exc).__name__}", *(["deadline_exceeded"] if symbol_timed_out else [])],
                     timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)},
                 )
             return RetrievalResult(
@@ -174,7 +193,7 @@ class RetrievalService:
                 intent=intent,
                 repository=repository,
                 candidates=[],
-                degraded=[f"search_error:{type(exc).__name__}"],
+                degraded=[f"search_error:{type(exc).__name__}", *(["deadline_exceeded"] if symbol_timed_out else [])],
                 timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)},
             )
 
@@ -182,7 +201,9 @@ class RetrievalService:
         # Symbol matches boost files that contain explicitly named symbols,
         # but vector search finds files via semantic similarity even when
         # symbol names don't match query words.
-        symbol_candidates = await symbol_task
+        symbol_candidates, symbol_timed_out = await collect_symbol_candidates()
+        if symbol_timed_out:
+            degraded.append("deadline_exceeded")
         repository = dict(raw.get("repository_scope") or repository)
         if symbol_candidates:
             repository["fast_route"] = "symbol"
@@ -212,14 +233,22 @@ class RetrievalService:
             if settings.DEFAULT_EMBEDDING_PROVIDER == "local" and repo_record is not None:
                 from brain.search.local_lexical import local_lexical
                 try:
-                    lexical = await asyncio.wait_for(local_lexical(repo_record.id, query, recall_budget),
-                                                     timeout=max(0.05, deadline_s - (time.perf_counter() - started)))
+                    remaining = deadline_s - (time.perf_counter() - started)
+                    if remaining <= 0:
+                        raise TimeoutError
+                    lexical = await asyncio.wait_for(
+                        local_lexical(repo_record.id, query, recall_budget), timeout=remaining
+                    )
                     for item in lexical:
                         candidate = RetrievalCandidate(path=item["path"], channel_scores={"bm25": item["score"]})
                         candidate.add_range(item["start"], item["end"])
                         vector_candidates.append(candidate)
                 except (TimeoutError, ValueError):
                     degraded.append("offline_lexical_unavailable")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    degraded.append(f"offline_lexical_error:{type(exc).__name__}")
             candidates = merge_linear(vector_candidates, symbol_candidates, query, candidate_budget)
         else:
             candidates = self._merge_candidates(vector_candidates, symbol_candidates, candidate_budget, query_identifiers)

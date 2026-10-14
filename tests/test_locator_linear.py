@@ -4,7 +4,7 @@ import pytest
 from brain.config.settings import Settings, settings
 from brain.retrieval.locator_fusion import merge_linear
 from brain.retrieval.service import RetrievalCandidate, RetrievalService
-from brain.search.filters import query_file_type_weight
+from brain.search.filters import is_template_path, is_test_path, query_file_type_weight
 
 
 @pytest.fixture(autouse=True)
@@ -49,6 +49,16 @@ def test_test_demotion_depends_on_query(query,first):
     assert merge_linear(candidates, [], query, 2)[0].path == first
     if "tests" in query:
         assert query_file_type_weight("test",query,"tests/test_compression.py") == 1
+
+
+def test_surface_detection_uses_path_components_not_substrings():
+    assert is_test_path("tests/test_engine.py")
+    assert is_test_path("src/engine.spec.ts")
+    assert not is_test_path("src/contest/engine.py")
+    assert not is_test_path("src/specification.py")
+    assert is_template_path("templates/index.html")
+    assert query_file_type_weight("template", "find the engine", "templates/index.html") == 0.45
+    assert query_file_type_weight("template", "edit the html template", "templates/index.html") == 1.0
 
 
 def test_explicit_named_symbol_can_win_without_basename_guesses():

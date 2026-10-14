@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-from eval.run_golden_eval import _metrics
+from eval.run_golden_eval import _evaluate_question, _metrics
 
 
 def task_metrics(rows: list[dict]) -> dict[str, float]:
@@ -19,8 +19,26 @@ def task_metrics(rows: list[dict]) -> dict[str, float]:
                          for row in positive)/count}
 
 
+def golden_metrics(rows: list[dict]) -> dict:
+    """Recompute derived scores from captured paths, never trusted booleans."""
+    evaluated = []
+    for row in rows:
+        files = row.get("response_files") or []
+        chunks = row.get("response_chunk_files") or []
+        evaluated.append(_evaluate_question(
+            {"id": row.get("id"), "question": row.get("question"),
+             "expect_files": row.get("expected_files") or []},
+            {"files": [{"path": path} for path in files],
+             "chunks": [{"file_path": path} for path in chunks]},
+            max(5, len(files), len(chunks)),
+        ))
+    return _metrics(evaluated)
+
+
 def compare(before: dict, after: dict) -> dict:
     failures = []
+    if before.get("phase") != "before" or after.get("phase") != "after":
+        failures.append("invalid comparison phases")
     for key in ("provider", "corpus_source", "input_hash"):
         if not before.get(key) or before.get(key) != after.get(key):
             failures.append(f"changed comparison control: {key}")
@@ -43,14 +61,14 @@ def compare(before: dict, after: dict) -> dict:
             failures.append(f"incomplete {kind} tasks")
         old_metrics, new_metrics = task_metrics(old), task_metrics(new)
         summaries[kind] = {"before":old_metrics,"after":new_metrics}
-        for metric in ("hit1","hit3","mrr"):
+        for metric in ("hit1","hit3","mrr","recall"):
             if new_metrics[metric] + 1e-9 < old_metrics[metric]:
                 failures.append(f"{kind} {metric} regressed")
         for row in new:
             bounds = {"context-007":3, "impact-003":19, "impact-004":75}
             if row["id"] in bounds and len(row["paths"]) > bounds[row["id"]]:
                 failures.append(f"{row['id']} adversarial check failed")
-    old_goldens, new_goldens = _metrics(before["goldens"]), _metrics(after["goldens"])
+    old_goldens, new_goldens = golden_metrics(before["goldens"]), golden_metrics(after["goldens"])
     for metric in ("hit_1_pct","hit_3_pct","mrr"):
         if new_goldens[metric] + 1e-9 < old_goldens[metric]:
             failures.append(f"golden {metric} regressed")

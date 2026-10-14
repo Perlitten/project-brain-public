@@ -32,6 +32,14 @@ _GENERIC = frozenset(
         "support", "system",
     }
 )
+_LANGUAGE_BY_SUFFIX = {
+    ".py": {"python"}, ".pyi": {"python"},
+    ".js": {"javascript"}, ".jsx": {"javascript", "react"},
+    ".ts": {"typescript"}, ".tsx": {"typescript", "react"},
+    ".java": {"java"}, ".kt": {"kotlin"}, ".kts": {"kotlin"},
+    ".rs": {"rust"}, ".go": {"go", "golang"}, ".rb": {"ruby"},
+    ".php": {"php"}, ".cs": {"csharp"},
+}
 
 
 def _terms(query: str) -> tuple[str, ...]:
@@ -150,6 +158,11 @@ def query_evidence_support(
     # Strip whitespace once; do not backtrack over an uncontrolled prefix.
     if re.match(r"(?:how|what|where|which|does|is|can|why)\b", query.lstrip(), re.I):
         evidence_tokens = _identifier_tokens(path_or_symbol + " " + slice_content) if terms else set()
+        for path, _, _ in fields:
+            lowered_path = path.casefold()
+            for suffix, language_names in _LANGUAGE_BY_SUFFIX.items():
+                if lowered_path.endswith(suffix):
+                    evidence_tokens.update(language_names)
         named_missing = tuple(match.group(0) for match in re.finditer(r"\b[A-Z][A-Za-z0-9_]{2,}\b", query)
                               if match.start() > 0 and match.group(0).casefold() not in _STOPWORDS | _GENERIC
                               and match.group(0).casefold() not in evidence_tokens)

@@ -95,3 +95,11 @@ def test_question_prefix_with_long_whitespace_keeps_named_evidence_guard():
     prefix = " " * 100_000
     assert should_abstain_for_unsupported_query(prefix + "How does ZebraCloud deploy the application?", candidates, slices)
     assert not should_abstain_for_unsupported_query(prefix + "Add ZebraCloud deployment support", candidates, slices)
+
+
+def test_language_extension_supports_named_technology_question():
+    candidates = [Candidate("src/config_loader.py", ("load_configuration",))]
+    slices = [{"path": candidates[0].path, "content": "def load_configuration(): return {}"}]
+    result = query_evidence_support("How does Python load configuration?", candidates, slices)
+    assert "Python" not in result["missing_named_anchors"]
+    assert result["should_abstain"] is False

@@ -11,6 +11,8 @@ from contextlib import contextmanager
 
 from brain.graph.schema import VALID_NODE_TYPES, VALID_RELATIONSHIP_TYPES
 
+_IMPACT_VISIT_LIMIT_PER_SEED = 64
+
 
 class GraphNode(dict):
     def __init__(self, node_id: int, label: str, props: dict):
@@ -62,6 +64,11 @@ class SQLiteGraph:
             for source, target, _, _ in edges:
                 adjacency.setdefault(source, []).append(target)
                 adjacency.setdefault(target, []).append(source)
+            for neighbors in adjacency.values():
+                neighbors.sort(key=lambda node_id: (
+                    0 if "File" in nodes[node_id].labels else 1,
+                    str(nodes[node_id].get("name", "")),
+                ))
             output = []
             seeds = []
             for kw in keywords[:12]:
@@ -81,6 +88,8 @@ class SQLiteGraph:
                     if distance < 2:
                         for neighbor in adjacency.get(node_id, []):
                             if neighbor not in seen:
+                                if len(seen) >= _IMPACT_VISIT_LIMIT_PER_SEED:
+                                    break
                                 seen.add(neighbor)
                                 queue.append((neighbor, distance + 1))
                 neighbors.sort(key=lambda item: (0 if "File" in nodes[item[0]].labels else 1,
