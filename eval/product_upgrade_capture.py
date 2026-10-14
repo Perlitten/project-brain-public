@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 
 import httpx
@@ -29,16 +30,41 @@ def input_hash() -> str:
     return digest.hexdigest()
 
 
+def validate_response(data: dict, kind: str, task_id: str) -> None:
+    """HTTP success does not imply successful v2 retrieval execution."""
+    fields = [data.get(key, []) for key in ("missing", "degraded")]
+    if any(not isinstance(values, list) or any(not isinstance(value, str) for value in values) for values in fields):
+        raise ValueError(f"{kind} response has invalid failure metadata for {task_id}")
+    # Only documented evidence/size abstention is admissible. Operational
+    # failures, stale-source blocking and unknown statuses are not evaluations.
+    abstention = {"no_retrieval_candidates", "no_code_slices", "no_relevant_candidates",
+                  "code_slices_excluded_by_budget", "insufficient_evidence"}
+    fatal = any(value not in abstention for values in fields for value in values)
+    modern_task = kind != "search" and ("repo" in data or "budget" in data)
+    allowed_statuses = {"ok", "partial"} if modern_task else {None, "ok", "partial"}
+    if "error" in data or data.get("status") not in allowed_statuses or fatal:
+        raise ValueError(f"{kind} response failed for {task_id}")
+
+
 async def capture(args: argparse.Namespace) -> dict:
     if args.phase not in {"before", "after"}:
         raise ValueError("capture phase must be before or after")
     headers = {"X-API-Key": os.environ["BRAIN_API_KEY"]}
     goldens, tasks = [], []
+    contracts: dict[str, set[str]] = {kind: set() for kind in ("search", "context", "impact")}
     async with httpx.AsyncClient(base_url=args.api_url.rstrip("/"), headers=headers, timeout=90) as client:
         for item in json.loads((ROOT / "eval/golden_set.json").read_text(encoding="utf-8")):
+            started = time.perf_counter()
             response = await client.post("/search", json={"query": item["question"], "repo_path": args.repo, "limit": 10})
             response.raise_for_status()
-            row = _evaluate_question(item, response.json(), 10)
+            data = response.json()
+            validate_response(data, "search", item["id"])
+            contract = "locator-v2" if "results" in data or ("repo" in data and "budget" in data) else "legacy-files-chunks"
+            contracts["search"].add(contract)
+            scored_data = {"results": data.get("results", [])} if contract == "locator-v2" else data
+            row = _evaluate_question(item, scored_data, 10)
+            row.update(contract=contract, seconds=time.perf_counter() - started,
+                       effective_max_bytes=data.get("budget", {}).get("limit"))
             row.pop("response")  # Keep paths/ranks, not source slices or local runtime metadata.
             goldens.append(row)
         for path in sorted((ROOT / "eval/harness_benchmark/tasks").glob("*.json")):
@@ -47,26 +73,36 @@ async def capture(args: argparse.Namespace) -> dict:
             if kind not in {"context", "impact"}:
                 continue
             payload = {"repo_path": args.repo}
-            payload.update({"task_description": task["task_description"], "persist": False} if kind == "context"
+            payload.update({"task_description": task["task_description"], "persist": False, "max_tokens": 3500} if kind == "context"
                            else {"change_request": task["change_request"], "fast": True})
+            started = time.perf_counter()
             response = await client.post("/" + kind, json=payload)
             response.raise_for_status()
             data = response.json()
+            validate_response(data, kind, task["id"])
             if kind == "context":
-                paths = [row["path"] for row in data.get("candidates", []) if row.get("path")]
+                contract = "runtime-v2" if "repo" in data else "legacy-context-pack"
+                paths = [row["path"] for row in data.get("candidates", data.get("retrieved_files", [])) if row.get("path")]
             else:
+                contract = "bounded-impact" if "budget" in data else "legacy-impact"
                 paths = [row["name"] for row in data.get("affected", []) if isinstance(row, dict) and row.get("name")]
                 paths += data.get("directly_affected", []) + data.get("indirectly_affected", [])
                 paths = [p for p in paths if isinstance(p, str) and "/" in p and p.endswith((".py", ".ts", ".js", ".tsx"))]
             expected = task.get("must_have_files", [])
+            contracts[kind].add(contract)
             rank = next((i for i, p in enumerate(paths, 1) if p in expected), 0)
             adversarial = {"context-007": len(paths) <= 3, "impact-003": len(paths) < 20, "impact-004": len(paths) <= 75}
             tasks.append({"id": task["id"], "type": kind, "input": task, "paths": paths, "expected": expected,
                           "hit1": rank == 1, "hit3": 1 <= rank <= 3, "mrr": 1 / rank if rank else 0,
                           "recall": sum(p in paths for p in expected) / len(expected) if expected else None,
-                          "adversarial_pass": adversarial.get(task["id"])})
+                          "adversarial_pass": adversarial.get(task["id"]), "contract": contract,
+                          "slice_paths": [row["path"] for row in data.get("slices", []) if row.get("path")],
+                          "effective_max_bytes": data.get("budget", {}).get("limit"),
+                          "seconds": time.perf_counter() - started})
     return {"phase": args.phase, "provider": args.provider, "corpus_source": args.corpus_source,
             "input_hash": input_hash(), "golden_metrics": _metrics(goldens), "goldens": goldens, "tasks": tasks,
+            "requested_budgets": {"search_limit": 10, "context_max_tokens": 3500, "impact_fast": True},
+            "retrieval_contract": {kind: sorted(values) for kind, values in contracts.items()},
             "limits": "Retrieval comparison; not learned semantic/SWE/coding-benefit evidence"}
 
 

@@ -34,6 +34,7 @@ class SQLiteGraph:
                     target INTEGER REFERENCES nodes(id) ON DELETE CASCADE, type TEXT NOT NULL,
                     props TEXT NOT NULL, PRIMARY KEY(source,target,type));
                 CREATE INDEX IF NOT EXISTS edges_target ON edges(target);
+                CREATE INDEX IF NOT EXISTS edges_incoming_order ON edges(target,source,type);
             """)
 
     @contextmanager
@@ -105,10 +106,18 @@ class SQLiteGraph:
                             neighbors.append((node_id, distance))
                         if distance >= 2 or edges_left <= 0 or len(seen) >= 64:
                             continue
-                        outgoing = db.execute("SELECT target FROM edges WHERE source=? LIMIT ?",
-                                              (node_id, edges_left)).fetchall()
-                        incoming = db.execute("SELECT source FROM edges WHERE target=? LIMIT ?",
+                        # Reserve half for incoming edges so symbol fan-out
+                        # cannot crowd out caller/module/file relationships.
+                        outgoing = db.execute("SELECT target FROM edges WHERE source=? ORDER BY target,type LIMIT ?",
+                                              (node_id, (edges_left + 1) // 2)).fetchall()
+                        incoming = db.execute("SELECT source FROM edges WHERE target=? ORDER BY source,type LIMIT ?",
                                               (node_id, edges_left - len(outgoing))).fetchall()
+                        unused = edges_left - len(outgoing) - len(incoming)
+                        if unused and len(outgoing) == (edges_left + 1) // 2:
+                            outgoing += db.execute(
+                                "SELECT target FROM edges WHERE source=? ORDER BY target,type LIMIT ? OFFSET ?",
+                                (node_id, unused, len(outgoing)),
+                            ).fetchall()
                         edges_left -= len(outgoing) + len(incoming)
                         adjacent = list(dict.fromkeys(row[0] for row in outgoing + incoming if row[0] not in seen))
                         if not adjacent:
@@ -126,7 +135,7 @@ class SQLiteGraph:
                             nodes[neighbor_id] = neighbor
                             queue.append((neighbor_id, distance + 1))
                     neighbors.sort(key=lambda item: (0 if "File" in nodes[item[0]].labels else 1,
-                                                      item[1], str(nodes[item[0]].get("name", ""))))
+                                                      item[1], str(nodes[item[0]].get("name", "")), item[0]))
                     for node_id, distance in neighbors[:8] or [(seed_id, 0)]:
                         if len(output) >= min(limit, 480):
                             return output

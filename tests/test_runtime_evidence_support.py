@@ -118,3 +118,10 @@ def test_language_evidence_does_not_establish_an_unknown_platform():
 def test_language_extensions_in_test_fixtures_are_not_feature_evidence():
     candidates = [Candidate("tests/config.py", ("load_configuration",))]
     assert should_abstain_for_unsupported_query("How does Python load configuration?", candidates)
+
+
+@pytest.mark.parametrize("path", ["app/tests.py", "test.py", "conftest.py"])
+def test_standalone_test_modules_do_not_establish_production_feature_evidence(path):
+    candidates = [Candidate(path, ("ZebraCloud", "deploy_application"))]
+    slices = [{"path": path, "content": "def deploy_application(): return ZebraCloud()"}]
+    assert should_abstain_for_unsupported_query("How does ZebraCloud deploy the application?", candidates, slices)

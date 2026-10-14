@@ -108,6 +108,8 @@ class RetrievalService:
                 degraded.append("deadline_exceeded")
 
         def result(candidates: list[RetrievalCandidate]) -> RetrievalResult:
+            if time.perf_counter() >= deadline:
+                mark_deadline()
             return RetrievalResult(query=query, intent=intent, repository=repository,
                                    candidates=candidates[:candidate_budget], degraded=degraded,
                                    timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)})
@@ -202,6 +204,9 @@ class RetrievalService:
                         else:
                             mark_deadline()
                             degraded.append("offline_lexical_unavailable")
+                    else:
+                        mark_deadline()
+                        degraded.append("offline_lexical_unavailable")
                 candidates = merge_linear(vector_candidates, symbols, query, candidate_budget)
             else:
                 query_identifiers = self._query_identifiers(query)

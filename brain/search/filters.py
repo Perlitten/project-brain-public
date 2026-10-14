@@ -351,7 +351,8 @@ def is_test_path(path: str) -> bool:
     name = parts[-1] if parts else normalized
     stem = name.rsplit(".", 1)[0]
     original_stem = path.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
-    return (any(part in {"test", "tests", "spec", "specs", "__tests__", "__specs__"} for part in parts[:-1])
+    return (stem in {"test", "tests", "conftest"}
+            or any(part in {"test", "tests", "spec", "specs", "__tests__", "__specs__"} for part in parts[:-1])
             or stem.startswith(("test_", "spec_")) or stem.endswith(("_test", "_tests", "_spec", "_specs", ".test", ".spec"))
             or bool(re.fullmatch(r"Test[A-Z].*|[A-Za-z0-9_]+(?:Test|Tests|Spec|Specs)", original_stem)))
 

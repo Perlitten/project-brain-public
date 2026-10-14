@@ -124,6 +124,7 @@ def _evaluate_question(question: dict, response: dict, limit: int) -> dict:
         # Unified results are the canonical ranking.  Do not double-count a
         # compatibility channel if a server includes both representations.
         file_paths = result_paths
+        chunk_paths = []
 
     def _matches(candidate: str) -> bool:
         return any(
