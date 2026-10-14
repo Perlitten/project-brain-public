@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -79,7 +80,9 @@ def test_hash_and_generate_are_deterministic_and_prefixed():
     raw = generate_credential()
     assert raw.startswith(f"{CREDENTIAL_PREFIX}_")
     assert len(hash_credential(raw)) == 64
-    assert hash_credential(raw) == hash_credential(raw)
+    # Independent oracle; a constant 64-character hash must not pass.
+    assert hash_credential(raw) == hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    assert hash_credential(raw) != hash_credential(raw + "different")
 
 
 def test_admin_scope_star_satisfies_any_scope():
@@ -122,7 +125,7 @@ async def test_mint_reuses_existing_principal():
 
 
 @pytest.mark.asyncio
-async def test_resolve_rejects_revoked_expired_disabled_and_unknown():
+async def test_resolve_rejects_revoked_expired_and_disabled():
     session = _FakeSession()
     raw, cred = await mint_credential(session, name="svc-1", scopes=["jobs:read"])
     await session.flush()
@@ -168,9 +171,6 @@ async def test_resolve_rejects_revoked_expired_disabled_and_unknown():
     session.execute = fake_execute_disabled
     assert await resolve_credential(session, raw) is None
 
-    # unknown key
-    async def fake_execute_none(stmt):
-        return _FakeResult(row=None)
-
-    session.execute = fake_execute_none
-    assert await resolve_credential(session, "pbk_unknown") is None
+    # Unknown-key selection is covered by persisted, multi-key ASGI tests in
+    # test_auth_boundary_contracts; replacing execute with a constant None here
+    # would not exercise the lookup predicate at all.

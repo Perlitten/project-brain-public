@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -28,6 +29,17 @@ def _consume_task_exception(task: asyncio.Task) -> None:
         task.exception()
 
 
+def _finite_score(value: Any, fallback: float) -> float | None:
+    """Missing scores use rank; malformed/nonfinite scores cannot enter ranking."""
+    if value is None:
+        return fallback
+    try:
+        score = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return score if math.isfinite(score) else None
+
+
 @dataclass
 class RetrievalCandidate:
     path: str
@@ -37,7 +49,7 @@ class RetrievalCandidate:
     score: float = 0.0
 
     def add_range(self, start: Any, end: Any) -> None:
-        if isinstance(start, int) and isinstance(end, int) and start > 0 and end >= start:
+        if type(start) is int and type(end) is int and start > 0 and end >= start:
             item = (start, end)
             if item not in self.ranges:
                 self.ranges.append(item)
@@ -85,6 +97,8 @@ class RetrievalService:
     ) -> RetrievalResult:
         if candidate_budget < 1:
             raise ValueError("candidate_budget must be positive")
+        if not math.isfinite(deadline_s):
+            raise ValueError("deadline_s must be finite")
         started = time.perf_counter()
         deadline = started + max(0.0, deadline_s)
         recall_budget = max(candidate_budget, 10)
@@ -182,7 +196,7 @@ class RetrievalService:
             vector_status = raw.get("vector_status")
             if vector_status is not None and str(vector_status).strip().casefold() != "ok":
                 degraded.append(f"vector:{vector_status}")
-            vector_candidates = self._normalize(raw, recall_budget, query)
+            vector_candidates = self._normalize(raw, recall_budget, query, degraded)
             if settings.RETRIEVAL_V2_ENABLED:
                 from brain.retrieval.locator_fusion import merge_linear
                 if settings.DEFAULT_EMBEDDING_PROVIDER == "local" and repo_record is not None:
@@ -423,18 +437,29 @@ class RetrievalService:
         return sorted(grouped.values(), key=lambda item: (-item.score, item.path))[:candidate_budget]
 
     @staticmethod
-    def _normalize(raw: dict[str, Any], candidate_budget: int, query: str = "") -> list[RetrievalCandidate]:
+    def _normalize(
+        raw: dict[str, Any], candidate_budget: int, query: str = "", degraded: list[str] | None = None,
+    ) -> list[RetrievalCandidate]:
         grouped: dict[str, RetrievalCandidate] = {}
 
         def candidate_for(path: str) -> RetrievalCandidate:
             return grouped.setdefault(path, RetrievalCandidate(path=path))
 
+        def valid_score(value: Any, fallback: float) -> float | None:
+            score = _finite_score(value, fallback)
+            if score is None and degraded is not None and "invalid_retrieval_scores" not in degraded:
+                degraded.append("invalid_retrieval_scores")
+            return score
+
         for rank, item in enumerate(raw.get("files") or [], 1):
             if not isinstance(item, dict) or not item.get("path"):
                 continue
+            score = valid_score(item.get("lexical_score"), 1.0 / rank)
+            if score is None:
+                continue
             candidate = candidate_for(str(item["path"]))
             candidate.channel_scores["lexical"] = max(candidate.channel_scores.get("lexical", 0.0),
-                                                       float(item.get("lexical_score", 1.0 / rank)))
+                                                       score)
             candidate.score += 1.0 / rank
         for rank, item in enumerate(raw.get("symbols") or [], 1):
             if not isinstance(item, dict) or not item.get("path"):
@@ -448,9 +473,11 @@ class RetrievalService:
         for rank, item in enumerate(raw.get("chunks") or [], 1):
             if not isinstance(item, dict) or not item.get("file_path"):
                 continue
+            score = valid_score(item.get("similarity"), 1.0 / rank)
+            if score is None:
+                continue
             candidate = candidate_for(str(item["file_path"]))
             candidate.add_range(item.get("start_line"), item.get("end_line"))
-            score = float(item["similarity"]) if item.get("similarity") is not None else 1.0 / rank
             candidate.channel_scores["vector"] = max(candidate.channel_scores.get("vector", 0.0), score)
             candidate.score += score
         if settings.RETRIEVAL_V2_ENABLED:

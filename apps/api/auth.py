@@ -46,7 +46,10 @@ def dev_open() -> bool:
 
 async def resolve_api_key(raw_key: str) -> ResolvedPrincipal | None:
     """Resolve a presented key (legacy shared key or ``pbk_`` credential)."""
-    if hmac.compare_digest(raw_key, settings.PROJECT_BRAIN_API_KEY or ""):
+    if not raw_key:
+        return None
+    legacy_key = settings.PROJECT_BRAIN_API_KEY
+    if legacy_key and hmac.compare_digest(raw_key.encode("utf-8"), legacy_key.encode("utf-8")):
         return LEGACY_PRINCIPAL
     async with async_session_factory() as session:
         async with session.begin():
