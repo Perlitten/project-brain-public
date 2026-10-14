@@ -87,6 +87,9 @@ the final campaigns. Before candidates 75/83/90/91 demonstrate legacy-key,
 principal-selection, expiry-boundary and key-lookup gaps; 127 detects unreaped
 late exceptions. Fresh critical-section removals fail forced-interleaving tests.
 These claims apply to the enumerated operators and input contracts only.
+The fresh mutation snapshot precedes two additive test-only checks: schema
+privacy and a fail-fast invalid-lifetime storage trap. Their measured snapshot
+hashes and separately validated delivery hashes are recorded explicitly.
 
 ## Verification and limits
 
@@ -136,6 +139,10 @@ python scripts/mutation_audit.py \
   --extra-test tests/test_retrieval_edge_regressions.py \
   --extra-test tests/test_concurrency_regressions.py
 ```
+
+For bit-exact fresh-campaign replay, restore `tests/test_auth_failure_regressions.py`
+and `tests/test_concurrency_regressions.py` from `5a15b93` in a temporary checkout;
+the current versions add the two checks noted above.
 
 For the comparable pair, export base commit `15d549f` to a temporary directory.
 Run the current mutation runner with `--root` pointing to that export,

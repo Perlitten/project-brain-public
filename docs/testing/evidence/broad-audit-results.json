@@ -494,10 +494,10 @@
       ],
       "test_sha256": {
         "tests/test_property_and_mutation.py": "f9ca1cb2ba66e692ca98469b96f991d32873d85492e6fe3f7a95e3fdf1187778",
-        "tests/test_auth_failure_regressions.py": "482fdbc3b8385df8cab894074eca57690b3769bf11d494e272d6b1c8a1f4c363",
+        "tests/test_auth_failure_regressions.py": "823dd13a873c879dd8188e063c6981f9b8f32ee2ac5d8a552f62c2c42b04b5e8",
         "tests/test_chaos_v06.py": "960dcda05ae540ff6161ee85c11461da7df9c1f2efcbb1293828fa30caec9474",
         "tests/test_adversarial_harness_suite.py": "6a6423c75a46110f39af2a16485e88b4173be81c4dd676e37cb7a14619a556de",
-        "tests/test_concurrency_regressions.py": "ea0d8464d327d8f4a22655449c3448c9253d4681d5acee71fc6520fc335387e2",
+        "tests/test_concurrency_regressions.py": "ba3e85c20680cd6248093205b338b9c2e37c0255afb2ac1d61c060dafb0e3cdc",
         "tests/test_harness_attestation.py": "9778396c64111110f6a2505dab2f63e59343c36a058eaf23ae5112c9d569bf93",
         "tests/test_retrieval_deadlines.py": "70269532ac6063a3d2202225ab8b61708a9fe24454c8c753ef20764225ee9a76",
         "tests/test_api_scope_coverage.py": "b66009cac909502de39e98e2da9e0790d744108840bd3eef80391d8039422cc4",
@@ -716,6 +716,11 @@
         "200": "FAILED tests/test_retrieval_boundary_contracts.py::test_normalization_skips_incomplete_rows_and_ranks_valid_channels[False-files-path]",
         "201": "FAILED tests/test_retrieval_boundary_contracts.py::test_normalization_skips_incomplete_rows_and_ranks_valid_channels[False-symbols-path]",
         "202": "FAILED tests/test_retrieval_boundary_contracts.py::test_normalization_skips_incomplete_rows_and_ranks_valid_channels[False-chunks-file_path]"
+      },
+      "snapshot_note": "Mutation workers copied these two test files from runtime head 5a15b93, before the final additive schema assertion and fail-fast invalid-lifetime storage trap. Other test fingerprints match the delivery files. Exact replay can restore these two files from 5a15b93 in a temporary checkout. The later assertions were separately validated.",
+      "delivery_test_sha256": {
+        "tests/test_auth_failure_regressions.py": "482fdbc3b8385df8cab894074eca57690b3769bf11d494e272d6b1c8a1f4c363",
+        "tests/test_concurrency_regressions.py": "ea0d8464d327d8f4a22655449c3448c9253d4681d5acee71fc6520fc335387e2"
       }
     }
   ],
@@ -746,5 +751,11 @@
     "codeql_pr_check": "No new alerts in code changed by this pull request",
     "historical_alert_inventory": "HTTP 403 integration permission limitation"
   },
-  "limits": ["Bounded AST operators and seven targeted modules; not a repository-wide mutation score", "One UTF-8-encodable zero-boundary equivalent; type-invalid string subtraction excluded", "No cross-process nonce or database transaction-isolation certification", "No live model/provider calls, model downloads or paid usage", "Final-head remote status recorded on the evidence follow-up PR"]
+  "limits": [
+    "Bounded AST operators and seven targeted modules; not a repository-wide mutation score",
+    "One UTF-8-encodable zero-boundary equivalent; type-invalid string subtraction excluded",
+    "No cross-process nonce or database transaction-isolation certification",
+    "No live model/provider calls, model downloads or paid usage",
+    "Final-head remote status recorded on the evidence follow-up PR"
+  ]
 }
