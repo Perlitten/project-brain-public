@@ -1,6 +1,12 @@
 """Two-Pass Fail-Closed Secret Redaction Engine for Telemetry and Trajectories."""
 
+import json
 import re
+
+_SECRET_FIELD = re.compile(
+    r"(?:[A-Z_]*(?:API_KEY|TOKEN|PASSWORD|SECRET|CREDENTIAL)|(?:proxy-)?authorization|x-api-key)",
+    re.IGNORECASE,
+)
 
 # Pass 1: Deterministic secret patterns & high-entropy key patterns
 SECRET_PATTERNS = [
@@ -30,6 +36,29 @@ PATH_PATTERNS = [
 
 def redact_text_pass1(text: str) -> str:
     """Pass 1: Deterministic secret & credential pattern redaction."""
+    # Redact decoded values independently so a header inside a JSON string
+    # cannot consume its closing quote or unrelated fields on the same line.
+    try:
+        document = json.loads(text)
+    except (ValueError, TypeError):
+        pass
+    else:
+        def redact_value(value):
+            if isinstance(value, dict):
+                return {
+                    key: "[REDACTED_SECRET]" if _SECRET_FIELD.fullmatch(key) else redact_value(item)
+                    for key, item in value.items()
+                }
+            if isinstance(value, list):
+                return [redact_value(item) for item in value]
+            if isinstance(value, str):
+                return _redact_plaintext(value)
+            return value
+        return json.dumps(redact_value(document), ensure_ascii=False)
+    return _redact_plaintext(text)
+
+
+def _redact_plaintext(text: str) -> str:
     redacted = text
     for pat, repl_fn in SECRET_PATTERNS:
         redacted = pat.sub(repl_fn, redacted)

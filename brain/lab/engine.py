@@ -897,7 +897,7 @@ class ValidationRunner:
             result.duration_seconds = round(time.monotonic() - started, 3)
             return result
 
-        if len(argv) >= 3 and argv[1:3] == ["-m", "compileall"]:
+        if argv[0].lower().removesuffix(".exe") in {"python", "python3", "py"} and len(argv) >= 3 and argv[1:3] == ["-m", "compileall"]:
             argv = [argv[0], "-I", *argv[1:]]
 
         popen_kwargs: Dict[str, Any] = {

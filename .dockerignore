@@ -47,5 +47,10 @@
 **/*.key
 **/context_packs
 **/context_packs/**
-**/logs
-**/logs/**
+/logs/
+/logs/**
+
+**/.deploy.env
+**/.deploy.env.*
+**/.netrc
+**/.git-credentials
