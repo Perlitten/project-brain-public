@@ -1,0 +1,39 @@
+{
+  "docker_context_private_markers_excluded": [
+    "apps/web/.env.local",
+    "apps/web/.npmrc",
+    "apps/api/.brain/probe.db",
+    "apps/web/.venv/secret",
+    "apps/web/.vercel/config.json"
+  ],
+  "public_source_retained": true,
+  "public_template_retained": true,
+  "actual_container": {
+    "workspace_id": "",
+    "profile_name": "real-container",
+    "passed": true,
+    "cancelled": false,
+    "rejected_reasons": [],
+    "network_isolation": "enforced:docker",
+    "results": [
+      {
+        "command_idx": 0,
+        "argv": [
+          "python",
+          "-c",
+          "import os,socket,json\nprint(json.dumps({\"outside_visible\":os.path.exists('/workspace/production-hardening/outside-sentinel')}))\nopen('workspace-write','w').write('owned')\ntry: socket.create_connection(('192.0.2.1',80),timeout=.2);print('network_connected')\nexcept OSError: print('network_denied')\n"
+        ],
+        "exit_code": 0,
+        "stdout_snippet": "{\"outside_visible\": false}\nnetwork_denied\n",
+        "stderr_snippet": "",
+        "duration_seconds": 0.771,
+        "timed_out": false,
+        "required": true
+      }
+    ],
+    "duration_seconds": 0.838
+  },
+  "outside_unchanged": true,
+  "network": "denied",
+  "model_or_dependency_downloads": 0
+}

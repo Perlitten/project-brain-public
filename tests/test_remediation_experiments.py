@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -27,6 +28,7 @@ from brain.experiments.models import (
 from brain.experiments.orchestrator import (
     ExperimentComparator,
     ExperimentManager,
+    ExperimentRunner,
     ExperimentStore,
     _count_changed_lines,
 )
@@ -453,6 +455,40 @@ def test_run_records_unverified_network_isolation(manager, repo):
     )
 
 
+def test_infrastructure_retry_replaces_attempt_uncertainty(tmp_path):
+    lab = Mock()
+    lab.run_session.side_effect = [
+        {"outcome": "failed", "validation": {"infrastructure_error": True, "rejected_reasons": ["image missing"]},
+         "network_isolation": "unverified"},
+        {"outcome": "passed", "validation": {"passed": True}, "network_isolation": "enforced:docker"},
+    ]
+    option = _option("a", executed=False, passed_required=False, unresolved_uncertainty=["external evidence needs review"])
+    experiment = _experiment(option)
+    runner = ExperimentRunner(lab)
+    runner.run(experiment, tmp_path)
+    assert not option.executed
+    assert "image missing" in option.failure_reason
+    assert len(option.unresolved_uncertainty) == 3
+    runner.run(experiment, tmp_path)
+    assert option.executed and option.passed_required
+    assert option.failure_reason == ""
+    assert option.unresolved_uncertainty == ["external evidence needs review"]
+
+
+@pytest.mark.parametrize("optional_exit,expected", [(None, False), (127, False), (0, True)])
+def test_optional_outcome_uses_individual_command_evidence(tmp_path, optional_exit, expected):
+    required = {"required": True, "exit_code": 0}
+    optional = [] if optional_exit is None else [{"required": False, "exit_code": optional_exit}]
+    lab = Mock()
+    lab.run_session.return_value = {"outcome": "passed", "network_isolation": "enforced:docker",
+                                    "validation": {"passed": True, "results": [required, *optional]}}
+    option = _option("a", executed=False)
+    runner = ExperimentRunner(lab)
+    runner.run(_experiment(option), tmp_path)
+    assert option.passed_required
+    assert option.passed_optional is expected
+
+
 # ──────────────────────────────────────────────
 # Phase E8 — human lifecycle
 # ──────────────────────────────────────────────
@@ -860,3 +896,14 @@ def test_no_experiment_endpoint_promotes_a_patch():
     forbidden = {"apply", "commit", "push", "merge", "deploy", "promote"}
     for path in experiment_paths:
         assert not (forbidden & set(path.lower().split("/")))
+
+
+@pytest.fixture(autouse=True)
+def explicit_trusted_fixture_execution(monkeypatch):
+    # Process-supervision/CLI contract fixtures are owned, trusted test code.
+    # Security tests independently prove the normal default rejects host work.
+    from brain.config.settings import settings
+    monkeypatch.setattr(settings, "LAB_SANDBOX_MODE", "off")
+    monkeypatch.setattr(settings, "LAB_ALLOW_UNSAFE_HOST_EXECUTION", True)
+    monkeypatch.setenv("LAB_SANDBOX_MODE", "off")
+    monkeypatch.setenv("LAB_ALLOW_UNSAFE_HOST_EXECUTION", "true")

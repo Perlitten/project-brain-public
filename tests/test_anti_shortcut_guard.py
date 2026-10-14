@@ -35,7 +35,7 @@ def test_production_code_never_imports_eval_harness():
 
 
 @pytest.mark.asyncio
-async def test_goal_run_allocates_real_worktree_and_commit():
+async def test_unimplemented_goal_cannot_invent_worktree_or_commit():
     """Verify GoalRun allocates a real worktree directory and commit SHA."""
     service = GoalRunService()
     await service.submit_goal(
@@ -46,10 +46,10 @@ async def test_goal_run_allocates_real_worktree_and_commit():
     )
     executed = await service.execute_goal_run("anti_shortcut_test_01")
 
-    assert executed.worktree_path is not None
-    assert Path(executed.worktree_path).exists()
-    assert executed.commit_sha is not None
-    assert executed.current_phase.value == "closed"
+    assert executed.worktree_path is None
+    assert executed.commit_sha is None
+    assert executed.deployed is False
+    assert executed.status == "BLOCKED"
 
 
 def test_invalid_oracle_fails_as_expected():

@@ -90,6 +90,10 @@ Besides tools, both servers implement:
 * **Elicitation.** With `BRAIN_MCP_CONFIRM_WRITES=true`, `record_decision` and
   `record_rule` ask the human to approve the write when the client supports
   elicitation. It is opt-in, because an unattended agent would stall on the prompt.
+  An enabled legacy prompt fails closed on errors, invalid responses or a
+  30-second timeout. Modern clients receive an input request before the write
+  retry. Clients without elicitation retain the existing unattended policy;
+  confirmation does not authenticate a human independently of the client.
 * **Sampling.** When the server-side model fails, the remote `ask_project` asks the
   client's own model to answer from the Brain's context pack instead of returning
   an error.

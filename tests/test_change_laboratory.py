@@ -47,6 +47,15 @@ from tests.support import git_fixtures as gf
 # ──────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def trusted_process_supervision(monkeypatch):
+    # These owned fixture processes exercise supervision, not containment.
+    # Missing-backend rejection is tested independently without this opt-in.
+    from brain.config.settings import settings
+    monkeypatch.setattr(settings, "LAB_SANDBOX_MODE", "off")
+    monkeypatch.setattr(settings, "LAB_ALLOW_UNSAFE_HOST_EXECUTION", True)
+
+
 @pytest.fixture
 def repo(tmp_path) -> Path:
     return gf.make_python_repo(tmp_path, "lab-repo")

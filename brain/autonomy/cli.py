@@ -37,12 +37,15 @@ def main() -> int:
     service = GoalRunService()
 
     if args.command == "submit-goal":
-        asyncio.run(service.submit_goal(
+        submission = asyncio.run(service.submit_goal(
             goal_id=args.goal_id,
             description=args.description,
             target_file=args.target_file,
             requires_deploy=args.requires_deploy,
         ))
+        if submission.get("status") == "BLOCKED":
+            print(json.dumps(submission, indent=2))
+            return 1
         executed = asyncio.run(service.execute_goal_run(args.goal_id))
         print(json.dumps({
             "status": "ok",

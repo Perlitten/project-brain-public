@@ -108,11 +108,11 @@ class Settings(BaseSettings):
     HARNESS_STALE_REAPER_ENABLED: bool = True
     HARNESS_STALE_REAPER_BATCH_SIZE: int = 500
 
-    # Change-lab sandbox for validation commands: "auto" (docker if the daemon
-    # + image are present, else unshare namespaces, else off), "docker",
-    # "unshare", or "off". "off" keeps the previous unverified-isolation mode.
+    # Docker is the sole containment backend. Missing/invalid backends fail
+    # closed; unsafe host execution requires both mode=off and explicit opt-in.
+    LAB_ALLOW_UNSAFE_HOST_EXECUTION: bool = False
     LAB_SANDBOX_MODE: str = "auto"
-    LAB_SANDBOX_IMAGE: str = "debian:bookworm-slim"
+    LAB_SANDBOX_IMAGE: str = "python:3.12-slim"
     LAB_SANDBOX_PIDS_LIMIT: int = 256
     LAB_SANDBOX_MEMORY_MB: int = 2048
     LAB_SANDBOX_CPUS: float = 2.0

@@ -21,6 +21,7 @@ imports ``brain/`` - ``remote_server`` must stay installable without the core.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from typing import Any, Awaitable, Callable
@@ -48,6 +49,7 @@ RULES_URI = "brain://rules"
 DECISIONS_URI = "brain://decisions"
 
 CONFIRM_WRITES_ENV = "BRAIN_MCP_CONFIRM_WRITES"
+CONFIRMATION_TIMEOUT_SECONDS = 30
 SAMPLING_MAX_TOKENS = 1_500
 
 
@@ -158,7 +160,10 @@ async def confirm_memory_write(ctx: Context | None, summary: str) -> dict[str, A
             })
         if not isinstance(response, ElicitResult):
             return {"status": "cancelled", "reason": "Invalid memory write confirmation.", "note": ""}
-        data = WriteConfirmation.model_validate(response.content) if response.action == "accept" else None
+        try:
+            data = WriteConfirmation.model_validate(response.content) if response.action == "accept" else None
+        except (ValueError, TypeError):
+            return {"status": "cancelled", "reason": "Invalid memory write confirmation.", "note": ""}
         if data is not None and data.approve:
             return None
         return {
@@ -167,9 +172,14 @@ async def confirm_memory_write(ctx: Context | None, summary: str) -> dict[str, A
             "note": data.note if data is not None else "",
         }
     try:
-        result = await ctx.elicit(message=summary, schema=WriteConfirmation)
-    except Exception:  # noqa: BLE001 - a broken prompt must not lose the write
-        return None
+        result = await asyncio.wait_for(
+            ctx.elicit(message=summary, schema=WriteConfirmation),
+            timeout=CONFIRMATION_TIMEOUT_SECONDS,
+        )
+        if result.action == "accept" and not isinstance(result.data, WriteConfirmation):
+            return {"status": "cancelled", "reason": "Invalid memory write confirmation.", "note": ""}
+    except Exception:  # noqa: BLE001 - opted-in confirmation must fail closed
+        return {"status": "cancelled", "reason": "Memory write confirmation failed.", "note": ""}
     if result.action == "accept" and result.data.approve:
         return None
     note = result.data.note if result.action == "accept" else ""

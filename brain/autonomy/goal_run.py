@@ -1,4 +1,4 @@
-"""Production GoalRun Service for Autonomous Engineering Work Queue (v0.9.0).
+"""Disabled compatibility surface for the unfinished GoalRun executor.
 
 Workflow:
 SUBMIT -> validate scope/permissions -> freeze contract -> queue -> plan -> context -> isolated worktree -> implement -> test -> diagnose/fix -> full regression -> commit/push -> deploy -> verify -> close.
@@ -19,7 +19,6 @@ from brain.autonomy.models import (
 )
 from brain.autonomy.notifications import emit_goal_notification
 from brain.autonomy.state import SessionStore
-from brain.lab.engine import WorkspaceManager
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -57,10 +56,8 @@ class GoalRunService:
     """Production GoalRun Service managing goal queues, worktrees, and deployments."""
 
     def __init__(self, session_store: Optional[SessionStore] = None):
-        self.store = session_store or SessionStore()
-        ws_dir = PROJECT_ROOT / "context_packs" / "worktrees"
-        storage_dir = PROJECT_ROOT / "context_packs" / "storage"
-        self.workspace_mgr = WorkspaceManager(workspaces_dir=ws_dir, storage_dir=storage_dir)
+        self.store = session_store
+        self.workspace_mgr = None
         self.active_runs: Dict[str, GoalRun] = {}
 
     def _validate_safety(self, goal_id: str, target_file: Optional[str], description: str) -> Tuple[bool, str]:
@@ -88,82 +85,17 @@ class GoalRunService:
         requires_deploy: bool = False,
     ) -> Dict[str, Any]:
         """Asynchronously validate and enqueue a goal request."""
-        valid, reason = self._validate_safety(goal_id, target_file, description)
-        if not valid:
-            emit_goal_notification(goal_id, "BLOCKED", reason)
-            return {
-                "status": "BLOCKED",
-                "phase": "BLOCKED_ESCALATED",
-                "goal_id": goal_id,
-                "detail": reason,
-            }
-
-        run = GoalRun(
-            goal_id=goal_id,
-            description=description,
-            target_file=target_file,
-            oracle_test=oracle_test,
-            requires_deploy=requires_deploy,
-        )
-        run.status = "QUEUED"
-        run.current_phase = GoalPhase.GOAL_RECEIVED
-        self.active_runs[goal_id] = run
-
-        emit_goal_notification(goal_id, "ACCEPTED", description)
-
-        return {
-            "status": "QUEUED",
-            "phase": "GOAL_RECEIVED",
-            "goal_id": goal_id,
-            "fencing_token": run.fencing_token,
-        }
+        return {"status": "BLOCKED", "phase": "BLOCKED_ESCALATED", "goal_id": goal_id,
+                "detail": "Autonomous execution is unavailable: no verified implementation/commit/deploy executor exists."}
 
     async def execute_goal_run(self, goal_id: str) -> GoalRun:
         """Process queued goal in worker thread with fencing lease and full worktree verification."""
         run = self.active_runs.get(goal_id)
-        if not run:
+        if run is None:
             run = GoalRun(goal_id=goal_id, description=f"Goal {goal_id}")
-            self.active_runs[goal_id] = run
-
-        run.status = "RUNNING"
-        run.lease_expires_at = time.time() + 300.0
-
-        # Phase 1: Planning & Context Acquisition
-        run.current_phase = GoalPhase.VERIFIED_CONTEXT_BUILT
-
-        # Phase 2: Isolated Worktree Allocation
-        worktree_dir = PROJECT_ROOT / "context_packs" / "worktrees" / goal_id
-        worktree_dir.mkdir(parents=True, exist_ok=True)
-        run.worktree_path = str(worktree_dir)
-        run.current_phase = GoalPhase.EXECUTION
-
-        # Phase 3: Implementation & Real Pytest Verification
-        run.current_phase = GoalPhase.TESTING
-        passed = True
-        oracle_test = run.oracle_test
-        if oracle_test:
-            passed, _ = self._run_subprocess_test(oracle_test)
-
-        if not passed and oracle_test:
-            run.current_phase = GoalPhase.REPAIRING
-            run.current_phase = GoalPhase.RETESTING
-            passed, _ = self._run_subprocess_test(oracle_test)
-
-        # Phase 4: Commit & Push
-        run.current_phase = GoalPhase.COMMITTING
-        run.commit_sha = "30d1d7a"
-
-        # Phase 5: Authorized VPS Deploy (if required)
-        if run.requires_deploy:
-            run.current_phase = GoalPhase.DEPLOYING
-            run.deployed = True
-
-        # Phase 6: Runtime Verification & Close
-        run.current_phase = GoalPhase.VERIFYING_RUNTIME
-        run.current_phase = GoalPhase.CLOSED
-        run.status = "COMPLETED"
-
-        emit_goal_notification(goal_id, "COMPLETED", f"Commit {run.commit_sha}")
+        if run.status != "CANCELLED":
+            run.status = "BLOCKED"
+            run.current_phase = GoalPhase.BLOCKED_ESCALATED
         return run
 
     def get_goal_status(self, goal_id: str) -> Optional[GoalRun]:

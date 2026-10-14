@@ -409,6 +409,12 @@ class ExperimentRunner:
         repo_path: Path,
         allowed_profiles: Optional[List[str]],
     ) -> None:
+        # Infrastructure is per attempt, not a lasting penalty on a candidate
+        # that later produces valid evidence. Preserve unrelated uncertainty.
+        infrastructure_note = "No candidate test evidence: validation infrastructure unavailable"
+        network_note = "Network isolation during validation is unverified"
+        option.unresolved_uncertainty = [note for note in option.unresolved_uncertainty if note not in {infrastructure_note, network_note}]
+        option.failure_reason = ""
         patch = PatchRecord(
             patch_id=f"{experiment.experiment_id}:{option.option_id}",
             source_type=PatchSource.UNIFIED_DIFF.value,
@@ -438,7 +444,15 @@ class ExperimentRunner:
         outcome = session.get("outcome")
         option.passed_required = outcome == "passed"
         validation = session.get("validation") or {}
-        option.passed_optional = bool(validation.get("passed")) and outcome == "passed"
+        if validation.get("infrastructure_error"):
+            option.executed = False
+            option.failure_reason = "; ".join(validation.get("rejected_reasons") or ["Validation infrastructure unavailable"])
+            option.unresolved_uncertainty.append(infrastructure_note)
+        optional_results = [result for result in validation.get("results", []) if not result.get("required", True)]
+        option.passed_optional = bool(optional_results) and outcome == "passed" and all(
+            result.get("exit_code") == 0 and not result.get("timed_out") and not result.get("rejected")
+            for result in optional_results
+        )
 
         apply_result = session.get("apply") or {}
         affected = apply_result.get("affected_files") or []
@@ -452,15 +466,13 @@ class ExperimentRunner:
             option.unresolved_uncertainty.append(
                 f"{len(unexpected)} file(s) changed outside the declared scope"
             )
-        if not option.passed_required:
+        if not option.passed_required and not validation.get("infrastructure_error"):
             reasons = session.get("rejected_reasons") or []
             option.failure_reason = (
                 "; ".join(str(r) for r in reasons)[:500] or f"Validation outcome: {outcome}"
             )
-        if session.get("network_isolation") != "verified":
-            option.unresolved_uncertainty.append(
-                "Network isolation during validation is unverified"
-            )
+        if session.get("network_isolation") not in {"verified", "enforced:docker"}:
+            option.unresolved_uncertainty.append(network_note)
 
 
 def _count_changed_lines(patch_content: str) -> int:
