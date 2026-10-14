@@ -396,7 +396,7 @@ async def ask_project(body: AskRequest, request: Request):
                 if (decision.status or "").lower() == "active"
                 # repo_path is NULL for cross-project decisions; scoping them out
                 # would hide exactly the architectural memory worth recalling.
-                and (decision.repo_path is None or normalize_repo_scope(decision.repo_path) == decision_scope)
+                and (normalize_repo_scope(decision.repo_path) is None or normalize_repo_scope(decision.repo_path) == decision_scope)
             ]
             recorded_decisions_str = (
                 "\n".join(

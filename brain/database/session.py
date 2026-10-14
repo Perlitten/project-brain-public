@@ -187,6 +187,8 @@ async def _init_db_unlocked() -> None:
         from brain.database import harness_models  # noqa: F401
         async with async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            from brain.database.migrations import _ensure_decision_title_uniqueness
+            await _ensure_decision_title_uniqueness(conn)
         return
 
     # The `embeddings` table declares a pgvector column, so the `vector` extension

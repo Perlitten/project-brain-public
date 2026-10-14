@@ -128,6 +128,9 @@ class Decision(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Duplicate historical policy is retained under its original ID/content.
+    # This pointer identifies the canonical record without injecting both.
+    superseded_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     repo_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str | None] = mapped_column(String(50), nullable=True)  # e.g., "active", "deprecated", "superseded"

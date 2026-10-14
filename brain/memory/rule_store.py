@@ -1,11 +1,13 @@
 import re
 import os
+import hashlib
+import json
 import yaml
 from typing import List, Optional, Any, Dict
 from sqlalchemy import select
 from brain.database.session import async_session_factory
 from brain.database.models import Rule
-from brain.memory.repo_scope import normalize_repo_scope, repository_scope_clause
+from brain.memory.repo_scope import normalize_repo_scope, repository_scope_clause, scope_equals
 
 def slugify(text: str) -> str:
     """Helper to convert a rule name to a standard slug ID."""
@@ -13,6 +15,23 @@ def slugify(text: str) -> str:
     text = re.sub(r'[^a-z0-9\-]', '-', text)
     text = re.sub(r'-+', '-', text)
     return text.strip('-')
+
+
+def scoped_rule_id(rule_key: str, repo_path: Optional[str]) -> str:
+    scope = normalize_repo_scope(repo_path)
+    identity = json.dumps([scope, rule_key], ensure_ascii=False).encode()
+    return f"{rule_key[:221]}--{hashlib.sha256(identity).hexdigest()[:32]}"
+
+
+async def _find_rule(session, rule_key: str, scope: Optional[str]):
+    scoped_id = scoped_rule_id(rule_key, scope)
+    # Preserve existing bare IDs in their original scope. A matching ID in
+    # another repository is never re-parented or overwritten.
+    result = await session.execute(select(Rule).where(
+        Rule.id.in_([rule_key, scoped_id]), scope_equals(Rule.repo_path, scope),
+    ).order_by(Rule.id))
+    return result.scalar_one_or_none(), scoped_id
+
 
 class RuleStore:
     """Store for managing compliance and development rules."""
@@ -33,9 +52,9 @@ class RuleStore:
         r_id = rule_id or slugify(name)
         normalized_repo_path = normalize_repo_scope(repo_path)
         async with async_session_factory() as session:
-            result = await session.execute(select(Rule).where(Rule.id == r_id))
-            existing = result.scalar_one_or_none()
+            existing, scoped_id = await _find_rule(session, r_id, normalized_repo_path)
             if existing:
+                r_id = existing.id
                 existing.name = name
                 existing.repo_path = normalized_repo_path
                 existing.description = description
@@ -44,6 +63,7 @@ class RuleStore:
                 existing.status = status
                 existing.applies_to = applies_to
             else:
+                r_id = scoped_id
                 new_rule = Rule(
                     id=r_id,
                     name=name,
@@ -114,8 +134,7 @@ class RuleStore:
                 applies_to = rule_data.get("applies_to")
                 repo_path = normalize_repo_scope(rule_data.get("repo_path"))
 
-                result = await session.execute(select(Rule).where(Rule.id == r_id))
-                existing_rule = result.scalar_one_or_none()
+                existing_rule, scoped_id = await _find_rule(session, r_id, repo_path)
 
                 if existing_rule:
                     existing_rule.name = name
@@ -127,7 +146,7 @@ class RuleStore:
                     existing_rule.applies_to = applies_to
                 else:
                     new_rule = Rule(
-                        id=r_id,
+                        id=scoped_id,
                         name=name,
                         repo_path=repo_path,
                         description=description,

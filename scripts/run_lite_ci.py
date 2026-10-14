@@ -5,7 +5,7 @@ import sys
 
 
 def main() -> int:
-    commands = [[sys.executable, "-m", "pytest", "tests/test_lite_mode.py", "tests/test_lite_graph_bounds.py", "-q"]]
+    commands = [[sys.executable, "-m", "pytest", "tests/test_lite_mode.py", "tests/test_lite_graph_bounds.py", "tests/test_lite_queue_recovery.py", "-q"]]
     if "--install" in sys.argv:
         commands = [[sys.executable, "-m", "pip", "install", "--require-hashes", "-r", "requirements-dev.lock", "-r", "requirements-windows.lock"],
                     [sys.executable, "-m", "pip", "install", "--no-deps", "-e", "."]]

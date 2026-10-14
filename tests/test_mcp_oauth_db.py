@@ -92,6 +92,32 @@ async def _register(http, name="Test Client"):
     return response.json()["client_id"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["client_secret_post", "client_secret_basic"])
+async def test_confidential_revocation_still_requires_correct_secret(oauth_app, method):
+    async with _client(oauth_app) as client:
+        response = await client.post("/register", json={
+            "redirect_uris": [REDIRECT], "client_name": "Confidential fixture",
+            "token_endpoint_auth_method": method, "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+        })
+        assert response.status_code == 201, response.text
+        registered = response.json()
+        client_id, secret = registered["client_id"], registered["client_secret"]
+        data = {"token": "unknown-fixture-token", "client_id": client_id}
+        assert (await client.post("/revoke", data=data)).status_code == 401
+        if method == "client_secret_post":
+            assert (await client.post("/revoke", data={**data, "client_secret": "incorrect"})).status_code == 401
+            correct = await client.post("/revoke", data={**data, "client_secret": secret})
+        else:
+            def header(value):
+                return {"Authorization": "Basic " + base64.b64encode(f"{client_id}:{value}".encode()).decode()}
+            assert (await client.post("/revoke", data=data, headers=header("incorrect"))).status_code == 401
+            correct = await client.post("/revoke", data=data, headers=header(secret))
+        assert correct.status_code == 200
+        assert correct.headers["cache-control"] == "no-store"
+
+
 def _pkce():
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
@@ -206,7 +232,7 @@ async def test_full_flow_issues_rotates_and_revokes_tokens(oauth_app):
         assert reused.status_code == 400
         assert await _mcp_status(client, rotated["access_token"]) == 200
 
-        revoked = await client.post("/revoke", data={"token": rotated["refresh_token"], "client_id": client_id, "client_secret": ""})
+        revoked = await client.post("/revoke", data={"token": rotated["refresh_token"], "client_id": client_id})
         assert revoked.status_code == 200, revoked.text
         assert await _mcp_status(client, rotated["access_token"]) == 401
 

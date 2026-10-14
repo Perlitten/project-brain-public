@@ -185,19 +185,31 @@ async def _ensure_files_path_uniqueness(conn: AsyncConnection) -> None:
 
 
 async def _ensure_decision_title_uniqueness(conn: AsyncConnection) -> None:
-    """Enforce one canonical decision title per repository scope."""
+    """Canonical global scopes agree; duplicate history retains IDs/content."""
+    if conn.dialect.name == "sqlite":
+        columns = (await conn.execute(text("PRAGMA table_info(decisions)"))).fetchall()
+        if "superseded_by_id" not in {row[1] for row in columns}:
+            await conn.execute(text("ALTER TABLE decisions ADD COLUMN superseded_by_id INTEGER"))
+    else:
+        await conn.execute(text("ALTER TABLE decisions ADD COLUMN IF NOT EXISTS superseded_by_id INTEGER"))
     await conn.execute(text("DROP INDEX IF EXISTS uq_decisions_normalized_title"))
-    await conn.execute(
-        text(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_decisions_normalized_title
-            ON decisions (
-                lower(btrim(title)),
-                COALESCE(lower(btrim(repo_path)), '')
-            )
-            """
+    scope = """CASE WHEN repo_path IS NULL OR trim(repo_path)='system_global' THEN ''
+             WHEN substr(trim(repo_path),2,1)=':' OR substr(trim(repo_path),1,2)='//'
+             THEN lower(trim(repo_path)) ELSE trim(repo_path) END"""
+    await conn.execute(text(f"""
+        WITH canonical AS (
+            SELECT id, MAX(id) OVER (PARTITION BY lower(trim(title)), {scope}) AS winner
+            FROM decisions WHERE superseded_by_id IS NULL
         )
-    )
+        UPDATE decisions SET status='superseded',
+            superseded_by_id=(SELECT winner FROM canonical WHERE canonical.id=decisions.id)
+        WHERE id IN (SELECT id FROM canonical WHERE id<>winner)
+    """))
+    await conn.execute(text(f"""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_decisions_normalized_title
+        ON decisions (lower(trim(title)), ({scope}))
+        WHERE superseded_by_id IS NULL
+    """))
 
 
 async def _backfill_non_current_knowledge_authority(

@@ -3,7 +3,7 @@ from typing import List, Optional, Any
 from sqlalchemy import func, or_, select
 from brain.database.session import async_session_factory
 from brain.database.models import Decision
-from brain.memory.repo_scope import normalize_repo_scope
+from brain.memory.repo_scope import normalize_repo_scope, scope_equals
 
 
 class DecisionStore:
@@ -53,7 +53,8 @@ class DecisionStore:
                 select(Decision)
                 .where(
                     func.lower(func.trim(Decision.title)) == normalized_title.casefold(),
-                    func.lower(func.trim(Decision.repo_path)) == normalized_repo_path.casefold(),
+                    scope_equals(Decision.repo_path, normalized_repo_path),
+                    Decision.superseded_by_id.is_(None),
                 )
                 .order_by(Decision.id.desc())
                 .limit(1)

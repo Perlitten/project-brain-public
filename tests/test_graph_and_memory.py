@@ -410,7 +410,7 @@ async def test_rule_store_methods(tmp_path):
             description="A test rule",
             type="architecture",
         )
-        assert rule_id == "test-rule"
+        assert rule_id.startswith("test-rule--")
         assert mock_session.add.called
         assert mock_session.add.call_args.args[0].repo_path == "/indexed/example"
         assert mock_session.commit.called

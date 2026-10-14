@@ -71,7 +71,7 @@ class SQLiteJobQueue:
                         return existing[0]
                 depth = db.execute("SELECT count(*) FROM jobs WHERE prefix=? AND status IN ('queued','running')", (self.prefix,)).fetchone()[0]
                 if settings.WORKER_QUEUE_MAX_DEPTH > 0 and depth >= settings.WORKER_QUEUE_MAX_DEPTH:
-                    raise QueueDepthExceeded("Lite maintenance queue depth exceeded")
+                    raise QueueDepthExceeded(depth, settings.WORKER_QUEUE_MAX_DEPTH)
                 job_id = str(uuid.uuid4())
                 payload = {"job_id": job_id, "type": job_type, "job_type": job_type, "params": params or {},
                            "attempt": 0, "max_attempts": max(1, max_attempts), "status": "queued",
@@ -85,15 +85,28 @@ class SQLiteJobQueue:
         def write():
             with self.redis.connection() as db:
                 db.execute("BEGIN IMMEDIATE")
-                db.execute("UPDATE jobs SET status='queued',token=NULL WHERE prefix=? AND status='running' AND expires<=?", (self.prefix,time.time()))
-                row = db.execute("SELECT id,payload FROM jobs WHERE prefix=? AND status='queued' ORDER BY created,id LIMIT 1", (self.prefix,)).fetchone()
-                if not row:
-                    return None
-                payload = json.loads(row[1])
+                expired = db.execute("SELECT id,payload FROM jobs WHERE prefix=? AND status='running' AND expires<=?",
+                                     (self.prefix,time.time())).fetchall()
+                for job_id, serialized in expired:
+                    payload = json.loads(serialized)
+                    status = "failed" if payload["attempt"] >= payload["max_attempts"] else "queued"
+                    payload.update(status=status, result={"error": "lease_expired"})
+                    db.execute("UPDATE jobs SET status=?,payload=?,token=NULL,expires=NULL WHERE id=? AND prefix=?",
+                               (status,json.dumps(payload),job_id,self.prefix))
+                while True:
+                    row = db.execute("SELECT id,payload FROM jobs WHERE prefix=? AND status='queued' ORDER BY created,id LIMIT 1", (self.prefix,)).fetchone()
+                    if not row:
+                        return None
+                    payload = json.loads(row[1])
+                    if payload["attempt"] < payload["max_attempts"]:
+                        break
+                    payload.update(status="failed", result={"error": "attempt_budget_exhausted"})
+                    db.execute("UPDATE jobs SET status='failed',payload=?,token=NULL,expires=NULL WHERE id=? AND prefix=?",
+                               (json.dumps(payload),row[0],self.prefix))
                 payload["attempt"] += 1
                 token = str(uuid.uuid4())
                 db.execute("UPDATE jobs SET status='running',token=?,expires=?,payload=? WHERE id=?",
-                           (token,time.time()+60,json.dumps(payload),row[0]))
+                           (token,time.time()+max(1, settings.WORKER_JOB_LEASE_SECONDS),json.dumps(payload),row[0]))
                 return payload, token
         return await asyncio.to_thread(write)
 
@@ -101,7 +114,23 @@ class SQLiteJobQueue:
         def write():
             with self.redis.connection() as db:
                 return bool(db.execute("UPDATE jobs SET expires=? WHERE id=? AND token=? AND status='running' AND expires>?",
-                                       (time.time()+60,job_id,token,time.time())).rowcount)
+                                       (time.time()+max(1, settings.WORKER_JOB_LEASE_SECONDS),job_id,token,time.time())).rowcount)
+        return await asyncio.to_thread(write)
+
+    async def return_unexecuted_claim(self, job_id, token):
+        """Refund a delivery whose durable fence could not be acquired."""
+        def write():
+            with self.redis.connection() as db:
+                db.execute("BEGIN IMMEDIATE")
+                row = db.execute("SELECT payload FROM jobs WHERE id=? AND prefix=? AND token=? AND status='running'",
+                                 (job_id, self.prefix, token)).fetchone()
+                if not row:
+                    return False
+                payload = json.loads(row[0])
+                payload.update(attempt=max(0, payload["attempt"] - 1), status="queued")
+                db.execute("UPDATE jobs SET status='queued',payload=?,token=NULL,expires=NULL WHERE id=? AND prefix=? AND token=?",
+                           (json.dumps(payload), job_id, self.prefix, token))
+                return True
         return await asyncio.to_thread(write)
 
     async def finish(self, job_id, token, status, result):
@@ -151,6 +180,8 @@ async def serve_worker():
     from brain.workers.tasks import execute_job
 
     queue = SQLiteJobQueue(redis_client, settings.WORKER_REDIS_PREFIX)
+    lease_seconds = max(1, settings.WORKER_JOB_LEASE_SECONDS)
+    renewal_interval = min(10, lease_seconds / 3)
     worker_id = "lite:" + str(uuid.uuid4())
     while True:
         await redis_client.set(queue.heartbeat_key, json.dumps({"available_capacity":1,"worker_id":worker_id}), ex=45)
@@ -160,9 +191,19 @@ async def serve_worker():
             continue
         job, token = claimed
         job_id = job["job_id"]
-        async with async_session_factory() as session, session.begin():
-            acquired = await claim_db_lease(session, job_id=job_id, fencing_token=token, worker_id=worker_id, ttl_seconds=60)
+        try:
+            async with async_session_factory() as session, session.begin():
+                acquired = await claim_db_lease(session, job_id=job_id, fencing_token=token, worker_id=worker_id, ttl_seconds=lease_seconds)
+        except asyncio.CancelledError:
+            await queue.return_unexecuted_claim(job_id, token)
+            raise
+        except Exception:
+            await queue.return_unexecuted_claim(job_id, token)
+            await asyncio.sleep(min(.5, renewal_interval))
+            continue
         if not acquired:
+            await queue.return_unexecuted_claim(job_id, token)
+            await asyncio.sleep(min(.5, renewal_interval))
             continue
         ownership_lost = False
         execution = None
@@ -170,12 +211,12 @@ async def serve_worker():
         async def renew():
             nonlocal ownership_lost
             while True:
-                await asyncio.sleep(10)
+                await asyncio.sleep(renewal_interval)
                 try:
                     good = await queue.renew(job_id, token)
                     async with async_session_factory() as session, session.begin():
                         good = good and await renew_db_lease(
-                            session, job_id=job_id, fencing_token=token, ttl_seconds=60
+                            session, job_id=job_id, fencing_token=token, ttl_seconds=lease_seconds
                         )
                 except Exception:
                     good = False
