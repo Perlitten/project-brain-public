@@ -5,6 +5,7 @@ import asyncio
 import json
 import sqlite3
 import time
+import threading
 from collections import deque
 from pathlib import Path
 from contextlib import contextmanager
@@ -56,41 +57,89 @@ class SQLiteGraph:
         return nodes, edges
 
     async def bounded_impact(self, repository_id: int, keywords: list[str], limit=480):
-        def walk():
-            nodes, edges = self._snapshot(repository_id)
-            adjacency: dict[int, list[int]] = {}
-            for source, target, _, _ in edges:
-                adjacency.setdefault(source, []).append(target)
-                adjacency.setdefault(target, []).append(source)
-            output = []
-            seeds = []
-            for kw in keywords[:12]:
-                matching = [node_id for node_id, node in nodes.items() if kw in str(node.get("name", "")).lower()
-                            or kw in str(node.get("path", "")).lower()]
-                matching.sort(key=lambda node_id: (0 if str(nodes[node_id].get("name", "")).lower() == kw
-                              else 1 if "File" in nodes[node_id].labels else 2, str(nodes[node_id].get("name", ""))))
-                seeds.extend((kw,node_id) for node_id in matching[:5])
-            for kw, seed in seeds:
-                queue = deque([(seed, 0)])
-                seen = {seed}
-                neighbors = []
-                while queue:
-                    node_id, distance = queue.popleft()
-                    if distance:
-                        neighbors.append((node_id,distance))
-                    if distance < 2:
-                        for neighbor in adjacency.get(node_id, []):
-                            if neighbor not in seen:
-                                seen.add(neighbor)
-                                queue.append((neighbor, distance + 1))
-                neighbors.sort(key=lambda item: (0 if "File" in nodes[item[0]].labels else 1,
-                                                item[1],str(nodes[item[0]].get("name", ""))))
-                for node_id,distance in neighbors[:8] or [(seed,0)]:
-                    if len(output) >= limit:
-                        return output
-                    output.append({"kw":kw,"n":nodes[seed],"m":nodes[node_id] if distance else None,"distance":distance})
+        from brain.config.settings import settings
+        stop = threading.Event()
+        deadline = time.monotonic() + max(0.0, settings.AGENT_IMPACT_DEADLINE_S * 0.8)
+        try:
+            return await asyncio.to_thread(self._bounded_impact, repository_id, keywords, limit, stop, deadline)
+        finally:
+            # Cancelling to_thread alone leaves its worker running. SQL progress
+            # and traversal loops both observe this cooperative stop signal.
+            stop.set()
+
+    def _bounded_impact(self, repository_id, keywords, limit, stop, deadline):
+        # Fetch adjacency on demand: do not copy the repository's full graph.
+        # Each of at most 60 seeds visits <=64 nodes and reads <=128 edges.
+        output = []
+        if limit <= 0 or stop.is_set():
             return output
-        return await asyncio.to_thread(walk)
+        db = sqlite3.connect(self.path, timeout=0.05)
+        db.set_progress_handler(lambda: int(stop.is_set() or time.monotonic() >= deadline), 100)
+        try:
+            db.execute("PRAGMA query_only=ON")
+            for kw in keywords[:12]:
+                if stop.is_set():
+                    return output
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Lite impact deadline exceeded")
+                seeds = db.execute("""SELECT id,label,props FROM nodes WHERE repo=? AND
+                    (instr(lower(COALESCE(json_extract(props,'$.name'),'')),?)>0 OR
+                     instr(lower(COALESCE(json_extract(props,'$.path'),'')),?)>0)
+                    ORDER BY CASE WHEN lower(json_extract(props,'$.name'))=? THEN 0
+                                  WHEN label='File' THEN 1 ELSE 2 END,
+                             json_extract(props,'$.name'),id LIMIT 5""", (repository_id,kw,kw,kw)).fetchall()
+                for seed_id, label, props in seeds:
+                    seed = GraphNode(seed_id, label, json.loads(props))
+                    queue = deque([(seed_id, 0)])
+                    seen = {seed_id}
+                    nodes = {seed_id: seed}
+                    neighbors = []
+                    edges_left = 128
+                    while queue:
+                        if stop.is_set():
+                            return output
+                        if time.monotonic() >= deadline:
+                            raise TimeoutError("Lite impact deadline exceeded")
+                        node_id, distance = queue.popleft()
+                        if distance:
+                            neighbors.append((node_id, distance))
+                        if distance >= 2 or edges_left <= 0 or len(seen) >= 64:
+                            continue
+                        outgoing = db.execute("SELECT target FROM edges WHERE source=? LIMIT ?",
+                                              (node_id, edges_left)).fetchall()
+                        incoming = db.execute("SELECT source FROM edges WHERE target=? LIMIT ?",
+                                              (node_id, edges_left - len(outgoing))).fetchall()
+                        edges_left -= len(outgoing) + len(incoming)
+                        adjacent = list(dict.fromkeys(row[0] for row in outgoing + incoming if row[0] not in seen))
+                        if not adjacent:
+                            continue
+                        placeholders = ",".join("?" for _ in adjacent)
+                        rows = db.execute(f"SELECT id,label,props FROM nodes WHERE repo=? AND id IN ({placeholders})",
+                                          (repository_id, *adjacent)).fetchall()
+                        hydrated = [GraphNode(row[0], row[1], json.loads(row[2])) for row in rows]
+                        hydrated.sort(key=lambda node: (0 if "File" in node.labels else 1, str(node.get("name", "")), int(node.element_id)))
+                        for neighbor in hydrated:
+                            neighbor_id = int(neighbor.element_id)
+                            if len(seen) >= 64:
+                                break
+                            seen.add(neighbor_id)
+                            nodes[neighbor_id] = neighbor
+                            queue.append((neighbor_id, distance + 1))
+                    neighbors.sort(key=lambda item: (0 if "File" in nodes[item[0]].labels else 1,
+                                                      item[1], str(nodes[item[0]].get("name", ""))))
+                    for node_id, distance in neighbors[:8] or [(seed_id, 0)]:
+                        if len(output) >= min(limit, 480):
+                            return output
+                        output.append({"kw":kw,"n":seed,"m":nodes[node_id] if distance else None,"distance":distance})
+            return output
+        except sqlite3.OperationalError as exc:
+            if stop.is_set():
+                return output
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Lite impact deadline exceeded") from exc
+            raise
+        finally:
+            db.close()
 
     async def verify_connectivity(self):
         with self.connection() as db:

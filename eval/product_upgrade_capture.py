@@ -30,6 +30,8 @@ def input_hash() -> str:
 
 
 async def capture(args: argparse.Namespace) -> dict:
+    if args.phase not in {"before", "after"}:
+        raise ValueError("capture phase must be before or after")
     headers = {"X-API-Key": os.environ["BRAIN_API_KEY"]}
     goldens, tasks = [], []
     async with httpx.AsyncClient(base_url=args.api_url.rstrip("/"), headers=headers, timeout=90) as client:
@@ -70,8 +72,9 @@ async def capture(args: argparse.Namespace) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("api-url", "repo", "provider", "corpus-source", "phase"):
+    for name in ("api-url", "repo", "provider", "corpus-source"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--phase", choices=("before", "after"), required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     args.output.write_text(json.dumps(asyncio.run(capture(args)), indent=2) + "\n", encoding="utf-8")

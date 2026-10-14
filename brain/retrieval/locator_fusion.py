@@ -11,11 +11,19 @@ if TYPE_CHECKING:
     from brain.retrieval.service import RetrievalCandidate
 
 
+def query_requests_tests(query: str) -> bool:
+    return bool(re.search(r"\b(?:tests?|testing|pytest|unittest|specs?|fixtures?|regressions?|coverage|test_\w+)\b", query, re.I))
+
+
+def query_requests_templates(query: str) -> bool:
+    return bool(re.search(r"\b(?:templates?|html|styling|dashboard|branding)\b", query, re.I))
+
+
 def surface_weight(path: str, query: str) -> float:
     """Tests/templates remain first-class when the task explicitly asks for them."""
-    if is_test_path(path) and not re.search(r"\b(?:tests?|testing|pytest|unittest|specs?|fixtures?|regressions?|coverage|test_\w+)\b", query, re.I):
+    if is_test_path(path) and not query_requests_tests(query):
         return 0.45
-    if is_template_path(path) and not re.search(r"\b(?:templates?|html|styling|dashboard|branding)\b", query, re.I):
+    if is_template_path(path) and not query_requests_templates(query):
         return 0.4
     if path.startswith("eval/") and not re.search(r"\b(?:benchmarks?|eval|evaluation|metrics|golden)\b", query, re.I):
         return 0.15

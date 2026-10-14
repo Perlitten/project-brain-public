@@ -23,6 +23,11 @@ RetrievalIntent = Literal["locator", "runtime_context", "ask", "impact", "deep"]
 _IDENTIFIER_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b")
 
 
+def _consume_task_exception(task: asyncio.Task) -> None:
+    if not task.cancelled():
+        task.exception()
+
+
 @dataclass
 class RetrievalCandidate:
     path: str
@@ -81,117 +86,142 @@ class RetrievalService:
         if candidate_budget < 1:
             raise ValueError("candidate_budget must be positive")
         started = time.perf_counter()
-        # The response budget is applied after merging channels. Keep the
-        # supported ten-candidate window so small locators retain recall.
+        deadline = started + max(0.0, deadline_s)
         recall_budget = max(candidate_budget, 10)
         repo_value = str(repo_path) if repo_path is not None else None
         repository: dict[str, Any] = {"requested_path": repo_value, "found": False}
-        repo_record = None
-        if repo_value:
-            repo_record = await get_repository_by_path(repo_value)
-            if repo_record is None:
-                return RetrievalResult(
-                    query=query,
-                    intent=intent,
-                    repository=repository,
-                    candidates=[],
-                    degraded=["repository_not_indexed"],
-                    timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)},
-                )
-
-        # Symbol route runs in parallel with vector search; results are merged
-        # below. Early return only if vector search fails entirely.
-        symbol_task = asyncio.create_task(
-            self._known_symbol_route(query, repo_record, recall_budget)
-        )
-
         degraded: list[str] = []
-        try:
-            raw = await asyncio.wait_for(
-                search_code(query, limit=min(recall_budget, 10), repo_path=repo_value),
-                timeout=max(0.05, deadline_s),
-            )
-        except asyncio.TimeoutError:
-            # Fall back to symbol-only results if vector search times out
-            fast_candidates = await symbol_task
-            if fast_candidates:
-                repository_fast: dict[str, Any] = {
-                    "requested_path": repo_value,
-                    "found": repo_record is not None,
-                    "fast_route": "symbol",
-                }
-                if repo_record is not None:
-                    repository_fast.update({
-                        "repository_id": repo_record.id,
-                        "repository_path": repo_record.path,
-                        "indexed_revision": repo_record.last_indexed_commit,
-                        "freshness": await assess_repository_freshness(repo_record),
-                    })
-                return RetrievalResult(
-                    query=query,
-                    intent=intent,
-                    repository=repository_fast,
-                    candidates=fast_candidates[:candidate_budget],
-                    degraded=["deadline_exceeded"],
-                    timings_ms={
-                        "symbol": round((time.perf_counter() - started) * 1000, 2),
-                        "total": round((time.perf_counter() - started) * 1000, 2),
-                    },
-                )
-            return RetrievalResult(
-                query=query,
-                intent=intent,
-                repository=repository,
-                candidates=[],
-                degraded=["deadline_exceeded"],
-                timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)},
-            )
-        except Exception as exc:  # Keep optional retrieval failure typed and fail-open for locators.
-            fast_candidates = await symbol_task
-            if fast_candidates:
-                repository_fast = {
-                    "requested_path": repo_value,
-                    "found": repo_record is not None,
-                    "fast_route": "symbol",
-                }
-                if repo_record is not None:
-                    repository_fast.update({
-                        "repository_id": repo_record.id,
-                        "repository_path": repo_record.path,
-                        "indexed_revision": repo_record.last_indexed_commit,
-                        "freshness": await assess_repository_freshness(repo_record),
-                    })
-                return RetrievalResult(
-                    query=query,
-                    intent=intent,
-                    repository=repository_fast,
-                    candidates=fast_candidates[:candidate_budget],
-                    degraded=[f"search_error:{type(exc).__name__}"],
-                    timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)},
-                )
-            return RetrievalResult(
-                query=query,
-                intent=intent,
-                repository=repository,
-                candidates=[],
-                degraded=[f"search_error:{type(exc).__name__}"],
-                timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)},
-            )
+        owned: set[asyncio.Task] = set()
 
-        # Merge vector search candidates with symbol route candidates.
-        # Symbol matches boost files that contain explicitly named symbols,
-        # but vector search finds files via semantic similarity even when
-        # symbol names don't match query words.
-        symbol_candidates = await symbol_task
-        repository = dict(raw.get("repository_scope") or repository)
-        if symbol_candidates:
-            repository["fast_route"] = "symbol"
-        vector_status = raw.get("vector_status")
-        if vector_status is not None and str(vector_status).strip().casefold() != "ok":
-            degraded.append(f"vector:{vector_status}")
-        vector_candidates = self._normalize(raw, recall_budget, query)
-        # Extract query identifiers for file-name bonus in merge.
-        _STOP = {
+        def spawn(coroutine) -> asyncio.Task:
+            task = asyncio.create_task(coroutine)
+            owned.add(task)
+            return task
+
+        async def wait_for_remaining(tasks: set[asyncio.Task]) -> None:
+            # Unlike wait_for(), wait() does not wait indefinitely for a
+            # provider's cancellation cleanup after the request deadline.
+            await asyncio.wait(tasks, timeout=max(0.0, deadline - time.perf_counter()))
+
+        def mark_deadline() -> None:
+            if "deadline_exceeded" not in degraded:
+                degraded.append("deadline_exceeded")
+
+        def result(candidates: list[RetrievalCandidate]) -> RetrievalResult:
+            return RetrievalResult(query=query, intent=intent, repository=repository,
+                                   candidates=candidates[:candidate_budget], degraded=degraded,
+                                   timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)})
+
+        try:
+            repo_record = None
+            if time.perf_counter() >= deadline:
+                mark_deadline()
+                return result([])
+            if repo_value:
+                lookup = spawn(get_repository_by_path(repo_value))
+                await wait_for_remaining({lookup})
+                if not lookup.done():
+                    mark_deadline()
+                    return result([])
+                repo_record = lookup.result()
+                if repo_record is None:
+                    degraded.append("repository_not_indexed")
+                    return result([])
+            if time.perf_counter() >= deadline:
+                mark_deadline()
+                return result([])
+
+            # Every channel shares the absolute request deadline, including
+            # scope lookup, symbols, fallback freshness and optional BM25.
+            symbol_task = spawn(self._known_symbol_route(query, repo_record, recall_budget))
+            search_task = spawn(search_code(query, limit=min(recall_budget, 10), repo_path=repo_value))
+            await wait_for_remaining({symbol_task, search_task})
+            symbols: list[RetrievalCandidate] = []
+            raw = None
+            if symbol_task.done():
+                try:
+                    symbols = symbol_task.result()
+                except Exception as exc:
+                    degraded.append(f"symbol_error:{type(exc).__name__}")
+            else:
+                mark_deadline()
+            if search_task.done():
+                try:
+                    raw = search_task.result()
+                except TimeoutError:
+                    mark_deadline()
+                except Exception as exc:
+                    degraded.append(f"search_error:{type(exc).__name__}")
+            else:
+                mark_deadline()
+
+            if raw is None:
+                if symbols:
+                    repository.update(found=repo_record is not None, fast_route="symbol")
+                    if repo_record is not None:
+                        repository.update(repository_id=repo_record.id, repository_path=repo_record.path,
+                                          indexed_revision=repo_record.last_indexed_commit,
+                                          freshness={"status": "unknown"})
+                        if time.perf_counter() < deadline:
+                            freshness = spawn(assess_repository_freshness(repo_record))
+                            await wait_for_remaining({freshness})
+                            if freshness.done():
+                                try:
+                                    repository["freshness"] = freshness.result()
+                                except Exception as exc:
+                                    degraded.append(f"freshness_error:{type(exc).__name__}")
+                            else:
+                                mark_deadline()
+                return result(symbols)
+
+            repository = dict(raw.get("repository_scope") or repository)
+            if symbols:
+                repository["fast_route"] = "symbol"
+            vector_status = raw.get("vector_status")
+            if vector_status is not None and str(vector_status).strip().casefold() != "ok":
+                degraded.append(f"vector:{vector_status}")
+            vector_candidates = self._normalize(raw, recall_budget, query)
+            if settings.RETRIEVAL_V2_ENABLED:
+                from brain.retrieval.locator_fusion import merge_linear
+                if settings.DEFAULT_EMBEDDING_PROVIDER == "local" and repo_record is not None:
+                    from brain.search.local_lexical import local_lexical
+                    if time.perf_counter() < deadline:
+                        lexical_task = spawn(local_lexical(repo_record.id, query, recall_budget))
+                        await wait_for_remaining({lexical_task})
+                        if lexical_task.done():
+                            try:
+                                lexical = lexical_task.result()
+                                for item in lexical:
+                                    candidate = RetrievalCandidate(path=item["path"], channel_scores={"bm25": item["score"]})
+                                    candidate.add_range(item["start"], item["end"])
+                                    vector_candidates.append(candidate)
+                            except Exception:
+                                # This companion never discards successful primary
+                                # channels. CancelledError remains caller-visible.
+                                degraded.append("offline_lexical_unavailable")
+                        else:
+                            mark_deadline()
+                            degraded.append("offline_lexical_unavailable")
+                candidates = merge_linear(vector_candidates, symbols, query, candidate_budget)
+            else:
+                query_identifiers = self._query_identifiers(query)
+                candidates = self._merge_candidates(vector_candidates, symbols, candidate_budget, query_identifiers)
+            return result(candidates)
+        finally:
+            cancelled = False
+            for task in owned:
+                if not task.done():
+                    task.cancel()
+                    cancelled = True
+                task.add_done_callback(_consume_task_exception)
+            if cancelled:
+                # Deliver cancellation without making request completion depend
+                # on unbounded provider/DB cleanup. Late exceptions are reaped.
+                await asyncio.sleep(0)
+
+    @staticmethod
+    def _query_identifiers(query: str) -> list[str]:
+        stop = {
             "the", "and", "for", "with", "from", "that", "this", "what", "why",
             "how", "when", "where", "did", "does", "was", "were", "are", "not",
             "but", "all", "any", "can", "has", "have", "had", "will", "would",
@@ -203,34 +233,7 @@ class RetrievalService:
             "handle", "across", "explain", "request", "user", "trace", "flows",
             "flow", "down",
         }
-        query_identifiers = [
-            i for i in _IDENTIFIER_RE.findall(query)
-            if len(i) >= 4 and i.lower() not in _STOP
-        ][:12]
-        if settings.RETRIEVAL_V2_ENABLED:
-            from brain.retrieval.locator_fusion import merge_linear
-            if settings.DEFAULT_EMBEDDING_PROVIDER == "local" and repo_record is not None:
-                from brain.search.local_lexical import local_lexical
-                try:
-                    lexical = await asyncio.wait_for(local_lexical(repo_record.id, query, recall_budget),
-                                                     timeout=max(0.05, deadline_s - (time.perf_counter() - started)))
-                    for item in lexical:
-                        candidate = RetrievalCandidate(path=item["path"], channel_scores={"bm25": item["score"]})
-                        candidate.add_range(item["start"], item["end"])
-                        vector_candidates.append(candidate)
-                except (TimeoutError, ValueError):
-                    degraded.append("offline_lexical_unavailable")
-            candidates = merge_linear(vector_candidates, symbol_candidates, query, candidate_budget)
-        else:
-            candidates = self._merge_candidates(vector_candidates, symbol_candidates, candidate_budget, query_identifiers)
-        return RetrievalResult(
-            query=query,
-            intent=intent,
-            repository=repository,
-            candidates=candidates,
-            degraded=degraded,
-            timings_ms={"total": round((time.perf_counter() - started) * 1000, 2)},
-        )
+        return [i for i in _IDENTIFIER_RE.findall(query) if len(i) >= 4 and i.lower() not in stop][:12]
 
     @staticmethod
     def _merge_candidates(
