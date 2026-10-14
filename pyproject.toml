@@ -94,6 +94,9 @@ packages = ["brain", "apps"]
 # cache, npm dependencies, or local credentials with the Python runtime.
 exclude = ["**/.brain/**", "/apps/web/**", "**/__pycache__/**", "**/*.pyc", "**/.next/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.env", "**/.env.*", "**/.deploy.env"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"docs/legal/THIRD_PARTY_NOTICES.md" = "brain/THIRD_PARTY_NOTICES.md"
+
 [tool.hatch.build.targets.editable]
 dev-mode-dirs = ["."]
 

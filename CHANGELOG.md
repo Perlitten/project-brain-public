@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Reconcile third-party notices with pinned Python and web dependencies,
+  distinguish the TypeScript npm alias, include notices in runtime wheels,
+  and check versions, licenses and packaged notice retention in CI.
+
 - Split the FAQ into "Using Brain" (agents not calling Brain, wrong repository,
   stale index, stuck jobs, mock models, demo data, updating) and "Limits and evidence".
 - Add a dashboard Help screen (`/help`): server version and models, common
