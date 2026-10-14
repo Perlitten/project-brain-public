@@ -224,6 +224,8 @@ export function RunButton({
   title,
   small,
   onDone,
+  disabled = false,
+  disabledReason,
 }: {
   action: () => Promise<ActionResult<unknown>>;
   label: string;
@@ -234,10 +236,13 @@ export function RunButton({
   title?: string;
   small?: boolean;
   onDone?: (res: ActionResult<unknown>) => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   const { run, pending, mode } = useAction(action, { title: title ?? label });
   const [asking, setAsking] = useState(false);
   const go = async () => {
+    if (disabled || pending || mode !== "on") return;
     setAsking(false);
     const res = await run();
     onDone?.(res);
@@ -248,9 +253,9 @@ export function RunButton({
       <button
         type="button"
         className={`btn btn--${variant}${small ? " btn--sm" : ""}`}
-        disabled={pending || locked}
+        disabled={disabled || pending || locked}
         aria-busy={pending}
-        title={locked ? LOCK_REASON[mode] : undefined}
+        title={locked ? LOCK_REASON[mode] : disabled ? disabledReason : undefined}
         onClick={() => (confirm ? setAsking(true) : go())}
       >
         {pending ? <span className="spin" aria-hidden="true" /> : icon ? <Icon name={icon} size={15} /> : null}
@@ -263,7 +268,7 @@ export function RunButton({
             <button type="button" className="btn btn--neutral" onClick={() => setAsking(false)}>
               Cancel
             </button>
-            <button type="button" className={`btn btn--${variant === "danger" ? "danger" : "primary"}`} onClick={go} autoFocus>
+            <button type="button" className={`btn btn--${variant === "danger" ? "danger" : "primary"}`} disabled={disabled || pending || locked} onClick={go} autoFocus>
               {confirm.yes}
             </button>
           </div>

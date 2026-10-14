@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Disable Telegram's test-message control until both a saved bot token and
+  chat ID are configured, with an explanation instead of a doomed request.
+
 - Replace the all-at-once code map with collapsed top-level areas, searchable
   modules, a minimum edge-weight filter and persistent one/two-hop focus.
   Tests are hidden by default; the map fits desktop and narrow mobile screens
