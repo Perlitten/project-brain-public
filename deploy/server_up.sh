@@ -261,6 +261,7 @@ python3 scripts/write_source_manifest.py . \
     --output "$source_manifest_temp" \
     --include pyproject.toml \
     --include README.md \
+    --include docs/legal/THIRD_PARTY_NOTICES.md \
     --include brain \
     --include apps \
     --include rules \

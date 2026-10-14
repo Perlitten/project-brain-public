@@ -127,6 +127,9 @@ jobs:
       - name: Lint with ruff
         run: ruff check .
 
+      - name: Verify legal inventory against pinned dependencies
+        run: python scripts/check_third_party_notices.py
+
       - name: Type check ratchet (mypy, non-increasing baseline)
         run: bash scripts/mypy_gate.sh
 
@@ -156,7 +159,8 @@ jobs:
       - name: Build wheel + clean-install smoke
         run: |
           python -m pip install build
-          python -m build --wheel --outdir dist/
+          python -m build --wheel --sdist --outdir dist/
+          python scripts/check_third_party_notices.py dist/*.whl dist/*.tar.gz
           python -m venv /tmp/whlvenv
           /tmp/whlvenv/bin/pip install --require-hashes -r requirements.lock
           /tmp/whlvenv/bin/pip install --no-deps dist/*.whl

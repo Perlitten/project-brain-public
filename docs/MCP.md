@@ -51,6 +51,13 @@ already hold the requested scopes. See [Deployment](operations/DEPLOYMENT.md) fo
 credential creation, public routing and the single-worker session requirement.
 `BRAIN_MCP_HTTP_ENABLED=false` disables the native endpoint.
 
+Native HTTP and hosted OAuth remain experimental: synthetic SDK/auth tests do
+not establish interoperability with Claude, Cursor, Codex or a hosted connector.
+Use the [native deployment checklist](operations/DEPLOYMENT.md#native-mcp-and-oauth)
+before exposing either. Local stdio initialization records a self-reported
+client label, not an authenticated agent identity; see the
+[measurement contract](DASHBOARD.md#request-collection).
+
 ## Tool reference
 
 Local stdio exposes 13 tools. The HTTP-backed server adds the fourteenth,

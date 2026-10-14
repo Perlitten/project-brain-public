@@ -2,6 +2,9 @@
 !Dockerfile
 !pyproject.toml
 !README.md
+!docs/
+!docs/legal/
+!docs/legal/THIRD_PARTY_NOTICES.md
 !brain/
 !brain/**
 !apps/
@@ -43,6 +46,12 @@
 **/.vercel/**
 **/.git
 **/.git/**
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3
+**/*.sqlite3-*
 **/*.pem
 **/*.key
 **/context_packs
