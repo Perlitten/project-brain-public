@@ -88,6 +88,16 @@ def test_source_digest_tracks_the_copied_lock(monkeypatch, tmp_path):
     assert "requirements.lock" in release_gate.source_inputs()
 
 
+def test_source_digest_tracks_copied_wheel_notices(monkeypatch, tmp_path):
+    monkeypatch.setattr(release_gate, "ROOT", tmp_path)
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("COPY pyproject.toml README.md ./\n")
+    assert "docs/legal/THIRD_PARTY_NOTICES.md" not in release_gate.source_inputs()
+    with dockerfile.open("a") as stream:
+        stream.write("COPY docs/legal/THIRD_PARTY_NOTICES.md ./docs/legal/THIRD_PARTY_NOTICES.md\n")
+    assert "docs/legal/THIRD_PARTY_NOTICES.md" in release_gate.source_inputs()
+
+
 def test_source_only_inventory_cannot_satisfy_backend_sbom():
     with pytest.raises(ValueError):
         check_image_sbom.validate_image_sbom({"packages": [{"name": "next", "versionInfo": "synthetic"}]}, "api")
