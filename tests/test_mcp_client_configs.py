@@ -48,10 +48,9 @@ def test_launch_contract_points_inside_this_install():
 
 def test_brain_mcp_console_script_is_declared_and_callable():
     pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
-    assert pyproject["project"]["scripts"]["brain-mcp"] == "apps.mcp_server.server:main"
-    from apps.mcp_server import server as mcp_server
-
-    assert callable(mcp_server.main)
+    assert pyproject["project"]["scripts"]["brain-mcp"] == "apps.cli.entrypoint:mcp_main"
+    from apps.cli.entrypoint import mcp_main
+    assert callable(mcp_main)
 
 
 async def _handshake(pythonpath: str, cwd: str) -> int:

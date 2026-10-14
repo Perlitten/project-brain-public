@@ -61,6 +61,9 @@ def create_llm_provider(provider_name: str, model: Optional[str] = None) -> LLMP
 
 def create_embedding_provider(provider_name: str) -> EmbeddingProvider:
     name = normalize_provider_name(provider_name)
+    if name == "local":
+        from brain.llm.providers.local_embedding import LocalEmbeddingProvider
+        return LocalEmbeddingProvider()
     if name == "mock":
         from brain.llm.providers.mock_provider import MockEmbeddingProvider
 

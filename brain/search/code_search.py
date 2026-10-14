@@ -334,6 +334,11 @@ async def vector_search_chunks(
             return result
 
         async with async_session_factory() as session:
+            if settings.BRAIN_STORAGE_MODE == "lite":
+                from brain.search.sqlite_vectors import sqlite_vector_search
+                result.matches = await sqlite_vector_search(session, query, query_vector, top_k, repository_id)
+                result.message = "SQLite exact float32 cosine"
+                return result
             try:
                 result.matches = await _pgvector_chunk_search(
                     session,

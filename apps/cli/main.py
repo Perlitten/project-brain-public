@@ -1,4 +1,5 @@
 import typer
+import asyncio
 from brain.version import build_info
 from apps.cli.commands.doctor import doctor_command
 from apps.cli.commands.health import health_command
@@ -57,6 +58,31 @@ cli.command(name="eval")(eval_command)
 cli.add_typer(cache_app, name="cache")
 cli.add_typer(embeddings_app, name="embeddings")
 cli.add_typer(import_app, name="import")
+
+
+@cli.command("init")
+def init_command():
+    """Initialize the local SQLite profile (use `brain init --lite`)."""
+    from brain.config.settings import settings
+    from brain.database.session import init_db
+    if settings.BRAIN_STORAGE_MODE != "lite":
+        raise typer.BadParameter("Use brain init --lite for a local profile")
+    asyncio.run(init_db())
+    typer.echo(f"Lite store initialized at {settings.BRAIN_LITE_DIR}. Next: brain index; brain mcp")
+
+
+@cli.command("serve")
+def serve_command(port: int = typer.Option(8000, "--port")):
+    """Serve the local API on loopback, with a Lite maintenance worker."""
+    import uvicorn
+    uvicorn.run("apps.api.main:app", host="127.0.0.1", port=port)
+
+
+@cli.command("mcp")
+def mcp_command():
+    """Serve MCP over stdio using the selected profile."""
+    from apps.mcp_server.server import main
+    main()
 
 
 if __name__ == "__main__":

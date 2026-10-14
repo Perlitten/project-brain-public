@@ -4,7 +4,7 @@ import math
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 from loguru import logger
 from sqlalchemy import select
 
@@ -200,6 +200,17 @@ class ImpactAnalyzer:
         try:
 
             async def query_graph() -> None:
+                if settings.BRAIN_STORAGE_MODE == "lite":
+                    from brain.graph.sqlite_graph import SQLiteGraph
+                    records = await cast(SQLiteGraph, graph_client.driver).bounded_impact(repository.id, keywords, limit=480)
+                    for record in records:
+                        kw = record["kw"]
+                        for key, distance in (("n", 0), ("m", record["distance"])):
+                            node = record.get(key)
+                            if node and not _is_noise_node(node.get("path") or node.get("name")):
+                                _register_node(visited_nodes, node.element_id, node.get("path") or node.get("name"),
+                                               next(iter(node.labels)), distance, kw, dict(node))
+                    return
                 async with graph_client.driver.session() as session:
                     result = await session.run(cypher, keywords=keywords, repository_id=repository.id, limit=480)
                     async for record in result:

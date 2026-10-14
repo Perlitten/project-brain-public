@@ -89,6 +89,28 @@ installation path.
 
 ## Connect your agent
 
+### Local Lite profile (unreleased main)
+
+In a checkout of `main`, install the Python package and open a terminal in your
+own repository. Lite uses SQLite, local graph adjacency and a durable local
+queue/cache; it starts no Docker containers or database daemons.
+
+```bash
+brain init --lite
+brain index
+brain mcp
+# Optional local API and background maintenance worker:
+brain serve --lite
+```
+
+`brain mcp` uses the saved `.brain` profile over stdio; point your MCP client at
+the absolute `brain` executable with argument `mcp` and your repository as cwd.
+Offline token-feature embeddings support identifier search; they do not provide
+learned semantic retrieval. Chat answers require an explicitly configured model.
+Lite supports bounded search/context/impact up to 50k chunks; advanced Cypher
+administration uses the full stack. See [Lite setup](docs/GETTING_STARTED.md#lite-mode-unreleased-main).
+Initial indexing on `main` uses deterministic summaries without chat completions.
+
 The local stdio server reads Brain's `.env` and connects directly to its
 storage services. Use the absolute path to the Python interpreter in the
 checkout you just installed:

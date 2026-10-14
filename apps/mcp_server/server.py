@@ -557,6 +557,9 @@ async def review_diff(
 
 
 def main() -> None:
+    if settings.BRAIN_STORAGE_MODE == "lite":
+        from brain.database.session import init_db
+        asyncio.run(init_db())
     mcp.run()
 
 
