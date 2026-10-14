@@ -67,13 +67,17 @@ def require_unpublished_release(repository: str, tag: str, token: str) -> None:
 
 
 def source_inputs() -> list[str]:
+    dockerfile = (ROOT / "Dockerfile").read_text()
     copied_files = next(
-        line for line in (ROOT / "Dockerfile").read_text().splitlines()
+        line for line in dockerfile.splitlines()
         if line.startswith("COPY pyproject.toml ")
     )
+    inputs = list(SOURCE_INPUTS)
     if "requirements.lock" in copied_files:
-        return [*SOURCE_INPUTS, "requirements.lock"]
-    return SOURCE_INPUTS
+        inputs.append("requirements.lock")
+    if any(line.startswith("COPY docs/legal/THIRD_PARTY_NOTICES.md ") for line in dockerfile.splitlines()):
+        inputs.append("docs/legal/THIRD_PARTY_NOTICES.md")
+    return inputs
 
 
 def main() -> None:
