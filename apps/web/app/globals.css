@@ -126,7 +126,6 @@ code, .mono { font-family: var(--mono); }
 @keyframes brick-in { from { opacity: 0; transform: scaleY(0.15); } }
 @keyframes pop-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } }
 @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
-@keyframes flow { to { stroke-dashoffset: -0.07; } }
 @keyframes reveal { from { opacity: 0.55; transform: translateY(10px); } }
 
 /* ---------- shell ---------- */
@@ -615,16 +614,28 @@ code, .mono { font-family: var(--mono); }
 .copy.is-done polyline { stroke-dasharray: 1; animation: draw 360ms var(--ease-expo); }
 
 /* ---------- code graph ---------- */
-.graph-wrap { padding: 16px 20px; overflow-x: auto; }
-.graph-scroll-hint { display: none; }
-@media (max-width: 760px) { .graph-scroll-hint { display: block; padding: var(--s-3) var(--s-4) 0; font-size: var(--fs-12); line-height: var(--lh-prose); } }
-.graph { width: 100%; min-width: 640px; height: auto; display: block; }
-/* On its own tab the map takes the whole screen below the head and tabs. */
-.graph-wrap--full { display: grid; place-items: center; min-height: calc(100vh - var(--plate-h) - 300px); }
-.graph-wrap--full .graph { max-height: calc(100vh - var(--plate-h) - 260px); min-height: 420px; }
-.graph__edge { fill: none; stroke: var(--border-strong); stroke-linecap: round; stroke-dasharray: 1; animation: draw 1100ms var(--ease-expo) backwards; animation-delay: calc(var(--i) * 90ms + 400ms); transition: stroke 200ms, opacity 200ms; }
-.graph__edge--bad { stroke: var(--bad-fg); }
-.graph__flow { fill: none; stroke: var(--bad-fg); stroke-linecap: round; stroke-dasharray: 0.035 0.035; animation: flow 1.4s linear infinite; opacity: 0.9; }
+.code-map-wrap { padding: var(--s-4); min-width: 0; }
+.code-map { min-width: 0; width: 100%; }
+.code-map__controls { display: flex; flex-wrap: wrap; gap: var(--s-4); align-items: end; }
+.code-map__controls label { display: grid; gap: var(--s-2); font-size: var(--fs-12); color: var(--text-2); min-width: 0; }
+.code-map__search { flex: 1; }
+.code-map__controls input:not([type="range"]):not([type="checkbox"]), .code-map__controls select { min-width: 0; width: 100%; padding: var(--s-2); border: 1px solid var(--border-default); border-radius: var(--r-sm); background: var(--surface-inset); color: var(--text-1); font: inherit; }
+.code-map__controls input[type="range"], .code-map__controls input[type="checkbox"] { accent-color: var(--teal-fg); }
+.code-map__controls .code-map__check { display: flex; align-items: center; padding-bottom: var(--s-2); }
+.code-map__summary, .code-map__areas { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-4); font-size: var(--fs-12); color: var(--text-2); }
+.code-map__summary span { flex: 1; }
+.code-map__summary button { overflow-wrap: anywhere; white-space: normal; }
+.code-map__areas button[aria-pressed="true"] { color: var(--teal-fg); }
+.code-map__canvas.graph { min-width: 0; width: 100%; height: auto; max-height: none; }
+.code-map__edge { fill: none; stroke: var(--border-strong); opacity: 0.5; }
+.code-map__edge--bad { stroke: var(--bad-fg); opacity: 1; }
+.code-map__node { cursor: pointer; animation: none; }
+.code-map__node.is-dimmed { opacity: 0.3; }
+.code-map__node.is-hot rect, .code-map__node:focus-visible rect { stroke: var(--teal-fg); }
+.code-map__area rect { fill: var(--surface-raise); }
+.code-map__hint { font-size: var(--fs-12); color: var(--text-2); line-height: var(--lh-prose); margin-top: var(--s-3); }
+@media (max-width: 560px) { .code-map__search { flex-basis: 100%; } .code-map__summary { align-items: start; } .code-map__summary span { flex-basis: 100%; } }
+.graph { width: 100%; height: auto; display: block; }
 .graph__node rect { fill: var(--surface-inset); stroke: var(--border-default); transition: stroke 200ms, fill 200ms; }
 .graph__node text { fill: var(--text-1); font: 500 12px var(--mono); }
 .graph__node .graph__sub { fill: var(--text-3); font: 400 11px var(--sans); }
@@ -820,14 +831,6 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 @keyframes pulse-sweep { from { transform: translateX(0); } to { transform: translateX(1560px); } }
 
 /* ---------- code graph life ---------- */
-.graph__spark { fill: var(--teal-fg); opacity: 0.55; transition: opacity 220ms var(--ease); }
-.graph__spark--bad { fill: var(--bad-fg); opacity: 0.95; }
-.graph__sparks { animation: fade-in 800ms var(--ease) 1300ms backwards; }
-.graph--focus .graph__edge { opacity: 0.12; }
-.graph--focus .graph__edge.is-hot { opacity: 1; stroke: var(--teal-fg); }
-.graph--focus .graph__edge--bad.is-hot { stroke: var(--bad-fg); }
-.graph--focus .graph__spark { opacity: 0.06; }
-.graph--focus .graph__spark.is-hot { opacity: 1; }
 .graph--focus .graph__node { opacity: 0.35; transition: opacity 220ms var(--ease); }
 .graph--focus .graph__node.is-hot, .graph--focus .graph__node.is-near { opacity: 1; }
 .graph__node.is-hot rect { stroke: var(--teal-fg); fill: var(--teal-soft); }
@@ -880,7 +883,7 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
   /* A short duration still follows a scroll timeline and leaves off-screen
      panels transparent. Reduced motion means immediate, visible content. */
   .panel { animation: none !important; }
-  .graph__flow, .graph__sparks, .pulse__trace { display: none; }
+  .pulse__trace { display: none; }
 }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

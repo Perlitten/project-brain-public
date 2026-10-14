@@ -30,7 +30,7 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
         lede={
           <>
             Each box is a part of your project; each line means one part uses another. Thicker lines mean more
-            connections. A red, moving line breaks a rule you agreed on — <Term k="coupling">tangled modules</Term>.
+            connections. A red line breaks a rule you agreed on — <Term k="coupling">tangled modules</Term>.
           </>
         }
       />
@@ -55,9 +55,8 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
             ]}
           />
           {tab === "map" ? (
-            <Panel id="map" title="Module map" desc="Read left to right: entry points, then core logic, then storage." flush>
-              <p className="graph-scroll-hint text-dim">Scroll the map sideways on small screens, or open Connections for the full list.</p>
-              <div className="graph-wrap graph-wrap--full" tabIndex={0} role="region" aria-label="Scrollable module map">
+            <Panel id="map" title="Module map" desc="Start with areas, then expand or focus the connections you need." flush>
+              <div className="code-map-wrap">
                 <CodeGraph edges={edges} />
               </div>
               <p className="graph-legend">
