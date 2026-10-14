@@ -40,6 +40,16 @@ def test_stale_blocked_unknown_or_malformed_capture_outcomes_fail_closed(data):
         validate_response(data, "context", "synthetic")
 
 
+@pytest.mark.parametrize("kind,data", [
+    ("context", {"repo": {"path": "synthetic"}, "budget": {"limit": 1000}}),
+    ("impact", {"budget": {"limit": 1000}, "affected": []}),
+])
+def test_modern_task_envelope_requires_explicit_execution_status(kind, data):
+    from eval.product_upgrade_capture import validate_response
+    with pytest.raises(ValueError, match="response failed"):
+        validate_response(data, kind, "synthetic")
+
+
 def test_legitimate_unsupported_context_abstention_remains_valid():
     from eval.product_upgrade_capture import validate_response
     validate_response({"status": "partial", "missing": ["insufficient_evidence"], "candidates": []}, "context", "context-007")

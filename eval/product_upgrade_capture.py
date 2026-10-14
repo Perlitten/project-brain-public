@@ -40,7 +40,9 @@ def validate_response(data: dict, kind: str, task_id: str) -> None:
     abstention = {"no_retrieval_candidates", "no_code_slices", "no_relevant_candidates",
                   "code_slices_excluded_by_budget", "insufficient_evidence"}
     fatal = any(value not in abstention for values in fields for value in values)
-    if "error" in data or data.get("status") not in {None, "ok", "partial"} or fatal:
+    modern_task = kind != "search" and ("repo" in data or "budget" in data)
+    allowed_statuses = {"ok", "partial"} if modern_task else {None, "ok", "partial"}
+    if "error" in data or data.get("status") not in allowed_statuses or fatal:
         raise ValueError(f"{kind} response failed for {task_id}")
 
 
