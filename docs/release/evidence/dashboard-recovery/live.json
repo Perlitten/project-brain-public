@@ -1,0 +1,766 @@
+{
+  "fixture": "owned synthetic HTTP backend; no providers or external browser requests",
+  "before_revision": "4a8f791ae60a3c0dcb0a684a233269fbf48ef8ff",
+  "after": "uncommitted dashboard recovery source",
+  "results": [
+    {
+      "which": "before",
+      "mode": "wave",
+      "content_ready_seconds": 0.886,
+      "healthy_measurement_visible": false,
+      "unavailable_label_visible": false,
+      "overflow": false
+    },
+    {
+      "which": "after",
+      "mode": "wave",
+      "content_ready_seconds": 0.798,
+      "healthy_measurement_visible": true,
+      "unavailable_label_visible": false,
+      "overflow": false
+    },
+    {
+      "which": "before",
+      "mode": "slow",
+      "content_ready_seconds": 10.627,
+      "healthy_measurement_visible": false,
+      "unavailable_label_visible": false,
+      "overflow": false
+    },
+    {
+      "which": "after",
+      "mode": "slow",
+      "content_ready_seconds": 4.561,
+      "healthy_measurement_visible": false,
+      "unavailable_label_visible": true,
+      "overflow": false
+    },
+    {
+      "which": "after",
+      "mode": "empty",
+      "content_ready_seconds": 2.618,
+      "healthy_measurement_visible": false,
+      "unavailable_label_visible": false,
+      "overflow": false
+    },
+    {
+      "which": "after",
+      "mode": "error",
+      "content_ready_seconds": 2.676,
+      "healthy_measurement_visible": false,
+      "unavailable_label_visible": true,
+      "overflow": false
+    },
+    {
+      "which": "after",
+      "mode": "invalid",
+      "content_ready_seconds": 2.611,
+      "healthy_measurement_visible": false,
+      "unavailable_label_visible": true,
+      "overflow": false
+    }
+  ],
+  "api_calls": [
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d&repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d&repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/overview",
+      "query": "repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/modules",
+      "query": "repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/index-runs",
+      "query": "repository_id=1&page_size=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d&repository_id=2"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d&repository_id=2"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/overview",
+      "query": "repository_id=2"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/modules",
+      "query": "repository_id=2"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/index-runs",
+      "query": "repository_id=2&page_size=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d&repository_id=3"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d&repository_id=3"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/overview",
+      "query": "repository_id=3"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/modules",
+      "query": "repository_id=3"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/index-runs",
+      "query": "repository_id=3&page_size=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d&repository_id=4"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d&repository_id=4"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/modules",
+      "query": "repository_id=4"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/index-runs",
+      "query": "repository_id=4&page_size=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d&repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d&repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/overview",
+      "query": "repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/modules",
+      "query": "repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/index-runs",
+      "query": "repository_id=1&page_size=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d&repository_id=2"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d&repository_id=2"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/overview",
+      "query": "repository_id=2"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/modules",
+      "query": "repository_id=2"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/index-runs",
+      "query": "repository_id=2&page_size=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d&repository_id=3"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d&repository_id=3"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/overview",
+      "query": "repository_id=3"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/modules",
+      "query": "repository_id=3"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/index-runs",
+      "query": "repository_id=3&page_size=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d&repository_id=4"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/overview",
+      "query": "repository_id=4"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d&repository_id=4"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/modules",
+      "query": "repository_id=4"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/index-runs",
+      "query": "repository_id=4&page_size=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d&repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d&repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/modules",
+      "query": "repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/overview",
+      "query": "repository_id=1"
+    },
+    {
+      "mode": "wave",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "wave",
+      "endpoint": "api/web/index-runs",
+      "query": "repository_id=1&page_size=1"
+    },
+    {
+      "mode": "slow",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d"
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d"
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d"
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d"
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "slow",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "empty",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "empty",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d"
+    },
+    {
+      "mode": "empty",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d"
+    },
+    {
+      "mode": "empty",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "empty",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "empty",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "empty",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "empty",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "error",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "error",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d"
+    },
+    {
+      "mode": "error",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d"
+    },
+    {
+      "mode": "error",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "error",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "error",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "error",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "error",
+      "endpoint": "api/version",
+      "query": ""
+    },
+    {
+      "mode": "invalid",
+      "endpoint": "repositories",
+      "query": ""
+    },
+    {
+      "mode": "invalid",
+      "endpoint": "api/web/dashboard",
+      "query": "period=7d"
+    },
+    {
+      "mode": "invalid",
+      "endpoint": "api/web/agent-value",
+      "query": "period=7d"
+    },
+    {
+      "mode": "invalid",
+      "endpoint": "api/web/quality",
+      "query": ""
+    },
+    {
+      "mode": "invalid",
+      "endpoint": "health",
+      "query": ""
+    },
+    {
+      "mode": "invalid",
+      "endpoint": "api/setup/providers",
+      "query": ""
+    },
+    {
+      "mode": "invalid",
+      "endpoint": "api/setup/status",
+      "query": ""
+    },
+    {
+      "mode": "invalid",
+      "endpoint": "api/version",
+      "query": ""
+    }
+  ],
+  "after_source_commit": "de44503ff445e1d4ba796a07066685237ca8091a"
+}
