@@ -38,11 +38,15 @@ step() { echo; echo "==> $1"; }
 
 # 1. prerequisites
 step "Checking prerequisites"
-command -v python3 >/dev/null || { echo "python3 not found" >&2; exit 1; }
-PYV=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-echo "  python $PYV"
-python3 -c 'import sys; raise SystemExit(not ((3, 12) <= sys.version_info[:2] < (3, 13)))' || {
+# The dependency locks are reviewed for 3.12. Prefer an explicit python3.12 so
+# a machine whose default python3 is newer still bootstraps (PYTHON overrides).
+PYTHON=${PYTHON:-$(command -v python3.12 || command -v python3 || true)}
+[[ -n "$PYTHON" ]] || { echo "python3 not found" >&2; exit 1; }
+PYV=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+echo "  python $PYV ($PYTHON)"
+"$PYTHON" -c 'import sys; raise SystemExit(not ((3, 12) <= sys.version_info[:2] < (3, 13)))' || {
   echo "Python 3.12 is required by the reviewed dependency locks; found $PYV." >&2
+  echo "Install python3.12 or run with PYTHON=/path/to/python3.12." >&2
   exit 1
 }
 command -v docker >/dev/null || { echo "docker not found — install Docker Engine first" >&2; exit 1; }
@@ -52,7 +56,7 @@ echo "  $(docker compose version --short)"
 # 2. venv + install
 step "Setting up virtualenv"
 if [[ ! -x .venv/bin/python ]]; then
-  python3 -m venv .venv
+  "$PYTHON" -m venv .venv
 fi
 .venv/bin/python -c 'import sys; raise SystemExit(not ((3, 12) <= sys.version_info[:2] < (3, 13)))' || {
   echo "Existing .venv is not Python 3.12; migrate it before retrying (no environment removed)." >&2

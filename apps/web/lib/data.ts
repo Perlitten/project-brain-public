@@ -481,7 +481,7 @@ function evidenceText(e: unknown): string {
 }
 
 async function loadInsights(): Promise<Insight[] | null> {
-  const data = await brainFetch<Json>("/insights?limit=100");
+  const data = await brainFetch<Json>("/insights?limit=100", { fresh: true });
   if (!data) return null;
   return list(data, "insights")
     .filter((i) => !["resolved", "dismissed", "closed", "archived"].includes(str(i.status).toLowerCase()))
@@ -725,6 +725,7 @@ export const getIndexRuns = async (slug?: string | null): Promise<IndexRun[]> =>
         chunks: int(r.chunks),
         startedAt: fmtWhen(r.started_at),
         duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration),
+        uncommitted: int(r.uncommitted_changes) || undefined,
       };
     });
   });
@@ -733,7 +734,7 @@ export const getIndexRuns = async (slug?: string | null): Promise<IndexRun[]> =>
 export const getContextPacks = async (): Promise<ContextPack[]> => {
   if (!apiConfigured) return mock.contextPacks;
   return live<ContextPack[]>([], async () => {
-    const data = await brainFetch<Json>("/api/web/context-packs?limit=200");
+    const data = await brainFetch<Json>("/api/web/context-packs?limit=200", { fresh: true });
     if (!data) return null;
     return list(data, "packs").map((p) => {
       const budget = str(p.budget).toLowerCase();
@@ -762,7 +763,7 @@ function decisionStatus(v: unknown): Decision["status"] {
 export const getDecisions = async (): Promise<Decision[]> => {
   if (!apiConfigured) return mock.decisions;
   return live<Decision[]>([], async () => {
-    const data = await brainFetch<unknown>("/decisions");
+    const data = await brainFetch<unknown>("/decisions", { fresh: true });
     if (!data) return null;
     return list(data, "decisions").map((d) => {
       const modules = arr(d.affected_modules).map((m) => str(m)).filter(Boolean);
@@ -798,7 +799,7 @@ function ruleScope(applies: unknown, type: string): string {
 export const getRules = async (): Promise<Rule[]> => {
   if (!apiConfigured) return mock.rules;
   return live<Rule[]>([], async () => {
-    const data = await brainFetch<unknown>("/rules");
+    const data = await brainFetch<unknown>("/rules", { fresh: true });
     if (!data) return null;
     return list(data, "rules")
       .filter((r) => !["disabled", "inactive", "deprecated"].includes(str(r.status).toLowerCase()))
@@ -854,6 +855,8 @@ export const getMcpTools = async (): Promise<McpTool[]> => {
             ? "bad"
             : errorRate === undefined && num(t.calls_24h) === undefined
               ? "info"
+              : num(t.calls_24h) === 0
+                ? "idle"
               : errorRate !== undefined && errorRate > 0.05
                 ? "bad"
                 : errorRate !== undefined && errorRate > 0.02
@@ -867,7 +870,7 @@ export const getMcpTools = async (): Promise<McpTool[]> => {
 export const getReports = async (): Promise<Report[]> => {
   if (!apiConfigured) return mock.reports;
   return live<Report[]>([], async () => {
-    const data = await brainFetch<Json>("/api/web/reports?limit=200");
+    const data = await brainFetch<Json>("/api/web/reports?limit=200", { fresh: true });
     if (!data) return null;
     return list(data, "reports").map((r) => ({
       id: str(r.id),
@@ -890,7 +893,7 @@ export const getPagedIndexRuns = async (slug: string | null | undefined, input: 
     const data = await brainFetch<Json>(`/api/web/index-runs?repository_id=${repo.id}&${queryString(q)}`, { fresh: true });
     return data ? { ...pageResult(data, "runs", q, (r) => {
       const status = jobStatus(r.status), rev = str(r.revision);
-      return { id: int(r.id), revision: shortRevision(rev), trigger: indexTrigger(r.trigger), status, completeness: completeness(r.completeness, status), files: int(r.files), changed: int(r.changed), chunks: int(r.chunks), startedAt: fmtWhen(r.started_at), duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration) };
+      return { id: int(r.id), revision: shortRevision(rev), trigger: indexTrigger(r.trigger), status, completeness: completeness(r.completeness, status), files: int(r.files), changed: int(r.changed), chunks: int(r.chunks), startedAt: fmtWhen(r.started_at), duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration), uncommitted: int(r.uncommitted_changes) || undefined };
     }), available: true } : null;
   });
 };
@@ -904,7 +907,7 @@ export const getPagedContextPacks = async (input: Partial<ListQuery> = {}, slug?
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
     if (slug && !repo) return null;
-    const data = await brainFetch<Json>(`/api/web/context-packs?${queryString(q)}${repo ? `&repository_id=${repo.id}` : ""}`);
+    const data = await brainFetch<Json>(`/api/web/context-packs?${queryString(q)}${repo ? `&repository_id=${repo.id}` : ""}`, { fresh: true });
     return data ? pageResult(data, "packs", q, (p) => { const budget = str(p.budget).toLowerCase(); return { id: str(p.id), task: str(p.task) || "Untitled task", budget: budget === "small" || budget === "large" ? budget : "medium", tokens: int(p.tokens), files: int(p.files), createdAt: fmtShort(p.created_at), stale: typeof p.stale === "boolean" ? p.stale : null, consumer: str(p.consumer) || "an agent" }; }) : null;
   });
 };
@@ -916,7 +919,7 @@ export const getPagedReports = async (input: Partial<ListQuery> = {}): Promise<P
     return demoPage(rows, q, (r) => `${r.title} ${r.id}`);
   }
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
-    const data = await brainFetch<Json>(`/api/web/reports?${queryString(q)}`);
+    const data = await brainFetch<Json>(`/api/web/reports?${queryString(q)}`, { fresh: true });
     return data ? pageResult(data, "reports", q, (r) => ({ id: str(r.id), title: str(r.title) || str(r.id) || "Untitled report", kind: str(r.kind) || "report", createdAt: fmtWhen(r.created_at), size: fmtBytes(num(r.size_bytes)) })) : null;
   });
 };
@@ -930,7 +933,7 @@ export const getPagedInsights = async (slug: string | null | undefined, input: P
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const params = new URLSearchParams(queryString({ ...q, status: "" }));
     if (q.status) params.set("severity", q.status);
-    const data = await brainFetch<Json>(`/insights?${params}`);
+    const data = await brainFetch<Json>(`/insights?${params}`, { fresh: true });
     return data ? pageResult(data, "insights", q, (i) => {
       const evidence = arr(i.evidence), first = obj(evidence[0]);
       return { id: str(i.id), tone: severityTone(i.severity), kind: insightKind(str(i.insight_type)), title: str(i.title, "Untitled finding"), evidence: evidenceText(evidence[0]) || str(i.summary), module: str(first.module) || str(first.file) || str(first.path) || str(i.source) || "—", detectedAt: fmtShort(i.last_seen_at ?? i.created_at) };
@@ -947,7 +950,7 @@ export const getPagedDecisions = async (slug: string | null | undefined, input: 
   return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
     const scope = repo ? `&repository_id=${repo.id}` : "";
-    const data = await brainFetch<Json>(`/api/web/decisions?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${q.status ? `&status=${q.status}` : ""}${scope}`);
+    const data = await brainFetch<Json>(`/api/web/decisions?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${q.status ? `&status=${q.status}` : ""}${scope}`, { fresh: true });
     return data ? pageResult(data, "decisions", q, (d) => ({ id: `D-${str(d.id)}`, title: str(d.title) || "Untitled decision", status: decisionStatus(d.status), scope: str(d.repo_path).split(/[\\/]/).filter(Boolean).pop() || "whole project", recordedAt: fmtShort(d.date ?? d.created_at), summary: str(d.description) || str(d.reason) || "" })) : null;
   });
 };
@@ -962,7 +965,7 @@ export const getPagedRules = async (slug: string | null | undefined, input: Part
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
     const scope = repo ? `&repository_id=${repo.id}` : "";
     const severity = q.status && ["block", "warn", "advise"].includes(q.status) ? `&severity=${q.status}` : "";
-    const data = await brainFetch<Json>(`/api/web/rules?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${scope}${severity}`);
+    const data = await brainFetch<Json>(`/api/web/rules?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${scope}${severity}`, { fresh: true });
     return data ? pageResult(data, "rules", q, (r) => ({ id: str(r.id), rule: str(r.description) || str(r.name) || str(r.id), severity: ruleSeverity(r.severity), scope: ruleScope(r.applies_to, str(r.type)), delivered30d: num(r.delivered_30d), caught30d: num(r.flagged_30d) })) : null;
   });
 };
@@ -970,7 +973,7 @@ export const getPagedRules = async (slug: string | null | undefined, input: Part
 export const getPrincipals = async (): Promise<Principal[]> => {
   if (!apiConfigured) return mock.principals;
   return live<Principal[]>([], async () => {
-    const data = await brainFetch<Json>("/admin/principals");
+    const data = await brainFetch<Json>("/admin/principals", { fresh: true });
     if (!data) return null;
     const now = Date.now();
     return list(data, "principals")
@@ -1145,8 +1148,12 @@ export const getReranker = async (slug?: string | null): Promise<RerankerStatus>
     const approvedRevision = str(approval.approved_index_revision);
     const approvedDocs = int(approval.approved_document_count);
 
+    // Never set up: nothing switched on and nothing encoded. That is a normal,
+    // fully working install (search uses the first pass), not a fault.
+    const notSetUp = traffic.enabled !== true && traffic.remote_enabled !== true && !current && !docs;
+
     const offReasons: string[] = [];
-    if (!on) {
+    if (!on && !notSetUp) {
       if (traffic.enabled !== true) offReasons.push("Switched off in the server settings (LATE_INTERACTION_ENABLED).");
       else if (traffic.rerank !== true) offReasons.push("Re-ranking itself is switched off (LATE_INTERACTION_RERANK_ENABLED).");
       if (int(traffic.canary_percent) <= 0) offReasons.push("0% of searches are routed to it (LATE_INTERACTION_CANARY_PERCENT).");
@@ -1156,12 +1163,12 @@ export const getReranker = async (slug?: string | null): Promise<RerankerStatus>
         );
       if (approval.production_gates_passed === false) offReasons.push("Its quality checks for live traffic haven’t passed yet.");
     }
-    if (!serviceUp && pStatus) offReasons.push(`The model service reports “${pStatus}”${str(provider.reason) ? `: ${str(provider.reason)}` : ""}.`);
+    if (!serviceUp && pStatus && !notSetUp) offReasons.push(`The model service reports “${pStatus}”${str(provider.reason) ? `: ${str(provider.reason)}` : ""}.`);
 
     return {
       model: str(inv.model) || str(provider.model_revision).slice(0, 12) || "—",
       state,
-      stateText,
+      stateText: notSetUp ? "Not set up" : stateText,
       coverage: {
         label: "Ready for precise ranking",
         value: total ? `${pct.toFixed(1)}%` : docs ? fmtN(docs) : "—",
@@ -1179,7 +1186,8 @@ export const getReranker = async (slug?: string | null): Promise<RerankerStatus>
       ndcgLift: "—",
       queries24h: int(metrics.rerank_requests),
       queriesWindow: "since the API last restarted",
-      service: pStatus ? (serviceUp ? { tone: "ok", text: "Model service ready" } : { tone: "bad", text: `Model service ${pStatus}` }) : undefined,
+      service: pStatus && !notSetUp ? (serviceUp ? { tone: "ok", text: "Model service ready" } : { tone: "bad", text: `Model service ${pStatus}` }) : undefined,
+      notSetUp,
       offReasons,
       index: revision
         ? { revision, documents: docs, updated: inv.last_update ? fmtShort(inv.last_update) : undefined, approvedRevision: approvedRevision || undefined, approvedDocuments: approvedDocs || undefined }

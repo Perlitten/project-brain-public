@@ -593,6 +593,20 @@ class BrainRequestTelemetry(Base):
     latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
 
 
+
+class McpToolCall(Base):
+    """One MCP tool call: which tool, over which transport, how it ended, how long it took.
+    Payload-free; feeds the per-tool health on the Agent tools screen."""
+    __tablename__ = "mcp_tool_calls"
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), index=True)
+    tool: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    surface: Mapped[str] = mapped_column(String(16), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
+
+
 class RuleUsageEvent(Base):
     """One occasion on which a recorded rule did something, payload-free.
 

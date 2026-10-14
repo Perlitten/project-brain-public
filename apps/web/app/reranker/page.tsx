@@ -15,7 +15,7 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
     <>
       <PageHead
         title="Reranker"
-        status={off ? { tone: "warn", text: <>The second search pass is turned off<small>Search still works; results are ranked by the first pass only.</small></> } : undefined}
+        status={off && !r.notSetUp ? { tone: "warn", text: <>The second search pass is turned off<small>Search still works; results are ranked by the first pass only.</small></> } : undefined}
         lede={
           <>
             After a quick first search, a second model — the <Term k="reranker">reranker</Term> — re-checks the top results and
@@ -30,7 +30,17 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
         }
       />
       <SectionTabs section="settings" active="/reranker" />
-      {r.available === false ? (
+      {r.notSetUp ? (
+        <Panel id="optional" title="Optional, and not set up on this server">
+          <p className="text-dim">
+            Brain’s search works fully without it: agents get results from the first pass. The reranker is an advanced extra that
+            runs a separate late-interaction model service and only re-orders results once it is set up, encoded and approved.
+          </p>
+          <p className="text-dim reasons__note">
+            Turn it on with <span className="mono">LATE_INTERACTION_ENABLED</span> and a model service URL in the server settings.
+          </p>
+        </Panel>
+      ) : r.available === false ? (
         <EmptyState
           title="No reranker status"
           body="Brain didn’t report the state of its reranker. It may be turned off, or no repository is indexed yet."

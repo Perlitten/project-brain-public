@@ -36,7 +36,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import InputRequiredResult
 from mcp.server.auth.middleware.auth_context import get_access_token
 
-from apps.mcp_server.client_activity import observe_client_activity
+from apps.mcp_server.client_activity import observe_client_activity, tool_call_observer
 from apps.mcp_server.deferred_payload import (
     DeferredPayloadStore,
     compact_payload,
@@ -81,7 +81,11 @@ _MISSING_CONFIG = (
     "them from the environment, so set them where your client launches this server."
 )
 
-mcp = MCPServer("project-brain-remote", middleware=[observe_client_activity])
+mcp = MCPServer(
+    "project-brain-remote",
+    # Tool telemetry only when served in-process by the API (where the database is).
+    middleware=[observe_client_activity, tool_call_observer("http", enabled=lambda: _asgi_app is not None)],
+)
 
 # Enumeration-shaped results (impact projections, graph walks, review reports)
 # keep their head inline and park the tail here; see deferred_payload.py.
@@ -303,7 +307,7 @@ async def prepare_deep_context(
     repo_path: Optional[str] = None,
     notify: bool = True,
 ) -> dict:
-    """Queue a quality-first context pack that uses exact CPU LFM reranking."""
+    """Queue a durable, quality-first context pack (late-interaction reranking when configured)."""
     return await _post(
         "/jobs/deep-context",
         {

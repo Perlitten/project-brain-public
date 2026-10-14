@@ -185,11 +185,8 @@ async def enqueue_nightly_maintenance(
 
 @router.post("/deep-context", dependencies=[Depends(require_scope("jobs:write"))])
 async def enqueue_deep_context(body: DeepContextJobRequest, request: Request = cast(Request, None)):
-    if not settings.LATE_INTERACTION_DEEP_ENABLED:
-        raise HTTPException(
-            status_code=503,
-            detail="LFM deep lane is disabled",
-        )
+    # Without the late-interaction lane the job still builds a durable pack
+    # with the default retrieval (see brain.workers.tasks.run_deep_context).
     from apps.api.request_observation import requesting_principal
 
     params: dict[str, Any] = {
