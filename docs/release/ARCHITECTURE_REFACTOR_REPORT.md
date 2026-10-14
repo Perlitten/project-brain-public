@@ -18,7 +18,10 @@ and SQLite Lite [#74](https://github.com/Perlitten/project-brain-public/pull/74)
 were subsequently merged by the owner, including additional summary and queue
 hardening. Their code/CI/CodeQL checks pass; Vercel preview checks still report
 a build rate limit. Those merges were owner actions, not bypasses by this agent.
-The retrieval candidate is verified locally and is documented separately below.
+The retrieval candidate [#75](https://github.com/Perlitten/project-brain-public/pull/75)
+is verified locally and documented separately below. Both of its Vercel previews
+pass. A new CodeQL regex alert was fixed by stripping question whitespace once
+before matching; CodeQL subsequently reports no new alerts.
 
 No release is published by this work. v0.9.0, v0.9.1 and v0.9.2 tags and
 historical release archives remain unchanged. No production infrastructure,
@@ -171,7 +174,7 @@ production-quality inference inappropriate. The new path is covered separately
 by dense-hit/duplicate-channel/explicit-identifier/query-intent invariants.
 
 After incorporating current `main` and owner hardening, the candidate's full
-default-profile suite passes **2079 tests, 11 optional skips**. Ruff passes and
+default-profile suite passes **2080 tests, 11 optional skips**. Ruff passes and
 the mypy ratchet reports zero errors across 418 source files. Public launch,
 documentation and reachable commit privacy guards pass. Wheel and source
 archives pass packaging checks; a clean hash-locked wheel install runs actual
@@ -201,6 +204,7 @@ and loaders. Size alone did not justify changing these public surfaces during
 this set. Their future work should separate cohesive data-loading contracts
 only where an independently testable responsibility exists.
 
-Keep the remaining retrieval candidate unmerged while preview checks are red.
+Keep the remaining retrieval candidate unmerged until exact-head checks pass
+and the documented per-query acceptance gaps are reviewed.
 Prepare one compatible release after the coherent set passes all checks and
 quality limitations are reviewed. Publish only after a separate user action.
