@@ -127,7 +127,7 @@ code, .mono { font-family: var(--mono); }
 @keyframes pop-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } }
 @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes flow { to { stroke-dashoffset: -0.07; } }
-@keyframes reveal { from { opacity: 0; transform: translateY(16px); } }
+@keyframes reveal { from { opacity: 0.55; transform: translateY(10px); } }
 
 /* ---------- shell ---------- */
 .shell {
@@ -304,14 +304,22 @@ code, .mono { font-family: var(--mono); }
   overflow: hidden;
 }
 @supports (animation-timeline: view()) {
-  .panel { animation: reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 55%; }
+  /* Short range + an opacity floor in the keyframe: a panel parked below the
+     fold (zoom users, tall viewports, full-page capture) stays legible instead
+     of rendering as a blank until it scrolls into view. */
+  .panel { animation: reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 30%; }
 }
+@media print {
+  .panel { animation: none !important; }
+}
+/* Top hairline tinted by the panel's tone — status cue without a side stripe. */
 .panel--spine::before, .verdict::before, .card::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-  background: var(--tone);
-  transform-origin: top;
-  animation: spine-draw 800ms var(--ease-expo) 260ms backwards;
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+  background: linear-gradient(90deg, var(--tone), transparent 70%);
+  transform-origin: left;
+  animation: edge-draw 800ms var(--ease-expo) 260ms backwards;
 }
+@keyframes edge-draw { from { transform: scaleX(0); } }
 .panel--ok { --tone: var(--ok-fg); } .panel--warn { --tone: var(--warn-fg); }
 .panel--bad { --tone: var(--bad-fg); } .panel--info { --tone: var(--info-fg); } .panel--idle { --tone: var(--idle-fg); }
 .panel__head {
@@ -410,6 +418,9 @@ code, .mono { font-family: var(--mono); }
 .meter--compact { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); }
 .meter--compact .meter__cells { height: 12px; gap: 2px; }
 .meter--compact .meter__value { font-size: var(--fs-12); color: var(--text-2); min-width: 8ch; text-align: right; }
+/* Stale snapshot: dim the cells so a full bar doesn't read as "verified now". */
+.meter--stale { opacity: 0.55; }
+.meter--stale .meter__cell { animation: none; }
 
 /* ---------- ledger ---------- */
 .ledger__row {

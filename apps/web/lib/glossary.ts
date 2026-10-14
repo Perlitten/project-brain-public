@@ -14,6 +14,8 @@ export const glossary = {
   hotspot: "A file that changes far more often than the rest. Bugs cluster here.",
   golden: "A fixed set of curated questions or tasks with expected answers. Results describe that dataset, not general coding effectiveness.",
   p95: "95% of calls finish faster than this. The slowest 5% are slower.",
+  freshness: "How recently Brain re-read this repository. When Brain can't reach the source it can't tell whether its copy is current — answers come from the last version it read.",
+  degraded: "The job finished but not completely — part of the work was skipped or fell back to a simpler path. Results are usable, just weaker.",
   tokens: "Units a model tokenizer assigns to text. Counts vary by model; smaller context alone does not establish lower total cost or faster coding.",
 } as const;
 

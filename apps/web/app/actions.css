@@ -49,11 +49,14 @@
 .preset small { font-size: var(--fs-11); color: var(--text-3); }
 
 .progress { height: 4px; margin-top: var(--s-2); background: var(--data-track); border-radius: var(--r-pill); overflow: hidden; }
-.progress__bar { display: block; height: 100%; background: var(--tone, var(--teal-fg)); transition: width 600ms var(--ease-expo); }
-.progress__bar--busy { width: 30%; animation: busy 1.3s var(--ease) infinite; }
+.progress__bar { display: block; height: 100%; width: 100%; background: var(--tone, var(--teal-fg)); transform: scaleX(var(--pct, 0)); transform-origin: left; transition: transform 600ms var(--ease-expo); }
+.progress__bar--busy { width: 30%; transform: none; animation: busy 1.3s var(--ease) infinite; }
 @keyframes busy { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
 .toaster { position: fixed; right: var(--s-4); bottom: var(--s-4); z-index: 80; display: grid; gap: var(--s-2); width: min(400px, calc(100vw - 2 * var(--s-4))); pointer-events: none; }
+/* While the mobile drawer is open a toast would cover the rail footer
+   ("Finish setup", vital signs). Toasts are transient; hide them then. */
+.shell--drawer .toaster { display: none; }
 .toast {
   pointer-events: auto; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: var(--s-3); align-items: start;
   padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4); background: var(--surface-raise); border: 1px solid var(--tone-line, var(--border-default));

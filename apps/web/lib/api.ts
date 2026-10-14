@@ -16,6 +16,9 @@ type FetchOptions = {
   fresh?: boolean;
   /** Seconds to keep a cached response; ignored when `fresh`. */
   revalidate?: number;
+  /** Abort the request after this many ms (default 8000). Fan-out calls that
+      block first paint (per-repo overviews) should pass a shorter budget. */
+  timeoutMs?: number;
 };
 
 // One line per failing path+reason per process, so a dead API does not flood
@@ -112,7 +115,7 @@ export async function brainFetch<T>(path: string, opts: FetchOptions = {}): Prom
   try {
     const res = await fetch(url, {
       headers: { "X-API-Key": key, Accept: "application/json" },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 8000),
       ...(opts.fresh ? { cache: "no-store" as const } : { next: { revalidate: opts.revalidate ?? 30 } }),
     });
     if (!res.ok) {

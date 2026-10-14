@@ -45,7 +45,7 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
         <Stat label="Files in the last good run" value={last ? fmt(last.files) : "—"} note={result.available === false ? "index history unavailable" : last ? `${last.startedAt} · took ${last.duration}` : "no completed run in this list"} />
         <Stat label="Pieces stored" value={corpus.available === false ? "—" : fmt(corpus.chunks)} note={corpus.available === false ? "indexing totals unavailable" : "searchable pieces of code Brain holds"} />
         <div className={result.available === false || troubled ? "tone-warn" : "tone-ok"}>
-        <Stat label="Runs that failed or ran degraded" value={result.available === false ? "—" : String(troubled)} note={result.available === false ? "index history unavailable" : `${hasFacets ? "of" : "on this page, of"} ${result.paging.total.toLocaleString("en-US")} runs`} />
+        <Stat label={<>Runs that failed or ran <Term k="degraded">degraded</Term></>} value={result.available === false ? "—" : String(troubled)} note={result.available === false ? "index history unavailable" : `${hasFacets ? "of" : "on this page, of"} ${result.paging.total.toLocaleString("en-US")} runs`} />
         </div>
       </div>
       <Panel id="runs" title="Index runs" desc="Newest first. “Partial” means only changed files were re-read, which is normal." flush>

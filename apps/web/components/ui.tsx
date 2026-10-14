@@ -218,8 +218,9 @@ function Pulse({ tone }: { tone: Tone }) {
 // Twenty discrete cells instead of a smooth bar: the reader counts the missing
 // bricks. Slots are allocated by largest remainder, and any non-zero part
 // keeps at least one cell so a small gap never rounds away to nothing.
-/** `compact` keeps the cells and the value for table rows; the key moves to the tooltip. */
-export function Meter({ meter, slots = 20, compact = false }: { meter: MeterData; slots?: number; compact?: boolean }) {
+/** `compact` keeps the cells and the value for table rows; the key moves to the tooltip.
+    `stale` dims the cells when the reading is a last-known snapshot, not a live measure. */
+export function Meter({ meter, slots = 20, compact = false, stale = false }: { meter: MeterData; slots?: number; compact?: boolean; stale?: boolean }) {
   const total = meter.parts.reduce((s, p) => s + p.count, 0) || 1;
   const raw = meter.parts.map((p) => (p.count / total) * slots);
   const alloc = raw.map((r, i) => (meter.parts[i].count > 0 ? Math.max(1, Math.floor(r)) : 0));
@@ -241,7 +242,7 @@ export function Meter({ meter, slots = 20, compact = false }: { meter: MeterData
   const aria = `${meter.label}: ${meter.parts.map((p) => p.text).join(", ")}`;
   if (compact) {
     return (
-      <div className="meter meter--compact" title={aria}>
+      <div className={`meter meter--compact${stale ? " meter--stale" : ""}`} title={aria}>
         <div className="meter__cells" role="img" aria-label={aria}>
           {cells.map((tone, i) => (
             <span key={i} className={`meter__cell meter__cell--${tone}`} style={{ "--i": i } as CSSProperties} />
@@ -305,7 +306,7 @@ export function Ledger({ events, limit, compact, paged, paging }: { events: Ledg
   return <ol className={cls}>{items}</ol>;
 }
 
-export function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
+export function Stat({ label, value, note }: { label: ReactNode; value: string; note?: string }) {
   return (
     <div className="stat">
       <span className="stat__label">{label}</span>

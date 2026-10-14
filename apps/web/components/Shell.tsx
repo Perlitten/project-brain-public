@@ -29,7 +29,7 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
   const page = locate(path)?.item;
   const allowsAllRepos = ["command", "projects", "packs", "memory", "runs", "logs"].includes(page?.key ?? "");
   const repoSlug = params.get("repo") ?? (page?.repoScoped && !allowsAllRepos ? repos[0]?.slug : undefined);
-  const repo = repos.find((r) => r.slug === repoSlug);
+  const repo = repos.find((r) => r.slug === repoSlug || r.name.toLowerCase() === repoSlug?.toLowerCase());
   const [drawer, setDrawer] = useState(false);
   // Icons-only rail, remembered per browser. Medium screens get it from CSS.
   const [slim, setSlim] = useState(false);
@@ -187,7 +187,6 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
             <button
               type="button"
               className="repo__btn"
-              aria-haspopup="listbox"
               aria-expanded={repoMenu}
               onClick={() => setRepoMenu((o) => !o)}
             >
@@ -199,11 +198,11 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
               <Icon name="arrow" size={14} className="repo__caret" />
             </button>
             {repoMenu && (
-              <ul className="repo__menu pop" role="listbox" aria-label="Switch repository">
-                {allowsAllRepos && <li role="option" aria-selected={!repoSlug}><Link href={withRepo(`${path}${params.get("period") ? `?period=${params.get("period")}` : ""}`, "")} className={!repoSlug ? "is-on" : ""}>All projects</Link></li>}
+              <ul className="repo__menu pop">
+                {allowsAllRepos && <li><Link href={withRepo(`${path}${params.get("period") ? `?period=${params.get("period")}` : ""}`, "")} className={!repoSlug ? "is-on" : ""} aria-current={!repoSlug ? "true" : undefined}>All projects</Link></li>}
                 {repos.map((r, i) => (
-                  <li key={r.slug} role="option" aria-selected={r.slug === repo?.slug} style={{ "--i": i } as CSSProperties}>
-                    <Link href={withRepo(`${path}${params.get("period") ? `?period=${params.get("period")}` : ""}`, r.slug)} className={r.slug === repo?.slug ? "is-on" : ""}>
+                  <li key={r.slug} style={{ "--i": i } as CSSProperties}>
+                    <Link href={withRepo(`${path}${params.get("period") ? `?period=${params.get("period")}` : ""}`, r.slug)} className={r.slug === repo?.slug ? "is-on" : ""} aria-current={r.slug === repo?.slug ? "true" : undefined}>
                       <span className={`dot tone-${r.tone}`} aria-hidden="true" />
                       <span className="repo__name">{r.name}</span>
                       <span className="repo__status">{r.status}</span>

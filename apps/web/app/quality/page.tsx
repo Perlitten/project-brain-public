@@ -51,7 +51,7 @@ export default async function Quality({ searchParams }: { searchParams: Promise<
           id="benchmark"
           title="Search benchmark"
           desc="The latest saved test run. Each result is tied to the Brain build it measured."
-          actions={reports.length ? <Link className="link" href="/quality?view=reports">All {reports.length} saved reports</Link> : undefined}
+          actions={result.paging.total ? <Link className="link" href="/quality?view=reports">All {result.paging.total} saved reports</Link> : undefined}
         >
           <QualityEvidence evidence={evidence} />
         </Panel>
