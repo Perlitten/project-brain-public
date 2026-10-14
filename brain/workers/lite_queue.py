@@ -71,7 +71,7 @@ class SQLiteJobQueue:
                         return existing[0]
                 depth = db.execute("SELECT count(*) FROM jobs WHERE prefix=? AND status IN ('queued','running')", (self.prefix,)).fetchone()[0]
                 if settings.WORKER_QUEUE_MAX_DEPTH > 0 and depth >= settings.WORKER_QUEUE_MAX_DEPTH:
-                    raise QueueDepthExceeded("Lite maintenance queue depth exceeded")
+                    raise QueueDepthExceeded(depth, settings.WORKER_QUEUE_MAX_DEPTH)
                 job_id = str(uuid.uuid4())
                 payload = {"job_id": job_id, "type": job_type, "job_type": job_type, "params": params or {},
                            "attempt": 0, "max_attempts": max(1, max_attempts), "status": "queued",
@@ -85,15 +85,28 @@ class SQLiteJobQueue:
         def write():
             with self.redis.connection() as db:
                 db.execute("BEGIN IMMEDIATE")
-                db.execute("UPDATE jobs SET status='queued',token=NULL WHERE prefix=? AND status='running' AND expires<=?", (self.prefix,time.time()))
-                row = db.execute("SELECT id,payload FROM jobs WHERE prefix=? AND status='queued' ORDER BY created,id LIMIT 1", (self.prefix,)).fetchone()
-                if not row:
-                    return None
-                payload = json.loads(row[1])
+                expired = db.execute("SELECT id,payload FROM jobs WHERE prefix=? AND status='running' AND expires<=?",
+                                     (self.prefix,time.time())).fetchall()
+                for job_id, serialized in expired:
+                    payload = json.loads(serialized)
+                    status = "failed" if payload["attempt"] >= payload["max_attempts"] else "queued"
+                    payload.update(status=status, result={"error": "lease_expired"})
+                    db.execute("UPDATE jobs SET status=?,payload=?,token=NULL,expires=NULL WHERE id=? AND prefix=?",
+                               (status,json.dumps(payload),job_id,self.prefix))
+                while True:
+                    row = db.execute("SELECT id,payload FROM jobs WHERE prefix=? AND status='queued' ORDER BY created,id LIMIT 1", (self.prefix,)).fetchone()
+                    if not row:
+                        return None
+                    payload = json.loads(row[1])
+                    if payload["attempt"] < payload["max_attempts"]:
+                        break
+                    payload.update(status="failed", result={"error": "attempt_budget_exhausted"})
+                    db.execute("UPDATE jobs SET status='failed',payload=?,token=NULL,expires=NULL WHERE id=? AND prefix=?",
+                               (json.dumps(payload),row[0],self.prefix))
                 payload["attempt"] += 1
                 token = str(uuid.uuid4())
                 db.execute("UPDATE jobs SET status='running',token=?,expires=?,payload=? WHERE id=?",
-                           (token,time.time()+60,json.dumps(payload),row[0]))
+                           (token,time.time()+max(1, settings.WORKER_JOB_LEASE_SECONDS),json.dumps(payload),row[0]))
                 return payload, token
         return await asyncio.to_thread(write)
 
@@ -101,7 +114,7 @@ class SQLiteJobQueue:
         def write():
             with self.redis.connection() as db:
                 return bool(db.execute("UPDATE jobs SET expires=? WHERE id=? AND token=? AND status='running' AND expires>?",
-                                       (time.time()+60,job_id,token,time.time())).rowcount)
+                                       (time.time()+max(1, settings.WORKER_JOB_LEASE_SECONDS),job_id,token,time.time())).rowcount)
         return await asyncio.to_thread(write)
 
     async def finish(self, job_id, token, status, result):

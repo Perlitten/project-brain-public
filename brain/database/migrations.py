@@ -193,7 +193,7 @@ async def _ensure_decision_title_uniqueness(conn: AsyncConnection) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS uq_decisions_normalized_title
             ON decisions (
                 lower(btrim(title)),
-                COALESCE(lower(btrim(repo_path)), '')
+                COALESCE(btrim(repo_path), '')
             )
             """
         )

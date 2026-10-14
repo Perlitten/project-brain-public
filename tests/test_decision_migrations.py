@@ -55,7 +55,7 @@ async def test_decision_title_uniqueness_uses_repo_scoped_normalized_index():
     assert "DROP INDEX IF EXISTS uq_decisions_normalized_title" in statements[0]
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_decisions_normalized_title" in statements[1]
     assert "lower(btrim(title))" in statements[1]
-    assert "COALESCE(lower(btrim(repo_path)), '')" in statements[1]
+    assert "COALESCE(btrim(repo_path), '')" in statements[1]
 
 
 @pytest.mark.asyncio

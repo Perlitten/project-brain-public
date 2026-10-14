@@ -263,7 +263,7 @@ async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional
                 decision
                 for decision in decisions
                 if (decision.status or "").lower() == "active"
-                and (decision.repo_path is None or normalize_repo_scope(decision.repo_path) == decision_scope)
+                and (normalize_repo_scope(decision.repo_path) is None or normalize_repo_scope(decision.repo_path) == decision_scope)
             ]
             recorded_decisions_str = (
                 "\n".join([f"- {d.id}: {d.title} - {d.description}" for d in active_decisions]) or "None"

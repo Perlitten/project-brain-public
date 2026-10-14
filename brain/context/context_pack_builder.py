@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from loguru import logger
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 
 from brain.database.session import async_session_factory
 from brain.database.models import File, Symbol, Rule, Decision, Learning, ContextPack, IndexingRun
@@ -21,7 +21,7 @@ from brain.search.filters import (
 from brain.search.code_search import extract_keywords
 from brain.search.path_hints import expand_keywords
 from brain.database.repository_utils import get_repository_by_path
-from brain.memory.repo_scope import normalize_repo_scope, repository_scope_clause
+from brain.memory.repo_scope import normalize_repo_scope, scope_equals, repository_scope_clause
 from brain.memory.rule_usage import record_rules_delivered
 from brain.context.budget import estimated_tokens
 from brain.context.rendering import PackDocument, render_document, render_evidence
@@ -32,7 +32,7 @@ def _learning_scope_clause(repo_scope: Optional[str]):
     normalized_scope = normalize_repo_scope(repo_scope)
     return or_(
         Learning.repo_scope.is_(None),
-        func.lower(func.trim(Learning.repo_scope)) == (normalized_scope or "").casefold(),
+        scope_equals(Learning.repo_scope, normalized_scope),
     )
 
 

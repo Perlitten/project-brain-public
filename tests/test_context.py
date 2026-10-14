@@ -51,14 +51,14 @@ def test_decision_scope_clause_includes_global_and_matching_repo():
     statement = str(_decision_scope_clause("/indexed/docs-site/").compile(compile_kwargs={"literal_binds": True}))
 
     assert "decisions.repo_path IS NULL" in statement
-    assert "lower(trim(decisions.repo_path)) = '/indexed/docs-site'" in statement
+    assert "trim(decisions.repo_path) = '/indexed/docs-site'" in statement
 
 
 def test_rule_scope_clause_includes_global_and_matching_repo():
     statement = str(_rule_scope_clause("/indexed/docs-site/").compile(compile_kwargs={"literal_binds": True}))
 
     assert "rules.repo_path IS NULL" in statement
-    assert "lower(trim(rules.repo_path)) = '/indexed/docs-site'" in statement
+    assert "trim(rules.repo_path) = '/indexed/docs-site'" in statement
 
 
 @pytest.mark.asyncio
