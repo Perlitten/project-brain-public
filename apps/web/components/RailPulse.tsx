@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { getPulse, type Pulse } from "@/lib/actions/pulse";
 import { pulseHeadline } from "@/lib/pulse-presentation";
 import { stepTitle } from "@/lib/setup-copy";
+import { uncommittedMessage } from "@/lib/repository-status";
 
 const POLL_MS = 20_000;
 // One failed /health read is usually a busy server, not an outage: the
@@ -93,6 +94,8 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
       ? `Indexed ${ago(pulse.index.at)}`
       : `Index ${pulse.index.status}`;
   const setupLeft = pulse.setup && pulse.setup.done < pulse.setup.total;
+  const omitted = pulse.index?.uncommitted;
+  const omittedNote = omitted !== undefined && omitted > 0 ? uncommittedMessage(omitted) : "";
   const tip = [
     pulse.version ? `Brain v${pulse.version}${pulse.build ? ` (${pulse.build})` : ""}` : "",
     pulse.llm || pulse.embedding ? `Models: ${pulse.llm ?? "—"} / ${pulse.embedding ?? "—"}` : "",
@@ -111,8 +114,8 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
         {pulse.reachable && pulse.latencyMs !== undefined && <span className="vitals__ms num">{pulse.latencyMs} ms</span>}
       </Link>
       {pulse.reachable && repoSlug !== "" && (
-        <Link href={withRepo("/indexing")} className="vitals__line" title="Indexing history">
-          <span className="vitals__text">{memory}</span>
+        <Link href={withRepo("/indexing")} className={`vitals__line${omittedNote ? " vitals__line--warning tone-warn" : ""}`} title={omittedNote ? `${memory} · Recorded at the latest index run, not a live checkout count` : "Indexing history"}>
+          <span className="vitals__text">{omittedNote || memory}</span>
         </Link>
       )}
       {setupLeft && (

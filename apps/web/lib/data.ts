@@ -9,6 +9,7 @@ import { apiConfigured, brainFetch, brainRead, readFailureNote, type ReadFailure
 import * as mock from "./mock";
 import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./list-query";
 import { shortRevision } from "./revision";
+import { uncommittedCount } from "./repository-status";
 import type {
   AccessKey,
   AccessView,
@@ -594,7 +595,18 @@ export const getCorpus = async (slug?: string | null): Promise<Corpus> => {
       embeddings: int(counts.embeddings),
       meters: overview ? coverageMeters(overview) : [],
       available: true,
+      uncommitted: uncommittedCount(obj(overview.last_index_run).uncommitted_changes),
     };
+  });
+};
+
+export const getLatestUncommittedChanges = async (repoPath?: string): Promise<number | null> => {
+  if (!apiConfigured || !repoPath) return null;
+  return live<number | null>(null, async () => {
+    const repo = (await fetchRepos())?.find((r) => r.path === repoPath);
+    if (!repo) return null;
+    const overview = await fetchOverview(repo.id);
+    return uncommittedCount(obj(overview?.last_index_run).uncommitted_changes);
   });
 };
 
@@ -725,7 +737,7 @@ export const getIndexRuns = async (slug?: string | null): Promise<IndexRun[]> =>
         chunks: int(r.chunks),
         startedAt: fmtWhen(r.started_at),
         duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration),
-        uncommitted: int(r.uncommitted_changes) || undefined,
+        uncommitted: uncommittedCount(r.uncommitted_changes) ?? undefined,
       };
     });
   });
@@ -893,7 +905,7 @@ export const getPagedIndexRuns = async (slug: string | null | undefined, input: 
     const data = await brainFetch<Json>(`/api/web/index-runs?repository_id=${repo.id}&${queryString(q)}`, { fresh: true });
     return data ? { ...pageResult(data, "runs", q, (r) => {
       const status = jobStatus(r.status), rev = str(r.revision);
-      return { id: int(r.id), revision: shortRevision(rev), trigger: indexTrigger(r.trigger), status, completeness: completeness(r.completeness, status), files: int(r.files), changed: int(r.changed), chunks: int(r.chunks), startedAt: fmtWhen(r.started_at), duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration), uncommitted: int(r.uncommitted_changes) || undefined };
+      return { id: int(r.id), revision: shortRevision(rev), trigger: indexTrigger(r.trigger), status, completeness: completeness(r.completeness, status), files: int(r.files), changed: int(r.changed), chunks: int(r.chunks), startedAt: fmtWhen(r.started_at), duration: status === "running" || status === "queued" ? "—" : durationOf(r.duration_seconds ?? r.duration), uncommitted: uncommittedCount(r.uncommitted_changes) ?? undefined };
     }), available: true } : null;
   });
 };

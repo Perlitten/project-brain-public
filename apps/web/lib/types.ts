@@ -54,6 +54,8 @@ export interface Corpus {
   meters: Meter[];
   available?: boolean;
   availabilityNote?: string;
+  /** Working-tree edits omitted by the latest index run, not a live checkout count. */
+  uncommitted?: number | null;
 }
 
 export interface Job {

@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Show edits omitted by the latest index run in the dashboard, sidebar and
+  Setup. Keep unknown counts distinct from zero and label the observation as
+  index-run provenance rather than live filesystem monitoring.
+
 - Replace the all-at-once code map with collapsed top-level areas, searchable
   modules, a minimum edge-weight filter and persistent one/two-hop focus.
   Tests are hidden by default; the map fits desktop and narrow mobile screens

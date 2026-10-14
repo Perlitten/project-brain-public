@@ -42,7 +42,7 @@ export default async function Dashboard({ searchParams }: Props) {
   const chunks = validCoverage.reduce((sum, s) => sum + (s.corpus.meters.find((m) => m.label === "Searchable")?.parts.reduce((n, p) => n + p.count, 0) ?? 0), 0);
   const searchable = validCoverage.reduce((sum, s) => sum + (s.corpus.meters.find((m) => m.label === "Searchable")?.parts.filter((p) => p.tone === "filled").reduce((n, p) => n + p.count, 0) ?? 0), 0);
   const coverage = chunks > 0 && validCoverage.length === projects.length ? searchable === chunks ? 100 : Math.min(99.9, Math.floor(searchable / chunks * 1000) / 10) : null;
-  const attention = projects.map((repo) => ({ repo, ...repositoryStatus(repo) })).filter((s) => s.tone !== "ok").sort((a, b) => severity[b.tone] - severity[a.tone]);
+  const attention = snapshots.map(({ repo, corpus }) => ({ repo, ...repositoryStatus(repo, corpus.uncommitted) })).filter((s) => s.tone !== "ok").sort((a, b) => severity[b.tone] - severity[a.tone]);
   const withRepo = (path: string, extra: Record<string, string> = {}) => {
     const query = new URLSearchParams({ ...(slug ? { repo: slug } : {}), ...extra });
     return `${path}${query.size ? `?${query}` : ""}`;
@@ -61,10 +61,10 @@ export default async function Dashboard({ searchParams }: Props) {
       : first
         ? {
           tone: first.tone,
-          text: <>{projects.length === 1 ? `${first.repo.name}: ${first.status.toLowerCase()}` : `${attention.length} of ${projects.length} projects need attention`}<small>{projects.length === 1 ? "Agents may get context from older code until it is reindexed." : attention.map((a) => `${a.repo.name} — ${a.status.toLowerCase()}`).join(" · ")}</small></>,
+          text: <>{projects.length === 1 ? `${first.repo.name}: ${first.status.toLowerCase()}` : `${attention.length} of ${projects.length} projects need attention`}<small>{projects.length === 1 ? "Uncommitted changes are those omitted at the latest index run, not a live checkout count. Agents may get context from older code until it is reindexed." : attention.map((a) => `${a.repo.name} — ${a.status.toLowerCase()}`).join(" · ")}</small></>,
           action: <Link className="btn btn--neutral" href={`/indexing?repo=${encodeURIComponent(first.repo.slug)}`}>Open {first.repo.name}</Link>,
         }
-        : { tone: "ok", text: <>Memory is current {projects.length === 1 ? `for ${projects[0].name}` : `in all ${projects.length} projects`}<small>{coverage !== null ? `${measuredNumber(coverage, "%")} of eligible code is searchable. ` : ""}Agents get context from the latest indexed revision.</small></> };
+        : { tone: "ok", text: <>Committed memory is current {projects.length === 1 ? `for ${projects[0].name}` : `in all ${projects.length} projects`}<small>{coverage !== null ? `${measuredNumber(coverage, "%")} of eligible code is searchable. ` : ""}Agents get context from the latest indexed revision. {snapshots.some((s) => s.corpus.uncommitted == null) ? "Working-tree changes were not reported by the latest run." : "The latest run recorded no uncommitted changes; later edits may not be detected."}</small></> };
 
   const packs = worthData?.packs;
   const ruleUse = worthData?.rules;
@@ -117,7 +117,7 @@ export default async function Dashboard({ searchParams }: Props) {
       <div className="memory-rows" role="table" aria-label="Project memory">
         <div className="memory-rows__head" role="row"><span role="columnheader">Project</span><span role="columnheader">Status</span><span role="columnheader">Code agents can use now</span></div>
         {snapshots.map(({ repo, corpus }) => {
-          const state = repositoryStatus(repo);
+          const state = repositoryStatus(repo, corpus.uncommitted);
           const meter = (label: string) => corpus.available === false ? undefined : corpus.meters.find((m) => m.label === label);
           // One number per project: how much of its code is indexed at the
           // current revision. "Searchable" alone overstates it (old copies count).
@@ -129,7 +129,9 @@ export default async function Dashboard({ searchParams }: Props) {
             ? "From the last copy Brain read — the source is unavailable now"
             : state.tone === "ok"
               ? "All indexed code is current"
-              : "Last known snapshot — freshness couldn’t be verified";
+              : corpus.uncommitted != null && corpus.uncommitted > 0
+                ? "Committed snapshot only — the latest run omitted working-tree edits"
+                : "Last known snapshot — freshness couldn’t be verified";
           return <div key={repo.id} className="memory-rows__row" role="row">
             <span role="cell" className="memory-rows__name"><Link href={`/projects?repo=${encodeURIComponent(repo.slug)}`}>{repo.name}</Link><span className="sub mono">{[repo.branch, repo.head].filter(Boolean).join(" · ") || "revision not recorded"}</span></span>
             <span role="cell"><Chip tone={state.tone}>{state.status}</Chip></span>
