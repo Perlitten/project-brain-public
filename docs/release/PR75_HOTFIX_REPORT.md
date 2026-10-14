@@ -30,7 +30,7 @@ query-time path classification is corrected immediately.
 
 ## Offline verification
 
-- Full default-profile Python suite: **2131 passed, 11 optional skips**.
+- Full default-profile Python suite: **2155 passed, 11 optional skips**.
 - Ruff passes; mypy reports **zero errors**; public launch and docs guards pass.
 - Wheel/sdist archive checks pass. The candidate wheel is installed without
   dependency downloads into an isolated copy of the hash-locked baseline
@@ -42,27 +42,27 @@ query-time path classification is corrected immediately.
   dependency. Mock providers prove functional compatibility; they do not prove
   learned semantic or coding benefit.
 
-New [before](evidence/pr75-hotfix/before.json) and
-[after](evidence/pr75-hotfix/after.json) captures execute all 20 unchanged goldens,
+New [before](evidence/pr75-hotfix/before-validated.json) and
+[after](evidence/pr75-hotfix/after-final.json) captures execute all 20 unchanged goldens,
 seven context tasks and four impact tasks against the same frozen source
 (`2a7e66819c60b6eeb19edbb2cc9c2a082184fe57`), verified index and offline provider.
 The baseline package's six changed runtime modules byte-match pre-hotfix main;
 each arm runs in a fresh process, so the context cache starts empty. Chat is
 disabled and API calls use an in-process ASGI transport.
 
-The strengthened [gate](evidence/pr75-hotfix/gate.json) passes:
+The strengthened [gate](evidence/pr75-hotfix/gate-final.json) passes:
 
 | Metric | Before → hotfix |
 |---|---|
-| Golden Hit@1 / Hit@3 / MRR | 50% / 70% / 0.6211 → unchanged |
+| Golden Hit@1 / Hit@3 / Hit@5 / MRR | 50% / 70% / 75% / 0.6211 → unchanged |
 | Positive context Hit@1 / Hit@3 / MRR / required-file recall | 33.3% / 66.7% / 0.5056 / 75% → unchanged |
 | Positive impact Hit@1 / Hit@3 / MRR / required-file recall | 50% / 100% / 0.75 / 100% → unchanged |
 | Three adversarial restraint tasks | pass → pass |
 
 ```bash
 python -m eval.product_upgrade_gate \
-  docs/release/evidence/pr75-hotfix/before.json \
-  docs/release/evidence/pr75-hotfix/after.json
+  docs/release/evidence/pr75-hotfix/before-validated.json \
+  docs/release/evidence/pr75-hotfix/after-final.json
 ```
 
 Existing golden inputs, task definitions, baseline captures and historical
@@ -78,3 +78,32 @@ blocking findings. Then consider a compatible patch release carrying these
 corrections and the existing retrieval limitations. Do not describe offline
 token hashing as learned semantic evidence. No tag, published release asset or
 production deployment is changed or published by this hotfix.
+
+## Review follow-up and evidence hardening
+
+PR #77 was merged by the owner at `4a8f791ae60a3c0dcb0a684a233269fbf48ef8ff`
+before its three P2 review corrections were delivered. This follow-up includes
+standalone `test.py`/`tests.py`/`conftest.py` recognition, explicit degradation
+when no budget remains to start BM25, and reserved incoming-edge capacity so
+outgoing hub symbols cannot hide incoming callers. Each has regression coverage.
+
+The gate now rejects inconsistent stored metrics as well as recomputing ranks,
+validates frozen canonical inputs, input hashes, task identities, requested and
+effective budgets, and single known retrieval contracts. Hit@5 also gates
+acceptance. Unified results cannot borrow legacy compatibility chunk hits.
+Captures record elapsed time and actual budgets, without credentials or content.
+The wider context slice pool remains valid: each published locator must have a
+returned slice. Initial captures and instrumentation-validation captures are
+retained separately; historical captures are unchanged.
+
+CPU lexical ranking cooperatively stops on cancellation; lexical term iteration
+and bounded graph queries use deterministic ordering. Deadline tests include
+32 simultaneous requests and assert every cooperative child completes, alongside
+elapsed-time bounds and slow cancellation cleanup. Provider code that suppresses
+cancellation cannot be forcibly terminated by asyncio; late errors are consumed
+rather than delaying the response indefinitely.
+
+Historical retrieval-default evidence independently shows Hit@5 **80% → 75%**.
+The stricter gate flags this historical loss; it is not relabelled as passing.
+The matched-contract pre-hotfix/current comparison shows no additional loss.
+Token-hash results do not establish learned semantic quality.
