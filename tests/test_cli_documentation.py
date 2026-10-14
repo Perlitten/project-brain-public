@@ -1,11 +1,13 @@
 """User-facing command discovery and target-relative artifact contracts."""
 
 from pathlib import Path
+import os
 
 from typer.main import get_command
 from typer.testing import CliRunner
 
 from apps.cli.main import cli
+from apps.cli.entrypoint import bootstrap
 from brain.config.settings import Settings, settings
 from scripts.check_docs_consistency import CURRENT_PAGES, documentation_findings
 
@@ -55,3 +57,13 @@ def test_faq_distinguishes_published_release_from_current_defaults():
     changelog = (ROOT / "CHANGELOG.md").read_text().split("## [0.9.2]", 1)[0]
     for change in ("Lite", "warn_and_serve", "RETRIEVAL_V2_ENABLED", "summaries"):
         assert change in changelog
+
+
+def test_lite_console_selects_profile_report_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(os, "environ", os.environ.copy())
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("BRAIN_LITE_DIR", raising=False)
+    monkeypatch.delenv("BRAIN_STORAGE_MODE", raising=False)
+    assert bootstrap(["audit", "--lite"]) == ["audit"]
+    assert Path(os.environ["REPORT_OUTPUT_DIR"]) == tmp_path / ".brain/reports"
+    assert "<lite-directory>/reports" in (ROOT / "docs/CLI.md").read_text()

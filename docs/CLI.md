@@ -1,7 +1,7 @@
 # CLI reference
 
 Installing the wheel or an editable source checkout registers `brain`.
-`python -m brain` is the same entry point. The table describes current `main`;
+Use that console entry point for saved Lite-profile selection. The table describes current `main`;
 commands marked **main only** are absent from the recommended v0.9.2 release.
 See [Getting started](GETTING_STARTED.md) for version-specific installation.
 
@@ -48,8 +48,12 @@ brain audit --repo /absolute/path/to/target-repository
 This reads local source without a model call. It writes
 `<target-repository>/reports/initial-audit.md`, **not** the Brain checkout's report
 directory when these are different repositories. `REPORT_OUTPUT_DIR` explicitly
-overrides that directory. The target must be writable for report output.
-Without `--repo`, CLI commands use `REPO_ROOT` (default `.`); that fallback is not
+overrides that directory. On **main Lite**, console startup sets that override to
+`<lite-directory>/reports` (normally `.brain/reports` in the selected profile),
+even if `--repo` names another allowed target. Set `BRAIN_STORAGE_MODE=full` to
+select full mode rather than an automatically discovered ancestor Lite profile.
+The report directory must be writable.
+Without `--repo`, full-mode CLI commands use `REPO_ROOT` (default `.`); that fallback is not
 the server's `TARGET_REPO_PATH`. Explicit paths must satisfy allowed-root checks.
 
 ## Index, context and evaluation
@@ -81,4 +85,3 @@ There is not a `brain backup` command. The source checkout supplies
 installed CLI tree. Follow the version-matched [backup/restore runbook](runbooks/backup-restore.md)
 with an explicit configuration and disposable rehearsal before touching data.
 Restoration is destructive and is not an offline CLI smoke test.
-
