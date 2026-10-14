@@ -53,6 +53,7 @@ export interface Corpus {
   embeddings: number;
   meters: Meter[];
   available?: boolean;
+  availabilityNote?: string;
 }
 
 export interface Job {
