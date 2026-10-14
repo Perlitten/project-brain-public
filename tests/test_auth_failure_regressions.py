@@ -24,6 +24,7 @@ async def test_unicode_keys_do_not_raise_in_constant_time_comparison(monkeypatch
 @pytest.mark.asyncio
 async def test_invalid_credential_lifetime_is_rejected_before_storage(ttl):
     session = AsyncMock()
+    session.execute.side_effect = AssertionError("invalid lifetime reached storage")
     with pytest.raises(ValueError, match="ttl_days"):
         await mint_credential(session, name="invalid", scopes=["jobs:read"], ttl_days=ttl)
     session.execute.assert_not_called()

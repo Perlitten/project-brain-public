@@ -135,10 +135,35 @@ async def test_fallback_reports_freshness_failure_and_preserves_repository_ident
     monkeypatch.setattr("brain.retrieval.service.assess_repository_freshness", AsyncMock(side_effect=ValueError("offline")))
     result = await service.retrieve("find", "/repo")
     assert [row.path for row in result.candidates] == ["src/symbol.py"]
+    assert result.repository["found"] is True
     assert result.repository["repository_id"] == 7
     assert result.repository["indexed_revision"] == "revision"
     assert result.repository["freshness"] == {"status": "unknown"}
     assert result.degraded == ["search_error:RuntimeError", "freshness_error:ValueError"]
+
+
+@pytest.mark.asyncio
+async def test_expired_primary_budget_cannot_start_fallback_freshness(monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr("brain.retrieval.service.time.perf_counter", lambda: clock[0])
+    repo = SimpleNamespace(id=7, path="/repo", last_indexed_commit="revision")
+    monkeypatch.setattr("brain.retrieval.service.get_repository_by_path", AsyncMock(return_value=repo))
+    service = RetrievalService()
+    monkeypatch.setattr(service, "_known_symbol_route", AsyncMock(return_value=[RetrievalCandidate("src/symbol.py")]))
+
+    async def search(*args, **kwargs):
+        clock[0] = 100.05
+        raise RuntimeError("budget exhausted")
+
+    freshness = AsyncMock()
+    monkeypatch.setattr("brain.retrieval.service.search_code", search)
+    monkeypatch.setattr("brain.retrieval.service.assess_repository_freshness", freshness)
+    result = await service.retrieve("find", "/repo", deadline_s=0.05)
+    assert [row.path for row in result.candidates] == ["src/symbol.py"]
+    assert result.repository["found"] is True
+    assert result.repository["freshness"] == {"status": "unknown"}
+    assert result.degraded == ["search_error:RuntimeError", "deadline_exceeded"]
+    freshness.assert_not_called()
 
 
 @pytest.mark.parametrize("provider", ["mock", "local"])
