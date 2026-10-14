@@ -26,7 +26,7 @@ def _tokens(text: str) -> list[str]:
 
 def rank_chunks(rows: list[tuple[str, int | None, int | None, str]], query: str, budget: int,
                 *, stop: threading.Event | None = None) -> list[dict]:
-    terms = set(extract_keywords(query))
+    terms = sorted(set(extract_keywords(query)))
     if not terms:
         return []
     counts = []
