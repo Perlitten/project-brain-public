@@ -20,6 +20,8 @@ def captures():
     ("impact", "degraded", "impact_deadline_exceeded"),
     ("context", "missing", "context_deadline_exceeded"),
     ("search", "degraded", "search_error:RuntimeError"),
+    ("search", "degraded", "locator_error:RuntimeError"),
+    ("impact", "degraded", "graph_error:RuntimeError"),
 ])
 def test_http_200_runtime_failure_envelopes_cannot_be_captured(kind, field, marker):
     from eval.product_upgrade_capture import validate_response
