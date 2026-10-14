@@ -22,7 +22,7 @@ export default async function Dashboard({ searchParams }: Props) {
   const { repo: slug, period: inputPeriod } = await searchParams;
   const period = dashboardPeriod(inputPeriod);
   const repositories = await getRepositories();
-  const selected = slug ? repositories.find((r) => r.slug === slug) : undefined;
+  const selected = slug ? repositories.find((r) => r.slug === slug || r.name.toLowerCase() === slug.toLowerCase()) : undefined;
   const projects = slug ? selected ? [selected] : [] : repositories;
   // The map describes one repository; cross-project totals remain in the rows.
   const mapRepository = selected ?? (dataSource === "demo" ? repositories.reduce((a, b) => ((b.behind ?? 0) > (a.behind ?? 0) ? b : a), repositories[0]) : undefined);
@@ -120,10 +120,17 @@ export default async function Dashboard({ searchParams }: Props) {
           // current revision. "Searchable" alone overstates it (old copies count).
           const ready = meter("Up to date") ?? meter("Searchable");
           const behind = ready?.parts.filter((p) => p.tone === "missing" && p.count > 0).map((p) => p.text).join(" · ");
+          // The meter shows what was last read; when the source is gone or the
+          // freshness check can't run, calling it "current" would be a lie.
+          const snapshotNote = repo.freshness === "source_missing"
+            ? "From the last copy Brain read — the source is unavailable now"
+            : state.tone === "ok" || state.tone === "warn"
+              ? "All indexed code is current"
+              : "Last known snapshot — freshness couldn’t be verified";
           return <div key={repo.id} className="memory-rows__row" role="row">
             <span role="cell" className="memory-rows__name"><Link href={`/projects?repo=${encodeURIComponent(repo.slug)}`}>{repo.name}</Link><span className="sub mono">{[repo.branch, repo.head].filter(Boolean).join(" · ") || "revision not recorded"}</span></span>
             <span role="cell"><Chip tone={state.tone}>{state.status}</Chip></span>
-            <span role="cell" data-label="Usable now" className="memory-rows__ready">{ready ? <><Meter meter={ready} compact /><span className="sub">{behind || "All indexed code is current"}</span></> : <span className="text-faint">Not measured</span>}</span>
+            <span role="cell" data-label="Usable now" className="memory-rows__ready">{ready ? <><Meter meter={ready} compact stale={repo.freshness === "source_missing" || repo.freshness === "freshness_error"} /><span className="sub">{behind || snapshotNote}</span></> : <span className="text-faint">{corpus.available === false ? "No answer — try reloading" : "Not measured"}</span>}</span>
           </div>;
         })}
       </div>

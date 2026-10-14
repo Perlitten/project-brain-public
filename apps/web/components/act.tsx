@@ -15,6 +15,7 @@ import {
   useState,
   useSyncExternalStore,
   useTransition,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { getJob } from "@/lib/actions/jobs";
@@ -156,7 +157,7 @@ function JobToast({ t }: { t: Toast }) {
         <p>{done ? (snap.ok ? "Done — the screen is updated." : snap.detail ?? "It didn’t finish cleanly.") : snap?.detail ?? t.message}</p>
         {!done && (
           <div className="progress" aria-label="Progress">
-            <span className={pct === undefined ? "progress__bar progress__bar--busy" : "progress__bar"} style={pct === undefined ? undefined : { width: `${pct}%` }} />
+            <span className={pct === undefined ? "progress__bar progress__bar--busy" : "progress__bar"} style={pct === undefined ? undefined : ({ "--pct": pct / 100 } as CSSProperties)} />
           </div>
         )}
         {lost > 3 && !snap && <p className="toast__meta">Can’t read this job’s status — it keeps running on the server.</p>}

@@ -200,8 +200,12 @@ function toRepository(r: RawRepo): Repository {
 
 const noRepository: Repository = { id: 0, slug: "", name: "No repository", path: "", branch: "", head: "", behind: null, freshness: "unindexed" };
 
+// `?repo=` accepts the id (as the switcher writes it) or the name a person
+// would type by hand — a typoed name used to dead-end on "not connected".
 const pickRepo = (repos: RawRepo[] | null, slug?: string | null) =>
-  slug ? repos?.find((r) => String(r.id) === slug) ?? null : repos?.[0] ?? null;
+  slug
+    ? repos?.find((r) => String(r.id) === slug || (r.name !== undefined && str(r.name).toLowerCase() === slug.toLowerCase())) ?? null
+    : repos?.[0] ?? null;
 
 export type Paged<T> = { items: T[]; paging: ListPaging; available?: boolean };
 
@@ -230,9 +234,27 @@ const pageResult = <T>(data: Json, key: string, q: ListQuery, map: (v: Json) => 
 // Overview (new /api/web router; may be missing on older APIs)
 
 type RawOverview = Json;
+// One overview per repository; on a slow or unreachable API each one can
+// eat the whole fetch budget while the page waits. Half of it is enough:
+// the screens already render an honest "not measured" on timeout.
+// When the endpoint just timed out once, the next dozen per-repo calls
+// will too — hold a short breaker so navigations stay fast and degraded.
+let overviewDeadUntil = 0;
+let overviewFails = 0;
 const fetchOverview = cache(
-  (repositoryId?: number): Promise<RawOverview | null> =>
-    brainFetch<RawOverview>(`/api/web/overview${repositoryId ? `?repository_id=${repositoryId}` : ""}`, { fresh: true }),
+  (repositoryId?: number): Promise<RawOverview | null> => {
+    if (Date.now() < overviewDeadUntil) return Promise.resolve(null);
+    return brainFetch<RawOverview>(`/api/web/overview${repositoryId ? `?repository_id=${repositoryId}` : ""}`, { fresh: true, timeoutMs: 4000 }).then(
+      (r) => {
+        // Trip only on a wave of failures — a single repo with no overview
+        // (404 on an older API) must not blank the others.
+        if (r === null) {
+          if (++overviewFails >= 3) overviewDeadUntil = Date.now() + 30_000;
+        } else overviewFails = 0;
+        return r;
+      },
+    );
+  },
 );
 
 function toJob(j: Json, repoName: string): Job {
