@@ -818,6 +818,10 @@ class ValidationRunner:
         env = ValidationRunner.build_environment(profile.environment)
         backend = resolve_sandbox_backend()
         report.network_isolation = network_isolation_status(backend)
+        if backend == "unavailable":
+            report.rejected_reasons = ["No supported sandbox available; validation was not executed."]
+            report.duration_seconds = round(time.monotonic() - started, 3)
+            return report
         deadline = time.monotonic() + profile.timeout_seconds
         results: List[ValidationResult] = []
         passed = True
@@ -881,6 +885,9 @@ class ValidationRunner:
             result.duration_seconds = round(time.monotonic() - started, 3)
             return result
 
+        if len(argv) >= 3 and argv[1:3] == ["-m", "compileall"]:
+            argv = [argv[0], "-I", *argv[1:]]
+
         popen_kwargs: Dict[str, Any] = {
             "cwd": str(root),
             "env": env,
@@ -895,9 +902,14 @@ class ValidationRunner:
         else:
             popen_kwargs["start_new_session"] = True
 
-        popen_argv, sandbox = wrap_argv(
-            backend, workspace=root, argv=[resolved, *argv[1:]], env=env, resolved_exe=Path(resolved)
-        )
+        try:
+            popen_argv, sandbox = wrap_argv(
+                backend, workspace=root, argv=[resolved, *argv[1:]], env=env, resolved_exe=Path(resolved)
+            )
+        except PermissionError as exc:
+            result.exit_code = -1
+            result.stderr_snippet = str(exc)
+            return result
 
         try:
             process = subprocess.Popen(popen_argv, **popen_kwargs)
@@ -1001,7 +1013,8 @@ class ValidationRunner:
 
     @staticmethod
     def _redact(text: str) -> str:
-        return ValidationRunner._SECRET_PATTERNS.sub(r"\1\2<REDACTED>", text)
+        from brain.improvement.redaction import redact_text_pass1
+        return ValidationRunner._SECRET_PATTERNS.sub(r"\1\2<REDACTED>", redact_text_pass1(text))
 
 
 class _Cancelled(Exception):

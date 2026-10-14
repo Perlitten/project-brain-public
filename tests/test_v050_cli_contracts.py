@@ -753,3 +753,14 @@ def test_every_v050_cli_command_is_covered(request):
     selected = [item for item in request.session.items if item.fspath == request.node.fspath]
     if len(selected) >= defined:
         assert COVERED_COMMANDS - INVOKED == set(), "commands claimed but never invoked"
+
+
+@pytest.fixture(autouse=True)
+def explicit_trusted_fixture_execution(monkeypatch):
+    # Process-supervision/CLI contract fixtures are owned, trusted test code.
+    # Security tests independently prove the normal default rejects host work.
+    from brain.config.settings import settings
+    monkeypatch.setattr(settings, "LAB_SANDBOX_MODE", "off")
+    monkeypatch.setattr(settings, "LAB_ALLOW_UNSAFE_HOST_EXECUTION", True)
+    monkeypatch.setenv("LAB_SANDBOX_MODE", "off")
+    monkeypatch.setenv("LAB_ALLOW_UNSAFE_HOST_EXECUTION", "true")

@@ -130,7 +130,22 @@ async def record_procedure_outcome(skill_id: int, task_id: str, validation_id: i
 def _is_safe_base_url(url: str) -> bool:
     """Allow https anywhere, or plain http only to loopback. Prevents sending the
     API key in cleartext to a remote host via a mis-set BRAIN_API_URL."""
-    return url.startswith("https://") or url.startswith(("http://127.0.0.1", "http://localhost"))
+    from ipaddress import ip_address
+    from urllib.parse import urlsplit
+    try:
+        parsed = urlsplit(url)
+        if not parsed.hostname or parsed.username is not None or parsed.password is not None:
+            return False
+        _ = parsed.port  # Validate malformed/out-of-range ports before sending a key.
+        if parsed.scheme == "https":
+            return True
+        if parsed.scheme != "http":
+            return False
+        if parsed.hostname == "localhost":
+            return True
+        return ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        return False
 
 
 # --- backend ---------------------------------------------------------------------

@@ -21,7 +21,7 @@ def test_session_store_crud(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_operator_engine_closed_loop(tmp_path):
+async def test_unimplemented_operator_blocks_without_fake_telemetry(tmp_path):
     """Verify autonomous operator executes closed loop to CLOSED phase."""
     store = SessionStore(storage_dir=tmp_path)
     engine = AutonomousOperatorEngine(session_store=store)
@@ -34,10 +34,11 @@ async def test_operator_engine_closed_loop(tmp_path):
         oracle_test="tests/improvement/test_holdout_sealing.py::test_multiple_challengers_can_never_access_sealed_pool_in_league",
     )
 
-    assert resolved_session.is_closed is True
-    assert resolved_session.current_phase == GoalPhase.CLOSED
-    assert len(resolved_session.checkpoints) >= 5
-    assert len(resolved_session.telemetry) > 0
+    assert resolved_session.is_closed is False
+    assert resolved_session.is_blocked is True
+    assert resolved_session.current_phase == GoalPhase.BLOCKED_ESCALATED
+    assert resolved_session.telemetry == []
+    assert store.load("goal_01").is_blocked is True
 
 
 def test_operator_escalation_boundary(tmp_path):

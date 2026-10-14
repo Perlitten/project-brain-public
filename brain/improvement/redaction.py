@@ -11,6 +11,16 @@ SECRET_PATTERNS = [
     (re.compile(r"Authorization:\s*Bearer\s+[A-Za-z0-9_\.\-]+", re.IGNORECASE), lambda m: "Authorization: Bearer [REDACTED_SECRET]"),
 ]
 
+# Native Brain, hosted-provider and GitHub credential formats, including
+# credentials printed without an assignment or Authorization header.
+SECRET_PATTERNS += [
+    (re.compile(r"\b(?:pbk_|pbr_|github_pat_|gh[ousr]_|hf_)[A-Za-z0-9_\-]+"), lambda m: "[REDACTED_SECRET]"),
+    (re.compile(r"\bAIza[A-Za-z0-9_\-]+"), lambda m: "[REDACTED_SECRET]"),
+    (re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----", re.DOTALL), lambda m: "[REDACTED_SECRET]"),
+    (re.compile(r"([\"']?(?:[A-Z_]*(?:API_KEY|TOKEN|PASSWORD|SECRET|CREDENTIAL)|authorization|x-api-key)[\"']?\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)", re.IGNORECASE), lambda m: m.group(1) + '"[REDACTED_SECRET]"'),
+    (re.compile(r"(https?://)[^\s/@:]+:[^\s/@]+@", re.IGNORECASE), lambda m: m.group(1) + "[REDACTED_SECRET]@"),
+]
+
 # Pass 2: Path & identity pseudonymization
 PATH_PATTERNS = [
     (re.compile(r"C:\\Users\\[A-Za-z0-9_]+\\"), lambda m: "C:\\Users\\[REDACTED_USER]\\"),

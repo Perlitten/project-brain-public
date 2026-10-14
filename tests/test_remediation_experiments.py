@@ -860,3 +860,14 @@ def test_no_experiment_endpoint_promotes_a_patch():
     forbidden = {"apply", "commit", "push", "merge", "deploy", "promote"}
     for path in experiment_paths:
         assert not (forbidden & set(path.lower().split("/")))
+
+
+@pytest.fixture(autouse=True)
+def explicit_trusted_fixture_execution(monkeypatch):
+    # Process-supervision/CLI contract fixtures are owned, trusted test code.
+    # Security tests independently prove the normal default rejects host work.
+    from brain.config.settings import settings
+    monkeypatch.setattr(settings, "LAB_SANDBOX_MODE", "off")
+    monkeypatch.setattr(settings, "LAB_ALLOW_UNSAFE_HOST_EXECUTION", True)
+    monkeypatch.setenv("LAB_SANDBOX_MODE", "off")
+    monkeypatch.setenv("LAB_ALLOW_UNSAFE_HOST_EXECUTION", "true")

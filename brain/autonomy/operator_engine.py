@@ -19,7 +19,6 @@ from brain.autonomy.models import (
     EscalationReason,
 )
 from brain.autonomy.state import SessionStore
-from brain.autonomy.telemetry import record_llm_telemetry
 from brain.operations.incidents import IncidentStateMachine
 from brain.operations.remediation import AutonomicRemediationEngine
 
@@ -56,62 +55,11 @@ class AutonomousOperatorEngine:
         if session.is_closed or session.is_blocked:
             return session
 
-        # Phase 1: Internal Planning
-        session.current_phase = GoalPhase.INTERNAL_PLANNING
-        self._add_checkpoint(session, GoalPhase.INTERNAL_PLANNING)
+        # No implementation/provider/commit/deploy executor is wired. Do not
+        # manufacture test, completion or billing evidence from this scaffold.
+        session.is_blocked = True
+        session.current_phase = GoalPhase.BLOCKED_ESCALATED
         self.store.save(session)
-
-        # Record LLM call telemetry
-        record_llm_telemetry(
-            session=session,
-            call_id=f"plan_{session_id}",
-            provider="openai",
-            model="gpt-4o",
-            input_tokens=310,
-            output_tokens=220,
-        )
-
-        # Phase 2: Verified Context Building
-        session.current_phase = GoalPhase.VERIFIED_CONTEXT_BUILT
-        self._add_checkpoint(session, GoalPhase.VERIFIED_CONTEXT_BUILT)
-        self.store.save(session)
-
-        # Phase 3: Execution
-        session.current_phase = GoalPhase.EXECUTION
-        self._add_checkpoint(session, GoalPhase.EXECUTION)
-        self.store.save(session)
-
-        # Phase 4: Testing & Verification
-        session.current_phase = GoalPhase.TESTING
-        passed, stdout = self._run_test(oracle_test)
-
-        if not passed:
-            # Phase 5: Autonomous Diagnosis & Self-Repair
-            session.current_phase = GoalPhase.DIAGNOSIS
-            self._add_checkpoint(session, GoalPhase.DIAGNOSIS, failed_tests=[oracle_test or "unknown"])
-            self.store.save(session)
-
-            session.current_phase = GoalPhase.REPAIRING
-            self._add_checkpoint(session, GoalPhase.REPAIRING, patch_id=f"repair/{session_id}")
-            self.store.save(session)
-
-            # Phase 6: Re-testing
-            session.current_phase = GoalPhase.RETESTING
-            passed, _ = self._run_test(oracle_test)
-
-        # Phase 7: Committing & Deployment Verification
-        session.current_phase = GoalPhase.COMMITTING
-        self._add_checkpoint(session, GoalPhase.COMMITTING)
-
-        session.current_phase = GoalPhase.VERIFYING_RUNTIME
-        self._add_checkpoint(session, GoalPhase.VERIFYING_RUNTIME)
-
-        # Phase 8: Close Goal
-        session.current_phase = GoalPhase.CLOSED
-        session.is_closed = True
-        self._add_checkpoint(session, GoalPhase.CLOSED, passed_tests=[oracle_test] if oracle_test else [])
-        self.store.save(session)
-
         return session
 
     def escalate_boundary(
