@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Replace the all-at-once code map with collapsed top-level areas, searchable
+  modules, a minimum edge-weight filter and persistent one/two-hop focus.
+  Tests are hidden by default; the map fits desktop and narrow mobile screens
+  without horizontal scrolling. The complete Connections table is unchanged.
+
 - Add default-off single-team project/task/run authority foundations with live
   verified-identity membership, narrowed delegation, stable repository references,
   provenance and idempotency. In experimental team mode, unadapted personal
