@@ -126,3 +126,17 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["v050_engineering_lab_verification"]
 ignore_missing_imports = true
+
+# Project-wide mutation campaign: no coverage-only filter or stack-depth cutoff.
+[tool.mutmut]
+source_paths = ["brain", "apps/api", "apps/mcp_server", "apps/cli", "apps/__init__.py", "scripts"]
+also_copy = ["README.md", "CLAUDE.md", "CHANGELOG.md", "SECURITY.md", ".env.example", ".mcp.json", ".dockerignore", ".gitattributes", "docs", "eval", "rules", "benchmarks", "examples", "apps/web", ".github", ".git", ".gitignore", "LICENSE", "requirements.lock", "requirements-dev.lock", "requirements-windows.lock", "docker-compose.yml", "docker-compose.quickstart.yml", "docker-compose.experimental-images.yml", "Dockerfile", "Makefile", "deploy", "migrations", "pytest.ini", "alembic.ini"]
+pytest_add_cli_args_test_selection = ["tests/"]
+mutate_only_covered_lines = false
+max_stack_depth = -1
+process_isolation = "forkserver"
+forkserver_warmup = "collect"
+use_setproctitle = false
+timeout_multiplier = 3.0
+timeout_constant = 2.0
+log_to_file = true
