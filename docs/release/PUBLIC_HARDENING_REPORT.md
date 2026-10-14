@@ -85,3 +85,12 @@ with 11 optional skips**, and Ruff, mypy and public launch checks passed.
 The [actual optional-tool container probe](evidence/public-hardening/docker-optional-tool-review3.json)
 passes required isolated compilation with an accepted Python alias while a
 missing optional Ruff tool fails without invalidating the required result.
+
+The following review identified five additional edge cases. Common secret-key
+fields are now redacted; Docker retains the image's PATH; a retry replaces
+attempt-scoped network uncertainty and recognizes `enforced:docker`; optional
+test credit requires successful individual optional results; and malformed
+candidate metadata is a candidate rejection rather than a retryable image
+failure. Focused regressions passed **108 tests**, and the full safety suite
+passed **2,234 tests with 11 optional skips**. Ruff, mypy and public launch checks
+passed. Fresh remote validation remains required before merging this branch.

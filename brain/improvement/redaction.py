@@ -6,7 +6,7 @@ import re
 def _secret_field(key: str) -> bool:
     normalized = re.sub(r"[^a-z0-9]", "", key.lower())
     return normalized.endswith(("apikey", "token", "password", "secret", "credential",
-                                "authorization", "privatekey", "secretaccesskey", "accesskeyid"))
+                                "authorization", "privatekey", "secretkey", "signingkey", "secretaccesskey", "accesskeyid"))
 
 
 def _redact_assignment(match: re.Match) -> str:

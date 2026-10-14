@@ -24,6 +24,10 @@ SANDBOX_OFF = "off"
 
 _PROBE_TIMEOUT = 10
 
+
+class CandidateMetadataError(ValueError):
+    """The candidate's project metadata is invalid, rather than its toolchain."""
+
 def validate_image_toolchain(workspace: Path, commands: list, timeout: float) -> bool:
     """Probe image-owned tools/dependencies without importing repository code."""
     executables, modules = set(), set()
@@ -52,13 +56,22 @@ if config['test_dependencies'] and Path(config['project']).is_file():
         except ImportError:
             import tomli as tomllib
         from packaging.requirements import Requirement
+    except ImportError:
+        sys.exit(1)
+    try:
         project = tomllib.loads(Path(config['project']).read_text(encoding='utf-8')).get('project', {})
+        if not isinstance(project, dict) or not isinstance(project.get('dependencies', []), list):
+            sys.exit(2)
         requirements.extend(project.get('dependencies', []))
         extras = project.get('optional-dependencies', {})
+        if not isinstance(extras, dict):
+            sys.exit(2)
         for group in ('dev', 'test', 'tests'):
+            if not isinstance(extras.get(group, []), list):
+                sys.exit(2)
             requirements.extend(extras.get(group, []))
-    except (ImportError, OSError, ValueError, TypeError, AttributeError):
-        sys.exit(1)
+    except (OSError, ValueError, TypeError, AttributeError):
+        sys.exit(2)
 for specification in requirements:
     try:
         requirement = Requirement(specification)
@@ -66,7 +79,9 @@ for specification in requirements:
                 continue
         version = importlib.metadata.version(requirement.name)
         ok = ok and version in requirement.specifier
-    except (ImportError, ValueError, importlib.metadata.PackageNotFoundError):
+    except (ValueError, TypeError):
+        sys.exit(2)
+    except (ImportError, importlib.metadata.PackageNotFoundError):
         ok = False
 sys.exit(0 if ok else 1)
 """
@@ -77,7 +92,10 @@ sys.exit(0 if ok else 1)
                                json.dumps(config)],
                                env={}, resolved_exe=Path("python3"))
     try:
-        return subprocess.run(argv, capture_output=True, timeout=max(.1, timeout)).returncode == 0
+        result = subprocess.run(argv, capture_output=True, timeout=max(.1, timeout))
+        if result.returncode == 2:
+            raise CandidateMetadataError("Candidate pyproject.toml contains invalid project metadata")
+        return result.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         handle.terminate()
         return False
@@ -173,6 +191,8 @@ def wrap_docker(
         str(ws),
     ]
     for key, value in env.items():
+        if key == "PATH":
+            continue
         cmd += ["-e", f"{key}={value}"]
     cmd += ["-v", f"{ws}:{ws}:rw"]
     # Resolve the tool inside the trusted image, never through host mounts.

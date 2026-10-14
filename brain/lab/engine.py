@@ -821,9 +821,13 @@ class ValidationRunner:
             report.duration_seconds = round(time.monotonic() - started, 3)
             return report
         if backend == "docker":
-            from brain.lab.sandbox import validate_image_toolchain
+            from brain.lab.sandbox import CandidateMetadataError, validate_image_toolchain
             try:
                 compatible = validate_image_toolchain(root, profile.commands, min(10, profile.timeout_seconds))
+            except CandidateMetadataError as exc:
+                report.rejected_reasons = [str(exc)]
+                report.duration_seconds = round(time.monotonic() - started, 3)
+                return report
             except (ValueError, TypeError, OSError):
                 compatible = False
             if not compatible:

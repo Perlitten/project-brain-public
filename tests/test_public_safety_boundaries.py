@@ -244,7 +244,7 @@ def test_redaction_preserves_json_structure_and_benign_evidence():
         assert decoded["nested"]["path"] == "brain/core.py"
 
 
-@pytest.mark.parametrize("key", ["apiKey", "xApiKey", "AWS_SECRET_ACCESS_KEY", "privateKey", "refreshToken"])
+@pytest.mark.parametrize("key", ["apiKey", "xApiKey", "AWS_SECRET_ACCESS_KEY", "privateKey", "refreshToken", "secret_key", "SECRET_KEY", "signingKey"])
 def test_common_credential_fields_redact_without_provider_prefix(key):
     for redactor in (redact_trajectory_content, ValidationRunner._redact):
         for raw in (json.dumps({key: "synthetic-private-value", "tests_passed": 17}), f"{key}=synthetic-private-value"):
@@ -292,6 +292,32 @@ def test_candidate_module_is_not_an_image_owned_tool(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", run_probe)
     assert sandbox.validate_image_toolchain(tmp_path, [CommandDef(argv=["python", "-m", "fixture_check"])], 5)
     assert captured["config"]["modules"] == []
+
+
+def test_docker_uses_image_path_instead_of_host_path(tmp_path):
+    argv, _ = sandbox.wrap_docker(workspace=tmp_path, argv=["ruff", "check", "."],
+                                  env={"PATH": "/host-only/venv/bin", "LANG": "C.UTF-8"}, resolved_exe=Path("ruff"))
+    assert "PATH=/host-only/venv/bin" not in argv
+    assert "LANG=C.UTF-8" in argv
+
+
+def test_malformed_candidate_metadata_is_not_retryable_infrastructure(tmp_path, monkeypatch):
+    (tmp_path / "pyproject.toml").write_text("[project\nbroken", encoding="utf-8")
+    original_run = subprocess.run
+
+    def run_probe(argv, **kwargs):
+        probe, payload = argv[-2:]
+        return original_run([sys.executable, "-I", "-c", probe, payload], **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run_probe)
+    monkeypatch.setattr(sandbox, "_docker_available", lambda: True)
+    monkeypatch.setattr(settings, "LAB_SANDBOX_MODE", "docker")
+    # The interpreter probe is a real subprocess. Candidate execution remains
+    # forbidden: the invalid metadata must be rejected before _run_one.
+    monkeypatch.setattr(ValidationRunner, "_run_one", lambda *a: pytest.fail("invalid metadata must not execute candidate commands"))
+    report = ValidationRunner.run_profile(tmp_path, ValidationProfile(commands=[CommandDef(argv=["python", "-m", "pytest"])]))
+    assert not report.passed and not report.infrastructure_error
+    assert "invalid project metadata" in report.rejected_reasons[0]
 
 
 @pytest.mark.asyncio
