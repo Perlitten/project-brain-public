@@ -22,7 +22,9 @@ def git_source_is_clean(path, files) -> bool:
         return not (path / ".git").exists()
     if probe.returncode:
         return not (path / ".git").exists()  # File snapshots have no Git tree.
-    status = subprocess.run([*command, "status", "--porcelain", "--untracked-files=all"], capture_output=True)
+    # Untracked files outside the indexed set (Brain's own .brain/ data, editor
+    # files, anything the scanner skips) do not make the indexed source dirty.
+    status = subprocess.run([*command, "status", "--porcelain", "--untracked-files=no"], capture_output=True)
     tracked = subprocess.run([*command, "ls-files", "-z"], capture_output=True)
     if status.returncode or tracked.returncode or status.stdout:
         return False

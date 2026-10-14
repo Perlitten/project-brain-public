@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # General Settings
     ENVIRONMENT: str = "local"
     BRAIN_STORAGE_MODE: Literal["full", "lite"] = "full"
+    BRAIN_TEAM_MODE: bool = False
     BRAIN_LITE_DIR: str = ".brain"
     BRAIN_LITE_MAX_CHUNKS: int = 50_000
     # Unset: documentation is available locally and disabled in production.
@@ -108,11 +109,11 @@ class Settings(BaseSettings):
     HARNESS_STALE_REAPER_ENABLED: bool = True
     HARNESS_STALE_REAPER_BATCH_SIZE: int = 500
 
-    # Change-lab sandbox for validation commands: "auto" (docker if the daemon
-    # + image are present, else unshare namespaces, else off), "docker",
-    # "unshare", or "off". "off" keeps the previous unverified-isolation mode.
+    # Docker is the sole containment backend. Missing/invalid backends fail
+    # closed; unsafe host execution requires both mode=off and explicit opt-in.
+    LAB_ALLOW_UNSAFE_HOST_EXECUTION: bool = False
     LAB_SANDBOX_MODE: str = "auto"
-    LAB_SANDBOX_IMAGE: str = "debian:bookworm-slim"
+    LAB_SANDBOX_IMAGE: str = "python:3.12-slim"
     LAB_SANDBOX_PIDS_LIMIT: int = 256
     LAB_SANDBOX_MEMORY_MB: int = 2048
     LAB_SANDBOX_CPUS: float = 2.0
@@ -367,7 +368,8 @@ class Settings(BaseSettings):
     LATE_INTERACTION_DEEP_VECTOR_LIMIT: int = 200
     LATE_INTERACTION_DEEP_NOTIFY: bool = True
     NIGHTLY_DEEP_MAINTENANCE_ENABLED: bool = False
-    NIGHTLY_DEEP_MAINTENANCE_REPO_PATH: str = "/app"
+    # Blank = the indexed repository (TARGET_REPO_PATH); see _default_repo_paths.
+    NIGHTLY_DEEP_MAINTENANCE_REPO_PATH: str = ""
     NIGHTLY_DEEP_MAINTENANCE_NOTIFY: bool = True
     NIGHTLY_DEEP_MAINTENANCE_QUALITY_QUERIES: int = 3
     # Test/migration escape hatch only. Production requests must bind every
@@ -458,7 +460,8 @@ class Settings(BaseSettings):
     # changing the trigger branch alone is enough unless the workflow is
     # pinned to a different ref.
     PROJECT_BRAIN_WEBHOOK_REF: str = "refs/heads/main"
-    PROJECT_BRAIN_GIT_REPO_PATH: str = "/app"
+    # Blank = the indexed repository (TARGET_REPO_PATH); see _default_repo_paths.
+    PROJECT_BRAIN_GIT_REPO_PATH: str = ""
 
     @field_validator("POSTGRES_POOL_SIZE")
     @classmethod
@@ -658,6 +661,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _lite_defaults(self):
+        if self.BRAIN_TEAM_MODE and self.BRAIN_STORAGE_MODE == "lite":
+            raise ValueError("Team mode requires full storage; personal Lite remains supported")
         if self.BRAIN_STORAGE_MODE == "lite":
             if "DEFAULT_EMBEDDING_PROVIDER" not in self.model_fields_set:
                 self.DEFAULT_EMBEDDING_PROVIDER = "local"
@@ -757,10 +762,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 "the LFM deep lane requires an approved corpus lineage id"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _default_repo_paths(self):
+        # Scheduled maintenance and the merge webhook act on the repository
+        # Brain indexes unless told otherwise. A hard-coded container path here
+        # made every scheduled job fail on a local (venv) install.
+        target = (self.TARGET_REPO_PATH or ".").strip() or "."
         if not self.NIGHTLY_DEEP_MAINTENANCE_REPO_PATH.strip():
-            raise ValueError(
-                "NIGHTLY_DEEP_MAINTENANCE_REPO_PATH cannot be blank"
-            )
+            self.NIGHTLY_DEEP_MAINTENANCE_REPO_PATH = target
+        if not self.PROJECT_BRAIN_GIT_REPO_PATH.strip():
+            self.PROJECT_BRAIN_GIT_REPO_PATH = target
         return self
 
     @model_validator(mode="after")

@@ -22,6 +22,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy.engine import URL, make_url
+
+from scripts.recovery_config import load_recovery_config
+
 BACKUP_VERSION = "2.1.0"
 ARTIFACT_POSTGRES = "postgres"
 ARTIFACT_NEO4J = "neo4j"
@@ -77,7 +81,17 @@ def export_postgres_dump(target: Path, dsn: str, *, timeout: int = 300) -> None:
     pg_dump = shutil.which("pg_dump")
     if not pg_dump:
         raise RuntimeError("pg_dump not found on PATH; cannot produce a real PostgreSQL backup")
-    subprocess.run([pg_dump, "--dbname", dsn, "-f", str(target)], check=True, timeout=timeout)
+    url = make_url(dsn)
+    safe_url = URL.create("postgresql", username=url.username, host=url.host, port=url.port,
+                          database=url.database, query=url.query).render_as_string(hide_password=False)
+    env = {**os.environ, "PGPASSWORD": url.password or os.environ.get("PGPASSWORD", "")}
+    try:
+        subprocess.run([pg_dump, "--dbname", safe_url, "-f", str(target)], check=True, timeout=timeout,
+                       capture_output=True, env=env)
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(f"pg_dump failed (exit {exc.returncode}); check database connectivity and credentials") from None
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("pg_dump timed out; check database connectivity") from None
     if not target.exists() or target.stat().st_size == 0:
         raise RuntimeError("pg_dump produced an empty dump")
 
@@ -133,6 +147,7 @@ def run_backup(
     neo4j_user: str | None = None,
     neo4j_password: str | None = None,
     allow_missing: tuple[str, ...] = (),
+    config_path: str | None = None,
 ) -> dict:
     """Produce real backup artifacts and a manifest describing exactly what was captured.
 
@@ -144,6 +159,8 @@ def run_backup(
     unknown = set(allow_missing) - set(ARTIFACT_NAMES)
     if unknown:
         raise ValueError(f"Unknown artifact(s) in allow_missing: {sorted(unknown)}")
+
+    config = load_recovery_config(config_path)
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     target_path = Path(output_dir) if output_dir else Path("backups") / f"brain_backup_{ts}"
@@ -157,12 +174,12 @@ def run_backup(
         artifacts.append(_artifact_skipped(ARTIFACT_POSTGRES, "skipped", "demoted by --allow-missing postgres"))
     else:
         try:
-            export_postgres_dump(pg_file, pg_dsn or os.environ.get(
-                "DATABASE_URL", "postgresql://brain:brain_password@localhost:5432/brain_db"))
+            export_postgres_dump(pg_file, pg_dsn or config.pg_dump_dsn)
             artifacts.append(_artifact_ok(ARTIFACT_POSTGRES, pg_file))
         except Exception as exc:
             pg_file.unlink(missing_ok=True)
-            artifacts.append(_artifact_failed(ARTIFACT_POSTGRES, str(exc)))
+            reason = str(exc) if isinstance(exc, RuntimeError) and str(exc).startswith("pg_dump ") else type(exc).__name__
+            artifacts.append(_artifact_failed(ARTIFACT_POSTGRES, reason))
 
     # 2. Neo4j graph (required unless explicitly allowed missing)
     neo4j_file = target_path / "neo4j_export.jsonl"
@@ -172,16 +189,16 @@ def run_backup(
         try:
             counts = export_neo4j_jsonl(
                 neo4j_file,
-                neo4j_uri or os.environ.get("NEO4J_URI", "bolt://localhost:7687"),
-                neo4j_user or os.environ.get("NEO4J_USER", "neo4j"),
-                neo4j_password or os.environ.get("NEO4J_PASSWORD", "neo4j_password"),
+                neo4j_uri or config.neo4j_uri,
+                neo4j_user or config.neo4j_user,
+                neo4j_password or config.neo4j_password,
             )
             entry = _artifact_ok(ARTIFACT_NEO4J, neo4j_file)
             entry["record_counts"] = counts
             artifacts.append(entry)
         except Exception as exc:
             neo4j_file.unlink(missing_ok=True)
-            artifacts.append(_artifact_failed(ARTIFACT_NEO4J, str(exc)))
+            artifacts.append(_artifact_failed(ARTIFACT_NEO4J, f"Neo4j export failed: {type(exc).__name__}"))
 
     status = "ok" if all(a["status"] == "ok" for a in artifacts if a["required"]) else "failed"
     manifest = {
@@ -207,6 +224,7 @@ def run_backup(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Project Brain Backup Runner")
     parser.add_argument("--output", help="Output directory for backup artifacts")
+    parser.add_argument("--config", help="Required Brain .env path (or set BRAIN_ENV_FILE)")
     parser.add_argument(
         "--allow-missing",
         action="append",
@@ -214,19 +232,24 @@ def main(argv: list[str] | None = None) -> int:
         choices=ARTIFACT_NAMES,
         help="Demote a store to optional when it is out of scope for this deployment",
     )
-    parser.add_argument("--pg-dsn", help="PostgreSQL DSN (default: $DATABASE_URL)")
+    parser.add_argument("--pg-dsn", help="Override configured PostgreSQL DSN (avoid passwords in shell arguments)")
     parser.add_argument("--neo4j-uri", help="Neo4j bolt URI (default: $NEO4J_URI)")
     parser.add_argument("--neo4j-user", help="Neo4j user (default: $NEO4J_USER)")
     parser.add_argument("--neo4j-password", help="Neo4j password (default: $NEO4J_PASSWORD)")
     args = parser.parse_args(argv)
-    manifest = run_backup(
-        args.output,
-        pg_dsn=args.pg_dsn,
-        neo4j_uri=args.neo4j_uri,
-        neo4j_user=args.neo4j_user,
-        neo4j_password=args.neo4j_password,
-        allow_missing=tuple(args.allow_missing),
-    )
+    try:
+        manifest = run_backup(
+            args.output,
+            pg_dsn=args.pg_dsn,
+            neo4j_uri=args.neo4j_uri,
+            neo4j_user=args.neo4j_user,
+            neo4j_password=args.neo4j_password,
+            allow_missing=tuple(args.allow_missing),
+            config_path=args.config,
+        )
+    except ValueError as exc:
+        print(f"Backup configuration error: {exc}", file=sys.stderr)
+        return 1
     return 0 if manifest["status"] == "ok" else 1
 
 

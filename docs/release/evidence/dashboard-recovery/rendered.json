@@ -1,0 +1,651 @@
+{
+  "scope": "synthetic demo, external browser requests blocked, reduced motion, actual Chromium renders; all sections scrolled into view",
+  "results": [
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/",
+      "content_ready_seconds": 0.927,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Dashboard"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/projects",
+      "content_ready_seconds": 0.91,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Projects"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/graph",
+      "content_ready_seconds": 0.788,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Code map"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/memory",
+      "content_ready_seconds": 0.839,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Memory"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/packs",
+      "content_ready_seconds": 0.805,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Context packs"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/quality",
+      "content_ready_seconds": 0.826,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Quality"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/logs",
+      "content_ready_seconds": 0.786,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Requests & jobs"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/setup",
+      "content_ready_seconds": 0.792,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Set up Brain"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/settings",
+      "content_ready_seconds": 0.813,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Settings"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/help",
+      "content_ready_seconds": 0.733,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Help"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/indexing",
+      "content_ready_seconds": 0.732,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Index runs"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/insights",
+      "content_ready_seconds": 0.71,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Findings"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/mcp",
+      "content_ready_seconds": 0.741,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Agent tools"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/reranker",
+      "content_ready_seconds": 0.763,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Reranker"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/admin",
+      "content_ready_seconds": 0.714,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Access"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/runs",
+      "content_ready_seconds": 0.718,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Agent tasks"
+    },
+    {
+      "revision": "before",
+      "device": "desktop",
+      "route": "/reports",
+      "content_ready_seconds": 0.942,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Quality"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/",
+      "content_ready_seconds": 0.895,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Dashboard"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/projects",
+      "content_ready_seconds": 0.835,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Projects"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/graph",
+      "content_ready_seconds": 0.708,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Code map"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/memory",
+      "content_ready_seconds": 0.658,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Memory"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/packs",
+      "content_ready_seconds": 0.689,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Context packs"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/quality",
+      "content_ready_seconds": 0.685,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Quality"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/logs",
+      "content_ready_seconds": 0.776,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Requests & jobs"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/setup",
+      "content_ready_seconds": 0.643,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Set up Brain"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/settings",
+      "content_ready_seconds": 0.707,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Settings"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/help",
+      "content_ready_seconds": 0.737,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Help"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/indexing",
+      "content_ready_seconds": 0.722,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Index runs"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/insights",
+      "content_ready_seconds": 0.731,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Findings"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/mcp",
+      "content_ready_seconds": 0.712,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Agent tools"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/reranker",
+      "content_ready_seconds": 0.765,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Reranker"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/admin",
+      "content_ready_seconds": 0.704,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Access"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/runs",
+      "content_ready_seconds": 0.713,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Agent tasks"
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "route": "/reports",
+      "content_ready_seconds": 0.756,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Quality"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/",
+      "content_ready_seconds": 0.891,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Dashboard"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/projects",
+      "content_ready_seconds": 0.793,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Projects"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/graph",
+      "content_ready_seconds": 0.829,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Code map"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/memory",
+      "content_ready_seconds": 0.801,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Memory"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/packs",
+      "content_ready_seconds": 0.896,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Context packs"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/quality",
+      "content_ready_seconds": 0.732,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Quality"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/logs",
+      "content_ready_seconds": 0.783,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Requests & jobs"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/setup",
+      "content_ready_seconds": 0.746,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Set up Brain"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/settings",
+      "content_ready_seconds": 0.8,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Settings"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/help",
+      "content_ready_seconds": 0.766,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Help"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/indexing",
+      "content_ready_seconds": 0.85,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Index runs"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/insights",
+      "content_ready_seconds": 0.805,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Findings"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/mcp",
+      "content_ready_seconds": 0.763,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Agent tools"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/reranker",
+      "content_ready_seconds": 0.833,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Reranker"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/admin",
+      "content_ready_seconds": 0.796,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Access"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/runs",
+      "content_ready_seconds": 0.941,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Agent tasks"
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "route": "/reports",
+      "content_ready_seconds": 1.094,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Quality"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/",
+      "content_ready_seconds": 0.872,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Dashboard"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/projects",
+      "content_ready_seconds": 0.832,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Projects"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/graph",
+      "content_ready_seconds": 0.7,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Code map"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/memory",
+      "content_ready_seconds": 0.679,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Memory"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/packs",
+      "content_ready_seconds": 0.73,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Context packs"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/quality",
+      "content_ready_seconds": 0.697,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Quality"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/logs",
+      "content_ready_seconds": 0.766,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Requests & jobs"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/setup",
+      "content_ready_seconds": 0.705,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Set up Brain"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/settings",
+      "content_ready_seconds": 0.73,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Settings"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/help",
+      "content_ready_seconds": 0.702,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Help"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/indexing",
+      "content_ready_seconds": 0.723,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Index runs"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/insights",
+      "content_ready_seconds": 0.735,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Findings"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/mcp",
+      "content_ready_seconds": 0.721,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Agent tools"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/reranker",
+      "content_ready_seconds": 0.732,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Reranker"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/admin",
+      "content_ready_seconds": 0.682,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Access"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/runs",
+      "content_ready_seconds": 0.713,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Agent tasks"
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "route": "/reports",
+      "content_ready_seconds": 0.891,
+      "overflow": false,
+      "unnamedButtons": 0,
+      "h1": "Quality"
+    }
+  ],
+  "interactions": [
+    {
+      "revision": "before",
+      "device": "desktop",
+      "keyboard_palette_open_focus_escape": true
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "keyboard_palette_open_focus_escape": true
+    },
+    {
+      "revision": "before",
+      "device": "mobile",
+      "mobile_menu_keyboard_escape": true
+    },
+    {
+      "revision": "after",
+      "device": "desktop",
+      "keyboard_palette_open_focus_escape": true
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "keyboard_palette_open_focus_escape": true
+    },
+    {
+      "revision": "after",
+      "device": "mobile",
+      "mobile_menu_keyboard_escape": true
+    }
+  ],
+  "page_errors": [],
+  "after_source_commit": "de44503ff445e1d4ba796a07066685237ca8091a"
+}

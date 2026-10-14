@@ -1,5 +1,7 @@
 """Tests for retrieval filter helpers."""
 
+import pytest
+
 from brain.search.filters import (
     HISTORICAL_AUTHORITY_NOTE,
     HISTORICAL_RETRIEVAL_WEIGHT,
@@ -25,6 +27,45 @@ def test_template_path_detection():
 def test_test_path_detection():
     assert is_test_path("tests/test_health.py")
     assert not is_test_path("apps/api/main.py")
+
+
+@pytest.mark.parametrize("path", ["src/contest/engine.py", "src/specification.py", "src/latest.py", "src/specialist.py"])
+def test_production_substrings_are_not_test_paths(path):
+    from brain.retrieval.locator_fusion import surface_weight
+    from brain.indexers.repo_indexer import classify_file
+    from pathlib import Path
+    assert not is_test_path(path)
+    assert surface_weight(path, "Explain implementation") == 1
+    assert classify_file(Path("/repo") / path, Path("/repo")) == "source_code"
+
+
+@pytest.mark.parametrize("path", ["tests/core.py", "test/core.py", "spec/core.ts", "__tests__/core.ts", "test_core.py", "core_test.py", "core.spec.ts", "core.test.ts", "TestCore.java", "CoreTest.java", "app/tests.py", "test.py", "conftest.py"])
+def test_explicit_test_conventions_remain_classified(path):
+    from pathlib import Path
+    from brain.indexers.repo_indexer import classify_file
+    assert is_test_path(path)
+    assert classify_file(Path("/repo") / path, Path("/repo")) == "test"
+
+
+@pytest.mark.parametrize("path", ["templates/index.html", "templates\\index.html", "nested/templates/index.jinja2"])
+def test_root_relative_templates_stay_demoted_until_explicitly_requested(monkeypatch, path):
+    from brain.config.settings import settings
+    from brain.search.filters import query_file_type_weight
+    from brain.retrieval.locator_fusion import surface_weight
+    monkeypatch.setattr(settings, "RETRIEVAL_V2_ENABLED", True)
+    assert is_template_path(path)
+    assert surface_weight(path, "Explain storage") == 0.4
+    assert query_file_type_weight("template", "Explain storage", path) == 0.45
+    assert query_file_type_weight("template", "Fix HTML template", path) == 1
+
+
+def test_explicit_file_type_requires_query_intent_even_with_unconventional_path(monkeypatch):
+    from brain.config.settings import settings
+    from brain.search.filters import query_file_type_weight
+    monkeypatch.setattr(settings, "RETRIEVAL_V2_ENABLED", True)
+    assert query_file_type_weight("template", "Explain storage", "views/index.html") == 0.45
+    assert query_file_type_weight("test", "Explain storage", "qa/core.py") == 0.85
+    assert query_file_type_weight("test", "Add regression tests", "qa/core.py") == 1
 
 
 def test_explicit_historical_frontmatter_is_classified_without_age_guessing():

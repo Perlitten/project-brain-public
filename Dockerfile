@@ -1,11 +1,12 @@
 # --- Builder stage ---
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /build
 
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml requirements.lock README.md ./
+COPY docs/legal/THIRD_PARTY_NOTICES.md ./docs/legal/THIRD_PARTY_NOTICES.md
 COPY brain ./brain
 COPY apps ./apps
 COPY rules ./rules
@@ -37,10 +38,11 @@ RUN if [ "${BRAIN_REQUIRE_RELEASE_IDENTITY}" = "true" ]; then \
             --source-revision "${BRAIN_BUILD_SHA}"; \
     fi
 
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock && \
+    pip install --no-cache-dir --no-deps .
 
 # --- Runtime stage ---
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -57,7 +59,7 @@ RUN groupadd -r -g 999 brain && useradd -r -u 999 -g brain -s /bin/false brain
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application source

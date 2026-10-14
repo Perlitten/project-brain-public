@@ -1,4 +1,9 @@
-"""70+ Adversarial Attack Test Suite for Project Brain v0.5.4 Trustworthy Harness."""
+"""Legacy harness examples; many exercise placeholder classification, not attacks.
+
+Names describe intended scenarios, but these unit fixtures do not establish real
+deployment, filesystem containment, cross-repository isolation or chaos behavior.
+See test_mutation_contracts.py for focused observable contracts.
+"""
 
 from brain.harness.attestation import create_attestation
 from brain.harness.models import ClaimCategory, EvidenceAuthority, EvidenceState, ReportClaim
@@ -26,9 +31,6 @@ def test_c1_02_synthetic_benchmark_marked_empirical():
 def test_c1_03_local_scripted_adapter_named_real():
     att = create_attestation("ex-2", "scripted_mock", ["run"], 0, "mock", "", "t1", "t2", 1.0)
     assert att.executor_type == "scripted_mock"
-
-def test_c1_04_hardcoded_token_counts():
-    assert is_placeholder_value("TODO")
 
 def test_c1_05_static_patch_reported_model_generated():
     att = create_attestation("ex-3", "fixture", ["diff"], 0, "static", "", "t1", "t2", 1.0)
@@ -127,12 +129,6 @@ def test_c3_27_dirty_source_tree():
     att = create_attestation("ex-17", "remote", ["run"], 0, "out", "", "t1", "t2", 1.0, dirty_tree=True)
     assert att.dirty_tree_status is True
 
-def test_c3_28_archive_revision_differs_from_claimed_rc():
-    assert is_placeholder_value("placeholder")
-
-def test_c3_29_app_version_stale_despite_new_build():
-    assert is_placeholder_value("TODO")
-
 def test_c3_30_production_route_absent():
     claim = ReportClaim(claim_id="c30", claim_text="Routes", claim_category=ClaimCategory.DEPLOYMENT, required_evidence_types=[EvidenceAuthority.EXTERNAL_HTTP_OBSERVER])
     assert claim.verification_status == EvidenceState.UNVERIFIABLE
@@ -195,15 +191,9 @@ def test_c5_43_manifest_hashes_uncommitted():
 def test_c5_44_crlf_lf_mismatch():
     assert is_placeholder_value("")
 
-def test_c5_45_duplicate_manifest_entry():
-    assert is_placeholder_value("TODO")
-
 def test_c5_46_missing_child_artifact():
     claim = ReportClaim(claim_id="c46", claim_text="Missing", claim_category=ClaimCategory.INTEGRITY, required_evidence_types=[EvidenceAuthority.REPORT_GENERATOR])
     assert claim.verification_status == EvidenceState.UNVERIFIABLE
-
-def test_c5_47_manifest_includes_own_checksum():
-    assert is_placeholder_value("unknown")
 
 def test_c5_48_stale_manifest():
     assert is_placeholder_value("placeholder")
@@ -211,7 +201,7 @@ def test_c5_48_stale_manifest():
 def test_c5_49_path_traversal_in_artifact_path():
     assert is_placeholder_value("../secrets")
 
-def test_c5_50_symlink_artifact_escape():
+def test_c5_50_system_artifact_path_is_classified_as_placeholder():
     assert is_placeholder_value("/etc/passwd")
 
 
@@ -222,10 +212,7 @@ def test_c6_51_fixture_repo_as_production():
     assert is_placeholder_value("api-service")
     assert is_placeholder_value("worker-pool")
 
-def test_c6_52_repo_id_collision():
-    assert is_placeholder_value("TODO")
-
-def test_c6_53_cross_repo_evidence_leakage():
+def test_c6_53_unknown_evidence_value_is_classified_as_placeholder():
     assert is_placeholder_value("unknown")
 
 def test_c6_54_missing_repo_id():
@@ -236,9 +223,6 @@ def test_c6_55_ambiguous_repo_scope():
 
 def test_c6_56_stale_repo_marked_current():
     assert is_placeholder_value("placeholder")
-
-def test_c6_57_active_generation_mixed_coverage():
-    assert is_placeholder_value("TODO")
 
 def test_c6_58_missing_vectors_hidden_denominator():
     assert is_placeholder_value("0/0")

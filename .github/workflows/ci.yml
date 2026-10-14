@@ -127,6 +127,9 @@ jobs:
       - name: Lint with ruff
         run: ruff check .
 
+      - name: Verify legal inventory against pinned dependencies
+        run: python scripts/check_third_party_notices.py
+
       - name: Type check ratchet (mypy, non-increasing baseline)
         run: bash scripts/mypy_gate.sh
 
@@ -139,6 +142,14 @@ jobs:
           # Optional comma/newline-separated extra banned phrases (repo secret),
           # hashed on the fly by the privacy denylist test. Empty is fine.
           PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
+
+      - name: Team authority PostgreSQL race, native MCP and restore checks
+        run: |
+          PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE USER fixture WITH CREATEDB PASSWORD 'fixture_local_only'" \
+            -c "CREATE DATABASE brain_team_test OWNER fixture"
+          TEST_TEAM_POSTGRES_URL="postgresql+asyncpg://fixture:fixture_local_only@127.0.0.1:$POSTGRES_PORT/brain_team_test" \
+            pytest tests/test_team_foundations.py tests/test_team_transport.py tests/test_team_restore.py -q
 
       - name: Coverage summary
         run: |
@@ -156,7 +167,8 @@ jobs:
       - name: Build wheel + clean-install smoke
         run: |
           python -m pip install build
-          python -m build --wheel --outdir dist/
+          python -m build --wheel --sdist --outdir dist/
+          python scripts/check_third_party_notices.py dist/*.whl dist/*.tar.gz
           python -m venv /tmp/whlvenv
           /tmp/whlvenv/bin/pip install --require-hashes -r requirements.lock
           /tmp/whlvenv/bin/pip install --no-deps dist/*.whl

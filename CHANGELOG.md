@@ -6,6 +6,54 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Replace the all-at-once code map with collapsed top-level areas, searchable
+  modules, a minimum edge-weight filter and persistent one/two-hop focus.
+  Tests are hidden by default; the map fits desktop and narrow mobile screens
+  without horizontal scrolling. The complete Connections table is unchanged.
+
+- Add default-off single-team project/task/run authority foundations with live
+  verified-identity membership, narrowed delegation, stable repository references,
+  provenance and idempotency. In experimental team mode, unadapted personal
+  APIs/MCP resources and all execution are refused; this is not a team-ready MVP.
+  Personal/full and personal/Lite retain their existing defaults.
+
+- Clarify self-reported MCP telemetry labels versus authenticated principals,
+  native OAuth discovery/TLS and single-worker restart limits, and full/Lite
+  queue cancellation and idempotency retention without claiming hosted-client
+  verification or exactly-once side effects.
+
+- Reconcile third-party notices with pinned Python and web dependencies,
+  distinguish the TypeScript npm alias, include notices in runtime wheels,
+  and check versions, licenses and packaged notice retention in CI.
+
+- Add opt-in Lite source profile with durable SQLite memory, maintenance queues,
+  local token-hash embeddings, SQLite graph adjacency and a disabled default LLM.
+  Lite commands and local state are not in published v0.9.2 artifacts.
+- Default agent context to `BRAIN_AGENT_CONTEXT_V2_MODE=on` and retrieval to
+  `RETRIEVAL_V2_ENABLED=true`: bounded locators/runtime slices, linear per-file
+  fusion, identifier/path handling and a bounded local BM25 companion. Both
+  switches can be disabled for the legacy contract; no useful coding savings
+  or learned semantic quality are established by the offline profile.
+- Default moving-checkout context to `warn_and_serve`, with freshness warnings,
+  bounded changed-source slices and throttled reindexing; retain `strict_block`.
+- Make initial indexing write deterministic source summaries before optional
+  asynchronous LLM enrichment. Summary availability is not evidence of model
+  execution. Existing response-summary trimming was already present in v0.9.2.
+- Exclude nested SQLite databases and their sidecars from root image contexts
+  and source identity digests, even inside included application directories.
+- Gate releases on a matching immutable tag/package version and the latest
+  successful main-push CI run for that revision. Pass verified identities to
+  all images, inventory installed API/worker/web dependencies, and publish
+  the checksum-verified build artifacts instead of rebuilding them.
+- Require an explicit, complete Brain configuration for full-mode backups and
+  PostgreSQL restores; reject conflicting ambient database settings and require
+  confirmation of the exact restore target. Recovery no longer silently uses a
+  different default database. Neo4j reindexing and interrupted-job recovery
+  remain separate operator steps.
+- Align the unreleased source path on Python 3.12 and Node 22; bootstrap and
+  the API image now install the same hash-locked dependency graph as CI.
+  Python 3.10/3.11 remain available on the published v0.9.2 tag, not on this
+  new source revision.
 - Split the FAQ into "Using Brain" (agents not calling Brain, wrong repository,
   stale index, stuck jobs, mock models, demo data, updating) and "Limits and evidence".
 - Add a dashboard Help screen (`/help`): server version and models, common

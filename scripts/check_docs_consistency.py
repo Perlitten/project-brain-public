@@ -22,6 +22,7 @@ CURRENT_PAGES = (
     ".github/CODE_OF_CONDUCT.md", "SECURITY.md", "docs/ROADMAP.md",
     "docs/legal/THIRD_PARTY_NOTICES.md", "docs/operations/DEPLOYMENT.md",
     "docs/operations/AGENT_DEPLOYMENT.md", "deploy/RUNBOOK.md", "examples/README.md",
+    "docs/EVAL.md", "docs/CLI.md", "docs/DASHBOARD.md", "docs/runbooks/backup-restore.md",
 )
 PUBLISHED_PAGES = ("README.md", "docs/FAQ.md", "docs/GETTING_STARTED.md")
 PUBLISHED = re.compile(r"Latest published release: \*\*\[v(\d+\.\d+\.\d+)\]\(([^)]+)\)\*\*")

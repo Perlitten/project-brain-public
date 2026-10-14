@@ -1,0 +1,187 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from enum import StrEnum
+import uuid
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from brain.auth.principals import ResolvedPrincipal
+from brain.config.settings import settings
+from brain.database.models import ApiCredential, Principal
+from brain.database.harness_models import AgentTask
+from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamMember, TeamProject, TeamTaskBinding
+
+
+class Permission(StrEnum):
+    READ = "read"
+    CREATE_TASK = "task.create"
+    REQUEST_RUN = "run.request"
+    PROPOSE = "knowledge.propose"
+    APPROVE = "knowledge.approve"
+    ACCEPT = "task.accept"
+    EXECUTE = "execute"
+    MERGE = "merge"
+    TRANSFER = "provider.transfer"
+
+
+ROLE_PERMISSIONS = {
+    "reader": frozenset({Permission.READ}),
+    "contributor": frozenset({Permission.READ, Permission.CREATE_TASK, Permission.REQUEST_RUN, Permission.PROPOSE}),
+    "reviewer": frozenset({Permission.READ, Permission.CREATE_TASK, Permission.REQUEST_RUN,
+                           Permission.PROPOSE, Permission.APPROVE, Permission.ACCEPT}),
+}
+RUN_CAPABILITIES = frozenset({Permission.READ, Permission.REQUEST_RUN})
+
+
+class TeamDenied(PermissionError):
+    pass
+
+
+class TeamConflict(ValueError):
+    pass
+
+
+def require_team_mode() -> None:
+    if not settings.BRAIN_TEAM_MODE or settings.BRAIN_STORAGE_MODE != "full":
+        raise TeamDenied("Team foundations are disabled")
+
+
+def permissions(value: list[str]) -> frozenset[Permission]:
+    try:
+        return frozenset(Permission(item) for item in value)
+    except (ValueError, TypeError) as exc:
+        raise TeamDenied("Invalid authority policy") from exc
+
+
+async def fresh(session: AsyncSession, model, *predicates, exclusive: bool = False):
+    return (await session.execute(select(model).where(*predicates)
+                                  .with_for_update(read=not exclusive)
+                                  .execution_options(populate_existing=True))).scalar_one_or_none()
+
+
+async def live_credential(session: AsyncSession, principal_id: int, credential_id: int | None) -> ResolvedPrincipal:
+    if principal_id <= 0 or credential_id is None:
+        raise TeamDenied("A named live credential is required")
+    identity = await fresh(session, Principal, Principal.id == principal_id)
+    credential = await fresh(session, ApiCredential, ApiCredential.id == credential_id)
+    now = datetime.now(timezone.utc)
+    if (identity is None or credential is None or credential.principal_id != principal_id
+            or identity.disabled_at or credential.revoked_at
+            or (credential.expires_at is not None and credential.expires_at <= now)):
+        raise TeamDenied("Credential is no longer authorized")
+    return ResolvedPrincipal(id=identity.id, name=identity.name, kind=identity.kind,
+                             credential_id=credential.id, scopes=frozenset(credential.scopes or []))
+
+
+async def human_member(session: AsyncSession, caller: ResolvedPrincipal, team_id: int) -> TeamMember:
+    member = await fresh(session, TeamMember, TeamMember.principal_id == caller.id, TeamMember.team_id == team_id)
+    if (caller.kind != "human" or member is None or not member.verified_at or member.revoked_at
+            or not member.verification_issuer.strip() or not member.verification_subject.strip()):
+        raise TeamDenied("Verified team membership is required")
+    return member
+
+
+@dataclass(frozen=True)
+class Authority:
+    actor_id: int
+    initiator_id: int
+    initiator_credential_id: int
+    allowed: frozenset[Permission]
+    run_id: uuid.UUID | None = None
+
+
+async def authorize(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
+                    permission: Permission, *, task_id: uuid.UUID | None = None,
+                    author_id: int | None = None) -> Authority:
+    require_team_mode()
+    caller = await live_credential(session, caller.id, caller.credential_id)
+    project = await fresh(session, TeamProject, TeamProject.id == project_id)
+    if project is None or project.disabled_at:
+        raise TeamDenied("Project access denied")
+    chain: list[AgentRun] = []
+    initiator = caller
+    if caller.kind == "run":
+        run = await fresh(session, AgentRun, AgentRun.principal_id == caller.id)
+        if run is None or run.credential_id != caller.credential_id or (task_id and run.task_id != task_id):
+            raise TeamDenied("Run identity mismatch")
+        task_id = run.task_id
+        while run is not None:
+            if len(chain) >= 32 or run.id in {item.id for item in chain} or run.revoked_at or run.task_id != task_id:
+                raise TeamDenied("Invalid delegation chain")
+            await live_credential(session, run.principal_id, run.credential_id)
+            chain.append(run)
+            run = await fresh(session, AgentRun, AgentRun.id == run.parent_id) if run.parent_id else None
+            if chain[-1].parent_id and run is None:
+                raise TeamDenied("Missing parent authority")
+        initiator = await live_credential(session, chain[0].initiator_id, chain[0].initiator_credential_id)
+        if any(r.initiator_id != initiator.id or r.initiator_credential_id != initiator.credential_id for r in chain):
+            raise TeamDenied("Delegation changed initiator")
+    await human_member(session, initiator, project.team_id)
+    membership = await fresh(session, ProjectMember, ProjectMember.project_id == project_id,
+                             ProjectMember.principal_id == initiator.id)
+    if membership is None or membership.revoked_at:
+        raise TeamDenied("Project access denied")
+    allowed = ROLE_PERMISSIONS.get(membership.role, frozenset()) & permissions(project.permissions)
+    allowed = frozenset(p for p in allowed if initiator.has_scope(f"team:{p}") and caller.has_scope(f"team:{p}"))
+    if task_id is not None:
+        binding = await fresh(session, TeamTaskBinding, TeamTaskBinding.task_id == task_id,
+                              TeamTaskBinding.project_id == project_id)
+        if binding is None:
+            raise TeamDenied("Task access denied")
+        repository = await fresh(session, ProjectRepository, ProjectRepository.repository_id == binding.repository_id,
+                                 ProjectRepository.project_id == project_id)
+        if repository is None:
+            raise TeamDenied("Source repository no longer belongs to this project")
+        allowed &= permissions(binding.permissions)
+    for grant in chain:
+        grant_credential = await live_credential(session, grant.principal_id, grant.credential_id)
+        allowed &= permissions(grant.permissions) & permissions(grant.executor_capabilities) & RUN_CAPABILITIES
+        allowed = frozenset(p for p in allowed if grant_credential.has_scope(f"team:{p}"))
+    if permission == Permission.APPROVE and (author_id is None or author_id == initiator.id):
+        raise TeamDenied("Independent, attributed approval is required")
+    if permission not in allowed:
+        raise TeamDenied("Permission denied")
+    if task_id is not None and permission == Permission.REQUEST_RUN:
+        task = await fresh(session, AgentTask, AgentTask.id == task_id)
+        if task is None or task.cancellation_requested_at is not None or task.status in {"cancelled", "completed"}:
+            raise TeamDenied("Task cannot accept further run requests")
+    assert initiator.credential_id is not None
+    return Authority(caller.id, initiator.id, initiator.credential_id, allowed, chain[0].id if chain else None)
+
+
+async def change_role(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
+                      principal_id: int, role: str, expected_version: int) -> None:
+    await administrator(session, caller, project_id)
+    if role not in ROLE_PERMISSIONS:
+        raise TeamConflict("Unknown project role")
+    changed = await session.execute(update(ProjectMember).where(
+        ProjectMember.project_id == project_id, ProjectMember.principal_id == principal_id,
+        ProjectMember.version == expected_version).values(role=role, version=expected_version + 1)
+        .returning(ProjectMember.principal_id))
+    if changed.scalar_one_or_none() is None:
+        raise TeamConflict("Membership version conflict")
+
+
+async def administrator(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID) -> None:
+    require_team_mode()
+    caller = await live_credential(session, caller.id, caller.credential_id)
+    project = await fresh(session, TeamProject, TeamProject.id == project_id, exclusive=True)
+    if project is None:
+        raise TeamDenied("Project access denied")
+    member = await human_member(session, caller, project.team_id)
+    if not member.is_admin or not caller.has_scope("team:admin"):
+        raise TeamDenied("Administration permission required")
+
+
+async def change_policy(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
+                        allowed: list[str], expected_version: int) -> None:
+    await administrator(session, caller, project_id)
+    policy = sorted(permissions(allowed))
+    changed = await session.execute(update(TeamProject).where(
+        TeamProject.id == project_id, TeamProject.version == expected_version)
+        .values(permissions=policy, version=expected_version + 1).returning(TeamProject.id))
+    if changed.scalar_one_or_none() is None:
+        raise TeamConflict("Policy version conflict")

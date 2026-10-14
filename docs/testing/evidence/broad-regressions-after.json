@@ -1,0 +1,11 @@
+{
+  "source_commit": "5a15b9345f25070a0e3d97f7e357c7a0cb52ffcd",
+  "command": ["python", "-m", "pytest", "tests/test_auth_failure_regressions.py", "tests/test_retrieval_edge_regressions.py", "tests/test_concurrency_regressions.py::test_simultaneous_nonce_consumers_return_exactly_one_success", "tests/test_concurrency_regressions.py::test_parallel_section_reservations_cannot_overbook_bytes", "tests/test_concurrency_regressions.py::test_parallel_claim_verification_does_not_publish_mixed_outcomes", "tests/test_concurrency_regressions.py::test_join_admission_and_reservation_are_one_operation", "tests/test_concurrency_regressions.py::test_generating_challenges_evicts_expired_unused_records", "tests/test_concurrency_regressions.py::test_replay_markers_expire_without_resurrecting_a_spent_challenge", "tests/test_concurrency_regressions.py::test_snapshot_exclusion_records_do_not_alias_mutable_state", "tests/test_concurrency_regressions.py::test_snapshot_cannot_observe_half_committed_reservation", "tests/test_concurrency_regressions.py::test_parallel_exclusions_cannot_overflow_metadata_cap", "-q", "--tb=short"],
+  "exit_code": 0,
+  "summary": "35 passed in 2.11s",
+  "test_sha256": {
+    "tests/test_auth_failure_regressions.py": "482fdbc3b8385df8cab894074eca57690b3769bf11d494e272d6b1c8a1f4c363",
+    "tests/test_retrieval_edge_regressions.py": "a309befde99d88399ed21e664cbd5d590c0fd8a557923b97182e60bc8a6209f4",
+    "tests/test_concurrency_regressions.py": "ea0d8464d327d8f4a22655449c3448c9253d4681d5acee71fc6520fc335387e2"
+  }
+}

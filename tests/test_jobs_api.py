@@ -39,6 +39,7 @@ def mock_queue():
 def api_key_env():
     with patch("apps.api.auth.settings") as mock_settings:
         mock_settings.PROJECT_BRAIN_API_KEY = "test-secret-key"
+        mock_settings.BRAIN_TEAM_MODE = False
         yield mock_settings
 
 
@@ -214,7 +215,7 @@ def test_enqueue_nightly_maintenance_has_long_quality_budget(
     )
 
 
-def test_enqueue_deep_context_is_authenticated_and_explicitly_gated(
+def test_enqueue_deep_context_is_authenticated_and_degrades_without_lfm(
     mock_queue,
     api_key_env,
 ):
@@ -232,8 +233,11 @@ def test_enqueue_deep_context_is_authenticated_and_explicitly_gated(
             json=body,
             headers={"X-API-Key": "test-secret-key"},
         )
-    assert disabled.status_code == 503
-    mock_queue.enqueue.assert_not_awaited()
+    # Without the late-interaction lane the job still queues: the worker builds
+    # a durable pack with the default retrieval instead of refusing.
+    assert disabled.status_code == 200
+    mock_queue.enqueue.assert_awaited_once()
+    mock_queue.enqueue.reset_mock()
 
     with (
         patch(
@@ -307,6 +311,7 @@ def test_get_job_not_found(mock_queue, api_key_env):
 def test_no_auth_when_api_key_unset(mock_queue):
     with patch("apps.api.auth.settings") as mock_settings:
         mock_settings.PROJECT_BRAIN_API_KEY = None
+        mock_settings.BRAIN_TEAM_MODE = False
         response = client.post("/jobs/reindex")
         assert response.status_code == 200
 

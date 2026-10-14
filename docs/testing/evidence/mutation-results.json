@@ -1,0 +1,2832 @@
+{
+  "base_commit": "3c4449e37909541496a5d995b6035a6129c82c10",
+  "python": "3.12.14",
+  "phases": {
+    "before": {
+      "tests": [
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py"
+      ],
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py",
+        "-q",
+        "--tb=short",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "timeout_seconds": 30,
+      "results": [
+        {
+          "id": 1,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.492,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 2,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.66,
+          "first_failure_witnesses": [
+            "tests/test_remote_observe_drill.py::test_remote_observe_hmac_signature_and_tamper_detection"
+          ]
+        },
+        {
+          "id": 3,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.622,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 4,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.562,
+          "first_failure_witnesses": [
+            "tests/test_remote_observe_drill.py::test_remote_observe_hmac_signature_and_tamper_detection"
+          ]
+        },
+        {
+          "id": 5,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.44,
+          "first_failure_witnesses": [
+            "tests/test_harness_attestation.py::test_attestation_integrity - Assert...",
+            "tests/test_property_and_mutation.py::test_hash_tampering_detected - As..."
+          ]
+        },
+        {
+          "id": 6,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.421,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 7,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.53,
+          "first_failure_witnesses": [
+            "tests/test_harness_attestation.py::test_attestation_integrity - Assert...",
+            "tests/test_harness_attestation.py::test_claim_verification - Assertion...",
+            "tests/test_property_and_mutation.py::test_hash_tampering_detected - As..."
+          ]
+        },
+        {
+          "id": 8,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.515,
+          "first_failure_witnesses": [
+            "tests/test_harness_attestation.py::test_remote_nonce_challenge - Asser...",
+            "tests/test_adversarial_harness_suite.py::test_c2_17_replayed_remote_nonce",
+            "tests/test_remote_observe_drill.py::test_remote_observe_hmac_signature_and_tamper_detection"
+          ]
+        },
+        {
+          "id": 9,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.639,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 10,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.532,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 11,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.71,
+          "first_failure_witnesses": [
+            "tests/test_harness_attestation.py::test_remote_nonce_challenge - Asser...",
+            "tests/test_adversarial_harness_suite.py::test_c2_17_replayed_remote_nonce",
+            "tests/test_remote_observe_drill.py::test_remote_observe_hmac_signature_and_tamper_detection"
+          ]
+        },
+        {
+          "id": 12,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.592,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 13,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.64,
+          "first_failure_witnesses": [
+            "tests/test_harness_attestation.py::test_remote_nonce_challenge - Asser...",
+            "tests/test_adversarial_harness_suite.py::test_c2_17_replayed_remote_nonce",
+            "tests/test_remote_observe_drill.py::test_remote_observe_hmac_signature_and_tamper_detection"
+          ]
+        },
+        {
+          "id": 14,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.583,
+          "first_failure_witnesses": [
+            "tests/test_adversarial_harness_suite.py::test_c2_16_nonce_from_another_host"
+          ]
+        },
+        {
+          "id": 15,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.513,
+          "first_failure_witnesses": [
+            "tests/test_harness_attestation.py::test_remote_nonce_challenge - Asser...",
+            "tests/test_adversarial_harness_suite.py::test_c2_17_replayed_remote_nonce",
+            "tests/test_remote_observe_drill.py::test_remote_observe_hmac_signature_and_tamper_detection"
+          ]
+        },
+        {
+          "id": 16,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.443,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 17,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.541,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 18,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.452,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 19,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.846,
+          "first_failure_witnesses": [
+            "tests/test_harness_attestation.py::test_remote_nonce_challenge - Asser...",
+            "tests/test_adversarial_harness_suite.py::test_c2_17_replayed_remote_nonce",
+            "tests/test_remote_observe_drill.py::test_remote_observe_hmac_signature_and_tamper_detection"
+          ]
+        },
+        {
+          "id": 20,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.59,
+          "first_failure_witnesses": [
+            "tests/test_harness_attestation.py::test_remote_nonce_challenge - Asser...",
+            "tests/test_adversarial_harness_suite.py::test_c2_17_replayed_remote_nonce",
+            "tests/test_remote_observe_drill.py::test_remote_observe_hmac_signature_and_tamper_detection"
+          ]
+        },
+        {
+          "id": 21,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.64,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 22,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.389,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 23,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.529,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 24,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.562,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 25,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.471,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 26,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.606,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 27,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.523,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 28,
+          "status": "timeout"
+        },
+        {
+          "id": 29,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.359,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 30,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.444,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 31,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.592,
+          "first_failure_witnesses": [
+            "tests/test_context_budget.py::test_truncate_utf8_is_valid_deterministic_and_never_over_budget"
+          ]
+        },
+        {
+          "id": 32,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.344,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 33,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.436,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 34,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.535,
+          "first_failure_witnesses": [
+            "tests/test_context_budget.py::test_truncate_utf8_is_valid_deterministic_and_never_over_budget",
+            "tests/test_context_budget.py::test_context_budget_records_section_and_exclusion",
+            "tests/test_context_budget.py::test_payload_builder_never_exceeds_hard_cap_for_random_payloads"
+          ]
+        },
+        {
+          "id": 35,
+          "status": "timeout"
+        },
+        {
+          "id": 36,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.353,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 37,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.426,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 38,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.38,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 39,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.262,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 40,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.338,
+          "first_failure_witnesses": [
+            "tests/test_context_budget.py::test_context_budget_records_section_and_exclusion",
+            "tests/test_context_budget.py::test_payload_builder_fails_closed_when_metadata_cannot_fit",
+            "tests/test_context_budget.py::test_payload_builder_never_exceeds_hard_cap_for_random_payloads"
+          ]
+        },
+        {
+          "id": 41,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.402,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 42,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.293,
+          "first_failure_witnesses": [
+            "tests/test_context_budget.py::test_context_budget_records_section_and_exclusion"
+          ]
+        },
+        {
+          "id": 43,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.327,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 44,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.268,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 45,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.45,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 46,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.336,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 47,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.376,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 48,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.184,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 49,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.547,
+          "first_failure_witnesses": [
+            "tests/test_context_budget.py::test_context_budget_records_section_and_exclusion",
+            "tests/test_context_budget.py::test_payload_builder_never_exceeds_hard_cap_for_random_payloads"
+          ]
+        },
+        {
+          "id": 50,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.479,
+          "first_failure_witnesses": [
+            "tests/test_context_budget.py::test_context_budget_records_section_and_exclusion"
+          ]
+        },
+        {
+          "id": 51,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.574,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 52,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.24,
+          "first_failure_witnesses": [
+            "tests/test_context_budget.py::test_context_budget_records_section_and_exclusion"
+          ]
+        },
+        {
+          "id": 53,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.392,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 54,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.39,
+          "first_failure_witnesses": []
+        }
+      ],
+      "summary": {
+        "killed": 18,
+        "survived": 34,
+        "timeout": 2
+      },
+      "excluded_type_invalid_mutants": [
+        34
+      ],
+      "usable_summary": {
+        "killed": 17,
+        "survived": 34,
+        "timeout": 2
+      },
+      "tested_source_sha256": {
+        "brain/harness/attestation.py": "22e41f2c8d5892df0ae2f7636caa9e4eb0aad3714418e4c7fdb0f86b3022e1a2",
+        "brain/harness/nonce.py": "c093eff48bc4ebfca94cfb896b92daec99a0d3ca79ff26c3d90aba72227e6dbb",
+        "brain/context/budget.py": "2f677ffdbf8dd02ed25ff911ccf0ecf6c314e719543b99ac3d00b8bcf568815d"
+      },
+      "command_interpreter_normalized": true
+    },
+    "strengthened_tests": {
+      "tests": [
+        "tests/test_mutation_contracts.py",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py"
+      ],
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_mutation_contracts.py",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py",
+        "-q",
+        "-x",
+        "--tb=short",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "timeout_seconds": 30,
+      "results": [
+        {
+          "id": 1,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.053,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 2,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.243,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 3,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.22,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 4,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.795,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 5,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.812,
+          "first_failure_witnesses": [
+            "tests/test_harness_attestation.py::test_attestation_integrity - Assert..."
+          ]
+        },
+        {
+          "id": 6,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 3.441,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 7,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.067,
+          "first_failure_witnesses": [
+            "tests/test_harness_attestation.py::test_attestation_integrity - Assert..."
+          ]
+        },
+        {
+          "id": 8,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.56,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 9,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.028,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
+          ]
+        },
+        {
+          "id": 10,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 7.33,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 11,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.297,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 12,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.85,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
+          ]
+        },
+        {
+          "id": 13,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.865,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 14,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.68,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 15,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.448,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 16,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.851,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_inclusive_ttl_boundary - ..."
+          ]
+        },
+        {
+          "id": 17,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 3.695,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 18,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.397,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 19,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.691,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 20,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.102,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 21,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.353,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 22,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.229,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
+          ]
+        },
+        {
+          "id": 23,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.559,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
+          ]
+        },
+        {
+          "id": 24,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.31,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[-5-0]"
+          ]
+        },
+        {
+          "id": 25,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.644,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 26,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.277,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 27,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 6.833,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 28,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.579,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 29,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.721,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 30,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.372,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 31,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.546,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 32,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.641,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-3-\\u2026-\\u2026]"
+          ]
+        },
+        {
+          "id": 33,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.359,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-2-\\u2026-he]"
+          ]
+        },
+        {
+          "id": 34,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.325,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 35,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.112,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 36,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.516,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+          ]
+        },
+        {
+          "id": 37,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.516,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+          ]
+        },
+        {
+          "id": 38,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.538,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+          ]
+        },
+        {
+          "id": 39,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.488,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+          ]
+        },
+        {
+          "id": 40,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.555,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 41,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.612,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_invalid_budget_is_rejected[0-allocations0]"
+          ]
+        },
+        {
+          "id": 42,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.147,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 43,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.49,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_zero_allocation_is_valid_and_excludes_content"
+          ]
+        },
+        {
+          "id": 44,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.095,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 45,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.623,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 46,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.173,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 47,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 4.584,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_exclusion_metadata_has_bounded_count_and_labels"
+          ]
+        },
+        {
+          "id": 48,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.591,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 49,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.61,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 50,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.0,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 51,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.433,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 52,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.661,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 53,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.808,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 54,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.704,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_explicit_allocation_can_only_reduce_section_allowance"
+          ]
+        }
+      ],
+      "summary": {
+        "killed": 50,
+        "survived": 4
+      },
+      "excluded_type_invalid_mutants": [
+        34
+      ],
+      "usable_summary": {
+        "killed": 49,
+        "survived": 4
+      },
+      "tested_source_sha256": {
+        "brain/harness/attestation.py": "22e41f2c8d5892df0ae2f7636caa9e4eb0aad3714418e4c7fdb0f86b3022e1a2",
+        "brain/harness/nonce.py": "c093eff48bc4ebfca94cfb896b92daec99a0d3ca79ff26c3d90aba72227e6dbb",
+        "brain/context/budget.py": "2f677ffdbf8dd02ed25ff911ccf0ecf6c314e719543b99ac3d00b8bcf568815d"
+      },
+      "command_interpreter_normalized": true
+    },
+    "fixed_frozen_replay": {
+      "tests": [
+        "tests/test_mutation_contracts.py",
+        "tests/test_mutation_bug_regressions.py",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py"
+      ],
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_mutation_contracts.py",
+        "tests/test_mutation_bug_regressions.py",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py",
+        "-q",
+        "-x",
+        "--tb=short",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "timeout_seconds": 30,
+      "results": [
+        {
+          "id": 1,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.096,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 2,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.965,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 3,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.967,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 4,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.964,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 5,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.574,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_signed_integrity_requires_explicit_credentials_and_binds_the_payload"
+          ]
+        },
+        {
+          "id": 6,
+          "status": "removed_by_source_change"
+        },
+        {
+          "id": 7,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.759,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_failed_reverification_revokes_previous_success[missing-UNVERIFIABLE]"
+          ]
+        },
+        {
+          "id": 8,
+          "status": "removed_by_source_change"
+        },
+        {
+          "id": 9,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.623,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
+          ]
+        },
+        {
+          "id": 10,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.707,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 11,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.744,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 12,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.63,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
+          ]
+        },
+        {
+          "id": 13,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.946,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 14,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.891,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 15,
+          "status": "removed_by_source_change"
+        },
+        {
+          "id": 16,
+          "status": "removed_by_source_change"
+        },
+        {
+          "id": 17,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.797,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 18,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.767,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 19,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.737,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 20,
+          "status": "removed_by_source_change"
+        },
+        {
+          "id": 21,
+          "status": "removed_by_source_change"
+        },
+        {
+          "id": 22,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.621,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
+          ]
+        },
+        {
+          "id": 23,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.748,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
+          ]
+        },
+        {
+          "id": 24,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.853,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[-5-0]"
+          ]
+        },
+        {
+          "id": 25,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.916,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 26,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.89,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 27,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.747,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 28,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.831,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 29,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.889,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 30,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.93,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 31,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.72,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 32,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.856,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-3-\\u2026-\\u2026]"
+          ]
+        },
+        {
+          "id": 33,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.636,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-2-\\u2026-he]"
+          ]
+        },
+        {
+          "id": 34,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.718,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 35,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.869,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 36,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.526,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+          ]
+        },
+        {
+          "id": 37,
+          "status": "removed_by_source_change"
+        },
+        {
+          "id": 38,
+          "status": "removed_by_source_change"
+        },
+        {
+          "id": 39,
+          "status": "removed_by_source_change"
+        },
+        {
+          "id": 40,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.677,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 41,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.697,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_invalid_budget_is_rejected[0-allocations0]"
+          ]
+        },
+        {
+          "id": 42,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.967,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 43,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.855,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_zero_allocation_is_valid_and_excludes_content"
+          ]
+        },
+        {
+          "id": 44,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.82,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 45,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.519,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 46,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.973,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 47,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.777,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_exclusion_metadata_has_bounded_count_and_labels"
+          ]
+        },
+        {
+          "id": 48,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.69,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 49,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.666,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 50,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.728,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 51,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.642,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 52,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.616,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 53,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.665,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 54,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.556,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_explicit_allocation_can_only_reduce_section_allowance"
+          ]
+        }
+      ],
+      "summary": {
+        "killed": 42,
+        "removed_by_source_change": 9,
+        "survived": 3
+      },
+      "replay": true,
+      "tested_source_sha256": {
+        "brain/harness/attestation.py": "881a99dccc4c865b78fdd50b1cb267d105649318bcc1561632570c086b1c6cf3",
+        "brain/harness/nonce.py": "addffed0968e5c4d11b60f9398c3f0b285372efb672ad67875c8cc9481026540",
+        "brain/context/budget.py": "0e329fccf2d650a0814642b94625f60bfb3c1f7a69f78cadbbc359b71d62ceae"
+      },
+      "source_mismatches": [
+        "brain/harness/attestation.py",
+        "brain/harness/nonce.py",
+        "brain/context/budget.py"
+      ],
+      "excluded_type_invalid_mutants": [
+        34
+      ],
+      "usable_summary": {
+        "killed": 41,
+        "removed_by_source_change": 9,
+        "survived": 3
+      }
+    },
+    "fixed_fresh_campaign": {
+      "tests": [
+        "tests/test_mutation_contracts.py",
+        "tests/test_mutation_bug_regressions.py",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py"
+      ],
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_mutation_contracts.py",
+        "tests/test_mutation_bug_regressions.py",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py",
+        "-q",
+        "-x",
+        "--tb=short",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "timeout_seconds": 30,
+      "results": [
+        {
+          "id": 1,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.015,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 2,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.956,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 3,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.869,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 4,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 3.005,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_malformed_hmac_returns_false_without_raising[\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9]"
+          ]
+        },
+        {
+          "id": 5,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.409,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_malformed_hmac_returns_false_without_raising[\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9]"
+          ]
+        },
+        {
+          "id": 6,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.429,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 7,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.536,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 8,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.282,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
+          ]
+        },
+        {
+          "id": 9,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.369,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_signed_integrity_requires_explicit_credentials_and_binds_the_payload"
+          ]
+        },
+        {
+          "id": 10,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.378,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_failed_reverification_revokes_previous_success[missing-UNVERIFIABLE]"
+          ]
+        },
+        {
+          "id": 11,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.455,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_signed_integrity_requires_explicit_credentials_and_binds_the_payload"
+          ]
+        },
+        {
+          "id": 12,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.605,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_signature_prefix_cannot_authenticate_evidence_or_verify_a_claim"
+          ]
+        },
+        {
+          "id": 13,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.44,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_nonce_expires_after_host_suspend"
+          ]
+        },
+        {
+          "id": 14,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.147,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_nonce_expiry_has_portable_monotonic_fallback[missing_constant]"
+          ]
+        },
+        {
+          "id": 15,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.031,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 16,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.989,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 17,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.874,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
+          ]
+        },
+        {
+          "id": 18,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 3.499,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 19,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.206,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 20,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.964,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
+          ]
+        },
+        {
+          "id": 21,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.893,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 22,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.834,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 23,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.923,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 24,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.16,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 25,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.664,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_inclusive_ttl_boundary - ..."
+          ]
+        },
+        {
+          "id": 26,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 3.431,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 27,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.85,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 28,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.9,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 29,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.219,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 30,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.95,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
+        },
+        {
+          "id": 31,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.205,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_signature_prefix_cannot_authenticate_evidence_or_verify_a_claim"
+          ]
+        },
+        {
+          "id": 32,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.258,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_signed_claim_accepts_valid_credentials_and_rejects_tampering"
+          ]
+        },
+        {
+          "id": 33,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.144,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_one_sided_missing_evidence_cannot_promote_a_claim[claimed_ids]"
+          ]
+        },
+        {
+          "id": 34,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.742,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_signed_claim_accepts_valid_credentials_and_rejects_tampering"
+          ]
+        },
+        {
+          "id": 35,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.175,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_failed_reverification_revokes_previous_success[synthetic-SYNTHETIC]"
+          ]
+        },
+        {
+          "id": 36,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.165,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
+          ]
+        },
+        {
+          "id": 37,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.827,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
+          ]
+        },
+        {
+          "id": 38,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.491,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[-5-0]"
+          ]
+        },
+        {
+          "id": 39,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.703,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 40,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.773,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 41,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.815,
+          "first_failure_witnesses": []
+        },
+        {
+          "id": 42,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.534,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 43,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.596,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 44,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.595,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+          ]
+        },
+        {
+          "id": 45,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.685,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 46,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.87,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-3-\\u2026-\\u2026]"
+          ]
+        },
+        {
+          "id": 47,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.571,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-2-\\u2026-he]"
+          ]
+        },
+        {
+          "id": 48,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.571,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 49,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.701,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+          ]
+        },
+        {
+          "id": 50,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.665,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+          ]
+        },
+        {
+          "id": 51,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.733,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+          ]
+        },
+        {
+          "id": 52,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.859,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+          ]
+        },
+        {
+          "id": 53,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.77,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+          ]
+        },
+        {
+          "id": 54,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.764,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_join_after_prior_content_keeps_whole_items_within_remaining_allocation"
+          ]
+        },
+        {
+          "id": 55,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.643,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+          ]
+        },
+        {
+          "id": 56,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.734,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 57,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.858,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_invalid_budget_is_rejected[0-allocations0]"
+          ]
+        },
+        {
+          "id": 58,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.649,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 59,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.802,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_zero_allocation_is_valid_and_excludes_content"
+          ]
+        },
+        {
+          "id": 60,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.72,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 61,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.638,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 62,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.708,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 63,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.807,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_exclusion_metadata_has_bounded_count_and_labels"
+          ]
+        },
+        {
+          "id": 64,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.782,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 65,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.681,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 66,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.667,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 67,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.731,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 68,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.77,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 69,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.469,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 70,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.41,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 71,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.75,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_multiple_additions_share_a_sections_allocation"
+          ]
+        },
+        {
+          "id": 72,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.705,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_explicit_allocation_can_only_reduce_section_allowance"
+          ]
+        }
+      ],
+      "summary": {
+        "killed": 69,
+        "survived": 3
+      },
+      "replay": false,
+      "tested_source_sha256": {
+        "brain/harness/attestation.py": "881a99dccc4c865b78fdd50b1cb267d105649318bcc1561632570c086b1c6cf3",
+        "brain/harness/nonce.py": "addffed0968e5c4d11b60f9398c3f0b285372efb672ad67875c8cc9481026540",
+        "brain/harness/verifier.py": "c70be785d2cab4ca53d439ec26d9cbfd4006cf7ca3e8ccda99e67dd182ca8664",
+        "brain/context/budget.py": "0e329fccf2d650a0814642b94625f60bfb3c1f7a69f78cadbbc359b71d62ceae"
+      },
+      "source_mismatches": [],
+      "excluded_type_invalid_mutants": [
+        48
+      ],
+      "usable_summary": {
+        "killed": 68,
+        "survived": 3
+      }
+    },
+    "nonce_cleanup_assertions": {
+      "tests": [
+        "tests/test_mutation_contracts.py",
+        "tests/test_mutation_bug_regressions.py",
+        "tests/test_nonce_lifecycle.py",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py"
+      ],
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_mutation_contracts.py",
+        "tests/test_mutation_bug_regressions.py",
+        "tests/test_nonce_lifecycle.py",
+        "tests/test_harness_attestation.py",
+        "tests/test_property_and_mutation.py",
+        "tests/test_adversarial_harness_suite.py",
+        "tests/test_remote_observe_drill.py",
+        "tests/test_context_budget.py",
+        "tests/test_context_budget_evidence.py",
+        "tests/test_fault_injection.py",
+        "tests/test_chaos_v06.py",
+        "-q",
+        "-x",
+        "--tb=short",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "timeout_seconds": 30,
+      "results": [
+        {
+          "id": 1,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.173
+        },
+        {
+          "id": 2,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.029
+        },
+        {
+          "id": 3,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.1
+        },
+        {
+          "id": 4,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.097
+        },
+        {
+          "id": 5,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.153
+        },
+        {
+          "id": 6,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.057
+        },
+        {
+          "id": 7,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.014
+        },
+        {
+          "id": 8,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.55
+        },
+        {
+          "id": 9,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.341
+        },
+        {
+          "id": 10,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.156
+        },
+        {
+          "id": 11,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.399
+        },
+        {
+          "id": 12,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.157
+        },
+        {
+          "id": 13,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.069
+        },
+        {
+          "id": 14,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.208
+        },
+        {
+          "id": 15,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.092
+        },
+        {
+          "id": 16,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.999
+        },
+        {
+          "id": 17,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.437
+        },
+        {
+          "id": 18,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.092
+        },
+        {
+          "id": 19,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.035
+        },
+        {
+          "id": 20,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.133
+        },
+        {
+          "id": 21,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.102
+        },
+        {
+          "id": 22,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.081
+        },
+        {
+          "id": 23,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.155
+        },
+        {
+          "id": 24,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.004
+        },
+        {
+          "id": 25,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.163
+        },
+        {
+          "id": 26,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.149
+        },
+        {
+          "id": 27,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.089
+        },
+        {
+          "id": 28,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.135
+        },
+        {
+          "id": 29,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.063
+        },
+        {
+          "id": 30,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.139
+        },
+        {
+          "id": 31,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.086
+        },
+        {
+          "id": 32,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.034
+        },
+        {
+          "id": 33,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.626
+        },
+        {
+          "id": 34,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.731
+        },
+        {
+          "id": 35,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.829
+        },
+        {
+          "id": 36,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.752
+        },
+        {
+          "id": 37,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.843
+        },
+        {
+          "id": 38,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.747
+        },
+        {
+          "id": 39,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.027
+        },
+        {
+          "id": 40,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.803
+        },
+        {
+          "id": 41,
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 3.826
+        },
+        {
+          "id": 42,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.294
+        },
+        {
+          "id": 43,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.457
+        },
+        {
+          "id": 44,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.017
+        },
+        {
+          "id": 45,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.061
+        },
+        {
+          "id": 46,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.135
+        },
+        {
+          "id": 47,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.077
+        },
+        {
+          "id": 48,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.306
+        },
+        {
+          "id": 49,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.305
+        },
+        {
+          "id": 50,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.176
+        },
+        {
+          "id": 51,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.102
+        },
+        {
+          "id": 52,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.505
+        },
+        {
+          "id": 53,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.194
+        },
+        {
+          "id": 54,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.294
+        },
+        {
+          "id": 55,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.597
+        },
+        {
+          "id": 56,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.396
+        },
+        {
+          "id": 57,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.048
+        },
+        {
+          "id": 58,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.281
+        },
+        {
+          "id": 59,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.109
+        },
+        {
+          "id": 60,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.154
+        },
+        {
+          "id": 61,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.115
+        },
+        {
+          "id": 62,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.291
+        },
+        {
+          "id": 63,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.077
+        },
+        {
+          "id": 64,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.281
+        },
+        {
+          "id": 65,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.5
+        },
+        {
+          "id": 66,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.213
+        },
+        {
+          "id": 67,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.344
+        },
+        {
+          "id": 68,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.287
+        },
+        {
+          "id": 69,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.907
+        },
+        {
+          "id": 70,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.391
+        },
+        {
+          "id": 71,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.446
+        },
+        {
+          "id": 72,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.183
+        }
+      ],
+      "summary": {
+        "killed": 71,
+        "survived": 1
+      },
+      "replay": false,
+      "tested_source_sha256": {
+        "brain/harness/attestation.py": "881a99dccc4c865b78fdd50b1cb267d105649318bcc1561632570c086b1c6cf3",
+        "brain/harness/nonce.py": "addffed0968e5c4d11b60f9398c3f0b285372efb672ad67875c8cc9481026540",
+        "brain/harness/verifier.py": "c70be785d2cab4ca53d439ec26d9cbfd4006cf7ca3e8ccda99e67dd182ca8664",
+        "brain/context/budget.py": "0e329fccf2d650a0814642b94625f60bfb3c1f7a69f78cadbbc359b71d62ceae"
+      },
+      "source_mismatches": [],
+      "excluded_type_invalid_mutants": [
+        48
+      ],
+      "usable_summary": {
+        "killed": 70,
+        "survived": 1
+      }
+    }
+  },
+  "survivor_classification": [
+    {
+      "before_id": 6,
+      "classification": "unsafe baseline behavior corrected; original return True removed",
+      "fixed_fresh_id": null
+    },
+    {
+      "before_id": 10,
+      "fixed_fresh_id": 18,
+      "classification": "accept/reject equivalent, resource-retention coverage gap",
+      "reason": "Consumed nonce membership still rejects replay, including reissuance; pending dictionary entry remains."
+    },
+    {
+      "before_id": 17,
+      "fixed_fresh_id": 26,
+      "classification": "accept/reject equivalent, resource-retention coverage gap",
+      "reason": "With a monotonic clock, expired nonces remain expired. Pending dictionary entry remains."
+    },
+    {
+      "before_id": 27,
+      "fixed_fresh_id": 41,
+      "classification": "equivalent",
+      "reason": "Only limit zero differs in branch selection; both branches return an empty string, including empty input and arbitrary suffix."
+    }
+  ],
+  "excluded_mutation_reason": "String subtraction prefix - suffix is type-invalid; excluded from behavioral totals, retained in raw results.",
+  "full_suite": {
+    "tests": "2415",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "11",
+    "skips": [
+      {
+        "test": "tests.test_lab_sandbox.test_sandboxed_command_executes_in_workspace",
+        "reason": "no sandbox backend (docker/unshare) available"
+      },
+      {
+        "test": "tests.test_lab_sandbox.test_network_egress_denied",
+        "reason": "no sandbox backend (docker/unshare) available"
+      },
+      {
+        "test": "tests.test_lab_sandbox.test_home_secrets_not_visible",
+        "reason": "no sandbox backend (docker/unshare) available"
+      },
+      {
+        "test": "tests.test_lab_sandbox.test_write_escape_does_not_touch_host",
+        "reason": "no sandbox backend (docker/unshare) available"
+      },
+      {
+        "test": "tests.test_lab_sandbox.test_forked_children_die_with_sandbox",
+        "reason": "no sandbox backend (docker/unshare) available"
+      },
+      {
+        "test": "tests.test_lab_sandbox.test_run_profile_records_enforced_backend",
+        "reason": "no sandbox backend (docker/unshare) available"
+      },
+      {
+        "test": "tests.test_lab_sandbox.test_docker_container_removed_after_run",
+        "reason": "docker backend not active"
+      },
+      {
+        "test": "tests.test_mcp_client_configs.test_claude_code_accepts_generated_config",
+        "reason": "claude CLI not installed \u2014 Claude Code config validated against its documented contract only"
+      },
+      {
+        "test": "tests.test_mcp_client_configs.test_cursor_accepts_generated_config",
+        "reason": "cursor CLI not installed \u2014 Cursor config validated against its documented contract only"
+      },
+      {
+        "test": "tests.test_neo4j_helpers_integration.test_top_connected_and_orphans_against_live_neo4j",
+        "reason": "Neo4j not available"
+      },
+      {
+        "test": "tests.test_v050_api_contracts.test_v050_endpoints_require_the_api_key",
+        "reason": "no API key configured in this environment"
+      }
+    ]
+  },
+  "full_suite_result": {
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "tests",
+      "-q",
+      "-rs",
+      "--junitxml=/workspace/test-quality-audit/review-full-suite.xml"
+    ],
+    "cwd": "/workspace/production-hardening/retrieval-verified",
+    "exit_code": 0,
+    "seconds": 98.82,
+    "log": "mutation-audit-review-full.log"
+  },
+  "mypy_result": {
+    "command": [
+      "bash",
+      "scripts/mypy_gate.sh"
+    ],
+    "cwd": "/workspace/production-hardening/retrieval-verified",
+    "exit_code": 0,
+    "seconds": 0.45,
+    "log": "mutation-audit-review-mypy.log"
+  },
+  "final_focused_regression": {
+    "passed": 61,
+    "skipped": 0,
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "tests/test_mutation_contracts.py",
+      "tests/test_mutation_bug_regressions.py",
+      "tests/test_mutation_runner.py",
+      "-q"
+    ],
+    "note": "Includes two one-sided missing-evidence cases and a CRLF source-fingerprint case added after full-suite collection."
+  },
+  "additional_original_bug_reproduction": {
+    "test": "test_failed_reverification_revokes_previous_success",
+    "failed": 4,
+    "passed": 0,
+    "base_commit": "3c4449e37909541496a5d995b6035a6129c82c10"
+  },
+  "nonce_cleanup_verification": {
+    "full_python_passed": 2409,
+    "skipped": 11,
+    "ruff": "passed",
+    "mypy_errors": 0,
+    "new_tests": [
+      "test_consuming_nonce_evicts_its_pending_record",
+      "test_expired_nonce_evicts_its_pending_record"
+    ]
+  }
+}

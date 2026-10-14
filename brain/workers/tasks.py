@@ -576,20 +576,26 @@ async def auto_heal_stale_repositories(exclude_repository_id: int | None = None)
 
 
 async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
-    if (
-        params.get("scheduled")
-        and not settings.NIGHTLY_DEEP_MAINTENANCE_ENABLED
-    ):
-        return {
-            "status": "skipped",
-            "reason": "NIGHTLY_DEEP_MAINTENANCE_ENABLED=false",
-            "scheduled": True,
-        }
+    """Keep the indexed repository healthy: heal stale repos, reindex, verify and
+    repair embeddings, consolidate memory.
+
+    The late-interaction (LFM) deep lane is an optional extra on top. Without it
+    the standard maintenance still runs, so a default install gets a working
+    nightly job instead of a skipped or failing one.
+    """
+    deep = bool(settings.NIGHTLY_DEEP_MAINTENANCE_ENABLED)
 
     await init_db()
 
     repo_path = _deep_repo_path(params)
-    record = await _approved_deep_repository(repo_path)
+    if deep:
+        record = await _approved_deep_repository(repo_path)
+    else:
+        record = await get_repository_by_path(repo_path)
+        if record is None:
+            raise PermanentJobError(
+                f"Repository is not indexed yet: {repo_path.as_posix()}. Run `brain index --repo {repo_path.as_posix()}` first."
+            )
     # The selected target has its own reindex below; sweep only other repos.
     auto_heal_result = await auto_heal_stale_repositories(exclude_repository_id=record.id)
 
@@ -626,17 +632,20 @@ async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
             },
         )
 
-    late_sync, exact_client = await _reconcile_exact_lfm(record.id)
-    try:
-        quality_probes = await _run_deep_quality_probes(
-            record.path,
-            exact_client,
-        )
-    finally:
-        await exact_client.aclose()
-    if not quality_probes or any(
+    late_sync: Dict[str, Any] = {"status": "skipped", "reason": "NIGHTLY_DEEP_MAINTENANCE_ENABLED=false"}
+    quality_probes: list[dict[str, Any]] = []
+    if deep:
+        late_sync, exact_client = await _reconcile_exact_lfm(record.id)
+        try:
+            quality_probes = await _run_deep_quality_probes(
+                record.path,
+                exact_client,
+            )
+        finally:
+            await exact_client.aclose()
+    if deep and (not quality_probes or any(
         not probe.get("passed") for probe in quality_probes
-    ):
+    )):
         raise PermanentJobError(
             "Nightly deep quality probe failed closed",
             result={
@@ -677,6 +686,7 @@ async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
     )
     result = {
         "status": "completed",
+        "mode": "deep" if deep else "standard",
         "repository": {
             "id": record.id,
             "path": record.path,
@@ -700,13 +710,40 @@ async def run_nightly_maintenance(params: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-async def run_deep_context(params: Dict[str, Any]) -> Dict[str, Any]:
-    if not settings.LATE_INTERACTION_DEEP_ENABLED:
-        raise PermanentJobError("LFM deep lane is disabled")
+async def _standard_deep_context(task_description: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Durable context pack with the default retrieval, for installs without the
+    late-interaction model service. The agent still gets a full, persisted pack."""
+    from brain.context.context_pack_builder import ContextPackBuilder
 
+    await init_db()
+    repo_path = resolve_repo_path(params.get("repo_path") or settings.TARGET_REPO_PATH)
+    if await get_repository_by_path(repo_path) is None:
+        raise PermanentJobError(
+            f"Repository is not indexed yet: {repo_path.as_posix()}. Run `brain index --repo {repo_path.as_posix()}` first."
+        )
+    context_pack = await ContextPackBuilder().build_context_pack(
+        task_description=task_description,
+        repo_path=repo_path,
+        budget="deep",
+        consumer=str(params.get("consumer") or "") or None,
+    )
+    context_pack.pop("markdown_content", None)
+    context_pack = json.loads(json.dumps(context_pack, ensure_ascii=False, default=str))
+    return {
+        "status": "completed",
+        "mode": "standard",
+        "note": "Late-interaction reranking is not configured; built with the default retrieval.",
+        "context_pack": context_pack,
+    }
+
+
+async def run_deep_context(params: Dict[str, Any]) -> Dict[str, Any]:
     task_description = str(params.get("task_description") or "").strip()
     if not task_description:
         raise PermanentJobError("Deep context task_description is required")
+
+    if not settings.LATE_INTERACTION_DEEP_ENABLED:
+        return await _standard_deep_context(task_description, params)
 
     await init_db()
     repo_path = _deep_repo_path(params)
@@ -821,6 +858,8 @@ async def execute_job(
     transaction that opts into ``assert_current_db_fence``.
     """
     fence_token_ctx = None
+    if settings.BRAIN_TEAM_MODE:
+        raise PermissionError("Unscoped jobs are unavailable in team mode")
     if fencing_token and job_id:
         await validate_task_fencing(
             redis_client, lease_prefix or settings.WORKER_REDIS_PREFIX, job_id, fencing_token

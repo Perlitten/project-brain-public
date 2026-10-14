@@ -22,6 +22,7 @@ _NEUTRAL_ENV = {
     "BRAIN_PUBLIC_URL": "",
     "BRAIN_PUBLIC_HOST": "",
     "BRAIN_MCP_CONFIRM_WRITES": "",
+    "BRAIN_TEAM_MODE": "false",
     "OPENAI_API_KEY": "",
     "ANTHROPIC_API_KEY": "",
     "GOOGLE_API_KEY": "",

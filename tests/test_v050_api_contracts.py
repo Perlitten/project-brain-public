@@ -92,9 +92,6 @@ COVERED_ENDPOINTS = {
     ("POST", "/operations/jobs/{job_id}/retry"),
     ("POST", "/operations/canary/rollback"),
     ("GET", "/operations/canary/status"),
-    ("POST", "/autonomy/goals"),
-    ("GET", "/autonomy/goals/{goal_id}"),
-    ("POST", "/autonomy/goals/{goal_id}/cancel"),
 }
 
 V050_PREFIXES = ("/workspace", "/portfolio", "/freshness", "/lab", "/experiments",
@@ -611,3 +608,14 @@ def test_every_v050_endpoint_is_covered():
     }
     assert live - COVERED_ENDPOINTS == set(), "endpoints without a smoke test"
     assert COVERED_ENDPOINTS - live == set(), "smoke tests for endpoints that no longer exist"
+
+
+@pytest.fixture(autouse=True)
+def explicit_trusted_fixture_execution(monkeypatch):
+    # Process-supervision/CLI contract fixtures are owned, trusted test code.
+    # Security tests independently prove the normal default rejects host work.
+    from brain.config.settings import settings
+    monkeypatch.setattr(settings, "LAB_SANDBOX_MODE", "off")
+    monkeypatch.setattr(settings, "LAB_ALLOW_UNSAFE_HOST_EXECUTION", True)
+    monkeypatch.setenv("LAB_SANDBOX_MODE", "off")
+    monkeypatch.setenv("LAB_ALLOW_UNSAFE_HOST_EXECUTION", "true")

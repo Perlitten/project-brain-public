@@ -7,12 +7,12 @@ async_session_factory, no ORM sessions leak past this module.
 from typing import Any, Dict, List, Optional
 import json
 
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.sql.elements import ColumnElement
 
 from brain.database.models import MemorySkill
 from brain.database.session import async_session_factory
-from brain.memory.repo_scope import normalize_repo_scope
+from brain.memory.repo_scope import normalize_repo_scope, scope_equals
 
 
 class SkillConflictError(Exception):
@@ -30,7 +30,7 @@ def _scope_clause(repo_scope: Optional[str]):
     normalized = normalize_repo_scope(repo_scope)
     return or_(
         MemorySkill.repo_scope.is_(None),
-        func.lower(func.trim(MemorySkill.repo_scope)) == (normalized or "").casefold(),
+        scope_equals(MemorySkill.repo_scope, normalized),
     )
 
 
@@ -48,7 +48,7 @@ def _injection_scope_clause(repo_scope: Optional[str]):
     clauses: list[ColumnElement[bool]] = [MemorySkill.is_global.is_(True)]
     if normalized:
         clauses.append(
-            func.lower(func.trim(MemorySkill.repo_scope)) == normalized.casefold()
+            scope_equals(MemorySkill.repo_scope, normalized)
         )
     return or_(*clauses)
 

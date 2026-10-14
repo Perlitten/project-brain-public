@@ -733,9 +733,6 @@ class ValidationRunner:
         "PYTHONDONTWRITEBYTECODE",
     )
     _SECRETISH = ("SECRET", "TOKEN", "PASSWORD", "API_KEY", "PRIVATE_KEY", "CREDENTIAL")
-    _SECRET_PATTERNS = re.compile(
-        r"(API_KEY|PASSWORD|SECRET|TOKEN|PRIVATE_KEY)([\s=:]+)\S+", re.IGNORECASE
-    )
 
     # ── profile validation ──
 
@@ -825,6 +822,26 @@ class ValidationRunner:
         env = ValidationRunner.build_environment(profile.environment)
         backend = resolve_sandbox_backend()
         report.network_isolation = network_isolation_status(backend)
+        if backend == "unavailable":
+            report.infrastructure_error = True
+            report.rejected_reasons = ["No supported sandbox available; validation was not executed."]
+            report.duration_seconds = round(time.monotonic() - started, 3)
+            return report
+        if backend == "docker":
+            from brain.lab.sandbox import CandidateMetadataError, validate_image_toolchain
+            try:
+                compatible = validate_image_toolchain(root, profile.commands, min(10, profile.timeout_seconds))
+            except CandidateMetadataError as exc:
+                report.rejected_reasons = [str(exc)]
+                report.duration_seconds = round(time.monotonic() - started, 3)
+                return report
+            except (ValueError, TypeError, OSError):
+                compatible = False
+            if not compatible:
+                report.infrastructure_error = True
+                report.rejected_reasons = ["Sandbox image lacks required tools or declared project dependencies; validation was not executed."]
+                report.duration_seconds = round(time.monotonic() - started, 3)
+                return report
         deadline = time.monotonic() + profile.timeout_seconds
         results: List[ValidationResult] = []
         passed = True
@@ -881,12 +898,15 @@ class ValidationRunner:
     ) -> ValidationResult:
         started = time.monotonic()
         result = ValidationResult(command_idx=idx, argv=list(argv), required=required)
-        resolved = ValidationRunner._resolve_executable(argv[0])
+        resolved = (argv[0] if argv[0].lower().removesuffix(".exe") in ValidationRunner.ALLOWED_EXECUTABLES else None) if backend == "docker" else ValidationRunner._resolve_executable(argv[0])
         if resolved is None:
             result.exit_code = -1
             result.stderr_snippet = f"Executable not found on PATH: {argv[0]}"
             result.duration_seconds = round(time.monotonic() - started, 3)
             return result
+
+        if argv[0].lower().removesuffix(".exe") in {"python", "python3", "py"} and len(argv) >= 3 and argv[1:3] == ["-m", "compileall"]:
+            argv = [argv[0], "-I", *argv[1:]]
 
         popen_kwargs: Dict[str, Any] = {
             "cwd": str(root),
@@ -902,9 +922,14 @@ class ValidationRunner:
         else:
             popen_kwargs["start_new_session"] = True
 
-        popen_argv, sandbox = wrap_argv(
-            backend, workspace=root, argv=[resolved, *argv[1:]], env=env, resolved_exe=Path(resolved)
-        )
+        try:
+            popen_argv, sandbox = wrap_argv(
+                backend, workspace=root, argv=[resolved, *argv[1:]], env=env, resolved_exe=Path(resolved)
+            )
+        except PermissionError as exc:
+            result.exit_code = -1
+            result.stderr_snippet = str(exc)
+            return result
 
         try:
             process = subprocess.Popen(popen_argv, **popen_kwargs)
@@ -940,12 +965,8 @@ class ValidationRunner:
         else:
             result.exit_code = process.returncode
 
-        result.stdout_snippet = ValidationRunner._redact(
-            (stdout or "")[: ValidationRunner.MAX_OUTPUT_CHARS]
-        )
-        result.stderr_snippet = ValidationRunner._redact(
-            (stderr or "")[: ValidationRunner.MAX_OUTPUT_CHARS]
-        )
+        result.stdout_snippet = ValidationRunner._redact(stdout or "")[: ValidationRunner.MAX_OUTPUT_CHARS]
+        result.stderr_snippet = ValidationRunner._redact(stderr or "")[: ValidationRunner.MAX_OUTPUT_CHARS]
         result.duration_seconds = round(time.monotonic() - started, 3)
         return result
 
@@ -1008,7 +1029,8 @@ class ValidationRunner:
 
     @staticmethod
     def _redact(text: str) -> str:
-        return ValidationRunner._SECRET_PATTERNS.sub(r"\1\2<REDACTED>", text)
+        from brain.improvement.redaction import redact_text_pass1
+        return redact_text_pass1(text).replace("[REDACTED_SECRET]", "<REDACTED>")
 
 
 class _Cancelled(Exception):

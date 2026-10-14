@@ -260,7 +260,9 @@ python3 scripts/write_source_manifest.py . \
     --source-revision "$BRAIN_BUILD_SHA" \
     --output "$source_manifest_temp" \
     --include pyproject.toml \
+    --include requirements.lock \
     --include README.md \
+    --include docs/legal/THIRD_PARTY_NOTICES.md \
     --include brain \
     --include apps \
     --include rules \

@@ -1,37 +1,16 @@
-"""OS-level sandboxing for lab validation commands.
+"""Fail-closed Docker isolation for repository-controlled validation.
 
-Two backends, probed once per run:
-
-* ``docker`` — disposable container: ``--network none``, ``--read-only``,
-  ``--cap-drop ALL``, ``no-new-privileges``, numeric ``--pids-limit`` /
-  ``--memory`` / ``--cpus``, the workspace is the only writable host path and
-  only allowlisted toolchain paths are mounted read-only. Preferred when the
-  daemon and the configured image are both available.
-* ``unshare`` — unprivileged Linux namespaces: user (root mapped to the real
-  uid), network (empty namespace, no egress), PID + ``--fork`` + ``--kill-child``
-  (tree dies with the namespace init, so group-kill semantics stay airtight),
-  private ``/proc``, and a mount namespace that hides ``$HOME`` behind a tmpfs
-  and re-exposes only the workspace plus allowlisted toolchain paths.
-
-Both keep the existing supervision contract: argv is never shell-joined
-(argv[0] still resolved from the allowlist), env is the allowlisted dict, and
-``terminate()`` kills the whole sandbox (``docker rm -f`` or the namespace
-init's process group).
-
-Residuals by backend: ``unshare`` has no numeric PID/memory cap — the kernel
-has no unprivileged cgroup here — so a fork bomb is contained only by the
-CPU/time limits plus namespace teardown; ``docker`` enforces numeric caps.
-World-readable files outside ``$HOME`` stay visible under both (only secret-
-bearing user state is hidden); full rootfs isolation needs the docker backend.
+Only the workspace is bound into the image. Toolchains must be installed in
+that image: host PATH, virtualenvs and their parent directories are never
+mounted. Unshare is rejected because it does not contain the host filesystem.
+Host execution is exclusively an explicit trusted-development opt-in.
 """
-
 from __future__ import annotations
 
 import os
-import shlex
+import json
 import shutil
 import subprocess
-import sys
 import uuid
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
@@ -45,68 +24,81 @@ SANDBOX_OFF = "off"
 
 _PROBE_TIMEOUT = 10
 
-# Host directories mounted read-only into the sandbox so allowlisted
-# executables resolve identically inside it.
-_SYSTEM_TOOLCHAIN_MOUNTS = ("/usr", "/bin", "/sbin", "/lib", "/lib64")
 
+class CandidateMetadataError(ValueError):
+    """The candidate's project metadata is invalid, rather than its toolchain."""
 
-def _home() -> Optional[Path]:
-    home = os.environ.get("HOME")
-    if not home:
-        return None
+def validate_image_toolchain(workspace: Path, commands: list, timeout: float) -> bool:
+    """Probe image-owned tools/dependencies without importing repository code."""
+    executables, modules = set(), set()
+    for command in commands:
+        if not command.required:
+            continue
+        name = command.argv[0].lower().removesuffix(".exe")
+        executables.add("python3" if name in {"python", "python3", "py"} else name)
+        if name in {"python", "python3", "py"} and "-m" in command.argv:
+            index = command.argv.index("-m")
+            if index + 1 < len(command.argv) and command.argv[index + 1] in {"pytest", "compileall", "ruff", "mypy"}:
+                modules.add(command.argv[index + 1])
+    # -I keeps the mounted repository out of import resolution. Metadata reads
+    # installed distributions; it does not import their or the project's code.
+    probe = """import importlib.util, importlib.metadata, json, shutil, sys
+from pathlib import Path
+config = json.loads(sys.argv[1])
+executables, modules = config['executables'], config['modules']
+ok = all(shutil.which(name) for name in executables)
+ok = ok and all(importlib.util.find_spec(name.split('.')[0]) for name in modules)
+requirements = []
+if config['test_dependencies'] and Path(config['project']).is_file():
     try:
-        return Path(home).resolve()
-    except OSError:
-        return None
-
-
-def _top_anchor_under_home(path: Path, home: Path) -> Optional[Path]:
-    """Return the first path component under ``home`` for ``path``.
-
-    ``/home/u/.pyenv/shims/python`` → ``/home/u/.pyenv``. Hiding all of
-    ``$HOME`` then re-exposing per-file would need a tree walk; anchoring at
-    the top-level directory keeps the mount list small and predictable.
-    """
-    try:
-        rel = Path(path).resolve().relative_to(home)
-    except (ValueError, OSError):
-        return None
-    return home / rel.parts[0] if rel.parts else None
-
-
-def keep_mounts(workspace: Path, resolved_exe: Optional[Path]) -> List[Path]:
-    """Host paths that must stay reachable inside the sandbox.
-
-    The workspace (writable) plus every toolchain path under ``$HOME`` that the
-    command or interpreter depends on, plus operator-configured extras.
-    """
-    home = _home()
-    out: List[Path] = []
-
-    def add(path: Optional[Path]) -> None:
-        if path is None:
-            return
         try:
-            resolved = path.resolve()
-        except OSError:
-            return
-        if not resolved.exists() or resolved in out or resolved == workspace:
-            return
-        out.append(resolved)
-
-    if home is not None:
-        for exe_path in (resolved_exe, Path(sys.executable)):
-            add(_top_anchor_under_home(exe_path, home) if exe_path else None)
-        for prefix in (sys.prefix, sys.base_prefix, os.environ.get("VIRTUAL_ENV")):
-            if prefix:
-                add(_top_anchor_under_home(Path(prefix), home))
-        for entry in os.environ.get("PATH", "").split(os.pathsep):
-            if entry:
-                add(_top_anchor_under_home(Path(entry), home))
-
-    for extra in settings.LAB_SANDBOX_EXTRA_MOUNTS:
-        add(Path(extra))
-    return out
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+        from packaging.requirements import Requirement
+    except ImportError:
+        sys.exit(1)
+    try:
+        project = tomllib.loads(Path(config['project']).read_text(encoding='utf-8')).get('project', {})
+        if not isinstance(project, dict) or not isinstance(project.get('dependencies', []), list):
+            sys.exit(2)
+        requirements.extend(project.get('dependencies', []))
+        extras = project.get('optional-dependencies', {})
+        if not isinstance(extras, dict):
+            sys.exit(2)
+        for group in ('dev', 'test', 'tests'):
+            if not isinstance(extras.get(group, []), list):
+                sys.exit(2)
+            requirements.extend(extras.get(group, []))
+    except (OSError, ValueError, TypeError, AttributeError):
+        sys.exit(2)
+for specification in requirements:
+    try:
+        requirement = Requirement(specification)
+        if requirement.marker and not requirement.marker.evaluate():
+                continue
+        version = importlib.metadata.version(requirement.name)
+        ok = ok and version in requirement.specifier
+    except (ValueError, TypeError):
+        sys.exit(2)
+    except (ImportError, importlib.metadata.PackageNotFoundError):
+        ok = False
+sys.exit(0 if ok else 1)
+"""
+    config = {"executables": sorted(executables), "modules": sorted(modules),
+              "project": str(workspace.resolve() / "pyproject.toml"),
+              "test_dependencies": "pytest" in executables or "pytest" in modules}
+    argv, handle = wrap_docker(workspace=workspace, argv=["python3", "-I", "-c", probe,
+                               json.dumps(config)],
+                               env={}, resolved_exe=Path("python3"))
+    try:
+        result = subprocess.run(argv, capture_output=True, timeout=max(.1, timeout))
+        if result.returncode == 2:
+            raise CandidateMetadataError("Candidate pyproject.toml contains invalid project metadata")
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        handle.terminate()
+        return False
 
 
 def _docker_available() -> bool:
@@ -129,53 +121,18 @@ def _docker_available() -> bool:
         return False
 
 
-def _unshare_available() -> bool:
-    unshare = shutil.which("unshare")
-    if unshare is None or os.name == "nt":
-        return False
-    try:
-        probe = subprocess.run(
-            [
-                unshare,
-                "--user",
-                "--map-root-user",
-                "--net",
-                "--pid",
-                "--fork",
-                "--mount-proc",
-                "true",
-            ],
-            capture_output=True,
-            timeout=_PROBE_TIMEOUT,
-        )
-        return probe.returncode == 0
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-
-
 def resolve_sandbox_backend() -> str:
-    """Pick the enforcement backend for this run; ``off`` when nothing fits."""
+    """Return unavailable instead of silently executing on the host."""
     mode = (settings.LAB_SANDBOX_MODE or "auto").lower()
-    if mode == SANDBOX_OFF:
+    if mode == SANDBOX_OFF and settings.LAB_ALLOW_UNSAFE_HOST_EXECUTION:
         return SANDBOX_OFF
-    candidates = {
-        SANDBOX_DOCKER: _docker_available,
-        SANDBOX_UNSHARE: _unshare_available,
-    }
-    if mode == "auto":
-        order: tuple[str, ...] = (SANDBOX_DOCKER, SANDBOX_UNSHARE)
-    elif mode in candidates:
-        order = (mode,)
-    else:
-        return SANDBOX_OFF
-    for name in order:
-        if candidates[name]():
-            return name
-    return SANDBOX_OFF
+    if mode in ("auto", SANDBOX_DOCKER) and _docker_available():
+        return SANDBOX_DOCKER
+    return "unavailable"
 
 
 def network_isolation_status(backend: str) -> str:
-    return f"enforced:{backend}" if backend in (SANDBOX_DOCKER, SANDBOX_UNSHARE) else "unverified"
+    return f"enforced:{backend}" if backend == SANDBOX_DOCKER else "unverified"
 
 
 class SandboxHandle:
@@ -191,66 +148,6 @@ class SandboxHandle:
                 self._terminate()
             except Exception:
                 pass
-
-
-def wrap_unshare(
-    *,
-    workspace: Path,
-    argv: List[str],
-    resolved_exe: Path,
-) -> tuple[List[str], SandboxHandle]:
-    """Prepend the namespace + mount-namespace wrapper to ``argv``.
-
-    Returns the wrapped argv and a handle whose ``terminate`` kills the
-    namespace init's process group (normal group-kill applies — the handle is
-    a no-op there because ``--kill-child`` already guarantees teardown).
-    """
-    unshare = shutil.which("unshare") or "unshare"
-    bash = shutil.which("bash") or "bash"
-    ws = workspace.resolve()
-    keeps = [ws, *keep_mounts(ws, resolved_exe)]
-    home = _home()
-
-    # mount namespaces resolve bind sources at mount time: stage each keep path
-    # under /tmp before covering $HOME, then rebind them at their real paths.
-    prelude_parts = [
-        "set -e",
-        "mount --make-rprivate /",
-    ]
-    if home is not None and keeps:
-        stage = "/tmp/.lab-keep"  # nosec B108
-        prelude_parts.append(f"mkdir -p {shlex.quote(stage)}")
-        for idx, keep in enumerate(keeps):
-            prelude_parts.append(f"mkdir -p {shlex.quote(f'{stage}/{idx}')}")
-            prelude_parts.append(
-                f"mount --bind {shlex.quote(str(keep))} {shlex.quote(f'{stage}/{idx}')}"
-            )
-        prelude_parts.append(f"mount -t tmpfs -o size=4m tmpfs {shlex.quote(str(home))}")
-        for idx, keep in enumerate(keeps):
-            prelude_parts.append(f"mkdir -p {shlex.quote(str(keep))}")
-            prelude_parts.append(
-                f"mount --bind {shlex.quote(f'{stage}/{idx}')} {shlex.quote(str(keep))}"
-            )
-    prelude_parts.append('exec "$@"')
-    prelude = "; ".join(prelude_parts)
-
-    wrapped = [
-        unshare,
-        "--user",
-        "--map-root-user",
-        "--net",
-        "--pid",
-        "--fork",
-        "--kill-child",
-        "--mount",
-        "--mount-proc",
-        bash,
-        "-c",
-        prelude,
-        "brain-lab-sandbox",
-        *argv,
-    ]
-    return wrapped, SandboxHandle(SANDBOX_UNSHARE)
 
 
 def wrap_docker(
@@ -294,14 +191,15 @@ def wrap_docker(
         str(ws),
     ]
     for key, value in env.items():
+        if key == "PATH":
+            continue
         cmd += ["-e", f"{key}={value}"]
     cmd += ["-v", f"{ws}:{ws}:rw"]
-    for keep in keep_mounts(ws, resolved_exe):
-        cmd += ["-v", f"{keep}:{keep}:ro"]
-    for sysdir in _SYSTEM_TOOLCHAIN_MOUNTS:
-        if Path(sysdir).is_dir():
-            cmd += ["-v", f"{sysdir}:{sysdir}:ro"]
-    cmd += [settings.LAB_SANDBOX_IMAGE, *argv]
+    # Resolve the tool inside the trusted image, never through host mounts.
+    executable = Path(argv[0]).name.lower().removesuffix(".exe")
+    if executable in {"python", "python3", "py"}:
+        executable = "python3"
+    cmd += [settings.LAB_SANDBOX_IMAGE, executable, *argv[1:]]
 
     def _terminate() -> None:
         subprocess.run(
@@ -321,6 +219,6 @@ def wrap_argv(
 ) -> tuple[List[str], SandboxHandle]:
     if backend == SANDBOX_DOCKER:
         return wrap_docker(workspace=workspace, argv=argv, env=env, resolved_exe=resolved_exe)
-    if backend == SANDBOX_UNSHARE:
-        return wrap_unshare(workspace=workspace, argv=argv, resolved_exe=resolved_exe)
-    return list(argv), SandboxHandle(SANDBOX_OFF)
+    if backend == SANDBOX_OFF and settings.LAB_ALLOW_UNSAFE_HOST_EXECUTION:
+        return list(argv), SandboxHandle(SANDBOX_OFF)
+    raise PermissionError("Validation requires an available Docker sandbox; host execution is disabled.")

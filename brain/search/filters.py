@@ -211,8 +211,8 @@ def query_file_type_weight(file_type: str | None, query: str, path: str) -> floa
     """Requested test/template work must not inherit the generic type penalty."""
     from brain.config.settings import settings
     if settings.RETRIEVAL_V2_ENABLED and file_type in {"test", "template"}:
-        from brain.retrieval.locator_fusion import surface_weight
-        if surface_weight(path, query) == 1.0:
+        from brain.retrieval.locator_fusion import query_requests_tests, query_requests_templates
+        if (file_type == "test" and query_requests_tests(query)) or (file_type == "template" and query_requests_templates(query)):
             return 1.0
     return get_file_type_weight(file_type)
 
@@ -341,7 +341,7 @@ def get_file_type_weight(file_type: Optional[str]) -> float:
 def is_template_path(path: str) -> bool:
     """Return True for Jinja/HTML template files under a templates/ directory."""
     normalized = path.replace("\\", "/").lower()
-    return "/templates/" in normalized and normalized.endswith((".html", ".jinja", ".jinja2"))
+    return "templates" in normalized.split("/")[:-1] and normalized.endswith((".html", ".jinja", ".jinja2"))
 
 
 def is_test_path(path: str) -> bool:
@@ -349,7 +349,12 @@ def is_test_path(path: str) -> bool:
     normalized = path.replace("\\", "/").lower()
     parts = normalized.split("/")
     name = parts[-1] if parts else normalized
-    return any("test" in part or "spec" in part for part in parts) or name.startswith("test_")
+    stem = name.rsplit(".", 1)[0]
+    original_stem = path.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    return (stem in {"test", "tests", "conftest"}
+            or any(part in {"test", "tests", "spec", "specs", "__tests__", "__specs__"} for part in parts[:-1])
+            or stem.startswith(("test_", "spec_")) or stem.endswith(("_test", "_tests", "_spec", "_specs", ".test", ".spec"))
+            or bool(re.fullmatch(r"Test[A-Z].*|[A-Za-z0-9_]+(?:Test|Tests|Spec|Specs)", original_stem)))
 
 
 def is_readme_path(path: str) -> bool:

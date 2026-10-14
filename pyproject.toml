@@ -7,7 +7,7 @@ name = "project-brain"
 version = "0.9.2"
 description = "Project Brain core foundation services and utilities"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
 authors = [{ name = "Perlitten" }]
 keywords = ["mcp", "code-search", "rag", "developer-tools", "llm"]
@@ -69,7 +69,7 @@ gpu = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]
@@ -94,6 +94,9 @@ packages = ["brain", "apps"]
 # cache, npm dependencies, or local credentials with the Python runtime.
 exclude = ["**/.brain/**", "/apps/web/**", "**/__pycache__/**", "**/*.pyc", "**/.next/**", "**/node_modules/**", "**/*.tsbuildinfo", "**/.env", "**/.env.*", "**/.deploy.env"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"docs/legal/THIRD_PARTY_NOTICES.md" = "brain/THIRD_PARTY_NOTICES.md"
+
 [tool.hatch.build.targets.editable]
 dev-mode-dirs = ["."]
 
@@ -104,8 +107,8 @@ exclude = ["**/.brain/**", "**/__pycache__/**", "**/*.pyc", "**/.vercel/**", "**
 
 [tool.mypy]
 # 3.12 required: numpy's shipped stubs use the PEP 695 `type` statement, which
-# mypy rejects under an older --python-version target. The >=3.10 support floor
-# is covered by the CI test matrix, not by this check.
+# mypy rejects under an older --python-version target. CI and the locked
+# production runtime both use Python 3.12.
 python_version = "3.12"
 warn_return_any = false
 warn_unused_ignores = false

@@ -20,7 +20,7 @@ from brain.lab.sandbox import (
 
 BACKEND = resolve_sandbox_backend()
 needs_sandbox = pytest.mark.skipif(
-    BACKEND == SANDBOX_OFF, reason="no sandbox backend (docker/unshare) available"
+    BACKEND != SANDBOX_DOCKER, reason="no sandbox backend (docker/unshare) available"
 )
 
 
@@ -36,7 +36,7 @@ def _run(ws: Path, code: str, timeout: int = 30) -> object:
 
 def test_backend_detection_reports_actual_mechanism():
     status = network_isolation_status(BACKEND)
-    if BACKEND == SANDBOX_OFF:
+    if BACKEND != SANDBOX_DOCKER:
         assert status == "unverified"
     else:
         assert status == f"enforced:{BACKEND}"
@@ -150,7 +150,7 @@ def test_off_backend_reports_unverified_when_forced():
         None,
         SANDBOX_OFF,
     )
-    assert res.exit_code == 0
+    assert res.exit_code != 0
     assert network_isolation_status(SANDBOX_OFF) == "unverified"
 
 

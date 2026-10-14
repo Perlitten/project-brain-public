@@ -16,7 +16,7 @@ from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.types import InputRequiredResult
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
-from apps.mcp_server.client_activity import record_client_activity
+from apps.mcp_server.client_activity import record_client_activity, tool_call_observer
 from apps.mcp_server.deferred_payload import (
     DeferredPayloadStore,
     compact_payload,
@@ -235,6 +235,7 @@ async def _record_client_initialize(ctx: ServerRequestContext, call_next: CallNe
     return result
 
 mcp.middleware.append(_record_client_initialize)
+mcp.middleware.append(tool_call_observer("stdio"))
 
 
 @mcp.tool(**tool_meta("ask_project"))
@@ -263,7 +264,7 @@ async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional
                 decision
                 for decision in decisions
                 if (decision.status or "").lower() == "active"
-                and (decision.repo_path is None or normalize_repo_scope(decision.repo_path) == decision_scope)
+                and (normalize_repo_scope(decision.repo_path) is None or normalize_repo_scope(decision.repo_path) == decision_scope)
             ]
             recorded_decisions_str = (
                 "\n".join([f"- {d.id}: {d.title} - {d.description}" for d in active_decisions]) or "None"
@@ -330,9 +331,7 @@ async def prepare_deep_context(
     repo_path: Optional[str] = None,
     notify: bool = True,
 ) -> dict:
-    """Queue a quality-first context pack using exact CPU LFM reranking."""
-    if not settings.LATE_INTERACTION_DEEP_ENABLED:
-        return {"status": "failed", "error": "LFM deep lane is disabled"}
+    """Queue a durable, quality-first context pack (late-interaction reranking when configured)."""
     queue = queue_for_job(
         redis_client,
         settings.WORKER_REDIS_PREFIX,
@@ -557,6 +556,8 @@ async def review_diff(
 
 
 def main() -> None:
+    if settings.BRAIN_TEAM_MODE:
+        raise RuntimeError("Local personal MCP is unavailable in team mode; use authenticated native MCP")
     if settings.BRAIN_STORAGE_MODE == "lite":
         from brain.database.session import init_db
         asyncio.run(init_db())

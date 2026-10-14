@@ -49,6 +49,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_repository_and_symbol_indexes(conn)
     await _ensure_audit_request_id_column(conn)
     await _ensure_request_telemetry_table(conn)
+    await _ensure_mcp_tool_calls_table(conn)
     await _ensure_skill_outcomes_table(conn)
     await _ensure_telemetry_state_table(conn)
     await _ensure_memory_learnings_table(conn)
@@ -185,19 +186,31 @@ async def _ensure_files_path_uniqueness(conn: AsyncConnection) -> None:
 
 
 async def _ensure_decision_title_uniqueness(conn: AsyncConnection) -> None:
-    """Enforce one canonical decision title per repository scope."""
+    """Canonical global scopes agree; duplicate history retains IDs/content."""
+    if conn.dialect.name == "sqlite":
+        columns = (await conn.execute(text("PRAGMA table_info(decisions)"))).fetchall()
+        if "superseded_by_id" not in {row[1] for row in columns}:
+            await conn.execute(text("ALTER TABLE decisions ADD COLUMN superseded_by_id INTEGER"))
+    else:
+        await conn.execute(text("ALTER TABLE decisions ADD COLUMN IF NOT EXISTS superseded_by_id INTEGER"))
     await conn.execute(text("DROP INDEX IF EXISTS uq_decisions_normalized_title"))
-    await conn.execute(
-        text(
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_decisions_normalized_title
-            ON decisions (
-                lower(btrim(title)),
-                COALESCE(lower(btrim(repo_path)), '')
-            )
-            """
+    scope = """CASE WHEN repo_path IS NULL OR trim(repo_path)='system_global' THEN ''
+             WHEN substr(trim(repo_path),2,1)=':' OR substr(trim(repo_path),1,2)='//'
+             THEN lower(trim(repo_path)) ELSE trim(repo_path) END"""
+    await conn.execute(text(f"""
+        WITH canonical AS (
+            SELECT id, MAX(id) OVER (PARTITION BY lower(trim(title)), {scope}) AS winner
+            FROM decisions WHERE superseded_by_id IS NULL
         )
-    )
+        UPDATE decisions SET status='superseded',
+            superseded_by_id=(SELECT winner FROM canonical WHERE canonical.id=decisions.id)
+        WHERE id IN (SELECT id FROM canonical WHERE id<>winner)
+    """))
+    await conn.execute(text(f"""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_decisions_normalized_title
+        ON decisions (lower(trim(title)), ({scope}))
+        WHERE superseded_by_id IS NULL
+    """))
 
 
 async def _backfill_non_current_knowledge_authority(
@@ -686,6 +699,21 @@ async def _ensure_request_telemetry_table(conn: AsyncConnection) -> None:
     await conn.execute(text("ALTER TABLE brain_request_telemetry ADD COLUMN IF NOT EXISTS surface VARCHAR(16) NOT NULL DEFAULT 'http'"))
     await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brain_request_telemetry_repo_time ON brain_request_telemetry (repository_id, created_at)"))
 
+
+
+async def _ensure_mcp_tool_calls_table(conn: AsyncConnection) -> None:
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS mcp_tool_calls (
+            id BIGSERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            tool VARCHAR(64) NOT NULL,
+            surface VARCHAR(16) NOT NULL,
+            outcome VARCHAR(16) NOT NULL,
+            latency_ms DOUBLE PRECISION NOT NULL
+        )
+    """))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_mcp_tool_calls_created_at ON mcp_tool_calls (created_at)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_mcp_tool_calls_tool ON mcp_tool_calls (tool)"))
 
 async def _ensure_skill_outcomes_table(conn: AsyncConnection) -> None:
     await conn.execute(text("""

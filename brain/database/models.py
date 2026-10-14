@@ -128,6 +128,9 @@ class Decision(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Duplicate historical policy is retained under its original ID/content.
+    # This pointer identifies the canonical record without injecting both.
+    superseded_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     repo_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str | None] = mapped_column(String(50), nullable=True)  # e.g., "active", "deprecated", "superseded"
@@ -587,6 +590,20 @@ class BrainRequestTelemetry(Base):
     principal_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     outcome: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+
+class McpToolCall(Base):
+    """One MCP tool call: which tool, over which transport, how it ended, how long it took.
+    Payload-free; feeds the per-tool health on the Agent tools screen."""
+    __tablename__ = "mcp_tool_calls"
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), index=True)
+    tool: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    surface: Mapped[str] = mapped_column(String(16), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
     latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
 
 

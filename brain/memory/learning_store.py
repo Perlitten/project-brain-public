@@ -9,12 +9,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.database.models import Learning
 from brain.database.session import async_session_factory
-from brain.memory.repo_scope import normalize_repo_scope
+from brain.memory.repo_scope import normalize_repo_scope, scope_equals
 
 
 def json_key(item: Any) -> str:
@@ -30,7 +30,7 @@ def _scope_clause(repo_path: Optional[str]):
     normalized = normalize_repo_scope(repo_path)
     return or_(
         Learning.repo_scope.is_(None),
-        func.lower(func.trim(Learning.repo_scope)) == (normalized or "").casefold(),
+        scope_equals(Learning.repo_scope, normalized),
     )
 
 

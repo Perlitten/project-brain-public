@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import math
 import re
+import threading
 from collections import Counter
 from pathlib import Path
 
@@ -24,17 +25,28 @@ def _tokens(text: str) -> list[str]:
     return [token for token in tokens if len(token) >= 3 and token not in ENGLISH_STOPWORDS]
 
 
-def rank_chunks(rows: list[tuple[str, int | None, int | None, str]], query: str, budget: int) -> list[dict]:
-    terms = set(extract_keywords(query))
+def rank_chunks(rows: list[tuple[str, int | None, int | None, str]], query: str, budget: int,
+                *, stop: threading.Event | None = None) -> list[dict]:
+    terms = sorted(set(extract_keywords(query)))
     if not terms:
         return []
-    counts = [Counter(_tokens(content)) for _, _, _, content in rows]
+    counts = []
+    for _, _, _, content in rows:
+        if stop is not None and stop.is_set():
+            return []
+        counts.append(Counter(_tokens(content)))
     lengths = [sum(count.values()) for count in counts]
     average = sum(lengths) / max(len(lengths), 1) or 1
-    frequency = Counter(term for count in counts for term in terms if term in count)
+    frequency: Counter[str] = Counter()
+    for count in counts:
+        if stop is not None and stop.is_set():
+            return []
+        frequency.update(term for term in terms if term in count)
     idf = {term: math.log(1 + (len(rows) - frequency[term] + 0.5) / (frequency[term] + 0.5)) for term in terms}
     best: dict[str, dict] = {}
     for (path, start, end, _), count, length in zip(rows, counts, lengths):
+        if stop is not None and stop.is_set():
+            return []
         score = sum(idf[term] * count[term] * 2.5 / (count[term] + 1.5 * (0.25 + 0.75 * length / average))
                     for term in terms if count[term])
         if score > best.get(path, {}).get("score", 0):
@@ -64,4 +76,8 @@ async def local_lexical(repository_id: int | None, query: str, budget: int) -> l
             if used > 8 * 1024 * 1024:
                 raise ValueError("Offline lexical input exceeds the 8 MiB work budget")
             bounded.append((path,start,end,content))
-    return await asyncio.to_thread(rank_chunks, bounded, query, budget)
+    stop = threading.Event()
+    try:
+        return await asyncio.to_thread(rank_chunks, bounded, query, budget, stop=stop)
+    finally:
+        stop.set()

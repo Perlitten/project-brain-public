@@ -1470,3 +1470,14 @@ def test_scenario_50_complete_portfolio_end_to_end_lifecycle(brain_dir, portfoli
     assert summary["ledger"]["valid"] is True
     assert plane.observed_usage()["max_active_workspaces"] == 0
     assert plane.health()["status"] in {"ok", "degraded"}
+
+
+@pytest.fixture(autouse=True)
+def explicit_trusted_fixture_execution(monkeypatch):
+    # Process-supervision/CLI contract fixtures are owned, trusted test code.
+    # Security tests independently prove the normal default rejects host work.
+    from brain.config.settings import settings
+    monkeypatch.setattr(settings, "LAB_SANDBOX_MODE", "off")
+    monkeypatch.setattr(settings, "LAB_ALLOW_UNSAFE_HOST_EXECUTION", True)
+    monkeypatch.setenv("LAB_SANDBOX_MODE", "off")
+    monkeypatch.setenv("LAB_ALLOW_UNSAFE_HOST_EXECUTION", "true")

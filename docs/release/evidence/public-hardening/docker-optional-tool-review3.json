@@ -1,0 +1,42 @@
+{
+  "workspace_id": "",
+  "profile_name": "offline-optional-tool",
+  "passed": true,
+  "cancelled": false,
+  "infrastructure_error": false,
+  "rejected_reasons": [],
+  "network_isolation": "enforced:docker",
+  "results": [
+    {
+      "command_idx": 0,
+      "argv": [
+        "PYTHON.exe",
+        "-m",
+        "compileall",
+        "-q",
+        "."
+      ],
+      "exit_code": 0,
+      "stdout_snippet": "",
+      "stderr_snippet": "",
+      "duration_seconds": 0.693,
+      "timed_out": false,
+      "required": true
+    },
+    {
+      "command_idx": 1,
+      "argv": [
+        "ruff",
+        "check",
+        "."
+      ],
+      "exit_code": 127,
+      "stdout_snippet": "",
+      "stderr_snippet": "docker: Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: \"ruff\": executable file not found in $PATH: unknown\n\nRun 'docker run --help' for more information\n",
+      "duration_seconds": 1.452,
+      "timed_out": false,
+      "required": false
+    }
+  ],
+  "duration_seconds": 3.006
+}

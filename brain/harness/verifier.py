@@ -49,24 +49,33 @@ def is_placeholder_value(val: Any) -> bool:
     return False
 
 
-def verify_claim(claim: ReportClaim, attestations: List[ExecutionAttestation]) -> EvidenceState:
+def _set_claim_status(claim: ReportClaim, state: EvidenceState) -> EvidenceState:
+    claim.verification_status = state
+    claim.confidence = 1.0 if state == EvidenceState.VERIFIED else 0.0
+    claim.allowed_in_executive_summary = state == EvidenceState.VERIFIED
+    return state
+
+
+def verify_claim(
+    claim: ReportClaim, attestations: List[ExecutionAttestation], *,
+    secret_key: str | None = None, expected_nonce: str | None = None,
+) -> EvidenceState:
     """Fail-closed evaluation of a report claim against provided attestations."""
-    if not claim.supplied_attestation_ids or not attestations:
-        return EvidenceState.UNVERIFIABLE
+    with claim._verification_lock:
+        _set_claim_status(claim, EvidenceState.UNVERIFIABLE)
+        if not claim.supplied_attestation_ids or not attestations:
+            return _set_claim_status(claim, EvidenceState.UNVERIFIABLE)
 
-    att_map = {att.attestation_id: att for att in attestations}
-    for att_id in claim.supplied_attestation_ids:
-        att = att_map.get(att_id)
-        if not att:
-            return EvidenceState.UNVERIFIABLE
-        if not att.verify_integrity():
-            return EvidenceState.FAILED
-        if att.exit_code != 0:
-            return EvidenceState.FAILED
-        if is_placeholder_value(att.image_id) or is_placeholder_value(att.stdout_sha256):
-            return EvidenceState.SYNTHETIC
+        att_map = {att.attestation_id: att for att in attestations}
+        for att_id in claim.supplied_attestation_ids:
+            att = att_map.get(att_id)
+            if not att:
+                return _set_claim_status(claim, EvidenceState.UNVERIFIABLE)
+            if not att.verify_integrity(secret_key=secret_key, expected_nonce=expected_nonce):
+                return _set_claim_status(claim, EvidenceState.FAILED)
+            if att.exit_code != 0:
+                return _set_claim_status(claim, EvidenceState.FAILED)
+            if is_placeholder_value(att.image_id) or is_placeholder_value(att.stdout_sha256):
+                return _set_claim_status(claim, EvidenceState.SYNTHETIC)
 
-    claim.verification_status = EvidenceState.VERIFIED
-    claim.confidence = 1.0
-    claim.allowed_in_executive_summary = True
-    return EvidenceState.VERIFIED
+        return _set_claim_status(claim, EvidenceState.VERIFIED)

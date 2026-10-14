@@ -15,6 +15,7 @@ from brain.database.session import async_engine, init_db
 
 EXPECTED_MIGRATED_COLUMNS = [
     ("decisions", "repo_path"),
+    ("decisions", "superseded_by_id"),
     ("rules", "repo_path"),
     ("embeddings", "provider"),
     ("embeddings", "content_hash"),
@@ -34,6 +35,8 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("context_packs", "rule_count"),
     ("context_packs", "consumer"),
     ("rule_usage_events", "kind"),
+    ("team_task_bindings", "request_digest"),
+    ("agent_runs", "initiator_credential_id"),
 ]
 
 

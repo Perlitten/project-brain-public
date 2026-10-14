@@ -4,6 +4,8 @@ import json
 import os
 import re
 import subprocess
+import tarfile
+import tempfile
 import time
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -497,6 +499,34 @@ def _scan_repo_files(path_obj: Path) -> List[Path]:
     return sorted(set(scanned))
 
 
+def _uncommitted_tracked_changes(path_obj: Path) -> int:
+    """Number of tracked files with uncommitted changes (0 outside Git)."""
+    if not (path_obj / ".git").exists():
+        return 0
+    try:
+        proc = subprocess.run(
+            ["git", "-c", f"safe.directory={path_obj}", "-C", str(path_obj), "status", "--porcelain", "--untracked-files=no"],
+            capture_output=True, timeout=60,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return 0
+    if proc.returncode:
+        return 0
+    return sum(1 for line in proc.stdout.decode("utf-8", errors="replace").splitlines() if line.strip())
+
+
+def _export_head(path_obj: Path, target: Path) -> None:
+    """Write the committed HEAD tree into ``target`` without touching the checkout."""
+    archive = target / ".brain-head.tar"
+    subprocess.run(
+        ["git", "-c", f"safe.directory={path_obj}", "-C", str(path_obj), "archive", "--format=tar", "-o", str(archive), "HEAD"],
+        check=True, capture_output=True, timeout=600,
+    )
+    with tarfile.open(archive) as tar:
+        tar.extractall(target, filter="data")
+    archive.unlink()
+
+
 def _source_content_snapshot(path_obj: Path, files: List[Path]) -> dict:
     hashes = {}
     for filepath in files:
@@ -688,10 +718,29 @@ class FileIndexer:
         async with self._repository_run_lock:
             self._reset_progress()
             async with repository_index_lock(path_obj.as_posix()):
+                # A developer's checkout is usually mid-edit. Index the committed
+                # HEAD from a private snapshot instead of refusing: provenance stays
+                # exact (one commit), and the run reports what is not indexed yet.
+                self._uncommitted_changes = await asyncio.to_thread(_uncommitted_tracked_changes, path_obj)
+                if self._uncommitted_changes:
+                    logger.warning(
+                        f"FileIndexer: {self._uncommitted_changes} uncommitted change(s) in {path_obj}; "
+                        "indexing the committed HEAD. Commit to include them."
+                    )
+                    with tempfile.TemporaryDirectory(prefix="brain-head-") as tmp:
+                        snapshot = Path(tmp)
+                        await asyncio.to_thread(_export_head, path_obj, snapshot)
+                        return await self._index_repository(path_obj, clean, expected_revision, source_root=snapshot)
                 return await self._index_repository(path_obj, clean, expected_revision)
 
-    async def _index_repository(self, path_obj: Path, clean: bool, expected_revision: str) -> Repository:
-        """Scan a repository, identify new or changed files, index them and save to database."""
+    async def _index_repository(self, path_obj: Path, clean: bool, expected_revision: str,
+                                source_root: Optional[Path] = None) -> Repository:
+        """Scan a repository, identify new or changed files, index them and save to database.
+
+        ``path_obj`` is the repository's identity; ``source_root`` (default: the
+        same directory) is where file contents are read from.
+        """
+        src = source_root or path_obj
         await self._reset_late_dual_write_circuit()
         repo_name = path_obj.name
         commit_hash = get_git_commit_hash(path_obj)
@@ -743,10 +792,10 @@ class FileIndexer:
             started = time.monotonic()
             heartbeat = asyncio.create_task(self._progress_heartbeat())
             try:
-                scanned_files = sorted(await asyncio.to_thread(_scan_repo_files, path_obj))
-                if not await asyncio.to_thread(git_source_is_clean, path_obj, scanned_files):
+                scanned_files = sorted(await asyncio.to_thread(_scan_repo_files, src))
+                if not await asyncio.to_thread(git_source_is_clean, src, scanned_files):
                     raise ValueError("Repository working tree must be clean and indexed files tracked")
-                self._source_content_hashes = await asyncio.to_thread(_source_content_snapshot, path_obj, scanned_files)
+                self._source_content_hashes = await asyncio.to_thread(_source_content_snapshot, src, scanned_files)
                 if clean:
                     # The cleanup opens its own fenced transaction: don't hold
                     # the job-lease row lock in an outer transaction here.
@@ -762,21 +811,21 @@ class FileIndexer:
 
                 async def process(filepath):
                     try:
-                        outcome = await self.index_file(repo_id, path_obj, filepath)
+                        outcome = await self.index_file(repo_id, src, filepath)
                         if outcome in {"excluded", "skipped_large", "unchanged"}:
                             self.progress["files"]["skipped"] += 1
                             self.file_counts["unchanged" if outcome == "unchanged" else "excluded"] += 1
                         else:
                             self.progress["files"]["processed"] += 1
                             self.file_counts["graph_failed" if outcome == "indexed_graph_failed" else "indexed"] += 1
-                            indexed_paths.append(filepath.relative_to(path_obj).as_posix())
+                            indexed_paths.append(filepath.relative_to(src).as_posix())
                     except Exception as exc:
                         self.progress["files"]["failed"] += 1
                         self.file_counts["failed"] += 1
                         if len(self.file_counts["error_samples"]) < 25:
-                            self.file_counts["error_samples"].append({"file": filepath.relative_to(path_obj).as_posix(),
+                            self.file_counts["error_samples"].append({"file": filepath.relative_to(src).as_posix(),
                                                                      "error": type(exc).__name__})
-                        self._failure("file", exc, filepath.relative_to(path_obj).as_posix())
+                        self._failure("file", exc, filepath.relative_to(src).as_posix())
                     await self._publish_progress()
 
                 concurrency = settings.INDEX_FILE_CONCURRENCY
@@ -785,24 +834,24 @@ class FileIndexer:
                 if settings.LATE_INTERACTION_ENABLED and settings.LATE_INTERACTION_DUAL_WRITE_ENABLED:
                     concurrency = 1
                 await bounded_map(scanned_files, process, concurrency)
-                await self._remove_stale_files(repo_id, {fp.relative_to(path_obj).as_posix() for fp in scanned_files}, repo_name)
+                await self._remove_stale_files(repo_id, {fp.relative_to(src).as_posix() for fp in scanned_files}, repo_name)
                 self.progress["phase"] = "graph"
                 await self._publish_progress()
                 from brain.graph.write_buffer import GraphWriteBuffer
                 graph_client = self.graph_client
                 self.graph_client = GraphWriteBuffer(graph_client)
                 try:
-                    await self._post_process_graph(repo.name, path_obj, scanned_files)
+                    await self._post_process_graph(repo.name, src, scanned_files)
                     await self.graph_client.flush()
                 finally:
                     self.graph_client = graph_client
                 self.progress["phase"] = "verification"
                 await self._publish_progress()
                 embeddings = await verify_embeddings(repo_id, path_obj.as_posix())
-                final_files = sorted(await asyncio.to_thread(_scan_repo_files, path_obj))
-                final_hashes = await asyncio.to_thread(_source_content_snapshot, path_obj, final_files)
+                final_files = sorted(await asyncio.to_thread(_scan_repo_files, src))
+                final_hashes = await asyncio.to_thread(_source_content_snapshot, src, final_files)
                 source_verified = (get_git_commit_hash(path_obj) == commit_hash
-                    and await asyncio.to_thread(git_source_is_clean, path_obj, final_files)
+                    and await asyncio.to_thread(git_source_is_clean, src, final_files)
                     and final_hashes == self._source_content_hashes)
                 projection_status = compute_run_status(processed=self.file_counts["indexed"],
                     unchanged=self.file_counts["unchanged"], failed=self.progress["files"]["failed"],
@@ -818,6 +867,8 @@ class FileIndexer:
                     "embedding_verification": embeddings,
                     "counts": self.progress,
                     "file_counts": self.file_counts,
+                    "indexed_from": "HEAD" if source_root is not None else "working_tree",
+                    "uncommitted_changes": getattr(self, "_uncommitted_changes", 0),
                 }
                 self.progress["phase"] = status
                 await self._publish_progress()

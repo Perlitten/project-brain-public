@@ -53,6 +53,7 @@ export interface Corpus {
   embeddings: number;
   meters: Meter[];
   available?: boolean;
+  availabilityNote?: string;
 }
 
 export interface Job {
@@ -100,6 +101,8 @@ export interface IndexRun {
   chunks: number;
   startedAt: string;
   duration: string;
+  /** Edited-but-uncommitted files the run left out (it indexed the committed HEAD). */
+  uncommitted?: number;
 }
 
 export interface ContextPack {
@@ -244,6 +247,8 @@ export interface RerankerStatus {
   queriesWindow?: string;
   /** False when the live API returned no reranker status at all. */
   available?: boolean;
+  /** True when the optional reranker was never set up on this install (nothing switched on, nothing encoded). */
+  notSetUp?: boolean;
   /** Whether the model service itself answers (separate from being switched on). */
   service?: { tone: Tone; text: string };
   /** Plain reasons it is not re-ranking searches; empty when it is. */

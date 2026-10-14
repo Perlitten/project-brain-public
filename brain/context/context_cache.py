@@ -5,6 +5,7 @@ import hashlib
 import time
 from typing import Any, Optional
 from loguru import logger
+from brain.memory.repo_scope import normalize_repo_scope
 
 _CONTEXT_CACHE: dict[str, tuple[float, str, dict[str, Any]]] = {}
 _MAX_CACHE_ENTRIES = 500
@@ -13,7 +14,7 @@ _CACHE_TTL_SECONDS = 3600  # 1 hour
 
 def _make_key(repo_scope: str, task_description: str, source_revision: Optional[str] = None,
               max_bytes: Optional[int] = None) -> str:
-    norm_repo = (repo_scope or "").strip().lower()
+    norm_repo = normalize_repo_scope(repo_scope) or ""
     norm_task = " ".join((task_description or "").strip().lower().split())
     norm_rev = (source_revision or "").strip().lower()
     raw = f"{norm_repo}:{norm_rev}:{norm_task}"

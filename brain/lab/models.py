@@ -130,6 +130,7 @@ class ValidationRunReport:
     profile_name: str = ""
     passed: bool = False
     cancelled: bool = False
+    infrastructure_error: bool = False
     rejected_reasons: List[str] = field(default_factory=list)
     # Reported, never claimed: see NETWORK_ISOLATION_STATUS.
     network_isolation: str = NETWORK_ISOLATION_STATUS

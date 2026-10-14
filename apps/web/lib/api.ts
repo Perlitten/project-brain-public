@@ -16,7 +16,7 @@ type FetchOptions = {
   fresh?: boolean;
   /** Seconds to keep a cached response; ignored when `fresh`. */
   revalidate?: number;
-  /** Abort the request after this many ms (default 8000). Fan-out calls that
+  /** Abort the request after this many ms (default 4000). Fan-out calls that
       block first paint (per-repo overviews) should pass a shorter budget. */
   timeoutMs?: number;
 };
@@ -61,6 +61,22 @@ export interface SendResult<T = unknown> {
   data: T | null;
   /** Human-readable reason on failure (API `detail`, HTTP status, network). */
   error?: string;
+}
+
+export type ReadFailure = "not_configured" | "not_found" | "timeout" | "network" | "http_error" | "invalid_response";
+export type ReadResult<T> =
+  | { ok: true; status: number; data: T }
+  | { ok: false; status: number; reason: ReadFailure };
+
+export function readFailureNote(reason: ReadFailure): string {
+  switch (reason) {
+    case "not_found": return "Not available on this server";
+    case "timeout": return "Brain did not answer in time";
+    case "network": return "Brain is unreachable";
+    case "invalid_response": return "Brain returned an unreadable response";
+    case "http_error": return "Brain could not provide this measurement";
+    case "not_configured": return "Brain is not connected";
+  }
 }
 
 /**
@@ -122,26 +138,45 @@ function describeError(status: number, data: unknown): string {
  * GET a JSON document from the Brain API. Returns null on any failure
  * (not configured, network error, timeout, non-2xx, bad JSON) and never throws.
  */
-export async function brainFetch<T>(path: string, opts: FetchOptions = {}): Promise<T | null> {
-  if (!base || !key) return null;
+export async function brainRead<T>(path: string, opts: FetchOptions = {}): Promise<ReadResult<T>> {
+  if (!base || !key) return { ok: false, status: 0, reason: "not_configured" };
   const url = apiUrl(base, path);
   if (!url) {
     logOnce(path, "invalid BRAIN_API_URL");
-    return null;
+    return { ok: false, status: 0, reason: "not_configured" };
   }
   try {
     const res = await fetch(url, {
       headers: { "X-API-Key": key, Accept: "application/json" },
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 8000),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 4000),
       ...(opts.fresh ? { cache: "no-store" as const } : { next: { revalidate: opts.revalidate ?? 30 } }),
     });
     if (!res.ok) {
       logOnce(path, `HTTP ${res.status}`);
-      return null;
+      return { ok: false, status: res.status, reason: res.status === 404 ? "not_found" : "http_error" };
     }
-    return (await res.json()) as T;
+    try {
+      return { ok: true, status: res.status, data: (await res.json()) as T };
+    } catch (err) {
+      // A timeout while receiving the body still uses the request deadline.
+      if (timeoutError(err)) throw err;
+      logOnce(path, "invalid JSON");
+      return { ok: false, status: res.status, reason: "invalid_response" };
+    }
   } catch (err) {
-    logOnce(path, err instanceof Error ? `${err.name}: ${err.message}` : String(err));
-    return null;
+    const reason = timeoutError(err) ? "timeout" : "network";
+    logOnce(path, reason);
+    return { ok: false, status: 0, reason };
   }
+}
+
+function timeoutError(err: unknown): boolean {
+  return Boolean(err && typeof err === "object" && "name" in err &&
+    (err.name === "TimeoutError" || err.name === "AbortError"));
+}
+
+/** Compatibility wrapper for callers that only need an unavailable fallback. */
+export async function brainFetch<T>(path: string, opts: FetchOptions = {}): Promise<T | null> {
+  const result = await brainRead<T>(path, opts);
+  return result.ok ? result.data : null;
 }

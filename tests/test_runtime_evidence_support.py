@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+import pytest
+
 from brain.context.evidence_support import (
     query_evidence_support,
     should_abstain_for_unsupported_query,
@@ -95,3 +97,31 @@ def test_question_prefix_with_long_whitespace_keeps_named_evidence_guard():
     prefix = " " * 100_000
     assert should_abstain_for_unsupported_query(prefix + "How does ZebraCloud deploy the application?", candidates, slices)
     assert not should_abstain_for_unsupported_query(prefix + "Add ZebraCloud deployment support", candidates, slices)
+
+
+@pytest.mark.parametrize("language,extension", [("Python", "py"), ("TypeScript", "ts"), ("JavaScript", "js"), ("Kotlin", "kt"), ("Rust", "rs")])
+def test_source_extension_supports_a_named_language_question(language, extension):
+    candidates = [Candidate(f"src/config.{extension}", ("load_configuration",))]
+    result = query_evidence_support(f"How does {language} load configuration?", candidates)
+    assert language.casefold() in result["supported_terms"]
+    assert not result["should_abstain"]
+    assert not result["missing_named_anchors"]
+
+
+def test_language_evidence_does_not_establish_an_unknown_platform():
+    candidates = [Candidate("src/config.py", ("load_configuration",))]
+    result = query_evidence_support("How does ZebraCloud load Python configuration?", candidates)
+    assert result["should_abstain"]
+    assert "ZebraCloud" in result["missing_named_anchors"]
+
+
+def test_language_extensions_in_test_fixtures_are_not_feature_evidence():
+    candidates = [Candidate("tests/config.py", ("load_configuration",))]
+    assert should_abstain_for_unsupported_query("How does Python load configuration?", candidates)
+
+
+@pytest.mark.parametrize("path", ["app/tests.py", "test.py", "conftest.py"])
+def test_standalone_test_modules_do_not_establish_production_feature_evidence(path):
+    candidates = [Candidate(path, ("ZebraCloud", "deploy_application"))]
+    slices = [{"path": path, "content": "def deploy_application(): return ZebraCloud()"}]
+    assert should_abstain_for_unsupported_query("How does ZebraCloud deploy the application?", candidates, slices)

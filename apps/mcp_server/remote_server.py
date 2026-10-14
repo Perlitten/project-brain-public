@@ -26,15 +26,17 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from functools import wraps
 from typing import Any, List, Optional
 from urllib.parse import quote
 
 import httpx
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import InputRequiredResult
 from mcp.server.auth.middleware.auth_context import get_access_token
 
-from apps.mcp_server.client_activity import observe_client_activity
+from apps.mcp_server.client_activity import observe_client_activity, tool_call_observer
 from apps.mcp_server.deferred_payload import (
     DeferredPayloadStore,
     compact_payload,
@@ -79,7 +81,11 @@ _MISSING_CONFIG = (
     "them from the environment, so set them where your client launches this server."
 )
 
-mcp = MCPServer("project-brain-remote", middleware=[observe_client_activity])
+mcp = MCPServer(
+    "project-brain-remote",
+    # Tool telemetry only when served in-process by the API (where the database is).
+    middleware=[observe_client_activity, tool_call_observer("http", enabled=lambda: _asgi_app is not None)],
+)
 
 # Enumeration-shaped results (impact projections, graph walks, review reports)
 # keep their head inline and park the tail here; see deferred_payload.py.
@@ -87,7 +93,19 @@ _PAYLOADS = DeferredPayloadStore()
 register_payload_resource(mcp, _PAYLOADS)
 
 
+def checked_tool(function):
+    """Signal operational bridge failures through the MCP tool contract."""
+    @wraps(function)
+    async def checked(*args, **kwargs):
+        result = await function(*args, **kwargs)
+        if isinstance(result, dict) and result.get("_bridge_error") is True:
+            raise ToolError(str(result["error"]))
+        return result
+    return checked
+
+
 @mcp.tool(**tool_meta("record_task_lesson"))
+@checked_tool
 async def record_task_lesson(task_id: str, statement: str, category: str, validation_id: int,
                              artifact_ids: list[int], source_refs: list[str], idempotency_key: str) -> dict:
     """Capture a lesson from an existing task's reported check and artifacts.
@@ -102,6 +120,7 @@ async def record_task_lesson(task_id: str, statement: str, category: str, valida
 
 
 @mcp.tool(**tool_meta("record_task_observation"))
+@checked_tool
 async def record_task_observation(task_id: str, statement: str, category: str, idempotency_key: str,
                                   outcome: str = "learning") -> dict:
     """Capture an unvalidated observation for a task; no validation or artifact needed.
@@ -115,6 +134,7 @@ async def record_task_observation(task_id: str, statement: str, category: str, i
 
 
 @mcp.tool(**tool_meta("record_procedure_outcome"))
+@checked_tool
 async def record_procedure_outcome(skill_id: int, task_id: str, validation_id: int,
                                     outcome: str, artifact_ids: list[int], source_refs: list[str]) -> dict:
     """Record success/failure after applying a skill; one durable result per task.
@@ -130,7 +150,22 @@ async def record_procedure_outcome(skill_id: int, task_id: str, validation_id: i
 def _is_safe_base_url(url: str) -> bool:
     """Allow https anywhere, or plain http only to loopback. Prevents sending the
     API key in cleartext to a remote host via a mis-set BRAIN_API_URL."""
-    return url.startswith("https://") or url.startswith(("http://127.0.0.1", "http://localhost"))
+    from ipaddress import ip_address
+    from urllib.parse import urlsplit
+    try:
+        parsed = urlsplit(url)
+        if not parsed.hostname or parsed.username is not None or parsed.password is not None:
+            return False
+        _ = parsed.port  # Validate malformed/out-of-range ports before sending a key.
+        if parsed.scheme == "https":
+            return True
+        if parsed.scheme != "http":
+            return False
+        if parsed.hostname == "localhost":
+            return True
+        return ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        return False
 
 
 # --- backend ---------------------------------------------------------------------
@@ -163,28 +198,31 @@ def _caller_credential() -> str | None:
 
 def _failure(path: str, exc: Exception) -> dict:
     if isinstance(exc, httpx.HTTPStatusError):
-        return {"error": f"{path} -> HTTP {exc.response.status_code}: {exc.response.text[:300]}", "status": "failed"}
+        return _bridge_failure(f"{path} -> HTTP {exc.response.status_code}")
     # The exception TYPE matters more than its message here: httpx timeouts
     # and asyncio cancellations both stringify to "", which produced the
     # useless "/ask request failed: " that hid a latency problem for weeks.
-    return {"error": f"{path} request failed: {type(exc).__name__}: {exc}".rstrip(": "), "status": "failed"}
+    return _bridge_failure(f"{path} request failed: {type(exc).__name__}")
+
+
+def _bridge_failure(error: str) -> dict:
+    # Polling endpoints may successfully report a failed domain job. Only
+    # locally generated request/configuration failures carry this marker.
+    return {"error": error, "status": "failed", "_bridge_error": True}
 
 
 async def _request(method: str, path: str, payload: dict | None, timeout: float) -> Any:
     if _asgi_app is not None:
         credential = _caller_credential()
         if credential is None:
-            return {"error": "no authenticated MCP caller for an in-process call", "status": "failed"}
+            return _bridge_failure("no authenticated MCP caller for an in-process call")
         headers = {"X-API-Key": credential} if credential else {}
         client = httpx.AsyncClient(transport=httpx.ASGITransport(app=_asgi_app), base_url=_IN_PROCESS_BASE)
     else:
         if not BASE_URL or not API_KEY:
-            return {"error": _MISSING_CONFIG, "status": "failed"}
+            return _bridge_failure(_MISSING_CONFIG)
         if not _is_safe_base_url(BASE_URL):
-            return {
-                "error": "BRAIN_API_URL must use https (refusing to send the API key over plaintext http)",
-                "status": "failed",
-            }
+            return _bridge_failure("BRAIN_API_URL must use https (refusing to send the API key over plaintext http)")
         headers = {"X-API-Key": API_KEY}
         client = httpx.AsyncClient(base_url=BASE_URL, timeout=timeout)
     async with client:
@@ -224,6 +262,7 @@ register_prompts(mcp)
 
 
 @mcp.tool(**tool_meta("ask_project"))
+@checked_tool
 async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> str | InputRequiredResult:
     """Grounded answer; use search_code first when only location is unknown."""
     repo = repo_path or DEFAULT_REPO
@@ -245,10 +284,13 @@ async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional
         )
         if answer is not None:
             return answer
+    if isinstance(res, dict) and res.get("status") == "failed":
+        raise ToolError(str(res.get("error", "Brain request failed")))
     return str(res)
 
 
 @mcp.tool(**tool_meta("prepare_task_context"))
+@checked_tool
 async def prepare_task_context(task_description: str, repo_path: Optional[str] = None) -> dict:
     """Bounded ephemeral code slices after a locator; no durable write by default."""
     return await _post(
@@ -259,12 +301,13 @@ async def prepare_task_context(task_description: str, repo_path: Optional[str] =
 
 
 @mcp.tool(**tool_meta("prepare_deep_context"))
+@checked_tool
 async def prepare_deep_context(
     task_description: str,
     repo_path: Optional[str] = None,
     notify: bool = True,
 ) -> dict:
-    """Queue a quality-first context pack that uses exact CPU LFM reranking."""
+    """Queue a durable, quality-first context pack (late-interaction reranking when configured)."""
     return await _post(
         "/jobs/deep-context",
         {
@@ -276,12 +319,14 @@ async def prepare_deep_context(
 
 
 @mcp.tool(**tool_meta("get_background_job"))
+@checked_tool
 async def get_background_job(job_id: str) -> dict:
     """Read a compact async-job status; full artifacts are fetched explicitly."""
     return await _get(f"/jobs/{job_id}?include_result=false")
 
 
 @mcp.tool(**tool_meta("impact_analysis"))
+@checked_tool
 async def impact_analysis(change_request: str, repo_path: Optional[str] = None) -> dict:
     """Bounded deterministic impact projection; long tails move to a brain:// resource."""
     return compact_payload(
@@ -295,6 +340,7 @@ async def impact_analysis(change_request: str, repo_path: Optional[str] = None) 
 
 
 @mcp.tool(**tool_meta("record_decision"))
+@checked_tool
 async def record_decision(
     title: str,
     repo_path: Optional[str] = None,
@@ -328,6 +374,7 @@ async def record_decision(
 
 
 @mcp.tool(**tool_meta("record_rule"))
+@checked_tool
 async def record_rule(
     name: str,
     repo_path: Optional[str] = None,
@@ -359,6 +406,7 @@ async def record_rule(
 
 
 @mcp.tool(**tool_meta("search_code"))
+@checked_tool
 async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
     """Compact locator: paths, symbols and ranges only (≤600 estimated tokens)."""
     # The API owns the rollout flag and its locator defaults. Keep this MCP
@@ -368,6 +416,7 @@ async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
 
 
 @mcp.tool(**tool_meta("find_related_files"))
+@checked_tool
 async def find_related_files(file_path: str, repo_path: Optional[str] = None) -> dict:
     """Graph neighbours of a path; long tails move to a brain:// resource."""
     return compact_payload(
@@ -380,6 +429,7 @@ async def find_related_files(file_path: str, repo_path: Optional[str] = None) ->
 
 
 @mcp.tool(**tool_meta("review_diff"))
+@checked_tool
 async def review_diff(
     base: Optional[str] = None,
     head: Optional[str] = "current",
@@ -401,6 +451,7 @@ async def review_diff(
 
 
 @mcp.tool(**tool_meta("get_diff_review"))
+@checked_tool
 async def get_diff_review(job_id: str) -> dict:
     """Poll a diff review queued by ``review_diff``; ``status`` is completed, failed, or still running.
 
@@ -414,4 +465,8 @@ async def get_diff_review(job_id: str) -> dict:
 
 
 if __name__ == "__main__":
+    from brain.config.settings import settings
+
+    if settings.BRAIN_TEAM_MODE:
+        raise RuntimeError("Personal remote MCP is unavailable in team mode; use authenticated native MCP")
     mcp.run()
