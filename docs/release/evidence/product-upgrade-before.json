@@ -2,6 +2,7 @@
   "phase": "before",
   "provider": "local-token-hash-v1",
   "corpus_source": "2a7e66819c60b6eeb19edbb2cc9c2a082184fe57",
+  "input_hash": "92818fedc09401c54ea04bbcea82be4f59fe1df16ba62bc7f8efd3d4e7ec99ab",
   "golden_metrics": {
     "hit_1_count": 9,
     "hit_3_count": 13,
@@ -895,22 +896,6 @@
     {
       "id": "context-001",
       "type": "context",
-      "paths": [
-        "brain/llm/providers/openai_compatible.py",
-        "brain/llm/providers/openai_provider.py",
-        "brain/llm/presets.py",
-        "tests/test_openai_compatible.py",
-        "brain/llm/providers/anthropic_provider.py",
-        "brain/llm/providers/google_provider.py"
-      ],
-      "expected": [
-        "brain/llm/presets.py"
-      ],
-      "hit1": false,
-      "hit3": true,
-      "mrr": 0.3333333333333333,
-      "recall": 1.0,
-      "adversarial_pass": null,
       "input": {
         "id": "context-001",
         "type": "context",
@@ -928,27 +913,27 @@
           "source": "manual harness evaluation 2026-10-05",
           "note": "Verified: /context returned presets.py among 6 candidates."
         }
-      }
+      },
+      "paths": [
+        "brain/llm/providers/openai_compatible.py",
+        "brain/llm/providers/openai_provider.py",
+        "brain/llm/presets.py",
+        "tests/test_openai_compatible.py",
+        "brain/llm/providers/anthropic_provider.py",
+        "brain/llm/providers/google_provider.py"
+      ],
+      "expected": [
+        "brain/llm/presets.py"
+      ],
+      "hit1": false,
+      "hit3": true,
+      "mrr": 0.3333333333333333,
+      "recall": 1.0,
+      "adversarial_pass": null
     },
     {
       "id": "context-002",
       "type": "context",
-      "paths": [
-        "brain/embeddings/backfill.py",
-        "brain/indexers/file_indexer.py",
-        "apps/cli/commands/embeddings.py",
-        "brain/workers/tasks.py",
-        "brain/routing/cli.py",
-        "apps/api/routers/jobs.py"
-      ],
-      "expected": [
-        "brain/embeddings/backfill.py"
-      ],
-      "hit1": true,
-      "hit3": true,
-      "mrr": 1.0,
-      "recall": 1.0,
-      "adversarial_pass": null,
       "input": {
         "id": "context-002",
         "type": "context",
@@ -966,27 +951,27 @@
           "source": "benchmark expansion 2026-10-05",
           "note": "backfill.py is the core implementation; CLI command triggers it."
         }
-      }
+      },
+      "paths": [
+        "brain/embeddings/backfill.py",
+        "brain/indexers/file_indexer.py",
+        "apps/cli/commands/embeddings.py",
+        "brain/workers/tasks.py",
+        "brain/routing/cli.py",
+        "apps/api/routers/jobs.py"
+      ],
+      "expected": [
+        "brain/embeddings/backfill.py"
+      ],
+      "hit1": true,
+      "hit3": true,
+      "mrr": 1.0,
+      "recall": 1.0,
+      "adversarial_pass": null
     },
     {
       "id": "context-003",
       "type": "context",
-      "paths": [
-        "apps/cli/commands/review_diff.py",
-        "tests/test_p0_worker_and_diff_review.py",
-        "brain/analyzers/diff_analyzer.py",
-        "brain/insights/git_diff.py",
-        "apps/api/routers/core_retrieval.py",
-        "brain/memory/harness_store.py"
-      ],
-      "expected": [
-        "brain/analyzers/diff_analyzer.py"
-      ],
-      "hit1": false,
-      "hit3": true,
-      "mrr": 0.3333333333333333,
-      "recall": 1.0,
-      "adversarial_pass": null,
       "input": {
         "id": "context-003",
         "type": "context",
@@ -1003,28 +988,27 @@
           "source": "benchmark expansion 2026-10-05",
           "note": "diff_analyzer.py owns review_diff; fallback behavior fixed 2026-10-05."
         }
-      }
+      },
+      "paths": [
+        "apps/cli/commands/review_diff.py",
+        "tests/test_p0_worker_and_diff_review.py",
+        "brain/analyzers/diff_analyzer.py",
+        "brain/insights/git_diff.py",
+        "apps/api/routers/core_retrieval.py",
+        "brain/memory/harness_store.py"
+      ],
+      "expected": [
+        "brain/analyzers/diff_analyzer.py"
+      ],
+      "hit1": false,
+      "hit3": true,
+      "mrr": 0.3333333333333333,
+      "recall": 1.0,
+      "adversarial_pass": null
     },
     {
       "id": "context-004",
       "type": "context",
-      "paths": [
-        "apps/api/audit_middleware.py",
-        "eval/audit_corpus.py",
-        "apps/api/routers/web_login.py",
-        "apps/api/routers/audit.py",
-        "apps/mcp_server/remote_server.py",
-        "apps/cli/commands/audit.py"
-      ],
-      "expected": [
-        "apps/api/auth.py",
-        "apps/api/audit_middleware.py"
-      ],
-      "hit1": true,
-      "hit3": true,
-      "mrr": 1.0,
-      "recall": 0.5,
-      "adversarial_pass": null,
       "input": {
         "id": "context-004",
         "must_have_files": [
@@ -1041,20 +1025,28 @@
         },
         "task_description": "Where is the caller's API key validated before the request is written to the audit log?",
         "type": "context"
-      }
+      },
+      "paths": [
+        "apps/api/audit_middleware.py",
+        "eval/audit_corpus.py",
+        "apps/api/routers/web_login.py",
+        "apps/api/routers/audit.py",
+        "apps/mcp_server/remote_server.py",
+        "apps/cli/commands/audit.py"
+      ],
+      "expected": [
+        "apps/api/auth.py",
+        "apps/api/audit_middleware.py"
+      ],
+      "hit1": true,
+      "hit3": true,
+      "mrr": 1.0,
+      "recall": 0.5,
+      "adversarial_pass": null
     },
     {
       "id": "context-005",
       "type": "context",
-      "paths": [],
-      "expected": [
-        "brain/llm/providers/openai_compatible.py"
-      ],
-      "hit1": false,
-      "hit3": false,
-      "mrr": 0,
-      "recall": 0.0,
-      "adversarial_pass": null,
       "input": {
         "id": "context-005",
         "must_have_files": [
@@ -1070,27 +1062,20 @@
         },
         "task_description": "How does the LLM client implement exponential backoff when API requests fail?",
         "type": "context"
-      }
-    },
-    {
-      "id": "context-006",
-      "type": "context",
-      "paths": [
-        "apps/api/routers/setup.py",
-        "apps/cli/commands/embeddings.py",
-        "apps/api/routers/web_login.py",
-        "brain/execution/verifier.py",
-        "apps/api/schemas.py",
-        "tests/test_graph_v3_identity.py"
-      ],
+      },
+      "paths": [],
       "expected": [
-        "apps/api/auth.py"
+        "brain/llm/providers/openai_compatible.py"
       ],
       "hit1": false,
       "hit3": false,
       "mrr": 0,
       "recall": 0.0,
-      "adversarial_pass": null,
+      "adversarial_pass": null
+    },
+    {
+      "id": "context-006",
+      "type": "context",
       "input": {
         "id": "context-006",
         "must_have_files": [
@@ -1106,18 +1091,27 @@
         },
         "task_description": "How does the API verify the caller's identity on each request?",
         "type": "context"
-      }
+      },
+      "paths": [
+        "apps/api/routers/setup.py",
+        "apps/cli/commands/embeddings.py",
+        "apps/api/routers/web_login.py",
+        "brain/execution/verifier.py",
+        "apps/api/schemas.py",
+        "tests/test_graph_v3_identity.py"
+      ],
+      "expected": [
+        "apps/api/auth.py"
+      ],
+      "hit1": false,
+      "hit3": false,
+      "mrr": 0,
+      "recall": 0.0,
+      "adversarial_pass": null
     },
     {
       "id": "context-007",
       "type": "context",
-      "paths": [],
-      "expected": [],
-      "hit1": false,
-      "hit3": false,
-      "mrr": 0,
-      "recall": null,
-      "adversarial_pass": true,
       "input": {
         "id": "context-007",
         "type": "context",
@@ -1131,11 +1125,37 @@
           "source": "harsh benchmark 2026-10-05",
           "note": "Tests honest 'don't know' behavior vs hallucination."
         }
-      }
+      },
+      "paths": [],
+      "expected": [],
+      "hit1": false,
+      "hit3": false,
+      "mrr": 0,
+      "recall": null,
+      "adversarial_pass": true
     },
     {
       "id": "impact-001",
       "type": "impact",
+      "input": {
+        "id": "impact-001",
+        "type": "impact",
+        "change_request": "Rename the function resolve_embedding_dimension to get_embedding_dims across the codebase",
+        "must_have_files": [
+          "brain/embeddings/constants.py",
+          "brain/embeddings/config.py",
+          "brain/embeddings/store.py"
+        ],
+        "nice_to_have_files": [
+          "brain/search/code_search.py"
+        ],
+        "base_commit": "d30a11bf68ed9b706c81169b4f525f3908b5d143",
+        "provenance": {
+          "kind": "curated",
+          "source": "manual harness evaluation 2026-10-05",
+          "note": "Verified: /impact flagged the function, constants.py, config.py, store.py as affected."
+        }
+      },
       "paths": [
         "brain/database/migrations.py",
         "brain/embeddings/config.py",
@@ -1155,30 +1175,29 @@
       "hit3": true,
       "mrr": 0.5,
       "recall": 1.0,
-      "adversarial_pass": null,
-      "input": {
-        "id": "impact-001",
-        "type": "impact",
-        "change_request": "Rename the function resolve_embedding_dimension to get_embedding_dims across the codebase",
-        "must_have_files": [
-          "brain/embeddings/constants.py",
-          "brain/embeddings/config.py",
-          "brain/embeddings/store.py"
-        ],
-        "nice_to_have_files": [
-          "brain/search/code_search.py"
-        ],
-        "base_commit": "d30a11bf68ed9b706c81169b4f525f3908b5d143",
-        "provenance": {
-          "kind": "curated",
-          "source": "manual harness evaluation 2026-10-05",
-          "note": "Verified: /impact flagged the function, constants.py, config.py, store.py as affected."
-        }
-      }
+      "adversarial_pass": null
     },
     {
       "id": "impact-002",
       "type": "impact",
+      "input": {
+        "id": "impact-002",
+        "type": "impact",
+        "change_request": "Add a new nullable column to the File database model for tracking the indexing source",
+        "must_have_files": [
+          "brain/database/models.py",
+          "brain/database/migrations.py"
+        ],
+        "nice_to_have_files": [
+          "brain/indexers/file_indexer.py"
+        ],
+        "base_commit": "682ea7c53179964823785f5591b20e3d2a430226",
+        "provenance": {
+          "kind": "curated",
+          "source": "benchmark expansion 2026-10-05",
+          "note": "Model change requires migration; indexer consumes the model."
+        }
+      },
       "paths": [
         "brain/database/models.py",
         "brain/database/__init__.py",
@@ -1214,36 +1233,11 @@
       "hit3": true,
       "mrr": 1.0,
       "recall": 1.0,
-      "adversarial_pass": null,
-      "input": {
-        "id": "impact-002",
-        "type": "impact",
-        "change_request": "Add a new nullable column to the File database model for tracking the indexing source",
-        "must_have_files": [
-          "brain/database/models.py",
-          "brain/database/migrations.py"
-        ],
-        "nice_to_have_files": [
-          "brain/indexers/file_indexer.py"
-        ],
-        "base_commit": "682ea7c53179964823785f5591b20e3d2a430226",
-        "provenance": {
-          "kind": "curated",
-          "source": "benchmark expansion 2026-10-05",
-          "note": "Model change requires migration; indexer consumes the model."
-        }
-      }
+      "adversarial_pass": null
     },
     {
       "id": "impact-003",
       "type": "impact",
-      "paths": [],
-      "expected": [],
-      "hit1": false,
-      "hit3": false,
-      "mrr": 0,
-      "recall": null,
-      "adversarial_pass": true,
       "input": {
         "id": "impact-003",
         "type": "impact",
@@ -1257,11 +1251,32 @@
           "source": "harsh benchmark 2026-10-05",
           "note": "Tests if /impact hallucinates impact for vague requests."
         }
-      }
+      },
+      "paths": [],
+      "expected": [],
+      "hit1": false,
+      "hit3": false,
+      "mrr": 0,
+      "recall": null,
+      "adversarial_pass": true
     },
     {
       "id": "impact-004",
       "type": "impact",
+      "input": {
+        "id": "impact-004",
+        "type": "impact",
+        "change_request": "Rename the function get to fetch across the codebase",
+        "must_have_files": [],
+        "nice_to_have_files": [],
+        "adversarial": true,
+        "expectation": "Extremely common word 'get' matches thousands of nodes. Tests if IDF ranking prevents noise explosion. Pass criteria: affected_file_count <= 75 (respects top-k) AND noise is bounded.",
+        "provenance": {
+          "kind": "adversarial",
+          "source": "harsh benchmark 2026-10-05",
+          "note": "Tests IDF robustness against ultra-common keywords."
+        }
+      },
       "paths": [
         "apps/api/auth.py",
         "apps/api/routers/audit.py",
@@ -1293,23 +1308,8 @@
       "hit3": false,
       "mrr": 0,
       "recall": null,
-      "adversarial_pass": true,
-      "input": {
-        "id": "impact-004",
-        "type": "impact",
-        "change_request": "Rename the function get to fetch across the codebase",
-        "must_have_files": [],
-        "nice_to_have_files": [],
-        "adversarial": true,
-        "expectation": "Extremely common word 'get' matches thousands of nodes. Tests if IDF ranking prevents noise explosion. Pass criteria: affected_file_count <= 75 (respects top-k) AND noise is bounded.",
-        "provenance": {
-          "kind": "adversarial",
-          "source": "harsh benchmark 2026-10-05",
-          "note": "Tests IDF robustness against ultra-common keywords."
-        }
-      }
+      "adversarial_pass": true
     }
   ],
-  "limits": "Offline identifier retrieval, not learned semantic/SWE/coding-benefit evidence",
-  "input_hash": "92818fedc09401c54ea04bbcea82be4f59fe1df16ba62bc7f8efd3d4e7ec99ab"
+  "limits": "Retrieval comparison; not learned semantic/SWE/coding-benefit evidence"
 }

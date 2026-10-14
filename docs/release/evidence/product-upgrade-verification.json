@@ -1,0 +1,34 @@
+{
+  "built_from_commit": "62b488975a8d63e272726e9d93467f37587c3541",
+  "runtime_code_unchanged_after_build": true,
+  "local_default_profile": {
+    "tests_passed": 2079,
+    "optional_skips": 11,
+    "ruff": "pass",
+    "mypy_errors": 0,
+    "mypy_source_files": 418,
+    "public_launch": "pass",
+    "docs_consistency": "pass",
+    "public_commit_privacy": "pass"
+  },
+  "clean_install": {
+    "hash_locked_dependencies": true,
+    "source_imports_excluded": true,
+    "index_and_reindex": true,
+    "full_stdio_profiles": [
+      "default locator/context/impact",
+      "explicit legacy search/context/artifact/impact"
+    ],
+    "lite_stdio_tools": [
+      "search_code",
+      "prepare_task_context",
+      "impact_analysis"
+    ],
+    "lite_services_required": 0
+  },
+  "artifacts": {
+    "project_brain-0.9.2.tar.gz": "192220de8e38469333b5bd8ead7bd71c04d90645dd570161a66f7e360cd4c8d3",
+    "project_brain-0.9.2-py3-none-any.whl": "0a44908521297c24618e7fd7cb122f19a358b29df24e6531ff9746fb895ee394"
+  },
+  "limits": "Functional mock/offline verification; not learned semantic or coding benefit. Candidate builds do not alter published v0.9.2 assets."
+}

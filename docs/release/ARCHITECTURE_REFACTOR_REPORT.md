@@ -57,7 +57,7 @@ not infer dynamic calls and undercounts some `from package import module`
 aliases. Fan-out increases at several orchestrators because they now depend on
 explicit stage modules. The benefit is responsibility ownership, not lower
 total import coupling. Product indexing adds preparation/enrichment imports
-(1476 module lines and fan-out 27 at the measured candidate).
+(1493 module lines and fan-out 27 at the measured candidate).
 
 ## Ownership and cohesion
 
@@ -169,6 +169,16 @@ from separate files/chunks channels; the new locator has one compact ranking.
 That contract difference is included in the comparison and makes direct
 production-quality inference inappropriate. The new path is covered separately
 by dense-hit/duplicate-channel/explicit-identifier/query-intent invariants.
+
+After incorporating current `main` and owner hardening, the candidate's full
+default-profile suite passes **2079 tests, 11 optional skips**. Ruff passes and
+the mypy ratchet reports zero errors across 418 source files. Public launch,
+documentation and reachable commit privacy guards pass. Wheel and source
+archives pass packaging checks; a clean hash-locked wheel install runs actual
+stdio MCP search/context/impact for both the new default and explicit legacy
+contracts, including a durable legacy artifact byte comparison. SQLite Lite
+also runs installed stdio MCP without backing daemons. These are functional
+checks with mock/offline providers; no semantic or coding-benefit claim follows.
 
 A free learned-model rerun was attempted, but the cloud destination allowlist
 denies Hugging Face (HTTP 403). Domain additions are saved for environment
