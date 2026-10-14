@@ -63,6 +63,33 @@ async def test_stalled_symbols_cannot_extend_the_request_deadline(monkeypatch, s
 
 
 @pytest.mark.asyncio
+async def test_deadline_between_primary_completion_and_bm25_start_is_reported(monkeypatch):
+    from brain.config.settings import settings
+    monkeypatch.setattr(settings, "RETRIEVAL_V2_ENABLED", True)
+    monkeypatch.setattr(settings, "DEFAULT_EMBEDDING_PROVIDER", "local")
+    monkeypatch.setattr("brain.retrieval.service.get_repository_by_path", AsyncMock(return_value=SimpleNamespace(id=1)))
+    monkeypatch.setattr("brain.retrieval.service.search_code", AsyncMock(return_value={"files": [{"path": "src/core.py"}]}))
+    lexical = AsyncMock()
+    monkeypatch.setattr("brain.search.local_lexical.local_lexical", lexical)
+    service = RetrievalService()
+    monkeypatch.setattr(service, "_known_symbol_route", AsyncMock(return_value=[]))
+    normalizer = service._normalize
+    clock = [0.0]
+    monkeypatch.setattr("brain.retrieval.service.time.perf_counter", lambda: clock[0])
+
+    def normalize(*args):
+        rows = normalizer(*args)
+        clock[0] = 0.05  # Primary normalization used the last available budget.
+        return rows
+
+    monkeypatch.setattr(service, "_normalize", normalize)
+    result = await service.retrieve("core", "/repo", deadline_s=0.05)
+    assert result.candidates[0].path == "src/core.py"
+    assert result.degraded == ["deadline_exceeded", "offline_lexical_unavailable"]
+    lexical.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_repository_lookup_is_inside_the_deadline(monkeypatch):
     stopped = asyncio.Event()
 

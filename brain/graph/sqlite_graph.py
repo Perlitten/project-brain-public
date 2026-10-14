@@ -105,8 +105,10 @@ class SQLiteGraph:
                             neighbors.append((node_id, distance))
                         if distance >= 2 or edges_left <= 0 or len(seen) >= 64:
                             continue
+                        # Reserve half for incoming edges so symbol fan-out
+                        # cannot crowd out caller/module/file relationships.
                         outgoing = db.execute("SELECT target FROM edges WHERE source=? LIMIT ?",
-                                              (node_id, edges_left)).fetchall()
+                                              (node_id, (edges_left + 1) // 2)).fetchall()
                         incoming = db.execute("SELECT source FROM edges WHERE target=? LIMIT ?",
                                               (node_id, edges_left - len(outgoing))).fetchall()
                         edges_left -= len(outgoing) + len(incoming)

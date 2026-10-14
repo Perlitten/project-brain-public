@@ -202,6 +202,9 @@ class RetrievalService:
                         else:
                             mark_deadline()
                             degraded.append("offline_lexical_unavailable")
+                    else:
+                        mark_deadline()
+                        degraded.append("offline_lexical_unavailable")
                 candidates = merge_linear(vector_candidates, symbols, query, candidate_budget)
             else:
                 query_identifiers = self._query_identifiers(query)

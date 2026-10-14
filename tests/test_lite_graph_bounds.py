@@ -76,3 +76,20 @@ async def test_expired_sqlite_work_budget_is_a_typed_timeout(tmp_path, monkeypat
     monkeypatch.setattr(settings, "AGENT_IMPACT_DEADLINE_S", 0)
     with pytest.raises(TimeoutError):
         await graph.bounded_impact(1, ["hub"])
+
+
+@pytest.mark.asyncio
+async def test_high_outgoing_degree_cannot_starve_incoming_file_edges(tmp_path):
+    graph = SQLiteGraph(tmp_path)
+    populate(graph, 2500)
+    with graph.connection() as db:
+        db.execute("UPDATE nodes SET label='Function' WHERE identity!='hub'")
+        db.execute("INSERT INTO nodes(repo,label,identity,props) VALUES (1,'File','caller',?)",
+                   (json.dumps({"name": "src/caller.py"}),))
+        caller = db.execute("SELECT id FROM nodes WHERE identity='caller'").fetchone()[0]
+        hub = db.execute("SELECT id FROM nodes WHERE identity='hub'").fetchone()[0]
+        db.execute("INSERT INTO edges VALUES (?,?,'USES','{}')", (caller, hub))
+    rows = await graph.bounded_impact(1, ["hub"])
+    assert len(rows) == 8
+    assert rows[0]["m"]["name"] == "src/caller.py"
+    assert rows[0]["distance"] == 1

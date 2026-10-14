@@ -39,9 +39,12 @@ def test_production_substrings_are_not_test_paths(path):
     assert classify_file(Path("/repo") / path, Path("/repo")) == "source_code"
 
 
-@pytest.mark.parametrize("path", ["tests/core.py", "test/core.py", "spec/core.ts", "__tests__/core.ts", "test_core.py", "core_test.py", "core.spec.ts", "core.test.ts", "TestCore.java", "CoreTest.java"])
+@pytest.mark.parametrize("path", ["tests/core.py", "test/core.py", "spec/core.ts", "__tests__/core.ts", "test_core.py", "core_test.py", "core.spec.ts", "core.test.ts", "TestCore.java", "CoreTest.java", "app/tests.py", "test.py", "conftest.py"])
 def test_explicit_test_conventions_remain_classified(path):
+    from pathlib import Path
+    from brain.indexers.repo_indexer import classify_file
     assert is_test_path(path)
+    assert classify_file(Path("/repo") / path, Path("/repo")) == "test"
 
 
 @pytest.mark.parametrize("path", ["templates/index.html", "templates\\index.html", "nested/templates/index.jinja2"])
