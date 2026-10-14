@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import pytest
 from types import SimpleNamespace
@@ -236,3 +237,56 @@ async def test_bm25_uses_remaining_deadline_and_returns_primary_results(monkeypa
     assert result.candidates[0].path == "src/core.py"
     assert result.degraded == ["deadline_exceeded", "offline_lexical_unavailable"]
     assert stopped.is_set()
+
+
+@pytest.mark.parametrize("mode", ["normal", "symbol_late", "vector_late", "both_late", "search_error"])
+@pytest.mark.asyncio
+async def test_elapsed_deadline_and_owned_task_completion(monkeypatch, mode):
+    from brain.retrieval.service import RetrievalCandidate
+    children = []
+    service = RetrievalService()
+
+    async def symbols(*args):
+        children.append(asyncio.current_task())
+        if mode in {"symbol_late", "both_late"}:
+            await asyncio.Event().wait()
+        await asyncio.sleep(0.001)
+        return [RetrievalCandidate("src/core.py", score=1)]
+
+    async def search(*args, **kwargs):
+        children.append(asyncio.current_task())
+        if mode in {"vector_late", "both_late"}:
+            await asyncio.Event().wait()
+        if mode == "search_error":
+            raise RuntimeError("unavailable")
+        await asyncio.sleep(0.001)
+        return {"files": [{"path": "src/core.py"}]}
+
+    monkeypatch.setattr(service, "_known_symbol_route", symbols)
+    monkeypatch.setattr("brain.retrieval.service.search_code", search)
+    started = time.perf_counter()
+    result = await asyncio.wait_for(service.retrieve("core", None, deadline_s=0.02), 0.5)
+    elapsed = time.perf_counter() - started
+    assert elapsed < 0.12, f"request took {elapsed:.3f}s for a 0.020s budget"
+    assert all(task.done() for task in children)
+    if mode.endswith("late"):
+        assert "deadline_exceeded" in result.degraded
+    assert bool(result.candidates) == (mode != "both_late")
+
+
+@pytest.mark.asyncio
+async def test_repeated_concurrent_expiry_leaves_no_owned_channel_tasks(monkeypatch):
+    children = []
+
+    async def stalled(*args, **kwargs):
+        children.append(asyncio.current_task())
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr("brain.retrieval.service.search_code", stalled)
+    service = RetrievalService()
+    monkeypatch.setattr(service, "_known_symbol_route", stalled)
+    started = time.perf_counter()
+    results = await asyncio.wait_for(asyncio.gather(*(service.retrieve("core", None, deadline_s=0.02) for _ in range(32))), 0.5)
+    assert time.perf_counter() - started < 0.25
+    assert len(children) == 64 and all(task.done() for task in children)
+    assert all(result.degraded == ["deadline_exceeded"] for result in results)

@@ -93,3 +93,5 @@ async def test_high_outgoing_degree_cannot_starve_incoming_file_edges(tmp_path):
     assert len(rows) == 8
     assert rows[0]["m"]["name"] == "src/caller.py"
     assert rows[0]["distance"] == 1
+    repeated = await graph.bounded_impact(1, ["hub"])
+    assert [(row["m"].element_id, row["distance"]) for row in rows] == [(row["m"].element_id, row["distance"]) for row in repeated]
