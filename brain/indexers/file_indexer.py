@@ -6,6 +6,7 @@ import re
 import subprocess
 import time
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Union
 from sqlalchemy import select, delete, func, update
@@ -23,6 +24,7 @@ from brain.workers.runtime import current_job, check_job_lease
 from brain.workers.db_fencing import assert_current_db_fence
 from brain.llm.router import get_model_router
 from brain.indexers.repo_indexer import classify_file, should_ignore_dir, should_ignore_file, get_git_commit_hash
+from brain.indexers.source_summaries import source_summaries
 from brain.indexers.symbol_extractors import (
     extract_import_target_symbols,
     extract_structural_symbols,
@@ -518,6 +520,16 @@ def source_content_digest(path_obj: Path, files: List[Path]) -> str:
     return hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
 
 
+@dataclass(frozen=True)
+class PreparedFile:
+    """Ready-to-commit provider output; persistence owns IDs and fencing."""
+    symbols: list[dict[str, Any]]
+    chunks: list[dict[str, Any]]
+    summary: str
+    late_provider: Any
+    remote_late_write: bool
+
+
 class FileIndexer:
     """Handles parsing, chunking, embedding generation, and DB persistence for files."""
 
@@ -746,6 +758,8 @@ class FileIndexer:
                 self.file_counts["discovered"] = len(scanned_files)
                 await self._publish_progress()
 
+                indexed_paths: list[str] = []
+
                 async def process(filepath):
                     try:
                         outcome = await self.index_file(repo_id, path_obj, filepath)
@@ -755,6 +769,7 @@ class FileIndexer:
                         else:
                             self.progress["files"]["processed"] += 1
                             self.file_counts["graph_failed" if outcome == "indexed_graph_failed" else "indexed"] += 1
+                            indexed_paths.append(filepath.relative_to(path_obj).as_posix())
                     except Exception as exc:
                         self.progress["files"]["failed"] += 1
                         self.file_counts["failed"] += 1
@@ -817,6 +832,9 @@ class FileIndexer:
                     run_obj.verification = self.verification
                     run_obj.file_counts = self.file_counts
                     run_obj.completed_at = datetime.now(timezone.utc)
+                if (status == "completed" and settings.INDEX_LLM_SUMMARIES_MODE == "lazy"
+                        and settings.INDEX_LLM_SUMMARIES_BACKGROUND):
+                    await self._queue_summary_enrichment(repo_id, path_obj, commit_hash, indexed_paths)
                 return repo
             except BaseException as exc:
                 self.progress["phase"] = "interrupted"
@@ -1074,6 +1092,159 @@ class FileIndexer:
         logger.info(f"build_file_cards: {stats}")
         return stats
 
+    async def _prepare_file(
+        self, content: str, ext: str, rel_path: str, file_type: str, knowledge_status: str,
+    ) -> PreparedFile:
+        """Prepare structural/vector projection without holding a DB transaction."""
+        symbols = extract_symbols_from_content(content, ext)
+        chunks = chunk_file_content(content, symbols)
+        self.progress["chunks"]["discovered"] += len(chunks)
+        embedding_provider = self.router.embedding("passage")
+        embedding_char_limit = _infer_embedding_text_limit(embedding_provider)
+        late_provider = self._late_provider
+        remote_late_write = (
+            settings.LATE_INTERACTION_ENABLED
+            and settings.LATE_INTERACTION_DUAL_WRITE_ENABLED
+            and settings.LATE_INTERACTION_REMOTE_ENABLED
+            and not self._late_dual_write_circuit_open
+        )
+        if (
+            settings.LATE_INTERACTION_ENABLED
+            and settings.LATE_INTERACTION_DUAL_WRITE_ENABLED
+            and not settings.LATE_INTERACTION_REMOTE_ENABLED
+            and not self._late_dual_write_circuit_open
+            and late_provider is None
+        ):
+            # Additive/fail-open by design: the dense NVIDIA vector remains
+            # the chunk's authoritative embedding even when this sidecar is
+            # unavailable.
+            from brain.late_interaction.provider import LfmColbertProvider
+
+            late_provider = LfmColbertProvider(
+                timeout_s=settings.LATE_INTERACTION_DUAL_WRITE_TIMEOUT_S
+            )
+            self._late_provider = late_provider
+        # v6 P1: structural symbols (routes/CLI/entrypoints) are persisted for the
+        # symbol channel but deliberately NOT fed to chunk_file_content above, so
+        # chunk/embedding boundaries stay identical to the frozen v5 index.
+        symbols = symbols + extract_structural_symbols(content, ext, rel_path)
+
+        summaries = source_summaries(content, ext, rel_path, symbols)
+        inline_summaries = settings.INDEX_LLM_SUMMARIES_MODE == "inline"
+        if not inline_summaries:
+            for symbol in symbols:
+                symbol["summary"] = summaries.symbols.get((symbol["name"], int(symbol.get("start_line") or 0)), "")
+
+        # Chat synthesis is opt-in; deterministic prose is immediately usable.
+        file_summary = "" if inline_summaries else summaries.file
+        if inline_summaries and file_type in {"source_code", "documentation", "config", "api_spec"}:
+            if os.environ.get("FAST_INDEX") == "true":
+                file_summary = f"File {rel_path} with {len(content.splitlines())} lines."
+            else:
+                try:
+                    async with self._provider_slots:
+                        file_summary = await self.router.summarizer().summarize(content[:4000])
+                except Exception as e:
+                    logger.warning(f"Failed to generate summary for {rel_path}: {e}")
+                    self._failure("summary", e, rel_path)
+                    file_summary = f"File {rel_path} with {len(content.splitlines())} lines."
+        file_summary = annotate_knowledge_summary(file_summary, knowledge_status)
+
+        # Pre-generate chunk summaries and embeddings outside any DB transaction
+        # (long-running LLM calls must not hold a connection open).
+        prepared_chunks: list[dict] = []
+        vectors = await embed_chunks(embedding_provider, chunks, self._provider_slots,
+                                    lambda phase, exc, idx: self._failure(phase, exc, rel_path, idx))
+        for idx, chunk in enumerate(chunks):
+            chunk_summary = ""
+            # Per-chunk LLM summaries are off by default (2026-07-26). They cost
+            # one LLM round-trip per chunk — about half of total indexing time —
+            # and nothing consumes them: ranking scores embeddings of the chunk
+            # *content* (brain/search/code_search.py), and /ask injects
+            # c["content"], never c["summary"]. The only consumer is the search
+            # payload itself, where they duplicate the content they sit next to
+            # and inflate every response. Set BRAIN_CHUNK_SUMMARIES=1 to restore.
+            #
+            # NOTE: this is deliberately NOT keyed off FAST_INDEX, which also
+            # replaces the *file* summary with a stub. File summaries are what the
+            # lexical retrieval channel matches against (File.summary ILIKE), and
+            # that channel is already the weak one — degrading it would trade a
+            # measured 15% Hit@3 for indexing speed.
+            if not inline_summaries or os.environ.get("FAST_INDEX") == "true" or os.environ.get("BRAIN_CHUNK_SUMMARIES", "0") != "1":
+                chunk_summary = (
+                    f"Code chunk {idx} from line {chunk['start_line']} to {chunk['end_line']} in {rel_path}"
+                )
+            else:
+                try:
+                    async with self._provider_slots:
+                        chunk_summary = await self.router.summarizer().summarize(chunk["content"])
+                except Exception:
+                    chunk_summary = f"Code chunk {idx} in {rel_path}"
+            chunk_summary = annotate_knowledge_summary(
+                chunk_summary,
+                knowledge_status,
+            )
+
+            embedding_vector = vectors[idx]
+            if embedding_char_limit is not None and len(chunk["content"]) > embedding_char_limit:
+                logger.warning("Embedding input truncated for {} chunk {}", rel_path, idx)
+
+            late_embedding = None
+            if late_provider is not None:
+                try:
+                    late_embedding = await late_provider.embed(chunk["content"], is_query=False)
+                    self._late_dual_write_failures = 0
+                except Exception as exc:
+                    from brain.late_interaction.metrics import increment
+
+                    increment("dual_write_failures")
+                    await self._record_late_dual_write_failure()
+                    if self._late_dual_write_circuit_open:
+                        late_provider = None
+                    logger.warning(
+                        "Late-interaction dual-write failed open for {} chunk {}: {}",
+                        rel_path,
+                        idx,
+                        str(exc).strip() or type(exc).__name__,
+                    )
+
+            prepared_chunks.append(
+                {
+                    **chunk,
+                    "summary": chunk_summary,
+                    "embedding_vector": embedding_vector,
+                    "late_embedding": late_embedding,
+                }
+            )
+
+        return PreparedFile(symbols, prepared_chunks, file_summary, late_provider, remote_late_write)
+
+    async def _queue_summary_enrichment(
+        self,
+        repo_id: int,
+        path: Path,
+        revision: str | None,
+        indexed_paths: list[str],
+    ) -> None:
+        from brain.database.session import redis_client
+        from brain.workers.queue import queue_for_job
+
+        try:
+            queue = queue_for_job(redis_client, settings.WORKER_REDIS_PREFIX, "enrich_summaries",
+                                  pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED)
+            await queue.enqueue(
+                "enrich_summaries",
+                {
+                    "repo_path": path.as_posix(),
+                    "repository_id": repo_id,
+                    "paths": sorted(indexed_paths),
+                },
+                idempotency_key=f"{repo_id}:{revision}:{self.verification.get('source_content_digest')}",
+                max_attempts=3,
+            )
+        except Exception as exc:
+            logger.warning("Optional summary enrichment enqueue failed: {}", type(exc).__name__)
+
     async def index_file(self, repo_id: int, repo_path: Path, filepath: Path) -> str:
         """Parse single file, check if changed, chunk, generate embeddings, and save to Postgres."""
         rel_path = filepath.relative_to(repo_path).as_posix()
@@ -1133,120 +1304,12 @@ class FileIndexer:
 
             # Perform summaries and embeddings generation outside the database transaction
             # (prevents connection lock starvation)
-            symbols = extract_symbols_from_content(content, ext)
-            chunks = chunk_file_content(content, symbols)
-            self.progress["chunks"]["discovered"] += len(chunks)
-            embedding_provider = self.router.embedding("passage")
-            embedding_char_limit = _infer_embedding_text_limit(embedding_provider)
-            late_provider = self._late_provider
-            remote_late_write = (
-                settings.LATE_INTERACTION_ENABLED
-                and settings.LATE_INTERACTION_DUAL_WRITE_ENABLED
-                and settings.LATE_INTERACTION_REMOTE_ENABLED
-                and not self._late_dual_write_circuit_open
-            )
-            if (
-                settings.LATE_INTERACTION_ENABLED
-                and settings.LATE_INTERACTION_DUAL_WRITE_ENABLED
-                and not settings.LATE_INTERACTION_REMOTE_ENABLED
-                and not self._late_dual_write_circuit_open
-                and late_provider is None
-            ):
-                # Additive/fail-open by design: the dense NVIDIA vector remains
-                # the chunk's authoritative embedding even when this sidecar is
-                # unavailable.
-                from brain.late_interaction.provider import LfmColbertProvider
-
-                late_provider = LfmColbertProvider(
-                    timeout_s=settings.LATE_INTERACTION_DUAL_WRITE_TIMEOUT_S
-                )
-                self._late_provider = late_provider
-            # v6 P1: structural symbols (routes/CLI/entrypoints) are persisted for the
-            # symbol channel but deliberately NOT fed to chunk_file_content above, so
-            # chunk/embedding boundaries stay identical to the frozen v5 index.
-            symbols = symbols + extract_structural_symbols(content, ext, rel_path)
-
-            # Generate file summary using LLM (if it is source code/doc/config)
-            file_summary = ""
-            if file_type in {"source_code", "documentation", "config", "api_spec"}:
-                if os.environ.get("FAST_INDEX") == "true":
-                    file_summary = f"File {rel_path} with {len(content.splitlines())} lines."
-                else:
-                    try:
-                        async with self._provider_slots:
-                            file_summary = await self.router.summarizer().summarize(content[:4000])
-                    except Exception as e:
-                        logger.warning(f"Failed to generate summary for {rel_path}: {e}")
-                        self._failure("summary", e, rel_path)
-                        file_summary = f"File {rel_path} with {len(content.splitlines())} lines."
-            file_summary = annotate_knowledge_summary(file_summary, knowledge_status)
-
-            # Pre-generate chunk summaries and embeddings outside any DB transaction
-            # (long-running LLM calls must not hold a connection open).
-            prepared_chunks: list[dict] = []
-            vectors = await embed_chunks(embedding_provider, chunks, self._provider_slots,
-                                        lambda phase, exc, idx: self._failure(phase, exc, rel_path, idx))
-            for idx, chunk in enumerate(chunks):
-                chunk_summary = ""
-                # Per-chunk LLM summaries are off by default (2026-07-26). They cost
-                # one LLM round-trip per chunk — about half of total indexing time —
-                # and nothing consumes them: ranking scores embeddings of the chunk
-                # *content* (brain/search/code_search.py), and /ask injects
-                # c["content"], never c["summary"]. The only consumer is the search
-                # payload itself, where they duplicate the content they sit next to
-                # and inflate every response. Set BRAIN_CHUNK_SUMMARIES=1 to restore.
-                #
-                # NOTE: this is deliberately NOT keyed off FAST_INDEX, which also
-                # replaces the *file* summary with a stub. File summaries are what the
-                # lexical retrieval channel matches against (File.summary ILIKE), and
-                # that channel is already the weak one — degrading it would trade a
-                # measured 15% Hit@3 for indexing speed.
-                if os.environ.get("FAST_INDEX") == "true" or os.environ.get("BRAIN_CHUNK_SUMMARIES", "0") != "1":
-                    chunk_summary = (
-                        f"Code chunk {idx} from line {chunk['start_line']} to {chunk['end_line']} in {rel_path}"
-                    )
-                else:
-                    try:
-                        async with self._provider_slots:
-                            chunk_summary = await self.router.summarizer().summarize(chunk["content"])
-                    except Exception:
-                        chunk_summary = f"Code chunk {idx} in {rel_path}"
-                chunk_summary = annotate_knowledge_summary(
-                    chunk_summary,
-                    knowledge_status,
-                )
-
-                embedding_vector = vectors[idx]
-                if embedding_char_limit is not None and len(chunk["content"]) > embedding_char_limit:
-                    logger.warning("Embedding input truncated for {} chunk {}", rel_path, idx)
-
-                late_embedding = None
-                if late_provider is not None:
-                    try:
-                        late_embedding = await late_provider.embed(chunk["content"], is_query=False)
-                        self._late_dual_write_failures = 0
-                    except Exception as exc:
-                        from brain.late_interaction.metrics import increment
-
-                        increment("dual_write_failures")
-                        await self._record_late_dual_write_failure()
-                        if self._late_dual_write_circuit_open:
-                            late_provider = None
-                        logger.warning(
-                            "Late-interaction dual-write failed open for {} chunk {}: {}",
-                            rel_path,
-                            idx,
-                            str(exc).strip() or type(exc).__name__,
-                        )
-
-                prepared_chunks.append(
-                    {
-                        **chunk,
-                        "summary": chunk_summary,
-                        "embedding_vector": embedding_vector,
-                        "late_embedding": late_embedding,
-                    }
-                )
+            prepared_file = await self._prepare_file(content, ext, rel_path, file_type, knowledge_status)
+            symbols = prepared_file.symbols
+            prepared_chunks = prepared_file.chunks
+            file_summary = prepared_file.summary
+            late_provider = prepared_file.late_provider
+            remote_late_write = prepared_file.remote_late_write
 
             # Save symbols, chunks, and embeddings in a short-lived DB transaction
             remote_documents: list[dict[str, Any]] = []
@@ -1281,7 +1344,7 @@ class FileIndexer:
                             signature=sym["signature"],
                             start_line=sym["start_line"],
                             end_line=sym["end_line"],
-                            summary=f"Code symbol {sym['name']} ({sym['kind']}) in {rel_path}",
+                            summary=sym.get("summary") or f"Code symbol {sym['name']} ({sym['kind']}) in {rel_path}",
                         )
                         session.add(sym_obj)
 
@@ -1418,7 +1481,7 @@ class FileIndexer:
                 self.progress["graph"]["failed"] += 1
                 self._failure("graph_file", ge, rel_path)
 
-        logger.info(f"FileIndexer: Indexed file: {rel_path} with {len(symbols)} symbols and {len(chunks)} chunks.")
+        logger.info(f"FileIndexer: Indexed file: {rel_path} with {len(symbols)} symbols and {len(prepared_chunks)} chunks.")
         return "indexed" if graph_ok else "indexed_graph_failed"
 
     async def _post_process_graph(self, repo_name: str, repo_path: Path, scanned_files: List[Path]) -> None:

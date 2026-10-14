@@ -114,6 +114,14 @@ Restart API, worker and MCP clients after configuration changes.
 
 ## Connect MCP and run one task
 
+On unreleased `main`, initial indexing defaults to `INDEX_LLM_SUMMARIES_MODE=lazy`:
+symbols, deterministic docstrings/signatures, graph edges and embeddings finish
+without chat-model summaries. Embedding providers can still incur costs. Set
+`inline` to retain foreground chat summaries, or `off` to disable enrichment.
+Optional `INDEX_LLM_SUMMARIES_BACKGROUND=true` schedules bounded maintenance
+enrichment after verified completion; it can call your configured chat provider.
+Index readiness never waits for that job. No fixed indexing speed is promised.
+
 Local stdio MCP connects directly to Brain's databases; those services must
 remain running. The API is not required by this local transport.
 

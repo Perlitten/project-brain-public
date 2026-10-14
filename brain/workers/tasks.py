@@ -51,6 +51,19 @@ from brain.workers.errors import PermanentJobError, StaleWorkerFencingError
 # keeps `from brain.workers.tasks import StaleWorkerFencingError` working.
 
 
+async def run_enrich_summaries(params: Dict[str, Any]) -> Dict[str, Any]:
+    from brain.indexers.summary_enrichment import enrich_summaries
+
+    await init_db()
+    path = resolve_repo_path(params.get("repo_path"))
+    repository = await get_repository_by_path(path)
+    if repository is None or repository.id != params.get("repository_id"):
+        raise PermanentJobError("Summary enrichment repository scope does not match")
+    if settings.INDEX_LLM_SUMMARIES_MODE != "lazy" or not settings.INDEX_LLM_SUMMARIES_BACKGROUND:
+        return {"skipped": "summary enrichment is disabled"}
+    return await enrich_summaries(repository.id, path, params.get("paths"))
+
+
 async def validate_task_fencing(redis_cli, prefix: str, job_id: str, fencing_token: Optional[str]) -> None:
     if not fencing_token:
         return
@@ -817,6 +830,7 @@ async def execute_job(
         )
     params = params or {}
     handlers = {
+        "enrich_summaries": run_enrich_summaries,
         "reindex": run_reindex,
         "diff_review": run_diff_review,
         "health_check": run_health_check,
