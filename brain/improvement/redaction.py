@@ -8,7 +8,7 @@ SECRET_PATTERNS = [
     (re.compile(r"ghp_[A-Za-z0-9_\-]+"), lambda m: "[REDACTED_SECRET]"),
     (re.compile(r"sk-[A-Za-z0-9_\-]+"), lambda m: "[REDACTED_SECRET]"),
     (re.compile(r"POSTGRES_PASSWORD=[^\s]+"), lambda m: "POSTGRES_PASSWORD=[REDACTED_SECRET]"),
-    (re.compile(r"Authorization:\s*Bearer\s+[A-Za-z0-9_\.\-]+", re.IGNORECASE), lambda m: "Authorization: Bearer [REDACTED_SECRET]"),
+    (re.compile(r"\b((?:proxy-)?Authorization[ \t]*[:=][ \t]*)[^\r\n]+", re.IGNORECASE), lambda m: m.group(1) + "[REDACTED_SECRET]"),
 ]
 
 # Native Brain, hosted-provider and GitHub credential formats, including
@@ -16,7 +16,7 @@ SECRET_PATTERNS = [
 SECRET_PATTERNS += [
     (re.compile(r"\b(?:pbk_|pbr_|github_pat_|gh[ousr]_|hf_)[A-Za-z0-9_\-]+"), lambda m: "[REDACTED_SECRET]"),
     (re.compile(r"\bAIza[A-Za-z0-9_\-]+"), lambda m: "[REDACTED_SECRET]"),
-    (re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----", re.DOTALL), lambda m: "[REDACTED_SECRET]"),
+    (re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----.*?(?:-----END (?:[A-Z ]+ )?PRIVATE KEY-----|$)", re.DOTALL), lambda m: "[REDACTED_SECRET]"),
     (re.compile(r"([\"']?(?:[A-Z_]*(?:API_KEY|TOKEN|PASSWORD|SECRET|CREDENTIAL)|authorization|x-api-key)[\"']?\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)", re.IGNORECASE), lambda m: m.group(1) + '"[REDACTED_SECRET]"'),
     (re.compile(r"(https?://)[^\s/@:]+:[^\s/@]+@", re.IGNORECASE), lambda m: m.group(1) + "[REDACTED_SECRET]@"),
 ]

@@ -819,9 +819,21 @@ class ValidationRunner:
         backend = resolve_sandbox_backend()
         report.network_isolation = network_isolation_status(backend)
         if backend == "unavailable":
+            report.infrastructure_error = True
             report.rejected_reasons = ["No supported sandbox available; validation was not executed."]
             report.duration_seconds = round(time.monotonic() - started, 3)
             return report
+        if backend == "docker":
+            from brain.lab.sandbox import validate_image_toolchain
+            try:
+                compatible = validate_image_toolchain(root, profile.commands, min(10, profile.timeout_seconds))
+            except (ValueError, TypeError, OSError):
+                compatible = False
+            if not compatible:
+                report.infrastructure_error = True
+                report.rejected_reasons = ["Sandbox image lacks required tools or declared project dependencies; validation was not executed."]
+                report.duration_seconds = round(time.monotonic() - started, 3)
+                return report
         deadline = time.monotonic() + profile.timeout_seconds
         results: List[ValidationResult] = []
         passed = True
@@ -878,7 +890,7 @@ class ValidationRunner:
     ) -> ValidationResult:
         started = time.monotonic()
         result = ValidationResult(command_idx=idx, argv=list(argv), required=required)
-        resolved = ValidationRunner._resolve_executable(argv[0])
+        resolved = (argv[0] if argv[0].lower().removesuffix(".exe") in ValidationRunner.ALLOWED_EXECUTABLES else None) if backend == "docker" else ValidationRunner._resolve_executable(argv[0])
         if resolved is None:
             result.exit_code = -1
             result.stderr_snippet = f"Executable not found on PATH: {argv[0]}"
@@ -945,12 +957,8 @@ class ValidationRunner:
         else:
             result.exit_code = process.returncode
 
-        result.stdout_snippet = ValidationRunner._redact(
-            (stdout or "")[: ValidationRunner.MAX_OUTPUT_CHARS]
-        )
-        result.stderr_snippet = ValidationRunner._redact(
-            (stderr or "")[: ValidationRunner.MAX_OUTPUT_CHARS]
-        )
+        result.stdout_snippet = ValidationRunner._redact(stdout or "")[: ValidationRunner.MAX_OUTPUT_CHARS]
+        result.stderr_snippet = ValidationRunner._redact(stderr or "")[: ValidationRunner.MAX_OUTPUT_CHARS]
         result.duration_seconds = round(time.monotonic() - started, 3)
         return result
 
