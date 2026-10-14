@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Gate releases on a matching immutable tag/package version and the latest
+  successful main-push CI run for that revision. Pass verified identities to
+  all images, inventory installed API/worker/web dependencies, and publish
+  the checksum-verified build artifacts instead of rebuilding them.
 - Require an explicit, complete Brain configuration for full-mode backups and
   PostgreSQL restores; reject conflicting ambient database settings and require
   confirmation of the exact restore target. Recovery no longer silently uses a
