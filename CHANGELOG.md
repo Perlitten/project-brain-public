@@ -39,6 +39,10 @@ All notable changes to this project are documented here. The format follows
   confirmation of the exact restore target. Recovery no longer silently uses a
   different default database. Neo4j reindexing and interrupted-job recovery
   remain separate operator steps.
+- Align the unreleased source path on Python 3.12 and Node 22; bootstrap and
+  the API image now install the same hash-locked dependency graph as CI.
+  Python 3.10/3.11 remain available on the published v0.9.2 tag, not on this
+  new source revision.
 - Split the FAQ into "Using Brain" (agents not calling Brain, wrong repository,
   stale index, stuck jobs, mock models, demo data, updating) and "Limits and evidence".
 - Add a dashboard Help screen (`/help`): server version and models, common
