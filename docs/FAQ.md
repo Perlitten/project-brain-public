@@ -67,6 +67,15 @@ the [backup and restore runbook](runbooks/backup-restore.md).
 
 ## Limits and evidence
 
+### Can I cancel or permanently deduplicate background jobs?
+
+Not generically. Full Redis supports internal cancellation only before a worker
+dequeues the delivery; no generic `/jobs` cancel endpoint is exposed. Main Lite
+does not expose queue cancellation. Full Redis idempotency claims expire after
+7 days, whereas Lite keeps a completed-key row associated with the original ID.
+Neither mode guarantees exactly-once external side effects. See the
+[queue contract](operations/DEPLOYMENT.md#background-queue-cancellation-and-deduplication).
+
 ### How is this different from Obsidian / Mem0 / Letta / plain RAG?
 
 - **vs Obsidian** — Brain is not a notes app: it indexes *code* (chunks +

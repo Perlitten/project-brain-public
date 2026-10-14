@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Clarify self-reported MCP telemetry labels versus authenticated principals,
+  native OAuth discovery/TLS and single-worker restart limits, and full/Lite
+  queue cancellation and idempotency retention without claiming hosted-client
+  verification or exactly-once side effects.
+
 - Split the FAQ into "Using Brain" (agents not calling Brain, wrong repository,
   stale index, stuck jobs, mock models, demo data, updating) and "Limits and evidence".
 - Add a dashboard Help screen (`/help`): server version and models, common

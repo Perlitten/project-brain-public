@@ -2,10 +2,19 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_search_code_records_success_with_direct_mcp_identity(monkeypatch):
+@pytest.mark.parametrize("client_name,expected_label", [
+    (None, "mcp:unattributed"),
+    ("Synthetic Client", "mcp:synthetic-client"),
+    ("***", "mcp:unattributed"),
+])
+async def test_search_code_records_success_with_direct_mcp_identity(monkeypatch, tmp_path, client_name, expected_label):
     from apps.mcp_server import server
+    from mcp.types import Implementation
 
     monkeypatch.setattr(server, "_CONNECTED_CLIENT", None)
+    monkeypatch.setenv("BRAIN_SETUP_STATE_DIR", str(tmp_path))
+    if client_name is not None:
+        server._record_external_client(Implementation(name=client_name, version="synthetic-test"))
     records = []
     async def fake_search(query, *, limit, repo_path):
         return {"repository_scope": {"repository_path": "/srv/project"}, "chunks": [{"path": "a.py"}]}
@@ -24,7 +33,7 @@ async def test_search_code_records_success_with_direct_mcp_identity(monkeypatch)
     assert result["repository_scope"]["repository_path"] == "/srv/project"
     assert len(records) == 1
     assert records[0]["operation"] == "search"
-    assert records[0]["principal_name"] == "mcp:unattributed"
+    assert records[0]["principal_name"] == expected_label
     assert records[0]["repository_id"] == 7
     assert records[0]["repository_path"] == "/srv/project"
     assert records[0]["outcome"] == "success"
