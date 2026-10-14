@@ -52,6 +52,7 @@ def test_nonce_expiry_is_independent_of_other_challenges(monkeypatch):
     # Patch both APIs: the expiry contract survives switching to a monotonic clock.
     monkeypatch.setattr(module.time, "time", lambda: now[0])
     monkeypatch.setattr(module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(module.time, "clock_gettime", lambda clock: now[0], raising=False)
     manager = RemoteNonceManager(ttl_seconds=10)
     expired = manager.generate_nonce()
     now[0] = 105.0
@@ -71,6 +72,7 @@ def test_nonce_inclusive_ttl_boundary(monkeypatch):
     now = [100.0]
     monkeypatch.setattr(module.time, "time", lambda: now[0])
     monkeypatch.setattr(module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(module.time, "clock_gettime", lambda clock: now[0], raising=False)
     manager = RemoteNonceManager(ttl_seconds=10)
     nonce = manager.generate_nonce()
     now[0] = 110.0

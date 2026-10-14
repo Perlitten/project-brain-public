@@ -14,7 +14,7 @@
         "tests/test_chaos_v06.py"
       ],
       "command": [
-        "/workspace/project-brain-public/.venv/bin/python",
+        "python",
         "-m",
         "pytest",
         "tests/test_harness_attestation.py",
@@ -478,7 +478,8 @@
         "brain/harness/attestation.py": "22e41f2c8d5892df0ae2f7636caa9e4eb0aad3714418e4c7fdb0f86b3022e1a2",
         "brain/harness/nonce.py": "c093eff48bc4ebfca94cfb896b92daec99a0d3ca79ff26c3d90aba72227e6dbb",
         "brain/context/budget.py": "2f677ffdbf8dd02ed25ff911ccf0ecf6c314e719543b99ac3d00b8bcf568815d"
-      }
+      },
+      "command_interpreter_normalized": true
     },
     "strengthened_tests": {
       "tests": [
@@ -493,7 +494,7 @@
         "tests/test_chaos_v06.py"
       ],
       "command": [
-        "/workspace/project-brain-public/.venv/bin/python",
+        "python",
         "-m",
         "pytest",
         "tests/test_mutation_contracts.py",
@@ -1007,7 +1008,8 @@
         "brain/harness/attestation.py": "22e41f2c8d5892df0ae2f7636caa9e4eb0aad3714418e4c7fdb0f86b3022e1a2",
         "brain/harness/nonce.py": "c093eff48bc4ebfca94cfb896b92daec99a0d3ca79ff26c3d90aba72227e6dbb",
         "brain/context/budget.py": "2f677ffdbf8dd02ed25ff911ccf0ecf6c314e719543b99ac3d00b8bcf568815d"
-      }
+      },
+      "command_interpreter_normalized": true
     },
     "fixed_frozen_replay": {
       "tests": [
@@ -1023,7 +1025,7 @@
         "tests/test_chaos_v06.py"
       ],
       "command": [
-        "/workspace/project-brain-public/.venv/bin/python",
+        "python",
         "-m",
         "pytest",
         "tests/test_mutation_contracts.py",
@@ -1048,7 +1050,7 @@
           "id": 1,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.771,
+          "seconds": 2.096,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
           ]
@@ -1057,7 +1059,7 @@
           "id": 2,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.206,
+          "seconds": 1.965,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
           ]
@@ -1066,7 +1068,7 @@
           "id": 3,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.908,
+          "seconds": 1.967,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
           ]
@@ -1075,7 +1077,7 @@
           "id": 4,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.895,
+          "seconds": 1.964,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
           ]
@@ -1084,7 +1086,7 @@
           "id": 5,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.718,
+          "seconds": 1.574,
           "first_failure_witnesses": [
             "tests/test_mutation_bug_regressions.py::test_signed_integrity_requires_explicit_credentials_and_binds_the_payload"
           ]
@@ -1097,9 +1099,9 @@
           "id": 7,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.222,
+          "seconds": 1.759,
           "first_failure_witnesses": [
-            "tests/test_harness_attestation.py::test_attestation_integrity - Assert..."
+            "tests/test_mutation_bug_regressions.py::test_failed_reverification_revokes_previous_success[missing-UNVERIFIABLE]"
           ]
         },
         {
@@ -1110,7 +1112,7 @@
           "id": 9,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.684,
+          "seconds": 1.623,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
           ]
@@ -1119,14 +1121,14 @@
           "id": 10,
           "status": "survived",
           "exit_code": 0,
-          "seconds": 7.72,
+          "seconds": 2.707,
           "first_failure_witnesses": []
         },
         {
           "id": 11,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.798,
+          "seconds": 1.744,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
@@ -1135,7 +1137,7 @@
           "id": 12,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.436,
+          "seconds": 1.63,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
           ]
@@ -1144,7 +1146,7 @@
           "id": 13,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.587,
+          "seconds": 1.946,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
@@ -1153,7 +1155,7 @@
           "id": 14,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.864,
+          "seconds": 1.891,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
@@ -1170,14 +1172,14 @@
           "id": 17,
           "status": "survived",
           "exit_code": 0,
-          "seconds": 5.444,
+          "seconds": 2.797,
           "first_failure_witnesses": []
         },
         {
           "id": 18,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.041,
+          "seconds": 1.767,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
@@ -1186,7 +1188,7 @@
           "id": 19,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.668,
+          "seconds": 1.737,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
@@ -1203,7 +1205,7 @@
           "id": 22,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.157,
+          "seconds": 1.621,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
           ]
@@ -1212,7 +1214,7 @@
           "id": 23,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.675,
+          "seconds": 1.748,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
           ]
@@ -1221,7 +1223,7 @@
           "id": 24,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.132,
+          "seconds": 1.853,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[-5-0]"
           ]
@@ -1230,7 +1232,7 @@
           "id": 25,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.79,
+          "seconds": 1.916,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
           ]
@@ -1239,7 +1241,7 @@
           "id": 26,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.918,
+          "seconds": 1.89,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
           ]
@@ -1248,14 +1250,14 @@
           "id": 27,
           "status": "survived",
           "exit_code": 0,
-          "seconds": 5.967,
+          "seconds": 2.747,
           "first_failure_witnesses": []
         },
         {
           "id": 28,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.717,
+          "seconds": 1.831,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
           ]
@@ -1264,7 +1266,7 @@
           "id": 29,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.693,
+          "seconds": 1.889,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
           ]
@@ -1273,7 +1275,7 @@
           "id": 30,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.888,
+          "seconds": 1.93,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
           ]
@@ -1282,7 +1284,7 @@
           "id": 31,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.834,
+          "seconds": 1.72,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
           ]
@@ -1291,7 +1293,7 @@
           "id": 32,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.315,
+          "seconds": 1.856,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-3-\\u2026-\\u2026]"
           ]
@@ -1300,7 +1302,7 @@
           "id": 33,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 5.459,
+          "seconds": 1.636,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-2-\\u2026-he]"
           ]
@@ -1309,7 +1311,7 @@
           "id": 34,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.046,
+          "seconds": 1.718,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
           ]
@@ -1318,7 +1320,7 @@
           "id": 35,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.207,
+          "seconds": 1.869,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
           ]
@@ -1327,7 +1329,7 @@
           "id": 36,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.434,
+          "seconds": 1.526,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
           ]
@@ -1348,7 +1350,7 @@
           "id": 40,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 5.051,
+          "seconds": 1.677,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1357,7 +1359,7 @@
           "id": 41,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.215,
+          "seconds": 1.697,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_invalid_budget_is_rejected[0-allocations0]"
           ]
@@ -1366,7 +1368,7 @@
           "id": 42,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 5.106,
+          "seconds": 1.967,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1375,7 +1377,7 @@
           "id": 43,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.769,
+          "seconds": 1.855,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_zero_allocation_is_valid_and_excludes_content"
           ]
@@ -1384,7 +1386,7 @@
           "id": 44,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 5.491,
+          "seconds": 1.82,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1393,7 +1395,7 @@
           "id": 45,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.199,
+          "seconds": 1.519,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1402,7 +1404,7 @@
           "id": 46,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.481,
+          "seconds": 1.973,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1411,7 +1413,7 @@
           "id": 47,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.868,
+          "seconds": 1.777,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_exclusion_metadata_has_bounded_count_and_labels"
           ]
@@ -1420,7 +1422,7 @@
           "id": 48,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.743,
+          "seconds": 1.69,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1429,7 +1431,7 @@
           "id": 49,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.071,
+          "seconds": 1.666,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1438,7 +1440,7 @@
           "id": 50,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.309,
+          "seconds": 1.728,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1447,7 +1449,7 @@
           "id": 51,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.884,
+          "seconds": 1.642,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1456,7 +1458,7 @@
           "id": 52,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 5.644,
+          "seconds": 1.616,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1465,7 +1467,7 @@
           "id": 53,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.134,
+          "seconds": 1.665,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -1474,7 +1476,7 @@
           "id": 54,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.228,
+          "seconds": 1.556,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_explicit_allocation_can_only_reduce_section_allowance"
           ]
@@ -1485,6 +1487,17 @@
         "removed_by_source_change": 9,
         "survived": 3
       },
+      "replay": true,
+      "tested_source_sha256": {
+        "brain/harness/attestation.py": "881a99dccc4c865b78fdd50b1cb267d105649318bcc1561632570c086b1c6cf3",
+        "brain/harness/nonce.py": "addffed0968e5c4d11b60f9398c3f0b285372efb672ad67875c8cc9481026540",
+        "brain/context/budget.py": "0e329fccf2d650a0814642b94625f60bfb3c1f7a69f78cadbbc359b71d62ceae"
+      },
+      "source_mismatches": [
+        "brain/harness/attestation.py",
+        "brain/harness/nonce.py",
+        "brain/context/budget.py"
+      ],
       "excluded_type_invalid_mutants": [
         34
       ],
@@ -1492,11 +1505,6 @@
         "killed": 41,
         "removed_by_source_change": 9,
         "survived": 3
-      },
-      "tested_source_sha256": {
-        "brain/harness/attestation.py": "881a99dccc4c865b78fdd50b1cb267d105649318bcc1561632570c086b1c6cf3",
-        "brain/harness/nonce.py": "1045264813557ea8e8509d751aec074651e57a6d7d12ad6dd08d12c9f29dcf91",
-        "brain/context/budget.py": "0e329fccf2d650a0814642b94625f60bfb3c1f7a69f78cadbbc359b71d62ceae"
       }
     },
     "fixed_fresh_campaign": {
@@ -1513,7 +1521,7 @@
         "tests/test_chaos_v06.py"
       ],
       "command": [
-        "/workspace/project-brain-public/.venv/bin/python",
+        "python",
         "-m",
         "pytest",
         "tests/test_mutation_contracts.py",
@@ -1538,7 +1546,7 @@
           "id": 1,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.498,
+          "seconds": 3.015,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
           ]
@@ -1547,7 +1555,7 @@
           "id": 2,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.003,
+          "seconds": 2.956,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
           ]
@@ -1556,7 +1564,7 @@
           "id": 3,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.058,
+          "seconds": 2.869,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
           ]
@@ -1565,7 +1573,7 @@
           "id": 4,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.137,
+          "seconds": 3.005,
           "first_failure_witnesses": [
             "tests/test_mutation_bug_regressions.py::test_malformed_hmac_returns_false_without_raising[\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9]"
           ]
@@ -1574,7 +1582,7 @@
           "id": 5,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.403,
+          "seconds": 2.409,
           "first_failure_witnesses": [
             "tests/test_mutation_bug_regressions.py::test_malformed_hmac_returns_false_without_raising[\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9\\xe9]"
           ]
@@ -1583,7 +1591,7 @@
           "id": 6,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.008,
+          "seconds": 2.429,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
           ]
@@ -1592,7 +1600,7 @@
           "id": 7,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.843,
+          "seconds": 2.536,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
           ]
@@ -1601,7 +1609,7 @@
           "id": 8,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.782,
+          "seconds": 2.282,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_hmac_requires_signature_scheme_nonce_and_correct_key"
           ]
@@ -1610,7 +1618,7 @@
           "id": 9,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.747,
+          "seconds": 2.369,
           "first_failure_witnesses": [
             "tests/test_mutation_bug_regressions.py::test_signed_integrity_requires_explicit_credentials_and_binds_the_payload"
           ]
@@ -1619,16 +1627,16 @@
           "id": 10,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.298,
+          "seconds": 2.378,
           "first_failure_witnesses": [
-            "tests/test_harness_attestation.py::test_attestation_integrity - Assert..."
+            "tests/test_mutation_bug_regressions.py::test_failed_reverification_revokes_previous_success[missing-UNVERIFIABLE]"
           ]
         },
         {
           "id": 11,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.308,
+          "seconds": 2.455,
           "first_failure_witnesses": [
             "tests/test_mutation_bug_regressions.py::test_signed_integrity_requires_explicit_credentials_and_binds_the_payload"
           ]
@@ -1637,7 +1645,7 @@
           "id": 12,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.705,
+          "seconds": 2.605,
           "first_failure_witnesses": [
             "tests/test_mutation_bug_regressions.py::test_signature_prefix_cannot_authenticate_evidence_or_verify_a_claim"
           ]
@@ -1646,32 +1654,34 @@
           "id": 13,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.376,
+          "seconds": 2.44,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+            "tests/test_mutation_bug_regressions.py::test_nonce_expires_after_host_suspend"
           ]
         },
         {
           "id": 14,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.703,
+          "seconds": 2.147,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
+            "tests/test_mutation_bug_regressions.py::test_nonce_expiry_has_portable_monotonic_fallback[missing_constant]"
           ]
         },
         {
           "id": 15,
-          "status": "survived",
-          "exit_code": 0,
-          "seconds": 3.846,
-          "first_failure_witnesses": []
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.031,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
         },
         {
           "id": 16,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.283,
+          "seconds": 1.989,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
@@ -1680,25 +1690,23 @@
           "id": 17,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.425,
+          "seconds": 1.874,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
           ]
         },
         {
           "id": 18,
-          "status": "killed",
-          "exit_code": 1,
-          "seconds": 4.595,
-          "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
-          ]
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 3.499,
+          "first_failure_witnesses": []
         },
         {
           "id": 19,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.261,
+          "seconds": 2.206,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
@@ -1707,16 +1715,16 @@
           "id": 20,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.116,
+          "seconds": 1.964,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+            "tests/test_mutation_contracts.py::test_reissued_consumed_nonce_cannot_be_replayed"
           ]
         },
         {
           "id": 21,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 5.515,
+          "seconds": 1.893,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
@@ -1725,23 +1733,25 @@
           "id": 22,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.541,
+          "seconds": 1.834,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_nonce_inclusive_ttl_boundary - ..."
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
         },
         {
           "id": 23,
-          "status": "survived",
-          "exit_code": 0,
-          "seconds": 3.428,
-          "first_failure_witnesses": []
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.923,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+          ]
         },
         {
           "id": 24,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.793,
+          "seconds": 2.16,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
@@ -1750,25 +1760,23 @@
           "id": 25,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.953,
+          "seconds": 1.664,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
+            "tests/test_mutation_contracts.py::test_nonce_inclusive_ttl_boundary - ..."
           ]
         },
         {
           "id": 26,
-          "status": "killed",
-          "exit_code": 1,
-          "seconds": 6.102,
-          "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
-          ]
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 3.431,
+          "first_failure_witnesses": []
         },
         {
           "id": 27,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.187,
+          "seconds": 1.85,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
@@ -1777,257 +1785,257 @@
           "id": 28,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 5.179,
+          "seconds": 1.9,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
         },
         {
           "id": 29,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.276,
+          "seconds": 2.219,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
         },
         {
           "id": 30,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.58,
+          "seconds": 1.95,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[-5-0]"
+            "tests/test_mutation_contracts.py::test_nonce_expiry_is_independent_of_other_challenges"
           ]
         },
         {
           "id": 31,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.825,
+          "seconds": 2.205,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+            "tests/test_mutation_bug_regressions.py::test_signature_prefix_cannot_authenticate_evidence_or_verify_a_claim"
           ]
         },
         {
           "id": 32,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 5.056,
+          "seconds": 2.258,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+            "tests/test_mutation_bug_regressions.py::test_signed_claim_accepts_valid_credentials_and_rejects_tampering"
           ]
         },
         {
           "id": 33,
-          "status": "survived",
-          "exit_code": 0,
-          "seconds": 7.868,
-          "first_failure_witnesses": []
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.144,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_one_sided_missing_evidence_cannot_promote_a_claim[claimed_ids]"
+          ]
         },
         {
           "id": 34,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.505,
+          "seconds": 1.742,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+            "tests/test_mutation_bug_regressions.py::test_signed_claim_accepts_valid_credentials_and_rejects_tampering"
           ]
         },
         {
           "id": 35,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.29,
+          "seconds": 2.175,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+            "tests/test_mutation_bug_regressions.py::test_failed_reverification_revokes_previous_success[synthetic-SYNTHETIC]"
           ]
         },
         {
           "id": 36,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.692,
+          "seconds": 2.165,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
           ]
         },
         {
           "id": 37,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.109,
+          "seconds": 1.827,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[1-1]"
           ]
         },
         {
           "id": 38,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.426,
+          "seconds": 1.491,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-3-\\u2026-\\u2026]"
+            "tests/test_mutation_contracts.py::test_token_reporting_rounds_up_byte_quarters[-5-0]"
           ]
         },
         {
           "id": 39,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.904,
+          "seconds": 1.703,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-2-\\u2026-he]"
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
           ]
         },
         {
           "id": 40,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.511,
+          "seconds": 1.773,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
           ]
         },
         {
           "id": 41,
-          "status": "killed",
-          "exit_code": 1,
-          "seconds": 2.048,
-          "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
-          ]
+          "status": "survived",
+          "exit_code": 0,
+          "seconds": 2.815,
+          "first_failure_witnesses": []
         },
         {
           "id": 42,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.029,
+          "seconds": 1.534,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
           ]
         },
         {
           "id": 43,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.679,
+          "seconds": 1.596,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
           ]
         },
         {
           "id": 44,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.183,
+          "seconds": 1.595,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-5-\\u2026-hello]"
           ]
         },
         {
           "id": 45,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 1.932,
+          "seconds": 1.685,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
           ]
         },
         {
           "id": 46,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 4.189,
+          "seconds": 1.87,
           "first_failure_witnesses": [
-            "tests/test_mutation_bug_regressions.py::test_join_after_prior_content_keeps_whole_items_within_remaining_allocation"
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-3-\\u2026-\\u2026]"
           ]
         },
         {
           "id": 47,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.101,
+          "seconds": 1.571,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-2-\\u2026-he]"
           ]
         },
         {
           "id": 48,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.601,
+          "seconds": 1.571,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
           ]
         },
         {
           "id": 49,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 1.861,
+          "seconds": 1.701,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_invalid_budget_is_rejected[0-allocations0]"
+            "tests/test_mutation_contracts.py::test_truncation_preserves_exact_fit_and_useful_unicode_prefix[hello-4-\\u2026-h\\u2026]"
           ]
         },
         {
           "id": 50,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.845,
+          "seconds": 1.665,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
           ]
         },
         {
           "id": 51,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 3.649,
+          "seconds": 1.733,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_zero_allocation_is_valid_and_excludes_content"
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
           ]
         },
         {
           "id": 52,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.134,
+          "seconds": 1.859,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
           ]
         },
         {
           "id": 53,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 1.492,
+          "seconds": 1.77,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
           ]
         },
         {
           "id": 54,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.597,
+          "seconds": 1.764,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+            "tests/test_mutation_bug_regressions.py::test_join_after_prior_content_keeps_whole_items_within_remaining_allocation"
           ]
         },
         {
           "id": 55,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.234,
+          "seconds": 1.643,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_exclusion_metadata_has_bounded_count_and_labels"
+            "tests/test_mutation_contracts.py::test_join_retains_ordered_items_at_exact_limit_without_consuming_overflow"
           ]
         },
         {
           "id": 56,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.02,
+          "seconds": 1.734,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -2036,16 +2044,16 @@
           "id": 57,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 1.514,
+          "seconds": 1.858,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+            "tests/test_mutation_contracts.py::test_invalid_budget_is_rejected[0-allocations0]"
           ]
         },
         {
           "id": 58,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 2.149,
+          "seconds": 1.649,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -2054,16 +2062,16 @@
           "id": 59,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 1.813,
+          "seconds": 1.802,
           "first_failure_witnesses": [
-            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+            "tests/test_mutation_contracts.py::test_zero_allocation_is_valid_and_excludes_content"
           ]
         },
         {
           "id": 60,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 1.731,
+          "seconds": 1.72,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -2072,7 +2080,7 @@
           "id": 61,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 1.439,
+          "seconds": 1.638,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -2081,7 +2089,7 @@
           "id": 62,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 1.671,
+          "seconds": 1.708,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
           ]
@@ -2090,36 +2098,111 @@
           "id": 63,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 1.89,
+          "seconds": 1.807,
           "first_failure_witnesses": [
-            "tests/test_mutation_bug_regressions.py::test_multiple_additions_share_a_sections_allocation"
+            "tests/test_mutation_contracts.py::test_exclusion_metadata_has_bounded_count_and_labels"
           ]
         },
         {
           "id": 64,
           "status": "killed",
           "exit_code": 1,
-          "seconds": 1.897,
+          "seconds": 1.782,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 65,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.681,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 66,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.667,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 67,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.731,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 68,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.77,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 69,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.469,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 70,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.41,
+          "first_failure_witnesses": [
+            "tests/test_mutation_contracts.py::test_budget_accounts_for_multibyte_content_and_preserves_snapshot"
+          ]
+        },
+        {
+          "id": 71,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.75,
+          "first_failure_witnesses": [
+            "tests/test_mutation_bug_regressions.py::test_multiple_additions_share_a_sections_allocation"
+          ]
+        },
+        {
+          "id": 72,
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.705,
           "first_failure_witnesses": [
             "tests/test_mutation_contracts.py::test_explicit_allocation_can_only_reduce_section_allowance"
           ]
         }
       ],
       "summary": {
-        "killed": 61,
+        "killed": 69,
         "survived": 3
       },
-      "excluded_type_invalid_mutants": [
-        40
-      ],
-      "usable_summary": {
-        "killed": 60,
-        "survived": 3
-      },
+      "replay": false,
       "tested_source_sha256": {
         "brain/harness/attestation.py": "881a99dccc4c865b78fdd50b1cb267d105649318bcc1561632570c086b1c6cf3",
-        "brain/harness/nonce.py": "1045264813557ea8e8509d751aec074651e57a6d7d12ad6dd08d12c9f29dcf91",
+        "brain/harness/nonce.py": "addffed0968e5c4d11b60f9398c3f0b285372efb672ad67875c8cc9481026540",
+        "brain/harness/verifier.py": "c70be785d2cab4ca53d439ec26d9cbfd4006cf7ca3e8ccda99e67dd182ca8664",
         "brain/context/budget.py": "0e329fccf2d650a0814642b94625f60bfb3c1f7a69f78cadbbc359b71d62ceae"
+      },
+      "source_mismatches": [],
+      "excluded_type_invalid_mutants": [
+        48
+      ],
+      "usable_summary": {
+        "killed": 68,
+        "survived": 3
       }
     }
   },
@@ -2131,26 +2214,26 @@
     },
     {
       "before_id": 10,
-      "fixed_fresh_id": 15,
+      "fixed_fresh_id": 18,
       "classification": "accept/reject equivalent, resource-retention coverage gap",
       "reason": "Consumed nonce membership still rejects replay, including reissuance; pending dictionary entry remains."
     },
     {
       "before_id": 17,
-      "fixed_fresh_id": 23,
+      "fixed_fresh_id": 26,
       "classification": "accept/reject equivalent, resource-retention coverage gap",
       "reason": "With a monotonic clock, expired nonces remain expired. Pending dictionary entry remains."
     },
     {
       "before_id": 27,
-      "fixed_fresh_id": 33,
+      "fixed_fresh_id": 41,
       "classification": "equivalent",
       "reason": "Only limit zero differs in branch selection; both branches return an empty string, including empty input and arbitrary suffix."
     }
   ],
   "excluded_mutation_reason": "String subtraction prefix - suffix is type-invalid; excluded from behavioral totals, retained in raw results.",
   "full_suite": {
-    "tests": "2405",
+    "tests": "2415",
     "failures": "0",
     "errors": "0",
     "skipped": "11",
@@ -2209,12 +2292,12 @@
       "tests",
       "-q",
       "-rs",
-      "--junitxml=/workspace/test-quality-audit/full-suite.xml"
+      "--junitxml=/workspace/test-quality-audit/review-full-suite.xml"
     ],
     "cwd": "/workspace/production-hardening/retrieval-verified",
     "exit_code": 0,
-    "seconds": 99.29,
-    "log": "mutation-audit-final-full.log"
+    "seconds": 98.82,
+    "log": "mutation-audit-review-full.log"
   },
   "mypy_result": {
     "command": [
@@ -2223,7 +2306,27 @@
     ],
     "cwd": "/workspace/production-hardening/retrieval-verified",
     "exit_code": 0,
-    "seconds": 12.24,
-    "log": "mutation-audit-mypy.log"
+    "seconds": 0.45,
+    "log": "mutation-audit-review-mypy.log"
+  },
+  "final_focused_regression": {
+    "passed": 60,
+    "skipped": 0,
+    "command": [
+      "python",
+      "-m",
+      "pytest",
+      "tests/test_mutation_contracts.py",
+      "tests/test_mutation_bug_regressions.py",
+      "tests/test_mutation_runner.py",
+      "-q"
+    ],
+    "note": "Includes two one-sided missing-evidence cases added after full-suite collection."
+  },
+  "additional_original_bug_reproduction": {
+    "test": "test_failed_reverification_revokes_previous_success",
+    "failed": 4,
+    "passed": 0,
+    "base_commit": "3c4449e37909541496a5d995b6035a6129c82c10"
   }
 }
