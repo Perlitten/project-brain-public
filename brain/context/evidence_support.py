@@ -13,6 +13,18 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+from brain.search.filters import is_test_path
+
+_LANGUAGE_EXTENSIONS = {
+    "py": {"python"}, "pyi": {"python"},
+    "js": {"javascript"}, "jsx": {"javascript"}, "mjs": {"javascript"}, "cjs": {"javascript"},
+    "ts": {"typescript"}, "tsx": {"typescript"},
+    "rs": {"rust"}, "go": {"go", "golang"}, "java": {"java"},
+    "kt": {"kotlin"}, "kts": {"kotlin"}, "rb": {"ruby"}, "php": {"php"},
+    "scala": {"scala"}, "sql": {"sql"}, "html": {"html"}, "css": {"css"},
+    "cs": {"csharp"}, "cpp": {"cpp"}, "hpp": {"cpp"},
+}
+
 _TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_-]{2,}")
 _IDENTIFIER_PART = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
 _STOPWORDS = frozenset(
@@ -69,7 +81,7 @@ def _candidate_fields(candidate: Any) -> tuple[str, str, str]:
     symbols = getattr(candidate, "symbols", ()) or ()
     # Test fixtures can quote the user's question verbatim. They are useful
     # retrieval noise, but cannot establish that a production feature exists.
-    if re.search(r"(?:^|/)(?:tests?|fixtures?)(?:/|$)", str(path), re.I):
+    if is_test_path(str(path)) or re.search(r"(?:^|/)fixtures?(?:/|$)", str(path), re.I):
         return "", "", ""
     return str(path), " ".join(str(symbol) for symbol in symbols), " ".join(
         [str(path), *(str(symbol) for symbol in symbols)]
@@ -85,7 +97,7 @@ def _slice_text(slices: Iterable[Any]) -> str:
         else:
             path = str(getattr(item, "path", ""))
             content = str(getattr(item, "content", ""))
-        if re.search(r"(?:^|/)(?:tests?|fixtures?)(?:/|$)", path, re.I):
+        if is_test_path(path) or re.search(r"(?:^|/)fixtures?(?:/|$)", path, re.I):
             continue
         # Comments and quoted fixture prompts are incidental evidence. Keep
         # identifiers and prose from executable lines only.
@@ -120,16 +132,24 @@ def query_evidence_support(
     """
     terms = _terms(query)
     fields = [_candidate_fields(candidate) for candidate in candidates]
-    slice_content = _slice_text(slices)
+    slice_items = tuple(slices)
+    slice_content = _slice_text(slice_items)
+    path_or_symbol = " ".join(path + " " + symbols for path, symbols, _ in fields)
+    paths = [path for path, _, _ in fields]
+    paths.extend(str(item.get("path", "")) if isinstance(item, Mapping) else str(getattr(item, "path", ""))
+                 for item in slice_items)
+    languages: set[str] = set()
+    for path in paths:
+        if not is_test_path(path) and not re.search(r"(?:^|/)fixtures?(?:/|$)", path, re.I):
+            languages.update(_LANGUAGE_EXTENSIONS.get(path.rsplit(".", 1)[-1].casefold(), set()))
     supported: list[str] = []
     authoritative: list[str] = []
     for term in terms:
-        path_or_symbol = " ".join(path + " " + symbols for path, symbols, _ in fields)
         identifier_tokens = {
             canonical if not (len(canonical) > 4 and canonical.endswith("s") and not canonical.endswith("ss")) else canonical[:-1]
             for canonical in _identifier_tokens(path_or_symbol)
         }
-        if term in identifier_tokens:
+        if term in identifier_tokens or term in languages:
             supported.append(term)
             authoritative.append(term)
         elif term in {
@@ -149,7 +169,7 @@ def query_evidence_support(
     named_missing: tuple[str, ...] = ()
     # Strip whitespace once; do not backtrack over an uncontrolled prefix.
     if re.match(r"(?:how|what|where|which|does|is|can|why)\b", query.lstrip(), re.I):
-        evidence_tokens = _identifier_tokens(path_or_symbol + " " + slice_content) if terms else set()
+        evidence_tokens = (_identifier_tokens(path_or_symbol + " " + slice_content) | languages) if terms else set()
         named_missing = tuple(match.group(0) for match in re.finditer(r"\b[A-Z][A-Za-z0-9_]{2,}\b", query)
                               if match.start() > 0 and match.group(0).casefold() not in _STOPWORDS | _GENERIC
                               and match.group(0).casefold() not in evidence_tokens)

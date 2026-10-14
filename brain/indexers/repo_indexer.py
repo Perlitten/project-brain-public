@@ -100,7 +100,8 @@ def classify_file(path: Path, repo_path: Path) -> str:
         return "ci_config"
 
     # 2. Test
-    if any("test" in p or "spec" in p for p in rel_parts[:-1]) or "test" in name or "spec" in name:
+    from brain.search.filters import is_test_path
+    if is_test_path(rel_path.as_posix()):
         return "test"
 
     # 3. Migration
