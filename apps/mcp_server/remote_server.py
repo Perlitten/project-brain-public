@@ -94,7 +94,7 @@ def checked_tool(function):
     @wraps(function)
     async def checked(*args, **kwargs):
         result = await function(*args, **kwargs)
-        if isinstance(result, dict) and result.get("status") == "failed" and "error" in result:
+        if isinstance(result, dict) and result.get("_bridge_error") is True:
             raise ToolError(str(result["error"]))
         return result
     return checked
@@ -194,28 +194,31 @@ def _caller_credential() -> str | None:
 
 def _failure(path: str, exc: Exception) -> dict:
     if isinstance(exc, httpx.HTTPStatusError):
-        return {"error": f"{path} -> HTTP {exc.response.status_code}", "status": "failed"}
+        return _bridge_failure(f"{path} -> HTTP {exc.response.status_code}")
     # The exception TYPE matters more than its message here: httpx timeouts
     # and asyncio cancellations both stringify to "", which produced the
     # useless "/ask request failed: " that hid a latency problem for weeks.
-    return {"error": f"{path} request failed: {type(exc).__name__}", "status": "failed"}
+    return _bridge_failure(f"{path} request failed: {type(exc).__name__}")
+
+
+def _bridge_failure(error: str) -> dict:
+    # Polling endpoints may successfully report a failed domain job. Only
+    # locally generated request/configuration failures carry this marker.
+    return {"error": error, "status": "failed", "_bridge_error": True}
 
 
 async def _request(method: str, path: str, payload: dict | None, timeout: float) -> Any:
     if _asgi_app is not None:
         credential = _caller_credential()
         if credential is None:
-            return {"error": "no authenticated MCP caller for an in-process call", "status": "failed"}
+            return _bridge_failure("no authenticated MCP caller for an in-process call")
         headers = {"X-API-Key": credential} if credential else {}
         client = httpx.AsyncClient(transport=httpx.ASGITransport(app=_asgi_app), base_url=_IN_PROCESS_BASE)
     else:
         if not BASE_URL or not API_KEY:
-            return {"error": _MISSING_CONFIG, "status": "failed"}
+            return _bridge_failure(_MISSING_CONFIG)
         if not _is_safe_base_url(BASE_URL):
-            return {
-                "error": "BRAIN_API_URL must use https (refusing to send the API key over plaintext http)",
-                "status": "failed",
-            }
+            return _bridge_failure("BRAIN_API_URL must use https (refusing to send the API key over plaintext http)")
         headers = {"X-API-Key": API_KEY}
         client = httpx.AsyncClient(base_url=BASE_URL, timeout=timeout)
     async with client:

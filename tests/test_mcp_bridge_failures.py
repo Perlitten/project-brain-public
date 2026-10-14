@@ -29,7 +29,10 @@ async def test_missing_bridge_configuration_signals_tool_and_resource_errors(mon
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["legacy", "auto"])
 @pytest.mark.parametrize("status", [401, 500, "timeout"])
-async def test_http_failure_is_reported_through_real_mcp_contract(monkeypatch, mode, status):
+@pytest.mark.parametrize("tool,arguments", [("search_code", {"query": "payments"}),
+                                         ("get_background_job", {"job_id": "fixture"}),
+                                         ("get_diff_review", {"job_id": "fixture"})])
+async def test_http_failure_is_reported_through_real_mcp_contract(monkeypatch, mode, status, tool, arguments):
     monkeypatch.setattr(remote_server, "_asgi_app", None)
     monkeypatch.setattr(remote_server, "BASE_URL", "http://127.0.0.1:9999")
     monkeypatch.setattr(remote_server, "API_KEY", "synthetic-fixture")
@@ -42,10 +45,26 @@ async def test_http_failure_is_reported_through_real_mcp_contract(monkeypatch, m
 
     monkeypatch.setattr(remote_server.httpx, "AsyncClient", lambda **kw: original(transport=httpx.MockTransport(respond), **kw))
     async with Client(remote_server.mcp, mode=mode) as client:
-        result = await client.call_tool("search_code", {"query": "payments"})
+        result = await client.call_tool(tool, arguments)
     assert result.is_error
     assert str(status) in str(result) or "ReadTimeout" in str(result)
     assert "synthetic-secret-not-for-output" not in str(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["legacy", "auto"])
+@pytest.mark.parametrize("tool", ["get_background_job", "get_diff_review"])
+async def test_failed_domain_job_is_successful_polling_data(monkeypatch, mode, tool):
+    monkeypatch.setattr(remote_server, "_asgi_app", None)
+    monkeypatch.setattr(remote_server, "BASE_URL", "http://127.0.0.1:9999")
+    monkeypatch.setattr(remote_server, "API_KEY", "synthetic-fixture")
+    original = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"status": "failed", "error": "synthetic-job-failure"}))
+    monkeypatch.setattr(remote_server.httpx, "AsyncClient", lambda **kw: original(transport=transport, **kw))
+    async with Client(remote_server.mcp, mode=mode) as client:
+        result = await client.call_tool(tool, {"job_id": "fixture"})
+    assert not result.is_error
+    assert "synthetic-job-failure" in str(result)
 
 
 @pytest.mark.asyncio

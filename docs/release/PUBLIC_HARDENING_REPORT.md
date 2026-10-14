@@ -28,6 +28,13 @@ explicit typed token loads; Ruff and mypy passed after that correction, and
 release archive or tag was changed. Provider verification used fixtures only.
 Remote exact-head checks and independent review are required before merge.
 
+The first MCP review found that failed domain jobs were mistaken for failed
+bridge requests. Locally generated bridge errors now carry an explicit marker;
+HTTP 200 failed-job polling remains structured successful data. Real SDK legacy
+and modern sessions verify both polling tools, including their HTTP failures
+and timeouts. The combined bridge/OAuth/HTTP/protocol suite passed **81 tests**;
+Ruff and mypy passed. The marker is consumed at the MCP tool boundary.
+
 ## Execution and privacy corrections
 
 | Assessment finding | Correction / verification | Status |
