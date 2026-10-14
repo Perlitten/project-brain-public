@@ -28,6 +28,8 @@ All notable changes to this project are documented here. The format follows
 - Make initial indexing write deterministic source summaries before optional
   asynchronous LLM enrichment. Summary availability is not evidence of model
   execution. Existing response-summary trimming was already present in v0.9.2.
+- Exclude nested SQLite databases and their sidecars from root image contexts
+  and source identity digests, even inside included application directories.
 - Gate releases on a matching immutable tag/package version and the latest
   successful main-push CI run for that revision. Pass verified identities to
   all images, inventory installed API/worker/web dependencies, and publish
