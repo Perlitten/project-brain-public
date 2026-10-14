@@ -10,6 +10,8 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from brain.concurrency import StateLock
+
 
 def utf8_bytes(value: str) -> int:
     return len(value.encode("utf-8"))
@@ -54,6 +56,7 @@ class ContextBudget:
     truncated: bool = False
 
     def __post_init__(self) -> None:
+        self._lock = StateLock()
         if self.max_bytes <= 0:
             raise ValueError("max_bytes must be positive")
         if any(value < 0 for value in self.allocations.values()):
@@ -64,33 +67,36 @@ class ContextBudget:
         return max(0, self.max_bytes - self.consumed_bytes)
 
     def exclude(self, section: str, reason: str) -> None:
-        self.truncated = True
-        if len(self.exclusions) < 24:
-            self.exclusions.append({"section": str(section)[:80], "reason": str(reason)[:120]})
+        with self._lock:
+            self.truncated = True
+            if len(self.exclusions) < 24:
+                self.exclusions.append({"section": str(section)[:80], "reason": str(reason)[:120]})
 
     def add_text(self, section: str, value: str, *, allocation: int | None = None) -> str:
-        requested = utf8_bytes(value)
-        section_cap = max(0, self.allocations.get(section, self.max_bytes) - self.sections.get(section, 0))
-        if allocation is not None:
-            section_cap = min(section_cap, allocation)
-        section_cap = min(section_cap, self.remaining_bytes)
-        rendered = truncate_utf8(value, section_cap)
-        rendered_bytes = utf8_bytes(rendered)
-        self.consumed_bytes += rendered_bytes
-        self.sections[section] = self.sections.get(section, 0) + rendered_bytes
-        if rendered_bytes < requested:
-            self.exclude(section, "byte_cap")
-        return rendered
+        with self._lock:
+            requested = utf8_bytes(value)
+            section_cap = max(0, self.allocations.get(section, self.max_bytes) - self.sections.get(section, 0))
+            if allocation is not None:
+                section_cap = min(section_cap, allocation)
+            section_cap = min(section_cap, self.remaining_bytes)
+            rendered = truncate_utf8(value, section_cap)
+            rendered_bytes = utf8_bytes(rendered)
+            self.consumed_bytes += rendered_bytes
+            self.sections[section] = self.sections.get(section, 0) + rendered_bytes
+            if rendered_bytes < requested:
+                self.exclude(section, "byte_cap")
+            return rendered
 
     def snapshot(self) -> dict[str, Any]:
-        return {
-            "estimated_tokens": estimated_tokens(self.consumed_bytes),
-            "bytes": self.consumed_bytes,
-            "limit": self.max_bytes,
-            "truncated": self.truncated,
-            "sections": dict(sorted(self.sections.items())),
-            "excluded": list(self.exclusions),
-        }
+        with self._lock:
+            return {
+                "estimated_tokens": estimated_tokens(self.consumed_bytes),
+                "bytes": self.consumed_bytes,
+                "limit": self.max_bytes,
+                "truncated": self.truncated,
+                "sections": dict(sorted(self.sections.items())),
+                "excluded": [dict(item) for item in self.exclusions],
+            }
 
 
 def _payload_bytes(payload: dict[str, Any]) -> int:
@@ -231,12 +237,13 @@ class BudgetedPayloadBuilder:
 
 def bounded_join(budget: ContextBudget, section: str, values: Iterable[str], separator: str = "\n") -> str:
     """Append values until the section/global allocation is exhausted."""
-    accepted: list[str] = []
-    for value in values:
-        candidate = separator.join([*accepted, value])
-        section_remaining = max(0, budget.allocations.get(section, budget.max_bytes) - budget.sections.get(section, 0))
-        if utf8_bytes(candidate) > min(section_remaining, budget.remaining_bytes):
-            budget.exclude(section, "byte_cap")
-            break
-        accepted.append(value)
-    return budget.add_text(section, separator.join(accepted))
+    with budget._lock:
+        accepted: list[str] = []
+        for value in values:
+            candidate = separator.join([*accepted, value])
+            section_remaining = max(0, budget.allocations.get(section, budget.max_bytes) - budget.sections.get(section, 0))
+            if utf8_bytes(candidate) > min(section_remaining, budget.remaining_bytes):
+                budget.exclude(section, "byte_cap")
+                break
+            accepted.append(value)
+        return budget.add_text(section, separator.join(accepted))
