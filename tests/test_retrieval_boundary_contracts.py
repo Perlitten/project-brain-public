@@ -63,6 +63,59 @@ async def test_zero_deadline_never_starts_work(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_scope_lookup_using_last_deadline_budget_cannot_start_channels(monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr("brain.retrieval.service.time.perf_counter", lambda: clock[0])
+
+    async def lookup(*args):
+        clock[0] = 100.05
+        return SimpleNamespace(id=7)
+
+    search, symbols = AsyncMock(), AsyncMock()
+    monkeypatch.setattr("brain.retrieval.service.get_repository_by_path", lookup)
+    monkeypatch.setattr("brain.retrieval.service.search_code", search)
+    service = RetrievalService()
+    monkeypatch.setattr(service, "_known_symbol_route", symbols)
+    result = await service.retrieve("find", "/repo", deadline_s=0.05)
+    assert result.degraded == ["deadline_exceeded"]
+    assert result.candidates == []
+    search.assert_not_called()
+    symbols.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_normalization_using_last_deadline_budget_preserves_results_and_reports_expiry(monkeypatch):
+    monkeypatch.setattr(settings, "DEFAULT_EMBEDDING_PROVIDER", "mock")
+    clock = [100.0]
+    monkeypatch.setattr("brain.retrieval.service.time.perf_counter", lambda: clock[0])
+    service = RetrievalService()
+    original = service._normalize
+
+    def normalize(*args):
+        rows = original(*args)
+        clock[0] = 100.05
+        return rows
+
+    monkeypatch.setattr(service, "_normalize", normalize)
+    monkeypatch.setattr(service, "_known_symbol_route", AsyncMock(return_value=[]))
+    monkeypatch.setattr("brain.retrieval.service.search_code", AsyncMock(return_value={"files": [{"path": "src/good.py"}]}))
+    result = await service.retrieve("find", None, deadline_s=0.05)
+    assert [row.path for row in result.candidates] == ["src/good.py"]
+    assert result.degraded == ["deadline_exceeded"]
+
+
+@pytest.mark.asyncio
+async def test_large_requested_budget_keeps_primary_channel_bounded(monkeypatch):
+    search, symbols = AsyncMock(return_value={}), AsyncMock(return_value=[])
+    monkeypatch.setattr("brain.retrieval.service.search_code", search)
+    service = RetrievalService()
+    monkeypatch.setattr(service, "_known_symbol_route", symbols)
+    await service.retrieve("find", None, candidate_budget=25)
+    search.assert_awaited_once_with("find", limit=10, repo_path=None)
+    symbols.assert_awaited_once_with("find", None, 25)
+
+
+@pytest.mark.asyncio
 async def test_symbol_failure_is_reported_without_hiding_primary_success(monkeypatch):
     service = RetrievalService()
     monkeypatch.setattr(service, "_known_symbol_route", AsyncMock(side_effect=RuntimeError("offline")))
