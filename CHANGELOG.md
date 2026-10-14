@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Gate releases on a matching immutable tag/package version and the latest
+  successful main-push CI run for that revision. Pass verified identities to
+  all images, inventory installed API/worker/web dependencies, and publish
+  the checksum-verified build artifacts instead of rebuilding them.
 - Split the FAQ into "Using Brain" (agents not calling Brain, wrong repository,
   stale index, stuck jobs, mock models, demo data, updating) and "Limits and evidence".
 - Add a dashboard Help screen (`/help`): server version and models, common
