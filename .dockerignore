@@ -1,6 +1,7 @@
 **
 !Dockerfile
 !pyproject.toml
+!requirements.lock
 !README.md
 !docs/
 !docs/legal/
