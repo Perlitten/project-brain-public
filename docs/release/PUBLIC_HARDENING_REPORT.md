@@ -54,3 +54,22 @@ containment succeeds. Provision a trusted image with pytest and the candidate's
 declared dependencies for standard testing; a bare Python image is suitable
 only for compile-only profiles. No automatic download or host mounts supply
 missing tools.
+
+### Safety review follow-up
+
+The second review's six findings are corrected: mandatory image preflight
+ignores optional tools, dependency markers are evaluated in the sandbox,
+isolated-mode rewriting applies only to Python, accepted executable aliases
+resolve to the same image tool that was probed, and the disabled autonomy CLI
+returns `BLOCKED` with a nonzero exit without executing or creating state.
+Runtime log exclusions now preserve source directories named `logs`.
+
+The [real Docker context export](evidence/public-hardening/docker-context-review2.json)
+retains `apps/web/app/logs/page.tsx`, excludes ten private marker classes and
+has the same source content digest before and after filtering. No image or
+dependency download was needed. JSON redaction also preserves unrelated fields
+and valid syntax, and a real legacy SDK confirmation timeout dispatches no
+write. Focused verification passed **82 tests**; full Python verification passed
+**2,217 tests with 11 optional skips**. Ruff, mypy, public launch and current
+documentation checks passed. These results apply to the safety branch; they do
+not certify the unfinished recovery, distribution or dashboard work.

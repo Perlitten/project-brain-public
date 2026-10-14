@@ -1,0 +1,18 @@
+{
+  "source_content_digest_before": "3f80aa425981d9894d4c86d1c7bd50c28cd16e89cde93885d52c17f08f5c5f8e",
+  "source_content_digest_after": "3f80aa425981d9894d4c86d1c7bd50c28cd16e89cde93885d52c17f08f5c5f8e",
+  "logs_route_retained": true,
+  "private_markers_excluded": [
+    "apps/web/.env.local",
+    "apps/api/.deploy.env",
+    "apps/api/.deploy.env.test",
+    "apps/web/.npmrc",
+    "apps/api/.netrc",
+    "apps/api/.git-credentials",
+    "apps/api/.brain/probe.db",
+    "apps/web/.venv/secret",
+    "apps/web/.vercel/config.json",
+    "logs/private-runtime.log"
+  ],
+  "image_model_or_dependency_downloads": 0
+}

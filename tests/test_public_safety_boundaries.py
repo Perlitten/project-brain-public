@@ -1,13 +1,16 @@
 """Adversarial regressions for the independently reproduced release blockers."""
 
+import asyncio
+import json
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from mcp import Client
 
-from apps.mcp_server import remote_server
+from apps.mcp_server import protocol, remote_server
 from apps.mcp_server.protocol import CONFIRM_WRITES_ENV
 from brain.autonomy.goal_run import GoalRun, GoalRunService
 from brain.config.settings import settings
@@ -151,3 +154,110 @@ def test_incompatible_image_is_infrastructure_error_before_any_candidate_command
     ))
     assert report.infrastructure_error and not report.passed
     assert report.results == [] and report.rejected_reasons
+
+
+def test_optional_tool_does_not_block_required_image_preflight(tmp_path, monkeypatch):
+    captured = {}
+
+    def probe(argv, **kwargs):
+        captured["tools"] = json.loads(argv[-1])
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(subprocess, "run", probe)
+    commands = [CommandDef(argv=["python", "-m", "compileall", "."]),
+                CommandDef(argv=["ruff", "check", "."], required=False)]
+    assert sandbox.validate_image_toolchain(tmp_path, commands, 5)
+    assert captured["tools"] == [["python3"], ["compileall"], []]
+
+
+def test_dependency_markers_are_evaluated_by_image_interpreter(tmp_path, monkeypatch):
+    # Force a different target environment in the probe, without downloading
+    # an image or changing the host interpreter. A host-side evaluation would
+    # wrongly retain this requirement before that probe sees it.
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\ndependencies = ["not-installed-in-this-fixture; python_version >= \'3.12\'"]\n',
+        encoding="utf-8",
+    )
+
+    def run_probe(argv, **kwargs):
+        probe, payload = argv[-2:]
+        assert json.loads(payload)[2][0][2] == 'python_version >= "3.12"'
+        target_environment = (
+            "import packaging.markers\n"
+            "original = packaging.markers.default_environment\n"
+            "packaging.markers.default_environment = lambda: dict(original(), python_version='3.11')\n"
+        )
+        return original_run([sys.executable, "-I", "-c", target_environment + probe, payload], **kwargs)
+
+    original_run = subprocess.run
+    monkeypatch.setattr(subprocess, "run", run_probe)
+    assert sandbox.validate_image_toolchain(tmp_path, [CommandDef(argv=["python", "-m", "pytest"])], 5)
+
+
+@pytest.mark.parametrize("alias", ["PYTHON", "python.exe", "py.exe", "PYTHON3"])
+def test_accepted_python_aliases_execute_image_python(tmp_path, alias):
+    argv, _ = sandbox.wrap_docker(workspace=tmp_path, argv=[alias, "-V"], env={}, resolved_exe=Path(alias))
+    assert argv[-2:] == ["python3", "-V"]
+
+
+def test_pytest_marker_named_compileall_is_not_rewritten(tmp_path, monkeypatch):
+    captured = {}
+    process = Mock()
+    process.communicate.return_value = ("", "")
+    process.returncode = 0
+
+    def spawn(argv, **kwargs):
+        captured["argv"] = argv
+        return process
+
+    monkeypatch.setattr(subprocess, "Popen", spawn)
+    result = ValidationRunner._run_one(tmp_path, ["pytest", "-m", "compileall"], {}, 5, 0, True, None, "docker")
+    assert result.exit_code == 0
+    assert captured["argv"][-3:] == ["pytest", "-m", "compileall"]
+
+
+def test_disabled_goal_cli_reports_blocked_without_execution(monkeypatch, capsys):
+    from brain.autonomy import cli
+    monkeypatch.setattr(sys, "argv", ["brain.autonomy", "submit-goal", "--goal-id", "fixture", "--description", "fixture"])
+    monkeypatch.setattr(GoalRunService, "execute_goal_run", lambda *a: pytest.fail("blocked goal must not execute"))
+    assert cli.main() == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "BLOCKED"
+    assert "commit_sha" not in result
+
+
+def test_disabled_goal_constructor_does_not_create_state(monkeypatch):
+    monkeypatch.setattr(Path, "mkdir", lambda *a, **k: pytest.fail("disabled service must not create state"))
+    assert GoalRunService().workspace_mgr is None
+
+
+def test_redaction_preserves_json_structure_and_benign_evidence():
+    original = {"output": "Authorization: Basic synthetic-private-value", "tests_passed": 17,
+                "nested": {"authorization": "Custom synthetic-private-value", "path": "brain/core.py"}}
+    for redactor in (redact_trajectory_content, ValidationRunner._redact):
+        result = redactor(json.dumps(original))
+        decoded = json.loads(result)
+        assert "synthetic-private-value" not in result
+        assert decoded["tests_passed"] == 17
+        assert decoded["nested"]["path"] == "brain/core.py"
+
+
+@pytest.mark.asyncio
+async def test_legacy_confirmation_timeout_cancels_write(monkeypatch):
+    monkeypatch.setenv(CONFIRM_WRITES_ENV, "true")
+    monkeypatch.setattr(protocol, "CONFIRMATION_TIMEOUT_SECONDS", .02)
+    cancelled = asyncio.Event()
+
+    async def never_responds(*args):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    post = AsyncMock()
+    monkeypatch.setattr(remote_server, "_post", post)
+    async with Client(remote_server.mcp, mode="legacy", elicitation_callback=never_responds) as client:
+        result = await asyncio.wait_for(client.call_tool("record_rule", {"name": "fixture", "repo_path": "/fixture"}), 2)
+        assert "cancelled" in str(result)
+    post.assert_not_awaited()
+    assert cancelled.is_set()

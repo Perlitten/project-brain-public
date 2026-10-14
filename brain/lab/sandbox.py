@@ -24,12 +24,12 @@ SANDBOX_OFF = "off"
 
 _PROBE_TIMEOUT = 10
 
-# Host directories mounted read-only into the sandbox so allowlisted
-# executables resolve identically inside it.
 def validate_image_toolchain(workspace: Path, commands: list, timeout: float) -> bool:
     """Probe image-owned tools/dependencies without importing repository code."""
     executables, modules, requirements = set(), set(), []
     for command in commands:
+        if not command.required:
+            continue
         name = command.argv[0].lower().removesuffix(".exe")
         executables.add("python3" if name in {"python", "python3", "py"} else name)
         if name in {"python", "python3", "py"} and "-m" in command.argv:
@@ -44,16 +44,19 @@ def validate_image_toolchain(workspace: Path, commands: list, timeout: float) ->
             config = tomllib.loads(project.read_text(encoding="utf-8"))
             for spec in config.get("project", {}).get("dependencies", []):
                 requirement = Requirement(spec)
-                if requirement.marker is None or requirement.marker.evaluate():
-                    requirements.append((requirement.name, str(requirement.specifier)))
+                requirements.append((requirement.name, str(requirement.specifier), str(requirement.marker) if requirement.marker else ""))
     # -I keeps the mounted repository out of import resolution. Metadata reads
     # installed distributions; it does not import their or the project's code.
     probe = """import importlib.util, importlib.metadata, json, shutil, sys
 executables, modules, requirements = json.loads(sys.argv[1])
 ok = all(shutil.which(name) for name in executables)
 ok = ok and all(importlib.util.find_spec(name.split('.')[0]) for name in modules)
-for name, spec in requirements:
+for name, spec, marker in requirements:
     try:
+        if marker:
+            from packaging.markers import Marker
+            if not Marker(marker).evaluate():
+                continue
         version = importlib.metadata.version(name)
         if spec:
             from packaging.specifiers import SpecifierSet
@@ -165,7 +168,7 @@ def wrap_docker(
         cmd += ["-e", f"{key}={value}"]
     cmd += ["-v", f"{ws}:{ws}:rw"]
     # Resolve the tool inside the trusted image, never through host mounts.
-    executable = Path(argv[0]).name
+    executable = Path(argv[0]).name.lower().removesuffix(".exe")
     if executable in {"python", "python3", "py"}:
         executable = "python3"
     cmd += [settings.LAB_SANDBOX_IMAGE, executable, *argv[1:]]

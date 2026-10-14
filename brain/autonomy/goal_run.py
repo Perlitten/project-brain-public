@@ -19,7 +19,6 @@ from brain.autonomy.models import (
 )
 from brain.autonomy.notifications import emit_goal_notification
 from brain.autonomy.state import SessionStore
-from brain.lab.engine import WorkspaceManager
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -57,10 +56,8 @@ class GoalRunService:
     """Production GoalRun Service managing goal queues, worktrees, and deployments."""
 
     def __init__(self, session_store: Optional[SessionStore] = None):
-        self.store = session_store or SessionStore()
-        ws_dir = PROJECT_ROOT / "context_packs" / "worktrees"
-        storage_dir = PROJECT_ROOT / "context_packs" / "storage"
-        self.workspace_mgr = WorkspaceManager(workspaces_dir=ws_dir, storage_dir=storage_dir)
+        self.store = session_store
+        self.workspace_mgr = None
         self.active_runs: Dict[str, GoalRun] = {}
 
     def _validate_safety(self, goal_id: str, target_file: Optional[str], description: str) -> Tuple[bool, str]:
