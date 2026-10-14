@@ -29,6 +29,17 @@ def test_http_200_runtime_failure_envelopes_cannot_be_captured(kind, field, mark
         validate_response({"status": "partial", field: [marker]}, kind, "synthetic")
 
 
+@pytest.mark.parametrize("data", [
+    {"status": "stale_blocked", "missing": ["current_source_required_for_code_change"]},
+    {"status": "future_failure"}, {"status": "partial", "degraded": ["unknown_operational_failure"]},
+    {"status": "partial", "missing": "context_error:RuntimeError"},
+])
+def test_stale_blocked_unknown_or_malformed_capture_outcomes_fail_closed(data):
+    from eval.product_upgrade_capture import validate_response
+    with pytest.raises(ValueError):
+        validate_response(data, "context", "synthetic")
+
+
 def test_legitimate_unsupported_context_abstention_remains_valid():
     from eval.product_upgrade_capture import validate_response
     validate_response({"status": "partial", "missing": ["insufficient_evidence"], "candidates": []}, "context", "context-007")
