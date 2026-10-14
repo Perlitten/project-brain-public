@@ -20,7 +20,6 @@ import time
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Optional, Literal
-from functools import partial
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Form, Request
@@ -362,11 +361,11 @@ def revocation_route(provider: BrainOAuthProvider) -> Route:
             form = RevocationForm.model_validate(dict(await request.form()))
         except ValidationError:
             return JSONResponse({"error": "invalid_request"}, status_code=400)
-        loaders = [provider.load_access_token, partial(provider.load_refresh_token, client)]
-        if form.token_type_hint == "refresh_token":
-            loaders.reverse()
-        for loader in loaders:
-            token = await loader(form.token)
+        for token_type in (("refresh", "access") if form.token_type_hint == "refresh_token" else ("access", "refresh")):
+            token = (
+                await provider.load_refresh_token(client, form.token)
+                if token_type == "refresh" else await provider.load_access_token(form.token)
+            )
             if token is not None:
                 if token.client_id == client.client_id:
                     await provider.revoke_token(token)

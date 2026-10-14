@@ -4,6 +4,30 @@ Date: 2026-10-14. This is a corrections ledger for the supplied independent
 assessment, not certification of unchanged v0.9.2 assets. Publication remains
 **NO-GO** while confirmed core/recovery/distribution blockers are unresolved.
 
+## MCP integration corrections
+
+C05: failed remote bridge tool envelopes now become SDK tool errors, and failed
+memory-resource reads become resource errors instead of rule rows. Empty
+successful retrieval remains a success. Missing configuration, HTTP 401/500 and
+transport timeouts are exercised through real SDK sessions; legacy and modern
+stdio subprocesses also verify the missing-configuration boundary. Error text
+does not persist raw backend response bodies or exception credentials. The
+remote bridge remains independent of `brain` imports.
+
+C06: OAuth revocation accepts public clients without a `client_secret` field
+while preserving SDK authentication for confidential clients. Actual owned
+PostgreSQL-backed flows verify public revocation and subsequent rejection of
+the access token; confidential post/basic clients reject missing or incorrect
+secrets and accept correct authentication. Token ownership is checked before
+revocation; unknown tokens retain RFC 7009 success behavior.
+
+The frozen MCP source passed **2,248 Python tests with 11 optional skips**.
+Ruff passed. One heterogeneous-callable mypy error was then corrected with
+explicit typed token loads; Ruff and mypy passed after that correction, and
+**20 bridge/OAuth tests** passed. No baseline, provider behavior, historical
+release archive or tag was changed. Provider verification used fixtures only.
+Remote exact-head checks and independent review are required before merge.
+
 ## Execution and privacy corrections
 
 | Assessment finding | Correction / verification | Status |
