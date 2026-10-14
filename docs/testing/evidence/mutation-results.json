@@ -14,7 +14,7 @@
         "tests/test_chaos_v06.py"
       ],
       "command": [
-        "/workspace/project-brain-public/.venv/bin/python",
+        "python",
         "-m",
         "pytest",
         "tests/test_harness_attestation.py",
@@ -478,7 +478,8 @@
         "brain/harness/attestation.py": "22e41f2c8d5892df0ae2f7636caa9e4eb0aad3714418e4c7fdb0f86b3022e1a2",
         "brain/harness/nonce.py": "c093eff48bc4ebfca94cfb896b92daec99a0d3ca79ff26c3d90aba72227e6dbb",
         "brain/context/budget.py": "2f677ffdbf8dd02ed25ff911ccf0ecf6c314e719543b99ac3d00b8bcf568815d"
-      }
+      },
+      "interpreter_path_redacted": true
     },
     "strengthened_tests": {
       "tests": [
@@ -493,7 +494,7 @@
         "tests/test_chaos_v06.py"
       ],
       "command": [
-        "/workspace/project-brain-public/.venv/bin/python",
+        "python",
         "-m",
         "pytest",
         "tests/test_mutation_contracts.py",
@@ -1007,7 +1008,8 @@
         "brain/harness/attestation.py": "22e41f2c8d5892df0ae2f7636caa9e4eb0aad3714418e4c7fdb0f86b3022e1a2",
         "brain/harness/nonce.py": "c093eff48bc4ebfca94cfb896b92daec99a0d3ca79ff26c3d90aba72227e6dbb",
         "brain/context/budget.py": "2f677ffdbf8dd02ed25ff911ccf0ecf6c314e719543b99ac3d00b8bcf568815d"
-      }
+      },
+      "interpreter_path_redacted": true
     },
     "fixed_frozen_replay": {
       "tests": [
@@ -1023,7 +1025,7 @@
         "tests/test_chaos_v06.py"
       ],
       "command": [
-        "/workspace/project-brain-public/.venv/bin/python",
+        "python",
         "-m",
         "pytest",
         "tests/test_mutation_contracts.py",
@@ -1497,7 +1499,8 @@
         "brain/harness/attestation.py": "881a99dccc4c865b78fdd50b1cb267d105649318bcc1561632570c086b1c6cf3",
         "brain/harness/nonce.py": "1045264813557ea8e8509d751aec074651e57a6d7d12ad6dd08d12c9f29dcf91",
         "brain/context/budget.py": "0e329fccf2d650a0814642b94625f60bfb3c1f7a69f78cadbbc359b71d62ceae"
-      }
+      },
+      "interpreter_path_redacted": true
     },
     "fixed_fresh_campaign": {
       "tests": [
@@ -1513,7 +1516,7 @@
         "tests/test_chaos_v06.py"
       ],
       "command": [
-        "/workspace/project-brain-public/.venv/bin/python",
+        "python",
         "-m",
         "pytest",
         "tests/test_mutation_contracts.py",
@@ -2120,7 +2123,8 @@
         "brain/harness/attestation.py": "881a99dccc4c865b78fdd50b1cb267d105649318bcc1561632570c086b1c6cf3",
         "brain/harness/nonce.py": "1045264813557ea8e8509d751aec074651e57a6d7d12ad6dd08d12c9f29dcf91",
         "brain/context/budget.py": "0e329fccf2d650a0814642b94625f60bfb3c1f7a69f78cadbbc359b71d62ceae"
-      }
+      },
+      "interpreter_path_redacted": true
     }
   },
   "survivor_classification": [

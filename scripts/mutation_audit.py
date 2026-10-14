@@ -113,6 +113,10 @@ def manifest(root: Path) -> dict:
     return {"scope": {p: sorted(f) for p, f in SCOPE.items()}, "source_sha256": hashes, "mutations": mutations}
 
 
+def public_command(command: list[str]) -> list[str]:
+    return ["python", *command[1:]]
+
+
 def run(root: Path, frozen: dict, output: Path, extra_tests: list[str], workers: int, timeout: float) -> None:
     output.mkdir(parents=True, exist_ok=True)
     # Contract tests first and stop on the first failure. A broken truncator
@@ -163,7 +167,8 @@ def run(root: Path, frozen: dict, output: Path, extra_tests: list[str], workers:
         batches = [frozen["mutations"][i::workers] for i in range(workers)]
         results = sorted([r for batch in executor.map(worker, batches) for r in batch], key=lambda r: r["id"])
     summary = {status: sum(r["status"] == status for r in results) for status in sorted({r["status"] for r in results})}
-    record = {"tests": tests, "command": command, "timeout_seconds": timeout, "results": results, "summary": summary}
+    record = {"tests": tests, "command": public_command(command), "interpreter_path_redacted": True,
+              "python_version": sys.version.split()[0], "timeout_seconds": timeout, "results": results, "summary": summary}
     (output / "results.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(summary), flush=True)
 

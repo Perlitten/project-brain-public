@@ -4,6 +4,10 @@ Audited from `main` commit `3c4449e37909541496a5d995b6035a6129c82c10`.
 Verification used Python 3.12.14, local fixtures and mock providers. No model
 downloads, remote inference, paid calls or NVIDIA credential dependency.
 
+Saved commands replace machine-specific interpreter paths with `python` and mark
+`interpreter_path_redacted`. Test arguments, outcomes, timings and source hashes
+are unchanged; the recorded Python version identifies the runtime used.
+
 ## What the tests actually proved
 
 | Existing example | What it verified | Action |
