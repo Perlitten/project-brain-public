@@ -35,6 +35,24 @@ async def test_high_degree_hub_never_materializes_its_full_neighborhood(tmp_path
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("incoming_count", [0, 5])
+async def test_unused_incoming_capacity_backfills_outgoing_files(tmp_path, incoming_count):
+    graph = SQLiteGraph(tmp_path)
+    populate(graph, 90)
+    with graph.connection() as db:
+        db.execute("UPDATE nodes SET label='Function' WHERE identity!='hub'")
+        db.execute("UPDATE nodes SET label='File',props=? WHERE identity='leaf-80'",
+                   (json.dumps({"name": "src/important.py"}),))
+        for i in range(incoming_count):
+            db.execute("INSERT INTO nodes(repo,label,identity,props) VALUES (1,'Function',?,?)",
+                       (f"incoming-{i}", json.dumps({"name": f"incoming_{i}"})))
+            source = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+            db.execute("INSERT INTO edges VALUES (?,1,'USES','{}')", (source,))
+    rows = await graph.bounded_impact(1, ["hub"])
+    assert any(row["m"]["name"] == "src/important.py" for row in rows)
+
+
+@pytest.mark.asyncio
 async def test_traversal_preserves_scope_two_hops_and_small_result_limits(tmp_path):
     graph = SQLiteGraph(tmp_path)
     populate(graph, 3)

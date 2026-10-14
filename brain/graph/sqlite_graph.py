@@ -112,6 +112,12 @@ class SQLiteGraph:
                                               (node_id, (edges_left + 1) // 2)).fetchall()
                         incoming = db.execute("SELECT source FROM edges WHERE target=? ORDER BY source,type LIMIT ?",
                                               (node_id, edges_left - len(outgoing))).fetchall()
+                        unused = edges_left - len(outgoing) - len(incoming)
+                        if unused and len(outgoing) == (edges_left + 1) // 2:
+                            outgoing += db.execute(
+                                "SELECT target FROM edges WHERE source=? ORDER BY target,type LIMIT ? OFFSET ?",
+                                (node_id, unused, len(outgoing)),
+                            ).fetchall()
                         edges_left -= len(outgoing) + len(incoming)
                         adjacent = list(dict.fromkeys(row[0] for row in outgoing + incoming if row[0] not in seen))
                         if not adjacent:

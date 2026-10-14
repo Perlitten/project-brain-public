@@ -30,6 +30,15 @@ def input_hash() -> str:
     return digest.hexdigest()
 
 
+def validate_response(data: dict, kind: str, task_id: str) -> None:
+    """HTTP success does not imply successful v2 retrieval execution."""
+    markers = [str(value) for key in ("missing", "degraded") for value in data.get(key, [])]
+    fatal = any(value.startswith(("context_error:", "impact_error:", "search_error:"))
+                or "deadline_exceeded" in value for value in markers)
+    if "error" in data or data.get("status") in {"failed", "error", "unavailable"} or fatal:
+        raise ValueError(f"{kind} response failed for {task_id}")
+
+
 async def capture(args: argparse.Namespace) -> dict:
     if args.phase not in {"before", "after"}:
         raise ValueError("capture phase must be before or after")
@@ -42,6 +51,7 @@ async def capture(args: argparse.Namespace) -> dict:
             response = await client.post("/search", json={"query": item["question"], "repo_path": args.repo, "limit": 10})
             response.raise_for_status()
             data = response.json()
+            validate_response(data, "search", item["id"])
             contract = "locator-v2" if "results" in data or ("repo" in data and "budget" in data) else "legacy-files-chunks"
             contracts["search"].add(contract)
             scored_data = {"results": data.get("results", [])} if contract == "locator-v2" else data
@@ -62,8 +72,7 @@ async def capture(args: argparse.Namespace) -> dict:
             response = await client.post("/" + kind, json=payload)
             response.raise_for_status()
             data = response.json()
-            if "error" in data:
-                raise ValueError(f"{kind} response failed for {task['id']}")
+            validate_response(data, kind, task["id"])
             if kind == "context":
                 contract = "runtime-v2" if "repo" in data else "legacy-context-pack"
                 paths = [row["path"] for row in data.get("candidates", data.get("retrieved_files", [])) if row.get("path")]
