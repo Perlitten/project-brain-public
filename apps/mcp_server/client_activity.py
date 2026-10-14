@@ -47,7 +47,8 @@ def _call_failed(result: object) -> bool:
     if isinstance(result, dict):
         payload = payload or result.get("structuredContent") or result
     if isinstance(payload, dict):
-        inner = payload.get("result") if isinstance(payload.get("result"), dict) else payload
+        nested = payload.get("result")
+        inner = nested if isinstance(nested, dict) else payload
         return str(inner.get("status", "")).lower() == "failed" or (
             "error" in inner and not inner.get("status")
         )
