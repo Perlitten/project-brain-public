@@ -4,6 +4,10 @@ Project Brain is an early single-user service for a trusted operator. It
 combines a code index, dependency graph and project knowledge, then serves
 context to coding agents. It does not replace source inspection, Git or CI.
 
+The [single-team collaboration contract](adr/team-collaboration.md) describes the
+target architecture and staged MVP. It does not claim that current personal
+APIs, retrieval or executors are safe for multiple team members.
+
 ## Runtime components
 
 | Component | Responsibility |
