@@ -20,11 +20,24 @@ def captures():
     ("impact", "degraded", "impact_deadline_exceeded"),
     ("context", "missing", "context_deadline_exceeded"),
     ("search", "degraded", "search_error:RuntimeError"),
+    ("search", "degraded", "locator_error:RuntimeError"),
+    ("impact", "degraded", "graph_error:RuntimeError"),
 ])
 def test_http_200_runtime_failure_envelopes_cannot_be_captured(kind, field, marker):
     from eval.product_upgrade_capture import validate_response
     with pytest.raises(ValueError, match="response failed"):
         validate_response({"status": "partial", field: [marker]}, kind, "synthetic")
+
+
+@pytest.mark.parametrize("data", [
+    {"status": "stale_blocked", "missing": ["current_source_required_for_code_change"]},
+    {"status": "future_failure"}, {"status": "partial", "degraded": ["unknown_operational_failure"]},
+    {"status": "partial", "missing": "context_error:RuntimeError"},
+])
+def test_stale_blocked_unknown_or_malformed_capture_outcomes_fail_closed(data):
+    from eval.product_upgrade_capture import validate_response
+    with pytest.raises(ValueError):
+        validate_response(data, "context", "synthetic")
 
 
 def test_legitimate_unsupported_context_abstention_remains_valid():

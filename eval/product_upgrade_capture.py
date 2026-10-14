@@ -32,10 +32,15 @@ def input_hash() -> str:
 
 def validate_response(data: dict, kind: str, task_id: str) -> None:
     """HTTP success does not imply successful v2 retrieval execution."""
-    markers = [str(value) for key in ("missing", "degraded") for value in data.get(key, [])]
-    fatal = any(value.startswith(("context_error:", "impact_error:", "search_error:"))
-                or "deadline_exceeded" in value for value in markers)
-    if "error" in data or data.get("status") in {"failed", "error", "unavailable"} or fatal:
+    fields = [data.get(key, []) for key in ("missing", "degraded")]
+    if any(not isinstance(values, list) or any(not isinstance(value, str) for value in values) for values in fields):
+        raise ValueError(f"{kind} response has invalid failure metadata for {task_id}")
+    # Only documented evidence/size abstention is admissible. Operational
+    # failures, stale-source blocking and unknown statuses are not evaluations.
+    abstention = {"no_retrieval_candidates", "no_code_slices", "no_relevant_candidates",
+                  "code_slices_excluded_by_budget", "insufficient_evidence"}
+    fatal = any(value not in abstention for values in fields for value in values)
+    if "error" in data or data.get("status") not in {None, "ok", "partial"} or fatal:
         raise ValueError(f"{kind} response failed for {task_id}")
 
 
