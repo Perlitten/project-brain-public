@@ -20,7 +20,11 @@ def recovery_fixture_config(tmp_path, monkeypatch):
         "NEO4J_URI=bolt://127.0.0.1:25487\n"
         "NEO4J_USER=synthetic\nNEO4J_PASSWORD=fixture-only\n"
     )
-    for key in ("DATABASE_URL", "POSTGRES_HOST", "POSTGRES_PORT", "NEO4J_URI", "BRAIN_STORAGE_MODE"):
+    for key in (
+        "DATABASE_URL", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER",
+        "POSTGRES_PASSWORD", "POSTGRES_DB", "NEO4J_URI", "NEO4J_USER",
+        "NEO4J_PASSWORD", "BRAIN_STORAGE_MODE",
+    ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("BRAIN_ENV_FILE", str(config))
     return config
