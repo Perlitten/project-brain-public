@@ -10,19 +10,49 @@ on:
         required: true
 
 permissions:
+  actions: read
   contents: write
   packages: write
 
 env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
-  dist:
+  preflight:
     runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.verify.outputs.commit_sha }}
+      source_digest: ${{ steps.verify.outputs.source_digest }}
+      deploy_digest: ${{ steps.verify.outputs.deploy_digest }}
+      build_time: ${{ steps.verify.outputs.build_time }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify immutable tag, package version and main-push CI
+        id: verify
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m scripts.release_gate --tag "$RELEASE_TAG"
+
+  dist:
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit_sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Build wheel and sdist
         run: |
           python -m pip install --upgrade pip build twine
@@ -38,6 +68,7 @@ jobs:
           path: dist/
 
   images:
+    needs: preflight
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -54,65 +85,123 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ needs.preflight.outputs.commit_sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push ${{ matrix.name }}
+      - name: Build ${{ matrix.name }} for validation
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          push: true
+          push: false
+          load: true
+          build-args: |
+            BRAIN_BUILD_SHA=${{ needs.preflight.outputs.commit_sha }}
+            BRAIN_BUILD_TIME=${{ needs.preflight.outputs.build_time }}
+            BRAIN_SOURCE_DIGEST=${{ needs.preflight.outputs.source_digest }}
+            BRAIN_DEPLOY_DIGEST=${{ needs.preflight.outputs.deploy_digest }}
+            BRAIN_REQUIRE_RELEASE_IDENTITY=true
           tags: |
             ghcr.io/perlitten/project-brain-${{ matrix.name }}:${{ env.RELEASE_TAG }}
             ghcr.io/perlitten/project-brain-${{ matrix.name }}:latest
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-
-  sbom:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.RELEASE_TAG }}
-      - name: Generate SBOM
+      - name: Inventory installed ${{ matrix.name }} image packages
         uses: anchore/sbom-action@v0
         with:
-          output-file: sbom.spdx.json
+          image: ghcr.io/perlitten/project-brain-${{ matrix.name }}:${{ env.RELEASE_TAG }}
+          output-file: sbom-${{ matrix.name }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Validate installed application SBOM coverage
+        run: python scripts/check_image_sbom.py --kind "${{ matrix.name }}" "sbom-${{ matrix.name }}.spdx.json"
+      - name: Verify image identity before publishing
+        env:
+          IMAGE: ghcr.io/perlitten/project-brain-${{ matrix.name }}:${{ env.RELEASE_TAG }}
+          EXPECTED_SHA: ${{ needs.preflight.outputs.commit_sha }}
+        run: |
+          actual=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE")
+          test "$actual" = "$EXPECTED_SHA"
+      - name: Checksum verified image inventory
+        run: sha256sum "sbom-${{ matrix.name }}.spdx.json" > "sbom-${{ matrix.name }}.spdx.json.sha256"
+      - name: Push the validated image bytes
+        env:
+          IMAGE: ghcr.io/perlitten/project-brain-${{ matrix.name }}
+        run: |
+          docker push "$IMAGE:$RELEASE_TAG"
+          docker push "$IMAGE:latest"
       - uses: actions/upload-artifact@v4
         with:
-          name: sbom
-          path: sbom.spdx.json
+          name: sbom-${{ matrix.name }}
+          path: |
+            sbom-${{ matrix.name }}.spdx.json
+            sbom-${{ matrix.name }}.spdx.json.sha256
+          if-no-files-found: error
 
-  github-release:
-    needs: [dist, images, sbom]
+  sbom:
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
-      # Publish from the immutable tag directly. Cross-job artifact transport
-      # can fail even when builds pass; do not make it a distribution source.
-      - name: Build distributions for publication
-        run: |
-          python -m pip install --upgrade pip build twine
-          python -m build
-          twine check dist/*
-          mkdir -p sbom
-      - name: Generate publication SBOM
+          ref: ${{ needs.preflight.outputs.commit_sha }}
+      - name: Generate source SBOM
         uses: anchore/sbom-action@v0
         with:
-          output-file: sbom/sbom.spdx.json
+          output-file: sbom-source.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Checksum source inventory
+        run: sha256sum sbom-source.spdx.json > sbom-source.spdx.json.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-source
+          path: |
+            sbom-source.spdx.json
+            sbom-source.spdx.json.sha256
+          if-no-files-found: error
+
+  github-release:
+    needs: [preflight, dist, images, sbom]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.commit_sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sbom-*
+          merge-multiple: true
+          path: sbom
       - name: Verify distributions and checksum every release asset
         run: |
           python scripts/check_release_archives.py dist/*.whl dist/*.tar.gz
+          (cd dist && sha256sum -c SHA256SUMS)
+          for manifest in sbom/*.sha256; do (cd sbom && sha256sum -c "$(basename "$manifest")"); done
+          for kind in api worker web; do python scripts/check_image_sbom.py --kind "$kind" "sbom/sbom-$kind.spdx.json"; done
           python - <<'PY'
           import hashlib, pathlib
-          paths = sorted(pathlib.Path('dist').glob('*.whl')) + sorted(pathlib.Path('dist').glob('*.tar.gz')) + [pathlib.Path('sbom/sbom.spdx.json')]
+          dist = pathlib.Path('dist')
+          sbom = pathlib.Path('sbom')
+          wheels = list(dist.glob('*.whl'))
+          archives = list(dist.glob('*.tar.gz'))
+          expected_sboms = {'sbom-source.spdx.json', 'sbom-api.spdx.json', 'sbom-worker.spdx.json', 'sbom-web.spdx.json'}
+          expected_files = expected_sboms | {f'{name}.sha256' for name in expected_sboms}
+          if len(wheels) != 1 or len(archives) != 1 or {p.name for p in sbom.iterdir()} != expected_files:
+              raise SystemExit('Release requires one wheel, one sdist, and four checksummed source/image SBOMs')
+          paths = sorted(wheels + archives + [sbom / name for name in expected_sboms])
           pathlib.Path('SHA256SUMS').write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in paths))
           PY
       - name: Extract release notes from CHANGELOG
@@ -129,6 +218,10 @@ jobs:
               notes = launch.group(1).strip() + '\n\n' + notes.strip()
           pathlib.Path("release-notes.md").write_text(f"## {tag}\n\n{notes.strip()}\n")
           PY
+      - name: Recheck tag, main CI and unpublished release before creating assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m scripts.release_gate --tag "$RELEASE_TAG"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -137,5 +230,5 @@ jobs:
           files: |
             dist/*.whl
             dist/*.tar.gz
-            sbom/sbom.spdx.json
+            sbom/*.spdx.json
             SHA256SUMS
