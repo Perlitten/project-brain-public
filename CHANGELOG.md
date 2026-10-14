@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Clarify self-reported MCP telemetry labels versus authenticated principals,
+  native OAuth discovery/TLS and single-worker restart limits, and full/Lite
+  queue cancellation and idempotency retention without claiming hosted-client
+  verification or exactly-once side effects.
+
+- Reconcile third-party notices with pinned Python and web dependencies,
+  distinguish the TypeScript npm alias, include notices in runtime wheels,
+  and check versions, licenses and packaged notice retention in CI.
+
 - Add opt-in Lite source profile with durable SQLite memory, maintenance queues,
   local token-hash embeddings, SQLite graph adjacency and a disabled default LLM.
   Lite commands and local state are not in published v0.9.2 artifacts.

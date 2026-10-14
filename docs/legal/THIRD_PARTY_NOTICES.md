@@ -79,6 +79,7 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 |---|---|---|
 | annotated-doc | 0.0.5 | MIT |
 | annotated-types | 0.8.0 | MIT |
+| aiosqlite | 0.22.1 | MIT |
 | anyio | 4.15.1 | MIT |
 | asyncpg | 0.31.0 | Apache-2.0 |
 | attrs | 26.1.0 | MIT |
@@ -90,16 +91,16 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 | greenlet | 3.5.6 | MIT AND PSF-2.0 |
 | h11 | 0.16.0 | MIT |
 | httpcore | 1.0.9 | BSD-3-Clause |
+| httpcore2 | 2.13.1 | BSD-3-Clause |
 | httpx | 0.28.1 | BSD-3-Clause |
-| httpx-sse | 0.4.3 | MIT |
+| httpx2 | 2.13.1 | BSD-3-Clause |
 | idna | 3.20 | BSD-3-Clause |
-| jinja2 | 3.1.6 | BSD-3-Clause |
 | jsonschema | 4.26.0 | MIT |
 | jsonschema-specifications | 2025.9.1 | MIT |
 | loguru | 0.7.3 | MIT |
 | markdown-it-py | 4.2.0 | MIT |
-| markupsafe | 3.0.3 | BSD-3-Clause |
-| mcp | 1.29.0 | MIT |
+| mcp | 2.3.0 | MIT |
+| mcp-types | 2.3.0 | MIT |
 | mdurl | 0.1.2 | MIT |
 | neo4j | 6.3.1 | Apache-2.0 AND Python-2.0 |
 | numpy | 2.5.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 |
@@ -126,6 +127,7 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 | typer[all] | 0.27.2 | MIT |
 | typing-extensions | 4.16.0 | PSF-2.0 |
 | typing-inspection | 0.4.4 | MIT |
+| truststore | 0.10.4 | MIT |
 | uvicorn | 0.54.0 | BSD-3-Clause |
 
 ### Development only (`requirements-dev.lock`)
@@ -133,6 +135,8 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 | Package | Version | License |
 |---|---|---|
 | ast-serialize | 0.11.2 | MIT |
+| charset-normalizer | 3.5.2 | MIT |
+| coverage | 7.16.2 | Apache-2.0 |
 | iniconfig | 2.3.0 | MIT |
 | librt | 0.16.0 | MIT |
 | mypy | 2.4.0 | MIT |
@@ -144,7 +148,12 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 | pyee | 13.0.1 | MIT |
 | pytest | 9.1.1 | MIT |
 | pytest-asyncio | 1.4.0 | Apache-2.0 |
+| pytest-cov | 7.1.0 | MIT |
+| regex | 2026.9.29 | Apache-2.0 AND CNRI-Python |
+| requests | 2.34.2 | Apache-2.0 |
 | ruff | 0.16.10 | MIT |
+| tiktoken | 0.14.0 | MIT |
+| urllib3 | 2.8.0 | MIT |
 
 ### Optional extras
 
@@ -161,10 +170,18 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 
 | Package | Version | License |
 |---|---|---|
-| next | 16.3.8 | MIT |
-| react, react-dom | 19.3.0 | MIT |
-| typescript (dev) | 5.9.3 | Apache-2.0 |
-| @types/node, @types/react, @types/react-dom (dev) | — | MIT |
+| next | 16.4.0 | MIT |
+| react | 19.3.0 | MIT |
+| react-dom | 19.3.0 | MIT |
+| typescript | 7.0.2 | Apache-2.0 |
+| typescript5 | 5.9.3 | Apache-2.0 |
+| @types/node | 26.6.4 | MIT |
+| @types/react | 19.3.0 | MIT |
+| @types/react-dom | 19.3.0 | MIT |
+
+`typescript5` is an npm alias of TypeScript 5.9.3. It is not the primary
+`typescript` installation, which is 7.0.2. All TypeScript and `@types/*`
+entries above are development dependencies.
 
 Notable transitive packages:
 
@@ -222,6 +239,9 @@ affiliated with, sponsored by, or endorsed by any of them.
 
 ---
 
-*Inventory generated from `requirements.lock`, `requirements-dev.lock`,
-`apps/web/package-lock.json`, the Dockerfiles, the compose files and the
-font metadata on 2026-10-02. Regenerate when dependencies change.*
+*Inventory reconciled with `requirements.lock`, `requirements-dev.lock`,
+`apps/web/package-lock.json` and the font metadata on 2026-10-14; container
+references describe the current `main` Dockerfile. Recheck container entries
+when Dockerfiles change and run `python scripts/check_third_party_notices.py`
+whenever dependency locks change. This is an inventory of pinned packages and
+declared licenses, not a substitute for reviewing licenses in built images.*

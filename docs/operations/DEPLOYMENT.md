@@ -377,6 +377,58 @@ For Cursor, which reads its own config outside the repository, use
 
 For Claude Desktop/Code, use that client's MCP config location.
 
+### Native MCP and OAuth
+
+This is an experimental deployment path, not proof of hosted-client support.
+External Claude/Cursor/Codex connectors, real public TLS/discovery and a hosted
+OAuth authorization round trip remain **unverified** by the offline regressions.
+Do not expose a development-open API to make a client connect.
+
+1. Configure `BRAIN_MCP_HTTP_ENABLED=true` (the current default). Set
+   `BRAIN_PUBLIC_URL=https://brain.example.com` to the public API origin, with
+   no `/mcp` suffix. Alternatively set `BRAIN_PUBLIC_HOST=brain.example.com`;
+   Brain constructs `https://<host>`. The explicit URL takes precedence. With
+   neither set, `/mcp` still accepts API credentials but OAuth discovery is off.
+   The separately hosted dashboard URL is not the OAuth issuer.
+2. Require **HTTPS** and a valid certificate before sending credentials. Keep
+   the production API key and web-login credentials configured; never publish
+   the keyless development profile. Create a revocable, least-privilege scoped
+   `pbk_` credential rather than sharing the operator key. Search-only access
+   can use `core:read`; context/memory writes need the corresponding write
+   scope. Job polling uses `jobs:read` and lessons use `harness:write`. An OAuth
+   approver must already hold every scope it grants.
+3. Route `/mcp`, `/.well-known/oauth-protected-resource/mcp`,
+   `/.well-known/oauth-authorization-server` and `/oauth/*` to the same API
+   origin. The shipped nginx configuration passes discovery/OAuth routes via
+   `location /`, preserves Host/forwarded scheme, and disables buffering and
+   caching for the `/mcp` SSE stream with a 3,600-second proxy timeout. Retain
+   those properties if replacing the proxy; do not cache token/consent responses
+   or log Authorization headers, tokens or consent-form credentials.
+4. Run **one API worker** (the image's default uvicorn process). MCP sessions,
+   pending consent requests and authorization codes are **in-memory**. A
+   restart invalidates sessions and unfinished authorizations; clients must
+   initialize/authorize again. The native session idle timeout is 30 minutes.
+   Registered clients and issued credentials are database-backed, but they do
+   not restore these transient states. Multiple workers/replicas are not a
+   verified supported topology: merely adding sticky MCP routing is insufficient
+   if consent and code exchange reach a different process. Any experiment needs
+   affinity for the whole authorization/session lifecycle; it still cannot
+   preserve in-memory state across restarts.
+
+Unauthenticated discovery smoke commands (examples, not a hosted verification):
+
+```bash
+curl -i -H 'Accept: application/json, text/event-stream' https://brain.example.com/mcp
+curl -fsS https://brain.example.com/.well-known/oauth-protected-resource/mcp
+curl -fsS https://brain.example.com/.well-known/oauth-authorization-server
+```
+
+On a credential-protected server the first request should return 401 with a
+resource-metadata challenge; discovery must identify the configured public
+origin. This does not prove DCR, PKCE, consent, scoped calls, refresh rotation or
+public-client revocation in a real external client. Rehearse those separately
+before declaring a hosted integration supported.
+
 ## 11. Routine Operations
 
 ```bash
@@ -391,6 +443,33 @@ docker compose --project-directory . -f deploy/docker-compose.prod.yml down
 
 `down` stops the stack but keeps named volumes. To wipe data, remove named volumes
 explicitly only after taking backups.
+
+### Background queue cancellation and deduplication
+
+The full Redis maintenance queue supports **internal queued-only cancellation**
+through `JobQueue.cancel(job_id)`: it atomically removes a still-pending delivery,
+marks it cancelled and releases its idempotency claim. It returns `False` for
+missing, terminal, already dequeued or running work, even if a dequeued job has
+not yet transitioned from `queued`. It does not interrupt a running task; that
+task remains owned by its fenced worker. There is **no generic HTTP cancel endpoint**
+under `/jobs`, and feature-specific experiment/goal cancellation is a different
+contract. Do not assume a UI/client stop request aborts maintenance side effects.
+
+Full-mode idempotency is scoped by queue prefix, job type and caller-supplied
+key. Its Redis claim lasts **7 days**; a completed job returns its existing ID
+while that claim is valid. Job hashes have a **30 days** TTL, refreshed by status
+writes. A failed/missing job can release the claim on resubmission; accepted
+queued cancellation releases it immediately. These are distinct retention
+windows, not permanent deduplication. Only enqueue routes accepting an
+`idempotency_key` offer that caller-controlled behavior.
+
+Main Lite uses `SQLiteJobQueue`, which has **no cancellation method**. Its
+completed-key behavior is different: the unique `(queue prefix, job type, key)`
+row remains associated with the original ID, including completed/failed rows,
+without the Redis 7-day claim TTL. Use a new intentional key for a new run, not
+deletion of user state. Do not promise full/Lite cancellation parity. Lease
+renewal, bounded attempts and stale-owner fences are crash safeguards, **not exactly-once**
+execution or automatic rollback of external side effects.
 
 ## 12. Backups
 

@@ -29,8 +29,14 @@ retries; UUIDs correlate attempts and do not establish retry deduplication.
 
 Stored fields: operation, HTTP/MCP surface, repository attribution, identity label,
 request ID, outcome, recorded timestamp and handler duration. Prompts, queries,
-response content, API keys and code excerpts are not stored. MCP currently uses
-an unattributed identity; it does not inflate the count of known identities.
+response content, API keys and code excerpts are not stored. Direct stdio MCP
+uses `mcp:<client-name>` after initialization, with the client name normalized
+to a lowercase slug. An absent or unusable name becomes `mcp:unattributed`.
+The name is a **self-reported client label**, not an authenticated principal:
+two clients can choose the same name, and a name is not proof of a real external
+agent or completed task. HTTP and native HTTP-backed MCP requests use the
+authenticated principal passed through the API. Unattributed requests do not
+inflate the count of known labels; label counts are not unique-user counts.
 
 Duration measures handler/tool execution before telemetry persistence. HTTP auth,
 validation, serialization, network and frontend rendering are excluded. Latency
