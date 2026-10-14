@@ -8,6 +8,26 @@ import pytest
 
 from scripts.backup_runner import run_backup, main as backup_main
 from scripts.restore_verification_drill import verify_restore_drill, main as drill_main
+from scripts.recovery_config import load_recovery_config
+from scripts.restore_database import restore_database
+
+
+@pytest.fixture(autouse=True)
+def recovery_fixture_config(tmp_path, monkeypatch):
+    config = tmp_path / "synthetic.env"
+    config.write_text(
+        "DATABASE_URL=postgresql+asyncpg://synthetic:fixture-only@127.0.0.1:25435/synthetic_db\n"
+        "NEO4J_URI=bolt://127.0.0.1:25487\n"
+        "NEO4J_USER=synthetic\nNEO4J_PASSWORD=fixture-only\n"
+    )
+    for key in (
+        "DATABASE_URL", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER",
+        "POSTGRES_PASSWORD", "POSTGRES_DB", "NEO4J_URI", "NEO4J_USER",
+        "NEO4J_PASSWORD", "BRAIN_STORAGE_MODE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("BRAIN_ENV_FILE", str(config))
+    return config
 
 REAL_DUMP = """-- PostgreSQL database dump
 -- Dumped by pg_dump version 15.0
@@ -71,6 +91,59 @@ def _fake_neo4j_export(monkeypatch, target_dir: Path):
 
 
 class TestBackupRunner:
+    def test_explicit_config_controls_both_endpoints_with_cron_environment(self, tmp_path, monkeypatch, recovery_fixture_config):
+        captured = {}
+
+        def pg(target, dsn):
+            captured["pg"] = dsn
+            target.write_text(REAL_DUMP)
+
+        def graph(target, uri, user, password):
+            captured["neo"] = (uri, user, password)
+            target.write_text(NEO4J_JSONL)
+            return {"nodes": 1, "relationships": 1}
+
+        monkeypatch.setattr("scripts.backup_runner.export_postgres_dump", pg)
+        monkeypatch.setattr("scripts.backup_runner.export_neo4j_jsonl", graph)
+        assert run_backup(str(tmp_path / "backup"), config_path=str(recovery_fixture_config))["status"] == "ok"
+        assert captured["pg"] == "postgresql://synthetic:fixture-only@127.0.0.1:25435/synthetic_db"
+        assert captured["neo"] == ("bolt://127.0.0.1:25487", "synthetic", "fixture-only")
+
+    def test_missing_config_fails_before_creating_any_artifact(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("BRAIN_ENV_FILE")
+        with pytest.raises(ValueError, match="refusing implicit database defaults"):
+            run_backup(str(tmp_path / "never-created"))
+        assert not (tmp_path / "never-created").exists()
+
+    def test_incomplete_config_and_ambiguous_dbname_option_fail_closed(self, tmp_path, recovery_fixture_config):
+        recovery_fixture_config.write_text("POSTGRES_HOST=localhost\nNEO4J_URI=bolt://localhost:7687\n")
+        with pytest.raises(ValueError, match="explicitly set"):
+            load_recovery_config(str(recovery_fixture_config))
+        recovery_fixture_config.write_text(
+            "DATABASE_URL=postgresql://synthetic@localhost:25435/synthetic_db?dbname=other_db\n"
+            "NEO4J_URI=bolt://localhost:25487\nNEO4J_USER=synthetic\nNEO4J_PASSWORD=fixture-only\n"
+        )
+        with pytest.raises(ValueError, match="true target"):
+            load_recovery_config(str(recovery_fixture_config))
+
+    def test_conflicting_environment_cannot_redirect_restore(self, recovery_fixture_config, monkeypatch):
+        monkeypatch.setenv("DATABASE_URL", "postgresql://synthetic@other-host/production")
+        with pytest.raises(ValueError, match="ambiguous target"):
+            load_recovery_config(str(recovery_fixture_config))
+
+    def test_pg_dump_failure_does_not_write_password_to_manifest(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("scripts.backup_runner.shutil.which", lambda _: "/usr/bin/pg_dump")
+
+        def failed(args, **kwargs):
+            assert "fixture-only" not in str(args)
+            assert kwargs["env"]["PGPASSWORD"] == "fixture-only"
+            raise subprocess.CalledProcessError(1, args, stderr=b"fixture-only")
+
+        monkeypatch.setattr("scripts.backup_runner.subprocess.run", failed)
+        result = run_backup(str(tmp_path / "backup"), allow_missing=("neo4j",))
+        assert result["status"] == "failed"
+        assert "fixture-only" not in (tmp_path / "backup" / "backup_manifest.json").read_text()
+
     def test_missing_pg_dump_fails_visibly_no_placeholder(self, tmp_path, monkeypatch):
         monkeypatch.setattr("shutil.which", lambda name: None)
         def _export(target: Path, *a, **k):
@@ -127,6 +200,38 @@ class TestBackupRunner:
 
 
 class TestRestoreDrill:
+    def test_config_and_confirmation_gate_destructive_restore(self, tmp_path, recovery_fixture_config, monkeypatch):
+        config = load_recovery_config(str(recovery_fixture_config))
+        assert config.postgres_url.database == "synthetic_db"
+        monkeypatch.setattr("scripts.restore_database.verify_restore_drill", lambda _: {
+            "restore_drill_status": "artifacts_validated", "checks": {"postgres": {"violations": []}}
+        })
+        calls = []
+        monkeypatch.setattr("scripts.restore_database.shutil.which", lambda _: "/usr/bin/psql")
+        monkeypatch.setattr("scripts.restore_database.subprocess.run", lambda args, **kw: calls.append((args, kw)))
+        (tmp_path / "postgres_dump.sql").write_text(REAL_DUMP)
+        (tmp_path / "backup_manifest.json").write_text(json.dumps({"artifacts": [
+            {"name": "postgres", "file": "postgres_dump.sql", "status": "ok"}
+        ]}))
+        with pytest.raises(ValueError, match="exactly match"):
+            restore_database(tmp_path, str(recovery_fixture_config), "other_db")
+        assert not calls
+        restore_database(tmp_path, str(recovery_fixture_config), "synthetic_db")
+        assert len(calls) == 4
+        assert all("fixture-only" not in str(args) for args, _ in calls)
+        assert all(kw["env"]["PGPASSWORD"] == "fixture-only" for _, kw in calls)
+        assert "synthetic_db" in str(calls[1][0])
+
+    def test_manifest_cannot_validate_a_different_postgres_file(self, tmp_path, recovery_fixture_config, monkeypatch):
+        monkeypatch.setattr("scripts.restore_database.verify_restore_drill", lambda _: {
+            "restore_drill_status": "artifacts_validated", "checks": {"postgres": {"violations": []}}
+        })
+        (tmp_path / "backup_manifest.json").write_text(json.dumps({"artifacts": [
+            {"name": "postgres", "file": "../other.sql", "status": "ok"}
+        ]}))
+        with pytest.raises(ValueError, match="does not verify"):
+            restore_database(tmp_path, str(recovery_fixture_config), "synthetic_db")
+
     def _write_manifest(self, backup_dir: Path, artifacts: list[dict], status="ok"):
         manifest = {
             "backup_version": "2.0.0",
