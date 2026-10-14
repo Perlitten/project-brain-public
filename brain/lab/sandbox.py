@@ -26,7 +26,7 @@ _PROBE_TIMEOUT = 10
 
 def validate_image_toolchain(workspace: Path, commands: list, timeout: float) -> bool:
     """Probe image-owned tools/dependencies without importing repository code."""
-    executables, modules, requirements = set(), set(), []
+    executables, modules = set(), set()
     for command in commands:
         if not command.required:
             continue
@@ -34,39 +34,47 @@ def validate_image_toolchain(workspace: Path, commands: list, timeout: float) ->
         executables.add("python3" if name in {"python", "python3", "py"} else name)
         if name in {"python", "python3", "py"} and "-m" in command.argv:
             index = command.argv.index("-m")
-            if index + 1 < len(command.argv):
+            if index + 1 < len(command.argv) and command.argv[index + 1] in {"pytest", "compileall", "ruff", "mypy"}:
                 modules.add(command.argv[index + 1])
-    if "pytest" in executables or "pytest" in modules:
-        project = workspace / "pyproject.toml"
-        if project.exists():
-            import tomllib
-            from packaging.requirements import Requirement
-            config = tomllib.loads(project.read_text(encoding="utf-8"))
-            for spec in config.get("project", {}).get("dependencies", []):
-                requirement = Requirement(spec)
-                requirements.append((requirement.name, str(requirement.specifier), str(requirement.marker) if requirement.marker else ""))
     # -I keeps the mounted repository out of import resolution. Metadata reads
     # installed distributions; it does not import their or the project's code.
     probe = """import importlib.util, importlib.metadata, json, shutil, sys
-executables, modules, requirements = json.loads(sys.argv[1])
+from pathlib import Path
+config = json.loads(sys.argv[1])
+executables, modules = config['executables'], config['modules']
 ok = all(shutil.which(name) for name in executables)
 ok = ok and all(importlib.util.find_spec(name.split('.')[0]) for name in modules)
-for name, spec, marker in requirements:
+requirements = []
+if config['test_dependencies'] and Path(config['project']).is_file():
     try:
-        if marker:
-            from packaging.markers import Marker
-            if not Marker(marker).evaluate():
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
+        from packaging.requirements import Requirement
+        project = tomllib.loads(Path(config['project']).read_text(encoding='utf-8')).get('project', {})
+        requirements.extend(project.get('dependencies', []))
+        extras = project.get('optional-dependencies', {})
+        for group in ('dev', 'test', 'tests'):
+            requirements.extend(extras.get(group, []))
+    except (ImportError, OSError, ValueError, TypeError, AttributeError):
+        sys.exit(1)
+for specification in requirements:
+    try:
+        requirement = Requirement(specification)
+        if requirement.marker and not requirement.marker.evaluate():
                 continue
-        version = importlib.metadata.version(name)
-        if spec:
-            from packaging.specifiers import SpecifierSet
-            ok = ok and version in SpecifierSet(spec)
-    except (ImportError, importlib.metadata.PackageNotFoundError):
+        version = importlib.metadata.version(requirement.name)
+        ok = ok and version in requirement.specifier
+    except (ImportError, ValueError, importlib.metadata.PackageNotFoundError):
         ok = False
 sys.exit(0 if ok else 1)
 """
+    config = {"executables": sorted(executables), "modules": sorted(modules),
+              "project": str(workspace.resolve() / "pyproject.toml"),
+              "test_dependencies": "pytest" in executables or "pytest" in modules}
     argv, handle = wrap_docker(workspace=workspace, argv=["python3", "-I", "-c", probe,
-                               json.dumps([sorted(executables), sorted(modules), requirements])],
+                               json.dumps(config)],
                                env={}, resolved_exe=Path("python3"))
     try:
         return subprocess.run(argv, capture_output=True, timeout=max(.1, timeout)).returncode == 0

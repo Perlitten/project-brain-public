@@ -73,3 +73,15 @@ write. Focused verification passed **82 tests**; full Python verification passed
 **2,217 tests with 11 optional skips**. Ruff, mypy, public launch and current
 documentation checks passed. These results apply to the safety branch; they do
 not certify the unfinished recovery, distribution or dashboard work.
+
+The next review's six findings are also corrected: lab snippets keep valid JSON
+without a second plaintext regex; common camelCase and AWS credential fields
+are redacted; metadata and requirement parsing happen only in the image, with
+Python 3.10-compatible image parser fallback; pytest preflight includes declared
+dev/test extras; workspace modules are not mistaken for image tools; and a
+successful retry clears only the prior infrastructure uncertainty. Existing
+lab redaction markers remain compatible. Full verification passed **2,226 tests
+with 11 optional skips**, and Ruff, mypy and public launch checks passed.
+The [actual optional-tool container probe](evidence/public-hardening/docker-optional-tool-review3.json)
+passes required isolated compilation with an accepted Python alias while a
+missing optional Ruff tool fails without invalidating the required result.

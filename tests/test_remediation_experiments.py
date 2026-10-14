@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -27,6 +28,7 @@ from brain.experiments.models import (
 from brain.experiments.orchestrator import (
     ExperimentComparator,
     ExperimentManager,
+    ExperimentRunner,
     ExperimentStore,
     _count_changed_lines,
 )
@@ -451,6 +453,26 @@ def test_run_records_unverified_network_isolation(manager, repo):
     assert any(
         "Network isolation" in u for u in result.get_option("a").unresolved_uncertainty
     )
+
+
+def test_infrastructure_retry_replaces_attempt_uncertainty(tmp_path):
+    lab = Mock()
+    lab.run_session.side_effect = [
+        {"outcome": "failed", "validation": {"infrastructure_error": True, "rejected_reasons": ["image missing"]},
+         "network_isolation": "verified"},
+        {"outcome": "passed", "validation": {"passed": True}, "network_isolation": "verified"},
+    ]
+    option = _option("a", executed=False, passed_required=False, unresolved_uncertainty=["external evidence needs review"])
+    experiment = _experiment(option)
+    runner = ExperimentRunner(lab)
+    runner.run(experiment, tmp_path)
+    assert not option.executed
+    assert "image missing" in option.failure_reason
+    assert len(option.unresolved_uncertainty) == 2
+    runner.run(experiment, tmp_path)
+    assert option.executed and option.passed_required
+    assert option.failure_reason == ""
+    assert option.unresolved_uncertainty == ["external evidence needs review"]
 
 
 # ──────────────────────────────────────────────

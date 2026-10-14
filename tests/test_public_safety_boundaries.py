@@ -167,7 +167,9 @@ def test_optional_tool_does_not_block_required_image_preflight(tmp_path, monkeyp
     commands = [CommandDef(argv=["python", "-m", "compileall", "."]),
                 CommandDef(argv=["ruff", "check", "."], required=False)]
     assert sandbox.validate_image_toolchain(tmp_path, commands, 5)
-    assert captured["tools"] == [["python3"], ["compileall"], []]
+    assert captured["tools"]["executables"] == ["python3"]
+    assert captured["tools"]["modules"] == ["compileall"]
+    assert captured["tools"]["test_dependencies"] is False
 
 
 def test_dependency_markers_are_evaluated_by_image_interpreter(tmp_path, monkeypatch):
@@ -181,7 +183,7 @@ def test_dependency_markers_are_evaluated_by_image_interpreter(tmp_path, monkeyp
 
     def run_probe(argv, **kwargs):
         probe, payload = argv[-2:]
-        assert json.loads(payload)[2][0][2] == 'python_version >= "3.12"'
+        assert json.loads(payload)["project"] == str(tmp_path / "pyproject.toml")
         target_environment = (
             "import packaging.markers\n"
             "original = packaging.markers.default_environment\n"
@@ -240,6 +242,56 @@ def test_redaction_preserves_json_structure_and_benign_evidence():
         assert "synthetic-private-value" not in result
         assert decoded["tests_passed"] == 17
         assert decoded["nested"]["path"] == "brain/core.py"
+
+
+@pytest.mark.parametrize("key", ["apiKey", "xApiKey", "AWS_SECRET_ACCESS_KEY", "privateKey", "refreshToken"])
+def test_common_credential_fields_redact_without_provider_prefix(key):
+    for redactor in (redact_trajectory_content, ValidationRunner._redact):
+        for raw in (json.dumps({key: "synthetic-private-value", "tests_passed": 17}), f"{key}=synthetic-private-value"):
+            result = redactor(raw)
+            assert "synthetic-private-value" not in result
+
+
+def test_lab_json_assignment_preserves_adjacent_evidence():
+    result = json.loads(ValidationRunner._redact('{"output":"TOKEN=abc","tests_passed":17}'))
+    assert result["tests_passed"] == 17
+    assert "abc" not in result["output"]
+
+
+def test_preflight_checks_test_extras_without_host_metadata_imports(tmp_path, monkeypatch):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\ndependencies=[]\n[project.optional-dependencies]\ndev=["fixture-missing-test-plugin"]\n', encoding="utf-8",
+    )
+    original_run = subprocess.run
+
+    def run_probe(argv, **kwargs):
+        probe, payload = argv[-2:]
+        return original_run([sys.executable, "-I", "-c", probe, payload], **kwargs)
+
+    import builtins
+    original_import = builtins.__import__
+
+    def reject_host_metadata(name, *args, **kwargs):
+        if name in {"tomllib", "tomli", "packaging.requirements"}:
+            pytest.fail("project metadata must be parsed only in the image")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", reject_host_metadata)
+    monkeypatch.setattr(subprocess, "run", run_probe)
+    assert not sandbox.validate_image_toolchain(tmp_path, [CommandDef(argv=["python", "-m", "pytest"])], 5)
+
+
+def test_candidate_module_is_not_an_image_owned_tool(tmp_path, monkeypatch):
+    (tmp_path / "fixture_check.py").write_text("print('candidate module')\n", encoding="utf-8")
+    captured = {}
+
+    def run_probe(argv, **kwargs):
+        captured["config"] = json.loads(argv[-1])
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(subprocess, "run", run_probe)
+    assert sandbox.validate_image_toolchain(tmp_path, [CommandDef(argv=["python", "-m", "fixture_check"])], 5)
+    assert captured["config"]["modules"] == []
 
 
 @pytest.mark.asyncio

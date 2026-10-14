@@ -409,6 +409,11 @@ class ExperimentRunner:
         repo_path: Path,
         allowed_profiles: Optional[List[str]],
     ) -> None:
+        # Infrastructure is per attempt, not a lasting penalty on a candidate
+        # that later produces valid evidence. Preserve unrelated uncertainty.
+        infrastructure_note = "No candidate test evidence: validation infrastructure unavailable"
+        option.unresolved_uncertainty = [note for note in option.unresolved_uncertainty if note != infrastructure_note]
+        option.failure_reason = ""
         patch = PatchRecord(
             patch_id=f"{experiment.experiment_id}:{option.option_id}",
             source_type=PatchSource.UNIFIED_DIFF.value,
@@ -441,7 +446,7 @@ class ExperimentRunner:
         if validation.get("infrastructure_error"):
             option.executed = False
             option.failure_reason = "; ".join(validation.get("rejected_reasons") or ["Validation infrastructure unavailable"])
-            option.unresolved_uncertainty.append("No candidate test evidence: validation infrastructure unavailable")
+            option.unresolved_uncertainty.append(infrastructure_note)
         option.passed_optional = bool(validation.get("passed")) and outcome == "passed"
 
         apply_result = session.get("apply") or {}

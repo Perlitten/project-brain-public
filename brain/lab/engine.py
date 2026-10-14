@@ -726,9 +726,6 @@ class ValidationRunner:
         "PYTHONDONTWRITEBYTECODE",
     )
     _SECRETISH = ("SECRET", "TOKEN", "PASSWORD", "API_KEY", "PRIVATE_KEY", "CREDENTIAL")
-    _SECRET_PATTERNS = re.compile(
-        r"(API_KEY|PASSWORD|SECRET|TOKEN|PRIVATE_KEY)([\s=:]+)\S+", re.IGNORECASE
-    )
 
     # ── profile validation ──
 
@@ -1022,7 +1019,7 @@ class ValidationRunner:
     @staticmethod
     def _redact(text: str) -> str:
         from brain.improvement.redaction import redact_text_pass1
-        return ValidationRunner._SECRET_PATTERNS.sub(r"\1\2<REDACTED>", redact_text_pass1(text))
+        return redact_text_pass1(text).replace("[REDACTED_SECRET]", "<REDACTED>")
 
 
 class _Cancelled(Exception):

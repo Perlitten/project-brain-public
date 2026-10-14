@@ -3,10 +3,14 @@
 import json
 import re
 
-_SECRET_FIELD = re.compile(
-    r"(?:[A-Z_]*(?:API_KEY|TOKEN|PASSWORD|SECRET|CREDENTIAL)|(?:proxy-)?authorization|x-api-key)",
-    re.IGNORECASE,
-)
+def _secret_field(key: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", key.lower())
+    return normalized.endswith(("apikey", "token", "password", "secret", "credential",
+                                "authorization", "privatekey", "secretaccesskey", "accesskeyid"))
+
+
+def _redact_assignment(match: re.Match) -> str:
+    return match.group(1) + '"[REDACTED_SECRET]"' if _secret_field(match.group(2)) else match.group(0)
 
 # Pass 1: Deterministic secret patterns & high-entropy key patterns
 SECRET_PATTERNS = [
@@ -23,7 +27,7 @@ SECRET_PATTERNS += [
     (re.compile(r"\b(?:pbk_|pbr_|github_pat_|gh[ousr]_|hf_)[A-Za-z0-9_\-]+"), lambda m: "[REDACTED_SECRET]"),
     (re.compile(r"\bAIza[A-Za-z0-9_\-]+"), lambda m: "[REDACTED_SECRET]"),
     (re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----.*?(?:-----END (?:[A-Z ]+ )?PRIVATE KEY-----|$)", re.DOTALL), lambda m: "[REDACTED_SECRET]"),
-    (re.compile(r"([\"']?(?:[A-Z_]*(?:API_KEY|TOKEN|PASSWORD|SECRET|CREDENTIAL)|authorization|x-api-key)[\"']?\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)", re.IGNORECASE), lambda m: m.group(1) + '"[REDACTED_SECRET]"'),
+    (re.compile(r"([\"']?([A-Za-z][A-Za-z0-9_\-]*)[\"']?\s*[:=]\s*)(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)"), _redact_assignment),
     (re.compile(r"(https?://)[^\s/@:]+:[^\s/@]+@", re.IGNORECASE), lambda m: m.group(1) + "[REDACTED_SECRET]@"),
 ]
 
@@ -46,7 +50,7 @@ def redact_text_pass1(text: str) -> str:
         def redact_value(value):
             if isinstance(value, dict):
                 return {
-                    key: "[REDACTED_SECRET]" if _SECRET_FIELD.fullmatch(key) else redact_value(item)
+                    key: "[REDACTED_SECRET]" if _secret_field(key) else redact_value(item)
                     for key, item in value.items()
                 }
             if isinstance(value, list):
