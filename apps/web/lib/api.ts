@@ -31,6 +31,30 @@ function logOnce(path: string, reason: string) {
   console.error(`[brain-api] ${path}: ${reason}`);
 }
 
+/**
+ * Build the request URL for an API `path`. The origin always comes from
+ * BRAIN_API_URL: `path` can only extend its pathname (keeping any prefix such
+ * as /brain), never replace the host or climb above the base. Returns null
+ * when BRAIN_API_URL itself is not a valid URL or `path` tries to escape.
+ */
+function apiUrl(apiBase: string, path: string): URL | null {
+  let url: URL;
+  try {
+    url = new URL(apiBase);
+  } catch {
+    return null;
+  }
+  const queryAt = path.indexOf("?");
+  const pathPart = (queryAt === -1 ? path : path.slice(0, queryAt)).replace(/^\/+/, "");
+  const segments = pathPart.split("/");
+  if (segments.some((segment) => segment === "..")) return null;
+  const basePath = url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
+  url.pathname = `${basePath}${segments.join("/")}`;
+  url.search = queryAt === -1 ? "" : path.slice(queryAt);
+  url.hash = "";
+  return url;
+}
+
 export interface SendResult<T = unknown> {
   ok: boolean;
   status: number;
@@ -50,12 +74,8 @@ export async function brainSend<T = unknown>(
   timeoutMs = 30_000,
 ): Promise<SendResult<T>> {
   if (!base || !key) return { ok: false, status: 0, data: null, error: "The Brain API is not connected (BRAIN_API_URL / BRAIN_API_KEY)." };
-  let url: URL;
-  try {
-    url = new URL(path.replace(/^\/+/, ""), base.endsWith("/") ? base : `${base}/`);
-  } catch {
-    return { ok: false, status: 0, data: null, error: "BRAIN_API_URL is not a valid URL." };
-  }
+  const url = apiUrl(base, path);
+  if (!url) return { ok: false, status: 0, data: null, error: "BRAIN_API_URL is not a valid URL." };
   try {
     const res = await fetch(url, {
       method,
@@ -104,11 +124,8 @@ function describeError(status: number, data: unknown): string {
  */
 export async function brainFetch<T>(path: string, opts: FetchOptions = {}): Promise<T | null> {
   if (!base || !key) return null;
-  let url: URL;
-  try {
-    // Relative join keeps any path prefix on BRAIN_API_URL (e.g. /brain).
-    url = new URL(path.replace(/^\/+/, ""), base.endsWith("/") ? base : `${base}/`);
-  } catch {
+  const url = apiUrl(base, path);
+  if (!url) {
     logOnce(path, "invalid BRAIN_API_URL");
     return null;
   }

@@ -56,7 +56,14 @@ from brain.lab.sandbox import (
 
 
 class LabSecurityError(RuntimeError):
-    """Raised when an operation would leave the managed workspace boundary."""
+    """Raised when an operation would leave the managed workspace boundary.
+
+    ``reason`` is the lab's own explanation and is safe to show to callers.
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
 
 
 def _utc_now() -> str:
@@ -231,7 +238,7 @@ class PatchValidator:
             try:
                 target = WorkspaceGuard.resolve_inside(workspace_path, workspace_path / rel_path)
             except LabSecurityError as exc:
-                reasons.append(str(exc))
+                reasons.append(exc.reason)
                 continue
             if not target.is_file():
                 reasons.append(f"Patch base file is missing: {rel_path}")
@@ -588,8 +595,8 @@ class PatchApplier:
                 WorkspaceGuard.resolve_inside(root, root / t) for t in targets
             ]
         except LabSecurityError as exc:
-            result.rejected_reasons.append(str(exc))
-            result.error = str(exc)
+            result.rejected_reasons.append(exc.reason)
+            result.error = exc.reason
             return result
 
         snapshot = PatchApplier._snapshot(root, resolved_targets)
@@ -618,7 +625,7 @@ class PatchApplier:
                 result.rolled_back = PatchApplier._rollback(root, snapshot)
                 return result
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
-            result.error = str(exc)[:500]
+            result.error = f"Patch application failed: {type(exc).__name__}"
             result.rolled_back = PatchApplier._rollback(root, snapshot)
             return result
         finally:

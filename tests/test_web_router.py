@@ -477,6 +477,6 @@ def test_dashboard_redirects_to_web_url():
         root = client.get("/dashboard")
         nested = client.get("/dashboard/indexing")
     assert root.status_code == 301
-    assert root.headers["location"].startswith("https://ui.example.com")
+    assert root.headers["location"] == "https://ui.example.com"
     assert nested.status_code == 301
-    assert nested.headers["location"].startswith("https://ui.example.com")
+    assert nested.headers["location"] == "https://ui.example.com"

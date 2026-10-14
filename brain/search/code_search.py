@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 from sqlalchemy import case, false, or_, select, text, literal
 
+from brain.analyzers.identifier_words import split_identifier_words
 from brain.config.settings import settings
 from brain.database.models import Embedding, File, FileChunk, Symbol
 from brain.database.repository_utils import get_repository_by_path
@@ -115,11 +116,6 @@ def _trim_summary(summary: Optional[str]) -> Optional[str]:
     return summary[:SUMMARY_RESPONSE_CHARS].rstrip() + "…"
 
 
-# One identifier word: an acronym run that ends where a capitalised word starts
-# (HTTP|Adapter), a capitalised or lower-case word, or a trailing acronym.
-_IDENTIFIER_PART = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+")
-
-
 def extract_keywords(query: str) -> List[str]:
     """Extract lowercase keywords from a natural-language query.
 
@@ -135,8 +131,12 @@ def extract_keywords(query: str) -> List[str]:
     whole lexical branch.
     """
     tokens: List[str] = []
-    for raw in re.findall(r"\b[A-Za-z][A-Za-z0-9_]*[A-Za-z0-9]\b", query):
-        words = [w for chunk in raw.split("_") for w in _IDENTIFIER_PART.findall(chunk)]
+    # A single repetition keeps matching linear on attacker-shaped queries; the
+    # "ends in a letter or digit" rule of the identifier shape is applied after.
+    for raw in re.findall(r"\b[A-Za-z][A-Za-z0-9_]*\b", query):
+        if len(raw) < 2 or raw.endswith("_"):
+            continue
+        words = split_identifier_words(raw)
         if len(raw) >= 3:
             tokens.append(raw.lower())
         if len(words) > 1:

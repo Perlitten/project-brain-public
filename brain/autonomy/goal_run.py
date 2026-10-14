@@ -19,6 +19,7 @@ from brain.autonomy.models import (
 )
 from brain.autonomy.notifications import emit_goal_notification
 from brain.autonomy.state import SessionStore
+from brain.config.paths import resolve_within
 from brain.lab.engine import WorkspaceManager
 
 logger = logging.getLogger(__name__)
@@ -131,8 +132,16 @@ class GoalRunService:
         # Phase 1: Planning & Context Acquisition
         run.current_phase = GoalPhase.VERIFIED_CONTEXT_BUILT
 
-        # Phase 2: Isolated Worktree Allocation
-        worktree_dir = PROJECT_ROOT / "context_packs" / "worktrees" / goal_id
+        # Phase 2: Isolated Worktree Allocation (the goal id names a directory, so
+        # it must stay inside the worktrees root).
+        try:
+            worktree_dir = resolve_within(PROJECT_ROOT / "context_packs" / "worktrees", goal_id)
+        except ValueError:
+            reason = "Goal id is not a valid worktree name"
+            run.status = "BLOCKED"
+            run.current_phase = GoalPhase.BLOCKED_ESCALATED
+            emit_goal_notification(goal_id, "BLOCKED", reason)
+            return run
         worktree_dir.mkdir(parents=True, exist_ok=True)
         run.worktree_path = str(worktree_dir)
         run.current_phase = GoalPhase.EXECUTION

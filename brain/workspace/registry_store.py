@@ -14,6 +14,8 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
+
 from brain.workspace.models import (
     RegistryEvent,
     RegistryEventType,
@@ -305,6 +307,8 @@ class RegistryStore:
             self._load()
             return True, "Registry integrity verified"
         except RegistryCorruptionError as exc:
-            return False, str(exc)
+            logger.warning("Workspace registry integrity check failed: {}", exc)
+            return False, "Registry integrity check failed: the registry file is corrupted"
         except Exception as exc:
-            return False, f"Unexpected error: {exc}"
+            logger.warning("Workspace registry integrity check failed unexpectedly: {}", exc)
+            return False, f"Registry integrity check failed: unexpected error ({type(exc).__name__})"

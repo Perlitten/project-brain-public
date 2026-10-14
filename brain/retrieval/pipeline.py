@@ -433,7 +433,31 @@ def _select_final_paths(
 _IDENT_RE = re.compile(
     r"\b(?:[a-z][a-z0-9]*_[a-z0-9_]{2,}|[a-z]+[A-Z][a-zA-Z0-9]*|[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)+)\b"
 )
-_FILE_PATH_RE = re.compile(r"[\w./-]+/[\w./-]+\.(?:py|pyi|js|ts|tsx|jsx|java|go|rs|c|h|hpp|cpp|rb|md|rst|txt|html|css|toml|yaml|yml|json)\b")
+# File paths are mined without a backtracking regex: candidate tokens are cut on
+# characters that cannot appear in a path, then checked for shape in plain code.
+_PATH_TOKEN_RE = re.compile(r"[\w./-]+")
+_SOURCE_FILE_EXTENSIONS = frozenset({
+    "py", "pyi", "js", "ts", "tsx", "jsx", "java", "go", "rs", "c", "h", "hpp", "cpp", "rb",
+    "md", "rst", "txt", "html", "css", "toml", "yaml", "yml", "json",
+})
+
+
+def _extract_file_paths(text: str) -> List[str]:
+    """Return ``dir/file.ext`` tokens: at least one directory segment and a known extension."""
+    paths: List[str] = []
+    for token in _PATH_TOKEN_RE.findall(text):
+        candidate = token.rstrip("./-")
+        if "/" not in candidate:
+            continue
+        segments = [segment for segment in candidate.split("/") if segment]
+        if len(segments) < 2:
+            continue
+        name = segments[-1]
+        stem, dot, ext = name.rpartition(".")
+        if not dot or not stem or ext not in _SOURCE_FILE_EXTENSIONS:
+            continue
+        paths.append(candidate)
+    return paths
 _ERROR_NAME_RE = re.compile(r"\b[A-Z][a-zA-Z0-9]*(?:Error|Exception|Warning|Fault|Timeout|NotFound)\b")
 _STACK_FRAME_RE = re.compile(r'File "([^"]+)", line \d+')
 
@@ -450,7 +474,7 @@ def extract_code_query_terms(text: str, limit: int = 24) -> List[str]:
     import keyword
 
     terms: List[str] = []
-    terms.extend(_FILE_PATH_RE.findall(text))
+    terms.extend(_extract_file_paths(text))
     terms.extend(_STACK_FRAME_RE.findall(text))
     terms.extend(_ERROR_NAME_RE.findall(text))
     terms.extend(_IDENT_RE.findall(text))
