@@ -1,4 +1,4 @@
-"""State Machine Property and Patch Quality Adversary Tests."""
+"""Three example-based evidence rejection regressions; not a mutation campaign."""
 
 from brain.harness.attestation import create_attestation
 from brain.harness.models import ClaimCategory, EvidenceAuthority, EvidenceState, ReportClaim
