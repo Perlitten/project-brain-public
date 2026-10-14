@@ -50,6 +50,10 @@ function apiUrl(apiBase: string, path: string): URL | null {
   if (segments.some((segment) => segment === "..")) return null;
   const basePath = url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
   url.pathname = `${basePath}${segments.join("/")}`;
+  // WHATWG URL parsing also normalises percent-encoded dot segments
+  // (`%2e%2e`). Re-check the serialised pathname so those cannot climb above
+  // a configured prefix such as `/brain/`.
+  if (!url.pathname.startsWith(basePath)) return null;
   url.search = queryAt === -1 ? "" : path.slice(queryAt);
   url.hash = "";
   return url;
