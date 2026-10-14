@@ -1,9 +1,33 @@
 """Isolated profile tests cannot accidentally inherit the full-stack engine."""
+import asyncio
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+
+from brain.database.lite_cache import SQLiteCache
+from brain.workers.lite_queue import SQLiteJobQueue
+
+
+@pytest.mark.asyncio
+async def test_lite_queue_retries_and_lists_persisted_jobs(tmp_path):
+    queue = SQLiteJobQueue(SQLiteCache(tmp_path / "cache"), prefix="test")
+    first = await queue.enqueue("health_check", max_attempts=2)
+    await asyncio.sleep(0.01)
+    second = await queue.enqueue("health_check")
+
+    assert await queue.recent_job_ids(limit=1) == [second]
+    assert await queue.recent_job_ids(limit=1, offset=1) == [first]
+
+    job, token = await queue.claim()
+    assert job["job_id"] == first and job["attempt"] == 1
+    assert await queue.finish(first, token, "queued", {"error": "transient"})
+    retried, retry_token = await queue.claim()
+    assert retried["job_id"] == first and retried["attempt"] == 2
+    assert await queue.finish(first, retry_token, "failed", {"error": "terminal"})
 
 
 def test_zero_service_end_to_end_and_restart(tmp_path):

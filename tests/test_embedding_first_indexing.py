@@ -10,6 +10,7 @@ from brain.config.settings import settings
 from brain.database.models import Embedding, File, FileChunk, Symbol
 from brain.indexers.file_indexer import FileIndexer
 from brain.indexers.source_summaries import source_summaries
+from brain.search.filters import HISTORICAL_SUMMARY_PREFIX
 from tests.test_indexing_reliability import indexing_db as indexing_db
 
 SOURCE = '''"""Payments module."""
@@ -92,6 +93,58 @@ async def test_enrichment_cannot_overwrite_changed_source(indexing_db, tmp_path,
 
 
 @pytest.mark.asyncio
+async def test_enrichment_updates_current_hash_and_preserves_historical_status(
+    indexing_db, tmp_path, monkeypatch
+):
+    from brain.indexers import summary_enrichment
+
+    sessions, _, _ = indexing_db
+    monkeypatch.setattr(summary_enrichment, "async_session_factory", sessions)
+    source = tmp_path / "docs" / "audits" / "snapshot.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Historical snapshot\n")
+    result = await FileIndexer().index_repository(tmp_path)
+    summarizer = SimpleNamespace(summarize=AsyncMock(return_value="Generated prose"))
+    monkeypatch.setattr(
+        summary_enrichment,
+        "get_model_router",
+        lambda: SimpleNamespace(summarizer=lambda: summarizer),
+    )
+
+    counts = await summary_enrichment.enrich_summaries(
+        result.id, tmp_path, ["docs/audits/snapshot.md"]
+    )
+
+    assert counts == {"updated": 1, "skipped": 0, "failed": 0}
+    async with sessions() as session:
+        file = (await session.scalars(select(File).where(File.repository_id == result.id))).one()
+        assert file.summary.startswith(HISTORICAL_SUMMARY_PREFIX)
+        assert "Generated prose" in file.summary
+
+
+@pytest.mark.asyncio
+async def test_enrichment_provider_failures_are_retryable(indexing_db, tmp_path, monkeypatch):
+    from brain.indexers import summary_enrichment
+
+    sessions, _, _ = indexing_db
+    monkeypatch.setattr(summary_enrichment, "async_session_factory", sessions)
+    (tmp_path / "payments.py").write_text(SOURCE)
+    result = await FileIndexer().index_repository(tmp_path)
+    monkeypatch.setattr(
+        summary_enrichment,
+        "get_model_router",
+        lambda: SimpleNamespace(
+            summarizer=lambda: SimpleNamespace(
+                summarize=AsyncMock(side_effect=ConnectionError("provider unavailable"))
+            )
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="failed for 1 file"):
+        await summary_enrichment.enrich_summaries(result.id, tmp_path, ["payments.py"])
+
+
+@pytest.mark.asyncio
 async def test_optional_queue_failure_cannot_fail_verified_index(indexing_db, tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "INDEX_LLM_SUMMARIES_MODE", "lazy")
     monkeypatch.setattr(settings, "INDEX_LLM_SUMMARIES_BACKGROUND", True)
@@ -101,6 +154,10 @@ async def test_optional_queue_failure_cannot_fail_verified_index(indexing_db, tm
     result = await FileIndexer().index_repository(tmp_path)
     assert result.indexing_status == "completed"
     queue.enqueue.assert_awaited_once()
+    args, kwargs = queue.enqueue.await_args
+    assert args[0] == "enrich_summaries"
+    assert args[1]["paths"] == ["payments.py"]
+    assert kwargs["max_attempts"] == 3
 
 
 def test_deterministic_summaries_are_bounded_on_malformed_source():
