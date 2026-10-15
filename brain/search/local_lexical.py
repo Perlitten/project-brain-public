@@ -13,14 +13,15 @@ from sqlalchemy import select, func
 from brain.config.settings import settings
 from brain.database.models import File, FileChunk
 from brain.database.session import async_session_factory
-from brain.search.code_search import extract_keywords, ENGLISH_STOPWORDS, _IDENTIFIER_PART
+from brain.analyzers.identifier_words import split_identifier_words
+from brain.search.code_search import extract_keywords, ENGLISH_STOPWORDS
 from brain.search.filters import should_exclude_from_retrieval
 
 
 def _tokens(text: str) -> list[str]:
     tokens: list[str] = []
     for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text):
-        tokens.extend(dict.fromkeys([word.lower(), *(part.lower() for part in _IDENTIFIER_PART.findall(word))]))
+        tokens.extend(dict.fromkeys([word.lower(), *(part.lower() for part in split_identifier_words(word))]))
     return [token for token in tokens if len(token) >= 3 and token not in ENGLISH_STOPWORDS]
 
 

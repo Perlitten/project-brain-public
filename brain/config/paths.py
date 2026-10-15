@@ -1,5 +1,6 @@
 """Path helpers for portable repo-root resolution."""
 
+import os
 from pathlib import Path
 import tempfile
 from typing import Optional
@@ -55,32 +56,53 @@ def allowed_repo_roots() -> list[Path]:
     return allowed_bases
 
 
+def _canonical_prefix(path: str | Path) -> str:
+    """Canonical absolute form of *path* with a trailing separator.
+
+    Comparing prefixes that both end in a separator is what makes a plain
+    ``str.startswith`` a sound containment check: ``/repos/a`` cannot match
+    ``/repos/ab/`` by accident.
+    """
+    return os.path.join(os.path.realpath(str(path)), "")
+
+
+def resolve_within(root: str | Path, *parts: str) -> Path:
+    """Join *parts* onto *root* and return the canonical path, which must stay inside *root*.
+
+    Symlinks and ``..`` components are resolved before the containment check,
+    so a name that escapes the root (``../x``, an absolute path, a symlink
+    pointing elsewhere) raises ``ValueError`` instead of being touched.
+    """
+    root_prefix = _canonical_prefix(root)
+    candidate = _canonical_prefix(os.path.join(str(root), *parts))
+    if candidate.startswith(root_prefix):
+        return Path(candidate)
+    raise ValueError(f"Access denied: path escapes '{root}'")
+
+
 def validate_secure_repo_path(repo_input: str | Path) -> Path:
     """Strictly validate repository path against traversal, symlink escape, and non-existent targets."""
     raw_str = str(repo_input).strip()
     if not raw_str:
         raise ValueError("Repository path cannot be empty")
 
-    path_obj = Path(raw_str)
+    # Canonicalise first (symlinks, `..`, relative input), then compare prefixes
+    # against the allowed roots. Only a path proven to sit inside a root is
+    # ever handed to the filesystem.
+    candidate = _canonical_prefix(raw_str)
+    for base in allowed_repo_roots():
+        root_prefix = _canonical_prefix(base)
+        if candidate.startswith(root_prefix):
+            resolved = Path(candidate)
+            if not resolved.exists():
+                raise ValueError(f"Repository path does not exist: {raw_str}")
+            if not resolved.is_dir():
+                raise ValueError(f"Repository path is not a directory: {raw_str}")
+            return resolved
 
-    # Symlink escape check
-    try:
-        resolved = path_obj.resolve(strict=True)
-    except FileNotFoundError:
-        raise ValueError(f"Repository path does not exist: {raw_str}")
-
-    if not resolved.is_dir():
-        raise ValueError(f"Repository path is not a directory: {raw_str}")
-
-    is_inside = any(
-        resolved == base or base in resolved.parents
-        for base in allowed_repo_roots()
+    raise ValueError(
+        f"Access denied: Repository path '{Path(candidate)}' is outside allowed repository roots"
     )
-
-    if not is_inside:
-        raise ValueError(f"Access denied: Repository path '{resolved}' is outside allowed repository roots")
-
-    return resolved
 
 
 def reports_dir(repo_path: Optional[Path] = None) -> Path:

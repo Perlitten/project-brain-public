@@ -221,27 +221,36 @@ def _context_pack_roots() -> list[Path]:
 
 
 def _resolve_inside(candidate: Path, roots: list[Path]) -> Path | None:
-    """Return a regular file inside an allowed root, rejecting symlink hops."""
-    candidate_absolute = Path(os.path.abspath(os.fspath(candidate)))
+    """Return a regular file inside an allowed root, rejecting symlink hops.
+
+    Containment is proven twice on canonical strings with a trailing separator
+    (before and after symlink resolution); the filesystem is only consulted for
+    a candidate that already passed the lexical check.
+    """
     for root in roots:
         try:
-            root_absolute = Path(os.path.abspath(os.fspath(root)))
-            relative = candidate_absolute.relative_to(root_absolute)
-            current = root_absolute
-            if current.is_symlink():
+            root_absolute = os.path.abspath(os.fspath(root))
+            root_prefix = os.path.join(root_absolute, "")
+            candidate_absolute = os.path.abspath(os.fspath(candidate))
+            if not candidate_absolute.startswith(root_prefix):
                 continue
+            if os.path.islink(root_absolute):
+                continue
+            current = Path(root_absolute)
             hopped = False
-            for part in relative.parts:
+            for part in Path(candidate_absolute[len(root_prefix):]).parts:
                 current = current / part
                 if current.is_symlink():
                     hopped = True
                     break
             if hopped:
                 continue
-            resolved = candidate_absolute.resolve(strict=True)
-            resolved.relative_to(root_absolute.resolve(strict=True))
-            if resolved.is_file():
-                return resolved
+            resolved = os.path.join(os.path.realpath(candidate_absolute), "")
+            if not resolved.startswith(os.path.join(os.path.realpath(root_absolute), "")):
+                continue
+            final = Path(resolved)
+            if final.is_file():
+                return final
         except (OSError, RuntimeError, ValueError):
             continue
     return None
@@ -1074,7 +1083,13 @@ async def web_health() -> dict[str, Any]:
     try:
         scheduler: dict[str, Any] = await scheduler_status(redis_client)
     except Exception as exc:  # noqa: BLE001 — Redis down is reported in services
-        scheduler = {"error": f"{type(exc).__name__}: {exc}", "jobs": [], "stale": []}
+        logger.warning("Scheduler status unavailable: {}: {}", type(exc).__name__, exc)
+        scheduler = {
+            "error": "Scheduler status unavailable",
+            "error_type": type(exc).__name__,
+            "jobs": [],
+            "stale": [],
+        }
     job_data = await get_recent_brain_jobs(limit=10)
     diagnostics = await get_self_diagnosis_status()
     return {

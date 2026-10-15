@@ -4,6 +4,7 @@ Phase A6 — Server endpoints for repository registration,
 inspection, and capability management.
 """
 
+import os
 from pathlib import Path
 from typing import List
 
@@ -82,9 +83,12 @@ async def register_repository(req: RegisterRequest):
         if not r.disabled
     }
 
-    allowed_roots = [Path(req.path).resolve().parent, Path.cwd().resolve()]
+    # Roots are canonicalised with os.path.realpath (a pure path operation); the
+    # requested path's parent is an allowed root by design for this admin-scoped
+    # endpoint, so the sandbox enforces shape and git layout, not location.
+    allowed_roots = [Path(os.path.dirname(os.path.realpath(req.path))), Path.cwd().resolve()]
     for r in req.allowed_roots:
-        allowed_roots.append(Path(r).resolve())
+        allowed_roots.append(Path(os.path.realpath(r)))
 
     sandbox = PathSandbox(allowed_roots, registered_canonicals=registered_canonicals)
     require_git = trust != TrustLevel.FIXTURE

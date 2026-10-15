@@ -29,6 +29,9 @@ class PathSandbox:
         registered_canonicals: Optional[Set[str]] = None,
     ):
         self._allowed_roots = [r.resolve() for r in allowed_roots]
+        # Canonical roots with a trailing separator: the containment check is a
+        # prefix comparison, and the separator keeps "/w/a" from matching "/w/ab".
+        self._allowed_prefixes = [os.path.join(os.path.realpath(str(r)), "") for r in allowed_roots]
         self._allow_home = allow_home
         self._allow_nested = allow_nested
         self._registered_canonicals = registered_canonicals or set()
@@ -61,18 +64,25 @@ class PathSandbox:
                 f"Path traversal detected in '{raw}': '..' components are not allowed"
             )
 
-        # Resolve symlinks before containment validation
-        path_obj = Path(raw)
-        try:
-            resolved = path_obj.resolve(strict=True)
-        except (FileNotFoundError, OSError) as exc:
-            raise PathValidationError(f"Repository path does not exist: {raw}") from exc
+        # Canonicalise (symlinks, relative input) and prove containment before
+        # the filesystem is consulted: only a path inside an allowed root is
+        # ever stat'ed or listed.
+        candidate = os.path.join(os.path.realpath(raw), "")
+        for root_prefix in self._allowed_prefixes:
+            if candidate.startswith(root_prefix):
+                return self._validate_contained(Path(candidate), require_git=require_git)
+
+        raise PathValidationError(
+            f"Access denied: '{Path(candidate)}' is outside allowed workspace roots"
+        )
+
+    def _validate_contained(self, resolved: Path, *, require_git: bool) -> Path:
+        """Remaining checks for a canonical path already proven inside an allowed root."""
+        if not resolved.exists():
+            raise PathValidationError(f"Repository path does not exist: {resolved}")
 
         if not resolved.is_dir():
             raise PathValidationError(f"Repository path is not a directory: {resolved}")
-
-        # Symlink escape: resolved must still be inside allowed roots
-        # (checked below in containment)
 
         # Root filesystem check
         if resolved == resolved.anchor or str(resolved) in ("/", "\\"):
@@ -87,18 +97,6 @@ class PathSandbox:
         if resolved == home and not self._allow_home:
             raise PathValidationError(
                 "Cannot register home directory as a repository without explicit authorization"
-            )
-
-        # Containment check against allowed roots
-        is_inside = False
-        for root in self._allowed_roots:
-            if resolved == root or root in resolved.parents:
-                is_inside = True
-                break
-
-        if not is_inside:
-            raise PathValidationError(
-                f"Access denied: '{resolved}' is outside allowed workspace roots"
             )
 
         # Duplicate registration check

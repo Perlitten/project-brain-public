@@ -9,7 +9,7 @@ from sqlalchemy import or_, select
 from brain.database.session import async_session_factory
 from brain.database.models import File, Symbol, Rule, Decision, Learning, ContextPack, IndexingRun
 from brain.config.settings import settings
-from brain.config.paths import context_packs_dir
+from brain.config.paths import context_packs_dir, resolve_within
 from brain.graph.graph_client import GraphClient
 from brain.llm.router import TaskKind, get_model_router
 from brain.search.filters import (
@@ -946,7 +946,7 @@ class ContextPackBuilder:
         slug = re.sub(r"[^a-zA-Z0-9]", "_", task_description[:40]).strip("_").lower()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         filename = f"context_pack_{timestamp}_{slug}.md"
-        output_file_path = output_dir / filename
+        output_file_path = resolve_within(output_dir, filename)
 
         with open(output_file_path, "w", encoding="utf-8") as fp:
             fp.write(markdown_content)

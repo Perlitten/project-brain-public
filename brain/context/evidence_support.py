@@ -111,7 +111,9 @@ def _slice_text(slices: Iterable[Any]) -> str:
                 # Short executable identifiers/status values are code evidence;
                 # quoted natural-language prompts do not establish a feature.
                 return literal if len(literal) <= 128 and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", literal) else " "
-            lines.append(re.sub(r"(['\"])(?:\\.|(?!\1).)*\1", identifier_literal, line))
+            # Each alternative consumes one quote style; a backslash is only ever
+            # matched by the escape branch, so the loop never backtracks.
+            lines.append(re.sub(r"\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'", identifier_literal, line))
         parts.append(path)
         parts.append("\n".join(lines))
     return " ".join(parts).casefold()

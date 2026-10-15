@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from brain.config.paths import resolve_within
 from brain.insights.remediation_models import RemediationOption, RemediationPlan
 
 
@@ -26,8 +27,12 @@ class RemediationStrategyRegistry:
         desc = finding_dict.get("description", "Architectural finding detected")
 
         file_hashes: Dict[str, str] = {}
-        target_file = repo_path / file_path
-        if target_file.exists():
+        try:
+            target_file: Optional[Path] = resolve_within(repo_path, file_path)
+        except ValueError:
+            # A finding path that escapes the repository is never read.
+            target_file = None
+        if target_file is not None and target_file.exists():
             file_hashes[file_path] = hashlib.sha256(target_file.read_bytes()).hexdigest()
 
         now_str = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from brain.config.paths import resolve_within
 from brain.lab.engine import (
     LabSecurityError,
     PatchApplier,
@@ -68,6 +69,12 @@ BUILTIN_PROFILES: Dict[str, Dict[str, Any]] = {
 
 
 class ProfileNotFoundError(LookupError):
+    """Raised when a validation profile cannot be loaded; ``reason`` is safe to report."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
     """Raised when a requested validation profile does not exist."""
 
 
@@ -88,7 +95,10 @@ class ChangeLaboratory:
 
     def load_profile(self, name: str) -> ValidationProfile:
         """Load a declarative profile by name: on-disk first, then built-in."""
-        candidate = self.profiles_dir / f"{name}.json"
+        try:
+            candidate = resolve_within(self.profiles_dir, f"{name}.json")
+        except ValueError:
+            raise ProfileNotFoundError(f"Unknown validation profile: '{name}'")
         if candidate.is_file():
             try:
                 data = json.loads(candidate.read_text(encoding="utf-8"))
@@ -144,7 +154,7 @@ class ChangeLaboratory:
         try:
             profile = self.load_profile(profile_name)
         except ProfileNotFoundError as exc:
-            session["rejected_reasons"] = [str(exc)]
+            session["rejected_reasons"] = [exc.reason]
             return self._persist(session, started)
 
         profile_issues = ValidationRunner.validate_profile(profile)
@@ -167,8 +177,8 @@ class ChangeLaboratory:
         try:
             workspace_path = self.manager.workspace_path(record)
         except LabSecurityError as exc:
-            self.manager.quarantine(record.workspace_id, str(exc))
-            session["rejected_reasons"] = [str(exc)]
+            self.manager.quarantine(record.workspace_id, exc.reason)
+            session["rejected_reasons"] = [exc.reason]
             return self._persist(session, started)
 
         disposable = record.workspace_id if cleanup else ""
@@ -237,7 +247,10 @@ class ChangeLaboratory:
         return session
 
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        path = self.sessions_dir / f"{session_id}.json"
+        try:
+            path = resolve_within(self.sessions_dir, f"{session_id}.json")
+        except ValueError:
+            return None
         if not path.is_file():
             return None
         try:
