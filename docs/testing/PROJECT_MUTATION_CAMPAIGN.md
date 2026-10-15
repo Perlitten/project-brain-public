@@ -6,6 +6,13 @@ each security-sensitive module. **Generation and successful ordinary tests do
 not establish either target.** Results remain incomplete until every shard is
 accounted for and survivors have been reviewed.
 
+The focused behavior/test patch is reviewed in
+[PR #109](https://github.com/Perlitten/project-brain-public/pull/109).
+PR #108 carries the campaign tooling and evidence and retains that patch for
+combined validation. The behavior branch independently passes 2,544 tests;
+the combined branch passes 2,553 including nine tooling integrity cases. The
+infrastructure PR remains a draft pending the full-package campaign.
+
 ## Frozen scope and scoring
 
 The [inventory](evidence/project-mutation-inventory.json) records source hashes,
