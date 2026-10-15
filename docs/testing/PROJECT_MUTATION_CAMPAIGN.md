@@ -283,10 +283,10 @@ infrastructure attempts and the still-running hosted full-package baseline.
 Local dependency differences from the hosted lock remain recorded explicitly;
 the module results are not combined into an overall project score.
 
-The final guarded ordinary Python suite passed **2,551 tests, 11 skipped** in
+After the credential/OAuth iterations, the guarded ordinary Python suite passed **2,551 tests, 11 skipped** in
 99.62 seconds including wrapper overhead. All eight campaign tooling cases run
 in that environment. Ruff passes, and the unchanged mypy gate reports **0 errors
-across 434 production files**. Application case count increased by only one:
+across 434 production files**. At that stage, application case count increased by only one:
 three fake-session cases and three weak drift/version cases were replaced by
 two nested-scope cases, one controlled drift case and four OAuth storage cases.
 No production Python source, benchmark baseline or golden was changed. No
@@ -408,3 +408,91 @@ API authentication is being measured separately from the initial credential
 module. Follow-up assertions preserve the documented public preauthenticated
 request-state contract and require actionable, non-sensitive denial reasons.
 They accept case variations and do not pin exact diagnostic decoration.
+
+## API authentication and the no-vanity exception
+
+The [API authentication pair](evidence/project-api-auth-mutation-results.json)
+measured all 97 candidates, retaining earlier credential/OAuth improvements in
+both phases. The before snapshot is `1f99aca`; the after snapshot is `9adbdb5`.
+Their exact full commit IDs and test fingerprints are recorded in the evidence.
+
+| Phase | Killed | Survived (non-equivalent) | Timed out | Equivalent | Type-invalid | Score |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Before API follow-up | 29 | 26 | 0 | 3 | 39 | 52.73% |
+| After API follow-up | 43 | 12 | 0 | 3 | 39 | 78.18% |
+
+Fourteen additional type-valid changes are detected, with no lost kills or
+timeouts. Public HTTP checks now preserve an identity authenticated upstream
+through the documented `request.state.principal` contract, including bearer-only
+transport, and retain its scope denials. Error checks require actionable reasons
+and avoid reflecting the presented secret, without pinning capitalization.
+The three equivalences are identical UTF-8 codec aliases and HTTP header case.
+
+**This module is deliberately stopped below 80%.** All twelve remaining
+non-equivalent survivors change only diagnostic capitalization or add XX
+text decoration. They retain denial status, meaningful reason and attribution.
+One more detection would numerically reach 80%, but asserting exact diagnostic
+spelling just to do that would be a vanity test. These observable differences
+remain in the denominator, exercising the brief's explicit exception rather
+than weakening the target or classifying them away. All 29 initial survivors
+have individual decisions and mutation diffs in the evidence.
+
+The two API measurements took **995.87 seconds**. Across the seven accepted local
+credential/OAuth/API runs, measured time is **43.10 minutes**. The hosted
+full-package campaign is still running; this is not its final runtime or score.
+
+Fresh API replay uses deterministic shard 227 of 434:
+
+```bash
+python -m eval.project_mutation run \
+  --inventory docs/testing/evidence/project-mutation-inventory.json \
+  --shards 434 --shard 227 --output api-auth-replay.json
+```
+
+Use the recorded snapshot refs for the paired inputs, and the venv, owned
+fixtures and offline guard described above. Raw scores exclude compiler-invalid
+candidates; the source-bound equivalence decisions explain adjusted scores.
+
+## Repairing vacuous route gates
+
+Both old API scope gates inspected **zero routes** with the installed FastAPI:
+public `app.routes` contains deferred router inclusions. Their closure/name
+inspection therefore passed even when scope protection was removed.
+The replacement two tests discover the public OpenAPI inventory and exercise
+the real declared request signatures and dependencies through handler-free HTTP
+probes. They check **203 protected operations**, **89 write operations**, and
+four intentional query/verification POSTs with read-only grants. Any new
+published operation defaults to protected, even if it omits an auth header.
+Missing inventory mappings and missing core endpoints fail rather than vacuously
+passing.
+
+Three public health/version operations and six explicitly enumerated distinct
+policy operations are outside the generic probe: three team operations, two
+handler-authenticated Telegram bridge operations and the signed/API-key webhook.
+Their storage/HTTP tests cover their separate policies. A new team case checks
+that a valid contributor role and a caller claiming wildcard scopes cannot
+restore authority removed from its live stored credential.
+
+The four read-only POSTs are episode search, skill matching, MCP self-check and
+password verification. Their existing read policy is preserved and tested,
+instead of assuming that every POST changes protected project data. Handler
+bodies never run in these probes, including when authorization is faulty, so
+provider verification, jobs and other side effects cannot execute.
+
+A [supplemental policy experiment](evidence/project-route-policy-experiment.json)
+removes only `/index`'s scope dependency while retaining key authentication in
+the generated sandbox. Mypy accepts the change. Both original gates pass;
+both replacement tests fail. The sandbox source is restored afterward. This
+is a module-level configuration fault beyond mutmut's frozen function-body
+operators; **it is not added to the mutation-score numerator**.
+
+These probes validate declared dependency policy, not handler implementation or
+unpublished routes. Dedicated integration cases remain necessary for those
+behaviors. No Brain private closure or helper is inspected to infer scopes.
+
+Latest guarded offline verification: **2,553 passed, 11 skipped** in 101.81 seconds
+including wrapper overhead. All nine campaign tooling cases execute. Across the
+three local module pairs, **64 additional type-valid changes** are detected;
+those independently measured scopes are not combined into a project-wide score.
+The two route gates are replacements, not additional test cases. Net application
+case growth is two. No production Python source or benchmark input changed.

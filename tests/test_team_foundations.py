@@ -271,3 +271,18 @@ async def test_independent_review_and_admin_are_separate(team_db):
         await change_policy(session, caller(4), a, ["read"], 0)
         with pytest.raises(TeamConflict):
             await change_policy(session, caller(4), a, ["read", "execute"], 0)
+
+
+@pytest.mark.asyncio
+async def test_project_role_cannot_restore_permissions_removed_from_a_live_credential(team_db):
+    factory, project, _ = team_db
+    async with factory() as session, session.begin():
+        await authorize(session, caller(2), project, Permission.READ)
+    async with factory() as session, session.begin():
+        credential = await session.get(ApiCredential, 2)
+        credential.scopes = []
+    # The caller still claims wildcard scopes and has a valid contributor role;
+    # authority must come from the live stored credential, not either claim.
+    async with factory() as session:
+        with pytest.raises(TeamDenied):
+            await authorize(session, caller(2), project, Permission.READ)

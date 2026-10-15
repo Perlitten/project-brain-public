@@ -316,7 +316,7 @@ max_stack_depth = -1
         (campaign / "tests/test_extra.py").write_text("def test_unrelated():\n    assert True\n")
 
 
-def test_interrupted_runner_cannot_certify_cached_kills_even_if_it_swallows_ctrl_c(tmp_path, monkeypatch):
+def test_aborted_runner_cannot_certify_cached_kills(tmp_path, monkeypatch):
     import signal
     from eval import project_mutation, mutation_types
 
@@ -343,13 +343,20 @@ def test_interrupted_runner_cannot_certify_cached_kills_even_if_it_swallows_ctrl
     monkeypatch.setattr(sys, "argv", ["project_mutation", "run", "--inventory", str(tmp_path / "inventory.json"),
                                      "--type-proof", str(proof), "--output", str(output)])
     previous = signal.getsignal(signal.SIGINT)
-    with pytest.raises(SystemExit) as stopped:
-        project_mutation.main()
-    assert stopped.value.code == 130
-    assert signal.getsignal(signal.SIGINT) == previous
-    record = json.loads(output.read_text())
-    assert not record["verified"] and record["measurement_exit_code"] == 130
-    assert record["overall"]["killed"] == 1  # Retained history is not a fresh verification.
-    assert not record["overall"]["complete"] and record["overall"]["score"] is None
-    assert record["modules"][0]["score"] is None
-    assert "interrupted" in record["error"]
+    for expected_exit in (130, 2):
+        if expected_exit == 2:
+            # A successful process exit without completing verification also
+            # cannot certify cached outcomes.
+            def early_exit(*args):
+                raise SystemExit(0)
+            monkeypatch.setattr(project_mutation, "run_shard", early_exit)
+        with pytest.raises(SystemExit) as stopped:
+            project_mutation.main()
+        assert stopped.value.code == expected_exit
+        assert signal.getsignal(signal.SIGINT) == previous
+        record = json.loads(output.read_text())
+        assert not record["verified"] and record["measurement_exit_code"] == expected_exit
+        assert record["overall"]["killed"] == 1  # Retained history is not a fresh verification.
+        assert not record["overall"]["complete"] and record["overall"]["score"] is None
+        assert record["modules"][0]["score"] is None
+        assert record["error"]

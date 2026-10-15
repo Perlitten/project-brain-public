@@ -336,6 +336,7 @@ def main() -> None:
     timer = time.monotonic()
     exit_code = 0
     error = None
+    verified = False
     interrupted = False
     previous_handler = None
 
@@ -352,11 +353,13 @@ def main() -> None:
             # outcomes must not make that interrupted verification look clean.
             if interrupted:
                 raise KeyboardInterrupt
+            verified = True
     except KeyboardInterrupt:
         exit_code = 130
         error = "KeyboardInterrupt: mutation measurement interrupted"
     except SystemExit as exc:
-        exit_code = int(exc.code or 0)
+        exit_code = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+        error = "Mutation runner exited before verification completed"
         control = ROOT / ".mutation-results/stats-control.json"
         if exit_code and control.exists():
             error = "Mutation runner control failure: " + control.read_text(encoding="utf-8").strip()
@@ -367,7 +370,6 @@ def main() -> None:
         if previous_handler is not None:
             signal.signal(signal.SIGINT, previous_handler)
         report = summarize(shards[args.shard], ROOT / "mutants", invalid)
-        verified = args.action == "run" and exit_code == 0
         if not verified:
             report["overall"]["complete"] = False
             report["overall"]["score"] = None
