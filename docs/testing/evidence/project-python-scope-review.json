@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "scope": "Tracked Python tree cross-check; not a completed production exclusion or score approval",
+  "frozen_inventory": "project-mutation-inventory.json",
+  "included_roots": {
+    "brain": 318,
+    "apps": 79,
+    "scripts": 37
+  },
+  "frozen_modules": 434,
+  "pending_scope": [
+    {
+      "module": "deploy/index_snapshots.py",
+      "reason": "Operator helper has credential-file parsing, HTTP error handling and batch exit-status logic; not eligible for a logic-free CLI exclusion. Behavioral measurement and review are still required before full-repository acceptance.",
+      "candidates": 156,
+      "type_invalid": 41,
+      "stage": "generated and compiler-reviewed; behavioral measurement/survivor review and full-universe aggregation remain pending"
+    },
+    {
+      "module": "deploy/vps_staging_smoke.py",
+      "reason": "Deployment safety-policy assertions and configuration validation; not logic-free CLI glue. Behavioral measurement and review are still required before full-repository acceptance.",
+      "candidates": 62,
+      "type_invalid": 1,
+      "stage": "generated and compiler-reviewed; behavioral measurement/survivor review and full-universe aggregation remain pending"
+    }
+  ],
+  "non_runtime_boundaries": {
+    "tests": {
+      "tracked_python_files": 249,
+      "reason": "Regression suite and test support, not production mutation targets."
+    },
+    "eval": {
+      "tracked_python_files": 39,
+      "reason": "Offline evaluation/benchmark verification and mutation tooling, outside the installable Brain runtime; no mutation score credited for these files. This boundary must remain explicit."
+    },
+    "benchmarks": {
+      "tracked_python_files": 35,
+      "reason": "Historical utility-pilot research harness, task fixtures and evaluation oracles, outside the Brain runtime; frozen baselines/goldens must remain unchanged."
+    }
+  },
+  "expanded_runtime_operator_modules": 436,
+  "expanded_candidate_count": 107719,
+  "acceptance": "Not established. Pending modules are not zero-candidate modules and are not excluded from a future full-repository denominator.",
+  "supplemental_inventory": "project-deploy-mutation-inventory.json",
+  "supplemental_type_proof": "project-deploy-mutation-type-proof.json.gz"
+}

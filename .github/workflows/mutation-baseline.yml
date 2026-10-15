@@ -1,0 +1,153 @@
+name: Whole-package mutation baseline
+
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    if: >-
+      github.event.label.name == 'mutation-baseline' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_password
+          POSTGRES_DB: brain_db
+        ports: [5433:5432]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s
+          --health-timeout 5s --health-retries 5
+      neo4j:
+        image: neo4j:5.12-community
+        env:
+          NEO4J_AUTH: neo4j/neo4j_password
+          NEO4J_server_memory_heap_initial__size: 256m
+          NEO4J_server_memory_heap_max__size: 256m
+          NEO4J_server_memory_pagecache_size: 64m
+        ports: [7687:7687]
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p neo4j_password 'RETURN 1'"
+          --health-interval 10s --health-timeout 5s --health-retries 12
+    env:
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5433
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_DB: brain_db
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres_password@127.0.0.1:5433/brain_db
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      REDIS_URL: redis://127.0.0.1:6379/0
+      NEO4J_URI: bolt://127.0.0.1:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: neo4j_password
+      TEST_TEAM_POSTGRES_URL: postgresql+asyncpg://fixture:fixture_local_only@127.0.0.1:5433/brain_team_test
+      DEFAULT_LLM_PROVIDER: mock
+      DEFAULT_EMBEDDING_PROVIDER: mock
+      TARGET_REPO_PATH: .
+      REPO_ROOT: .
+      OMP_NUM_THREADS: 2
+      OPENBLAS_NUM_THREADS: 1
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+      HF_DATASETS_OFFLINE: '1'
+      # These ports belong to this disposable job, unlike a shared cloud host.
+      BRAIN_MUTATION_BLOCK_PORTS: ''
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install hash-locked test and mutation tools
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --require-hashes -r requirements-dev.lock -r eval/mutation-requirements.lock
+          .venv/bin/python -m pip install --no-deps -e .
+          command -v pg_dump
+          command -v psql
+      - name: Prepare owned team database
+        run: |
+          PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE USER fixture WITH CREATEDB PASSWORD 'fixture_local_only'" \
+            -c "CREATE DATABASE brain_team_test OWNER fixture"
+          mkdir -p .mutation-results/witnesses
+      - uses: actions/cache/restore@v6
+        with:
+          path: |
+            mutants/**/*.meta
+            mutants/mutmut-stats.json
+            mutants/campaign-context.json
+          key: mutation-${{ github.event.pull_request.head.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: mutation-${{ github.event.pull_request.head.sha }}-${{ matrix.shard }}-
+      - name: Measure shard with offline guard and one worker
+        env:
+          PYTHONPATH: ${{ github.workspace }}/eval/mutation_support
+          PYTEST_PLUGINS: import_check
+          PYTHONUNBUFFERED: '1'
+          BRAIN_MUTATION_WITNESSES: ${{ github.workspace }}/.mutation-results/witnesses
+        run: |
+          export PATH="$GITHUB_WORKSPACE/.venv/bin:$PATH"
+          timeout --signal=INT --kill-after=30s 335m .venv/bin/python -m eval.project_mutation run \
+            --inventory docs/testing/evidence/project-mutation-inventory.json \
+            --shards 32 --shard "${{ matrix.shard }}" --output .mutation-results/report.json \
+            > .mutation-results/mutmut.log 2>&1
+      - name: Summarize measurement completion
+        if: always()
+        run: |
+          tail -n 60 .mutation-results/mutmut.log || true
+          if test -f .mutation-results/report.json; then
+            .venv/bin/python -c 'import json; print(json.dumps(json.load(open(".mutation-results/report.json"))["overall"], indent=2))' >> "$GITHUB_STEP_SUMMARY"
+            .venv/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path(".mutation-results/report.json").read_text())
+          if report["measurement_exit_code"]:
+              reason = report.get("error") or "Incomplete mutation measurement: " + json.dumps(report["overall"])
+              reason = reason.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print("::error title=Mutation measurement incomplete::" + reason)
+          PY
+          fi
+      - uses: actions/cache/save@v6
+        if: always()
+        with:
+          path: |
+            mutants/**/*.meta
+            mutants/mutmut-stats.json
+            mutants/campaign-context.json
+          key: mutation-${{ github.event.pull_request.head.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Package raw outcomes and failure witnesses
+        if: always()
+        run: |
+          find mutants -name '*.meta' -print0 > .mutation-results/meta-files
+          tar --null -T .mutation-results/meta-files -czf .mutation-results/raw-metadata.tar.gz
+          tar -czf mutation-shard-${{ matrix.shard }}.tar.gz .mutation-results
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mutation-shard-${{ matrix.shard }}
+          path: mutation-shard-${{ matrix.shard }}.tar.gz
+          retention-days: 1

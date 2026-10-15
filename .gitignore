@@ -73,3 +73,8 @@ eval/mutation_testing/results/
 docker-compose.local.yml
 coverage.xml
 .coverage
+
+# Generated project-wide mutation working copies and caches.
+/mutants/
+/.mutation-results/
+/mutation-shard-*.tar.gz

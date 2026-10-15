@@ -1,0 +1,13 @@
+{
+  "pass": true,
+  "tasks_compared": 31,
+  "ignored_result_fields": [
+    "seconds"
+  ],
+  "non_timing_changes": [],
+  "capture_sha256": {
+    "before": "53c83b034dee1534802f2d3e7140111b80fdfffb9c22a8f6df99096ecdbff711",
+    "after": "fb10fb8df27f7144c31366f9ebca244b911510ac64a9bbb888e7f0033ef8576a"
+  },
+  "scope": "Same frozen corpus and index, local-token-hash embeddings and disabled chat. All 31 task result records are identical except elapsed time. This is not a learned-model or coding-performance result."
+}

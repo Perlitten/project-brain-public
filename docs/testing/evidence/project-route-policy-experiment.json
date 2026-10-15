@@ -1,0 +1,16 @@
+{
+  "mutation": "Remove the /index scope dependency while retaining API-key authentication",
+  "scope": "Supplemental module-level policy mutation, not included in the frozen function-body score",
+  "source_sha256": "cb02ef4a2f745c00b5a23dd825a58cc7f72a04cd75a0f7299af275b7f05cf7b4",
+  "mutant_sha256": "25b571ecd3a973f99b21bbae5cfdf2373bd1ca9803f3ae91d920975d82b0fc1c",
+  "type_check_exit": 0,
+  "before": {
+    "pytest_exit": 0,
+    "test_sha256": "b66009cac909502de39e98e2da9e0790d744108840bd3eef80391d8039422cc4"
+  },
+  "after": {
+    "pytest_exit": 1,
+    "test_sha256": "ff0fc2a9c219078cdbcb1f22a5bdfa01ce655d1eb6e45f654ef88186396f1f58"
+  },
+  "pass": true
+}
