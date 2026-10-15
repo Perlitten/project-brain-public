@@ -8,10 +8,12 @@ accounted for and survivors have been reviewed.
 
 The focused behavior/test patch is reviewed in
 [PR #109](https://github.com/Perlitten/project-brain-public/pull/109).
-PR #108 carries the campaign tooling and evidence and retains that patch for
-combined validation. The behavior branch independently passes 2,544 tests;
-the combined branch passes 2,553 including nine tooling integrity cases. The
-infrastructure PR remains a draft pending the full-package campaign.
+The process-supervision test correction is reviewed separately in
+[PR #110](https://github.com/Perlitten/project-brain-public/pull/110).
+PR #108 carries the campaign tooling and evidence and retains both patches for
+combined validation. The behavior branch independently passes 2,545 tests;
+the laboratory branch independently passes 2,542. The infrastructure PR remains
+a draft pending the full-package campaign.
 
 ## Frozen scope and scoring
 
@@ -327,6 +329,9 @@ of every historical tooling/test byte.
 The project-wide 70% goal and the 80% requirement for every security-sensitive
 module are **not yet established**. The full 32-shard run is still measuring:
 https://github.com/Perlitten/project-brain-public/actions/runs/38657878581.
+The [02:41 UTC snapshot](evidence/project-full-run-status.json) records 26
+successful shards, five running and one failed. The failed measurement exited
+143 and remains inconclusive. No aggregate or all-module score is reported.
 All-module before/after tables and complete survivor classification depend on
 collecting those raw reports. Zero-candidate declaration modules remain a
 separate operator-coverage limitation even if a later aggregate crosses 70%.
@@ -345,8 +350,9 @@ gh run download 38657878581 --repo Perlitten/project-brain-public \
 ```
 
 Artifacts expire after one day. No results from blocked downloads or failed
-runner controls are counted as detections. PR #108 remains a draft; no merge,
-release, deployment or tag change is authorized by an incomplete score.
+runner controls are counted as detections. PR #108 remains a draft. An incomplete
+score cannot certify the target; focused test PRs still require CI and review.
+No release, archive or tag changes are part of this campaign.
 
 ## Offline retrieval non-regression
 
@@ -502,4 +508,48 @@ including wrapper overhead. All nine campaign tooling cases execute. Across the
 three local module pairs, **64 additional type-valid changes** are detected;
 those independently measured scopes are not combined into a project-wide score.
 The two route gates are replacements, not additional test cases. Net application
-case growth is two. No production Python source or benchmark input changed.
+case growth was two at that snapshot. No production Python source or benchmark input changed.
+
+## Review controls and process supervision
+
+PR #109's review identified two additional gate defects. Copied aggregate
+APIRoute declarations can share an operation identifier without object identity;
+the inventory now keeps the dependency superset for the same endpoint and fails
+explicitly on ambiguous policies. The existing unscoped case includes real
+copied declarations as a control. The write gate's hardcoded domain list could
+also let a read denial mask missing write enforcement on a new domain. Read
+grants are now discovered through the public principal protocol before restoring
+the original method and asserting against a real persisted credential. One
+negative control uses a new-domain POST with no GET endpoint and a deliberately
+missing write check. Both controls fail against the earlier gate and pass after
+the correction ([paired evidence](evidence/project-route-review-controls.json)).
+Net application case growth is now three. These controls are not added to the
+frozen mutation numerator or retroactively attributed to earlier paired runs.
+
+The hosted full baseline has one shard whose measurement process exited 143.
+In a safe local reproduction, a type-valid laboratory mutation that removes the
+child process-session boundary kills pytest with SIGTERM. This matches the
+failure mechanism but does not establish the hosted cause without its raw log.
+The existing timeout/cancellation cases now run the real public validation API
+inside an owned subprocess and require distinct returned failure states. The
+original implementation passes both cases; the lost-session candidate now
+produces two assertion failures instead of killing pytest. Test count and
+production source are unchanged. This is a resilience correction, not an
+additional module score ([report](LAB_SUPERVISION_MUTATION_REVIEW.md),
+[evidence](evidence/project-lab-process-supervision.json)).
+
+The updated standalone behavior suite passes 2,545 tests (11 skipped) in 95.87
+pytest seconds; its wrapper takes 98.96 seconds. The standalone laboratory patch
+passes 2,542 tests (11 skipped) in 95.73 pytest seconds. Ruff, the unchanged
+zero-error mypy gate and documentation consistency pass. Exact-head CI, CodeQL
+and review status must be checked separately before any merge; Vercel preview
+quota failures are not treated as Python test failures or bypassed.
+
+Combined final offline verification after both focused patches: **2,554 passed,
+11 skipped**, 97.50 pytest seconds / 100.71 wrapper seconds, including all nine
+campaign tooling cases. All 434 inventoried production source hashes still
+match the frozen baseline. Re-evaluating the captured 31-task retrieval results
+passes without changing any record other than timing. Accepted local paired
+mutation runs total 43.10 worker minutes; the hosted baseline is still running
+and has no final runtime or complete before/after table. Its 02:41 snapshot is
+approximately 157 elapsed minutes after starting, not a completed campaign.

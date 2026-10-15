@@ -1,0 +1,320 @@
+{
+  "schema": 1,
+  "captured_at": "2026-10-15T02:41:05.897449+00:00",
+  "run": {
+    "id": 38657878581,
+    "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581",
+    "head_sha": "1842aec719c1f0f227287c45042214598772ad64",
+    "status": "in_progress",
+    "conclusion": null,
+    "created_at": "2026-10-15T00:04:25Z",
+    "updated_at": "2026-10-15T01:37:43Z"
+  },
+  "counts": {
+    "success": 26,
+    "in_progress": 5,
+    "failure": 1
+  },
+  "jobs": [
+    {
+      "id": 116171860729,
+      "name": "measure (4)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:28Z",
+      "completed_at": "2026-10-15T01:44:06Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860729"
+    },
+    {
+      "id": 116171860837,
+      "name": "measure (15)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:28Z",
+      "completed_at": "2026-10-15T01:23:43Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860837"
+    },
+    {
+      "id": 116171860868,
+      "name": "measure (0)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:29Z",
+      "completed_at": "2026-10-15T00:09:59Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860868"
+    },
+    {
+      "id": 116171860885,
+      "name": "measure (9)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:28Z",
+      "completed_at": "2026-10-15T01:42:12Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860885"
+    },
+    {
+      "id": 116171860927,
+      "name": "measure (7)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:28Z",
+      "completed_at": "2026-10-15T00:37:52Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860927"
+    },
+    {
+      "id": 116171860929,
+      "name": "measure (5)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:29Z",
+      "completed_at": "2026-10-15T00:47:03Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860929"
+    },
+    {
+      "id": 116171860938,
+      "name": "measure (10)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:29Z",
+      "completed_at": "2026-10-15T00:51:29Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860938"
+    },
+    {
+      "id": 116171860941,
+      "name": "measure (1)",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_at": "2026-10-15T00:04:29Z",
+      "completed_at": null,
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860941"
+    },
+    {
+      "id": 116171860965,
+      "name": "measure (6)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:34Z",
+      "completed_at": "2026-10-15T00:54:50Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860965"
+    },
+    {
+      "id": 116171860973,
+      "name": "measure (17)",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_at": "2026-10-15T00:36:29Z",
+      "completed_at": null,
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860973"
+    },
+    {
+      "id": 116171860982,
+      "name": "measure (2)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:29Z",
+      "completed_at": "2026-10-15T00:53:08Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860982"
+    },
+    {
+      "id": 116171860991,
+      "name": "measure (14)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:29Z",
+      "completed_at": "2026-10-15T00:36:26Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171860991"
+    },
+    {
+      "id": 116171861033,
+      "name": "measure (13)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:28Z",
+      "completed_at": "2026-10-15T00:41:15Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861033"
+    },
+    {
+      "id": 116171861042,
+      "name": "measure (12)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:29Z",
+      "completed_at": "2026-10-15T00:46:22Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861042"
+    },
+    {
+      "id": 116171861048,
+      "name": "measure (16)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:10:02Z",
+      "completed_at": "2026-10-15T01:15:24Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861048"
+    },
+    {
+      "id": 116171861057,
+      "name": "measure (11)",
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-10-15T00:04:29Z",
+      "completed_at": "2026-10-15T01:11:33Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861057"
+    },
+    {
+      "id": 116171861063,
+      "name": "measure (24)",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_at": "2026-10-15T00:54:53Z",
+      "completed_at": null,
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861063"
+    },
+    {
+      "id": 116171861064,
+      "name": "measure (3)",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_at": "2026-10-15T00:04:29Z",
+      "completed_at": null,
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861064"
+    },
+    {
+      "id": 116171861084,
+      "name": "measure (22)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:51:31Z",
+      "completed_at": "2026-10-15T01:55:19Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861084"
+    },
+    {
+      "id": 116171861090,
+      "name": "measure (21)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:47:05Z",
+      "completed_at": "2026-10-15T01:42:53Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861090"
+    },
+    {
+      "id": 116171861101,
+      "name": "measure (25)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T01:05:54Z",
+      "completed_at": "2026-10-15T01:47:22Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861101"
+    },
+    {
+      "id": 116171861118,
+      "name": "measure (8)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:04:29Z",
+      "completed_at": "2026-10-15T01:05:51Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861118"
+    },
+    {
+      "id": 116171861124,
+      "name": "measure (19)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:41:17Z",
+      "completed_at": "2026-10-15T02:11:22Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861124"
+    },
+    {
+      "id": 116171861126,
+      "name": "measure (20)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:46:25Z",
+      "completed_at": "2026-10-15T01:35:50Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861126"
+    },
+    {
+      "id": 116171861137,
+      "name": "measure (23)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:53:10Z",
+      "completed_at": "2026-10-15T01:24:57Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861137"
+    },
+    {
+      "id": 116171861144,
+      "name": "measure (18)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T00:37:55Z",
+      "completed_at": "2026-10-15T02:00:08Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171861144"
+    },
+    {
+      "id": 116171862880,
+      "name": "measure (26)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T01:11:36Z",
+      "completed_at": "2026-10-15T01:37:40Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171862880"
+    },
+    {
+      "id": 116171862957,
+      "name": "measure (30)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T01:35:52Z",
+      "completed_at": "2026-10-15T02:04:45Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171862957"
+    },
+    {
+      "id": 116171862990,
+      "name": "measure (28)",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_at": "2026-10-15T01:23:45Z",
+      "completed_at": null,
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171862990"
+    },
+    {
+      "id": 116171863057,
+      "name": "measure (31)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T01:37:43Z",
+      "completed_at": "2026-10-15T02:13:50Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171863057"
+    },
+    {
+      "id": 116171863170,
+      "name": "measure (29)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T01:25:00Z",
+      "completed_at": "2026-10-15T02:24:08Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171863170"
+    },
+    {
+      "id": 116171863186,
+      "name": "measure (27)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-10-15T01:15:27Z",
+      "completed_at": "2026-10-15T02:11:05Z",
+      "html_url": "https://github.com/Perlitten/project-brain-public/actions/runs/38657878581/job/116171863186"
+    }
+  ],
+  "aggregate_score": null,
+  "reason": "Incomplete baseline; raw artifacts inaccessible through current cloud allowlist. Failed measurement exit 143 is inconclusive, not a kill.",
+  "failed_shard": {
+    "shard": 11,
+    "measurement_exit": 143,
+    "local_reproduction": "One type-valid lost-process-session mutant kills the old pytest process with SIGTERM. Matching mechanism does not confirm hosted cause without raw log."
+  },
+  "blocked_artifact_hosts": [
+    "productionresultssa6.blob.core.windows.net",
+    "productionresultssa12.blob.core.windows.net"
+  ],
+  "artifacts_retention_days": 1
+}
