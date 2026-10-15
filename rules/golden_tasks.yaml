@@ -100,3 +100,22 @@ golden_tasks:
       - "streamable http"
     required_surfaces: []
     must_include_tests: true
+
+  - id: task_8
+    description: "Provision the team layer (projects, members, repositories) or bind OAuth clients to team members"
+    expected_files:
+      - "apps/cli/commands/team.py"
+      - "apps/api/routers/team.py"
+      - "brain/team/provisioning.py"
+      - "brain/team/oauth_link.py"
+      - "tests/test_team_provisioning.py"
+    expected_modules:
+      - "brain/team"
+      - "apps/api"
+      - "apps/cli"
+    expected_features:
+      - "team"
+      - "provisioning"
+      - "oauth"
+    required_surfaces: []
+    must_include_tests: true

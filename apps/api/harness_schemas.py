@@ -21,7 +21,8 @@ class TaskCreateRequest(BaseModel):
 
 class TaskStatusUpdateRequest(BaseModel):
     status: str
-    actor: str
+    # Accepted for older clients, ignored: the server attributes the caller.
+    actor: Optional[str] = Field(default=None, max_length=100)
     expected_task_version: int = Field(ge=0)
     current_session_id: Optional[str] = None
     note: Optional[str] = None
@@ -29,7 +30,8 @@ class TaskStatusUpdateRequest(BaseModel):
 
 class EventCreateRequest(BaseModel):
     event_type: str = Field(min_length=1, max_length=100)
-    actor: str = Field(min_length=1, max_length=100)
+    # Accepted for older clients, ignored: the server attributes the caller.
+    actor: Optional[str] = Field(default=None, max_length=100)
     classification: Literal[
         "claim",
         "observation",

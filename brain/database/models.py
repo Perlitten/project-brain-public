@@ -140,6 +140,8 @@ class Decision(Base):
     affected_features: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # List of strings
     affected_modules: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # List of strings
     affected_files: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # List of strings
+    # Principal that first recorded it; NULL for rows that predate authorship or came from the CLI.
+    author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -159,6 +161,7 @@ class Rule(Base):
     applies_to: Mapped[dict[str, Any] | None] = mapped_column(
         JSON, nullable=True
     )  # e.g., dict mapping features/modules
+    author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False

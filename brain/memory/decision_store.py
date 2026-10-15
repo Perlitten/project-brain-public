@@ -6,6 +6,16 @@ from brain.database.models import Decision
 from brain.memory.repo_scope import normalize_repo_scope, scope_equals
 
 
+# Scope that carries the admin role for system_global knowledge writes. The legacy
+# shared key and ``*`` credentials hold it; a plain ``core:write`` credential does not.
+MEMORY_ADMIN_SCOPE = "core:admin"
+
+
+def caller_role_for(principal) -> str:
+    """The memory role of a resolved principal: ``admin`` with ``core:admin``, else ``agent``."""
+    return "admin" if principal.has_scope(MEMORY_ADMIN_SCOPE) else "agent"
+
+
 class DecisionStore:
     """Store for managing architectural and technical decisions."""
 
@@ -23,16 +33,21 @@ class DecisionStore:
         affected_modules: Optional[List[str]] = None,
         affected_files: Optional[List[str]] = None,
         caller_role: str = "agent",
-        auth_token: Optional[str] = None,
+        author_principal_id: Optional[int] = None,
     ) -> int:
-        """Create or update the canonical decision with this title."""
+        """Create or update the canonical decision with this title.
+
+        ``caller_role`` is derived by the caller from its authenticated principal
+        (``caller_role_for``) or is ``admin`` for the operator CLI; only the admin
+        role may write ``system_global``. ``author_principal_id`` is kept on the
+        first record and never overwritten by later updates."""
         normalized_title = title.strip()
         if not normalized_title:
             raise ValueError("Decision title must not be empty")
 
         normalized_repo_path = normalize_repo_scope(repo_path)
         if not normalized_repo_path or normalized_repo_path == "system_global":
-            if caller_role != "admin" and not auth_token:
+            if caller_role != "admin":
                 raise PermissionError("Creating or updating system_global decisions requires elevated admin authorization.")
             normalized_repo_path = "system_global"
 
@@ -78,6 +93,8 @@ class DecisionStore:
                     existing.affected_modules = affected_modules
                 if affected_files is not None:
                     existing.affected_files = affected_files
+                if existing.author_principal_id is None:
+                    existing.author_principal_id = author_principal_id
                 await session.commit()
                 await session.refresh(existing)
                 return existing.id
@@ -93,6 +110,7 @@ class DecisionStore:
                 affected_features=affected_features,
                 affected_modules=affected_modules,
                 affected_files=affected_files,
+                author_principal_id=author_principal_id,
             )
             session.add(new_decision)
             await session.commit()

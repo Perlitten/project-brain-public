@@ -32,6 +32,7 @@ class TeamMember(Base):
 
 class TeamProject(Base):
     __tablename__ = "team_projects"
+    __table_args__ = (UniqueConstraint("team_id", "name", name="uq_team_projects_team_name"),)
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)

@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import hash_credential, mint_credential
 from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken
+from brain.team.oauth_link import bind_team_scopes
 
 REFRESH_PREFIX = "pbr"
 PRINCIPAL_PREFIX = "oauth"
@@ -100,9 +101,16 @@ async def issue_tokens(
     access_ttl: timedelta,
     refresh_ttl: Optional[timedelta],
 ) -> IssuedTokens:
-    """Mint an access credential and the refresh token that can replace it."""
+    """Mint an access credential and the refresh token that can replace it.
+
+    Personal scopes land on the client's service principal. Team scopes bind
+    the token to the verified member who approved it (``brain.team.oauth_link``):
+    the credential is minted on that member's human principal, so team routes
+    see the member and ``TeamDenied`` stops issuance - also on refresh."""
+    grant = await bind_team_scopes(session, subject, scopes)
+    principal_name = grant.principal.name if grant is not None else principal_name_for(client_id, client_name)
     access_raw, credential = await mint_credential(
-        session, name=principal_name_for(client_id, client_name), scopes=list(scopes), kind="service"
+        session, name=principal_name, scopes=list(scopes), kind="human" if grant is not None else "service"
     )
     now = _now()
     credential.expires_at = now + access_ttl
@@ -112,7 +120,7 @@ async def issue_tokens(
         OAuthRefreshToken(
             token_hash=hash_credential(refresh_raw),
             client_id=client_id,
-            principal_name=principal_name_for(client_id, client_name),
+            principal_name=principal_name,
             subject=subject,
             scopes=list(scopes),
             access_credential_id=credential.id,

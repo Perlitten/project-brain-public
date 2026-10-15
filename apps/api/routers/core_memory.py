@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from loguru import logger
 
-from apps.api.auth import require_api_key, require_scope
+from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.schemas import (
     EpisodeDecisionRequest,
     EpisodeSearchRequest,
@@ -18,8 +18,9 @@ from apps.api.schemas import (
     LearningCreate,
     RuleCreate,
 )
+from brain.auth.principals import ResolvedPrincipal
 from brain.database.session import async_session_factory
-from brain.memory.decision_store import DecisionStore
+from brain.memory.decision_store import DecisionStore, caller_role_for
 from brain.memory.learning_store import LearningStore
 from brain.memory.rule_store import RuleStore
 
@@ -66,7 +67,8 @@ async def get_decisions():
 
 
 @router.post("/decisions", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def create_decision(body: DecisionCreate):
+async def create_decision(body: DecisionCreate, caller: ResolvedPrincipal = Depends(require_principal)):
+    # The role and the author come from the authenticated principal, never from the body.
     try:
         decision_id = await DecisionStore.add_decision(
             title=body.title,
@@ -79,8 +81,12 @@ async def create_decision(body: DecisionCreate):
             affected_features=body.affected_features,
             affected_modules=body.affected_modules,
             affected_files=body.affected_files,
+            caller_role=caller_role_for(caller),
+            author_principal_id=caller.author_id,
         )
         return {"status": "success", "decision_id": decision_id}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(f"Failed to add decision: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to add decision") from exc
@@ -96,7 +102,7 @@ async def get_rules():
 
 
 @router.post("/rules", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def create_rule(body: RuleCreate):
+async def create_rule(body: RuleCreate, caller: ResolvedPrincipal = Depends(require_principal)):
     try:
         rule_id = await RuleStore.add_rule(
             name=body.name,
@@ -107,6 +113,7 @@ async def create_rule(body: RuleCreate):
             status=body.status,
             applies_to=body.applies_to,
             rule_id=body.rule_id,
+            author_principal_id=caller.author_id,
         )
         return {"status": "success", "rule_id": rule_id}
     except Exception as exc:

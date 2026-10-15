@@ -15,6 +15,7 @@ from apps.cli.commands.eval import eval_command
 from apps.cli.commands.cache import cache_app
 from apps.cli.commands.embeddings import embeddings_app
 from apps.cli.commands.import_cmd import import_app
+from apps.cli.commands.team import team_cli
 
 # The main Typer application instance (referenced as the entrypoint in pyproject.toml)
 cli = typer.Typer(
@@ -58,6 +59,7 @@ cli.command(name="eval")(eval_command)
 cli.add_typer(cache_app, name="cache")
 cli.add_typer(embeddings_app, name="embeddings")
 cli.add_typer(import_app, name="import")
+cli.add_typer(team_cli, name="team")
 
 
 @cli.command("init")

@@ -112,6 +112,12 @@ outcome per skill. Repeating the same evidence is idempotent; changing the
 evidence or result returns conflict. Retrieval never changes usage counters.
 Counters describe reported outcomes, not independently adjudicated efficacy.
 
+`POST /decisions` and `POST /rules` record the authenticated principal as the
+author (`author_principal_id`; NULL for the legacy shared key and CLI writes).
+A `system_global` decision additionally needs the `core:admin` scope, which the
+legacy shared key and `*` credentials hold; a plain `core:write` credential
+receives 403. The body carries no role: `caller_role` in a request is ignored.
+
 ## MCP
 
 Local and remote MCP expose record_task_lesson, record_task_observation and

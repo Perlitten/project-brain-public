@@ -49,6 +49,16 @@ class ResolvedPrincipal:
         domain, _, action = scope.rpartition(":")
         return action == "read" and bool(domain) and f"{domain}:write" in self.scopes
 
+    @property
+    def actor(self) -> str:
+        """Audit label for rows this principal writes (``principal:<id>``; synthetic ones by name)."""
+        return f"principal:{self.id}" if self.id > 0 else f"principal:{self.name}"
+
+    @property
+    def author_id(self) -> Optional[int]:
+        """Database principal id for authorship columns; ``None`` for synthetic principals."""
+        return self.id if self.id > 0 else None
+
 
 def hash_credential(raw_key: str) -> str:
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
