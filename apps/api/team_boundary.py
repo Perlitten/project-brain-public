@@ -17,7 +17,7 @@ class TeamBoundary:
                 await JSONResponse({"status": "experimental", "mode": "team-foundations",
                                     "execution_available": False})(scope, receive, send)
                 return
-            if not path.startswith("/team/projects/") and path not in {"/mcp", "/health"}:
+            if path != "/team/projects" and not path.startswith("/team/projects/") and path not in {"/mcp", "/health"}:
                 await JSONResponse({"detail": "Surface unavailable in experimental team mode"}, status_code=403)(
                     scope, receive, send)
                 return

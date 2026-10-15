@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from typer.testing import CliRunner
 
 from apps.cli.commands import team as team_commands
@@ -15,7 +16,7 @@ from brain.config.settings import settings
 from brain.database.models import ApiCredential, Principal
 from brain.team import provisioning
 from brain.team.authorization import Permission, TeamConflict, TeamDenied, team_administrator
-from brain.team.models import ProjectMember, Team, TeamMember
+from brain.team.models import ProjectMember, Team, TeamMember, TeamProject
 from brain.team.provisioning import TeamNotFound
 from tests.test_team_foundations import caller, team_db as team_fixture
 from tests.test_team_transport import team_app
@@ -83,10 +84,17 @@ async def test_projects_and_repositories_are_idempotent(team_db):
         project = await provisioning.create_project(session, name="docs")
         assert sorted(project.permissions) == sorted(str(p) for p in Permission)
         assert (await provisioning.create_project(session, name="docs")).id == project.id
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                session.add(TeamProject(team_id=1, name="docs", permissions=[]))
+                await session.flush()
         with pytest.raises(TeamConflict, match="different permission policy"):
             await provisioning.create_project(session, name="docs", allowed=["read"])
-        with pytest.raises(TeamDenied, match="Invalid authority policy"):
+        with pytest.raises(TeamConflict, match="Invalid authority policy"):
             await provisioning.create_project(session, name="broken", allowed=["fly"])
+        uuid_name = "123e4567-e89b-12d3-a456-426614174000"
+        named_like_uuid = await provisioning.create_project(session, name=uuid_name)
+        assert await provisioning.resolve_project(session, uuid_name) is named_like_uuid
         assert (await provisioning.resolve_project(session, "docs")).id == project.id
         assert (await provisioning.resolve_project(session, str(project.id))).id == project.id
         with pytest.raises(TeamNotFound):
@@ -100,7 +108,7 @@ async def test_projects_and_repositories_are_idempotent(team_db):
             await provisioning.resolve_repository(session, "/synthetic/missing")
         assert [row["repository_id"] for row in await provisioning.list_project_repositories(session, a)] == [1]
         names = [row["name"] for row in await provisioning.list_projects(session)]
-        assert "docs" in names and len(names) == 3
+        assert {"docs", uuid_name}.issubset(names) and len(names) == 4
 
 
 @pytest.mark.asyncio
@@ -137,6 +145,9 @@ async def test_admin_routes_provision_without_sql(team_db, monkeypatch):
         assert repeat.json()["id"] == created.json()["id"]
         conflict = await client.post("/team/projects/", headers=ADMIN, json={"name": "docs"})
         assert conflict.status_code == 409
+        invalid_policy = await client.post("/team/projects/", headers=ADMIN,
+                                           json={"name": "broken", "permissions": ["fly"]})
+        assert invalid_policy.status_code == 409 and "Invalid authority policy" in invalid_policy.text
         listing = await client.get("/team/projects/", headers=ADMIN)
         assert {row["name"] for row in listing.json()} >= {"docs", str(a), str(b)}
         bad = await client.post("/team/projects/members", headers=ADMIN, json={"principal_id": 20, "principal_name": "x"})
@@ -146,6 +157,13 @@ async def test_admin_routes_provision_without_sql(team_db, monkeypatch):
         member = await client.post("/team/projects/members", headers=ADMIN,
                                    json={"principal_id": 20, "issuer": "corp-sso", "subject": "new@example.test"})
         assert member.status_code == 200 and member.json()["verified_at"] and not member.json()["is_admin"]
+        preserved = await client.post("/team/projects/members", headers=ADMIN,
+                                      json={"principal_id": 4, "issuer": "fixture", "subject": "4"})
+        assert preserved.status_code == 200 and preserved.json()["is_admin"]
+        demotion = await client.post("/team/projects/members", headers=ADMIN,
+                                     json={"principal_id": 4, "issuer": "fixture", "subject": "4",
+                                           "is_admin": False})
+        assert demotion.status_code == 409
         members = await client.get("/team/projects/members", headers=ADMIN)
         assert {row["principal_id"] for row in members.json()} == {1, 2, 3, 4, 20}
         role = await client.put(f"/team/projects/{a}/members/20", headers=ADMIN, json={"role": "contributor"})
@@ -168,6 +186,21 @@ async def test_admin_routes_provision_without_sql(team_db, monkeypatch):
     async with factory() as session:
         member = await session.get(TeamMember, 20)
         assert member.revoked_at is not None
+
+
+@pytest.mark.asyncio
+async def test_admin_api_resolves_numeric_principal_name_and_allows_slashless_redirect(team_db, monkeypatch):
+    factory, _, _ = team_db
+    async with factory() as session, session.begin():
+        session.add(Principal(id=21, name="12345", kind="human"))
+    app = team_app(factory, monkeypatch)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+        redirect = await client.get("/team/projects", headers=ADMIN)
+        assert redirect.status_code == 307 and redirect.headers["location"].endswith("/team/projects/")
+        response = await client.post("/team/projects/members", headers=ADMIN,
+                                     json={"principal_name": "12345", "issuer": "corp-sso",
+                                           "subject": "numeric@example.test"})
+        assert response.status_code == 200 and response.json()["principal_id"] == 21
 
 
 @pytest.mark.asyncio
@@ -201,6 +234,8 @@ def test_cli_provisions_end_to_end(team_db, monkeypatch):
     project = invoke("project", "add", "docs", "--permission", "read", "--permission", "task.create")
     assert project.exit_code == 0, project.output
     assert json.loads(project.output)["permissions"] == ["read", "task.create"]
+    bad_project = invoke("project", "add", "broken", "--permission", "fly")
+    assert bad_project.exit_code == 1 and "Invalid authority policy" in bad_project.output
     member = invoke("member", "add", "--principal", "operator", "--mint-key", "--admin",
                     "--project", "docs", "--role", "reviewer")
     assert member.exit_code == 0, member.output

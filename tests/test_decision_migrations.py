@@ -9,6 +9,7 @@ from brain.database.migrations import (
     _ensure_decision_title_uniqueness,
     _ensure_memory_authorship_columns,
     _ensure_rule_repo_scope,
+    _ensure_team_project_name_uniqueness,
 )
 
 
@@ -57,6 +58,17 @@ async def test_memory_authorship_columns_are_idempotent():
         "ALTER TABLE decisions ADD COLUMN IF NOT EXISTS author_principal_id INTEGER",
         "ALTER TABLE rules ADD COLUMN IF NOT EXISTS author_principal_id INTEGER",
     ]
+
+
+@pytest.mark.asyncio
+async def test_team_project_name_uniqueness_is_idempotent():
+    connection = AsyncMock()
+
+    await _ensure_team_project_name_uniqueness(connection)
+
+    statement = str(connection.execute.await_args.args[0])
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_team_projects_team_name" in statement
+    assert "ON team_projects (team_id, name)" in statement
 
 
 @pytest.mark.asyncio

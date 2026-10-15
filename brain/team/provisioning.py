@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import mint_credential
 from brain.database.models import Principal, Repository
-from brain.team.authorization import ROLE_PERMISSIONS, Permission, TeamConflict, fresh, permissions
+from brain.team.authorization import ROLE_PERMISSIONS, Permission, TeamConflict, TeamDenied, fresh, permissions
 from brain.team.models import ProjectMember, ProjectRepository, Team, TeamMember, TeamProject
 
 TEAM_ID = 1
@@ -124,6 +124,14 @@ async def resolve_principal(session: AsyncSession, principal: int | str) -> Prin
     return found
 
 
+async def resolve_principal_name(session: AsyncSession, name: str) -> Principal:
+    """Resolve a principal explicitly by name, including all-digit names."""
+    found = await fresh(session, Principal, Principal.name == name)
+    if found is None:
+        raise TeamNotFound(f"Principal {name!r} not found")
+    return found
+
+
 async def create_human_principal(session: AsyncSession, name: str, *, is_admin: bool = False) -> tuple[str, Principal]:
     """Mint (or extend) a human principal with a member credential; the plaintext key is returned once."""
     existing = (await session.execute(select(Principal).where(Principal.name == name))).scalar_one_or_none()
@@ -135,7 +143,7 @@ async def create_human_principal(session: AsyncSession, name: str, *, is_admin: 
 
 
 async def add_member(session: AsyncSession, *, principal: Principal, issuer: str, subject: str,
-                     is_admin: bool = False, team_id: int = TEAM_ID) -> TeamMember:
+                     is_admin: bool | None = None, team_id: int = TEAM_ID) -> TeamMember:
     """Record verified membership for a human principal (idempotent; reactivates a revoked row)."""
     issuer, subject = issuer.strip(), subject.strip()
     if not issuer or not subject:
@@ -165,7 +173,8 @@ async def add_member(session: AsyncSession, *, principal: Principal, issuer: str
         raise TeamConflict("Principal belongs to a different team")
     if (member.verification_issuer, member.verification_subject) != (issuer, subject):
         raise TeamConflict("Member is verified under a different issuer/subject")
-    member.is_admin = bool(is_admin)
+    if is_admin is not None:
+        member.is_admin = is_admin
     if member.revoked_at or not member.verified_at:
         member.revoked_at = None
         member.verified_at = _now()
@@ -201,15 +210,23 @@ async def create_project(session: AsyncSession, *, name: str, allowed: list[str]
     name = name.strip()
     if not name:
         raise TeamConflict("Project name must not be blank")
-    policy = sorted(permissions(allowed)) if allowed is not None else sorted(Permission)
+    try:
+        policy = sorted(permissions(allowed)) if allowed is not None else sorted(Permission)
+    except TeamDenied as exc:
+        raise TeamConflict(str(exc)) from exc
     await require_team(session, team_id)
     project = await fresh(session, TeamProject, TeamProject.team_id == team_id, TeamProject.name == name,
                           exclusive=True)
     if project is None:
-        project = TeamProject(team_id=team_id, name=name, permissions=policy)
-        session.add(project)
-        await session.flush()
-        return project
+        try:
+            async with session.begin_nested():
+                project = TeamProject(team_id=team_id, name=name, permissions=policy)
+                session.add(project)
+                await session.flush()
+        except IntegrityError:
+            project = await fresh(session, TeamProject, TeamProject.team_id == team_id, TeamProject.name == name)
+            if project is None:
+                raise
     if sorted(project.permissions or []) != policy:
         raise TeamConflict(f"Project {name!r} already exists with a different permission policy")
     return project
@@ -222,6 +239,8 @@ async def resolve_project(session: AsyncSession, project: uuid.UUID | str, team_
         try:
             found = await fresh(session, TeamProject, TeamProject.id == uuid.UUID(project))
         except ValueError:
+            found = None
+        if found is None:
             found = await fresh(session, TeamProject, TeamProject.team_id == team_id, TeamProject.name == project)
     if found is None:
         raise TeamNotFound(f"Project {project!r} not found")

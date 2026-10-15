@@ -110,7 +110,7 @@ def add_member_cmd(
             else:
                 identity = await provisioning.resolve_principal(session, principal)
             member = await provisioning.add_member(session, principal=identity, issuer=issuer,
-                                                   subject=subject or identity.name, is_admin=admin)
+                                                   subject=subject or identity.name, is_admin=True if admin else None)
             result = provisioning.member_dict(member, identity)
             if project is not None:
                 target = await provisioning.resolve_project(session, project)

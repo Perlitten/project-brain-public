@@ -50,7 +50,7 @@ class TeamMemberRequest(BaseModel):
     principal_name: str | None = Field(default=None, min_length=1, max_length=128)
     issuer: str = Field(default=provisioning.CREDENTIAL_ISSUER, min_length=1, max_length=255)
     subject: str | None = Field(default=None, min_length=1, max_length=255)
-    is_admin: bool = False
+    is_admin: bool | None = None
 
     @model_validator(mode="after")
     def _one_principal(self):
@@ -110,8 +110,13 @@ async def list_team_members(caller: ResolvedPrincipal = Depends(require_principa
 async def add_team_member(body: TeamMemberRequest, caller: ResolvedPrincipal = Depends(require_principal),
                           session=Depends(team_session)):
     admin = await team_administrator(session, caller)
-    principal = await provisioning.resolve_principal(
-        session, body.principal_id if body.principal_id is not None else body.principal_name)
+    if body.principal_id is not None:
+        principal = await provisioning.resolve_principal(session, body.principal_id)
+    else:
+        assert body.principal_name is not None
+        principal = await provisioning.resolve_principal_name(session, body.principal_name)
+    if principal.id == admin.principal_id and body.is_admin is False:
+        raise TeamConflict("Administrators cannot demote their own membership")
     member = await provisioning.add_member(session, principal=principal, issuer=body.issuer,
                                            subject=body.subject or principal.name, is_admin=body.is_admin,
                                            team_id=admin.team_id)

@@ -34,6 +34,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_decision_repo_scope(conn)
     await _ensure_rule_repo_scope(conn)
     await _ensure_files_path_uniqueness(conn)
+    await _ensure_team_project_name_uniqueness(conn)
     await _ensure_decision_title_uniqueness(conn)
     await _ensure_memory_authorship_columns(conn)
     await _backfill_non_current_knowledge_authority(conn)
@@ -181,6 +182,18 @@ async def _ensure_files_path_uniqueness(conn: AsyncConnection) -> None:
             """
             CREATE UNIQUE INDEX IF NOT EXISTS uq_files_repository_path
             ON files (repository_id, path)
+            """
+        )
+    )
+
+
+async def _ensure_team_project_name_uniqueness(conn: AsyncConnection) -> None:
+    """Make project creation race-safe on databases created before the constraint existed."""
+    await conn.execute(
+        text(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_team_projects_team_name
+            ON team_projects (team_id, name)
             """
         )
     )
