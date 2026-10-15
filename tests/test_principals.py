@@ -47,4 +47,3 @@ def test_scoped_principal_checks():
     assert not require_scopes(p, "jobs:write")
     assert require_scopes(p, "jobs:read")
     assert ALL_SCOPES not in p.scopes
-

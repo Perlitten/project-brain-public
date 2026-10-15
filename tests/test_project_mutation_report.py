@@ -267,3 +267,50 @@ def test_aggregate_recomputes_raw_scores_and_requires_matching_complete_evidence
     decision["brain.security.x_check__mutmut_2"]["source_sha256"] = "different-source"
     with pytest.raises(ValueError, match="bound to the frozen source"):
         aggregate(inventory, reports, invalid, "compiler-proof", decision)
+
+
+def test_changing_module_scope_rebuilds_full_statistics_instead_of_claiming_no_tests(tmp_path):
+    pytest.importorskip("mutmut", reason="optional mutation engine; exercised in the mutation workflow")
+    import shutil
+
+    root = Path(__file__).resolve().parents[1]
+    campaign = tmp_path / "campaign"
+    (campaign / "brain").mkdir(parents=True)
+    (campaign / "tests").mkdir()
+    (campaign / "brain/__init__.py").write_text("")
+    for name, value in (("first", 17), ("second", 23)):
+        (campaign / f"brain/{name}.py").write_text(f"def value():\n    return {value}\n")
+        (campaign / f"tests/test_{name}.py").write_text(
+            f"from brain.{name} import value\ndef test_value():\n    assert value() == {value}\n")
+    (campaign / "pyproject.toml").write_text('''[tool.mutmut]
+source_paths = ["brain"]
+pytest_add_cli_args_test_selection = ["tests/"]
+process_isolation = "fork"
+max_stack_depth = -1
+''')
+    subprocess.run(["git", "init", str(campaign)], check=True, capture_output=True)
+    support = campaign / "eval/mutation_support"
+    shutil.copytree(root / "eval/mutation_support", support, ignore=shutil.ignore_patterns("__pycache__"))
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith("BRAIN_MUTATION_") and key not in {"MUTANT_UNDER_TEST", "PYTEST_CURRENT_TEST"}}
+    env.update(PYTHONPATH=f"{support}{os.pathsep}{root}", PYTEST_PLUGINS="import_check")
+    for iteration, name in enumerate(("first", "second", "second")):
+        if iteration == 2:
+            # This synthetic contract intentionally accepts both outputs. The
+            # previous kill must not survive a change in the test assertions.
+            (campaign / "tests/test_second.py").write_text(
+                "from brain.second import value\ndef test_value():\n    assert value() in (23, 24)\n")
+        result = subprocess.run([
+            sys.executable, "-c",
+            "import os; from pathlib import Path; import eval.project_mutation as campaign; "
+            f"campaign.ROOT=Path({str(campaign)!r}); os.chdir(campaign.ROOT); "
+            f"campaign.run_shard([{{'module': 'brain/{name}.py'}}])",
+        ], cwd=campaign, env=env, text=True, capture_output=True, timeout=60)
+        assert result.returncode == 0, result.stdout + result.stderr
+        metadata = json.loads((campaign / f"mutants/brain/{name}.py.meta").read_text())
+        assert metadata["exit_code_by_key"] and set(metadata["exit_code_by_key"].values()) == ({0} if iteration == 2 else {1})
+        assert "all shard candidates remain uncovered" not in result.stdout
+        # Reuse the first run's cache and introduce an unrelated new test. A
+        # partial incremental stats run would execute only this test and lose
+        # the second module's existing behavior assertions.
+        (campaign / "tests/test_extra.py").write_text("def test_unrelated():\n    assert True\n")

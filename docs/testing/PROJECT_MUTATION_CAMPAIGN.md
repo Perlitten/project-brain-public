@@ -218,3 +218,30 @@ integrity case was subsequently verified with all seven campaign tooling cases.
 The unchanged production mypy gate remains **0 errors across 434 files**. The
 ordinary GitHub CI and both CodeQL language analyses passed for `1842aec7` before
 these test-strengthening changes; exact-head remote checks remain required.
+
+## Cache and assertion hardening
+
+A local OAuth attempt was discarded because an incremental statistics cache
+collected only two unrelated new tests after the selected module changed. Its
+zero-association result is not a baseline and is never included in a score.
+Every run now recollects full statistics. Selected files are regenerated once
+because raw files copied for another scope can otherwise have mtimes that
+mutmut mistakes for generated code. A real two-module regression exercises
+that failure. A context envelope also binds resumable outcomes to production,
+test, runner and dependency fingerprints; changed assertions cannot retain old
+kills. The integration test verifies both fresh scope association and rejection
+of a stale kill after a synthetic test contract changes.
+
+Two repository-self-scan drift cases that accepted readiness fallbacks or empty
+list equality are replaced by one controlled repository case. It requires two
+distinct drift findings, correct severity/source evidence, repeatable identifiers
+and unchanged identifiers when source lines move. A version-floor placeholder
+is removed; release identity has dedicated existing contract tests.
+
+Three persisted OAuth cases add client-update isolation, token attribution,
+paired rotation/revocation, absence of raw tokens on disk, unaffected other
+clients, SQLite timezone handling and exact independent access/refresh deadlines.
+The existing PostgreSQL overlap case now holds a public database row lock and
+waits for both real HTTP transactions to contend. It no longer patches a private
+OAuth helper or relies on an arbitrary scheduling delay. The same existing
+issued-token case now verifies the principal's service kind.

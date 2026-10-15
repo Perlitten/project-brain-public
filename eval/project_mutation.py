@@ -210,6 +210,33 @@ def run_shard(modules: list[dict], invalid: dict | None = None) -> None:
 
     config().only_mutate = [item["module"] for item in modules]
     prepare_git_pointer(ROOT)
+    inputs = {str(path.relative_to(ROOT)): file_hash(path)
+              for base in ("brain", "apps", "scripts", "tests") for path in sorted((ROOT / base).rglob("*.py"))
+              if "node_modules" not in path.parts}
+    for path in [ROOT / "pyproject.toml", Path(__file__), *(ROOT / "eval/mutation_support").glob("*.py"),
+                 *ROOT.glob("requirements*.lock"), *ROOT.glob("eval/*requirements.lock")]:
+        label = str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else "campaign-runner"
+        inputs[label] = file_hash(path)
+    context = {"inputs": inputs, "modules": sorted(item["module"] for item in modules),
+               "python": sys.version, "versions": sorted([dist.metadata["Name"], dist.version]
+                                                         for dist in importlib.metadata.distributions())}
+    context_file = ROOT / "mutants/campaign-context.json"
+    try:
+        reset_outcomes = json.loads(context_file.read_text()) != context
+    except (FileNotFoundError, json.JSONDecodeError):
+        reset_outcomes = True
+    # A file copied raw when another shard was selected can have a newer mtime
+    # than its source. mutmut mistakes that for generated code. Force generation
+    # of this selection once; unchanged candidate outcomes can still be resumed.
+    for item in modules:
+        target = ROOT / "mutants" / item["module"]
+        if target.exists():
+            source = (ROOT / item["module"]).stat()
+            os.utime(target, ns=(source.st_atime_ns, source.st_mtime_ns))
+    # mutmut's incremental cache can retain test durations while losing all
+    # associations after a scope change. A baseline always recollects the full
+    # suite; candidate outcome metadata remains available for exact-head resume.
+    (ROOT / "mutants/mutmut-stats.json").unlink(missing_ok=True)
     os.environ["BRAIN_MUTATION_CONFIG_ROOT"] = str(ROOT)
     os.environ["BRAIN_MUTATION_SUPPORT_PATH"] = str(ROOT / "eval/mutation_support")
     child_stats = ROOT / ".mutation-results/subprocess-stats"
@@ -221,7 +248,7 @@ def run_shard(modules: list[dict], invalid: dict | None = None) -> None:
     control.parent.mkdir(exist_ok=True)
     control.unlink(missing_ok=True)
     os.environ["BRAIN_MUTATION_STATS_CONTROL"] = str(control)
-    if invalid:
+    if modules:
         from mutmut.__main__ import create_mutants
         from mutmut.utils.file_utils import copy_also_copy_files, copy_src_dir
 
@@ -229,17 +256,20 @@ def run_shard(modules: list[dict], invalid: dict | None = None) -> None:
         copy_also_copy_files()
         create_mutants(1)
         for item in modules:
-            if file_hash(ROOT / "mutants" / item["module"]) != item["generated_sha256"]:
+            if "generated_sha256" in item and file_hash(ROOT / "mutants" / item["module"]) != item["generated_sha256"]:
                 raise ValueError(f"Generated source changed: {item['module']}")
             path = ROOT / "mutants" / (item["module"] + ".meta")
             data = json.loads(path.read_text(encoding="utf-8"))
-            if candidate_hash(data["exit_code_by_key"]) != item["candidate_keys_sha256"]:
+            if "candidate_keys_sha256" in item and candidate_hash(data["exit_code_by_key"]) != item["candidate_keys_sha256"]:
                 raise ValueError(f"Candidate identities changed: {item['module']}")
             for key in data["exit_code_by_key"]:
                 if key in invalid:
                     data["exit_code_by_key"][key] = 37
                     data["type_check_error_by_key"][key] = json.dumps(invalid[key], sort_keys=True)
+                elif reset_outcomes:
+                    data["exit_code_by_key"][key] = None
             path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    context_file.write_text(json.dumps(context, sort_keys=True) + "\n", encoding="utf-8")
     try:
         _run((), max_children=1)
     except SystemExit:
