@@ -11,11 +11,17 @@
   "pending_scope": [
     {
       "module": "deploy/index_snapshots.py",
-      "reason": "Operator helper has credential-file parsing, HTTP error handling and batch exit-status logic; not eligible for a logic-free CLI exclusion. Must inventory and measure before full-repository acceptance."
+      "reason": "Operator helper has credential-file parsing, HTTP error handling and batch exit-status logic; not eligible for a logic-free CLI exclusion. Behavioral measurement and review are still required before full-repository acceptance.",
+      "candidates": 156,
+      "type_invalid": 41,
+      "stage": "generated and compiler-reviewed; behavioral measurement/survivor review and full-universe aggregation remain pending"
     },
     {
       "module": "deploy/vps_staging_smoke.py",
-      "reason": "Deployment safety-policy assertions and configuration validation; not logic-free CLI glue. Must inventory and measure before full-repository acceptance."
+      "reason": "Deployment safety-policy assertions and configuration validation; not logic-free CLI glue. Behavioral measurement and review are still required before full-repository acceptance.",
+      "candidates": 62,
+      "type_invalid": 1,
+      "stage": "generated and compiler-reviewed; behavioral measurement/survivor review and full-universe aggregation remain pending"
     }
   ],
   "non_runtime_boundaries": {
@@ -33,6 +39,8 @@
     }
   },
   "expanded_runtime_operator_modules": 436,
-  "expanded_candidate_count": null,
-  "acceptance": "Not established. Pending modules are not zero-candidate modules and are not excluded from a future full-repository denominator."
+  "expanded_candidate_count": 107719,
+  "acceptance": "Not established. Pending modules are not zero-candidate modules and are not excluded from a future full-repository denominator.",
+  "supplemental_inventory": "project-deploy-mutation-inventory.json",
+  "supplemental_type_proof": "project-deploy-mutation-type-proof.json.gz"
 }

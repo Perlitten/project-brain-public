@@ -30,9 +30,14 @@ helpers outside those roots: `deploy/index_snapshots.py` (credential-file parsin
 HTTP failure handling and batch exit status) and `deploy/vps_staging_smoke.py`
 (staging safety-policy validation). They are **pending scope**, not excluded as
 logic-free CLI glue. The frozen 434-module run cannot establish full-repository
-acceptance until these are also inventoried, type-checked, measured and reviewed.
-The expanded runtime/operator scope therefore contains at least 436 modules;
-its candidate denominator is not yet known. The original frozen inventory is
+acceptance until these are also measured and reviewed. A
+[supplemental inventory](evidence/project-deploy-mutation-inventory.json) now
+records their 218 candidates; the [compiler proof](evidence/project-deploy-mutation-type-proof.json.gz)
+excludes 42 type-invalid candidates (41 indexing-helper, one staging-helper).
+No behavioral outcomes or equivalents are inferred from generation or typing.
+The expanded runtime/operator scope contains 436 modules and 107,719 candidates,
+with 35,173 compiler-invalid candidates and 72,546 before equivalence review.
+This arithmetic is not an aggregated score. The original frozen inventory is
 preserved, rather than silently changing the denominator of running shards.
 See the [tracked Python scope review](evidence/project-python-scope-review.json)
 for non-runtime test/evaluation/benchmark boundaries. The tool's inventory
@@ -566,3 +571,41 @@ passes without changing any record other than timing. Accepted local paired
 mutation runs total 43.10 worker minutes; the hosted baseline is still running
 and has no final runtime or complete before/after table. Its 02:41 snapshot is
 approximately 157 elapsed minutes after starting, not a completed campaign.
+
+### Reproduce supplementary deployment generation
+
+In the same locked tool environment, these commands operate only on copies:
+
+```bash
+campaign_root="$PWD"
+campaign_scratch=$(mktemp -d)
+mkdir -p "$campaign_scratch/deploy"
+cp deploy/index_snapshots.py deploy/vps_staging_smoke.py "$campaign_scratch/deploy/"
+cat > "$campaign_scratch/pyproject.toml" <<'TOML'
+[tool.mutmut]
+source_paths = ["deploy"]
+mutate_only_covered_lines = false
+max_stack_depth = -1
+TOML
+cd "$campaign_scratch"
+python - <<'PY'
+import json
+from pathlib import Path
+from mutmut.__main__ import create_mutants_for_file
+for source in sorted(Path("deploy").glob("*.py")):
+    target = Path("mutants") / source
+    target.parent.mkdir(parents=True, exist_ok=True)
+    result = create_mutants_for_file(source, target)
+    assert not result.error and not result.warnings, result
+    print(source, len(json.loads(Path(str(target) + ".meta").read_text())["exit_code_by_key"]))
+PY
+cd mutants
+python -m mypy --config-file "$campaign_root/pyproject.toml" \
+  --explicit-package-bases --follow-imports=silent --output=json deploy \
+  > ../diagnostics.jsonl
+```
+
+The generator prints 156 and 62 candidates; mypy exits 1 for expected candidate
+errors. Use the source/generated hashes and per-candidate compiler diagnostics
+in the supplemental evidence to check identity. This does not add the helpers
+to the running 434-module shard plan or certify their behavioral coverage.

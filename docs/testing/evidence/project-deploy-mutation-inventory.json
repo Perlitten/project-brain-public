@@ -1,0 +1,23 @@
+{
+  "base": "e93e8a32e032a546172c7dfb0241a9e60b0b81b2",
+  "tool": "mutmut==3.8.0",
+  "modules": [
+    {
+      "module": "deploy/index_snapshots.py",
+      "sha256": "40319bcef6790240318c5e1db1c0909176717c9588cffe788744652bc0433bd4",
+      "candidates": 156,
+      "candidate_keys_sha256": "439cea02ba2aa168a946ef3242b591ffcd585aa3a9f05506b67de006e95d2282",
+      "generated_sha256": "d660f32ad7cf6c79d58af99e40b97c838351555aeb4d3b973fa9a95505f466fc"
+    },
+    {
+      "module": "deploy/vps_staging_smoke.py",
+      "sha256": "4ac57b4828573cf0de56c26549ca441b4dbb3e1ce86b850ade45548df9cb1b9e",
+      "candidates": 62,
+      "candidate_keys_sha256": "919f727948614de151f8a8e67cda611c33d464a1221af6bf4dd85e80f5609f70",
+      "generated_sha256": "cd5afc4ed300c19eb63f0f0681f11a56339389630512740d34c9d6006079662a"
+    }
+  ],
+  "module_count": 2,
+  "candidate_count": 218,
+  "scope": "Supplementary deployment-helper generation, not a complete inventory or measured score. Combine only with a validated full-universe run; no generation credited as detection."
+}
