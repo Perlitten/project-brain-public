@@ -465,8 +465,6 @@ async def get_diff_review(job_id: str) -> dict:
 
 
 if __name__ == "__main__":
-    from brain.config.settings import settings
+    from apps.mcp_server import team_server  # noqa: F401  (registers the team_* tools)
 
-    if settings.BRAIN_TEAM_MODE:
-        raise RuntimeError("Personal remote MCP is unavailable in team mode; use authenticated native MCP")
     mcp.run()

@@ -6,21 +6,33 @@ from typing import Any, Optional, Union, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.database.models import Embedding, File, FileCard, FileChunk, Repository
 from brain.database.session import async_session_factory
 from brain.workers.db_fencing import assert_current_db_fence
 
 
-async def get_repository_by_path(repo_path: Union[str, Path]) -> Optional[Repository]:
-    """Return the Repository row for an absolute repo path, if indexed."""
+def repository_path_candidates(repo_path: Union[str, Path]) -> list[str]:
+    """Every spelling under which an indexed repository path may have been stored."""
     raw_path = str(repo_path)
     path_obj = Path(raw_path)
     candidates = {raw_path, raw_path.replace("\\", "/"), path_obj.as_posix()}
     resolved_path = Path(os.path.realpath(raw_path))
     candidates.update({resolved_path.as_posix(), str(resolved_path)})
+    return list(candidates)
+
+
+async def find_repository_id(session: AsyncSession, repo_path: Union[str, Path]) -> Optional[int]:
+    """The ``repositories.id`` of an indexed path inside the caller's session, else ``None``."""
+    stmt = select(Repository.id).where(Repository.path.in_(repository_path_candidates(repo_path)))
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def get_repository_by_path(repo_path: Union[str, Path]) -> Optional[Repository]:
+    """Return the Repository row for an absolute repo path, if indexed."""
     async with async_session_factory() as session:
-        stmt = select(Repository).where(Repository.path.in_(list(candidates)))
+        stmt = select(Repository).where(Repository.path.in_(repository_path_candidates(repo_path)))
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 

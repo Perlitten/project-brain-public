@@ -38,9 +38,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from apps.api.auth import DEV_PRINCIPAL, dev_open, resolve_api_key
+from apps.api.auth import DEV_PRINCIPAL, dev_open, named_credential_required, resolve_api_key
 from apps.mcp_server import remote_server
-from brain.config.settings import settings
 
 MCP_PATH = "/mcp"
 
@@ -73,7 +72,7 @@ class _CredentialBackend(AuthenticationBackend):
             principal = resolved
         # The audit middleware reads the principal from request state.
         conn.scope.setdefault("state", {})["principal"] = principal
-        if settings.BRAIN_TEAM_MODE and principal.id <= 0:
+        if await named_credential_required(principal):
             return None
         scopes = sorted(principal.scopes)
         # Keyed by principal name (not credential) so a session survives an
@@ -114,16 +113,12 @@ class _SessionManagerHolder:
 class McpHttpEndpoint:
     def __init__(self, holder: _SessionManagerHolder, resource_metadata_url: Optional[AnyHttpUrl]) -> None:
         self.holder = holder
-        self.team_mode = settings.BRAIN_TEAM_MODE
         self.asgi: ASGIApp = AuthenticationMiddleware(
             AuthContextMiddleware(RequireAuthMiddleware(holder, [], resource_metadata_url)),
             backend=_CredentialBackend(),
         )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if self.team_mode != settings.BRAIN_TEAM_MODE:
-            await JSONResponse({"detail": "Mode changed; restart the API"}, status_code=503)(scope, receive, send)
-            return
         await self.asgi(scope, receive, send)
 
     def serving(self) -> contextlib.AbstractAsyncContextManager[None]:
@@ -146,10 +141,9 @@ def install(app: Any, *, public_url: Optional[str]) -> McpHttpEndpoint:
         app.router.routes.extend(oauth_routes(provider, issuer=public_url, resource=resource))
         app.include_router(consent_router(provider))
         logger.info("MCP OAuth authorization server enabled, issuer {}", public_url)
-    selected = remote_server.mcp
-    if settings.BRAIN_TEAM_MODE:
-        from apps.mcp_server.team_server import mcp as team_mcp
-        selected = team_mcp
-    endpoint = McpHttpEndpoint(_SessionManagerHolder(selected._lowlevel_server), resource_metadata_url)
+    # Registers the team_* tools next to the personal ones on the same server.
+    from apps.mcp_server import team_server  # noqa: F401
+
+    endpoint = McpHttpEndpoint(_SessionManagerHolder(remote_server.mcp._lowlevel_server), resource_metadata_url)
     app.router.routes.append(Route(MCP_PATH, endpoint=endpoint, methods=["GET", "POST", "DELETE"]))
     return endpoint

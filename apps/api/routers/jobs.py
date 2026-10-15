@@ -2,7 +2,7 @@ from typing import Any, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from apps.api.auth import require_api_key, require_scope
+from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.schemas import (
     BenchmarkJobRequest,
     DeepContextJobRequest,
@@ -14,8 +14,11 @@ from apps.api.schemas import (
     ReindexJobRequest,
     SelfDiagnosisJobRequest,
 )
+from apps.api.team_access import repository_authority
+from brain.auth.principals import ResolvedPrincipal
 from brain.database.session import redis_client
 from brain.config.settings import settings
+from brain.team.authorization import Permission
 from brain.workers.queue import JobQueue, WORKER_POOLS, queue_for_job, worker_pool_prefix
 
 router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(require_api_key)])
@@ -32,6 +35,11 @@ def _queue(job_type: str | None = None) -> JobQueue:
     )
 
 
+async def _authorize_job(principal: ResolvedPrincipal, repo_path: str | None) -> None:
+    # A job without a repository touches every repository: a team administrator once members exist.
+    await repository_authority(principal, Permission.REQUEST_RUN, repo_path=repo_path)
+
+
 def _enqueue_response(job_id: str) -> dict:
     return {
         "job_id": job_id,
@@ -41,7 +49,8 @@ def _enqueue_response(job_id: str) -> dict:
 
 
 @router.post("/reindex", dependencies=[Depends(require_scope("jobs:write"))])
-async def enqueue_reindex(body: ReindexJobRequest | None = None):
+async def enqueue_reindex(body: ReindexJobRequest | None = None, principal: ResolvedPrincipal = Depends(require_principal)):
+    await _authorize_job(principal, getattr(body, "repo_path", None))
     params: dict[str, Any] = {}
     if body:
         if body.repo_path:
@@ -61,14 +70,16 @@ async def enqueue_reindex(body: ReindexJobRequest | None = None):
 
 
 @router.post("/health-check", dependencies=[Depends(require_scope("jobs:write"))])
-async def enqueue_health_check(repo_path: Optional[str] = None):
+async def enqueue_health_check(repo_path: Optional[str] = None, principal: ResolvedPrincipal = Depends(require_principal)):
+    await _authorize_job(principal, repo_path)
     params = {"repo_path": repo_path} if repo_path else None
     job_id = await _queue("health_check").enqueue("health_check", params if params else None)
     return _enqueue_response(job_id)
 
 
 @router.post("/embedding-verify", dependencies=[Depends(require_scope("jobs:write"))])
-async def enqueue_embedding_verify(body: EmbeddingVerifyRequest | None = None):
+async def enqueue_embedding_verify(body: EmbeddingVerifyRequest | None = None, principal: ResolvedPrincipal = Depends(require_principal)):
+    await _authorize_job(principal, getattr(body, "repo_path", None))
     params: dict[str, Any] = {}
     if body and body.repo_path:
         params["repo_path"] = body.repo_path
@@ -77,7 +88,8 @@ async def enqueue_embedding_verify(body: EmbeddingVerifyRequest | None = None):
 
 
 @router.post("/embedding-backfill", dependencies=[Depends(require_scope("jobs:write"))])
-async def enqueue_embedding_backfill(body: EmbeddingBackfillRequest | None = None):
+async def enqueue_embedding_backfill(body: EmbeddingBackfillRequest | None = None, principal: ResolvedPrincipal = Depends(require_principal)):
+    await _authorize_job(principal, getattr(body, "repo_path", None))
     params: dict[str, Any] = {}
     if body:
         if body.repo_path:
@@ -94,7 +106,8 @@ async def enqueue_embedding_backfill(body: EmbeddingBackfillRequest | None = Non
 
 
 @router.post("/benchmark", dependencies=[Depends(require_scope("jobs:write"))])
-async def enqueue_benchmark(body: BenchmarkJobRequest | None = None):
+async def enqueue_benchmark(body: BenchmarkJobRequest | None = None, principal: ResolvedPrincipal = Depends(require_principal)):
+    await _authorize_job(principal, getattr(body, "repo_path", None))
     params: dict[str, Any] = {}
     if body:
         if body.repo_path:
@@ -108,7 +121,8 @@ async def enqueue_benchmark(body: BenchmarkJobRequest | None = None):
 
 
 @router.post("/proactive-insights", dependencies=[Depends(require_scope("jobs:write"))])
-async def enqueue_proactive_insights(body: ProactiveInsightsJobRequest | None = None):
+async def enqueue_proactive_insights(body: ProactiveInsightsJobRequest | None = None, principal: ResolvedPrincipal = Depends(require_principal)):
+    await _authorize_job(principal, getattr(body, "repo_path", None))
     params: dict[str, Any] = {}
     if body:
         if body.repo_path:
@@ -122,7 +136,8 @@ async def enqueue_proactive_insights(body: ProactiveInsightsJobRequest | None = 
 
 
 @router.post("/memory-consolidation", dependencies=[Depends(require_scope("jobs:write"))])
-async def enqueue_memory_consolidation(body: MemoryConsolidationJobRequest | None = None):
+async def enqueue_memory_consolidation(body: MemoryConsolidationJobRequest | None = None, principal: ResolvedPrincipal = Depends(require_principal)):
+    await _authorize_job(principal, getattr(body, "repo_path", None))
     params: dict[str, Any] = {}
     if body:
         if body.scheduled:
@@ -136,7 +151,8 @@ async def enqueue_memory_consolidation(body: MemoryConsolidationJobRequest | Non
 
 
 @router.post("/self-diagnosis", dependencies=[Depends(require_scope("jobs:write"))])
-async def enqueue_self_diagnosis(body: SelfDiagnosisJobRequest | None = None):
+async def enqueue_self_diagnosis(body: SelfDiagnosisJobRequest | None = None, principal: ResolvedPrincipal = Depends(require_principal)):
+    await _authorize_job(principal, getattr(body, "repo_path", None))
     params: dict[str, Any] = {}
     if body:
         if body.repo_path:
@@ -165,7 +181,9 @@ async def enqueue_self_diagnosis(body: SelfDiagnosisJobRequest | None = None):
 @router.post("/nightly-maintenance", dependencies=[Depends(require_scope("jobs:write"))])
 async def enqueue_nightly_maintenance(
     body: NightlyMaintenanceJobRequest | None = None,
+    principal: ResolvedPrincipal = Depends(require_principal),
 ):
+    await _authorize_job(principal, getattr(body, "repo_path", None))
     params: dict[str, Any] = {}
     if body:
         if body.repo_path:
@@ -184,7 +202,9 @@ async def enqueue_nightly_maintenance(
 
 
 @router.post("/deep-context", dependencies=[Depends(require_scope("jobs:write"))])
-async def enqueue_deep_context(body: DeepContextJobRequest, request: Request = cast(Request, None)):
+async def enqueue_deep_context(body: DeepContextJobRequest, request: Request = cast(Request, None),
+                               principal: ResolvedPrincipal = Depends(require_principal)):
+    await _authorize_job(principal, body.repo_path)
     # Without the late-interaction lane the job still builds a durable pack
     # with the default retrieval (see brain.workers.tasks.run_deep_context).
     from apps.api.request_observation import requesting_principal

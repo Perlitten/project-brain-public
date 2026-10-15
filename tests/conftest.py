@@ -73,3 +73,25 @@ def _discard_stale_db_connections():
     pending = async_engine.dispose(close=False)
     if asyncio.iscoroutine(pending):  # skipped when tests mock the engine
         asyncio.run(pending)
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "team_state: run the real team-state probe instead of the solo stub")
+
+
+@pytest.fixture(autouse=True)
+def _solo_team_state(request, monkeypatch):
+    """Tests without a team database run as a team of one.
+
+    The unified team model probes ``team_members`` on every personal request;
+    suites that mock the engine or the session factory have no table to probe.
+    Tests that provision a team opt back into the real probe with
+    ``@pytest.mark.team_state``.
+    """
+    if request.node.get_closest_marker("team_state"):
+        return
+
+    async def solo() -> str:
+        return "solo"
+
+    monkeypatch.setattr("apps.api.team_access.current_team_state", solo)

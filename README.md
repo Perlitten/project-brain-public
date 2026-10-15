@@ -142,6 +142,19 @@ After a change, an agent can request `review_diff`, record a scoped decision,
 or capture a lesson with its validation evidence. Tool access does not mean
 agents automatically call Brain in every session: configure your client workflow.
 
+## From one developer to a team
+
+A Brain starts as a team of one: with no team members registered, every
+authenticated caller (the shared `PROJECT_BRAIN_API_KEY` included) can use
+every indexed repository, and `/health` reports `"mode": "solo"`. Boundaries
+switch on when the first verified member is added with `brain team member add`:
+the shared key is then refused, each repository is reachable through the
+project it is attached to, and member roles (reader, contributor, reviewer,
+administrator) decide who may search, propose knowledge or request runs.
+Provisioning is an operator action through the CLI or the `team:admin` API;
+there is no invitation or SSO flow yet. Design and limits:
+[ADR: team collaboration](docs/adr/team-collaboration.md).
+
 ## See the product
 
 [Open the public, read-only demo](https://project-brain-demo.vercel.app/).

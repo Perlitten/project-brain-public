@@ -92,6 +92,10 @@ TOOL_ANNOTATIONS: dict[str, ToolAnnotations] = {
     "record_task_lesson": _annotations("Record a task lesson", read_only=False, idempotent=True),
     "record_task_observation": _annotations("Record a task observation", read_only=False, idempotent=True),
     "record_procedure_outcome": _annotations("Record a skill outcome", read_only=False, idempotent=True),
+    # Team tools: idempotency keys make repeated task and run requests land on the same row.
+    "team_list_tasks": _annotations("List team tasks", read_only=True),
+    "team_create_task": _annotations("Create a team task", read_only=False, idempotent=True),
+    "team_request_run": _annotations("Request a team run", read_only=False, idempotent=True),
 }
 
 

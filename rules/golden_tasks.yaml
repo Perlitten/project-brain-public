@@ -119,3 +119,20 @@ golden_tasks:
       - "oauth"
     required_surfaces: []
     must_include_tests: true
+
+  - id: task_9
+    description: "Decide who may read or write a repository: solo versus team state, member roles, named credential required"
+    expected_files:
+      - "brain/team/authorization.py"
+      - "apps/api/team_access.py"
+      - "apps/api/auth.py"
+      - "tests/test_team_transport.py"
+    expected_modules:
+      - "brain/team"
+      - "apps/api"
+    expected_features:
+      - "team"
+      - "authorization"
+      - "repository access"
+    required_surfaces: []
+    must_include_tests: true

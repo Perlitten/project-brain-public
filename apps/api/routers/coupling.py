@@ -6,6 +6,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import repository_access
+from brain.team.authorization import Permission
 from brain.config.paths import resolve_repo_path, validate_secure_repo_path
 from brain.graph.generation_manager import GraphGenerationManager
 from brain.insights.coupling_metrics import CouplingMetricsCalculator
@@ -14,7 +16,8 @@ from brain.insights.cycle_detector import CycleDetector
 from brain.insights.hotspots import HotspotAnalyzer
 from brain.insights.subsystem_config import SubsystemConfigManager
 
-router = APIRouter(prefix="/insights/coupling", tags=["coupling-intelligence"], dependencies=[Depends(require_api_key), Depends(require_scope("coupling:read"))])
+router = APIRouter(prefix="/insights/coupling", tags=["coupling-intelligence"], dependencies=[Depends(require_api_key), Depends(require_scope("coupling:read")),
+                                  Depends(repository_access(Permission.READ))])
 
 
 def _safe_resolve(repo_path_arg: Optional[str]) -> Path:

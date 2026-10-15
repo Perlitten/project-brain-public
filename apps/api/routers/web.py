@@ -19,6 +19,7 @@ from loguru import logger
 from sqlalchemy import String, case, cast, func, literal, select
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import repository_access
 from apps.api.helpers import (
     get_db_counts,
     get_embedding_retrieval_health,
@@ -32,13 +33,17 @@ from brain.context.budget import estimated_tokens
 from brain.database.models import ContextPack, Decision, Embedding, File, FileChunk, IndexingRun, Repository, Rule
 from brain.database.session import async_session_factory, check_health
 from brain.memory.repo_scope import repository_scope_clause
+from brain.team.authorization import Permission
 
 WEB_READ_SCOPE = "core:read"
 
 router = APIRouter(
     prefix="/api/web",
     tags=["web"],
-    dependencies=[Depends(require_api_key), Depends(require_scope(WEB_READ_SCOPE))],
+    # ``repository_id`` in the query string selects the repository; without it the
+    # screen spans every repository, which needs a team administrator once members exist.
+    dependencies=[Depends(require_api_key), Depends(require_scope(WEB_READ_SCOPE)),
+                  Depends(repository_access(Permission.READ))],
 )
 
 

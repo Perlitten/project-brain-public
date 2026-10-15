@@ -6,11 +6,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import repository_access
+from brain.team.authorization import Permission
 from brain.config.paths import resolve_repo_path, validate_secure_repo_path
 from brain.insights.remediation_manager import RemediationPlanManager
 from brain.insights.remediation_strategies import RemediationStrategyRegistry
 
-router = APIRouter(prefix="/insights/remediation", tags=["remediation-planner"], dependencies=[Depends(require_api_key), Depends(require_scope("remediation:read"))])
+router = APIRouter(prefix="/insights/remediation", tags=["remediation-planner"], dependencies=[Depends(require_api_key), Depends(require_scope("remediation:read")),
+                                  Depends(repository_access(Permission.READ))])
 
 
 def _safe_resolve(repo_path_arg: Optional[str]) -> Path:

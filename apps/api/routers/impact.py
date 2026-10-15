@@ -6,11 +6,14 @@ from typing import Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import repository_access
+from brain.team.authorization import Permission
 from brain.config.paths import resolve_repo_path, validate_secure_repo_path
 from brain.insights.impact_engine import ImpactAnalysisEngine
 from brain.insights.impact_models import ImpactResult
 
-router = APIRouter(prefix="/insights/impact", tags=["change-impact"], dependencies=[Depends(require_api_key), Depends(require_scope("impact:read"))])
+router = APIRouter(prefix="/insights/impact", tags=["change-impact"], dependencies=[Depends(require_api_key), Depends(require_scope("impact:read")),
+                                  Depends(repository_access(Permission.READ))])
 
 _IMPACT_CACHE: Dict[str, ImpactResult] = {}
 

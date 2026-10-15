@@ -15,6 +15,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import repository_access
+from brain.team.authorization import Permission
 from brain.config.paths import resolve_repo_path
 from brain.config.settings import settings
 from brain.insights.codeowners import CodeownersParser, FindingOwnershipResolver
@@ -29,7 +31,8 @@ from brain.insights.pr_risk import ArchitectureRiskCalculator
 from brain.insights.pr_summary import PRMarkdownRenderer, PRSummaryModel
 from brain.insights.review_queue import ReviewQueueManager
 
-router = APIRouter(prefix="/insights/architectural-drift", tags=["architectural-drift"], dependencies=[Depends(require_api_key), Depends(require_scope("drift:read"))])
+router = APIRouter(prefix="/insights/architectural-drift", tags=["architectural-drift"], dependencies=[Depends(require_api_key), Depends(require_scope("drift:read")),
+                                  Depends(repository_access(Permission.READ))])
 
 
 def _safe_resolve(repo_path: Optional[str]) -> Path:

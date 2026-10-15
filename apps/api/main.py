@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
         # Keep serving health and diagnostics; readiness remains red until
         # schema initialization succeeds on a later worker task or restart.
         logger.error(f"Startup schema initialization deferred: {type(exc).__name__}: {exc}")
-    if not settings.BRAIN_TEAM_MODE and settings.LATE_INTERACTION_ENABLED and (
+    if settings.LATE_INTERACTION_ENABLED and (
         settings.LATE_INTERACTION_SHADOW_ENABLED
         or settings.LATE_INTERACTION_RERANK_ENABLED
     ) and not settings.LATE_INTERACTION_REMOTE_ENABLED:
@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
                 )
 
         late_warmup_task = asyncio.create_task(_warm_late_interaction())
-    if not settings.BRAIN_TEAM_MODE and settings.LATE_INTERACTION_REMOTE_ENABLED:
+    if settings.LATE_INTERACTION_REMOTE_ENABLED:
         try:
             validated_index = await validate_remote_late_interaction_release()
         except LateInteractionReleaseUnavailableError as exc:
@@ -122,10 +122,8 @@ app = FastAPI(
     openapi_url="/openapi.json" if _api_docs_enabled else None,
 )
 
-from apps.api.team_boundary import TeamBoundary  # noqa: E402
 from apps.api.routers import team  # noqa: E402
 
-app.add_middleware(TeamBoundary)
 app.include_router(team.router)
 
 

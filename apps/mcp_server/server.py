@@ -556,8 +556,6 @@ async def review_diff(
 
 
 def main() -> None:
-    if settings.BRAIN_TEAM_MODE:
-        raise RuntimeError("Local personal MCP is unavailable in team mode; use authenticated native MCP")
     if settings.BRAIN_STORAGE_MODE == "lite":
         from brain.database.session import init_db
         asyncio.run(init_db())

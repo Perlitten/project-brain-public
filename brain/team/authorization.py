@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
+from typing import Literal
 import uuid
 
+from loguru import logger
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,9 +46,45 @@ class TeamConflict(ValueError):
     pass
 
 
-def require_team_mode() -> None:
-    if not settings.BRAIN_TEAM_MODE or settings.BRAIN_STORAGE_MODE != "full":
-        raise TeamDenied("Team foundations are disabled")
+TeamState = Literal["solo", "team"]
+FULL_AUTHORITY = frozenset(Permission)
+_strict_flag_warned = False
+
+
+def require_team_storage() -> None:
+    """Team tables exist only under full storage; Lite keeps the personal surfaces alone."""
+    if settings.BRAIN_STORAGE_MODE != "full":
+        raise TeamDenied("Team foundations require full storage")
+
+
+def strict_team_mode() -> bool:
+    """Deprecated ``BRAIN_TEAM_MODE`` alias: act as a team before the first member joins.
+
+    Boundaries now switch on with the first live team member. The flag only
+    keeps rejecting the shared API key and dev-open access on an empty team,
+    for operators who provision members offline before opening the API."""
+    global _strict_flag_warned
+    if settings.BRAIN_TEAM_MODE and not _strict_flag_warned:
+        _strict_flag_warned = True
+        logger.warning("BRAIN_TEAM_MODE is deprecated: team boundaries now switch on with the first team member; "
+                       "the flag only rejects the shared API key and dev-open access before that")
+    return bool(settings.BRAIN_TEAM_MODE)
+
+
+async def team_state(session: AsyncSession, team_id: int = 1) -> TeamState:
+    """``"solo"`` until the team has a live verified member, ``"team"`` from then on.
+
+    Solo is a team of one: every authenticated caller is the implicit
+    administrator of every repository. Team routes repository access through
+    project membership (see ``authorize_repository``)."""
+    if settings.BRAIN_STORAGE_MODE != "full":
+        return "solo"
+    if strict_team_mode():
+        return "team"
+    member = (await session.execute(select(TeamMember.principal_id).where(
+        TeamMember.team_id == team_id, TeamMember.revoked_at.is_(None), TeamMember.verified_at.is_not(None))
+        .limit(1))).scalar_one_or_none()
+    return "team" if member is not None else "solo"
 
 
 def permissions(value: list[str]) -> frozenset[Permission]:
@@ -88,7 +126,7 @@ async def human_member(session: AsyncSession, caller: ResolvedPrincipal, team_id
 class Authority:
     actor_id: int
     initiator_id: int
-    initiator_credential_id: int
+    initiator_credential_id: int | None
     allowed: frozenset[Permission]
     run_id: uuid.UUID | None = None
 
@@ -96,7 +134,7 @@ class Authority:
 async def authorize(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
                     permission: Permission, *, task_id: uuid.UUID | None = None,
                     author_id: int | None = None) -> Authority:
-    require_team_mode()
+    require_team_storage()
     caller = await live_credential(session, caller.id, caller.credential_id)
     project = await fresh(session, TeamProject, TeamProject.id == project_id)
     if project is None or project.disabled_at:
@@ -166,7 +204,7 @@ async def change_role(session: AsyncSession, caller: ResolvedPrincipal, project_
 
 
 async def administrator(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID) -> None:
-    require_team_mode()
+    require_team_storage()
     caller = await live_credential(session, caller.id, caller.credential_id)
     project = await fresh(session, TeamProject, TeamProject.id == project_id, exclusive=True)
     if project is None:
@@ -193,9 +231,36 @@ async def team_administrator(session: AsyncSession, caller: ResolvedPrincipal, t
     Unlike ``administrator`` this does not require a project, so it guards the
     provisioning operations (projects, team membership) that create the objects
     project-scoped checks would otherwise need."""
-    require_team_mode()
+    require_team_storage()
     caller = await live_credential(session, caller.id, caller.credential_id)
     member = await human_member(session, caller, team_id)
     if not member.is_admin or not caller.has_scope("team:admin"):
         raise TeamDenied("Administration permission required")
     return member
+
+
+def solo_authority(caller: ResolvedPrincipal) -> Authority:
+    """The implicit administrator of a team of one: full authority, no credential checks."""
+    return Authority(caller.id, caller.id, caller.credential_id, FULL_AUTHORITY)
+
+
+async def authorize_repository(session: AsyncSession, caller: ResolvedPrincipal, repository_id: int | None,
+                               permission: Permission) -> Authority:
+    """Authority over one indexed repository; ``None`` is the unscoped, every-repository surface.
+
+    Solo state short-circuits to ``solo_authority`` for any authenticated
+    caller, including the shared legacy key and dev-open access. In team state
+    the caller needs a live named credential; a repository attached to a
+    project is checked through ``authorize`` with the member's project role,
+    while an unattached repository or an unscoped call requires a team
+    administrator and grants full authority."""
+    if await team_state(session) == "solo":
+        return solo_authority(caller)
+    live = await live_credential(session, caller.id, caller.credential_id)
+    link = None
+    if repository_id is not None:
+        link = await fresh(session, ProjectRepository, ProjectRepository.repository_id == repository_id)
+    if link is None:
+        member = await team_administrator(session, live)
+        return Authority(live.id, member.principal_id, live.credential_id, FULL_AUTHORITY)
+    return await authorize(session, live, link.project_id, permission)
