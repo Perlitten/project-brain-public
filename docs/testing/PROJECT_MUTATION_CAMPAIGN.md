@@ -146,9 +146,9 @@ and subprocess-control tests do not expand application mutation scope. The
 optional mutmut subprocess test runs in the mutation environment; a normal
 development environment without mutmut skips it explicitly.
 
-Before/after mutation tables, survivor classifications, confirmed defects and
-retrieval acceptance results will be recorded after actual measurement and
-review. No project-wide score is claimed at this stage.
+Full-package before/after tables and survivor classifications await all shard
+results. Measured local module pairs are recorded below; they do not establish
+a project-wide score.
 
 ## Measured first improvements (not an overall score)
 
@@ -245,3 +245,155 @@ The existing PostgreSQL overlap case now holds a public database row lock and
 waits for both real HTTP transactions to contend. It no longer patches a private
 OAuth helper or relies on an arbitrary scheduling delay. The same existing
 issued-token case now verifies the principal's service kind.
+
+## OAuth survivor review and current verification
+
+All 234 OAuth storage candidates were measured with 134 compiler-proven invalid
+candidates excluded. The [raw reports and survivor decisions](evidence/project-oauth-mutation-results.json)
+retain both the original raw scores and adjusted summaries:
+
+| Phase | Killed | Survived (non-equivalent) | Timed out | Equivalent | Type-invalid | Score |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Before | 40 | 53 | 0 | 7 | 134 | 43.01% |
+| First improvements | 75 | 18 | 0 | 7 | 134 | 80.65% |
+| After survivor review | 80 | 13 | 0 | 7 | 134 | 86.02% |
+
+Forty additional type-valid changes are detected, with no lost kills. The last
+five gains verify consistent persisted attribution, the same principal after
+refresh, the requested refresh expiry, and preservation of the first revocation
+timestamps when an administrator has already revoked access or repeats a revoke.
+The seven equivalences are individually justified: the unchanged default service
+kind, compatible entropy choices and four inferred foreign-key joins. Both SQL
+dialects are recorded; equality operand reversal is semantically equivalent,
+not claimed to be textually identical SQL.
+
+Thirteen OAuth survivors stay in the denominator: ten observable principal-label
+format changes, added contention from read-only validation acquiring a row lock,
+and two naive-timestamp fallback changes. Persisted database timestamps now
+normalize through the shared UTC type, so those fallback branches have no known
+ordinary persisted-flow trigger; direct naive in-session object assignment
+remains unverified. No private-helper assertions were added to exercise them.
+The auth credential module separately retains one cosmetic error-message gap.
+These are documented remaining gaps, not automatic equivalence exclusions.
+
+Accepted local measurements took **615.94 seconds** for the two credential runs
+and **974.44 seconds** for the three OAuth runs. This is **26.51 worker minutes**
+for these scoped measurements, excluding inventory/type generation, discarded
+infrastructure attempts and the still-running hosted full-package baseline.
+Local dependency differences from the hosted lock remain recorded explicitly;
+the module results are not combined into an overall project score.
+
+The final guarded ordinary Python suite passed **2,551 tests, 11 skipped** in
+99.62 seconds including wrapper overhead. All eight campaign tooling cases run
+in that environment. Ruff passes, and the unchanged mypy gate reports **0 errors
+across 434 production files**. Application case count increased by only one:
+three fake-session cases and three weak drift/version cases were replaced by
+two nested-scope cases, one controlled drift case and four OAuth storage cases.
+No production Python source, benchmark baseline or golden was changed. No
+production vulnerability is claimed fixed; the confirmed fixes concern test
+coverage and the campaign runner's Git/caching failures.
+
+For a fresh scoped replay using the current hardened runner and the fixture,
+venv and guard settings above:
+
+```bash
+python -m eval.project_mutation run \
+  --inventory docs/testing/evidence/project-mutation-inventory.json \
+  --shards 434 --shard 219 --output credential-replay.json
+python -m eval.project_mutation run \
+  --inventory docs/testing/evidence/project-mutation-inventory.json \
+  --shards 434 --shard 128 --output oauth-replay.json
+```
+
+Those deterministic shards contain only `brain/auth/principals.py` and
+`brain/auth/oauth_store.py`, respectively. Raw reports include compiler-invalid
+exclusions but do not silently exclude equivalents; apply the individual
+source-bound survivor decisions when computing adjusted scores. The historical
+paired runs have their own recorded test fingerprints and instrumentation
+snapshots. The complete original full-package baseline uses committed test
+inputs at `1842aec719c1f0f227287c45042214598772ad64`; its exact 32-shard workflow
+is linked in PR #108. The current scoped replay is not represented as a replay
+of every historical tooling/test byte.
+
+## Pending acceptance
+
+The project-wide 70% goal and the 80% requirement for every security-sensitive
+module are **not yet established**. The full 32-shard run is still measuring:
+https://github.com/Perlitten/project-brain-public/actions/runs/38657878581.
+All-module before/after tables and complete survivor classification depend on
+collecting those raw reports. Zero-candidate declaration modules remain a
+separate operator-coverage limitation even if a later aggregate crosses 70%.
+
+Artifact downloads currently fail with a proxy tunnel **403 Forbidden** for
+`productionresultssa6.blob.core.windows.net`. Earlier run artifacts also used
+`productionresultssa12.blob.core.windows.net`. A saved environment configuration
+draft adds these exact hosts while preserving the existing custom hosts and
+credential settings. It must be reviewed/saved and published in environment
+settings before it applies. Alternatively, the repository owner can download
+completed artifacts on their own machine with:
+
+```bash
+gh run download 38657878581 --repo Perlitten/project-brain-public \
+  --dir mutation-artifacts
+```
+
+Artifacts expire after one day. No results from blocked downloads or failed
+runner controls are counted as detections. PR #108 remains a draft; no merge,
+release, deployment or tag change is authorized by an incomplete score.
+
+## Offline retrieval non-regression
+
+The [before capture](evidence/project-retrieval-before.json),
+[after capture](evidence/project-retrieval-after.json),
+[unchanged product gate](evidence/project-retrieval-gate.json) and
+[strict comparison](evidence/project-retrieval-comparison.json) cover the same
+20 golden and 11 context/impact tasks. Every task record is identical except
+its measured `seconds` field, including returned paths, ranks, required-file
+recall, error/status and contract fields. The unchanged aggregate gate passes.
+Context required-file recall remains 0.75; impact recall remains 1.0. No task,
+expected file, baseline or golden was edited.
+
+Capture used the frozen corpus at `02af8a216bb0f05214ac838091eb944aae22133d`
+and the existing isolated index (repository 100000), deterministic
+`local-token-hash-v1` embeddings and disabled chat, through in-process ASGI.
+The two captures took 38.62 and 37.00 seconds. Their recorded implementation
+commits differ only in tooling/tests; production source hashes remain those
+of the frozen inventory. This verifies offline non-regression for that profile;
+it does not establish learned-model quality or coding outcomes.
+
+Recheck the captured gate without any server, provider or model:
+
+```bash
+python -m eval.product_upgrade_gate \
+  docs/testing/evidence/project-retrieval-before.json \
+  docs/testing/evidence/project-retrieval-after.json \
+  --output /tmp/project-retrieval-gate.json
+python - <<'PY'
+import json
+from pathlib import Path
+root = Path("docs/testing/evidence")
+before = json.loads((root / "project-retrieval-before.json").read_text())
+after = json.loads((root / "project-retrieval-after.json").read_text())
+for group in ("goldens", "tasks"):
+    for old, new in zip(before[group], after[group], strict=True):
+        assert {k: v for k, v in old.items() if k != "seconds"} == {
+            k: v for k, v in new.items() if k != "seconds"
+        }, old["id"]
+print("31 task records unchanged except timing")
+PY
+```
+
+To recapture against an already indexed disposable API configured with local
+embeddings and disabled chat, the existing portable capture command is:
+
+```bash
+python -m eval.product_upgrade_capture \
+  --api-url http://127.0.0.1:8001 --repo /path/to/the/frozen-corpus \
+  --provider local-token-hash-v1 \
+  --corpus-source 02af8a216bb0f05214ac838091eb944aae22133d \
+  --phase after --output /tmp/project-retrieval-after.json
+```
+
+Use the same owned fixture database/index and model configuration in both arms;
+this capture command does not configure inference. The cloud session's exact
+ASGI adapter is retained at `/workspace/project-wide-mutation/capture_offline.py`.

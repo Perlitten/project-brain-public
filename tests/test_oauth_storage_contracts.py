@@ -3,9 +3,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from brain.auth import oauth_store
+from brain.auth.principals import hash_credential, resolve_credential
 from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken, Principal
 
 
@@ -66,8 +68,15 @@ async def test_pair_rotation_preserves_attribution_and_revocation_stays_with_its
             original.refresh_token, "client-reader", "approver:17", ["core:write", "jobs:read"],
         )
         assert refresh.expires_at is not None and refresh.expires_at > access.expires_at
+        identity = await resolve_credential(session, original.access_token)
+        assert identity is not None and identity.kind == "service"
+        saved_refresh = (await session.execute(select(OAuthRefreshToken).where(
+            OAuthRefreshToken.client_id == "client-reader",
+        ))).scalar_one()
+        assert saved_refresh.principal_name == identity.name
         unlimited = await oauth_store.load_refresh(session, other.refresh_token)
         assert unlimited is not None and unlimited.expires_at is None and unlimited.scopes == []
+    rotation_started = datetime.now(timezone.utc)
     async with sessions() as session, session.begin():
         rotated = await oauth_store.rotate_refresh(
             session, original.refresh_token, client_name="Reader", scopes=["core:read"],
@@ -80,6 +89,10 @@ async def test_pair_rotation_preserves_attribution_and_revocation_stays_with_its
         refreshed = await oauth_store.load_refresh(session, rotated.refresh_token)
         assert refreshed is not None
         assert (refreshed.client_id, refreshed.subject, refreshed.scopes) == ("client-reader", "approver:17", ["core:read"])
+        assert refreshed.expires_at is not None
+        assert rotation_started + timedelta(days=2) <= refreshed.expires_at <= datetime.now(timezone.utc) + timedelta(days=2)
+        refreshed_identity = await resolve_credential(session, rotated.access_token)
+        assert refreshed_identity is not None and refreshed_identity.id == identity.id
         assert (await oauth_store.load_access(session, rotated.access_token)).scopes == ["core:read"]
         await oauth_store.revoke(session, rotated.access_token)
     async with sessions() as session, session.begin():
@@ -121,3 +134,47 @@ async def test_access_and_refresh_expire_independently_at_their_exact_deadlines(
             session, pair.refresh_token, client_name="Expiring", scopes=["core:read"],
             access_ttl=timedelta(hours=1), refresh_ttl=None,
         ) is None
+
+
+@pytest.mark.asyncio
+async def test_paired_revocation_preserves_the_first_recorded_revocation_times(oauth_storage, monkeypatch):
+    sessions, _ = oauth_storage
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(oauth_store, "datetime", Clock)
+    async with sessions() as session, session.begin():
+        await oauth_store.save_client(session, "audit", {"client_name": "Audit"})
+        pair = await oauth_store.issue_tokens(
+            session, client_id="audit", client_name="Audit", scopes=[], subject=None,
+            access_ttl=timedelta(hours=3), refresh_ttl=timedelta(days=1),
+        )
+    # An administrator may have revoked the access key before its refresh pair.
+    async with sessions() as session, session.begin():
+        access = (await session.execute(select(ApiCredential).where(
+            ApiCredential.key_hash == hash_credential(pair.access_token),
+        ))).scalar_one()
+        access.revoked_at = now
+        access_id = access.id
+    access_revoked_at = now
+    now += timedelta(hours=1)
+    refresh_revoked_at = now
+    async with sessions() as session, session.begin():
+        await oauth_store.revoke(session, pair.refresh_token)
+    now += timedelta(hours=1)
+    async with sessions() as session, session.begin():
+        await oauth_store.revoke(session, pair.access_token)
+        await oauth_store.revoke(session, pair.refresh_token)
+    async with sessions() as session:
+        access = await session.get(ApiCredential, access_id)
+        refresh = (await session.execute(select(OAuthRefreshToken).where(
+            OAuthRefreshToken.client_id == "audit",
+        ))).scalar_one()
+        assert access.revoked_at == access_revoked_at
+        assert refresh.revoked_at == refresh_revoked_at
+        assert await oauth_store.load_access(session, pair.access_token) is None
+        assert await oauth_store.load_refresh(session, pair.refresh_token) is None
