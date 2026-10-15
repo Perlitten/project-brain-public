@@ -53,6 +53,14 @@ for _key, _value in _NEUTRAL_ENV.items():
     os.environ[_key] = _value
 
 
+@pytest.fixture
+def api_principal():
+    """Explicit caller for direct handlers, where FastAPI does not resolve Depends."""
+    from apps.api.auth import DEV_PRINCIPAL
+
+    return DEV_PRINCIPAL
+
+
 @pytest.fixture(autouse=True)
 def _discard_stale_db_connections():
     """Drop pooled DB connections between tests.

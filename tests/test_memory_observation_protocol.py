@@ -31,7 +31,7 @@ def _event(task_id, **overrides):
 
 
 @pytest.mark.asyncio
-async def test_observation_is_recorded_as_unvalidated_l1_event(monkeypatch):
+async def test_observation_is_recorded_as_unvalidated_l1_event(monkeypatch, api_principal):
     task_id = uuid.uuid4()
     task = SimpleNamespace(id=task_id, repo_path="/repo", version=0)
     store = AsyncMock(return_value=_event(task_id))
@@ -39,7 +39,7 @@ async def test_observation_is_recorded_as_unvalidated_l1_event(monkeypatch):
     monkeypatch.setattr(harness.HarnessStore, "get_task", AsyncMock(return_value=task))
     monkeypatch.setattr(harness.HarnessStore, "add_event", store)
 
-    result = await harness.add_task_observation(str(task_id), body())
+    result = await harness.add_task_observation(str(task_id), body(), caller=api_principal)
 
     args, kwargs = store.await_args
     assert args[:3] == (task_id, "observed_lesson", "client")
@@ -54,24 +54,24 @@ async def test_observation_is_recorded_as_unvalidated_l1_event(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_observation_outcome_selects_failure_lesson(monkeypatch):
+async def test_observation_outcome_selects_failure_lesson(monkeypatch, api_principal):
     task_id = uuid.uuid4()
     store = AsyncMock(return_value=_event(task_id, classification="failure_lesson"))
     monkeypatch.setattr(harness, "_parse_task_id", lambda _: task_id)
     monkeypatch.setattr(harness.HarnessStore, "get_task", AsyncMock(return_value=SimpleNamespace(repo_path=None)))
     monkeypatch.setattr(harness.HarnessStore, "add_event", store)
-    await harness.add_task_observation(str(task_id), body(outcome="failure_lesson"))
+    await harness.add_task_observation(str(task_id), body(outcome="failure_lesson"), caller=api_principal)
     assert store.await_args.kwargs["classification"] == "failure_lesson"
     assert store.await_args.args[3]["repo_scope"] is None
 
 
 @pytest.mark.asyncio
-async def test_observation_missing_task_is_404(monkeypatch):
+async def test_observation_missing_task_is_404(monkeypatch, api_principal):
     task_id = uuid.uuid4()
     monkeypatch.setattr(harness, "_parse_task_id", lambda _: task_id)
     monkeypatch.setattr(harness.HarnessStore, "get_task", AsyncMock(return_value=None))
     with pytest.raises(Exception) as exc:
-        await harness.add_task_observation(str(task_id), body())
+        await harness.add_task_observation(str(task_id), body(), caller=api_principal)
     assert getattr(exc.value, "status_code", None) == 404
 
 
