@@ -101,9 +101,19 @@ Besides tools, both servers implement:
   30-second timeout. Modern clients receive an input request before the write
   retry. Clients without elicitation retain the existing unattended policy;
   confirmation does not authenticate a human independently of the client.
-* **Sampling.** When the server-side model fails, the remote `ask_project` asks the
-  client's own model to answer from the Brain's context pack instead of returning
-  an error.
+
+## Compatibility only
+
+**MCP sampling — legacy fallback**, not a current feature. If server-side
+generation fails, `ask_project` compatibility code may ask a sampling-capable
+client to answer from Brain's retrieved context. MCP sampling is deprecated
+by [SEP-2577](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2577),
+but remains operational in supported versions. Brain's newer-protocol path
+uses input requests instead; the SEP made no wire-level protocol change.
+
+Configure a server-side model for normal operation. Client support, approval
+and billing vary; cross-client fallback interoperability remains unverified.
+The retained compatibility path is not advertised as a supported product feature.
 
 ## MCP stdio E2E verification
 
