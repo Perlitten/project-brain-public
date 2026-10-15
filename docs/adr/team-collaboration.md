@@ -136,6 +136,12 @@ green ADR/CI is not team readiness.
 - **M1:** durable scope, verified-identity provenance, task/run binding and centralized
   fail-closed enforcement; denial/revocation/CAS/idempotency/migration tests. Unadapted
   surfaces and all execution remain gated. No fake autonomy executor.
+  Provisioning (`brain team` CLI, `team:admin` routes), OAuth clients bound to
+  verified members within their roles, and principal-derived authorship for the
+  harness ledger and decisions/rules landed in 2026-10. Still open before team
+  mode is usable end to end: adapting search/context/memory routes and the OAuth
+  endpoints (`/authorize`, `/token`, `/register`, `/oauth/consent`) to the team
+  boundary, merging `brain/workspace` with `brain/team`, SSO/invitations.
 - **M2 after M1:** bounded real executors, run tools/secrets/egress/budget capabilities,
   revocation checkpoints, environments, timeout/cancel/crash fencing.
 - **M3 after M1/M2:** same-task subtasks/dependencies/coordinator, semantic overlap,

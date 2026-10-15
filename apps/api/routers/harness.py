@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import select
 
-from apps.api.auth import require_api_key, require_scope
+from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.harness_schemas import (
     AcceptanceCheckpointRequest,
     AcceptanceFinalizeRequest,
@@ -23,6 +23,7 @@ from apps.api.harness_schemas import (
     TaskStatusUpdateRequest,
     ValidationCreateRequest,
 )
+from brain.auth.principals import ResolvedPrincipal
 from brain.database.harness_models import (
     AgentTask,
     AgentTaskArtifact,
@@ -282,7 +283,9 @@ async def get_task(task_id: str):
 
 
 @router.patch("/tasks/{task_id}", dependencies=[Depends(require_scope("harness:write"))])
-async def update_task_status(task_id: str, body: TaskStatusUpdateRequest):
+async def update_task_status(
+    task_id: str, body: TaskStatusUpdateRequest, caller: ResolvedPrincipal = Depends(require_principal)
+):
     if body.status == "passed":
         raise HTTPException(
             status_code=403,
@@ -292,7 +295,7 @@ async def update_task_status(task_id: str, body: TaskStatusUpdateRequest):
         task = await HarnessStore.update_status(
             _parse_task_id(task_id),
             new_status=body.status,
-            actor=body.actor,
+            actor=caller.actor,
             expected_task_version=body.expected_task_version,
             current_session_id=body.current_session_id,
             note=body.note,
@@ -307,7 +310,7 @@ async def update_task_status(task_id: str, body: TaskStatusUpdateRequest):
 
 
 @router.post("/tasks/{task_id}/events", dependencies=[Depends(require_scope("harness:write"))])
-async def add_event(task_id: str, body: EventCreateRequest):
+async def add_event(task_id: str, body: EventCreateRequest, caller: ResolvedPrincipal = Depends(require_principal)):
     if body.event_type in PROTECTED_DECISION_EVENTS:
         raise HTTPException(
             status_code=403,
@@ -317,7 +320,7 @@ async def add_event(task_id: str, body: EventCreateRequest):
         event = await HarnessStore.add_event(
             _parse_task_id(task_id),
             body.event_type,
-            body.actor,
+            caller.actor,
             body.payload,
             classification=body.classification,
             idempotency_key=body.idempotency_key,

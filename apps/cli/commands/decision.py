@@ -30,7 +30,9 @@ def add_decision_cmd(
             consequences=consequences,
             affected_features=features_list,
             affected_modules=modules_list,
-            affected_files=files_list
+            affected_files=files_list,
+            # The CLI runs with the operator's own database access: admin role.
+            caller_role="admin",
         ))
         typer.secho(f"Successfully added decision with ID {dec_id}", fg=typer.colors.GREEN)
     except Exception as e:

@@ -185,3 +185,17 @@ async def change_policy(session: AsyncSession, caller: ResolvedPrincipal, projec
         .values(permissions=policy, version=expected_version + 1).returning(TeamProject.id))
     if changed.scalar_one_or_none() is None:
         raise TeamConflict("Policy version conflict")
+
+
+async def team_administrator(session: AsyncSession, caller: ResolvedPrincipal, team_id: int = 1) -> TeamMember:
+    """Team-level administration: a live human member flagged is_admin holding the team:admin scope.
+
+    Unlike ``administrator`` this does not require a project, so it guards the
+    provisioning operations (projects, team membership) that create the objects
+    project-scoped checks would otherwise need."""
+    require_team_mode()
+    caller = await live_credential(session, caller.id, caller.credential_id)
+    member = await human_member(session, caller, team_id)
+    if not member.is_admin or not caller.has_scope("team:admin"):
+        raise TeamDenied("Administration permission required")
+    return member

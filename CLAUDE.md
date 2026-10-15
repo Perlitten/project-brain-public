@@ -30,6 +30,7 @@ Start with the files for the task rather than relying on a stale repository size
 | `routers/experiments.py` | `brain/experiments/` | `test_remediation_experiments.py` |
 | `routers/portfolio.py` | `brain/portfolio/` | `test_portfolio_graph.py` |
 | `routers/control.py` | `brain/control/` | `test_control_plane.py` |
+| `routers/team.py` (experimental team mode) | `brain/team/` (`provisioning.py`, `oauth_link.py`, `authorization.py`, `store.py`) | `test_team_provisioning.py`, `test_team_oauth_link.py`, `test_team_transport.py`, `test_team_foundations.py` |
 
 ## Routes for common tasks
 
@@ -54,6 +55,7 @@ Start with the files for the task rather than relying on a stale repository size
 | MCP protocol: annotations, resources, prompts, elicitation and sampling | `apps/mcp_server/protocol.py`, `tests/test_mcp_protocol.py` |
 | Native Streamable HTTP with principal-bound sessions | `apps/api/mcp_http.py`, `tests/test_mcp_http.py` |
 | OAuth 2.1: DCR, PKCE, consent, scoped credentials and refresh rotation | `apps/api/mcp_oauth.py`, `brain/auth/oauth_store.py`, `tests/test_mcp_oauth_db.py` |
+| Team provisioning (team, projects, members, repos), OAuth clients as team members | `apps/cli/commands/team.py`, `brain/team/provisioning.py`, `brain/team/oauth_link.py`; ADR — `docs/adr/team-collaboration.md` |
 | Deferred MCP results and inline byte budgets | `apps/mcp_server/deferred_payload.py`, `tests/test_mcp_deferred_payload.py` |
 | Background jobs | `brain/workers/tasks.py`, `queue.py`, `worker.py` |
 | DB schema, migrations | `brain/database/models.py`, `harness_models.py`, `migrations.py` |

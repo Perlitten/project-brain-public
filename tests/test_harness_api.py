@@ -48,6 +48,8 @@ def api_key_env():
 
 
 AUTH = {"X-API-Key": "test-secret-key"}
+# The legacy shared key resolves to the synthetic principal "legacy-api-key".
+SERVER_ACTOR = "principal:legacy-api-key"
 
 
 def test_create_task_requires_api_key(api_key_env):
@@ -117,7 +119,7 @@ def test_update_status_success(api_key_env):
     with patch(
         "apps.api.routers.harness.HarnessStore.update_status",
         AsyncMock(return_value=_sample_task(status="routed")),
-    ):
+    ) as update_status:
         response = client.patch(
             f"/harness/tasks/{TASK_ID}",
             json={
@@ -128,6 +130,22 @@ def test_update_status_success(api_key_env):
             headers=AUTH,
         )
     assert response.status_code == 200
+    # The body's actor is ignored: the server attributes the authenticated principal.
+    assert update_status.await_args.kwargs["actor"] == SERVER_ACTOR
+
+
+def test_update_status_actor_is_optional_in_body(api_key_env):
+    with patch(
+        "apps.api.routers.harness.HarnessStore.update_status",
+        AsyncMock(return_value=_sample_task(status="routed")),
+    ) as update_status:
+        response = client.patch(
+            f"/harness/tasks/{TASK_ID}",
+            json={"status": "routed", "expected_task_version": 0},
+            headers=AUTH,
+        )
+    assert response.status_code == 200
+    assert update_status.await_args.kwargs["actor"] == SERVER_ACTOR
     assert response.json()["status"] == "routed"
 
 
@@ -223,6 +241,7 @@ def test_add_event_forwards_idempotency_and_cas(api_key_env):
     assert response.json()["task_version"] == 4
     assert response.json()["idempotency_key"] == event.idempotency_key
     assert add_event.await_args.kwargs["expected_task_version"] == 3
+    assert add_event.await_args.args[2] == SERVER_ACTOR
 
 
 def test_add_event_version_conflict_returns_409(api_key_env):

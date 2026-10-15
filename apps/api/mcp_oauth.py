@@ -49,8 +49,12 @@ from apps.api.routers.web_login import _configured as web_login_configured
 from apps.api.routers.web_login import _fail, _matches, _throttled
 from brain.auth import oauth_store
 from brain.database.session import async_session_factory
+from brain.team.authorization import TeamDenied
+from brain.team.oauth_link import DEV_OPEN_SUBJECT, TEAM_SCOPES, WEB_SUBJECT_PREFIX, bind_team_scopes, team_scopes
 
-SUPPORTED_SCOPES = ["core:read", "core:write", "jobs:read", "harness:write"]
+# team:* scopes are issued only to verified team members, bound to their
+# project roles (brain.team.oauth_link); they are never granted by default.
+SUPPORTED_SCOPES = ["core:read", "core:write", "jobs:read", "harness:write", *TEAM_SCOPES]
 # What the MCP tools need: core:write covers context/search/impact/review and
 # memory writes (write implies read), jobs:read polls background jobs,
 # harness:write records lessons and observations.
@@ -159,17 +163,20 @@ class BrainOAuthProvider:
         # Single use: a replayed code finds nothing.
         if self._codes.pop(authorization_code.code, None) is None:
             raise TokenError(error="invalid_grant", error_description="authorization code already used")
-        async with async_session_factory() as session:
-            async with session.begin():
-                issued = await oauth_store.issue_tokens(
-                    session,
-                    client_id=client.client_id or "",
-                    client_name=client.client_name,
-                    scopes=authorization_code.scopes,
-                    subject=authorization_code.subject,
-                    access_ttl=ACCESS_TTL,
-                    refresh_ttl=REFRESH_TTL,
-                )
+        try:
+            async with async_session_factory() as session:
+                async with session.begin():
+                    issued = await oauth_store.issue_tokens(
+                        session,
+                        client_id=client.client_id or "",
+                        client_name=client.client_name,
+                        scopes=authorization_code.scopes,
+                        subject=authorization_code.subject,
+                        access_ttl=ACCESS_TTL,
+                        refresh_ttl=REFRESH_TTL,
+                    )
+        except TeamDenied as exc:
+            raise TokenError(error="invalid_scope", error_description=str(exc)) from exc
         return _token_response(issued)
 
     async def load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> Optional[RefreshToken]:
@@ -188,16 +195,20 @@ class BrainOAuthProvider:
     async def exchange_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]
     ) -> OAuthToken:
-        async with async_session_factory() as session:
-            async with session.begin():
-                issued = await oauth_store.rotate_refresh(
-                    session,
-                    refresh_token.token,
-                    client_name=client.client_name,
-                    scopes=scopes or refresh_token.scopes,
-                    access_ttl=ACCESS_TTL,
-                    refresh_ttl=REFRESH_TTL,
-                )
+        try:
+            async with async_session_factory() as session:
+                async with session.begin():
+                    issued = await oauth_store.rotate_refresh(
+                        session,
+                        refresh_token.token,
+                        client_name=client.client_name,
+                        scopes=scopes or refresh_token.scopes,
+                        access_ttl=ACCESS_TTL,
+                        refresh_ttl=REFRESH_TTL,
+                    )
+        except TeamDenied as exc:
+            # Membership or a role was revoked since consent: the grant ends here.
+            raise TokenError(error="invalid_scope", error_description=str(exc)) from exc
         if issued is None:
             raise TokenError(error="invalid_grant", error_description="refresh token is no longer valid")
         return _token_response(issued)
@@ -282,13 +293,28 @@ color:#fff;border-color:var(--accent)}} .error{{color:var(--err)}} .or{{text-ali
 
 async def _approver(user: str, password: str, api_key: str, scopes: list[str], client_ip: str) -> tuple[str, str]:
     """Return ``(subject, "")`` for an approver who may grant ``scopes``, else ``("", error)``."""
+    subject, error = await _personal_approver(user, password, api_key, scopes, client_ip)
+    if error or not team_scopes(scopes):
+        return subject, error
+    # Team scopes additionally need the approver to be a verified member whose
+    # roles cover them; issuance re-checks this, the consent page just says why.
+    try:
+        async with async_session_factory() as session:
+            await bind_team_scopes(session, subject, scopes)
+    except TeamDenied as exc:
+        return "", f"{exc}."
+    return subject, ""
+
+
+async def _personal_approver(user: str, password: str, api_key: str, scopes: list[str],
+                             client_ip: str) -> tuple[str, str]:
     if dev_open():
-        return "dev-open", ""
+        return DEV_OPEN_SUBJECT, ""
     if user and web_login_configured():
         if _throttled(user, client_ip):
             return "", "Too many failed attempts. Try again in a few minutes."
         if await _matches(user, password):
-            return f"web:{user}", ""
+            return f"{WEB_SUBJECT_PREFIX}{user}", ""
         _fail(user, client_ip)
         return "", "Wrong username or password."
     if api_key:

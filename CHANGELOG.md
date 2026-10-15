@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Make experimental team mode provisionable without manual SQL: `brain team`
+  CLI and `team:admin` API routes create the team, projects, verified members
+  and repository bindings idempotently. OAuth clients can hold `team:*` scopes
+  only when a verified member approves them, within that member's live project
+  roles; the token then belongs to the member's principal and refresh
+  re-checks membership. Harness status/event writes attribute the authenticated
+  principal instead of a client-supplied actor; decisions and rules record the
+  author principal (nullable `author_principal_id`, migrated automatically) and
+  `system_global` writes through the API need the `core:admin` scope (held by
+  the legacy shared key and `*` credentials) and answer 403 otherwise.
+
 - Show edits omitted by the latest index run in the dashboard, sidebar and
   Setup. Keep unknown counts distinct from zero and label the observation as
   index-run provenance rather than live filesystem monitoring.

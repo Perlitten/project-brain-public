@@ -35,6 +35,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_rule_repo_scope(conn)
     await _ensure_files_path_uniqueness(conn)
     await _ensure_decision_title_uniqueness(conn)
+    await _ensure_memory_authorship_columns(conn)
     await _backfill_non_current_knowledge_authority(conn)
     await _ensure_insights_table(conn)
     await _ensure_harness_reliability_columns(conn)
@@ -183,6 +184,17 @@ async def _ensure_files_path_uniqueness(conn: AsyncConnection) -> None:
             """
         )
     )
+
+
+async def _ensure_memory_authorship_columns(conn: AsyncConnection) -> None:
+    """Decisions and rules remember the principal that recorded them (NULL before this)."""
+    for table in ("decisions", "rules"):
+        if conn.dialect.name == "sqlite":
+            columns = (await conn.execute(text(f"PRAGMA table_info({table})"))).fetchall()
+            if "author_principal_id" not in {row[1] for row in columns}:
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN author_principal_id INTEGER"))
+        else:
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS author_principal_id INTEGER"))
 
 
 async def _ensure_decision_title_uniqueness(conn: AsyncConnection) -> None:

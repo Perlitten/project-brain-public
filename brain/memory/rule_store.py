@@ -47,8 +47,9 @@ class RuleStore:
         status: Optional[str] = "active",
         applies_to: Optional[Dict[str, Any]] = None,
         rule_id: Optional[str] = None,
+        author_principal_id: Optional[int] = None,
     ) -> str:
-        """Saves or updates a rule in Postgres and returns its id."""
+        """Saves or updates a rule and returns its id; the first author is kept on updates."""
         r_id = rule_id or slugify(name)
         normalized_repo_path = normalize_repo_scope(repo_path)
         async with async_session_factory() as session:
@@ -62,6 +63,8 @@ class RuleStore:
                 existing.severity = severity
                 existing.status = status
                 existing.applies_to = applies_to
+                if existing.author_principal_id is None:
+                    existing.author_principal_id = author_principal_id
             else:
                 r_id = scoped_id
                 new_rule = Rule(
@@ -72,7 +75,8 @@ class RuleStore:
                     type=type,
                     severity=severity,
                     status=status,
-                    applies_to=applies_to
+                    applies_to=applies_to,
+                    author_principal_id=author_principal_id,
                 )
                 session.add(new_rule)
             await session.commit()
@@ -168,6 +172,7 @@ async def add_rule(
     status: Optional[str] = "active",
     applies_to: Optional[Dict[str, Any]] = None,
     rule_id: Optional[str] = None,
+    author_principal_id: Optional[int] = None,
 ) -> str:
     return await RuleStore.add_rule(
         name=name,
@@ -178,6 +183,7 @@ async def add_rule(
         status=status,
         applies_to=applies_to,
         rule_id=rule_id,
+        author_principal_id=author_principal_id,
     )
 
 async def list_rules() -> List[Rule]:
