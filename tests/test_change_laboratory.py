@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -512,33 +512,77 @@ def test_validation_stops_at_first_required_failure(manager, repo):
     assert report.results[0]["exit_code"] == 3
 
 
+def _supervised_validation(workspace, profile, *, cancel_after=None):
+    # A broken process-group boundary must fail this caller, not kill pytest.
+    # Exercise the public runner in an owned session, without replacing Popen
+    # or the runner's process supervision with mocks.
+    command = """
+import json, sys, threading
+from pathlib import Path
+from brain.config.settings import settings
+from brain.lab.engine import ValidationRunner
+from brain.lab.models import ValidationProfile
+
+settings.LAB_SANDBOX_MODE = "off"
+settings.LAB_ALLOW_UNSAFE_HOST_EXECUTION = True
+data = json.load(sys.stdin)
+cancel = threading.Event() if data["cancel_after"] is not None else None
+timer = threading.Timer(data["cancel_after"], cancel.set) if cancel else None
+if timer:
+    timer.daemon = True
+    timer.start()
+try:
+    report = ValidationRunner.run_profile(
+        Path(data["workspace"]), ValidationProfile.from_dict(data["profile"]),
+        cancel_event=cancel,
+    )
+    print(json.dumps(report.to_dict()))
+finally:
+    if timer:
+        timer.cancel()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", command],
+        input=json.dumps({"workspace": str(workspace), "profile": profile.to_dict(),
+                          "cancel_after": cancel_after}),
+        capture_output=True,
+        text=True,
+        timeout=25,
+        start_new_session=os.name != "nt",
+    )
+    assert result.returncode == 0, "validation killed or crashed its caller: " + result.stderr
+    return json.loads(result.stdout)
+
+
 def test_validation_timeout_terminates_process(manager, repo):
     record = manager.create_workspace("lab-repo", gf.head(repo), repo)
     profile = _profile(["python", "-c", "import time; time.sleep(30)"], timeout_seconds=2)
 
     started = time.monotonic()
-    report = ValidationRunner.run_profile(Path(record.workspace_root), profile)
+    report = _supervised_validation(Path(record.workspace_root), profile)
     elapsed = time.monotonic() - started
 
-    assert report.passed is False
-    assert report.results[0]["timed_out"] is True
+    assert report["passed"] is False
+    assert report["cancelled"] is False
+    assert len(report["results"]) == 1
+    assert report["results"][0]["timed_out"] is True
+    assert report["results"][0]["exit_code"] != 0
     assert elapsed < 25, "the supervisor must not wait for the child to finish"
 
 
 def test_validation_cancellation(manager, repo):
     record = manager.create_workspace("lab-repo", gf.head(repo), repo)
     profile = _profile(["python", "-c", "import time; time.sleep(30)"], timeout_seconds=60)
-    cancel = threading.Event()
-    threading.Timer(1.0, cancel.set).start()
-
     started = time.monotonic()
-    report = ValidationRunner.run_profile(
-        Path(record.workspace_root), profile, cancel_event=cancel
-    )
+    report = _supervised_validation(Path(record.workspace_root), profile, cancel_after=1.0)
     elapsed = time.monotonic() - started
 
     assert elapsed < 25
-    assert report.passed is False
+    assert report["passed"] is False
+    assert report["cancelled"] is True
+    assert len(report["results"]) == 1
+    assert report["results"][0]["timed_out"] is False
+    assert report["results"][0]["exit_code"] != 0
 
 
 def test_validation_output_is_redacted(manager, repo):
