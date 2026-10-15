@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "baseline_snapshot": "dfcade858288f142e7971b8773080d75ae925189",
+  "scope": "Route authorization gate controls, not production mutations or project-wide score",
+  "results": {
+    "before": {
+      "exit_code": 1,
+      "seconds": 4.325622390999342,
+      "test_sha256": "bf33d951a939be099ee3c1e268d051bc12a3062d7132bd3ad698490a407a03a7"
+    },
+    "after": {
+      "exit_code": 0,
+      "seconds": 5.181500088001485,
+      "test_sha256": "7466fc6cfd0aa7afad9214e77112ea23f4a03b9011451951a4345bbd0d39c91f"
+    }
+  },
+  "before_outcome": "2 failed, 1 passed: copied declarations rejected by object identity; missing new-domain write check escaped the old hardcoded-read-domain gate",
+  "after_outcome": "3 passed: cloned declarations accepted; the negative control observes the intended gate failure using a real persisted credential",
+  "control_design": "Run the same copied-route control and missing-write-check negative control against original gate logic and updated gate logic. Only add monkeypatch argument/imports to permit the original gate to run these controls. Restore test source in finally. No production source changes.",
+  "source_restored": true
+}
