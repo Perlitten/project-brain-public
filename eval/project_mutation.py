@@ -63,7 +63,7 @@ def generate_inventory(workers: int) -> dict:
     if cfg.only_mutate or cfg.max_stack_depth != -1 or cfg.mutate_only_covered_lines:
         raise ValueError("Whole-package generation cannot use a scope/coverage/stack-depth filter")
     if {str(path) for path in walk_mutatable_files()} != set(paths):
-        raise ValueError("Mutation configuration does not cover exactly the tracked production modules")
+        raise ValueError("Mutation configuration does not cover exactly the tracked brain/apps/scripts modules")
     copy_src_dir()
     copy_also_copy_files()
     prepare_git_pointer(ROOT)
@@ -91,7 +91,7 @@ def load_inventory(path: Path) -> dict:
     ).splitlines()
     actual = {path for path in tracked if path.endswith(".py")}
     if set(paths) != actual:
-        raise ValueError("Frozen inventory does not cover every tracked production Python module")
+        raise ValueError("Frozen inventory does not cover exactly the tracked brain/apps/scripts Python modules")
     for item in modules:
         if file_hash(ROOT / item["module"]) != item["sha256"]:
             raise ValueError(f"Source changed since inventory generation: {item['module']}")

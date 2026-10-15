@@ -25,6 +25,19 @@ call-depth cutoffs or `pragma no mutate` additions. CLI implementations remain
 included because they contain configuration and validation behavior. Scripts
 are included conservatively, including historical release tooling.
 
+The final tracked-tree cross-check found two additional nontrivial operator
+helpers outside those roots: `deploy/index_snapshots.py` (credential-file parsing,
+HTTP failure handling and batch exit status) and `deploy/vps_staging_smoke.py`
+(staging safety-policy validation). They are **pending scope**, not excluded as
+logic-free CLI glue. The frozen 434-module run cannot establish full-repository
+acceptance until these are also inventoried, type-checked, measured and reviewed.
+The expanded runtime/operator scope therefore contains at least 436 modules;
+its candidate denominator is not yet known. The original frozen inventory is
+preserved, rather than silently changing the denominator of running shards.
+See the [tracked Python scope review](evidence/project-python-scope-review.json)
+for non-runtime test/evaluation/benchmark boundaries. The tool's inventory
+validation messages now explicitly name the three roots they actually check.
+
 The inventory contains 80 modules with zero generated candidates. These remain
 listed, with an undefined score rather than an invented 100%. Mutmut's operators
 primarily transform function bodies; module-level declarations, schema fields
