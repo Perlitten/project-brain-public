@@ -4,6 +4,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_sampling_is_disclosed_as_legacy_not_advertised_as_a_current_feature():
+    for name in ("README.md", "docs/MCP.md"):
+        text = " ".join((ROOT / name).read_text(encoding="utf-8").split())
+        assert "MCP sampling — legacy fallback" in text
+        assert "not a current feature" in text
+        assert "sampling-capable client" in text
+        assert "* **Sampling.**" not in text
+
+
 def test_dashboard_distinguishes_client_labels_from_authenticated_principals():
     text = (ROOT / "docs/DASHBOARD.md").read_text(encoding="utf-8")
     for term in ("mcp:<client-name>", "mcp:unattributed", "self-reported", "authenticated principal"):

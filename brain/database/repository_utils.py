@@ -1,5 +1,6 @@
 """Repository lookup and index cleanup helpers."""
 
+import os
 from pathlib import Path
 from typing import Any, Optional, Union, cast
 
@@ -16,7 +17,7 @@ async def get_repository_by_path(repo_path: Union[str, Path]) -> Optional[Reposi
     raw_path = str(repo_path)
     path_obj = Path(raw_path)
     candidates = {raw_path, raw_path.replace("\\", "/"), path_obj.as_posix()}
-    resolved_path = path_obj.resolve()
+    resolved_path = Path(os.path.realpath(raw_path))
     candidates.update({resolved_path.as_posix(), str(resolved_path)})
     async with async_session_factory() as session:
         stmt = select(Repository).where(Repository.path.in_(list(candidates)))

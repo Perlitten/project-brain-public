@@ -9,6 +9,8 @@ All notable changes to this project are documented here. The format follows
 - Show edits omitted by the latest index run in the dashboard, sidebar and
   Setup. Keep unknown counts distinct from zero and label the observation as
   index-run provenance rather than live filesystem monitoring.
+- Disable Telegram's test-message control until both a saved bot token and
+  chat ID are configured, with an explanation instead of a doomed request.
 
 - Replace the all-at-once code map with collapsed top-level areas, searchable
   modules, a minimum edge-weight filter and persistent one/two-hop focus.

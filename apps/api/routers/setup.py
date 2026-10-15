@@ -15,6 +15,7 @@ from typing import Any, Dict, Literal, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 from pydantic import BaseModel, Field, SecretStr
 
 from apps.api.auth import require_api_key, require_scope
@@ -268,7 +269,8 @@ async def verify_agent() -> Dict[str, Any]:
     try:
         runtime = await run_mcp_self_check()
     except Exception as exc:  # pragma: no cover - defensive
-        return {"available": False, "error": str(exc)}
+        logger.warning("MCP self-check failed: {}: {}", type(exc).__name__, exc)
+        return {"available": False, "error": "MCP self-check failed", "error_type": type(exc).__name__}
     return runtime
 
 

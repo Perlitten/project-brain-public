@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from brain.config.paths import resolve_within
 from brain.experiments.models import (
     ACTIONS_ALLOWING_EXPORT,
     ACTIONS_REQUIRING_CONCLUSION,
@@ -75,9 +76,16 @@ class ExperimentStore:
             )
         return experiment
 
+    def _store_file(self, name: str) -> Optional[Path]:
+        """Path of a store file, or None when *name* would leave the store directory."""
+        try:
+            return resolve_within(self._dir, name)
+        except ValueError:
+            return None
+
     def get(self, experiment_id: str) -> Optional[Experiment]:
-        path = self._dir / f"{experiment_id}.json"
-        if not path.is_file():
+        path = self._store_file(f"{experiment_id}.json")
+        if path is None or not path.is_file():
             return None
         try:
             return Experiment.from_dict(json.loads(path.read_text(encoding="utf-8")))
@@ -103,8 +111,8 @@ class ExperimentStore:
         return result
 
     def get_comparison(self, experiment_id: str) -> Optional[ComparisonResult]:
-        path = self._dir / f"comparison-{experiment_id}.json"
-        if not path.is_file():
+        path = self._store_file(f"comparison-{experiment_id}.json")
+        if path is None or not path.is_file():
             return None
         try:
             return ComparisonResult.from_dict(json.loads(path.read_text(encoding="utf-8")))
@@ -118,8 +126,8 @@ class ExperimentStore:
         return export
 
     def get_export(self, export_id: str) -> Optional[PatchExport]:
-        path = self._dir / f"export-{export_id}.json"
-        if not path.is_file():
+        path = self._store_file(f"export-{export_id}.json")
+        if path is None or not path.is_file():
             return None
         try:
             return PatchExport.from_dict(json.loads(path.read_text(encoding="utf-8")))

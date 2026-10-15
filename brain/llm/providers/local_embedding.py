@@ -5,6 +5,7 @@ from collections import Counter
 
 import numpy as np
 
+from brain.analyzers.identifier_words import split_identifier_words
 from brain.llm.providers.base import EmbeddingProvider
 
 
@@ -18,7 +19,7 @@ class LocalEmbeddingProvider(EmbeddingProvider):
         features = []
         for token in tokens:
             features.append(token.lower())
-            features.extend(part.lower() for part in re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])", token.replace("_", " ")))
+            features.extend(part.lower() for part in split_identifier_words(token))
         vector = np.zeros(self.dimension, dtype=np.float32)
         for token, count in Counter(features).items():
             digest = hashlib.blake2b(token.encode(), digest_size=8).digest()

@@ -11,6 +11,7 @@ import { Panel } from "@/components/ui";
 import { saveSettings, testTelegram } from "@/lib/actions/settings";
 import type { SettingField, SettingsSection, SettingsView, TelegramStatus } from "@/lib/settings-view";
 import { SchedulerLine, SchedulerTable } from "./Scheduler";
+import { telegramConfigured } from "@/lib/telegram";
 
 type Draft = Record<string, string | boolean>;
 
@@ -19,6 +20,7 @@ const initial = (f: SettingField): string | boolean => (f.kind === "bool" ? f.va
 export function Settings({ view }: { view: SettingsView }) {
   const live = view.mode === "live" || view.mode === "demo";
   const section = (id: string) => view.sections.find((s) => s.id === id);
+  const canTestTelegram = telegramConfigured(section("telegram"));
 
   return (
     <div className="settings">
@@ -38,7 +40,7 @@ export function Settings({ view }: { view: SettingsView }) {
       <Panel
         id="telegram"
         title="Telegram alerts"
-        actions={live && <RunButton action={testTelegram} label="Send test message" icon="play" small title="Telegram" />}
+        actions={live && <RunButton action={testTelegram} label="Send test message" icon="play" small title="Telegram" disabled={!canTestTelegram} disabledReason="Add a bot token and chat ID first" />}
       >
         {live ? <SectionForm section={section("telegram")} telegram={view.telegram} /> : (
           <><TelegramLine t={view.telegram} /><EnvHint keys={["TELEGRAM_ALERTS_ENABLED", "TELEGRAM_ALERT_BOT_TOKEN", "TELEGRAM_ALERT_CHAT_ID"]} /></>

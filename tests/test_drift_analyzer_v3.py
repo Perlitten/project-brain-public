@@ -1,12 +1,7 @@
-import pytest
 from pathlib import Path
 from brain.insights.drift_analyzer import ArchitecturalDriftAnalyzer
 from brain.insights.proactive import deterministic_insights
-from brain._version import __version__
-
-def test_drift_v3_release_floor():
-    # Drift v3 shipped in 0.9.1; compatible patch releases retain this contract.
-    assert tuple(map(int, __version__.split("."))) >= (0, 9, 1)
+from tests.fixtures.drift_fixtures import setup_moved_fixture, setup_violating_fixture
 
 def test_drift_analyzer_detects_api_layer_raw_orm_bypass():
     analyzer = ArchitecturalDriftAnalyzer(Path("."))
@@ -47,32 +42,38 @@ def handle_request():
     violations = analyzer.analyze_file("apps/api/routers/core.py", code)
     assert len(violations) == 0
 
-@pytest.mark.asyncio
-async def test_deterministic_insights_includes_drift_candidates():
-    # Verify scan_repository_drift results flow into deterministic_insights() candidates
+def test_drift_insights_include_evidence_and_keep_distinct_keys_when_lines_move(tmp_path):
+    setup_violating_fixture(tmp_path)
     snapshot = {
         "counts": {"files": 100, "chunks": 500, "rules": 5, "decisions": 5},
         "embeddings": {"pgvector_coverage_pct": 100.0},
         "services": {"postgres": {"status": "healthy"}, "redis": {"status": "healthy"}, "neo4j": {"status": "healthy"}},
         "recent_indexing_runs": [{"id": 1, "status": "completed"}],
         "reports": [{"name": "audit.md"}],
-        "repo": {"path": "."},
+        "repo": {"path": str(tmp_path)},
     }
-    candidates = deterministic_insights(snapshot)
-    assert isinstance(candidates, list)
-    types = {c.insight_type for c in candidates}
-    assert "architectural_drift" in types or "operational_readiness" in types
 
-def test_deduplication_key_consistency_across_multiple_runs():
-    # Prove that running scan multiple times yields identical dedupe keys (preventing DB row duplication)
-    snapshot = {
-        "counts": {"files": 100, "chunks": 500},
-        "embeddings": {"pgvector_coverage_pct": 100.0},
-        "services": {"postgres": {"status": "healthy"}, "redis": {"status": "healthy"}, "neo4j": {"status": "healthy"}},
-        "recent_indexing_runs": [{"id": 1, "status": "completed"}],
-        "reports": [{"name": "audit.md"}],
-        "repo": {"path": "."},
-    }
-    run1 = [c.dedupe_key for c in deterministic_insights(snapshot)]
-    run2 = [c.dedupe_key for c in deterministic_insights(snapshot)]
-    assert run1 == run2
+    def drift():
+        candidates = [item for item in deterministic_insights(snapshot) if item.insight_type == "architectural_drift"]
+        assert len(candidates) == 2
+        return {dict((entry["label"], entry["value"]) for entry in item.evidence)["file_path"]: item
+                for item in candidates}
+
+    first = drift()
+    assert set(first) == {"apps/api/routers/users.py", "brain/workers/worker.py"}
+    assert first["apps/api/routers/users.py"].severity == "warning"
+    assert first["brain/workers/worker.py"].severity == "critical"
+    evidence = {path: {entry["label"]: entry["value"] for entry in item.evidence} for path, item in first.items()}
+    assert evidence["apps/api/routers/users.py"]["imported_module"] == "sqlalchemy.orm.session"
+    assert evidence["apps/api/routers/users.py"]["line_number"] == "2"
+    assert evidence["brain/workers/worker.py"]["imported_module"] == "apps.api.static"
+    assert evidence["brain/workers/worker.py"]["line_number"] == "1"
+    assert all(item["delta_state"] == "new" for item in evidence.values())
+    keys = {path: item.dedupe_key for path, item in first.items()}
+    assert all(keys.values()) and len(set(keys.values())) == 2
+    assert {path: item.dedupe_key for path, item in drift().items()} == keys
+    setup_moved_fixture(tmp_path)
+    moved = drift()
+    assert {path: item.dedupe_key for path, item in moved.items()} == keys
+    moved_evidence = {entry["label"]: entry["value"] for entry in moved["apps/api/routers/users.py"].evidence}
+    assert moved_evidence["line_number"] == "17"

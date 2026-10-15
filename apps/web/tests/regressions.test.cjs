@@ -118,6 +118,25 @@ test('API reads preserve missing, HTTP failure, invalid JSON and timeout reasons
   });
 });
 
+test('API requests preserve the configured path prefix and reject encoded traversal', async () => {
+  await withEnv({ BRAIN_API_URL: 'https://api.example/brain', BRAIN_API_KEY: 'synthetic-server-key' }, async () => {
+    const previous = global.fetch;
+    const urls = [];
+    try {
+      global.fetch = async url => {
+        urls.push(String(url));
+        return new Response('{}');
+      };
+      const api = load('lib/api.ts');
+      assert.equal((await api.brainRead('/repositories?limit=1')).ok, true);
+      assert.equal(urls[0], 'https://api.example/brain/repositories?limit=1');
+      assert.equal((await api.brainRead('/%2e%2e/admin')).reason, 'not_configured');
+      assert.equal((await api.brainSend('POST', '/%2E%2E/admin')).ok, false);
+      assert.equal(urls.length, 1, 'rejected paths must not reach fetch');
+    } finally { global.fetch = previous; }
+  });
+});
+
 test('demo history search and facets filter before paging without calling a backend', async () => {
   const overrides = {
     'next/server': { connection: async () => {} },
@@ -878,6 +897,26 @@ test('sidebar pulse carries validated last-run uncommitted observations without 
   assert.equal((await getPulse('7')).index.uncommitted, undefined);
   count = -1;
   assert.equal((await getPulse('7')).index.uncommitted, undefined);
+});
+
+test('Telegram test messaging requires both saved token and nonempty saved chat ID', () => {
+  const { telegramConfigured } = load('lib/telegram.ts');
+  const section = (saved, chat) => ({ fields: [
+    { key: 'TELEGRAM_ALERT_BOT_TOKEN', kind: 'secret', set: saved, value: null },
+    { key: 'TELEGRAM_ALERT_CHAT_ID', kind: 'text', value: chat },
+  ] });
+  assert.equal(telegramConfigured(section(false, '')), false);
+  assert.equal(telegramConfigured(section(false, '-1001234567890')), false);
+  assert.equal(telegramConfigured(section(true, '')), false);
+  assert.equal(telegramConfigured(section(true, '   ')), false);
+  assert.equal(telegramConfigured(section(true, '-1001234567890')), true);
+  assert.equal(telegramConfigured(section(true, '  -1001234567890  ')), true);
+  for (const invalid of [undefined, { fields: [] }, section(undefined, '-1001234567890'), section(true, null), section(true, false)]) {
+    assert.equal(telegramConfigured(invalid), false);
+  }
+  const draft = section(false, '-1001234567890');
+  draft.fields[0].value = 'unsaved-fixture-token';
+  assert.equal(telegramConfigured(draft), false, 'a typed unsaved token is not configured on the server');
 });
 
 test('live setup exposes copyable agent configuration and connection command', async () => {

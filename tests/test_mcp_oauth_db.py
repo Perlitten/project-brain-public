@@ -17,12 +17,12 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from apps.api import mcp_http
 from apps.mcp_server import remote_server
-from brain.auth.principals import mint_credential
-from brain.auth import oauth_store
+from brain.auth.principals import hash_credential, mint_credential
 from brain.config.settings import settings
 from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken, Principal
 
@@ -42,7 +42,9 @@ STREAM_HEADERS = {"Accept": "application/json, text/event-stream"}
 
 @pytest_asyncio.fixture
 async def sessions(monkeypatch):
-    engine = create_async_engine(settings.DATABASE_URL)
+    engine = create_async_engine(settings.DATABASE_URL, connect_args={
+        "server_settings": {"application_name": f"brain-oauth-tests-{secrets.token_hex(6)}"},
+    })
     try:
         async with engine.begin() as conn:
             # Only the auth tables: every test registers fresh clients, so no truncation.
@@ -262,6 +264,7 @@ async def test_issued_token_carries_the_granted_scopes(oauth_app):
         principal = await resolve_api_key(tokens["access_token"])
         assert principal is not None
         assert principal.name.startswith("oauth:Reader:")
+        assert principal.kind == "service"
         assert principal.has_scope("core:read")
         assert not principal.has_scope("core:write")
 
@@ -296,16 +299,7 @@ async def test_denied_consent_returns_access_denied(oauth_app):
 
 
 @pytest.mark.asyncio
-async def test_refresh_rotation_is_single_use_under_overlap(oauth_app, monkeypatch):
-    # Widen the interval between validation and revocation so competing
-    # transactions reliably exercise the row lock, rather than running serially.
-    revoke_row = oauth_store._revoke_row
-
-    async def delayed_revoke(session, row):
-        await asyncio.sleep(0.1)
-        await revoke_row(session, row)
-
-    monkeypatch.setattr(oauth_store, "_revoke_row", delayed_revoke)
+async def test_refresh_rotation_is_single_use_under_overlap(oauth_app, sessions):
     async with _client(oauth_app) as client:
         client_id = await _register(client)
         verifier, challenge = _pkce()
@@ -318,7 +312,37 @@ async def test_refresh_rotation_is_single_use_under_overlap(oauth_app, monkeypat
         })
         tokens = exchanged.json()
         data = {"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"], "client_id": client_id}
-        results = await asyncio.gather(client.post("/token", data=data), client.post("/token", data=data))
+        requests = []
+        try:
+            # Hold the persisted refresh row so both HTTP requests overlap. With
+            # proper serialization they wait before spending it. Without it,
+            # both read live state and reach conflicting writes before release.
+            async with sessions() as blocker, blocker.begin():
+                app_name = await blocker.scalar(text("SELECT current_setting('application_name')"))
+                await blocker.execute(select(OAuthRefreshToken).where(
+                    OAuthRefreshToken.token_hash == hash_credential(tokens["refresh_token"]),
+                ).with_for_update())
+                requests = [asyncio.create_task(client.post("/token", data=data)) for _ in range(2)]
+
+                async def both_waiting():
+                    while True:
+                        assert not any(request.done() for request in requests)
+                        async with sessions() as observer:
+                            count = await observer.scalar(text(
+                                "SELECT count(*) FROM pg_stat_activity "
+                                "WHERE application_name = :app AND wait_event_type = 'Lock'"
+                            ), {"app": app_name})
+                        if count == 2:
+                            return
+                        await asyncio.sleep(0.01)
+
+                await asyncio.wait_for(both_waiting(), timeout=10)
+            results = await asyncio.wait_for(asyncio.gather(*requests), timeout=10)
+        finally:
+            for request in requests:
+                if not request.done():
+                    request.cancel()
+            await asyncio.gather(*requests, return_exceptions=True)
         assert sorted(response.status_code for response in results) == [200, 400]
         rotated = next(response.json() for response in results if response.status_code == 200)
         assert await _mcp_status(client, rotated["access_token"]) == 200
