@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "source": {
+    "module": "brain/lab/engine.py",
+    "sha256": "f5636c0f2da2f081380d1b61828c2cea8d779a3434334068f456459d486ea69e",
+    "candidates": 1456,
+    "candidate_keys_sha256": "045591c0fe482c1a421f4616406854ab77530053cb821df838016415752bb69a",
+    "generated_sha256": "b270c4607570b45558d95be20a740d3a0c2e2c6425e2ee0990a470d8fa9995ee"
+  },
+  "candidate": "brain.lab.engine.x\u01c1ValidationRunner\u01c1_run_one__mutmut_94",
+  "mutation_diff": "--- \n\n+++ \n\n@@ -15,5 +15,5 @@\n\n         popen_kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP\n     else:\n-        popen_kwargs['start_new_session'] = True\n+        popen_kwargs['start_new_session'] = False\n     try:\n         popen_argv, sandbox = wrap_argv(backend, workspace=root, argv=[resolved, *argv[1:]], env=env, resolved_exe=Path(resolved))",
+  "type_valid": true,
+  "before": {
+    "candidate": "brain.lab.engine.x\u01c1ValidationRunner\u01c1_run_one__mutmut_94",
+    "generated_sha256": "b270c4607570b45558d95be20a740d3a0c2e2c6425e2ee0990a470d8fa9995ee",
+    "results": {
+      "control": {
+        "exit_code": 0,
+        "seconds": 4.787306746002287
+      },
+      "lost_process_session": {
+        "exit_code": -15,
+        "seconds": 2.4741146930027753
+      }
+    },
+    "restored": true,
+    "limitation": "Local controlled reproduction, not proof of the failed hosted shard cause without its raw log."
+  },
+  "after": {
+    "candidate": "brain.lab.engine.x\u01c1ValidationRunner\u01c1_run_one__mutmut_94",
+    "generated_sha256": "b270c4607570b45558d95be20a740d3a0c2e2c6425e2ee0990a470d8fa9995ee",
+    "results": {
+      "control": {
+        "exit_code": 0,
+        "seconds": 6.534764010000799
+      },
+      "lost_process_session": {
+        "exit_code": 1,
+        "seconds": 5.040814181003952
+      }
+    },
+    "restored": true,
+    "limitation": "Local controlled reproduction, not proof of the failed hosted shard cause without its raw log."
+  },
+  "original_test_sha256": "fac9822d1514f85f0bf7c5ac1d13f0799f150ea9b95092103098e320c2f8decc",
+  "improved_test_sha256": "72de6a67fea943fdabd1eae6d512b312de0e65157df7dc3a870fe0efce20b687",
+  "interpretation": "An inconclusive controller-killing mutation is now reported as an assertion failure. This is not a before/after module score or an extra whole-project kill. No production code changed. Hosted failure cause remains unconfirmed without raw log.",
+  "reproduce": "Seed frozen generated brain/lab/engine.py in an owned mutmut sandbox; run the two named tests with MUTANT_UNDER_TEST set to this candidate and the offline support/config from PR108. Always launch the pytest process with start_new_session=True from an outside controller. Restore generated and test bytes in finally.",
+  "tests": [
+    "tests/test_change_laboratory.py::test_validation_timeout_terminates_process",
+    "tests/test_change_laboratory.py::test_validation_cancellation"
+  ],
+  "limitation": "Linux process-session experiment; Windows real-process behavior remains checked by CI where selected. Does not certify all 1456 module candidates."
+}
