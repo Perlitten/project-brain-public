@@ -1,0 +1,32 @@
+{
+  "scope": "Five existing public team-revocation cases only; not a full team-module score",
+  "base": "e93e8a32e032a546172c7dfb0241a9e60b0b81b2",
+  "source_sha256": "9f19e0f6522557f0a589595a1ab956f2f1ebf984cf3ca8c57bee596d7c4595b4",
+  "candidate": "brain.team.authorization.x_fresh__mutmut_7",
+  "mutation": "populate_existing=True -> False",
+  "type_valid": true,
+  "before": {
+    "pytest_exit": 0,
+    "passed": 5,
+    "seconds": 2.03
+  },
+  "after": {
+    "pytest_exit": 1,
+    "failed": 5,
+    "seconds": 1.93
+  },
+  "test_sha256": "042c23d482a9e65de9d0f36e24b597d5ad18c32b41aad202d7b710de7c4816d5",
+  "behavior": "A caller holds a public ORM identity in a reused session across transactions. Another session revokes its credential, principal, membership or verification, or removes project permissions. The next create_task call must deny access.",
+  "test_cases_added": 0,
+  "limitations": [
+    "Focused test selection; another existing test may already detect this candidate in a complete module run.",
+    "Fault experiment uses SQLite. Unmutated PostgreSQL behavior is verified separately."
+  ],
+  "failures": [
+    "test_live_revocation_blocks_next_operation_not_cached_identity[membership]",
+    "test_live_revocation_blocks_next_operation_not_cached_identity[credential]",
+    "test_live_revocation_blocks_next_operation_not_cached_identity[principal]",
+    "test_live_revocation_blocks_next_operation_not_cached_identity[policy]",
+    "test_live_revocation_blocks_next_operation_not_cached_identity[verification]"
+  ]
+}

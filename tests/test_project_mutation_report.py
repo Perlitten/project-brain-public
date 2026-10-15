@@ -212,3 +212,58 @@ print(json.dumps({"cwd": os.getcwd(), "value": value()}))
             cwd=target, env=ordinary_env, text=True, capture_output=True, timeout=20,
         )
     assert ordinary.returncode == 0, ordinary.stderr
+
+
+def test_aggregate_recomputes_raw_scores_and_requires_matching_complete_evidence(tmp_path):
+    from copy import deepcopy
+    from eval.project_mutation_aggregate import aggregate
+
+    modules = []
+    raw = {}
+    for name, codes in (("brain/security.py", {"brain.security.x_check__mutmut_1": 1,
+                                              "brain.security.x_check__mutmut_2": 0}),
+                        ("brain/store.py", {"brain.store.x_write__mutmut_1": 36,
+                                           "brain.store.x_write__mutmut_2": 37})):
+        modules.append({"module": name, "candidates": 2, "sha256": "original-" + name,
+                        "generated_sha256": "generated-" + name, "candidate_keys_sha256": candidate_hash(codes)})
+        raw[name] = codes
+    inventory = {"base": "frozen-base", "tool": "mutmut==3.8.0", "modules": modules}
+    reports = [{"base": inventory["base"], "tool": inventory["tool"], "shard": index, "shard_count": 2,
+                "type_proof_sha256": "compiler-proof", "modules": shard,
+                "exit_code_by_key": {key: code for row in shard for key, code in raw[row["module"]].items()},
+                "verified": True, "runner_exit_code": 0, "measurement_exit_code": 0, "error": None,
+                "seconds": 5, "test_sha256": {"tests/test_contract.py": "identical-tests"},
+                "overall": {"score": 1.0, "killed": 9999}}  # Stored scores are deliberately false.
+               for index, shard in enumerate(assign_shards(modules, 2))]
+    invalid = {"brain.store.x_write__mutmut_2": [{"code": "arg-type"}]}
+    decision = {"brain.security.x_check__mutmut_2": {
+        "classification": "equivalent", "reason": "Identical accepted encoding alias",
+        "source_sha256": "original-brain/security.py"}}
+    combined = aggregate(inventory, list(reversed(reports)), invalid, "compiler-proof", decision)
+    assert combined["overall"]["complete"] and combined["overall"]["score"] == 0.5
+    assert {key: combined["overall"][key] for key in ("killed", "timed_out", "equivalent", "type_invalid")} == {
+        "killed": 1, "timed_out": 1, "equivalent": 1, "type_invalid": 1}
+    assert combined["worker_seconds"] == 10
+    assert combined["unclassified_survivors"] == []
+    missing = aggregate(inventory, reports[:1], invalid, "compiler-proof", decision)
+    assert not missing["overall"]["complete"] and missing["overall"]["score"] is None
+    unreviewed = aggregate(inventory, reports, invalid, "compiler-proof")
+    assert unreviewed["overall"]["score"] == 1 / 3
+    assert unreviewed["unclassified_survivors"] == list(decision)
+    with pytest.raises(ValueError, match="Duplicate shard"):
+        aggregate(inventory, reports + reports[:1], invalid, "compiler-proof", decision)
+    for field, replacement, expected in (
+        ("test_sha256", {"changed-test": "different"}, "test fingerprints"),
+        ("type_proof_sha256", "unproven", "compiler proof"),
+        ("exit_code_by_key", {"brain.unrelated.x__mutmut_1": 1}, "candidate identities"),
+    ):
+        changed = deepcopy(reports)
+        changed[0][field] = replacement
+        with pytest.raises(ValueError, match=expected):
+            aggregate(inventory, changed, invalid, "compiler-proof", decision)
+    incomplete = deepcopy(reports)
+    incomplete[0]["verified"] = False
+    assert aggregate(inventory, incomplete, invalid, "compiler-proof", decision)["overall"]["score"] is None
+    decision["brain.security.x_check__mutmut_2"]["source_sha256"] = "different-source"
+    with pytest.raises(ValueError, match="bound to the frozen source"):
+        aggregate(inventory, reports, invalid, "compiler-proof", decision)

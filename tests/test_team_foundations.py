@@ -146,22 +146,36 @@ async def test_run_idempotency_narrowing_and_task_bound_read(team_db):
 @pytest.mark.parametrize("target", ["membership", "credential", "principal", "policy", "verification"])
 async def test_live_revocation_blocks_next_operation_not_cached_identity(team_db, target):
     factory, a, _ = team_db
-    async with factory() as session, session.begin():
-        await authorize(session, caller(2), a, Permission.READ)
-    async with factory() as session, session.begin():
-        if target == "membership":
-            await session.execute(update(ProjectMember).where(ProjectMember.principal_id == 2).values(revoked_at=NOW))
-        elif target == "credential":
-            await session.execute(update(ApiCredential).where(ApiCredential.id == 2).values(revoked_at=NOW))
-        elif target == "principal":
-            await session.execute(update(Principal).where(Principal.id == 2).values(disabled_at=NOW))
-        elif target == "policy":
-            await session.execute(update(TeamProject).where(TeamProject.id == a).values(permissions=[]))
-        else:
-            await session.execute(update(TeamMember).where(TeamMember.principal_id == 2).values(verified_at=None))
-    async with factory() as session:
+    model, identity = {
+        "membership": (ProjectMember, {"project_id": a, "principal_id": 2}),
+        "credential": (ApiCredential, 2),
+        "principal": (Principal, 2),
+        "policy": (TeamProject, a),
+        "verification": (TeamMember, 2),
+    }[target]
+    async with factory() as reused:
+        async with reused.begin():
+            held = await reused.get(model, identity)
+            assert held is not None
+            await authorize(reused, caller(2), a, Permission.READ)
+        # Another request changes authority after the first transaction ends.
+        # The caller keeps its session and loaded entity, as a long-lived
+        # service can; opening a fresh session here would hide stale reads.
+        async with factory() as writer, writer.begin():
+            if target == "membership":
+                await writer.execute(update(ProjectMember).where(ProjectMember.principal_id == 2).values(revoked_at=NOW))
+            elif target == "credential":
+                await writer.execute(update(ApiCredential).where(ApiCredential.id == 2).values(revoked_at=NOW))
+            elif target == "principal":
+                await writer.execute(update(Principal).where(Principal.id == 2).values(disabled_at=NOW))
+            elif target == "policy":
+                await writer.execute(update(TeamProject).where(TeamProject.id == a).values(permissions=[]))
+            else:
+                await writer.execute(update(TeamMember).where(TeamMember.principal_id == 2).values(verified_at=None))
         with pytest.raises(TeamDenied):
-            await create_task(session, caller(2), a, task_payload())
+            async with reused.begin():
+                await create_task(reused, caller(2), a, task_payload())
+        assert held is not None  # Keep the loaded entity alive across both operations.
 
 
 @pytest.mark.asyncio

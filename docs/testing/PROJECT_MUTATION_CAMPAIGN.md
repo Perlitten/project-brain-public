@@ -149,3 +149,72 @@ development environment without mutmut skips it explicitly.
 Before/after mutation tables, survivor classifications, confirmed defects and
 retrieval acceptance results will be recorded after actual measurement and
 review. No project-wide score is claimed at this stage.
+
+## Measured first improvements (not an overall score)
+
+The paired [auth results](evidence/project-auth-mutation-results.json) cover all
+106 generated candidates in `brain/auth/principals.py`, using the same frozen
+production source and instrumentation for both runs:
+
+| Phase | Killed | Survived (non-equivalent) | Timed out | Equivalent | Type-invalid | Score |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Before | 47 | 11 | 0 | 5 | 43 | 81.03% |
+| After | 57 | 1 | 0 | 5 | 43 | 98.28% |
+
+The two runs took 317.52 and 298.42 seconds. Ten type-valid regressions are newly
+detected, with no lost kills. Real SQLite round trips now verify attribution of
+organization and principal kind, the minimum supported credential lifetime,
+persisted successful-use timestamps and unchanged timestamps after revocation.
+Nested scope domains are also checked. Three key-blind fake-session cases were
+removed; the net application case count decreased by one.
+
+Every initial auth survivor is classified in the evidence. Five equivalences
+cover identical codecs, unchanged default entropy, a compatible entropy increase
+and two identical inferred foreign-key joins (SQL checked for PostgreSQL and
+SQLite). One cosmetic error-message mutation remains observable and stays in
+the denominator; no exact-message assertion was added solely for the score.
+Equivalence assumptions and source/schema hashes are recorded individually.
+
+The local paired environment has iniconfig 2.3.1 versus the hosted lock's 2.3.0;
+these scoped results are not combined with the project-wide baseline. These
+changes repair test gaps; no production authentication vulnerability is claimed.
+
+Five existing team revocation cases now exercise a reused session with retained
+public ORM objects rather than opening a fresh session after each authority
+change. The [focused fault experiment](evidence/project-team-revocation-experiment.json)
+passes all five original cases with stale refresh behavior but fails all five
+strengthened cases. This is evidence that those assertions now catch stale
+credential, principal, membership, verification and project-policy authority.
+It is not a full team-module mutation score or a claim that the production code
+had that fault. No cases were added for this improvement.
+
+## Assemble shard evidence
+
+Download and unpack all `mutation-shard-N` artifacts before their one-day expiry,
+keeping each `report.json` in its own shard directory. Recompute rather than
+average their scores:
+
+```bash
+python -m eval.project_mutation_aggregate artifacts/*/.mutation-results/report.json \
+  --inventory docs/testing/evidence/project-mutation-inventory.json \
+  --type-proof docs/testing/evidence/project-mutation-type-proof.json.gz \
+  --output project-mutation-baseline.json
+```
+
+The aggregator rejects duplicate shards, different tests/compiler proof/source
+fingerprints and changed candidate identities. Missing shards and failed runner
+controls have no overall score. It recomputes every count from raw exit codes,
+keeps timeouts in the denominator and lists all unclassified survivors. An
+optional `--classifications decisions.json` maps candidate keys to a classification
+(`real_gap`, `equivalent`, `untestable`), a reason and the original `source_sha256`.
+Only individually justified equivalences are excluded; untestable candidates
+stay in the denominator. A complete raw score alone does not satisfy acceptance:
+every survivor still needs review, and every security-sensitive module needs
+its separate threshold check.
+
+After the auth/team changes, guarded offline verification passed **2,547 tests,
+11 skipped** in 99.11 seconds including wrapper overhead. The added aggregate
+integrity case was subsequently verified with all seven campaign tooling cases.
+The unchanged production mypy gate remains **0 errors across 434 files**. The
+ordinary GitHub CI and both CodeQL language analyses passed for `1842aec7` before
+these test-strengthening changes; exact-head remote checks remain required.

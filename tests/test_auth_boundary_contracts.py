@@ -50,6 +50,7 @@ async def test_persisted_lookup_distinguishes_keys_scopes_and_revocation(credent
     async def write():
         return {"ok": True}
 
+    used_after = datetime.now(timezone.utc)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
         assert (await client.get("/read", headers={"X-API-Key": reader})).json() == {"name": "reader"}
         assert (await client.post("/write", headers={"X-API-Key": reader})).status_code == 403
@@ -65,8 +66,12 @@ async def test_persisted_lookup_distinguishes_keys_scopes_and_revocation(credent
             assert (await client.get("/read")).status_code == 503
         async with factory() as session, session.begin():
             credential = await session.get(ApiCredential, read_id)
+            used_at = credential.last_used_at
+            assert used_at is not None and used_after <= used_at <= datetime.now(timezone.utc)
             credential.revoked_at = datetime.now(timezone.utc)
         assert (await client.get("/read", headers={"X-API-Key": reader})).status_code == 401
+        async with factory() as session:
+            assert (await session.get(ApiCredential, read_id)).last_used_at == used_at
 
 
 @pytest.mark.asyncio
@@ -101,14 +106,25 @@ async def test_mint_reuses_only_matching_principal_and_sets_future_expiry(creden
     factory = credential_store
     before = datetime.now(timezone.utc)
     async with factory() as session, session.begin():
-        _, first = await principals.mint_credential(session, name="first", scopes=["jobs:read"], ttl_days=2)
+        first_key, first = await principals.mint_credential(
+            session, name="first", scopes=["jobs:read"], ttl_days=1, org_id=7,
+        )
         await session.flush()
-        _, second = await principals.mint_credential(session, name="second", scopes=[])
+        second_key, second = await principals.mint_credential(
+            session, name="second", scopes=[], kind="human", org_id=11,
+        )
         _, reused = await principals.mint_credential(session, name="first", scopes=["jobs:write"])
         assert first.principal_id != second.principal_id
         assert reused.principal_id == first.principal_id
-        assert before + timedelta(days=2) <= first.expires_at <= datetime.now(timezone.utc) + timedelta(days=2)
+        assert before + timedelta(days=1) <= first.expires_at <= datetime.now(timezone.utc) + timedelta(days=1)
         assert second.expires_at is None
+    # Resolve after commit through a fresh session: issuing a key must preserve
+    # identity attribution, including non-default kinds and organization ids.
+    service = await auth.resolve_api_key(first_key)
+    human = await auth.resolve_api_key(second_key)
+    assert service is not None and human is not None
+    assert (service.id, service.name, service.kind, service.org_id) == (first.principal_id, "first", "service", 7)
+    assert (human.id, human.name, human.kind, human.org_id) == (second.principal_id, "second", "human", 11)
 
 
 @pytest.mark.parametrize("environment,key,opened,status", [
@@ -134,6 +150,8 @@ async def test_keyless_modes_fail_closed_in_production(monkeypatch, environment,
     ({"jobs:write"}, "jobs:read", True), ({"jobs:read"}, "jobs:write", False),
     ({"jobs:write"}, "memory:read", False), (set(), "jobs:read", False),
     ({"*"}, "memory:write", True), ({"jobs:write"}, "jobs", False),
+    ({"project:jobs:write"}, "project:jobs:read", True),
+    ({"project:jobs:write"}, "other:jobs:read", False),
 ])
 def test_scope_grants_have_exact_domain_and_direction(grants, requested, expected):
     principal = principals.ResolvedPrincipal(7, "scoped", "service", frozenset(grants))
