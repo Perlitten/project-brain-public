@@ -125,6 +125,7 @@ a.vitals__line:hover { background: var(--surface-inset); color: var(--text-1); }
 .vitals__line:not(.vitals__line--head) { padding-left: calc(var(--s-2) + 8px + var(--s-2)); }
 .vitals__line--next { color: var(--teal-fg); }
 .vitals__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vitals__line--warning .vitals__text { color: var(--tone); overflow: visible; white-space: normal; }
 .vitals__ms { color: var(--text-3); font-weight: 400; }
 .vitals__beat { width: 8px; height: 8px; flex: none; border-radius: var(--r-pill); background: var(--tone); box-shadow: 0 0 0 3px color-mix(in oklab, var(--tone) 22%, transparent); animation: heartbeat 2.4s var(--ease) infinite; }
 .tone-bad .vitals__beat { animation-duration: 0.9s; }

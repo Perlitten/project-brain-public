@@ -1,7 +1,8 @@
 import { Term } from "@/components/Term";
 import { SetupSteps } from "@/components/setup/SetupSteps";
-import { PageHead } from "@/components/ui";
-import { getClientConfigs } from "@/lib/data";
+import { PageHead, StatusLine } from "@/components/ui";
+import { getClientConfigs, getLatestUncommittedChanges } from "@/lib/data";
+import { uncommittedMessage } from "@/lib/repository-status";
 import { stepTitle } from "@/lib/setup-copy";
 import { getSetupView } from "@/lib/setup-view";
 
@@ -10,6 +11,7 @@ export const metadata = { title: "Set up Brain" };
 export default async function Setup() {
   const [view, clients] = await Promise.all([getSetupView(), getClientConfigs()]);
   const steps = view.steps;
+  const uncommitted = view.mode === "live" ? await getLatestUncommittedChanges(view.repoPath) : null;
   const done = steps.filter((s) => s.done).length;
   const next = steps.find((s) => s.id === view.nextStep) ?? steps.find((s) => !s.done);
   return (
@@ -34,6 +36,7 @@ export default async function Setup() {
         </div>
       ) : (
         <>
+          {uncommitted !== null && uncommitted > 0 && <StatusLine tone="warn" text={<>{uncommittedMessage(uncommitted)}<small>Recorded at the latest index run for this repository, not a live checkout count. Commit the changes and reindex to make them available to agents.</small></>} />}
           <SetupSteps view={view} clients={clients} />
         </>
       )}

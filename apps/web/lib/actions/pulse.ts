@@ -4,6 +4,7 @@
 // every mode except demo.
 import { apiConfigured, brainFetch } from "../api";
 import { getRepository } from "../data";
+import { uncommittedCount } from "../repository-status";
 
 export interface Pulse {
   at: number;
@@ -21,7 +22,7 @@ export interface Pulse {
   build?: string;
   llm?: string;
   embedding?: string;
-  index?: { status: string; at?: string };
+  index?: { status: string; at?: string; uncommitted?: number };
   setup?: { done: number; total: number; next?: string; nextId?: string };
 }
 
@@ -75,7 +76,7 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
     build: sha && sha !== "unknown" ? sha.slice(0, 7) : undefined,
     llm: modelLabel(current.llm, provider.llm),
     embedding: modelLabel(current.embedding, provider.embedding),
-    index: run.status ? { status: String(run.status), at: s(run.completed_at) ?? s(run.started_at) } : undefined,
+    index: run.status ? { status: String(run.status), at: s(run.completed_at) ?? s(run.started_at), uncommitted: uncommittedCount(run.uncommitted_changes) ?? undefined } : undefined,
     setup: steps.length
       ? {
           done: steps.filter((st) => st.status === "done").length,

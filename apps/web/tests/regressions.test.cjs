@@ -28,7 +28,7 @@ function load(file, overrides = {}) {
       return boundary;
     }
     if (name === 'server-only') return {};
-    if (name.startsWith('./')) return load(path.relative(root, path.resolve(path.dirname(filename), `${name}.ts`)), overrides);
+    if (name.startsWith('./') || name.startsWith('../')) return load(path.relative(root, path.resolve(path.dirname(filename), `${name}.ts`)), overrides);
     return require(name);
   };
   vm.runInNewContext(output, { module, exports: module.exports, require: requireModule,
@@ -822,6 +822,81 @@ test('selected repository scopes indexing and graph requests, and unknown freshn
   for (const status of ['unknown', 'source_missing', 'stale', 'freshness_error']) {
     assert.notEqual(repositoryStatus({ ...repo, freshness: status }).tone, 'ok');
   }
+});
+
+test('uncommitted observations preserve known zero, unknown and invalid counts', () => {
+  const { uncommittedCount, uncommittedMessage, repositoryStatus } = load('lib/repository-status.ts');
+  assert.equal(uncommittedCount(0), 0);
+  assert.equal(uncommittedCount(3), 3);
+  for (const value of [null, undefined, -1, 0.5, Infinity, NaN, '3', {}, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(uncommittedCount(value), null);
+  }
+  assert.equal(uncommittedMessage(1), '1 uncommitted change not indexed yet');
+  assert.equal(uncommittedMessage(3), '3 uncommitted changes not indexed yet');
+  const repo = { freshness: 'current', behind: 0 };
+  assert.equal(repositoryStatus(repo, 3).tone, 'warn');
+  assert.equal(repositoryStatus(repo, 3).status, uncommittedMessage(3));
+  assert.equal(repositoryStatus(repo, 0).tone, 'ok');
+  for (const status of ['source_missing', 'freshness_error', 'error']) {
+    const state = repositoryStatus({ ...repo, freshness: status }, 3);
+    assert.equal(state.tone, 'bad');
+    assert.match(state.status, /uncommitted changes/);
+    assert.match(state.status, /unavailable|failed/);
+  }
+  assert.equal(repositoryStatus({ ...repo, freshness: 'behind', behind: 30 }, 3).tone, 'bad');
+});
+
+test('dashboard and setup read the latest observation for the right repository, never an unknown zero', async () => {
+  let run = { uncommitted_changes: 3 };
+  const calls = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async endpoint => {
+      calls.push(endpoint);
+      if (endpoint === '/repositories') return { repositories: [
+        { id: 5, name: 'other', path: '/Other' }, { id: 7, name: 'selected', path: '/Selected' },
+      ] };
+      if (endpoint.startsWith('/api/web/overview')) return run === null ? null : { counts: { files: 2 }, last_index_run: run };
+      throw new Error(endpoint);
+    } },
+  });
+  assert.equal((await data.getCorpus('7')).uncommitted, 3);
+  assert.equal(await data.getLatestUncommittedChanges('/Selected'), 3);
+  assert.ok(calls.includes('/api/web/overview?repository_id=7'));
+  assert.equal(await data.getLatestUncommittedChanges('/selected'), null);
+  assert.equal(await data.getLatestUncommittedChanges(''), null);
+  assert.equal(calls.includes('/api/web/overview?repository_id=5'), false);
+  run = { uncommitted_changes: 0 };
+  assert.equal((await data.getCorpus('7')).uncommitted, 0);
+  run = {};
+  assert.equal((await data.getCorpus('7')).uncommitted, null);
+  run = null;
+  assert.equal((await data.getCorpus('7')).available, false);
+  assert.equal(await data.getLatestUncommittedChanges('/Selected'), null);
+});
+
+test('sidebar pulse carries validated last-run uncommitted observations without another request', async () => {
+  let count = 3;
+  const calls = [];
+  const { getPulse } = load('lib/actions/pulse.ts', {
+    '../repository-status': load('lib/repository-status.ts'),
+    '../data': { getRepository: async () => ({ id: 7 }) },
+    '../api': { apiConfigured: true, brainFetch: async endpoint => {
+      calls.push(endpoint);
+      if (endpoint === '/health') return { status: 'ok', details: {} };
+      if (endpoint.includes('/api/web/index-runs')) return { runs: [{ status: 'completed', uncommitted_changes: count }] };
+      return {};
+    } },
+  });
+  assert.equal((await getPulse('7')).index.uncommitted, 3);
+  assert.equal(calls.filter(p => p.includes('index-runs')).length, 1);
+  assert.ok(calls.includes('/api/web/index-runs?repository_id=7&page_size=1'));
+  count = 0;
+  assert.equal((await getPulse('7')).index.uncommitted, 0);
+  count = undefined;
+  assert.equal((await getPulse('7')).index.uncommitted, undefined);
+  count = -1;
+  assert.equal((await getPulse('7')).index.uncommitted, undefined);
 });
 
 test('Telegram test messaging requires both saved token and nonempty saved chat ID', () => {
