@@ -13,6 +13,7 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import signal
 import subprocess
 import sys
 import sysconfig
@@ -335,9 +336,25 @@ def main() -> None:
     timer = time.monotonic()
     exit_code = 0
     error = None
+    interrupted = False
+    previous_handler = None
+
+    def mark_interrupted(signum, frame):
+        nonlocal interrupted
+        interrupted = True
+        raise KeyboardInterrupt
+
     try:
         if args.action == "run":
+            previous_handler = signal.signal(signal.SIGINT, mark_interrupted)
             run_shard(shards[args.shard], invalid)
+            # mutmut catches Ctrl-C while draining workers. Completed/cached
+            # outcomes must not make that interrupted verification look clean.
+            if interrupted:
+                raise KeyboardInterrupt
+    except KeyboardInterrupt:
+        exit_code = 130
+        error = "KeyboardInterrupt: mutation measurement interrupted"
     except SystemExit as exc:
         exit_code = int(exc.code or 0)
         control = ROOT / ".mutation-results/stats-control.json"
@@ -347,6 +364,8 @@ def main() -> None:
         exit_code = 1
         error = f"{type(exc).__name__}: {exc}"
     finally:
+        if previous_handler is not None:
+            signal.signal(signal.SIGINT, previous_handler)
         report = summarize(shards[args.shard], ROOT / "mutants", invalid)
         verified = args.action == "run" and exit_code == 0
         if not verified:

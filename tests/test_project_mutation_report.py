@@ -314,3 +314,42 @@ max_stack_depth = -1
         # partial incremental stats run would execute only this test and lose
         # the second module's existing behavior assertions.
         (campaign / "tests/test_extra.py").write_text("def test_unrelated():\n    assert True\n")
+
+
+def test_interrupted_runner_cannot_certify_cached_kills_even_if_it_swallows_ctrl_c(tmp_path, monkeypatch):
+    import signal
+    from eval import project_mutation, mutation_types
+
+    shadow = tmp_path / "mutants"
+    shadow.mkdir()
+    row = module_record(shadow, {"brain.example.x_value__mutmut_1": 1})
+    proof = tmp_path / "proof.json.gz"
+    proof.write_bytes(b"fixture proof; compiler validation has separate contract tests")
+    output = tmp_path / "report.json"
+    monkeypatch.setattr(project_mutation, "ROOT", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(project_mutation, "load_inventory", lambda path: {
+        "modules": [row], "base": "frozen", "tool": "mutmut==3.8.0",
+    })
+    monkeypatch.setattr(mutation_types, "read_type_exclusions", lambda *args: {})
+
+    def interrupted_engine(*args):
+        try:
+            signal.raise_signal(signal.SIGINT)
+        except KeyboardInterrupt:
+            pass  # The engine catches Ctrl-C during worker shutdown.
+
+    monkeypatch.setattr(project_mutation, "run_shard", interrupted_engine)
+    monkeypatch.setattr(sys, "argv", ["project_mutation", "run", "--inventory", str(tmp_path / "inventory.json"),
+                                     "--type-proof", str(proof), "--output", str(output)])
+    previous = signal.getsignal(signal.SIGINT)
+    with pytest.raises(SystemExit) as stopped:
+        project_mutation.main()
+    assert stopped.value.code == 130
+    assert signal.getsignal(signal.SIGINT) == previous
+    record = json.loads(output.read_text())
+    assert not record["verified"] and record["measurement_exit_code"] == 130
+    assert record["overall"]["killed"] == 1  # Retained history is not a fresh verification.
+    assert not record["overall"]["complete"] and record["overall"]["score"] is None
+    assert record["modules"][0]["score"] is None
+    assert "interrupted" in record["error"]

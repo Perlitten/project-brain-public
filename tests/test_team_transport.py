@@ -98,7 +98,9 @@ async def test_api_uses_live_authenticated_author_and_project_scope(team_db, mon
     app = team_app(factory, monkeypatch)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
         headers = {"X-API-Key": "fixture-2"}
-        assert (await client.get(f"/team/projects/{a}/tasks")).status_code == 401
+        anonymous = await client.get(f"/team/projects/{a}/tasks")
+        assert anonymous.status_code == 401
+        assert "named credential" in anonymous.json()["detail"].lower()
         assert (await client.get(f"/team/projects/{b}/tasks", headers=headers)).status_code == 403
         assert (await client.post(f"/team/projects/{a}/tasks", headers={"X-API-Key": "fixture-1"},
                                   json=task_payload())).status_code == 403

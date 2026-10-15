@@ -397,3 +397,14 @@ python -m eval.product_upgrade_capture \
 Use the same owned fixture database/index and model configuration in both arms;
 this capture command does not configure inference. The cloud session's exact
 ASGI adapter is retained at `/workspace/project-wide-mutation/capture_offline.py`.
+
+A further controller regression sends a real SIGINT while the engine has a
+cached kill and swallows `KeyboardInterrupt` during shutdown. The CLI now retains
+the interruption, exits 130, restores the prior signal handler and suppresses
+scores rather than treating cached results as a newly verified run. This is
+campaign control hardening, not an additional Brain mutation detection.
+
+API authentication is being measured separately from the initial credential
+module. Follow-up assertions preserve the documented public preauthenticated
+request-state contract and require actionable, non-sensitive denial reasons.
+They accept case variations and do not pin exact diagnostic decoration.

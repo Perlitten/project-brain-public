@@ -42,6 +42,16 @@ async def test_persisted_lookup_distinguishes_keys_scopes_and_revocation(credent
 
     app = FastAPI()
 
+    @app.middleware("http")
+    async def upstream_bearer_identity(request: Request, call_next):
+        # A transport may authenticate before the scope dependency (as MCP
+        # does). Pass its real resolved identity through the public request
+        # state contract without also manufacturing an X-API-Key header.
+        authorization = request.headers.get("authorization", "")
+        if authorization.startswith("Bearer "):
+            request.state.principal = await auth.resolve_api_key(authorization.removeprefix("Bearer "))
+        return await call_next(request)
+
     @app.get("/read", dependencies=[Depends(auth.require_scope("jobs:read"))])
     async def read(request: Request):
         return {"name": request.state.principal.name}
@@ -53,17 +63,30 @@ async def test_persisted_lookup_distinguishes_keys_scopes_and_revocation(credent
     used_after = datetime.now(timezone.utc)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
         assert (await client.get("/read", headers={"X-API-Key": reader})).json() == {"name": "reader"}
-        assert (await client.post("/write", headers={"X-API-Key": reader})).status_code == 403
+        assert (await client.get("/read", headers={"Authorization": f"Bearer {reader}"})).json() == {"name": "reader"}
+        assert (await client.post("/write", headers={"Authorization": f"Bearer {reader}"})).status_code == 403
+        assert (await client.get("/read", headers={"Authorization": "Bearer pbk_unknown"})).status_code == 401
+        denied_write = await client.post("/write", headers={"X-API-Key": reader})
+        assert denied_write.status_code == 403
+        reason = denied_write.json()["detail"].lower()
+        assert "reader" in reason and "scope" in reason
         assert (await client.get("/read", headers={"X-API-Key": writer})).json() == {"name": "writer"}
         assert (await client.post("/write", headers={"X-API-Key": writer})).status_code == 200
         assert (await client.get("/read", headers={"X-API-Key": empty})).status_code == 403
-        assert (await client.get("/read", headers={"X-API-Key": "pbk_unknown"})).status_code == 401
-        assert (await client.get("/read")).status_code == 401
+        unknown_key = await client.get("/read", headers={"X-API-Key": "pbk_unknown"})
+        assert unknown_key.status_code == 401
+        assert "api key" in unknown_key.json()["detail"].lower()
+        assert "pbk_unknown" not in unknown_key.text
+        missing_key = await client.get("/read")
+        assert missing_key.status_code == 401
+        assert "api key" in missing_key.json()["detail"].lower()
         assert (await client.get("/read", headers={"X-API-Key": "test-legacy-key"})).json() == {"name": "legacy-api-key"}
         with monkeypatch.context() as no_legacy:
             no_legacy.setattr(auth.settings, "PROJECT_BRAIN_API_KEY", "")
             assert (await client.get("/read", headers={"X-API-Key": writer})).json() == {"name": "writer"}
-            assert (await client.get("/read")).status_code == 503
+            unconfigured = await client.get("/read")
+            assert unconfigured.status_code == 503
+            assert "not configured" in unconfigured.json()["detail"].lower()
         async with factory() as session, session.begin():
             credential = await session.get(ApiCredential, read_id)
             used_at = credential.last_used_at
