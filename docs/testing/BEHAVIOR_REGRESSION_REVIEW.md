@@ -22,6 +22,14 @@ release tags and archives are unchanged. It does not establish the separate
   four intentionally read-only POSTs. New published operations default to
   protected. Separate team, bridge and webhook policies are explicitly listed
   and retain dedicated tests. No private Brain closure is inspected.
+- Copied aggregate route declarations are deduplicated while preserving the
+  more complete inherited dependency policy; ambiguous policies fail explicitly.
+  Read grants are discovered through the public principal scope protocol, then
+  the assertions use a real persisted credential and the original scope method.
+  A new-domain POST negative control catches the previous masking by a read
+  dependency even when the domain has no GET endpoint. Both controls fail
+  against the earlier gate and pass after the fix; see
+  [paired control evidence](evidence/project-route-review-controls.json).
 - Two drift self-scans that could accept readiness fallback or empty lists are
   replaced by a controlled repository requiring two distinct findings, correct
   evidence and stable identity when source lines move. A version-floor
@@ -55,10 +63,10 @@ took 43.10 minutes, excluding the still-running hosted full-package campaign.
 
 ## Validation and remaining work
 
-This standalone patch passes **2,544 tests, 11 skipped** with mock providers,
+This standalone patch passes **2,545 tests, 11 skipped** with mock providers,
 owned PostgreSQL/Redis/Neo4j fixtures and the team PostgreSQL race/restore tests
 opted in. Ruff passes; the unchanged mypy gate reports **0 errors / 434 files**.
-Net application case growth is two. The same production source passes the
+Net application case growth is three. The same production source passes the
 unchanged 31-task offline retrieval gate: all task records match except timing.
 The combined campaign branch additionally runs nine tooling integrity cases.
 
