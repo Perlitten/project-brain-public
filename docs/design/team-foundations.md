@@ -9,7 +9,7 @@ from design or green CI alone.
 |---|---|---|---|
 | Verified authorship; no shared-admin bypass | `brain/auth/principals.py`, API auth | Trusted verified identity records; actor derived from live credential, not input | Real invitation/OIDC M5/pilot |
 | Reader write/execution denial | Domain scopes, workspace capabilities | Project role/policy intersection; legacy/execution refusal | Bounded execution M2 |
-| A/B isolation across API/Web/MCP | Native MCP forwards caller credential | Project-bound task APIs/tools; unadapted surfaces denied | Retrieval/cache/log/artifact adapters M2–M5 |
+| A/B isolation across API/Web/MCP | Native MCP forwards caller credential | Repository-scoped routes authorize the project per request once members exist | Cache/log/artifact adapters, unscoped routers M2–M5 |
 | No run/delegation escalation | Hashed credentials; harness task ledger | Durable task/run grants and narrowed parent chain | Real executor tool capabilities M2 |
 | Queued/active revocation | Credential revocation, queue lease checks | Live authorization recheck; no execution accepted | In-flight tool cancellation/checkpoints M2 |
 | Concurrent participants without shared session/folder | Worktrees and task/session references | Independent run identities/provenance on one task | Actual contained environments M2, coordination M3 |
@@ -23,13 +23,22 @@ from design or green CI alone.
 | Product onboarding and board | `apps/web`, operations docs | States/fields specified in ADR; no invented UI | Invitation/task/conflict UX M5 |
 | Same-project/same-task MVP | Authoritative harness ledger | Multiple isolated run records per task | Actual coordinated runs M2/M3 before M6 |
 
-## Experimental M1 implementation in the foundation change
+## M1 implementation: a solo Brain is a team of one
 
-`BRAIN_TEAM_MODE` defaults to `false`. Full-mode installations may explicitly
-enable the experimental boundary; Lite rejects it. Trusted operators must
-provision verified membership and named credentials in the database before use;
-there is no public invitation, SSO, or self-registration flow. An issuer/subject
-stored by a trusted operator is not evidence that OIDC has been integrated.
+There is no team switch. `team_state()` is `solo` until the first verified
+member is added (`brain team member add` or `POST /team/projects/members`) and
+`team` from then on; `/health` reports it as `mode`. In the solo state every
+authenticated caller, the shared `PROJECT_BRAIN_API_KEY` and keyless dev-open
+access included, is the implicit administrator of every repository. In the
+team state the shared key and dev-open access are refused with
+`Named credential required: this Brain has team members`, and repository
+access follows `ProjectRepository -> TeamProject -> member role`; an
+unattached repository or an unscoped call needs a team administrator.
+`BRAIN_TEAM_MODE=true` remains as a deprecated strictness alias that treats an
+empty team as a team (logged once as a deprecation warning); Lite rejects it.
+Trusted operators provision verified membership and named credentials; there is
+no public invitation, SSO, or self-registration flow. An issuer/subject stored
+by a trusted operator is not evidence that OIDC has been integrated.
 
 - `brain/team/models.py` adds single-team/project/member/repository/task bindings
   and per-run provenance in the existing database and harness schema. The task
@@ -42,18 +51,25 @@ stored by a trusted operator is not evidence that OIDC has been integrated.
   API and native MCP transport. Idempotency keys bind the request content;
   retries cannot recover a raw run credential. `declared_base_sha` and `branch`
   are caller declarations, not verified Git ancestry or checked-out worktrees.
-- Personal API/web, remote/local personal MCP, unscoped worker/scheduler/jobs,
-  search, context, memory, logs, downloads, notifications and provider routes
-  are **not adapted**: team mode refuses them. Its `/health` returns only a
-  non-project-specific experimental marker, not legacy worker/queue details.
-  Personal retrieval warmup and remote-release validation also stay disabled
-  during API startup, even when those settings are inherited.
-  No team executor, artifact download, approval, merge or provider call exists.
+- Personal surfaces authorize the repository scope through
+  `apps/api/team_access.py` (`repository_authority` for body-scoped handlers,
+  `repository_access(permission)` for query-scoped routers): search, ask,
+  context packs, impact and diff review need `read`; decisions, rules,
+  observations and lessons need `knowledge.propose` (system-global writes need
+  a team administrator); job submission needs `run.request`; the web JSON,
+  graph, impact, drift, coupling and remediation routers need `read` on their
+  `repository_id`/`repo_path` query. The `team_*` MCP tools are served next to
+  the personal tools on one server; workers and the scheduler keep running.
+- Not yet scoped, kept with their existing checks: the repository listing,
+  `GET /diff-review/{job_id}`, `context-packs/{id}`, the freshness and ledger
+  routers, logs, downloads, notifications and provider routes; queued jobs do
+  not carry the initiator principal. No team executor, artifact download,
+  approval, merge or provider call exists.
 
 The SQL upgrade was rehearsed from the current main schema in a disposable
 PostgreSQL database: a preexisting repository, principal and harness task kept
 their exact values after repeated migration, while seven additive team tables
-appeared. The full personal Python and Lite regressions run with the flag off;
+appeared. The full personal Python and Lite regressions run in the solo state;
 PostgreSQL-only concurrency cases exercise simultaneous task/run retry and
 membership-version updates. This is migration preservation evidence, not a
 production restore, team deployment or working collaboration execution proof.

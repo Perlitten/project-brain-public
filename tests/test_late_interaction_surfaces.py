@@ -744,7 +744,7 @@ async def test_pipeline_counterfactual_never_reuses_baseline_cache_or_llm(
 
 
 @pytest.mark.asyncio
-async def test_api_ask_and_search_share_integrated_code_search(monkeypatch):
+async def test_api_ask_and_search_share_integrated_code_search(monkeypatch, api_principal):
     monkeypatch.setattr(settings, "BRAIN_AGENT_CONTEXT_V2_MODE", "off")
     from apps.api.routers import core, core_retrieval
     from apps.api.schemas import AskRequest, SearchRequest
@@ -782,10 +782,12 @@ async def test_api_ask_and_search_share_integrated_code_search(monkeypatch):
     assert await core.ask_project(
         AskRequest(query="parser", repo_path="/app"),
         request,
+        principal=api_principal,
     ) == {"answer": "answer", "learnings_used": [], "skills_used": []}
     assert await core.search_code_endpoint(
         SearchRequest(query="parser", repo_path="/app", limit=3),
         request,
+        principal=api_principal,
     ) == payload
     assert hybrid.await_args_list[0].kwargs == {
         "limit": core.ASK_RETRIEVAL_LIMIT,

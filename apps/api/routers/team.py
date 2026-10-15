@@ -10,7 +10,7 @@ from apps.api.auth import require_principal
 from brain.auth.principals import ResolvedPrincipal
 from brain.database.session import async_session_factory
 from brain.team import provisioning, store
-from brain.team.authorization import TeamConflict, TeamDenied, administrator, require_team_mode, team_administrator
+from brain.team.authorization import TeamConflict, TeamDenied, administrator, require_team_storage, team_administrator
 from brain.team.provisioning import TeamNotFound
 
 router = APIRouter(prefix="/team/projects", tags=["experimental-team"])
@@ -71,7 +71,7 @@ class RepositoryAttachRequest(BaseModel):
 
 async def team_session():
     try:
-        require_team_mode()
+        require_team_storage()
         async with async_session_factory() as session, session.begin():
             yield session
     except TeamDenied as exc:

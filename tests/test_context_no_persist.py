@@ -7,7 +7,7 @@ from apps.api.schemas import ContextRequest
 
 
 @pytest.mark.asyncio
-async def test_context_persist_false_never_calls_durable_legacy_builder_when_v2_is_off():
+async def test_context_persist_false_never_calls_durable_legacy_builder_when_v2_is_off(api_principal):
     runtime = AsyncMock(return_value={"status": "ok", "slices": []})
     legacy = AsyncMock()
     with (
@@ -18,7 +18,8 @@ async def test_context_persist_false_never_calls_durable_legacy_builder_when_v2_
         runtime_builder.return_value.build = runtime
         legacy_builder.return_value.build_context_pack = legacy
         payload = await build_task_context(
-            ContextRequest(task_description="locate the API route", repo_path="/app", persist=False)
+            ContextRequest(task_description="locate the API route", repo_path="/app", persist=False),
+            principal=api_principal,
         )
 
     assert payload == {"status": "ok", "slices": []}

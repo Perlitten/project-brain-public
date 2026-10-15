@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # General Settings
     ENVIRONMENT: str = "local"
     BRAIN_STORAGE_MODE: Literal["full", "lite"] = "full"
+    # Deprecated strictness alias: a Brain is a team of one until its first member joins;
+    # True treats an empty team as a team (shared key and keyless access refused).
     BRAIN_TEAM_MODE: bool = False
     BRAIN_LITE_DIR: str = ".brain"
     BRAIN_LITE_MAX_CHUNKS: int = 50_000
@@ -662,7 +664,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _lite_defaults(self):
         if self.BRAIN_TEAM_MODE and self.BRAIN_STORAGE_MODE == "lite":
-            raise ValueError("Team mode requires full storage; personal Lite remains supported")
+            raise ValueError("Strict team mode (BRAIN_TEAM_MODE) requires full storage; Lite is always a team of one")
         if self.BRAIN_STORAGE_MODE == "lite":
             if "DEFAULT_EMBEDDING_PROVIDER" not in self.model_fields_set:
                 self.DEFAULT_EMBEDDING_PROVIDER = "local"

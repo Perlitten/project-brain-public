@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from loguru import logger
 
-from apps.api.auth import require_api_key, require_scope
+from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.schemas import (
     AskRequest,
     ContextRequest,
@@ -22,12 +22,15 @@ from apps.api.schemas import (
     RelatedRequest,
     SearchRequest,
 )
+from apps.api.team_access import repository_authority
 from brain.analyzers.impact_analyzer import ImpactAnalyzer
+from brain.auth.principals import ResolvedPrincipal
 from brain.config.paths import get_repo_root, resolve_repo_path
 from brain.config.settings import settings
 from brain.context.context_pack_builder import ContextPackBuilder
 from brain.context.budget import BudgetedPayloadBuilder, truncate_utf8
 from brain.context.runtime_context_builder import RuntimeContextBuilder
+from brain.team.authorization import Permission
 from brain.database.models import Repository
 from brain.database.repository_utils import require_repository_by_path
 from brain.database.session import async_session_factory
@@ -329,7 +332,8 @@ router = APIRouter()
 
 
 @router.post("/index", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def index_repository(body: IndexRequest):
+async def index_repository(body: IndexRequest, principal: ResolvedPrincipal = Depends(require_principal)):
+    await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
     try:
         repo_path = resolve_repo_path(body.repo_path)
     except ValueError as exc:
@@ -349,7 +353,8 @@ async def index_repository(body: IndexRequest):
 
 
 @router.post("/ask", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def ask_project(body: AskRequest, request: Request):
+async def ask_project(body: AskRequest, request: Request, principal: ResolvedPrincipal = Depends(require_principal)):
+    await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
     mode = _agent_v2_mode()
     if mode == "on":
         return await _ask_v2(body)
@@ -597,7 +602,9 @@ async def ask_project(body: AskRequest, request: Request):
 
 
 @router.post("/context", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def build_task_context(body: ContextRequest, request: Request = cast(Request, None)):
+async def build_task_context(body: ContextRequest, request: Request = cast(Request, None),
+                             principal: ResolvedPrincipal = Depends(require_principal)):
+    await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
     from apps.api.request_observation import classify_result, observe_http_request, requesting_principal
     started = time.perf_counter()
     outcome = "error"
@@ -642,7 +649,8 @@ async def build_task_context(body: ContextRequest, request: Request = cast(Reque
 
 
 @router.post("/impact", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def analyze_change_impact(body: ImpactRequest):
+async def analyze_change_impact(body: ImpactRequest, principal: ResolvedPrincipal = Depends(require_principal)):
+    await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
     if _agent_v2_mode() == "on":
         return await _impact_v2(body)
     if _agent_v2_mode() == "shadow":
@@ -659,12 +667,13 @@ async def analyze_change_impact(body: ImpactRequest):
 
 
 @router.post("/diff-review", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def review_git_diff(body: DiffReviewRequest):
+async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     """Start an async diff review. Returns immediately with a job ID.
 
     The review runs in the background (LLM calls can take minutes with retries).
     Poll GET /diff-review/{job_id} for the result.
     """
+    await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
     try:
         from brain.database.session import redis_client
         from brain.workers.queue import queue_for_job
@@ -734,8 +743,9 @@ _MAX_RELATED_FANOUT = 50
 
 
 @router.post("/search", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def search_code_endpoint(body: SearchRequest, request: Request):
+async def search_code_endpoint(body: SearchRequest, request: Request, principal: ResolvedPrincipal = Depends(require_principal)):
     """Hybrid file/symbol/chunk search — the HTTP form of the MCP `search_code` tool."""
+    await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
     from apps.api.request_observation import classify_result, observe_http_request
     started = time.perf_counter()
     outcome = "error"
@@ -804,8 +814,9 @@ async def list_repositories():
 
 
 @router.post("/related", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def related_files_endpoint(body: RelatedRequest):
+async def related_files_endpoint(body: RelatedRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     """Graph neighborhood lookup — the HTTP form of the MCP `find_related_files` tool."""
+    await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
     try:
         repository = await require_repository_by_path(
             resolve_repo_path(body.repo_path) if body.repo_path else get_repo_root()

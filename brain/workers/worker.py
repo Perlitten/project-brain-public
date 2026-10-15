@@ -316,8 +316,6 @@ async def _heartbeat_loop(queue: JobQueue, stop: asyncio.Event) -> None:
 
 
 async def run_worker() -> None:
-    if settings.BRAIN_TEAM_MODE:
-        raise RuntimeError("Team execution is not implemented; personal workers must remain stopped")
     logger.warning(
         "Repo path sandbox roots: {}",
         ", ".join(str(base) for base in allowed_repo_roots()),

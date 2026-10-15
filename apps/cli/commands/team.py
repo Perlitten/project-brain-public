@@ -1,8 +1,8 @@
-"""Operator provisioning for the experimental team layer.
+"""Operator provisioning for the team layer.
 
-These commands write directly to the database as a trusted operator action,
-so they work before ``BRAIN_TEAM_MODE`` is switched on (the API refuses team
-routes until an administrator exists). Every command is idempotent: repeating
+These commands write directly to the database as a trusted operator action:
+the first ``member add`` turns a team of one into a team, after which the API
+refuses the shared key and applies project roles. Every command is idempotent: repeating
 it with the same arguments is a no-op, contradictory arguments fail with a
 conflict instead of rewriting state.
 """

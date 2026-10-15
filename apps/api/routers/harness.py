@@ -23,7 +23,9 @@ from apps.api.harness_schemas import (
     TaskStatusUpdateRequest,
     ValidationCreateRequest,
 )
+from apps.api.team_access import repository_authority
 from brain.auth.principals import ResolvedPrincipal
+from brain.team.authorization import Permission
 from brain.database.harness_models import (
     AgentTask,
     AgentTaskArtifact,
@@ -73,7 +75,8 @@ class ObservationCreateRequest(BaseModel):
 
 
 @router.post("/tasks/{task_id}/observations", dependencies=[Depends(require_scope("harness:write"))])
-async def add_task_observation(task_id: str, body: ObservationCreateRequest):
+async def add_task_observation(task_id: str, body: ObservationCreateRequest,
+                               caller: ResolvedPrincipal = Depends(require_principal)):
     """Capture an unvalidated L1 lesson (what a session noticed, not what it proved).
 
     Cheaper than /lessons: no validation or artifact. The payload marks
@@ -84,6 +87,7 @@ async def add_task_observation(task_id: str, body: ObservationCreateRequest):
     task = await HarnessStore.get_task(tid)
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
+    await repository_authority(caller, Permission.PROPOSE, repo_path=task.repo_path)
     payload = {"statement": body.statement, "category": body.category, "repo_scope": task.repo_path,
                "reported_validation": False, "evidence_tier": "unvalidated"}
     try:
@@ -97,7 +101,8 @@ async def add_task_observation(task_id: str, body: ObservationCreateRequest):
 
 
 @router.post("/tasks/{task_id}/lessons", dependencies=[Depends(require_scope("harness:write"))])
-async def add_validated_lesson(task_id: str, body: LessonCreateRequest):
+async def add_validated_lesson(task_id: str, body: LessonCreateRequest,
+                               caller: ResolvedPrincipal = Depends(require_principal)):
     """Capture an evidence-linked L1 lesson; it is reported validation, not server execution."""
     tid = _parse_task_id(task_id)
     async with async_session_factory() as session:
@@ -111,6 +116,7 @@ async def add_validated_lesson(task_id: str, body: LessonCreateRequest):
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
+    await repository_authority(caller, Permission.PROPOSE, repo_path=task.repo_path)
     if validation is None or validation.status not in {"pass", "fail", "error"}:
         raise HTTPException(status_code=422, detail="validation must belong to task and have pass, fail, or error status")
     classification = "learning" if validation.status == "pass" else "failure_lesson"

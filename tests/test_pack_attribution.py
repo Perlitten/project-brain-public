@@ -27,7 +27,7 @@ def test_a_named_principal_is_used_verbatim():
 
 
 @pytest.mark.asyncio
-async def test_http_context_pack_records_the_calling_principal():
+async def test_http_context_pack_records_the_calling_principal(api_principal):
     from apps.api.routers.core import build_task_context
     from apps.api.schemas import ContextRequest
 
@@ -41,7 +41,8 @@ async def test_http_context_pack_records_the_calling_principal():
     ):
         pack_builder.return_value.build_context_pack = builder
         await build_task_context(
-            ContextRequest(task_description="locate the API route", repo_path="/app", persist=True), request
+            ContextRequest(task_description="locate the API route", repo_path="/app", persist=True), request,
+            principal=api_principal,
         )
 
     assert builder.await_args.kwargs["consumer"] == "api:ci-bot"

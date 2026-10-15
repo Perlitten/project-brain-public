@@ -40,7 +40,7 @@ def body(**overrides):
 
 
 @pytest.mark.asyncio
-async def test_pass_creates_learning_and_fail_creates_failure_lesson(monkeypatch):
+async def test_pass_creates_learning_and_fail_creates_failure_lesson(monkeypatch, api_principal):
     task_id = uuid.uuid4()
     task = SimpleNamespace(id=task_id, repo_path="/repo", version=0)
     event = SimpleNamespace(id=1, task_id=task_id, event_type="validated_lesson", actor="client", classification="learning", payload_json={},
@@ -51,22 +51,22 @@ async def test_pass_creates_learning_and_fail_creates_failure_lesson(monkeypatch
     artifacts = [SimpleNamespace(id=8, path_or_uri="test://case")]
     monkeypatch.setattr(harness, "async_session_factory", lambda: _Session(task, SimpleNamespace(id=4, task_id=task_id, status="pass", artifact_id=8, exit_code=0), artifacts))
     monkeypatch.setattr(harness.HarnessStore, "add_event", store)
-    await harness.add_validated_lesson(str(task_id), body())
+    await harness.add_validated_lesson(str(task_id), body(), caller=api_principal)
     assert store.await_args.kwargs["classification"] == "learning"
     store.reset_mock()
     monkeypatch.setattr(harness, "async_session_factory", lambda: _Session(task, SimpleNamespace(id=4, task_id=task_id, status="error", artifact_id=8, exit_code=1), artifacts))
-    await harness.add_validated_lesson(str(task_id), body(idempotency_key="lesson-0002"))
+    await harness.add_validated_lesson(str(task_id), body(idempotency_key="lesson-0002"), caller=api_principal)
     assert store.await_args.kwargs["classification"] == "failure_lesson"
 
 
 @pytest.mark.asyncio
-async def test_wrong_validation_or_artifact_is_rejected(monkeypatch):
+async def test_wrong_validation_or_artifact_is_rejected(monkeypatch, api_principal):
     task_id = uuid.uuid4()
     task = SimpleNamespace(id=task_id, repo_path="/repo", version=0)
     monkeypatch.setattr(harness, "_parse_task_id", lambda _: task_id)
     monkeypatch.setattr(harness, "async_session_factory", lambda: _Session(task, None, []))
     with pytest.raises(Exception) as exc:
-        await harness.add_validated_lesson(str(task_id), body())
+        await harness.add_validated_lesson(str(task_id), body(), caller=api_principal)
     assert getattr(exc.value, "status_code", None) == 422
 
 
@@ -79,7 +79,7 @@ async def test_missing_evidence_is_rejected_by_schema():
 
 
 @pytest.mark.asyncio
-async def test_idempotency_conflict_is_exposed_as_409(monkeypatch):
+async def test_idempotency_conflict_is_exposed_as_409(monkeypatch, api_principal):
     task_id = uuid.uuid4()
     task = SimpleNamespace(id=task_id, repo_path="/repo", version=7)
     validation = SimpleNamespace(id=4, task_id=task_id, status="pass", artifact_id=8, exit_code=0)
@@ -88,5 +88,5 @@ async def test_idempotency_conflict_is_exposed_as_409(monkeypatch):
     from brain.memory.harness_store import IdempotencyConflict
     monkeypatch.setattr(harness.HarnessStore, "add_event", AsyncMock(side_effect=IdempotencyConflict("conflict")))
     with pytest.raises(Exception) as exc:
-        await harness.add_validated_lesson(str(task_id), body())
+        await harness.add_validated_lesson(str(task_id), body(), caller=api_principal)
     assert exc.value.status_code == 409

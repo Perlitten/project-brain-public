@@ -24,6 +24,7 @@ from brain.auth.principals import (
     resolve_credential,
 )
 from brain.config.settings import settings
+from brain.team.authorization import strict_team_mode
 from brain.database.session import async_session_factory
 
 LEGACY_PRINCIPAL = ResolvedPrincipal(
@@ -39,9 +40,19 @@ DEV_PRINCIPAL = ResolvedPrincipal(
 
 
 def dev_open() -> bool:
-    """No key configured outside production: keyless requests act as DEV_PRINCIPAL."""
-    return (not settings.BRAIN_TEAM_MODE and not settings.PROJECT_BRAIN_API_KEY
+    """No key configured outside production: keyless requests act as DEV_PRINCIPAL.
+
+    The deprecated strict flag keeps a Brain closed to keyless access even
+    before its first team member joins."""
+    return (not strict_team_mode() and not settings.PROJECT_BRAIN_API_KEY
             and settings.ENVIRONMENT.lower() != "production")
+
+
+async def named_credential_required(principal: ResolvedPrincipal) -> bool:
+    """Shared-key and dev-open principals (id <= 0) stop being accepted once the team has members."""
+    from apps.api.team_access import current_team_state
+
+    return principal.id <= 0 and await current_team_state() == "team"
 
 
 async def resolve_api_key(raw_key: str) -> ResolvedPrincipal | None:
@@ -61,8 +72,6 @@ async def require_principal(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> ResolvedPrincipal:
     if not x_api_key:
-        if settings.BRAIN_TEAM_MODE:
-            raise HTTPException(status_code=401, detail="Named credential required in team mode")
         if settings.PROJECT_BRAIN_API_KEY:
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
         if settings.ENVIRONMENT.lower() == "production":
@@ -75,6 +84,9 @@ async def require_principal(
         if resolved is None:
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
         principal = resolved
+    if await named_credential_required(principal):
+        raise HTTPException(status_code=401 if principal is DEV_PRINCIPAL else 403,
+                            detail="Named credential required: this Brain has team members")
     request.state.principal = principal
     return principal
 

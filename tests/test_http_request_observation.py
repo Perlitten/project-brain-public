@@ -21,31 +21,31 @@ def test_outcomes_distinguish_delivery_from_empty_partial_and_error(result, oper
 
 
 @pytest.mark.asyncio
-async def test_non_persistent_context_records_partial_and_preserves_response():
+async def test_non_persistent_context_records_partial_and_preserves_response(api_principal):
     payload = {"status": "partial", "slices": []}
     request = SimpleNamespace(state=SimpleNamespace(principal=SimpleNamespace(name="owner"), request_id="trace"))
     with patch("apps.api.routers.core_retrieval.RuntimeContextBuilder") as builder, patch("apps.api.request_observation.observe_http_request", new_callable=AsyncMock) as observe:
         builder.return_value.build = AsyncMock(return_value=payload)
-        result = await build_task_context(ContextRequest(task_description="query", repo_path="/app", persist=False), request)
+        result = await build_task_context(ContextRequest(task_description="query", repo_path="/app", persist=False), request, principal=api_principal)
     assert result == payload
     observe.assert_awaited_once()
     assert observe.call_args.kwargs["outcome"] == "partial"
 
 
 @pytest.mark.asyncio
-async def test_runtime_context_exception_records_error_even_when_response_is_partial():
+async def test_runtime_context_exception_records_error_even_when_response_is_partial(api_principal):
     with patch("apps.api.routers.core_retrieval.RuntimeContextBuilder") as builder, patch("apps.api.request_observation.observe_http_request", new_callable=AsyncMock) as observe:
         builder.return_value.build = AsyncMock(side_effect=TimeoutError())
-        result = await build_task_context(ContextRequest(task_description="query", repo_path="/app", persist=False), SimpleNamespace())
+        result = await build_task_context(ContextRequest(task_description="query", repo_path="/app", persist=False), SimpleNamespace(), principal=api_principal)
     assert result["status"] == "partial"
     assert observe.call_args.kwargs["outcome"] == "error"
 
 
 @pytest.mark.asyncio
-async def test_locator_early_return_is_measured():
+async def test_locator_early_return_is_measured(api_principal):
     payload = {"results": [{"path": "config.py"}]}
     with patch("apps.api.routers.core_retrieval._agent_v2_mode", return_value="on"), patch("apps.api.routers.core_retrieval._compact_locator", new_callable=AsyncMock, return_value=payload), patch("apps.api.request_observation.observe_http_request", new_callable=AsyncMock) as observe:
-        result = await search_code_endpoint(SearchRequest(query="config", repo_path="/app", response_mode="locator"), SimpleNamespace())
+        result = await search_code_endpoint(SearchRequest(query="config", repo_path="/app", response_mode="locator"), SimpleNamespace(), principal=api_principal)
     assert result == payload
     observe.assert_awaited_once()
     assert observe.call_args.kwargs["outcome"] == "success"

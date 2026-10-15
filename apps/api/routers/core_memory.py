@@ -18,7 +18,9 @@ from apps.api.schemas import (
     LearningCreate,
     RuleCreate,
 )
+from apps.api.team_access import repository_authority
 from brain.auth.principals import ResolvedPrincipal
+from brain.team.authorization import Permission
 from brain.database.session import async_session_factory
 from brain.memory.decision_store import DecisionStore, caller_role_for
 from brain.memory.learning_store import LearningStore
@@ -69,6 +71,8 @@ async def get_decisions():
 @router.post("/decisions", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def create_decision(body: DecisionCreate, caller: ResolvedPrincipal = Depends(require_principal)):
     # The role and the author come from the authenticated principal, never from the body.
+    # No repo_path is the system-global scope: a team administrator once the team has members.
+    await repository_authority(caller, Permission.PROPOSE, repo_path=body.repo_path)
     try:
         decision_id = await DecisionStore.add_decision(
             title=body.title,
@@ -103,6 +107,7 @@ async def get_rules():
 
 @router.post("/rules", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def create_rule(body: RuleCreate, caller: ResolvedPrincipal = Depends(require_principal)):
+    await repository_authority(caller, Permission.PROPOSE, repo_path=body.repo_path)
     try:
         rule_id = await RuleStore.add_rule(
             name=body.name,
@@ -122,7 +127,8 @@ async def create_rule(body: RuleCreate, caller: ResolvedPrincipal = Depends(requ
 
 
 @router.get("/learnings", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def get_learnings(repo_path: Optional[str] = None):
+async def get_learnings(repo_path: Optional[str] = None, principal: ResolvedPrincipal = Depends(require_principal)):
+    await repository_authority(principal, Permission.READ, repo_path=repo_path)
     try:
         learnings = await LearningStore.list_active_learnings(repo_path)
         return [
@@ -345,8 +351,9 @@ async def reject_pending_skill(skill_id: int, body: Optional[EpisodeDecisionRequ
 
 
 @router.post("/skills/match", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def match_skills(body: SkillMatchRequest):
+async def match_skills(body: SkillMatchRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     """L4 procedural memory: find skills relevant to a task (embedding order, trigger re-rank)."""
+    await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
     try:
         from brain.memory.skill_store import match_skills as match_skills_query
 

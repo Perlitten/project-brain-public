@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import current_team_state
 from brain import __version__
 from brain.config.paths import resolve_repo_path
 from brain.config.settings import settings
@@ -44,9 +45,15 @@ async def health_check():
         )
     except Exception as exc:  # noqa: BLE001 — Redis down is already reported in details
         worker = {"running": None, "pools": None, "hint": "", "error": type(exc).__name__}
+    try:
+        # "solo" until the first team member joins, then "team" (unified team model).
+        mode = await current_team_state()
+    except Exception as exc:  # noqa: BLE001 — the database outage is already reported in details
+        mode = f"unknown ({type(exc).__name__})"
     return {
         "status": status,
         "version": __version__,
+        "mode": mode,
         "details": details,
         "worker": worker,
         "scheduler": {

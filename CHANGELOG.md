@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Unify the personal and team APIs: a Brain is a team of one until its first
+  verified member is added, and boundaries switch on from then. The
+  `TeamBoundary` 403 wall is gone; `/health` reports `mode` as `solo` or
+  `team`. Search, ask, context packs, impact, diff review, decisions, rules,
+  observations, lessons, job submission and the repository-scoped web, graph,
+  impact, drift, coupling and remediation routers authorize the repository's
+  project per request (`read`, `knowledge.propose`, `run.request`); with no
+  members every authenticated caller keeps full access, with members an
+  unattached repository needs a team administrator and the shared key or
+  keyless access answers `Named credential required`. The `team_*` MCP tools
+  are served next to the personal tools on one server, and workers, the
+  scheduler and task execution no longer refuse to run for a team.
+  `BRAIN_TEAM_MODE` is now a deprecated strictness alias (treat an empty team
+  as a team) that logs a warning.
+
 - Make experimental team mode provisionable without manual SQL: `brain team`
   CLI and `team:admin` API routes create the team, projects, verified members
   and repository bindings idempotently. OAuth clients can hold `team:*` scopes
