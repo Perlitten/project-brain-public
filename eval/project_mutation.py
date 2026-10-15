@@ -34,6 +34,19 @@ def candidate_hash(keys) -> str:
     return hashlib.sha256(json.dumps(sorted(keys), separators=(",", ":")).encode()).hexdigest()
 
 
+def prepare_git_pointer(root: Path) -> None:
+    """Let the generated tree read history without copying read-only packfiles."""
+    git_dir = subprocess.check_output(["git", "rev-parse", "--absolute-git-dir"], cwd=root, text=True).strip()
+    target = root / "mutants/.git"
+    target.parent.mkdir(exist_ok=True)
+    content = f"gitdir: {git_dir}\n"
+    if target.is_dir() or target.is_symlink():
+        raise ValueError("Preserve the existing mutants Git directory outside the checkout and start a fresh sandbox")
+    if target.exists() and target.read_text(encoding="utf-8") != content:
+        raise ValueError("Refusing to replace unrelated Git metadata in the mutation sandbox")
+    target.write_text(content, encoding="utf-8")
+
+
 def generate_inventory(workers: int) -> dict:
     if importlib.metadata.version("mutmut") != TOOL_VERSION:
         raise ValueError(f"Inventory generation requires mutmut=={TOOL_VERSION}")
@@ -52,6 +65,7 @@ def generate_inventory(workers: int) -> dict:
         raise ValueError("Mutation configuration does not cover exactly the tracked production modules")
     copy_src_dir()
     copy_also_copy_files()
+    prepare_git_pointer(ROOT)
     stats = create_mutants(workers)
     rows = []
     for path in paths:
@@ -195,6 +209,7 @@ def run_shard(modules: list[dict], invalid: dict | None = None) -> None:
     from mutmut.__main__ import _run
 
     config().only_mutate = [item["module"] for item in modules]
+    prepare_git_pointer(ROOT)
     os.environ["BRAIN_MUTATION_CONFIG_ROOT"] = str(ROOT)
     os.environ["BRAIN_MUTATION_SUPPORT_PATH"] = str(ROOT / "eval/mutation_support")
     child_stats = ROOT / ".mutation-results/subprocess-stats"
@@ -285,7 +300,7 @@ def main() -> None:
         return
     from eval.mutation_types import read_type_exclusions
 
-    invalid = read_type_exclusions(args.type_proof, inventory["modules"])
+    invalid = read_type_exclusions(args.type_proof, shards[args.shard])
     started = datetime.now(timezone.utc).isoformat()
     timer = time.monotonic()
     exit_code = 0

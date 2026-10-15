@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from eval.project_mutation import assign_shards, candidate_hash, outcome, subprocess_guard, summarize
+from eval.project_mutation import assign_shards, candidate_hash, outcome, prepare_git_pointer, subprocess_guard, summarize
 from eval.mutation_types import build_type_proof, read_type_exclusions
 
 
@@ -33,6 +33,32 @@ def test_sharding_preserves_the_entire_inventory_and_is_reproducible():
     assert sum(row["candidates"] for row in flattened) == 196
     with pytest.raises(ValueError, match="positive"):
         assign_shards(modules, 0)
+
+
+def test_generated_git_pointer_survives_repeated_preparation_with_readonly_packfiles(tmp_path):
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / "example.py").write_text("value = 17\n")
+    for command in (["add", "example.py"],
+                    ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture"],
+                    ["repack", "-ad"]):
+        subprocess.run(["git", *command], cwd=tmp_path, check=True, capture_output=True)
+    packs = list((tmp_path / ".git/objects/pack").glob("*.pack"))
+    assert packs and all(path.stat().st_mode & 0o222 == 0 for path in packs)
+    prepare_git_pointer(tmp_path)
+    prepare_git_pointer(tmp_path)
+    shadow = tmp_path / "mutants"
+    assert (shadow / ".git").is_file()
+    assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=shadow) == subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path,
+    )
+    assert Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], cwd=shadow, text=True).strip()) == shadow
+    (shadow / ".git").unlink()
+    (shadow / ".git").mkdir()
+    marker = shadow / ".git/keep"
+    marker.write_text("existing metadata")
+    with pytest.raises(ValueError, match="Preserve the existing"):
+        prepare_git_pointer(tmp_path)
+    assert marker.read_text() == "existing metadata"
 
 
 def test_report_keeps_timeouts_in_denominator_and_rejects_incomplete_scores(tmp_path):
