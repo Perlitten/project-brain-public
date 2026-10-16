@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends
 from brain.routing.models import RoutingContext, PolicyMode
 from brain.routing.policy_engine import SelectivePolicyEngine
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import team_administrator_access
 
-router = APIRouter(prefix="/routing", tags=["routing"])
+router = APIRouter(prefix="/routing", tags=["routing"], dependencies=[Depends(team_administrator_access())])
 engine = SelectivePolicyEngine()
 
 

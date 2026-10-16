@@ -1278,6 +1278,7 @@ class FileIndexer:
         indexed_paths: list[str],
     ) -> None:
         from brain.database.session import redis_client
+        from brain.workers.initiator import JobInitiator
         from brain.workers.queue import queue_for_job
 
         try:
@@ -1292,6 +1293,7 @@ class FileIndexer:
                 },
                 idempotency_key=f"{repo_id}:{revision}:{self.verification.get('source_content_digest')}",
                 max_attempts=3,
+                initiator=JobInitiator.inherited("summary_enrichment"),
             )
         except Exception as exc:
             logger.warning("Optional summary enrichment enqueue failed: {}", type(exc).__name__)

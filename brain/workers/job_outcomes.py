@@ -11,6 +11,7 @@ from loguru import logger
 from redis.asyncio import Redis
 
 from brain.config.settings import settings
+from brain.workers.initiator import JobInitiator
 from brain.workers.queue import queue_for_job
 from brain.workers.scheduler import deadman_url, job_stats_key
 
@@ -87,6 +88,7 @@ async def route_final_failure(
             },
             idempotency_key=f"job-failure:{job_type}:{bucket}",
             max_attempts=max(1, int(settings.SELF_DIAGNOSIS_JOB_MAX_ATTEMPTS)),
+            initiator=JobInitiator.system("job_failure"),
         )
     except Exception as exc:
         logger.warning("Could not route {} failure to self-diagnosis: {}", job_type, exc)

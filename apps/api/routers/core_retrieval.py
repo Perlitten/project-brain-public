@@ -685,6 +685,7 @@ async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal 
     await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
     try:
         from brain.database.session import redis_client
+        from brain.workers.initiator import JobInitiator
         from brain.workers.queue import queue_for_job
 
         # Team authorization must follow the indexed repository identity, not a
@@ -692,7 +693,7 @@ async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal 
         # Keep ``None`` for an unattached repository: in team state that is the
         # same administrator-only scope used when the job was submitted.
         repository_id = None
-        if principal.credential_id is not None:
+        if principal.credential_id is not None and body.repo_path:
             async with async_session_factory() as session:
                 repository_id = await find_repository_id(session, body.repo_path)
 
@@ -705,6 +706,7 @@ async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal 
         job_id = await queue.enqueue(
             "diff_review",
             {"repository_id": repository_id, "repo_path": body.repo_path, "base": body.base, "head": body.head},
+            initiator=JobInitiator.for_principal(principal, Permission.READ),
         )
         return {
             "status": "processing",

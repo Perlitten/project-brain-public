@@ -19,6 +19,7 @@ from brain.auth.principals import ResolvedPrincipal
 from brain.database.session import redis_client
 from brain.config.settings import settings
 from brain.team.authorization import Permission
+from brain.workers.initiator import JobInitiator
 from brain.workers.queue import JobQueue, WORKER_POOLS, queue_for_job, worker_pool_prefix
 
 router = APIRouter(prefix="/jobs", tags=["jobs"], dependencies=[Depends(require_api_key)])
@@ -38,6 +39,11 @@ def _queue(job_type: str | None = None) -> JobQueue:
 async def _authorize_job(principal: ResolvedPrincipal, repo_path: str | None) -> None:
     # A job without a repository touches every repository: a team administrator once members exist.
     await repository_authority(principal, Permission.REQUEST_RUN, repo_path=repo_path)
+
+
+def _initiator(principal: ResolvedPrincipal) -> JobInitiator:
+    """Recorded on the job so the worker re-authorizes the same caller and permission before it runs."""
+    return JobInitiator.for_principal(principal, Permission.REQUEST_RUN)
 
 
 def _enqueue_response(job_id: str) -> dict:
@@ -65,6 +71,7 @@ async def enqueue_reindex(body: ReindexJobRequest | None = None, principal: Reso
         params,
         idempotency_key=body.idempotency_key if body else None,
         max_attempts=3,
+        initiator=_initiator(principal),
     )
     return _enqueue_response(job_id)
 
@@ -73,7 +80,10 @@ async def enqueue_reindex(body: ReindexJobRequest | None = None, principal: Reso
 async def enqueue_health_check(repo_path: Optional[str] = None, principal: ResolvedPrincipal = Depends(require_principal)):
     await _authorize_job(principal, repo_path)
     params = {"repo_path": repo_path} if repo_path else None
-    job_id = await _queue("health_check").enqueue("health_check", params if params else None)
+    job_id = await _queue("health_check").enqueue(
+        "health_check", params if params else None,
+        initiator=_initiator(principal),
+    )
     return _enqueue_response(job_id)
 
 
@@ -83,7 +93,10 @@ async def enqueue_embedding_verify(body: EmbeddingVerifyRequest | None = None, p
     params: dict[str, Any] = {}
     if body and body.repo_path:
         params["repo_path"] = body.repo_path
-    job_id = await _queue("embedding_verify").enqueue("embedding_verify", params or None)
+    job_id = await _queue("embedding_verify").enqueue(
+        "embedding_verify", params or None,
+        initiator=_initiator(principal),
+    )
     return _enqueue_response(job_id)
 
 
@@ -101,7 +114,10 @@ async def enqueue_embedding_backfill(body: EmbeddingBackfillRequest | None = Non
         params["batch_size"] = body.batch_size
         if body.provider:
             params["provider"] = body.provider
-    job_id = await _queue("embedding_backfill").enqueue("embedding_backfill", params or None)
+    job_id = await _queue("embedding_backfill").enqueue(
+        "embedding_backfill", params or None,
+        initiator=_initiator(principal),
+    )
     return _enqueue_response(job_id)
 
 
@@ -116,7 +132,7 @@ async def enqueue_benchmark(body: BenchmarkJobRequest | None = None, principal: 
             params["golden"] = body.golden
         if body.smoke:
             params["smoke"] = True
-    job_id = await _queue("benchmark").enqueue("benchmark", params or None)
+    job_id = await _queue("benchmark").enqueue("benchmark", params or None, initiator=_initiator(principal))
     return _enqueue_response(job_id)
 
 
@@ -131,7 +147,10 @@ async def enqueue_proactive_insights(body: ProactiveInsightsJobRequest | None = 
             params["use_llm"] = body.use_llm
         if body.scheduled:
             params["scheduled"] = True
-    job_id = await _queue("proactive_insights").enqueue("proactive_insights", params or None)
+    job_id = await _queue("proactive_insights").enqueue(
+        "proactive_insights", params or None,
+        initiator=_initiator(principal),
+    )
     return _enqueue_response(job_id)
 
 
@@ -146,7 +165,10 @@ async def enqueue_memory_consolidation(body: MemoryConsolidationJobRequest | Non
             params["require_approval"] = body.require_approval
         if body.dry_run:
             params["dry_run"] = True
-    job_id = await _queue("memory_consolidation").enqueue("memory_consolidation", params or None)
+    job_id = await _queue("memory_consolidation").enqueue(
+        "memory_consolidation", params or None,
+        initiator=_initiator(principal),
+    )
     return _enqueue_response(job_id)
 
 
@@ -174,6 +196,7 @@ async def enqueue_self_diagnosis(body: SelfDiagnosisJobRequest | None = None, pr
         params or None,
         idempotency_key=idempotency_key,
         max_attempts=settings.SELF_DIAGNOSIS_JOB_MAX_ATTEMPTS,
+        initiator=_initiator(principal),
     )
     return _enqueue_response(job_id)
 
@@ -197,6 +220,7 @@ async def enqueue_nightly_maintenance(
         idempotency_key=body.idempotency_key if body else None,
         max_attempts=2,
         timeout_seconds=settings.WORKER_MAX_JOB_TIMEOUT_SECONDS,
+        initiator=_initiator(principal),
     )
     return _enqueue_response(job_id)
 
@@ -224,6 +248,7 @@ async def enqueue_deep_context(body: DeepContextJobRequest, request: Request = c
         idempotency_key=body.idempotency_key,
         max_attempts=1,
         timeout_seconds=settings.WORKER_MAX_JOB_TIMEOUT_SECONDS,
+        initiator=_initiator(principal),
     )
     return _enqueue_response(job_id)
 

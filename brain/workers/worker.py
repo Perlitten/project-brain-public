@@ -26,6 +26,7 @@ from brain.workers.job_outcomes import record_failure, record_success, retry_del
 from brain.workers.scheduler import run_scheduler
 from brain.workers.queue import JobQueue, JobStatus, worker_pool_prefix, queue_for_job
 from brain.workers.errors import PermanentJobError
+from brain.workers.initiator import JobInitiator, current_initiator, initiator_refusal
 from brain.workers.tasks import StaleWorkerFencingError, execute_job, validate_task_fencing
 from brain.workers.runtime import JobRuntime, current_job
 from brain.version import build_info
@@ -177,8 +178,32 @@ async def process_one(queue: JobQueue) -> bool:
             # Retain delivery until recovery can safely claim both.
             return True
 
+    # Team state re-authorizes who asked on every attempt: a revoked member's
+    # queued or retried work must not run (brain.workers.initiator).
+    try:
+        refusal = await initiator_refusal(job)
+    except Exception as exc:
+        logger.warning(f"Job {job_id} initiator check errored ({type(exc).__name__}) — skipping this dequeue")
+        if fencing_token:
+            with suppress(Exception):
+                await release_db_lease_open(job_id=job_id, fencing_token=fencing_token)
+        return True
+    if refusal:
+        logger.warning(f"Job {job_id} ({job['type']}) refused: {refusal}")
+        try:
+            await _finish_status(queue, job_id, fencing_token, JobStatus.FAILED, error=refusal)
+        except StaleWorkerFencingError as exc:
+            logger.warning("Job {} refusal stopped after lease loss: {}", job_id, exc)
+            return True
+        await queue.ack(job_id, fencing_token=fencing_token)
+        if fencing_token:
+            with suppress(Exception):
+                await release_db_lease_open(job_id=job_id, fencing_token=fencing_token)
+        return True
+
     job_type = job["type"]
     params = job.get("params") or {}
+    initiator = JobInitiator.from_job(job)
     queue.available_capacity = 0
     attempt = await queue.start_attempt(job_id)
     max_attempts = max(int(job.get("max_attempts") or 1), 1)
@@ -203,9 +228,11 @@ async def process_one(queue: JobQueue) -> bool:
         repair_queue = queue_for_job(queue.redis, settings.WORKER_REDIS_PREFIX, "embedding_backfill", pools_enabled=True) \
             if settings.BRAIN_WORKER_POOLS_V2_ENABLED else queue
         return await repair_queue.enqueue("embedding_backfill", {**params, "causal_parent_job_id": job_id},
-                                          idempotency_key=f"reindex-repair:{job_id}", max_attempts=3)
+                                          idempotency_key=f"reindex-repair:{job_id}", max_attempts=3,
+                                          initiator=initiator)
 
     runtime_token = current_job.set(JobRuntime(job_id, report, check_lease, enqueue_repair))
+    initiator_token = current_initiator.set(initiator)
     acknowledge_delivery = False
     try:
         if attempt > max_attempts:
@@ -279,6 +306,7 @@ async def process_one(queue: JobQueue) -> bool:
     except StaleWorkerFencingError as exc:
         logger.warning("Job {} transition stopped after lease loss: {}", job_id, exc)
     finally:
+        current_initiator.reset(initiator_token)
         current_job.reset(runtime_token)
         queue.available_capacity = 1
         if acknowledge_delivery:

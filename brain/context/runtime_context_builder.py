@@ -123,6 +123,7 @@ async def _queue_auto_reindex(repo_path: str) -> bool:
     from loguru import logger
 
     from brain.database.session import redis_client
+    from brain.workers.initiator import JobInitiator
     from brain.workers.queue import queue_for_job
 
     digest = hashlib.sha256(repo_path.encode("utf-8")).hexdigest()
@@ -139,7 +140,7 @@ async def _queue_auto_reindex(repo_path: str) -> bool:
             "reindex",
             pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED,
         )
-        await queue.enqueue("reindex", {"repo_path": repo_path})
+        await queue.enqueue("reindex", {"repo_path": repo_path}, initiator=JobInitiator.inherited("auto_reindex"))
         return True
     except Exception as exc:
         logger.warning(f"Auto-reindex enqueue failed for {repo_path}: {type(exc).__name__}: {exc}")

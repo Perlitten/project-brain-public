@@ -46,6 +46,7 @@ from brain.memory.rule_store import RuleStore
 from brain.llm.router import TaskKind, get_model_router
 from brain.search.code_search import search_code as hybrid_search_code
 from brain.retrieval.service import RetrievalService
+from brain.workers.initiator import JobInitiator
 from brain.workers.queue import WORKER_POOLS, JobQueue, queue_for_job, worker_pool_prefix
 
 PROJECT_ROOT = get_repo_root()
@@ -348,6 +349,8 @@ async def prepare_deep_context(
         },
         max_attempts=1,
         timeout_seconds=settings.WORKER_MAX_JOB_TIMEOUT_SECONDS,
+        # The local stdio server is the operator's own process, not a team credential.
+        initiator=JobInitiator.system("mcp_stdio"),
     )
     return {
         "job_id": job_id,

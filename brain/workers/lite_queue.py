@@ -57,7 +57,8 @@ class SQLiteJobQueue:
                 payload TEXT NOT NULL, status TEXT NOT NULL, token TEXT,
                 expires REAL, created REAL NOT NULL, UNIQUE(prefix,idempotency))""")
 
-    async def enqueue(self, job_type, params=None, *, idempotency_key=None, max_attempts=1, timeout_seconds=None):
+    async def enqueue(self, job_type, params=None, *, idempotency_key=None, max_attempts=1, timeout_seconds=None,
+                      initiator=None):
         if job_type not in self.SUPPORTED:
             raise ValueError(f"Lite maintenance does not support {job_type}; use full mode")
         def write():
@@ -76,7 +77,8 @@ class SQLiteJobQueue:
                 payload = {"job_id": job_id, "type": job_type, "job_type": job_type, "params": params or {},
                            "attempt": 0, "max_attempts": max(1, max_attempts), "status": "queued",
                            "timeout_seconds": min(timeout_seconds or settings.WORKER_JOB_TIMEOUT_SECONDS,
-                                                  settings.WORKER_MAX_JOB_TIMEOUT_SECONDS)}
+                                                  settings.WORKER_MAX_JOB_TIMEOUT_SECONDS),
+                           **(initiator.fields() if initiator is not None else {})}
                 db.execute("INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?)", (job_id,self.prefix,identity,json.dumps(payload),"queued",None,None,time.time()))
                 return job_id
         return await asyncio.to_thread(write)
@@ -176,6 +178,7 @@ async def serve_worker():
     from brain.database.session import async_session_factory, redis_client
     from brain.workers.db_fencing import DbFence, current_job_fence, claim_db_lease, renew_db_lease, release_db_lease
     from brain.workers.errors import StaleWorkerFencingError
+    from brain.workers.initiator import JobInitiator
     from brain.workers.runtime import JobRuntime, current_job
     from brain.workers.tasks import execute_job
 
@@ -235,7 +238,7 @@ async def serve_worker():
             await check()
 
         async def repair(params):
-            return await queue.enqueue("embedding_backfill", params)
+            return await queue.enqueue("embedding_backfill", params, initiator=JobInitiator.from_job(job))
 
         fence_ctx = current_job_fence.set(DbFence(job_id, token))
         runtime_ctx = current_job.set(JobRuntime(job_id, report, check, repair))

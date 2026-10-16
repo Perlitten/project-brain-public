@@ -8,13 +8,16 @@ import time
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, Mapping, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Tuple, cast
 
 from redis.asyncio import Redis
 from loguru import logger
 
 from brain.config.settings import settings
 from brain.version import build_info
+
+if TYPE_CHECKING:
+    from brain.workers.initiator import JobInitiator
 
 
 WORKER_POOLS = ("fast", "maintenance", "deep")
@@ -172,7 +175,10 @@ class JobQueue:
         idempotency_key: Optional[str] = None,
         max_attempts: int = 1,
         timeout_seconds: int | None = None,
+        initiator: "JobInitiator | None" = None,
     ) -> str:
+        """Queue one job. ``initiator`` is who asked (see ``brain.workers.initiator``);
+        without it the job is unattributed and refused in team state, like legacy work."""
         job_id = str(uuid.uuid4())
         idempotency_redis_key = None
         if idempotency_key:
@@ -242,6 +248,7 @@ class JobQueue:
             "updated_at": now,
             "progress": "{}",
             "heartbeat_at": "",
+            **(initiator.fields() if initiator is not None else {}),
         }
         try:
             max_depth = int(settings.WORKER_QUEUE_MAX_DEPTH)

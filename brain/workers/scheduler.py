@@ -17,6 +17,7 @@ from loguru import logger
 from redis.asyncio import Redis
 
 from brain.config.settings import settings
+from brain.workers.initiator import JobInitiator
 from brain.workers.queue import queue_for_job, worker_pool_for_job
 
 _LOOKAHEAD_MINUTES = 8 * 24 * 60
@@ -214,6 +215,7 @@ async def tick(redis: Redis, now: Optional[datetime] = None) -> List[Dict[str, A
                 idempotency_key=f"scheduler:{job.job_type}:{slot.isoformat()}",
                 max_attempts=max(1, int(settings.SCHEDULER_JOB_MAX_ATTEMPTS)),
                 timeout_seconds=job.timeout_seconds,
+                initiator=JobInitiator.system("scheduler"),
             )
         except Exception as exc:
             # Give the slot back so the next tick (or another worker) retries it.
