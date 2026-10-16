@@ -9,8 +9,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.schemas import GitMergeWebhook, SchedulerJobsResponse
+from apps.api.team_access import repository_authority, team_administrator_access
+from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
 from brain.database.session import redis_client
+from brain.team.authorization import Permission
 from brain.workers.initiator import JobInitiator
 from brain.workers.queue import queue_for_job
 from brain.workers.scheduler import scheduler_status
@@ -30,7 +33,8 @@ TRIGGER_PATHS = {
 @router.get(
     "/scheduler/jobs",
     response_model=SchedulerJobsResponse,
-    dependencies=[Depends(require_api_key), Depends(require_scope("jobs:read"))],
+    # Every schedule and its admin-only "Run now" trigger: a team administrator once members exist.
+    dependencies=[Depends(require_api_key), Depends(require_scope("jobs:read")), Depends(team_administrator_access())],
 )
 async def get_scheduler_jobs() -> SchedulerJobsResponse:
     state = await scheduler_status(redis_client)
@@ -52,17 +56,16 @@ def _github_signature_valid(raw_body: bytes, signature: str) -> bool:
     return hmac.compare_digest(expected, signature.strip())
 
 
-async def _api_key_valid(request: Request) -> bool:
-    """True when the presented ``X-API-Key`` resolves like on any other route."""
+async def _api_key_principal(request: Request) -> ResolvedPrincipal | None:
+    """The principal of a presented ``X-API-Key`` resolved like on any other route, else ``None``."""
     api_key = request.headers.get("x-api-key")
     if not api_key:
-        return False
+        return None
     try:
-        await require_principal(request, api_key)
+        return await require_principal(request, api_key)
     except Exception:
         # A bad key (401/503) or an unreachable credential store fails closed.
-        return False
-    return True
+        return None
 
 
 @router.post("/webhooks/git-merge")
@@ -71,16 +74,24 @@ async def git_merge_webhook(request: Request, body: GitMergeWebhook):
 
     Accepts a GitHub ``X-Hub-Signature-256`` HMAC over the raw body (secret
     ``PROJECT_BRAIN_WEBHOOK_TOKEN``) or the standard ``X-API-Key``; everything
-    else is rejected.
+    else is rejected. The signed path is the operator's own webhook secret; an
+    ``X-API-Key`` caller requests a reindex like ``POST /jobs/reindex`` does.
     """
     raw_body = await request.body()
     signature = request.headers.get("x-hub-signature-256", "")
-    if not _github_signature_valid(raw_body, signature) and not await _api_key_valid(request):
-        if not (settings.PROJECT_BRAIN_WEBHOOK_TOKEN or "").strip() and not (
-            settings.PROJECT_BRAIN_API_KEY or ""
-        ).strip():
-            raise HTTPException(status_code=503, detail="No webhook credential is configured")
-        raise HTTPException(status_code=401, detail="Invalid webhook credentials")
+    repo_path = body.repo_path or settings.PROJECT_BRAIN_GIT_REPO_PATH
+    # The signed path is the operator's own secret; a keyed caller is re-authorized like any other run.
+    initiator = JobInitiator.system("git_webhook")
+    if not _github_signature_valid(raw_body, signature):
+        principal = await _api_key_principal(request)
+        if principal is None:
+            if not (settings.PROJECT_BRAIN_WEBHOOK_TOKEN or "").strip() and not (
+                settings.PROJECT_BRAIN_API_KEY or ""
+            ).strip():
+                raise HTTPException(status_code=503, detail="No webhook credential is configured")
+            raise HTTPException(status_code=401, detail="Invalid webhook credentials")
+        await repository_authority(principal, Permission.REQUEST_RUN, repo_path=repo_path or None)
+        initiator = JobInitiator.for_principal(principal, Permission.REQUEST_RUN)
     expected_ref = settings.PROJECT_BRAIN_WEBHOOK_REF
     if body.ref != expected_ref:
         return {"status": "ignored", "reason": f"ref {body.ref} is not {expected_ref}"}
@@ -92,13 +103,13 @@ async def git_merge_webhook(request: Request, body: GitMergeWebhook):
         "reindex",
         {
             "clean": False,
-            "repo_path": body.repo_path or settings.PROJECT_BRAIN_GIT_REPO_PATH,
+            "repo_path": repo_path,
             "source_revision": revision,
             "verify_after": True,
             "benchmark_after": True,
         },
         idempotency_key=f"git-reindex:{revision}" if revision else None,
         max_attempts=3,
-        initiator=JobInitiator.system("git_webhook"),
+        initiator=initiator,
     )
     return {"status": "queued", "job_id": job_id, "status_url": f"/jobs/{job_id}"}

@@ -5,9 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import team_administrator_access
 from brain.autonomy.goal_run import GoalRunService
 
-router = APIRouter(prefix="/autonomy", tags=["autonomy"], dependencies=[Depends(require_api_key), Depends(require_scope("autonomy:read"))])
+router = APIRouter(prefix="/autonomy", tags=["autonomy"], dependencies=[
+    Depends(require_api_key), Depends(require_scope("autonomy:read")), Depends(team_administrator_access())])
 _goal_service = GoalRunService()
 
 

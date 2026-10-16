@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import team_administrator_access
 from brain.control.budgets import BudgetExceededError, BudgetUnknownError
 from brain.control.plane import ALLOWED_ACTIONS, ControlPlane
 
@@ -20,17 +21,22 @@ router = APIRouter(
 )
 
 
+# Everything but the static action vocabulary reads the whole control plane
+# across repositories: a team administrator once the Brain has members.
+TEAM_ADMIN = Depends(team_administrator_access())
+
+
 def _plane() -> ControlPlane:
     return ControlPlane(Path(".brain"))
 
 
-@router.get("/summary", dependencies=[Depends(require_scope("control:read"))])
+@router.get("/summary", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def summary():
     """Combined operator summary across every v0.5.0 subsystem."""
     return _plane().summary()
 
 
-@router.get("/queue", dependencies=[Depends(require_scope("control:read"))])
+@router.get("/queue", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def queue(
     repository_id: str = Query("", max_length=128),
     action_type: str = Query("", max_length=64),
@@ -55,12 +61,12 @@ async def allowed_actions():
     }
 
 
-@router.get("/budgets", dependencies=[Depends(require_scope("control:read"))])
+@router.get("/budgets", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def budgets():
     return _plane().budgets()
 
 
-@router.get("/budgets/{budget}/check", dependencies=[Depends(require_scope("control:read"))])
+@router.get("/budgets/{budget}/check", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def check_budget(budget: str, requested: int = Query(1, ge=1, le=1000)):
     """Fail-closed admission check. Refusal is a 409, not a soft warning."""
     try:
@@ -74,11 +80,11 @@ async def check_budget(budget: str, requested: int = Query(1, ge=1, le=1000)):
     return {"allowed": True, **usage.to_dict()}
 
 
-@router.get("/metrics", dependencies=[Depends(require_scope("control:read"))])
+@router.get("/metrics", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def metrics():
     return _plane().metrics()
 
 
-@router.get("/health", dependencies=[Depends(require_scope("control:read"))])
+@router.get("/health", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def health():
     return _plane().health()

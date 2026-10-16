@@ -3,8 +3,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from brain.shadow.runner import ShadowRunner
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import team_administrator_access
 
-router = APIRouter(prefix="/shadow", tags=["shadow"])
+router = APIRouter(prefix="/shadow", tags=["shadow"], dependencies=[Depends(team_administrator_access())])
 runner = ShadowRunner()
 
 

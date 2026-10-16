@@ -19,11 +19,13 @@ from sqlalchemy import desc, select
 from sqlalchemy.sql import Select
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import team_administrator_access
 from brain.audit.events import OUTCOME_ALLOWED, OUTCOME_DENIED, OUTCOME_ERROR
 from brain.database.models import AuditEvent
 from brain.database.session import async_session_factory
 
-router = APIRouter(prefix="/audit", tags=["audit"], dependencies=[Depends(require_api_key)])
+router = APIRouter(prefix="/audit", tags=["audit"],
+                   dependencies=[Depends(require_api_key), Depends(team_administrator_access())])
 
 _VALID_OUTCOMES = {OUTCOME_ALLOWED, OUTCOME_DENIED, OUTCOME_ERROR}
 _MAX_PAGE = 1000

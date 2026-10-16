@@ -6,8 +6,9 @@ from brain.execution.models import ExecutionSession, ExecutionState, ExecutionCo
 from brain.llm.presets import describe_llm_provider
 from brain.llm.router import TaskKind, get_model_router
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import team_administrator_access
 
-router = APIRouter(prefix="/execution", tags=["execution"])
+router = APIRouter(prefix="/execution", tags=["execution"], dependencies=[Depends(team_administrator_access())])
 
 
 @router.post("/sessions", dependencies=[Depends(require_scope("execution:write"))])
