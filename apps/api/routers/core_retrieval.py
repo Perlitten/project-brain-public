@@ -30,7 +30,7 @@ from brain.config.settings import settings
 from brain.context.context_pack_builder import ContextPackBuilder
 from brain.context.budget import BudgetedPayloadBuilder, truncate_utf8
 from brain.context.runtime_context_builder import RuntimeContextBuilder
-from brain.team.authorization import Permission
+from brain.team.authorization import Permission, TeamDenied, authorize_repository
 from brain.database.models import Repository
 from brain.database.repository_utils import require_repository_by_path
 from brain.database.session import async_session_factory
@@ -699,8 +699,11 @@ async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal 
 
 
 @router.get("/diff-review/{job_id}", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def get_diff_review_result(job_id: str):
-    """Get the result of an async diff review."""
+async def get_diff_review_result(job_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
+    """Get the result of an async diff review.
+
+    The caller needs ``read`` on the job's repository; a job the caller may not
+    read is the same 404 as a missing one, so its existence is not revealed."""
     try:
         from brain.database.session import redis_client
         from brain.workers.queue import queue_for_job
@@ -714,6 +717,14 @@ async def get_diff_review_result(job_id: str):
         job = await queue.get_job(job_id)
         if not job or job.get("type") != "diff_review":
             raise HTTPException(status_code=404, detail="Review job not found")
+        params = job.get("params") or {}
+        repository_id = params.get("repository_id")
+        try:
+            await repository_authority(principal, Permission.READ,
+                                       repository_id=repository_id if isinstance(repository_id, int) else None,
+                                       repo_path=params.get("repo_path"))
+        except HTTPException as exc:
+            raise HTTPException(status_code=404, detail="Review job not found") from exc
         status = job.get("status", "unknown")
         if status == "completed":
             return {
@@ -781,13 +792,37 @@ async def search_code_endpoint(body: SearchRequest, request: Request, principal:
                                    outcome=outcome, started=started)
 
 
+async def _readable_repository_ids(principal: ResolvedPrincipal, repository_ids: list[int]) -> set[int] | None:
+    """Ids among ``repository_ids`` the caller may ``read``; ``None`` means every repository.
+
+    Solo state and team administrators pass the unscoped check and see all; any
+    other team member sees the repositories their project roles grant."""
+    try:
+        await repository_authority(principal, Permission.READ)
+        return None
+    except HTTPException:
+        pass
+    readable: set[int] = set()
+    async with async_session_factory() as session:
+        for repository_id in repository_ids:
+            try:
+                await authorize_repository(session, principal, repository_id, Permission.READ)
+            except TeamDenied:
+                continue
+            readable.add(repository_id)
+    return readable
+
+
 @router.get("/repositories", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def list_repositories():
+async def list_repositories(principal: ResolvedPrincipal = Depends(require_principal)):
     try:
         async with async_session_factory() as session:
             stmt = select(Repository).order_by(Repository.id.asc())
             rows = await session.execute(stmt)
             repos = rows.scalars().all()
+        readable = await _readable_repository_ids(principal, [repo.id for repo in repos])
+        if readable is not None:
+            repos = [repo for repo in repos if repo.id in readable]
 
         return {
             "repositories": [

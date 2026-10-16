@@ -18,8 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from sqlalchemy import String, case, cast, func, literal, select
 
-from apps.api.auth import require_api_key, require_scope
-from apps.api.team_access import repository_access
+from apps.api.auth import require_api_key, require_principal, require_scope
+from apps.api.team_access import repository_access, repository_authority
 from apps.api.helpers import (
     get_db_counts,
     get_embedding_retrieval_health,
@@ -27,6 +27,7 @@ from apps.api.helpers import (
     get_reports_list,
     get_self_diagnosis_status,
 )
+from brain.auth.principals import ResolvedPrincipal
 from brain.config.paths import context_packs_dir, get_repo_root, reports_dir
 from brain.config.settings import settings
 from brain.context.budget import estimated_tokens
@@ -441,11 +442,19 @@ async def web_context_packs(
 
 
 @router.get("/context-packs/{pack_id}")
-async def web_context_pack_detail(pack_id: int) -> dict[str, Any]:
+async def web_context_pack_detail(pack_id: int,
+                                  principal: ResolvedPrincipal = Depends(require_principal)) -> dict[str, Any]:
     async with async_session_factory() as session:
         pack = await session.get(ContextPack, pack_id)
         if pack is None:
             raise HTTPException(status_code=404, detail="Context pack not found")
+        # The router-level check covers the ``repository_id`` query parameter, not
+        # the pack's own repository: authorize that too, and answer a pack the
+        # caller may not read exactly like a missing one.
+        try:
+            await repository_authority(principal, Permission.READ, repository_id=pack.repository_id)
+        except HTTPException as exc:
+            raise HTTPException(status_code=404, detail="Context pack not found") from exc
         resolved = resolve_context_pack_file(pack.path)
         if resolved is None:
             raise HTTPException(status_code=404, detail="Context pack content is unavailable")
