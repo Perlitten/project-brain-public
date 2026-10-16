@@ -71,6 +71,33 @@ class TeamTaskBinding(Base):
     request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
+class TeamInvitation(Base):
+    """A single-use, expiring offer of verified team membership.
+
+    Only the SHA-256 of the token is stored. The lifecycle state (invited,
+    expired, verified, active, revoked) is derived from the timestamps and the
+    issued member/credential rows rather than kept in a status column."""
+    __tablename__ = "team_invitations"
+    __table_args__ = (CheckConstraint("role IN ('reader','contributor','reviewer')", name="ck_team_invitation_role"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    principal_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    project_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    is_admin: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False)
+    invited_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    invited_by_principal_id: Mapped[int | None] = mapped_column(ForeignKey("principals.id"), nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    accepted_principal_id: Mapped[int | None] = mapped_column(ForeignKey("principals.id"), nullable=True, unique=True)
+    accepted_credential_id: Mapped[int | None] = mapped_column(ForeignKey("api_credentials.id"), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+
 class AgentRun(Base):
     __tablename__ = "agent_runs"
     __table_args__ = (UniqueConstraint("task_id", "requested_by", "request_key"), {"schema": HARNESS_SCHEMA})

@@ -37,6 +37,7 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("rule_usage_events", "kind"),
     ("team_task_bindings", "request_digest"),
     ("agent_runs", "initiator_credential_id"),
+    ("team_invitations", "token_hash"),
 ]
 
 
