@@ -30,7 +30,7 @@ Start with the files for the task rather than relying on a stale repository size
 | `routers/experiments.py` | `brain/experiments/` | `test_remediation_experiments.py` |
 | `routers/portfolio.py` | `brain/portfolio/` | `test_portfolio_graph.py` |
 | `routers/control.py` | `brain/control/` | `test_control_plane.py` |
-| `routers/team.py` (team admin, tasks, runs); `apps/api/team_access.py` (repository authority for every personal router: solo = team of one) | `brain/team/` (`provisioning.py`, `oauth_link.py`, `authorization.py`, `store.py`) | `test_team_provisioning.py`, `test_team_oauth_link.py`, `test_team_transport.py`, `test_team_foundations.py` |
+| `routers/team.py` (team admin, tasks, runs), `routers/team_invitations.py`; `apps/api/team_access.py` (repository authority for every personal router: solo = team of one) | `brain/team/` (`provisioning.py`, `invitations.py`, `oauth_link.py`, `authorization.py`, `store.py`) | `test_team_provisioning.py`, `test_team_invitations.py`, `test_team_oauth_link.py`, `test_team_transport.py`, `test_team_foundations.py` |
 
 ## Routes for common tasks
 
