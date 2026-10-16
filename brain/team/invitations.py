@@ -197,18 +197,20 @@ async def list_invitations(session: AsyncSession, team_id: int = TEAM_ID) -> lis
             select(ApiCredential).where(ApiCredential.id.in_(credential_ids))
         )).scalars()
         credentials = {row.id: row for row in credential_rows}
-    return [
-        invitation_dict(
+    result = []
+    for row in rows:
+        principal_id = row.accepted_principal_id
+        credential_id = row.accepted_credential_id
+        result.append(invitation_dict(
             row,
             derive_state(
                 row,
-                principals.get(row.accepted_principal_id),
-                members.get(row.accepted_principal_id),
-                credentials.get(row.accepted_credential_id),
+                principals.get(principal_id) if principal_id is not None else None,
+                members.get(principal_id) if principal_id is not None else None,
+                credentials.get(credential_id) if credential_id is not None else None,
             ),
-        )
-        for row in rows
-    ]
+        ))
+    return result
 
 
 async def accepted_principal(session: AsyncSession, invitation_id: uuid.UUID) -> ResolvedPrincipal:
