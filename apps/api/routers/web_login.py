@@ -26,10 +26,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import team_administrator_access
 from brain.config.settings import settings
 from brain.onboarding.envfile import setup_env_path, update_env_file
 
 router = APIRouter(prefix="/api/web-login", tags=["web-login"], dependencies=[Depends(require_api_key)])
+# Setting or removing the dashboard password changes the whole Brain's sign-in: a team administrator
+# once the team has members. Reading the mode and checking a password stay part of the sign-in flow.
+TEAM_ADMIN = Depends(team_administrator_access())
 
 KEYS = frozenset({"WEB_LOGIN_USER", "WEB_LOGIN_PASSWORD_HASH", "WEB_LOGIN_VERSION"})
 USER_PATTERN = re.compile(r"[A-Za-z0-9._@+-]{1,64}")
@@ -182,7 +186,7 @@ async def verify_web_login(body: VerifyBody, request: Request) -> Dict[str, Any]
     return {"ok": ok, "mode": "password", "version": settings.WEB_LOGIN_VERSION or "0"}
 
 
-@router.put("", dependencies=[Depends(require_scope("setup:write"))])
+@router.put("", dependencies=[Depends(require_scope("setup:write")), TEAM_ADMIN])
 async def set_web_login(body: SetBody, request: Request) -> Dict[str, Any]:
     user = body.user.strip()
     if not USER_PATTERN.fullmatch(user):
@@ -198,7 +202,7 @@ async def set_web_login(body: SetBody, request: Request) -> Dict[str, Any]:
     return _state()
 
 
-@router.post("/disable", dependencies=[Depends(require_scope("setup:write"))])
+@router.post("/disable", dependencies=[Depends(require_scope("setup:write")), TEAM_ADMIN])
 async def disable_web_login(body: DisableBody, request: Request) -> Dict[str, Any]:
     if not _configured():
         return _state()

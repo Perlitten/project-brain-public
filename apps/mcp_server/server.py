@@ -116,8 +116,8 @@ async def record_task_observation(task_id: str, statement: str, category: str, i
 async def record_procedure_outcome(skill_id: int, task_id: str, validation_id: int,
                                     outcome: Literal["success", "failure"], artifact_ids: list[int], source_refs: list[str]) -> dict:
     """Record a reported outcome once per task/skill, never on retrieval."""
-    from apps.api.routers.core_memory import SkillOutcomeEvidence, SkillOutcomeRequest, record_skill_outcome_endpoint
-    return await record_skill_outcome_endpoint(skill_id, SkillOutcomeRequest(
+    from apps.api.routers.core_memory import SkillOutcomeEvidence, SkillOutcomeRequest, record_skill_outcome_service
+    return await record_skill_outcome_service(skill_id, SkillOutcomeRequest(
         task_id=task_id, validation_id=validation_id, outcome=outcome,
         evidence=SkillOutcomeEvidence(artifact_ids=artifact_ids, source_refs=source_refs)))
 
