@@ -33,7 +33,8 @@ class MintCredentialRequest(BaseModel):
     ttl_days: Optional[int] = Field(default=None, gt=0)
 
 
-_SCOPE_RE = r"^[a-z_]+:[a-z_]+$"
+# Dotted actions (team:run.request) are named scopes too: provisioning.member_scopes mints them.
+_SCOPE_RE = r"^[a-z_]+:[a-z_]+(\.[a-z_]+)*$"
 
 
 class CreatePrincipalRequest(BaseModel):

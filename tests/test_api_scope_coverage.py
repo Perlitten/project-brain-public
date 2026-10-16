@@ -60,6 +60,7 @@ SEPARATE_OPERATIONS = {
     ("post", "/v1/intake/capture"): "handler-level bridge auth; test_telegram_bridge_auth",
     ("post", "/v1/assistant/reply"): "handler-level bridge auth; test_telegram_bridge_auth",
     ("post", "/webhooks/git-merge"): "webhook secret policy; test_worker_scheduler",
+    ("get", "/api/web-session"): "identity of the caller's own credential (dashboard sign-in); test_web_session",
 }
 
 

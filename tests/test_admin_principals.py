@@ -253,3 +253,23 @@ def test_create_principal_existing_name_409():
 def test_create_principal_rejects_wildcard_scope():
     response = client.post("/admin/principals", json={"name": "x", "scopes": ["*"]})
     assert response.status_code == 422
+
+
+def test_create_principal_accepts_dotted_team_scopes():
+    """The dashboard mints team members through this route; their scopes have dotted actions."""
+    created = _principal(id=10, name="alice", kind="human")
+    session = _FakeSession(scalars_rows=[[], [created]], exec_scalar=None)
+    with _patch_session(session):
+        response = client.post(
+            "/admin/principals",
+            json={"name": "alice", "kind": "human", "scopes": ["core:read", "team:read", "team:run.request"]},
+        )
+    assert response.status_code == 201
+    minted = [obj for obj in session.added if isinstance(obj, ApiCredential)]
+    assert minted and minted[0].scopes == ["core:read", "team:read", "team:run.request"]
+
+
+def test_create_principal_rejects_malformed_dotted_scope():
+    for scope in ("team:.read", "team:run.", "team:run..request", "team:*"):
+        response = client.post("/admin/principals", json={"name": "x", "scopes": [scope]})
+        assert response.status_code == 422, scope
