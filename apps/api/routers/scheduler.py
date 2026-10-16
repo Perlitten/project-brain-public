@@ -82,6 +82,7 @@ async def git_merge_webhook(request: Request, body: GitMergeWebhook):
     repo_path = body.repo_path or settings.PROJECT_BRAIN_GIT_REPO_PATH
     # The signed path is the operator's own secret; a keyed caller is re-authorized like any other run.
     initiator = JobInitiator.system("git_webhook")
+    idempotency_origin = "signed"
     if not _github_signature_valid(raw_body, signature):
         principal = await _api_key_principal(request)
         if principal is None:
@@ -92,6 +93,7 @@ async def git_merge_webhook(request: Request, body: GitMergeWebhook):
             raise HTTPException(status_code=401, detail="Invalid webhook credentials")
         await repository_authority(principal, Permission.REQUEST_RUN, repo_path=repo_path or None)
         initiator = JobInitiator.for_principal(principal, Permission.REQUEST_RUN)
+        idempotency_origin = f"principal:{principal.id}:{principal.credential_id or 'none'}"
     expected_ref = settings.PROJECT_BRAIN_WEBHOOK_REF
     if body.ref != expected_ref:
         return {"status": "ignored", "reason": f"ref {body.ref} is not {expected_ref}"}
@@ -108,7 +110,9 @@ async def git_merge_webhook(request: Request, body: GitMergeWebhook):
             "verify_after": True,
             "benchmark_after": True,
         },
-        idempotency_key=f"git-reindex:{revision}" if revision else None,
+        # A signed operator delivery must not be absorbed by a principal-owned
+        # claim (or by another principal whose credential may be revoked).
+        idempotency_key=f"git-reindex:{idempotency_origin}:{revision}" if revision else None,
         max_attempts=3,
         initiator=initiator,
     )

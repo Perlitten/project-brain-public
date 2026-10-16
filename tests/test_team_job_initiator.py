@@ -89,11 +89,14 @@ async def test_git_webhook_attributes_keyed_callers_and_keeps_the_signed_path_a_
     body = GitMergeWebhook(ref="refs/heads/main", sha="abc", repo_path="/synthetic/A")
     request = SimpleNamespace(body=AsyncMock(return_value=b"{}"), headers={})
 
-    for signed, expected in ((False, JobInitiator("principal", 2, 2, "run.request")),
-                             (True, JobInitiator.system("git_webhook"))):
+    for signed, expected, key in (
+        (False, JobInitiator("principal", 2, 2, "run.request"), "git-reindex:principal:2:2:abc"),
+        (True, JobInitiator.system("git_webhook"), "git-reindex:signed:abc"),
+    ):
         monkeypatch.setattr(scheduler, "_github_signature_valid", lambda *_, ok=signed: ok)
         await scheduler.git_merge_webhook(request, body)
         assert queue.enqueue.await_args.kwargs["initiator"] == expected
+        assert queue.enqueue.await_args.kwargs["idempotency_key"] == key
 
 
 @pytest.mark.asyncio
