@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from apps.api.auth import require_api_key, require_scope
-from apps.api.team_access import current_team_state
+from apps.api.team_access import current_team_state, repository_access
 from brain import __version__
 from brain.config.paths import resolve_repo_path
 from brain.config.settings import settings
@@ -22,6 +22,7 @@ from brain.late_interaction.operator_status import (
 )
 from brain.late_interaction.provider import LfmColbertProvider
 from brain.llm.presets import llm_provider_ready
+from brain.team.authorization import Permission
 from brain.version import build_info
 from brain.workers.queue import worker_liveness, worker_pool_status
 
@@ -162,7 +163,8 @@ async def api_version():
     return build_info()
 
 
-@router.get("/late-interaction/status", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.get("/late-interaction/status", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")),
+                                                      Depends(repository_access(Permission.READ))])
 async def late_interaction_status(repo_path: str):
     """Operator evidence for canary coverage, provider health and fail-open use."""
     repository = await require_repository_by_path(resolve_repo_path(repo_path))

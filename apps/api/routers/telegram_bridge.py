@@ -19,9 +19,9 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from apps.api.auth import DEV_PRINCIPAL, LEGACY_PRINCIPAL
+from apps.api.auth import DEV_PRINCIPAL, LEGACY_PRINCIPAL, named_credential_required
 from apps.api.schemas import AskRequest
-from brain.auth.principals import resolve_credential
+from brain.auth.principals import ResolvedPrincipal, resolve_credential
 from brain.config.settings import settings
 from brain.database.models import Repository
 from brain.database.session import async_session_factory
@@ -45,21 +45,23 @@ async def _authorize(
 
     ``pbk_`` credential (Bearer or X-API-Key) must carry ``bridge:write``.
     The resolved principal lands on request.state so the audit middleware
-    attributes these calls like every other authenticated mutation."""
+    attributes these calls like every other authenticated mutation. Once the
+    Brain has team members the shared key and dev-open access are refused, as
+    on every other route."""
     expected = settings.PROJECT_BRAIN_API_KEY or ""
     presented = x_api_key or ""
     if not presented and authorization and authorization.lower().startswith("bearer "):
         presented = authorization[7:].strip()
 
     if expected and presented and hmac.compare_digest(presented, expected):
-        request.state.principal = LEGACY_PRINCIPAL
+        await _accept_unnamed(request, LEGACY_PRINCIPAL)
         return
     if not presented:
         if expected:
             raise HTTPException(status_code=401, detail="Unauthorized")
         if settings.ENVIRONMENT.lower() == "production":
             raise HTTPException(status_code=503, detail="API authentication is not configured")
-        request.state.principal = DEV_PRINCIPAL
+        await _accept_unnamed(request, DEV_PRINCIPAL)
         return
 
     async with async_session_factory() as session:
@@ -72,6 +74,14 @@ async def _authorize(
             status_code=403,
             detail=f"Principal '{principal.name}' lacks required scope",
         )
+    request.state.principal = principal
+
+
+async def _accept_unnamed(request: Request, principal: ResolvedPrincipal) -> None:
+    """The shared key and dev-open access, refused like ``require_principal`` does in team state."""
+    if await named_credential_required(principal):
+        raise HTTPException(status_code=401 if principal is DEV_PRINCIPAL else 403,
+                            detail="Named credential required: this Brain has team members")
     request.state.principal = principal
 
 
@@ -176,11 +186,16 @@ async def assistant_reply(
     search_question = await _translate(question, "English") if russian else None
 
     try:
+        # Answer as the poller's own principal: ask_project checks read on the resolved repository.
         result = await ask_project(
             AskRequest(query=question, repo_path=repo_path, retrieval_query=search_question),
             request,
+            principal=request.state.principal,
         )
         answer = result.get("answer") if isinstance(result, dict) else str(result)
+    except HTTPException as exc:
+        logger.warning(f"telegram bridge: ask refused for repo={repo_path}: {exc.status_code}")
+        return {"answer": f"Could not answer: {exc.detail}"}
     except Exception as exc:  # a chat bot must answer, not 500 into silence
         logger.warning(f"telegram bridge: ask failed for repo={repo_path}: {exc}")
         return {"answer": f"Could not answer: {type(exc).__name__}"}

@@ -254,7 +254,12 @@ async def enqueue_deep_context(body: DeepContextJobRequest, request: Request = c
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_scope("jobs:read"))])
-async def get_job_status(job_id: str, include_result: bool = False):
+async def get_job_status(job_id: str, include_result: bool = False,
+                         principal: ResolvedPrincipal = Depends(require_principal)):
+    """Status of one queued job; the caller needs ``read`` on the job's repository.
+
+    A job the caller may not read is the same 404 as a missing one, so its
+    existence is not revealed; a job without a repository needs a team administrator."""
     queues = [_queue()]
     if settings.BRAIN_WORKER_POOLS_V2_ENABLED:
         queues = [
@@ -275,6 +280,16 @@ async def get_job_status(job_id: str, include_result: bool = False):
             break
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    params = job.get("params") or {}
+    repository_id = params.get("repository_id")
+    try:
+        if "repository_id" in params:
+            await repository_authority(principal, Permission.READ,
+                                       repository_id=repository_id if isinstance(repository_id, int) else None)
+        else:
+            await repository_authority(principal, Permission.READ, repo_path=params.get("repo_path"))
+    except HTTPException as exc:
+        raise HTTPException(status_code=404, detail="Job not found") from exc
     if not include_result:
         result = job.pop("result", None)
         # Queued jobs are initialized with an empty result. Its presence is not

@@ -19,7 +19,7 @@ from loguru import logger
 from sqlalchemy import String, case, cast, func, literal, select
 
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.team_access import repository_access, repository_authority
+from apps.api.team_access import repository_access, repository_authority, team_administrator_access
 from apps.api.helpers import (
     get_db_counts,
     get_embedding_retrieval_health,
@@ -46,6 +46,8 @@ router = APIRouter(
     dependencies=[Depends(require_api_key), Depends(require_scope(WEB_READ_SCOPE)),
                   Depends(repository_access(Permission.READ))],
 )
+# Reports and orchestration health span the whole Brain whatever repository the query names.
+TEAM_ADMIN = Depends(team_administrator_access())
 
 
 @router.get("/dashboard")
@@ -656,7 +658,7 @@ def shape_report(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@router.get("/reports")
+@router.get("/reports", dependencies=[TEAM_ADMIN])
 async def web_reports(
     limit: int = Query(50, ge=1, le=500),
     page: int = Query(1, ge=1),
@@ -683,7 +685,7 @@ async def web_reports(
     }
 
 
-@router.get("/reports/{report_name}")
+@router.get("/reports/{report_name}", dependencies=[TEAM_ADMIN])
 async def web_report_detail(report_name: str) -> dict[str, Any]:
     if Path(report_name).name != report_name or report_name in {"", ".", ".."}:
         raise HTTPException(status_code=400, detail="Invalid report name")
@@ -1088,7 +1090,7 @@ async def web_overview(
 # --------------------------------------------------------------------------- health
 
 
-@router.get("/health")
+@router.get("/health", dependencies=[TEAM_ADMIN])
 async def web_health() -> dict[str, Any]:
     from brain.database.session import redis_client
     from brain.workers.scheduler import scheduler_status

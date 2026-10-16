@@ -14,6 +14,10 @@ from brain.insights.remediation_strategies import RemediationStrategyRegistry
 
 router = APIRouter(prefix="/insights/remediation", tags=["remediation-planner"], dependencies=[Depends(require_api_key), Depends(require_scope("remediation:read")),
                                   Depends(repository_access(Permission.READ))])
+# Plans are stored under the repository: creating or advancing one needs ``run.request``;
+# approving or rejecting one is a decision: ``task.accept``.
+RUN = Depends(repository_access(Permission.REQUEST_RUN))
+ACCEPT = Depends(repository_access(Permission.ACCEPT))
 
 
 def _safe_resolve(repo_path_arg: Optional[str]) -> Path:
@@ -22,7 +26,7 @@ def _safe_resolve(repo_path_arg: Optional[str]) -> Path:
     return resolve_repo_path()
 
 
-@router.post("/plans", dependencies=[Depends(require_scope("remediation:write"))])
+@router.post("/plans", dependencies=[Depends(require_scope("remediation:write")), RUN])
 async def create_remediation_plan(
     rule_id: str = Query("DRIFT-001"),
     file_path: str = Query(...),
@@ -65,7 +69,7 @@ async def get_remediation_plan(plan_id: str, repo_path: Optional[str] = Query(No
     return {"status": "success", "plan": plan_dict}
 
 
-@router.post("/plans/{plan_id}/acknowledge", dependencies=[Depends(require_scope("remediation:write"))])
+@router.post("/plans/{plan_id}/acknowledge", dependencies=[Depends(require_scope("remediation:write")), RUN])
 async def acknowledge_plan(plan_id: str, repo_path: Optional[str] = Query(None)):
     target_repo = _safe_resolve(repo_path)
     mgr = RemediationPlanManager(target_repo / ".brain")
@@ -75,7 +79,7 @@ async def acknowledge_plan(plan_id: str, repo_path: Optional[str] = Query(None))
     return {"status": "success", "plan": plan.to_dict()}
 
 
-@router.post("/plans/{plan_id}/approve", dependencies=[Depends(require_scope("remediation:write"))])
+@router.post("/plans/{plan_id}/approve", dependencies=[Depends(require_scope("remediation:write")), ACCEPT])
 async def approve_plan(plan_id: str, repo_path: Optional[str] = Query(None)):
     target_repo = _safe_resolve(repo_path)
     mgr = RemediationPlanManager(target_repo / ".brain")
@@ -85,7 +89,7 @@ async def approve_plan(plan_id: str, repo_path: Optional[str] = Query(None)):
     return {"status": "success", "plan": plan.to_dict()}
 
 
-@router.post("/plans/{plan_id}/reject", dependencies=[Depends(require_scope("remediation:write"))])
+@router.post("/plans/{plan_id}/reject", dependencies=[Depends(require_scope("remediation:write")), ACCEPT])
 async def reject_plan(plan_id: str, repo_path: Optional[str] = Query(None)):
     target_repo = _safe_resolve(repo_path)
     mgr = RemediationPlanManager(target_repo / ".brain")
@@ -95,7 +99,7 @@ async def reject_plan(plan_id: str, repo_path: Optional[str] = Query(None)):
     return {"status": "success", "plan": plan.to_dict()}
 
 
-@router.post("/plans/{plan_id}/mark-implemented", dependencies=[Depends(require_scope("remediation:write"))])
+@router.post("/plans/{plan_id}/mark-implemented", dependencies=[Depends(require_scope("remediation:write")), RUN])
 async def mark_plan_implemented(plan_id: str, repo_path: Optional[str] = Query(None)):
     target_repo = _safe_resolve(repo_path)
     mgr = RemediationPlanManager(target_repo / ".brain")
@@ -105,7 +109,7 @@ async def mark_plan_implemented(plan_id: str, repo_path: Optional[str] = Query(N
     return {"status": "success", "plan": plan.to_dict()}
 
 
-@router.post("/plans/{plan_id}/verify", dependencies=[Depends(require_scope("remediation:write"))])
+@router.post("/plans/{plan_id}/verify", dependencies=[Depends(require_scope("remediation:write")), RUN])
 async def verify_plan(plan_id: str, repo_path: Optional[str] = Query(None)):
     target_repo = _safe_resolve(repo_path)
     mgr = RemediationPlanManager(target_repo / ".brain")

@@ -59,12 +59,23 @@ async def repository_authority(principal: ResolvedPrincipal, permission: Permiss
         raise HTTPException(status_code=403, detail=f"Repository access denied: {exc}") from exc
 
 
+_SCOPE_KEYS = frozenset({"repository_id", "repo_path"})
+
+
 def _query_scope(request: Request) -> tuple[int | None, str | None]:
-    """``repository_id`` / ``repo_path`` as the query string spells them; malformed ids count as unscoped."""
+    """``repository_id`` / ``repo_path`` as the query string spells them; malformed ids count as unscoped.
+
+    When the matched route declares one of the two keys, only the keys it declares count: a key the
+    handler ignores would otherwise authorize one repository while the handler falls back to another
+    (its default repository, or every repository). Routes that declare neither check their object's
+    repository themselves and keep accepting either key."""
     params = request.query_params
-    raw_id = params.get("repository_id")
+    dependant = getattr(request.scope.get("route"), "dependant", None)
+    declared = {field.alias for field in dependant.query_params} & _SCOPE_KEYS if dependant else set()
+    keys = declared or _SCOPE_KEYS
+    raw_id = params.get("repository_id") if "repository_id" in keys else None
     repository_id = int(raw_id) if raw_id is not None and raw_id.isdigit() else None
-    repo_path = params.get("repo_path") or None
+    repo_path = (params.get("repo_path") or None) if "repo_path" in keys else None
     return repository_id, repo_path
 
 
