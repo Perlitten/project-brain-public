@@ -32,6 +32,7 @@ def _settings(tmp_path, **overrides):
         ANTHROPIC_API_KEY=None,
         GOOGLE_API_KEY=None,
         NVIDIA_API_KEY=None,
+        BRAIN_STORAGE_MODE="lite",
     )
     for key, value in overrides.items():
         setattr(base, key, value)
@@ -122,3 +123,21 @@ def test_writable_probe_preserves_existing_files(tmp_path):
         doctor_module._check_writable_dirs(failures)
     assert failures == []
     assert existing.read_text() == "keep existing artifact"
+
+
+def test_doctor_fails_while_team_access_is_fenced(tmp_path):
+    settings_patch, health_patch = _doctor_env(tmp_path, BRAIN_STORAGE_MODE="full")
+    fenced = patch.object(doctor_module, "current_team_access", AsyncMock(return_value="pending_reconciliation"))
+    with settings_patch, health_patch, fenced, patch.object(doctor_module, "async_engine", SimpleNamespace(dispose=AsyncMock())):
+        result = runner.invoke(cli, ["doctor"])
+    assert result.exit_code == 1
+    assert "brain team reconcile" in result.output
+
+
+def test_doctor_passes_once_team_access_is_open(tmp_path):
+    settings_patch, health_patch = _doctor_env(tmp_path, BRAIN_STORAGE_MODE="full")
+    opened = patch.object(doctor_module, "current_team_access", AsyncMock(return_value="open"))
+    with settings_patch, health_patch, opened, patch.object(doctor_module, "async_engine", SimpleNamespace(dispose=AsyncMock())):
+        result = runner.invoke(cli, ["doctor"])
+    assert result.exit_code == 0
+    assert "team access open" in result.output

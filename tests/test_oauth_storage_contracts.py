@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from brain.auth import oauth_store
 from brain.auth.principals import hash_credential, resolve_credential
 from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken, Principal
+from brain.team.models import TeamAccessFence
 
 
 @pytest_asyncio.fixture
@@ -17,7 +18,8 @@ async def oauth_storage(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
     async with engine.begin() as connection:
         await connection.run_sync(lambda sync: Principal.metadata.create_all(
-            sync, tables=[model.__table__ for model in (Principal, ApiCredential, OAuthClient, OAuthRefreshToken)],
+            sync, tables=[model.__table__ for model in (Principal, ApiCredential, OAuthClient, OAuthRefreshToken,
+                                                       TeamAccessFence)],
         ))
     try:
         yield async_sessionmaker(engine, expire_on_commit=False), path

@@ -51,6 +51,7 @@ from brain.team.provisioning import (
     resolve_project,
     revoke_member,
 )
+from brain.team.restore_fence import FENCED, access_fenced
 
 INVITATION_ISSUER = "brain-invitation"
 TOKEN_PREFIX = "pbi_"
@@ -252,6 +253,8 @@ async def accept_invitation(session: AsyncSession, raw_token: str) -> dict:
     raw_token = (raw_token or "").strip()
     if not raw_token.startswith(TOKEN_PREFIX) or len(raw_token) > MAX_TOKEN_LENGTH:
         raise InvitationRejected(REJECTED)
+    if await access_fenced(session):
+        raise TeamConflict(FENCED)
     digest = hash_credential(raw_token)
     invitation = await fresh(session, TeamInvitation, TeamInvitation.token_hash == digest, exclusive=True)
     if invitation is None or not hmac.compare_digest(invitation.token_hash, digest) or invitation.revoked_at:

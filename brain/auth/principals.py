@@ -129,6 +129,11 @@ async def resolve_credential(
         return None
     if principal.disabled_at is not None:
         return None
+    # A restored team snapshot honours no credential until it is reconciled.
+    from brain.team.restore_fence import access_fenced
+
+    if await access_fenced(session):
+        return None
     cred.last_used_at = now
     return ResolvedPrincipal(
         id=principal.id,

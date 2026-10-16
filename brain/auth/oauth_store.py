@@ -24,7 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import hash_credential, mint_credential
 from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken
+from brain.team.authorization import TeamDenied
 from brain.team.oauth_link import bind_team_scopes
+from brain.team.restore_fence import FENCED, access_fenced
 
 REFRESH_PREFIX = "pbr"
 PRINCIPAL_PREFIX = "oauth"
@@ -106,7 +108,10 @@ async def issue_tokens(
     Personal scopes land on the client's service principal. Team scopes bind
     the token to the verified member who approved it (``brain.team.oauth_link``):
     the credential is minted on that member's human principal, so team routes
-    see the member and ``TeamDenied`` stops issuance - also on refresh."""
+    see the member and ``TeamDenied`` stops issuance - also on refresh. A
+    restored team Brain issues nothing until it is reconciled."""
+    if await access_fenced(session):
+        raise TeamDenied(FENCED)
     grant = await bind_team_scopes(session, subject, scopes)
     principal_name = grant.principal.name if grant is not None else principal_name_for(client_id, client_name)
     access_raw, credential = await mint_credential(

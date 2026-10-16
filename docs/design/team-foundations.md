@@ -18,7 +18,7 @@ from design or green CI alone.
 | Exact-version approvals/current-base integration | Harness acceptance/validation artifacts | Contract only; approval/merge endpoints closed | Combined changes/reapproval/branch protection M3/M4 |
 | No lost memory updates or draft promotion | Scoped stores, evidence/consolidation | Trusted-memory endpoints closed | CAS proposals/history/independent approval M4 |
 | Retry/restart idempotency | Harness idempotent events | Task/run request content binding, no raw-key replay | External-effect idempotency M2/M3 |
-| Backward-compatible migration/restore | Full/Lite initialization and backup scripts | Additive tables, preserve personal rows, repeat init; disposable PostgreSQL team snapshot restore | Post-snapshot revocation reconciliation, graph/secret recovery, controlled upgrade/pilot |
+| Backward-compatible migration/restore | Full/Lite initialization and backup scripts | Additive tables, preserve personal rows, repeat init; disposable PostgreSQL team snapshot restore behind a reconciliation fence | Graph/secret recovery, controlled upgrade/pilot |
 | Egress/model/budget separate from read | Provider adapters/control budgets | No implicit transfer grant; model surfaces closed | Enforced source consent and provider budget M2 |
 | Product onboarding and board | `apps/web`, operations docs | States/fields specified in ADR; no invented UI | Invitation/task/conflict UX M5 |
 | Same-project/same-task MVP | Authoritative harness ledger | Multiple isolated run records per task | Actual coordinated runs M2/M3 before M6 |
@@ -137,11 +137,30 @@ The test is opt-in through `TEST_TEAM_POSTGRES_URL`, restricted to the disposabl
 loopback `brain_team_test` database and `fixture` role; its target is exclusively
 `brain_team_restore_test`. CI requires it alongside PostgreSQL authority tests.
 Local PostgreSQL clients must support the fixture server version. Neo4j is
-explicitly excluded, not mocked or declared restored. Recovery preserves the
-backup snapshot only: revocations, cancellations and policy changes after that
-snapshot require separate reconciliation before reopening access. That recovery
-procedure, external identities/secrets and production upgrade/restore remain
-unimplemented/unverified; this test does not make team deployment safe or ready.
+explicitly excluded, not mocked or declared restored.
+
+A snapshot does not contain the revocations, cancellations and policy changes
+made after it, so `scripts/restore_database.py` loads every dump with team
+members together with `scripts/team_restore_fence.sql` in one transaction. The
+fence row (`team_access_fences`, `brain/team/restore_fence.py`) makes
+`resolve_credential` honour no credential, keeps `team_state()` at `team` so the
+shared key and dev-open access stay refused, denies `live_credential` and stops
+OAuth issuance and refresh and invitation acceptance. `/health` reports `team_access:
+pending_reconciliation` and `brain doctor` fails. A solo snapshot is not fenced.
+The host `brain team` CLI is the break-glass path: `brain team reconcile` prints
+the restored roster, roles, repository links, open tasks and a SHA-256 digest;
+the operator replays later revocations with the other `brain team` commands and
+then runs `brain team reconcile --attest <digest>`. A stale digest conflicts.
+Clearing the fence revokes every restored API credential, OAuth refresh token,
+run delegation and pending invitation unless `--keep-credentials` attests that the snapshot is
+current; members then receive new keys. `tests/test_team_restore.py` revokes a
+member and credential after the backup and proves the restored database denies
+the stale credential until reconciliation, after which only the re-keyed
+current member is admitted; `tests/test_team_restore_fence.py` pins the fence and
+attestation semantics. A hand-run `psql` restore writes no fence. External
+identities/secrets and production upgrade/restore remain unverified; this does
+not make team deployment safe or ready. Operator steps:
+[backup-restore runbook](../runbooks/backup-restore.md#restoring-a-team-brain).
 
 ## Evidence requirements for each slice
 

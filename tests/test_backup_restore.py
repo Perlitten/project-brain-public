@@ -3,13 +3,14 @@ import json
 import sqlite3
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from scripts.backup_runner import run_backup, main as backup_main
 from scripts.restore_verification_drill import verify_restore_drill, main as drill_main
 from scripts.recovery_config import load_recovery_config
-from scripts.restore_database import restore_database
+from scripts.restore_database import FENCE_SQL, restore_database
 
 
 @pytest.fixture(autouse=True)
@@ -208,7 +209,13 @@ class TestRestoreDrill:
         })
         calls = []
         monkeypatch.setattr("scripts.restore_database.shutil.which", lambda _: "/usr/bin/psql")
-        monkeypatch.setattr("scripts.restore_database.subprocess.run", lambda args, **kw: calls.append((args, kw)))
+
+        def run(args, **kw):
+            calls.append((args, kw))
+            # to_regclass finds the fence table, one fence is active: a team snapshot.
+            return SimpleNamespace(stdout="t\n" if "to_regclass" in str(args) else "1\n")
+
+        monkeypatch.setattr("scripts.restore_database.subprocess.run", run)
         (tmp_path / "postgres_dump.sql").write_text(REAL_DUMP)
         (tmp_path / "backup_manifest.json").write_text(json.dumps({"artifacts": [
             {"name": "postgres", "file": "postgres_dump.sql", "status": "ok"}
@@ -216,8 +223,11 @@ class TestRestoreDrill:
         with pytest.raises(ValueError, match="exactly match"):
             restore_database(tmp_path, str(recovery_fixture_config), "other_db")
         assert not calls
-        restore_database(tmp_path, str(recovery_fixture_config), "synthetic_db")
-        assert len(calls) == 4
+        assert restore_database(tmp_path, str(recovery_fixture_config), "synthetic_db") == "pending_reconciliation"
+        assert len(calls) == 6
+        # The dump and its fence load in one transaction, so the snapshot is never visible unfenced.
+        load = calls[3][0]
+        assert "--single-transaction" in load and load[-1] == str(FENCE_SQL) and load[-3].endswith("postgres_dump.sql")
         assert all("fixture-only" not in str(args) for args, _ in calls)
         assert all(kw["env"]["PGPASSWORD"] == "fixture-only" for _, kw in calls)
         assert "synthetic_db" in str(calls[1][0])

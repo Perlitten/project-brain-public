@@ -15,6 +15,7 @@ from brain.config.settings import settings
 from brain.database.models import ApiCredential, Principal
 from brain.database.harness_models import AgentTask
 from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamMember, TeamProject, TeamTaskBinding
+from brain.team.restore_fence import FENCED, access_fenced
 
 
 class Permission(StrEnum):
@@ -76,10 +77,12 @@ async def team_state(session: AsyncSession, team_id: int = 1) -> TeamState:
 
     Solo is a team of one: every authenticated caller is the implicit
     administrator of every repository. Team routes repository access through
-    project membership (see ``authorize_repository``)."""
+    project membership (see ``authorize_repository``). A Brain restored from a
+    team snapshot is ``"team"`` until reconciled, even if no member is live
+    (``brain.team.restore_fence``)."""
     if settings.BRAIN_STORAGE_MODE != "full":
         return "solo"
-    if strict_team_mode():
+    if strict_team_mode() or await access_fenced(session):
         return "team"
     member = (await session.execute(select(TeamMember.principal_id).where(
         TeamMember.team_id == team_id, TeamMember.revoked_at.is_(None), TeamMember.verified_at.is_not(None))
@@ -103,6 +106,8 @@ async def fresh(session: AsyncSession, model, *predicates, exclusive: bool = Fal
 async def live_credential(session: AsyncSession, principal_id: int, credential_id: int | None) -> ResolvedPrincipal:
     if principal_id <= 0 or credential_id is None:
         raise TeamDenied("A named live credential is required")
+    if await access_fenced(session):
+        raise TeamDenied(FENCED)
     identity = await fresh(session, Principal, Principal.id == principal_id)
     credential = await fresh(session, ApiCredential, ApiCredential.id == credential_id)
     now = datetime.now(timezone.utc)

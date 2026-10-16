@@ -25,8 +25,9 @@ from apps.mcp_server import remote_server
 from brain.auth.principals import hash_credential, mint_credential
 from brain.config.settings import settings
 from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken, Principal
+from brain.team.models import TeamAccessFence
 
-_TABLES = [model.__table__ for model in (Principal, ApiCredential, OAuthClient, OAuthRefreshToken)]
+_TABLES = [model.__table__ for model in (Principal, ApiCredential, OAuthClient, OAuthRefreshToken, TeamAccessFence)]
 
 ISSUER = "http://localhost"
 REDIRECT = "http://127.0.0.1:9999/callback"
