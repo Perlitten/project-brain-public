@@ -1,6 +1,7 @@
 """Memory endpoints: /decisions, /rules, /learnings, /episodes (L2) and
 /skills (L4)."""
 
+import uuid
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,7 +19,8 @@ from apps.api.schemas import (
     LearningCreate,
     RuleCreate,
 )
-from apps.api.team_access import repository_authority
+from apps.api import team_access
+from apps.api.team_access import repository_authority, team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.team.authorization import Permission
 from brain.database.session import async_session_factory
@@ -29,6 +31,9 @@ from brain.memory.rule_store import RuleStore
 EPISODES_MAX_LIMIT = 200
 
 router = APIRouter()
+# Brain-wide memory (unfiltered lists, episodes, approvals of trusted memory) belongs to no single
+# repository: a team administrator once the team has members, every caller in solo state.
+TEAM_ADMIN = Depends(team_administrator_access())
 
 
 class SkillOutcomeEvidence(BaseModel):
@@ -43,9 +48,19 @@ class SkillOutcomeRequest(BaseModel):
     evidence: SkillOutcomeEvidence
 
 
-@router.post("/skills/{skill_id}/outcomes", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def record_skill_outcome_endpoint(skill_id: int, body: SkillOutcomeRequest):
+@router.post("/skills/{skill_id}/outcomes", dependencies=[Depends(require_scope("core:write"))])
+async def record_skill_outcome_endpoint(skill_id: int, body: SkillOutcomeRequest,
+                                        principal: ResolvedPrincipal = Depends(require_principal)):
     from brain.memory.skill_outcomes import SkillOutcomeConflict, record_skill_outcome
+    # An outcome is evidence from one harness task, like a lesson: knowledge.propose on that task's
+    # repository; an unknown task leaves no repository, which only a team administrator may act on.
+    if await team_access.current_team_state() == "team":
+        from brain.memory.harness_store import HarnessStore
+        try:
+            task = await HarnessStore.get_task(uuid.UUID(body.task_id))
+        except ValueError:
+            task = None
+        await repository_authority(principal, Permission.PROPOSE, repo_path=task.repo_path if task else None)
     try:
         return await record_skill_outcome(skill_id=skill_id, task_id=body.task_id, validation_id=body.validation_id,
                                           outcome=body.outcome, evidence=body.evidence.model_dump())
@@ -59,7 +74,7 @@ async def record_skill_outcome_endpoint(skill_id: int, body: SkillOutcomeRequest
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.get("/decisions", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.get("/decisions", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")), TEAM_ADMIN])
 async def get_decisions():
     try:
         return await DecisionStore.list_decisions()
@@ -96,7 +111,7 @@ async def create_decision(body: DecisionCreate, caller: ResolvedPrincipal = Depe
         raise HTTPException(status_code=500, detail="Failed to add decision") from exc
 
 
-@router.get("/rules", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.get("/rules", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")), TEAM_ADMIN])
 async def get_rules():
     try:
         return await RuleStore.list_rules()
@@ -147,7 +162,7 @@ async def get_learnings(repo_path: Optional[str] = None, principal: ResolvedPrin
         raise HTTPException(status_code=500, detail="Failed to fetch learnings") from exc
 
 
-@router.get("/episodes", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.get("/episodes", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")), TEAM_ADMIN])
 async def get_episodes(
     status: Optional[Literal["pending", "promoted", "rejected", "duplicate", "merged"]] = None,
     topic: Optional[str] = None,
@@ -185,7 +200,8 @@ async def get_episodes(
         raise HTTPException(status_code=500, detail="Failed to fetch episodes") from exc
 
 
-@router.post("/episodes/search", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.post("/episodes/search",
+             dependencies=[Depends(require_api_key), Depends(require_scope("core:read")), TEAM_ADMIN])
 async def search_episodes(body: EpisodeSearchRequest):
     """L2 episodic memory: semantic search over episode summaries."""
     try:
@@ -242,7 +258,7 @@ async def _decide_episode(episode_id: int, body: Optional[EpisodeDecisionRequest
 
 @router.post(
     "/episodes/{episode_id}/approve",
-    dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))],
+    dependencies=[Depends(require_api_key), Depends(require_scope("core:write")), TEAM_ADMIN],
 )
 async def approve_pending_episode(episode_id: int, body: Optional[EpisodeDecisionRequest] = None):
     """Promote a pending (needs_approval) L2 episode into an L3 learning."""
@@ -251,7 +267,7 @@ async def approve_pending_episode(episode_id: int, body: Optional[EpisodeDecisio
 
 @router.post(
     "/episodes/{episode_id}/reject",
-    dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))],
+    dependencies=[Depends(require_api_key), Depends(require_scope("core:write")), TEAM_ADMIN],
 )
 async def reject_pending_episode(episode_id: int, body: Optional[EpisodeDecisionRequest] = None):
     """Reject a pending L2 episode."""
@@ -260,7 +276,7 @@ async def reject_pending_episode(episode_id: int, body: Optional[EpisodeDecision
 
 # === L4 Procedural Memory: Skills Registry ===
 
-@router.get("/skills", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.get("/skills", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")), TEAM_ADMIN])
 async def get_skills(status: Optional[str] = "active", limit: int = Query(50, ge=1, le=200)):
     """L4 procedural memory: list learned skills and workflows."""
     try:
@@ -291,8 +307,11 @@ async def get_skills(status: Optional[str] = "active", limit: int = Query(50, ge
 
 
 @router.post("/skills", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def create_skill(body: SkillCreate):
+async def create_skill(body: SkillCreate, principal: ResolvedPrincipal = Depends(require_principal)):
     """L4 procedural memory: register a new skill/workflow."""
+    # A global skill, or one without a repository, applies everywhere: a team administrator.
+    await repository_authority(principal, Permission.PROPOSE,
+                               repo_path=None if body.is_global else body.repo_scope)
     try:
         from brain.memory.skill_store import SkillConflictError, create_skill as create_skill_row
 
@@ -334,7 +353,7 @@ async def _decide_skill(skill_id: int, body: Optional[EpisodeDecisionRequest], *
 
 @router.post(
     "/skills/{skill_id}/approve",
-    dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))],
+    dependencies=[Depends(require_api_key), Depends(require_scope("core:write")), TEAM_ADMIN],
 )
 async def approve_pending_skill(skill_id: int, body: Optional[EpisodeDecisionRequest] = None):
     """Activate a pending (machine-distilled) L4 skill so it can be matched and injected."""
@@ -343,7 +362,7 @@ async def approve_pending_skill(skill_id: int, body: Optional[EpisodeDecisionReq
 
 @router.post(
     "/skills/{skill_id}/reject",
-    dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))],
+    dependencies=[Depends(require_api_key), Depends(require_scope("core:write")), TEAM_ADMIN],
 )
 async def reject_pending_skill(skill_id: int, body: Optional[EpisodeDecisionRequest] = None):
     """Reject a pending distilled L4 skill; its source learnings stay active."""
@@ -366,7 +385,8 @@ async def match_skills(body: SkillMatchRequest, principal: ResolvedPrincipal = D
 
 
 @router.post("/learnings", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
-async def create_learning(body: LearningCreate):
+async def create_learning(body: LearningCreate, principal: ResolvedPrincipal = Depends(require_principal)):
+    await repository_authority(principal, Permission.PROPOSE, repo_path=body.repo_scope)
     try:
         valid_until = None
         if body.valid_until:
@@ -387,7 +407,8 @@ async def create_learning(body: LearningCreate):
 
 
 @router.delete(
-    "/learnings/{learning_id}", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))]
+    "/learnings/{learning_id}",
+    dependencies=[Depends(require_api_key), Depends(require_scope("core:write")), TEAM_ADMIN],
 )
 async def delete_learning(learning_id: int):
     try:

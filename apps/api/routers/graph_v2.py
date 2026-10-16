@@ -14,6 +14,8 @@ from brain.graph.generation_manager import GraphGenerationManager
 
 router = APIRouter(prefix="/insights/graph", tags=["graph-v2"], dependencies=[Depends(require_api_key), Depends(require_scope("graph:read")),
                                   Depends(repository_access(Permission.READ))])
+# Building, activating or rolling back a generation changes the repository's stored graph: ``run.request``.
+RUN = Depends(repository_access(Permission.REQUEST_RUN))
 
 
 def _safe_resolve(repo_path_arg: Optional[str]) -> Path:
@@ -37,7 +39,7 @@ async def list_generations(repo_path: Optional[str] = Query(None)):
     }
 
 
-@router.post("/build", dependencies=[Depends(require_scope("graph:write"))])
+@router.post("/build", dependencies=[Depends(require_scope("graph:write")), RUN])
 async def build_generation(
     repo_path: Optional[str] = Query(None),
     git_revision: str = Query("HEAD"),
@@ -59,7 +61,7 @@ async def build_generation(
     }
 
 
-@router.post("/activate/{generation_id}", dependencies=[Depends(require_scope("graph:write"))])
+@router.post("/activate/{generation_id}", dependencies=[Depends(require_scope("graph:write")), RUN])
 async def activate_generation(generation_id: str, repo_path: Optional[str] = Query(None)):
     target_repo = _safe_resolve(repo_path)
     mgr = GraphGenerationManager(target_repo / ".brain")
@@ -68,7 +70,7 @@ async def activate_generation(generation_id: str, repo_path: Optional[str] = Que
     raise HTTPException(status_code=400, detail=f"Cannot activate generation '{generation_id}'")
 
 
-@router.post("/rollback", dependencies=[Depends(require_scope("graph:write"))])
+@router.post("/rollback", dependencies=[Depends(require_scope("graph:write")), RUN])
 async def rollback_generation(repo_path: Optional[str] = Query(None)):
     target_repo = _safe_resolve(repo_path)
     mgr = GraphGenerationManager(target_repo / ".brain")

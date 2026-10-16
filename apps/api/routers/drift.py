@@ -33,6 +33,10 @@ from brain.insights.review_queue import ReviewQueueManager
 
 router = APIRouter(prefix="/insights/architectural-drift", tags=["architectural-drift"], dependencies=[Depends(require_api_key), Depends(require_scope("drift:read")),
                                   Depends(repository_access(Permission.READ))])
+# The scan stores a baseline and a trend point, and reviews change state: ``run.request``;
+# approving or rejecting a review is a decision: ``task.accept``. /check and /pr-review only compute.
+RUN = Depends(repository_access(Permission.REQUEST_RUN))
+ACCEPT = Depends(repository_access(Permission.ACCEPT))
 
 
 def _safe_resolve(repo_path: Optional[str]) -> Path:
@@ -42,7 +46,7 @@ def _safe_resolve(repo_path: Optional[str]) -> Path:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@router.post("/scan", dependencies=[Depends(require_scope("drift:write"))])
+@router.post("/scan", dependencies=[Depends(require_scope("drift:write")), RUN])
 async def run_drift_scan(
     repo_path: Optional[str] = Query(None, description="Path to repository to scan"),
     read_only: bool = Query(False, description="If True, computes deltas without modifying the on-disk baseline"),
@@ -274,7 +278,7 @@ async def get_architecture_review(
     return {"status": "success", "review": item.to_dict()}
 
 
-@router.post("/reviews/{review_id}/acknowledge", dependencies=[Depends(require_scope("drift:write"))])
+@router.post("/reviews/{review_id}/acknowledge", dependencies=[Depends(require_scope("drift:write")), RUN])
 async def acknowledge_architecture_review(
     review_id: str,
     repo_path: Optional[str] = Query(None),
@@ -287,7 +291,7 @@ async def acknowledge_architecture_review(
     return {"status": "success", "review": item.to_dict()}
 
 
-@router.post("/reviews/{review_id}/approve", dependencies=[Depends(require_scope("drift:write"))])
+@router.post("/reviews/{review_id}/approve", dependencies=[Depends(require_scope("drift:write")), ACCEPT])
 async def approve_architecture_review(
     review_id: str,
     repo_path: Optional[str] = Query(None),
@@ -300,7 +304,7 @@ async def approve_architecture_review(
     return {"status": "success", "review": item.to_dict()}
 
 
-@router.post("/reviews/{review_id}/reject", dependencies=[Depends(require_scope("drift:write"))])
+@router.post("/reviews/{review_id}/reject", dependencies=[Depends(require_scope("drift:write")), ACCEPT])
 async def reject_architecture_review(
     review_id: str,
     repo_path: Optional[str] = Query(None),

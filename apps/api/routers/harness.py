@@ -23,7 +23,8 @@ from apps.api.harness_schemas import (
     TaskStatusUpdateRequest,
     ValidationCreateRequest,
 )
-from apps.api.team_access import repository_authority
+from apps.api import team_access
+from apps.api.team_access import repository_access, repository_authority
 from brain.auth.principals import ResolvedPrincipal
 from brain.team.authorization import Permission
 from brain.database.harness_models import (
@@ -152,6 +153,30 @@ def _parse_task_id(task_id: str) -> uuid.UUID:
         raise HTTPException(status_code=422, detail="task_id must be a UUID")
 
 
+async def _authorize_task(principal: ResolvedPrincipal, tid: uuid.UUID | None, permission: Permission) -> None:
+    """Authorize ``permission`` on the repository of task ``tid``; no task (or no repository) needs an administrator."""
+    if await team_access.current_team_state() == "solo":
+        return
+    task = await HarnessStore.get_task(tid) if tid is not None else None
+    if tid is not None and task is None:
+        raise HTTPException(status_code=404, detail="task not found")
+    await repository_authority(principal, permission, repo_path=task.repo_path if task else None)
+
+
+def task_access(permission: Permission):
+    """Dependency: authorize ``permission`` on the repository of the task named in the path."""
+
+    async def dependency(task_id: str, principal: ResolvedPrincipal = Depends(require_principal)) -> None:
+        await _authorize_task(principal, _parse_task_id(task_id), permission)
+
+    return dependency
+
+
+TASK_READ = Depends(task_access(Permission.READ))
+TASK_RUN = Depends(task_access(Permission.REQUEST_RUN))
+TASK_ACCEPT = Depends(task_access(Permission.ACCEPT))
+
+
 def _task_dict(t: AgentTask) -> dict:
     return {
         "id": str(t.id),
@@ -244,7 +269,8 @@ def _lease_dict(lease: WorkerLease) -> dict:
 
 
 @router.post("/tasks", dependencies=[Depends(require_scope("harness:write"))])
-async def create_task(body: TaskCreateRequest):
+async def create_task(body: TaskCreateRequest, principal: ResolvedPrincipal = Depends(require_principal)):
+    await repository_authority(principal, Permission.CREATE_TASK, repo_path=body.repo_path)
     task = await HarnessStore.create_task(
         title=body.title,
         goal=body.goal,
@@ -260,7 +286,8 @@ async def create_task(body: TaskCreateRequest):
     return _task_dict(task)
 
 
-@router.get("/tasks", dependencies=[Depends(require_scope("harness:read"))])
+@router.get("/tasks", dependencies=[Depends(require_scope("harness:read")),
+                                    Depends(repository_access(Permission.READ))])
 async def list_tasks(status: str | None = None, repo_path: str | None = None,
                      q: str | None = Query(None, max_length=500),
                      page: int = Query(1, ge=1), page_size: int | None = Query(None, ge=1, le=500),
@@ -280,7 +307,7 @@ async def list_tasks(status: str | None = None, repo_path: str | None = None,
             "facets": {"status": facets}, "scope": "repository" if repo_path else "global_or_unscoped"}
 
 
-@router.get("/tasks/{task_id}", dependencies=[Depends(require_scope("harness:read"))])
+@router.get("/tasks/{task_id}", dependencies=[Depends(require_scope("harness:read")), TASK_READ])
 async def get_task(task_id: str):
     task = await HarnessStore.get_task(_parse_task_id(task_id))
     if task is None:
@@ -288,7 +315,7 @@ async def get_task(task_id: str):
     return _task_dict(task)
 
 
-@router.patch("/tasks/{task_id}", dependencies=[Depends(require_scope("harness:write"))])
+@router.patch("/tasks/{task_id}", dependencies=[Depends(require_scope("harness:write")), TASK_RUN])
 async def update_task_status(
     task_id: str, body: TaskStatusUpdateRequest, caller: ResolvedPrincipal = Depends(require_principal)
 ):
@@ -315,7 +342,7 @@ async def update_task_status(
     return _task_dict(task)
 
 
-@router.post("/tasks/{task_id}/events", dependencies=[Depends(require_scope("harness:write"))])
+@router.post("/tasks/{task_id}/events", dependencies=[Depends(require_scope("harness:write")), TASK_RUN])
 async def add_event(task_id: str, body: EventCreateRequest, caller: ResolvedPrincipal = Depends(require_principal)):
     if body.event_type in PROTECTED_DECISION_EVENTS:
         raise HTTPException(
@@ -344,7 +371,7 @@ async def add_event(task_id: str, body: EventCreateRequest, caller: ResolvedPrin
     return _event_dict(event)
 
 
-@router.post("/tasks/{task_id}/acceptance-checkpoints/{checkpoint_id}/finalize", dependencies=[Depends(require_scope("harness:write"))])
+@router.post("/tasks/{task_id}/acceptance-checkpoints/{checkpoint_id}/finalize", dependencies=[Depends(require_scope("harness:write")), TASK_ACCEPT])
 async def finalize_acceptance_checkpoint(
     task_id: str,
     checkpoint_id: int,
@@ -372,7 +399,7 @@ async def finalize_acceptance_checkpoint(
     return _event_dict(event)
 
 
-@router.get("/tasks/{task_id}/events", dependencies=[Depends(require_scope("harness:read"))])
+@router.get("/tasks/{task_id}/events", dependencies=[Depends(require_scope("harness:read")), TASK_READ])
 async def list_events(task_id: str, limit: int = 200, after_id: int | None = None):
     if not 1 <= limit <= 1000:
         raise HTTPException(status_code=422, detail="limit must be between 1 and 1000")
@@ -380,7 +407,7 @@ async def list_events(task_id: str, limit: int = 200, after_id: int | None = Non
     return {"events": [_event_dict(e) for e in events]}
 
 
-@router.post("/tasks/{task_id}/acceptance-checkpoints", dependencies=[Depends(require_scope("harness:write"))])
+@router.post("/tasks/{task_id}/acceptance-checkpoints", dependencies=[Depends(require_scope("harness:write")), TASK_ACCEPT])
 async def add_acceptance_checkpoint(
     task_id: str,
     body: AcceptanceCheckpointRequest,
@@ -419,7 +446,7 @@ async def add_acceptance_checkpoint(
     return _event_dict(event)
 
 
-@router.post("/tasks/{task_id}/artifacts", dependencies=[Depends(require_scope("harness:write"))])
+@router.post("/tasks/{task_id}/artifacts", dependencies=[Depends(require_scope("harness:write")), TASK_RUN])
 async def add_artifact(task_id: str, body: ArtifactCreateRequest):
     try:
         artifact = await HarnessStore.add_artifact(
@@ -437,13 +464,13 @@ async def add_artifact(task_id: str, body: ArtifactCreateRequest):
     return _artifact_dict(artifact)
 
 
-@router.get("/tasks/{task_id}/artifacts", dependencies=[Depends(require_scope("harness:read"))])
+@router.get("/tasks/{task_id}/artifacts", dependencies=[Depends(require_scope("harness:read")), TASK_READ])
 async def list_artifacts(task_id: str):
     artifacts = await HarnessStore.list_artifacts(_parse_task_id(task_id))
     return {"artifacts": [_artifact_dict(a) for a in artifacts]}
 
 
-@router.post("/tasks/{task_id}/validations", dependencies=[Depends(require_scope("harness:write"))])
+@router.post("/tasks/{task_id}/validations", dependencies=[Depends(require_scope("harness:write")), TASK_RUN])
 async def add_validation(task_id: str, body: ValidationCreateRequest):
     try:
         validation = await HarnessStore.add_validation(
@@ -460,14 +487,15 @@ async def add_validation(task_id: str, body: ValidationCreateRequest):
     return _validation_dict(validation)
 
 
-@router.get("/tasks/{task_id}/validations", dependencies=[Depends(require_scope("harness:read"))])
+@router.get("/tasks/{task_id}/validations", dependencies=[Depends(require_scope("harness:read")), TASK_READ])
 async def list_validations(task_id: str):
     validations = await HarnessStore.list_validations(_parse_task_id(task_id))
     return {"validations": [_validation_dict(v) for v in validations]}
 
 
 @router.post("/handoffs", dependencies=[Depends(require_scope("harness:write"))])
-async def add_handoff(body: HandoffCreateRequest):
+async def add_handoff(body: HandoffCreateRequest, principal: ResolvedPrincipal = Depends(require_principal)):
+    await _authorize_task(principal, body.task_id, Permission.REQUEST_RUN)
     handoff = await HarnessStore.add_handoff(
         session_id=body.session_id,
         summary=body.summary,
@@ -479,13 +507,15 @@ async def add_handoff(body: HandoffCreateRequest):
 
 
 @router.get("/handoffs", dependencies=[Depends(require_scope("harness:read"))])
-async def list_handoffs(session_id: str | None = None, task_id: str | None = None, limit: int = 20):
+async def list_handoffs(session_id: str | None = None, task_id: str | None = None, limit: int = 20,
+                        principal: ResolvedPrincipal = Depends(require_principal)):
     tid = _parse_task_id(task_id) if task_id else None
+    await _authorize_task(principal, tid, Permission.READ)
     handoffs = await HarnessStore.list_handoffs(session_id=session_id, task_id=tid, limit=limit)
     return {"handoffs": [_handoff_dict(h) for h in handoffs]}
 
 
-@router.post("/tasks/{task_id}/leases", dependencies=[Depends(require_scope("harness:write"))])
+@router.post("/tasks/{task_id}/leases", dependencies=[Depends(require_scope("harness:write")), TASK_RUN])
 async def acquire_lease(task_id: str, body: LeaseAcquireRequest):
     try:
         lease = await HarnessStore.acquire_lease(_parse_task_id(task_id), body.worker_name, body.ttl_seconds)
