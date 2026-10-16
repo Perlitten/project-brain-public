@@ -1,7 +1,7 @@
 """Tests for job trigger API endpoints (worker queue mocked)."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 with (
     patch("sqlalchemy.ext.asyncio.create_async_engine"),
@@ -66,6 +66,7 @@ def test_enqueue_reindex_requires_api_key_when_configured(mock_queue, api_key_en
         },
         idempotency_key=None,
         max_attempts=3,
+        initiator=ANY,
     )
 
 
@@ -94,6 +95,7 @@ def test_enqueue_reindex_closed_loop_options(mock_queue, api_key_env):
         },
         idempotency_key="git:abc123",
         max_attempts=3,
+        initiator=ANY,
     )
 
 
@@ -103,7 +105,7 @@ def test_enqueue_health_check(mock_queue, api_key_env):
         headers={"X-API-Key": "test-secret-key"},
     )
     assert response.status_code == 200
-    mock_queue.enqueue.assert_awaited_once_with("health_check", None)
+    mock_queue.enqueue.assert_awaited_once_with("health_check", None, initiator=ANY)
 
 
 def test_enqueue_benchmark_smoke(mock_queue, api_key_env):
@@ -113,7 +115,7 @@ def test_enqueue_benchmark_smoke(mock_queue, api_key_env):
         headers={"X-API-Key": "test-secret-key"},
     )
     assert response.status_code == 200
-    mock_queue.enqueue.assert_awaited_once_with("benchmark", {"smoke": True})
+    mock_queue.enqueue.assert_awaited_once_with("benchmark", {"smoke": True}, initiator=ANY)
 
 
 def test_enqueue_proactive_insights(mock_queue, api_key_env):
@@ -126,6 +128,7 @@ def test_enqueue_proactive_insights(mock_queue, api_key_env):
     mock_queue.enqueue.assert_awaited_once_with(
         "proactive_insights",
         {"repo_path": "/tmp/repo", "use_llm": True},
+        initiator=ANY,
     )
 
 
@@ -136,7 +139,7 @@ def test_enqueue_scheduled_proactive_insights(mock_queue, api_key_env):
         headers={"X-API-Key": "test-secret-key"},
     )
     assert response.status_code == 200
-    mock_queue.enqueue.assert_awaited_once_with("proactive_insights", {"scheduled": True})
+    mock_queue.enqueue.assert_awaited_once_with("proactive_insights", {"scheduled": True}, initiator=ANY)
 
 
 def test_enqueue_self_diagnosis_is_idempotent_and_retryable(mock_queue, api_key_env):
@@ -156,6 +159,7 @@ def test_enqueue_self_diagnosis_is_idempotent_and_retryable(mock_queue, api_key_
         {"use_llm": True, "scheduled": True},
         idempotency_key="nightly:2026-07-28",
         max_attempts=4,
+        initiator=ANY,
     )
 
 
@@ -166,7 +170,7 @@ def test_enqueue_embedding_verify(mock_queue, api_key_env):
         headers={"X-API-Key": "test-secret-key"},
     )
     assert response.status_code == 200
-    mock_queue.enqueue.assert_awaited_once_with("embedding_verify", {"repo_path": "/tmp/repo"})
+    mock_queue.enqueue.assert_awaited_once_with("embedding_verify", {"repo_path": "/tmp/repo"}, initiator=ANY)
 
 
 def test_enqueue_embedding_backfill(mock_queue, api_key_env):
@@ -179,6 +183,7 @@ def test_enqueue_embedding_backfill(mock_queue, api_key_env):
     mock_queue.enqueue.assert_awaited_once_with(
         "embedding_backfill",
         {"repo_path": "/tmp/repo", "limit": 98, "batch_size": 4},
+        initiator=ANY,
     )
 
 
@@ -212,6 +217,7 @@ def test_enqueue_nightly_maintenance_has_long_quality_budget(
         idempotency_key="nightly-deep:2026-07-30",
         max_attempts=2,
         timeout_seconds=21_600,
+        initiator=ANY,
     )
 
 
@@ -266,6 +272,7 @@ def test_enqueue_deep_context_is_authenticated_and_degrades_without_lfm(
         idempotency_key=None,
         max_attempts=1,
         timeout_seconds=21_600,
+        initiator=ANY,
     )
 
 

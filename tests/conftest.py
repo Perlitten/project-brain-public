@@ -103,3 +103,4 @@ def _solo_team_state(request, monkeypatch):
         return "solo"
 
     monkeypatch.setattr("apps.api.team_access.current_team_state", solo)
+    monkeypatch.setattr("brain.workers.initiator.current_team_state", solo)
