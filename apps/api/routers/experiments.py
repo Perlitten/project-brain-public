@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field
 
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.registry_access import registry_authority
-from apps.api.team_access import current_team_state
 from brain.auth.principals import ResolvedPrincipal
 from brain.experiments.models import (
     ExperimentOption,
@@ -151,7 +150,7 @@ async def create_experiment(req: CreateExperimentRequest, principal: ResolvedPri
         source_finding_id=req.source_finding_id,
         graph_generation=req.graph_generation,
         policy_version=req.policy_version,
-        creation_actor=("api" if await current_team_state() == "solo"
+        creation_actor=("api" if authority.team_state == "solo"
                         else f"principal:{authority.initiator_id}"),
         validation_profile=req.validation_profile,
         max_parallel_options=req.max_parallel_options,
@@ -257,7 +256,7 @@ async def record_action(experiment_id: str, req: HumanActionRequest,
     if req.action not in {a.value for a in HumanAction}:
         raise HTTPException(status_code=422, detail=f"Unknown action '{req.action}'")
     actor = req.actor
-    if await current_team_state() == "team":
+    if authority.team_state == "team":
         actor = f"principal:{authority.initiator_id}"
         if req.action == HumanAction.ACCEPT_FOR_EXPORT.value and experiment.creation_actor == actor:
             raise HTTPException(status_code=403, detail="Independent experiment acceptance is required")

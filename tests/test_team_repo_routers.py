@@ -117,7 +117,6 @@ async def test_team_experiment_acceptance_requires_an_independent_initiator(monk
     monkeypatch.setattr(experiments, "_authorize", AsyncMock(
         return_value=Authority(actor_id=3, initiator_id=3, initiator_credential_id=3, allowed=frozenset())
     ))
-    monkeypatch.setattr(experiments, "current_team_state", AsyncMock(return_value="team"))
     principal = ResolvedPrincipal(3, "reviewer", "human", credential_id=3, scopes=frozenset())
 
     with pytest.raises(HTTPException, match="Independent experiment acceptance") as refused:
