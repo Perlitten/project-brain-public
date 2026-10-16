@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import case, func, select
 
-from apps.api.auth import require_api_key, require_scope
+from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.helpers import (
     format_datetime_utc,
     get_cache_status,
@@ -22,19 +22,31 @@ from apps.api.helpers import (
     get_self_diagnosis_status,
     get_top_connected_nodes,
 )
+from apps.api.team_access import is_team_administrator, repository_access, team_administrator_access
 from brain import __version__
+from brain.auth.principals import ResolvedPrincipal
 from brain.config.paths import get_repo_root
 from brain.database.models import BrainInsight
 from brain.database.session import async_session_factory, check_health
 from brain.indexers.repo_indexer import get_git_commit_hash
+from brain.team.authorization import Permission
 
 router = APIRouter()
 
+# Operator detail across every repository (runs, commits, graph hubs, reports):
+# a team administrator once the Brain has members. Liveness (/api/status,
+# /api/status/services, /api/status/mcp) stays readable by every member.
+ADMIN_READ = [Depends(require_api_key), Depends(require_scope("core:read")), Depends(team_administrator_access())]
+
 
 @router.get("/api/status", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def api_overall_status():
+async def api_overall_status(principal: ResolvedPrincipal = Depends(require_principal)):
     services = await check_health()
     is_healthy = all(svc.get("status") == "healthy" for svc in services.values())
+    if not await is_team_administrator(principal):
+        # A member sees liveness only: server checkout path, commit and
+        # every-repository counts are team-administrator detail.
+        return {"status": "ok" if is_healthy else "error", "version": __version__, "services": services}
     repo_path = get_repo_root()
     commit_hash = get_git_commit_hash(repo_path)
 
@@ -51,12 +63,15 @@ async def api_overall_status():
     }
 
 
-@router.get("/api/status/diagnostics", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.get("/api/status/diagnostics", dependencies=ADMIN_READ)
 async def diagnostics_status():
     return await get_self_diagnosis_status()
 
 
-@router.get("/insights", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+# Insights have no repository owner yet: the unscoped list is a team-administrator
+# view, and a repository-scoped request (always empty for now) needs project read.
+@router.get("/insights", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")),
+                                       Depends(repository_access(Permission.READ))])
 async def list_insights(
     status: str | None = Query(None, max_length=50),
     limit: int = Query(20, ge=1, le=500),
@@ -176,7 +191,7 @@ async def api_services_status():
     return await check_health()
 
 
-@router.get("/api/status/indexing", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.get("/api/status/indexing", dependencies=ADMIN_READ)
 async def api_indexing_status():
     from brain.database.models import IndexingRun
 
@@ -211,7 +226,7 @@ async def api_indexing_status():
     }
 
 
-@router.get("/api/status/graph", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.get("/api/status/graph", dependencies=ADMIN_READ)
 async def api_graph_status():
     services = await check_health()
     counts = await get_neo4j_counts()
@@ -258,12 +273,12 @@ async def api_mcp_status():
     }
 
 
-@router.get("/api/status/mcp/readiness", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.get("/api/status/mcp/readiness", dependencies=ADMIN_READ)
 async def api_mcp_readiness_status(timeout_seconds: float = 30.0):
     return await get_mcp_readiness_status(timeout_seconds=timeout_seconds)
 
 
-@router.get("/api/status/recent-activity", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+@router.get("/api/status/recent-activity", dependencies=ADMIN_READ)
 async def api_recent_activity():
     from brain.database.models import ContextPack, IndexingRun
 

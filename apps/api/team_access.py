@@ -9,12 +9,16 @@ team administrator, and the shared legacy key or dev-open access is refused.
 
 Handlers that read their scope from the request body call
 ``repository_authority`` after validation; routers whose scope is a query
-parameter declare ``Depends(repository_access(permission))``.
+parameter declare ``Depends(repository_access(permission))``. Global and
+administrative routes that belong to no repository declare
+``Depends(team_administrator_access())``; status routes that members may
+still read call ``is_team_administrator`` to trim what they return.
 """
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request
 
+from apps.api import auth
 from apps.api.auth import require_principal
 from brain.auth.principals import ResolvedPrincipal
 from brain.database.repository_utils import find_repository_id
@@ -26,6 +30,7 @@ from brain.team.authorization import (
     TeamState,
     authorize_repository,
     solo_authority,
+    team_administrator,
     team_state,
 )
 
@@ -69,5 +74,42 @@ def repository_access(permission: Permission):
     async def dependency(request: Request, principal: ResolvedPrincipal = Depends(require_principal)) -> Authority:
         repository_id, repo_path = _query_scope(request)
         return await repository_authority(principal, permission, repository_id=repository_id, repo_path=repo_path)
+
+    return dependency
+
+
+async def is_team_administrator(principal: ResolvedPrincipal) -> bool:
+    """True in solo state or for a live team administrator; never raises, for routes that trim output."""
+    if await current_team_state() == "solo":
+        return True
+    try:
+        async with async_session_factory() as session:
+            await team_administrator(session, principal)
+    except TeamDenied:
+        return False
+    return True
+
+
+def team_administrator_access():
+    """Dependency: the global, every-repository surfaces need a team administrator once members exist.
+
+    Solo state lets every authenticated caller through, as before. In team state
+    ``require_principal`` already refuses the shared key and dev-open access
+    (``Named credential required``); any other caller that is not a live team
+    administrator holding ``team:admin`` gets HTTP 403."""
+
+    async def dependency(request: Request) -> ResolvedPrincipal:
+        # Reuse the principal the router-level auth dependency already resolved, as ``require_scope`` does.
+        principal: ResolvedPrincipal | None = getattr(request.state, "principal", None)
+        if principal is None:
+            principal = await auth.require_principal(request, request.headers.get("x-api-key"))
+        if await current_team_state() == "solo":
+            return principal
+        try:
+            async with async_session_factory() as session:
+                await team_administrator(session, principal)
+        except TeamDenied as exc:
+            raise HTTPException(status_code=403, detail=f"Team administrator required: {exc}") from exc
+        return principal
 
     return dependency

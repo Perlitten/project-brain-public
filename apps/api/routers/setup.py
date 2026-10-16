@@ -19,6 +19,7 @@ from loguru import logger
 from pydantic import BaseModel, Field, SecretStr
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import team_administrator_access
 from apps.api.helpers import run_mcp_self_check
 from brain.config.settings import settings
 from brain.llm.presets import PRESETS, normalize_provider_name, resolve_embedding_endpoint, resolve_llm_endpoint
@@ -27,7 +28,8 @@ from brain.onboarding.setup_state import state_dir
 from brain.onboarding.provider_check import verify_configured_providers
 from brain.onboarding.readiness import collect_setup_status
 
-router = APIRouter(prefix="/api/setup", tags=["setup"], dependencies=[Depends(require_api_key)])
+router = APIRouter(prefix="/api/setup", tags=["setup"],
+                   dependencies=[Depends(require_api_key), Depends(team_administrator_access())])
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
