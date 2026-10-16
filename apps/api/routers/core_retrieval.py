@@ -676,6 +676,7 @@ async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal 
     await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
     try:
         from brain.database.session import redis_client
+        from brain.workers.initiator import JobInitiator
         from brain.workers.queue import queue_for_job
 
         queue = queue_for_job(
@@ -687,6 +688,7 @@ async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal 
         job_id = await queue.enqueue(
             "diff_review",
             {"repo_path": body.repo_path, "base": body.base, "head": body.head},
+            initiator=JobInitiator.for_principal(principal, Permission.READ),
         )
         return {
             "status": "processing",

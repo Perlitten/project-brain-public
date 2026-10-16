@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
@@ -400,7 +400,7 @@ async def test_stale_blocked_auto_reindex_routes_to_the_reindex_pool(auto_reinde
     assert auto_reindex_env.calls == [
         {"job_type": "reindex", "pools_enabled": True, "prefix": auto_reindex_env.calls[0]["prefix"]}
     ]
-    auto_reindex_env.queue.enqueue.assert_awaited_once_with("reindex", {"repo_path": "/app"})
+    auto_reindex_env.queue.enqueue.assert_awaited_once_with("reindex", {"repo_path": "/app"}, initiator=ANY)
 
 
 @pytest.mark.asyncio

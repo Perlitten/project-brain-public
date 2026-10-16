@@ -14,6 +14,7 @@ from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
 from brain.database.session import redis_client
 from brain.team.authorization import Permission
+from brain.workers.initiator import JobInitiator
 from brain.workers.queue import queue_for_job
 from brain.workers.scheduler import scheduler_status
 
@@ -106,5 +107,6 @@ async def git_merge_webhook(request: Request, body: GitMergeWebhook):
         },
         idempotency_key=f"git-reindex:{revision}" if revision else None,
         max_attempts=3,
+        initiator=JobInitiator.system("git_webhook"),
     )
     return {"status": "queued", "job_id": job_id, "status_url": f"/jobs/{job_id}"}
