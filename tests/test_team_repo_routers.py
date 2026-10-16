@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from sqlalchemy import update
 
 from apps.api import auth, team_access
@@ -21,8 +21,10 @@ from apps.api.routers import (
     quality,
     workspace,
 )
+from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
 from brain.database.models import ApiCredential
+from brain.team.authorization import Authority
 from brain.workspace.models import RepositoryRecord
 from tests.test_team_foundations import team_db as team_fixture
 from tests.test_team_transport import live_team_state, membership_driven, revoke_everyone
@@ -104,6 +106,29 @@ def validate_body(repository_id):
 
 def experiment_body(repository_id):
     return {"repository_id": repository_id, "options": []}
+
+
+@pytest.mark.asyncio
+async def test_team_experiment_acceptance_requires_an_independent_initiator(monkeypatch):
+    experiment = SimpleNamespace(repository_id="repo-a", creation_actor="principal:3")
+    manager = MagicMock()
+    manager.get.return_value = experiment
+    monkeypatch.setattr(experiments, "_manager", lambda: manager)
+    monkeypatch.setattr(experiments, "_authorize", AsyncMock(
+        return_value=Authority(actor_id=3, initiator_id=3, initiator_credential_id=3, allowed=frozenset())
+    ))
+    monkeypatch.setattr(experiments, "current_team_state", AsyncMock(return_value="team"))
+    principal = ResolvedPrincipal(3, "reviewer", "human", credential_id=3, scopes=frozenset())
+
+    with pytest.raises(HTTPException, match="Independent experiment acceptance") as refused:
+        await experiments.record_action(
+            "experiment-1",
+            experiments.HumanActionRequest(action="accept_for_export", actor="forged-reviewer"),
+            principal=principal,
+        )
+
+    assert refused.value.status_code == 403
+    manager.record_human_action.assert_not_called()
 
 
 # Scoped reads a project-A reader may make on repo-a and must be refused on repo-b, one per registry router.

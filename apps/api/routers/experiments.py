@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.registry_access import registry_authority
+from apps.api.team_access import current_team_state
 from brain.auth.principals import ResolvedPrincipal
 from brain.experiments.models import (
     ExperimentOption,
@@ -22,7 +23,7 @@ from brain.experiments.models import (
 )
 from brain.experiments.orchestrator import ExperimentManager, ExperimentStore
 from brain.lab.laboratory import ChangeLaboratory
-from brain.team.authorization import Permission
+from brain.team.authorization import Authority, Permission
 from brain.workspace.models import Capability
 from brain.workspace.registry_store import RegistryStore
 
@@ -43,10 +44,11 @@ def _manager() -> ExperimentManager:
     )
 
 
-async def _authorize(principal: ResolvedPrincipal, permission: Permission, repository_id: str | None) -> None:
+async def _authorize(principal: ResolvedPrincipal, permission: Permission,
+                     repository_id: str | None) -> Authority:
     """``permission`` on an experiment's registry repository; none or unknown means a team administrator."""
     record = RegistryStore(Path(".brain/workspace")).get(repository_id) if repository_id else None
-    await registry_authority(principal, permission, record)
+    return await registry_authority(principal, permission, record)
 
 
 async def _authorized_experiment(manager: ExperimentManager, experiment_id: str,
@@ -119,7 +121,7 @@ class ExportRequest(BaseModel):
 
 @router.post("", dependencies=[Depends(require_scope("experiments:write"))])
 async def create_experiment(req: CreateExperimentRequest, principal: ResolvedPrincipal = Depends(require_principal)):
-    await _authorize(principal, Permission.REQUEST_RUN, req.repository_id)
+    authority = await _authorize(principal, Permission.REQUEST_RUN, req.repository_id)
     record = _require_repository(
         req.repository_id,
         Capability.CREATE_WORKTREES,
@@ -149,7 +151,8 @@ async def create_experiment(req: CreateExperimentRequest, principal: ResolvedPri
         source_finding_id=req.source_finding_id,
         graph_generation=req.graph_generation,
         policy_version=req.policy_version,
-        creation_actor="api",
+        creation_actor=("api" if await current_team_state() == "solo"
+                        else f"principal:{authority.initiator_id}"),
         validation_profile=req.validation_profile,
         max_parallel_options=req.max_parallel_options,
         retain_workspaces=req.retain_workspaces,
@@ -246,14 +249,23 @@ async def record_action(experiment_id: str, req: HumanActionRequest,
     """Record a human workflow decision. Accepting an option does not apply it."""
     manager = _manager()
     # A review decision on a candidate patch: task acceptance in the ADR matrix (reviewer role).
-    await _authorized_experiment(manager, experiment_id, principal, Permission.ACCEPT)
+    experiment = manager.get(experiment_id)
+    authority = await _authorize(principal, Permission.ACCEPT,
+                                 experiment.repository_id if experiment is not None else None)
+    if experiment is None:
+        experiment = _require_experiment(manager, experiment_id)
     if req.action not in {a.value for a in HumanAction}:
         raise HTTPException(status_code=422, detail=f"Unknown action '{req.action}'")
+    actor = req.actor
+    if await current_team_state() == "team":
+        actor = f"principal:{authority.initiator_id}"
+        if req.action == HumanAction.ACCEPT_FOR_EXPORT.value and experiment.creation_actor == actor:
+            raise HTTPException(status_code=403, detail="Independent experiment acceptance is required")
     try:
         experiment = manager.record_human_action(
             experiment_id,
             action=req.action,
-            actor=req.actor,
+            actor=actor,
             option_id=req.option_id,
             note=req.note,
         )
