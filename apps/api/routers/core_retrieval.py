@@ -37,6 +37,7 @@ from brain.team.authorization import (
     authorize_repository,
     human_member,
     live_credential,
+    permissions,
 )
 from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamProject, TeamTaskBinding
 from brain.database.models import Repository
@@ -883,8 +884,16 @@ async def _readable_repository_ids(principal: ResolvedPrincipal, repository_ids:
             repository_id
             for repository_id, role, policy in rows
             if Permission.READ in ROLE_PERMISSIONS.get(role, frozenset())
-            and Permission.READ in {Permission(item) for item in (policy or [])}
+            and Permission.READ in _policy_permissions(policy)
         }
+
+
+def _policy_permissions(policy: list[str] | None) -> frozenset[Permission]:
+    """A project's granted permissions; an invalid policy grants nothing, as ``authorize`` denies it."""
+    try:
+        return permissions(policy or [])
+    except TeamDenied:
+        return frozenset()
 
 
 @router.get("/repositories", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
