@@ -155,6 +155,10 @@ Provisioning is an operator action through the CLI or the `team:admin` API;
 there is no invitation or SSO flow yet. Design and limits:
 [ADR: team collaboration](docs/adr/team-collaboration.md).
 
+In team state the dashboard signs each member in with their own key and sends
+it on every call, so Brain applies that member's roles. See
+[team sign-in](apps/web/README.md#team-sign-in).
+
 ## See the product
 
 [Open the public, read-only demo](https://project-brain-demo.vercel.app/).

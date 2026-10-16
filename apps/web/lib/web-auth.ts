@@ -1,7 +1,11 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from "node:crypto";
 import { publicDemoProblem } from "./public-demo";
 
 export const SESSION_COOKIE = "pb_session";
+/** Team state: the signed-in member's own credential, sealed (sealMember). */
+export const MEMBER_COOKIE = "pb_member";
+/** A member signs in again after a week; the seal's age is checked on every request too. */
+export const MEMBER_MAX_AGE = 60 * 60 * 24 * 7;
 
 const digest = (value: string) => createHash("sha256").update(value).digest();
 const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
@@ -23,11 +27,19 @@ const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
 // or a Brain API reporting only one of WEB_LOGIN_USER / WEB_LOGIN_PASSWORD_HASH
 // in its environment is a misconfiguration: fail closed (503), never demo.
 // A live dashboard that can't learn the state fails closed (503).
+//
+// Team state (the Brain has live team members, so it refuses the shared server
+// key with "Named credential required") replaces all of the above: every
+// member signs in with their own named credential, which this server keeps in
+// an encrypted httpOnly cookie and forwards as X-API-Key on each call
+// (brainKeyFor, lib/api.ts). Every request re-asks Brain who the credential is
+// (GET /api/web-session), so revocation locks the browser out on the next one.
 
 export type LoginState =
   | { kind: "env"; expected: string }
   | { kind: "brain"; mode: "open" | "password"; user: string | null; version: string }
   | { kind: "demo" }
+  | { kind: "team" }
   | { kind: "misconfigured"; reason: string }
   | { kind: "unreachable" };
 
@@ -36,7 +48,7 @@ export type LockReason = "unconfigured" | "misconfigured" | "unreachable";
 
 const STATE_TTL_MS = 10_000;
 const BASIC_TTL_MS = 60_000;
-let cached: { at: number; state: LoginState & { kind: "brain" } } | null = null;
+let cached: { at: number; state: LoginState & { kind: "brain" | "team" } } | null = null;
 const basicOk = new Map<string, number>();
 
 const apiBase = () => process.env.BRAIN_API_URL?.trim();
@@ -77,12 +89,12 @@ function warnOnce(message: string) {
   console.error(`[web-auth] ${message}`);
 }
 
-async function callBrain(method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; data: Record<string, unknown> | null }> {
+async function callBrain(method: "GET" | "POST", path: string, body?: unknown, key = apiKey()!): Promise<{ status: number; data: Record<string, unknown> | null }> {
   const base = apiBase()!;
   const url = new URL(path.replace(/^\/+/, ""), base.endsWith("/") ? base : `${base}/`);
   const res = await fetch(url, {
     method,
-    headers: { "X-API-Key": apiKey()!, Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+    headers: { "X-API-Key": key, Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
     signal: AbortSignal.timeout(6000),
@@ -116,7 +128,8 @@ export async function loginState({ fresh = false } = {}): Promise<LoginState> {
       warnOnce(reason);
       return { kind: "misconfigured", reason };
     }
-    return { kind: "env", expected };
+    // A team Brain refuses the server key: members sign in as themselves instead.
+    return live() && (await brainLogin(fresh)).kind === "team" ? { kind: "team" } : { kind: "env", expected };
   }
   if (Boolean(apiBase()) !== Boolean(apiKey())) {
     const reason = `${apiBase() ? "BRAIN_API_KEY" : "BRAIN_API_URL"} is missing: set both BRAIN_API_URL and BRAIN_API_KEY for live data, or neither for demo data. The dashboard stays locked until then.`;
@@ -124,6 +137,15 @@ export async function loginState({ fresh = false } = {}): Promise<LoginState> {
     return { kind: "misconfigured", reason };
   }
   if (!live()) return { kind: "demo" };
+  return brainLogin(fresh);
+}
+
+// "Named credential required" (auth.py) and "Team administrator required"
+// (team_access.py) are the Brain refusing the shared server key because the
+// team has members: team state, not an outage.
+const TEAM_REFUSAL = /^(Named credential required|Team administrator required)/;
+
+async function brainLogin(fresh: boolean): Promise<LoginState> {
   if (!fresh && cached && Date.now() - cached.at < STATE_TTL_MS) return cached.state;
   try {
     const { status, data } = await callBrain("GET", "/api/web-login");
@@ -150,6 +172,11 @@ export async function loginState({ fresh = false } = {}): Promise<LoginState> {
       cached = { at: Date.now(), state };
       return state;
     }
+    if ((status === 401 || status === 403) && typeof data?.detail === "string" && TEAM_REFUSAL.test(data.detail)) {
+      const state = { kind: "team" } as const;
+      cached = { at: Date.now(), state };
+      return state;
+    }
   } catch {
     // fall through to the last known state
   }
@@ -169,13 +196,101 @@ export function sessionForLogin(user: string, version: string) {
   return brainSession(user, version);
 }
 
-/** Reads the session cookie from a raw Cookie header. */
-export function sessionFrom(cookieHeader: string | null): string | null {
+function cookieFrom(cookieHeader: string | null, wanted: string): string | null {
   for (const part of (cookieHeader ?? "").split(";")) {
     const [name, ...rest] = part.trim().split("=");
-    if (name === SESSION_COOKIE) return rest.join("=");
+    if (name === wanted) return rest.join("=");
   }
   return null;
+}
+
+/** Reads the session cookie from a raw Cookie header. */
+export function sessionFrom(cookieHeader: string | null): string | null {
+  return cookieFrom(cookieHeader, SESSION_COOKIE);
+}
+
+/** Reads the sealed member credential from a raw Cookie header. */
+export function memberFrom(cookieHeader: string | null): string | null {
+  return cookieFrom(cookieHeader, MEMBER_COOKIE);
+}
+
+// The member cookie is AES-256-GCM over {k: credential, iat}, keyed from the
+// dashboard's server key, so the browser holds an opaque value it can neither
+// read nor forge, and rotating BRAIN_API_KEY signs every member out.
+const sealKey = () => Buffer.from(hkdfSync("sha256", apiKey() ?? "", "project-brain-web-member", "v1", 32));
+
+/** Cookie value carrying a member's credential; only this server can open it. */
+export function sealMember(credential: string, now = Date.now()): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", sealKey(), iv);
+  cipher.setAAD(Buffer.from(MEMBER_COOKIE));
+  const body = Buffer.concat([cipher.update(JSON.stringify({ k: credential, iat: Math.floor(now / 1000) }), "utf8"), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), body]).toString("base64url");
+}
+
+/** The credential inside a member cookie, or null when it is missing, forged, sealed by another key or too old. */
+export function openMember(value: string | null, now = Date.now()): string | null {
+  if (!value || !apiKey()) return null;
+  try {
+    const raw = Buffer.from(value, "base64url");
+    if (raw.length < 29) return null;
+    const decipher = createDecipheriv("aes-256-gcm", sealKey(), raw.subarray(0, 12));
+    decipher.setAAD(Buffer.from(MEMBER_COOKIE));
+    decipher.setAuthTag(raw.subarray(12, 28));
+    const payload = JSON.parse(Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8")) as { k?: unknown; iat?: unknown };
+    const age = Math.floor(now / 1000) - Number(payload.iat);
+    if (typeof payload.k !== "string" || !payload.k || !Number.isFinite(age) || age < -60 || age > MEMBER_MAX_AGE) return null;
+    return payload.k;
+  } catch {
+    return null;
+  }
+}
+
+export interface WebMember {
+  id: number;
+  name: string;
+  /** Offered the Team page's administration (Brain still decides every call). */
+  admin: boolean;
+}
+
+type WhoIs = { status: 200; member: WebMember } | { status: 401 | 503; solo?: boolean };
+
+/** Who a member credential belongs to right now. Asked of Brain on every call, never cached, so revocation is immediate. */
+async function whoIs(credential: string | null): Promise<WhoIs> {
+  if (!credential) return { status: 401 };
+  try {
+    const { status, data } = await callBrain("GET", "/api/web-session", undefined, credential);
+    if (status === 401 || status === 403) return { status: 401 };
+    const principal = data?.principal as { id?: unknown; name?: unknown } | undefined;
+    if (status !== 200 || !principal || typeof principal.name !== "string") return { status: 503 };
+    // The last member left since this process looked: the owner's login applies again.
+    if (data?.mode !== "team") return { status: 401, solo: true };
+    return { status: 200, member: { id: Number(principal.id), name: principal.name, admin: data.team_admin === true } };
+  } catch {
+    return { status: 503 };
+  }
+}
+
+function settle(who: WhoIs): WhoIs {
+  if (who.status !== 200 && who.solo) forgetLoginState();
+  return who;
+}
+
+/** The signed-in member for a sealed cookie value, or null (not team state, not signed in, revoked). */
+export async function memberFor(cookieValue: string | null): Promise<WebMember | null> {
+  if ((await loginState()).kind !== "team") return null;
+  const who = settle(await whoIs(openMember(cookieValue)));
+  return who.status === 200 ? who.member : null;
+}
+
+/**
+ * The key to send to Brain for a request carrying this member cookie: in team
+ * state the member's own credential (null without one, so nothing is
+ * forwarded), otherwise the dashboard's server key, exactly as before.
+ */
+export async function brainKeyFor(cookieValue: string | null): Promise<string | null> {
+  if ((await loginState()).kind === "team") return openMember(cookieValue);
+  return apiKey() ?? null;
 }
 
 function basicPair(header: string | null): [string, string] | null {
@@ -220,9 +335,11 @@ export async function lockReason(host: string | null = null): Promise<{ reason: 
 export const UNCONFIGURED_DETAIL =
   "No dashboard sign-in is configured. Set WEB_BASIC_AUTH=user:password in the dashboard's environment, or set a login through the Brain API (PUT /api/web-login), or open the dashboard on this machine (npm run dev / npm run start listen on 127.0.0.1) to set one from Settings → Sign-in.";
 
-export async function authorizeWebRequest(header: string | null, session: string | null = null, host: string | null = null): Promise<200 | 401 | 503> {
+export async function authorizeWebRequest(header: string | null, session: string | null = null, host: string | null = null,
+  member: string | null = null): Promise<200 | 401 | 503> {
   const state = await loginState();
   if (state.kind === "demo") return 200;
+  if (state.kind === "team") return settle(await whoIs(openMember(member))).status;
   if (state.kind === "misconfigured" || state.kind === "unreachable") return 503;
   if (state.kind === "env") {
     if (session && same(session, envSession(state.expected))) return 200;
@@ -263,12 +380,26 @@ export async function authorizeWebRequest(header: string | null, session: string
 }
 
 export type SignInResult = { status: 401 } | { status: 429 } | { status: 503 } | { status: 200; session: string | null };
+export type MemberSignInResult = { status: 401 } | { status: 503 } | { status: 200; cookie: string; member: WebMember };
+
+/** Team state: checks a member's own credential with Brain; on success returns the sealed cookie value to set. */
+export async function signInMember(credential: string): Promise<MemberSignInResult> {
+  const state = await loginState();
+  if (state.kind === "misconfigured" || state.kind === "unreachable") return { status: 503 };
+  const key = credential.trim();
+  if (state.kind !== "team" || !key || key.length > 512) return { status: 401 };
+  const who = settle(await whoIs(key));
+  if (who.status !== 200) return { status: who.status };
+  return { status: 200, cookie: sealMember(key), member: who.member };
+}
 
 /** Checks a sign-in form; on success returns the session cookie value to set. */
 export async function signIn(user: string, password: string, host: string | null = null): Promise<SignInResult> {
   const state = await loginState();
   if (state.kind === "demo") return { status: 200, session: null };
   if (state.kind === "misconfigured" || state.kind === "unreachable") return { status: 503 };
+  // A team Brain no longer takes the owner login: members use signInMember.
+  if (state.kind === "team") return { status: 401 };
   if (state.kind === "env") return same(`${user}:${password}`, state.expected) ? { status: 200, session: envSession(state.expected) } : { status: 401 };
   if (state.mode === "open") return openMode(host) ? { status: 200, session: null } : { status: 503 };
   const result = await verifyWithBrain(user, password);

@@ -21,6 +21,7 @@ const STATUS: Record<SignInView["mode"], { tone: "ok" | "warn" | "info" | "idle"
   password: { tone: "ok", chip: "Password set", title: "Only people with the password get in" },
   env: { tone: "info", chip: "Set by the server", title: "Sign-in is fixed by the deployment" },
   demo: { tone: "idle", chip: "Demo data", title: "Nothing to protect yet" },
+  team: { tone: "ok", chip: "Team members", title: "Every member signs in with their own key" },
   unknown: { tone: "bad", chip: "Can’t check", title: "Brain isn’t answering" },
 };
 
@@ -45,6 +46,12 @@ export function SignIn({ view }: { view: SignInView }) {
               <>
                 The login comes from <code>WEB_BASIC_AUTH</code> in the dashboard’s environment. Change it there and redeploy; remove it to manage
                 sign-in here instead.
+              </>
+            )}
+            {view.mode === "team" && (
+              <>
+                This Brain has team members, so the shared login no longer opens the dashboard. Each member signs in with their own key, and
+                Brain checks it on every request. Manage members on <a href="/team">Team</a>.
               </>
             )}
             {view.mode === "demo" && "This dashboard shows example data. Sign-in appears here once it is connected to a Brain server."}

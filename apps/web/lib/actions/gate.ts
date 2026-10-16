@@ -22,7 +22,8 @@ export async function actionsMode(): Promise<ActionsMode> {
   if (flag === "0") return "locked";
   if (flag === "1" || process.env.NODE_ENV === "development" || (loopbackBind() && localHost((await headers()).get("host")))) return "on";
   const state = await loginState();
-  if (state.kind === "env" || (state.kind === "brain" && state.mode === "password")) return "on";
+  // Team state: every action goes out with the signed-in member's own key, so Brain decides each one.
+  if (state.kind === "env" || state.kind === "team" || (state.kind === "brain" && state.mode === "password")) return "on";
   return "locked";
 }
 

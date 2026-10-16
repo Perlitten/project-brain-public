@@ -1,8 +1,12 @@
 // Server-only client for the Project Brain API. The key is read from the
 // server environment and attached here; nothing in this module may be
-// imported by a client component.
+// imported by a client component. In team state the signed-in member's own
+// credential (sealed in an httpOnly cookie, see lib/web-auth.ts) is sent
+// instead, so Brain authorizes every call as that member.
 import "server-only";
+import { cookies } from "next/headers";
 import { publicDemoProblem } from "./public-demo";
+import { MEMBER_COOKIE, brainKeyFor, loginState } from "./web-auth";
 
 // Block reads as well as mutations if an isolated public demo is misconfigured.
 const blocked = publicDemoProblem();
@@ -59,6 +63,26 @@ function apiUrl(apiBase: string, path: string): URL | null {
   return url;
 }
 
+/**
+ * The X-API-Key for the request being served. Outside team state this is the
+ * server key, exactly as before team mode. In team state it is only ever the
+ * signed-in member's own credential from their sealed cookie (null without a
+ * cookie that still opens: the server key is never sent), and the response
+ * bypasses the data cache so one member's answers never serve another request.
+ */
+async function requestKey(): Promise<{ key: string | null; member: boolean }> {
+  if ((await loginState()).kind !== "team") return { key: key ?? null, member: false };
+  let sealed: string | null = null;
+  try {
+    sealed = (await cookies()).get(MEMBER_COOKIE)?.value ?? null;
+  } catch {
+    sealed = null; // outside a request (build): no member, so nothing is sent
+  }
+  return { key: await brainKeyFor(sealed), member: true };
+}
+
+const SIGNED_OUT = "Your sign-in is no longer valid. Sign in again.";
+
 export interface SendResult<T = unknown> {
   ok: boolean;
   status: number;
@@ -96,10 +120,12 @@ export async function brainSend<T = unknown>(
   if (!base || !key) return { ok: false, status: 0, data: null, error: "The Brain API is not connected (BRAIN_API_URL / BRAIN_API_KEY)." };
   const url = apiUrl(base, path);
   if (!url) return { ok: false, status: 0, data: null, error: "BRAIN_API_URL is not a valid URL." };
+  const who = await requestKey();
+  if (!who.key) return { ok: false, status: 401, data: null, error: SIGNED_OUT };
   try {
     const res = await fetch(url, {
       method,
-      headers: { "X-API-Key": key, Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      headers: { "X-API-Key": who.key, Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
       signal: AbortSignal.timeout(timeoutMs),
@@ -131,7 +157,7 @@ function describeError(status: number, data: unknown): string {
       .map((d) => (d && typeof d === "object" ? `${((d as { loc?: unknown[] }).loc ?? []).slice(1).join(".")}: ${(d as { msg?: string }).msg}` : String(d)))
       .join("; ");
   }
-  if (status === 401 || status === 403) return "Brain refused this — the dashboard’s API key lacks the permission for it.";
+  if (status === 401 || status === 403) return "Brain refused this — the key in use lacks the permission for it.";
   if (status === 404) return "This Brain server doesn’t support that yet — update the server.";
   if (status === 409) return "Already in progress, or conflicts with the current state.";
   if (status >= 500) return `Brain hit an internal error (HTTP ${status}).`;
@@ -149,11 +175,13 @@ export async function brainRead<T>(path: string, opts: FetchOptions = {}): Promi
     logOnce(path, "invalid BRAIN_API_URL");
     return { ok: false, status: 0, reason: "not_configured" };
   }
+  const who = await requestKey();
+  if (!who.key) return { ok: false, status: 401, reason: "http_error" };
   try {
     const res = await fetch(url, {
-      headers: { "X-API-Key": key, Accept: "application/json" },
+      headers: { "X-API-Key": who.key, Accept: "application/json" },
       signal: AbortSignal.timeout(opts.timeoutMs ?? 4000),
-      ...(opts.fresh ? { cache: "no-store" as const } : { next: { revalidate: opts.revalidate ?? 30 } }),
+      ...(opts.fresh || who.member ? { cache: "no-store" as const } : { next: { revalidate: opts.revalidate ?? 30 } }),
     });
     if (!res.ok) {
       logOnce(path, `HTTP ${res.status}`);

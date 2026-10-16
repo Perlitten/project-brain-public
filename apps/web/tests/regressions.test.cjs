@@ -124,7 +124,8 @@ test('API requests preserve the configured path prefix and reject encoded traver
     const urls = [];
     try {
       global.fetch = async url => {
-        urls.push(String(url));
+        // The sign-in state probe (solo or team) is not part of what is asserted here.
+        if (!String(url).endsWith('/api/web-login')) urls.push(String(url));
         return new Response('{}');
       };
       const api = load('lib/api.ts');
@@ -564,7 +565,7 @@ test('password removed in another instance: open only in WEB_OPEN_MODE, locked o
   } finally { global.fetch = oldFetch; }
 });
 
-test('WEB_BASIC_AUTH wins over the Brain-kept login and never asks Brain', async () => {
+test('WEB_BASIC_AUTH wins over the Brain-kept login and never sends the password to Brain', async () => {
   const brain = fakeBrainLogin({ mode: 'open', user: null, version: '0' });
   const oldFetch = global.fetch;
   global.fetch = brain.fetch;
@@ -574,7 +575,15 @@ test('WEB_BASIC_AUTH wins over the Brain-kept login and never asks Brain', async
       assert.equal(await auth.authorizeWebRequest(null), 401);
       assert.equal(await auth.authorizeWebRequest(basic('user:password')), 200);
     });
-    assert.deepEqual(brain.calls, []);
+    // Only the cached team-state probe (a team Brain refuses the server key); the password stays here.
+    assert.deepEqual(brain.calls, ['GET /api/web-login']);
+    // Brain away: WEB_BASIC_AUTH still decides, exactly as before team mode.
+    brain.down = true;
+    auth.forgetLoginState();
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture', WEB_BASIC_AUTH: 'user:password' }, async () => {
+      assert.equal(await auth.authorizeWebRequest(null), 401);
+      assert.equal(await auth.authorizeWebRequest(basic('user:password')), 200);
+    });
   } finally { global.fetch = oldFetch; }
 });
 
@@ -1054,4 +1063,209 @@ test('quality shows "Run the benchmark" on a fresh install and labels a maintain
   assert.match(view, /Reference run by maintainers/);
   // The period selector lives on the overview only; /quality has none to mention.
   assert.match(view, /compact \? "; the period selector does not change it" : ""/);
+});
+
+// A stand-in for a Brain with team members: it refuses the dashboard's server key
+// ('fixture') and answers /api/web-session for each member's own credential.
+function fakeTeamBrain(members = { pbk_alice: { id: 7, name: 'alice', admin: true }, pbk_bob: { id: 8, name: 'bob', admin: false } }) {
+  const brain = { team: true, members: { ...members }, calls: [], forwarded: [] };
+  brain.fetch = async (url, options = {}) => {
+    const u = new URL(String(url));
+    const key = options.headers['X-API-Key'];
+    brain.calls.push(`${options.method ?? 'GET'} ${u.pathname} ${key}`);
+    if (u.pathname.endsWith('/api/web-login')) {
+      assert.equal(key, 'fixture');
+      return brain.team
+        ? Response.json({ detail: 'Named credential required: this Brain has team members' }, { status: 403 })
+        : Response.json({ mode: 'open', user: null, version: '0' });
+    }
+    if (u.pathname.endsWith('/api/web-session')) {
+      const member = brain.members[key];
+      if (!brain.team) return Response.json({ mode: 'solo', principal: { id: 0, name: 'owner', kind: 'service' }, team_admin: true, member: null });
+      if (!member) return Response.json({ detail: 'Dashboard sign-in denied: credential revoked' }, { status: 403 });
+      return Response.json({ mode: 'team', principal: { id: member.id, name: member.name, kind: 'human' }, team_admin: member.admin, member: { is_admin: member.admin } });
+    }
+    brain.forwarded.push(key);
+    return Response.json({ ok: true });
+  };
+  return brain;
+}
+
+const LIVE = { BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' };
+
+test('member cookie: sealed by the server key, opaque, tamper-evident and short-lived', () => {
+  const auth = load('lib/web-auth.ts');
+  withEnv(LIVE, () => {
+    const now = Date.UTC(2026, 9, 16);
+    const sealed = auth.sealMember('pbk_alice', now);
+    assert.equal(auth.openMember(sealed, now), 'pbk_alice');
+    assert.doesNotMatch(Buffer.from(sealed, 'base64url').toString('latin1'), /pbk_alice/, 'the credential must not be readable from the cookie');
+    assert.notEqual(auth.sealMember('pbk_alice', now), sealed, 'a fresh IV every time');
+    const last = sealed.length - 2;
+    const flipped = sealed.slice(0, last) + (sealed[last] === 'A' ? 'B' : 'A') + sealed.slice(last + 1);
+    const unsealed = Buffer.from(JSON.stringify({ k: 'pbk_alice', iat: now / 1000 })).toString('base64url');
+    for (const forged of [null, '', 'x', flipped, unsealed]) assert.equal(auth.openMember(forged, now), null);
+    assert.equal(auth.openMember(sealed, now + (auth.MEMBER_MAX_AGE + 1) * 1000), null, 'expired');
+    assert.equal(auth.openMember(auth.sealMember('pbk_alice', now + 3600_000), now), null, 'issued in the future');
+    assert.equal(auth.memberFrom(`theme=dark; pb_member=${sealed}; pb_session=x`), sealed);
+    withEnv({ ...LIVE, BRAIN_API_KEY: 'rotated' }, () => assert.equal(auth.openMember(sealed, now), null, 'rotating BRAIN_API_KEY signs members out'));
+  });
+});
+
+test('team state: members sign in with their own key, every request is re-checked, revocation applies at once', async () => {
+  const brain = fakeTeamBrain();
+  const oldFetch = global.fetch;
+  global.fetch = brain.fetch;
+  try {
+    const auth = load('lib/web-auth.ts');
+    await withEnv(LIVE, async () => {
+      assert.equal((await auth.loginState()).kind, 'team');
+      // The owner login and an anonymous visitor no longer get in.
+      assert.equal((await auth.signIn('owner', 'pw')).status, 401);
+      assert.equal(await auth.authorizeWebRequest(null), 401);
+      assert.equal((await auth.signInMember('pbk_mallory')).status, 401);
+      assert.equal((await auth.signInMember('')).status, 401);
+      const ok = await auth.signInMember('  pbk_bob ');
+      assert.equal(ok.status, 200);
+      assert.deepEqual({ ...ok.member }, { id: 8, name: 'bob', admin: false });
+      assert.equal(await auth.authorizeWebRequest(null, null, null, ok.cookie), 200);
+      assert.equal(await auth.brainKeyFor(ok.cookie), 'pbk_bob');
+      assert.equal(await auth.brainKeyFor(null), null, 'no cookie: nothing to send, never the server key');
+      assert.equal((await auth.memberFor(ok.cookie)).name, 'bob');
+      // Revoked in Brain: the very next request is refused, nothing cached.
+      delete brain.members.pbk_bob;
+      assert.equal(await auth.authorizeWebRequest(null, null, null, ok.cookie), 401);
+      assert.equal(await auth.memberFor(ok.cookie), null);
+    });
+    const checks = brain.calls.filter(c => c.includes('/api/web-session'));
+    assert.ok(checks.length >= 5, 'every check asks Brain');
+    assert.ok(checks.every(c => !c.endsWith(' fixture')), 'identity checks use the member key, never the server key');
+  } finally { global.fetch = oldFetch; }
+});
+
+test('team state: the /api/brain proxy forwards only the signed-in member key', async () => {
+  const brain = fakeTeamBrain();
+  const oldFetch = global.fetch;
+  global.fetch = brain.fetch;
+  try {
+    const auth = load('lib/web-auth.ts');
+    const { GET } = load('app/api/brain/[...path]/route.ts', { '@/lib/web-auth': auth });
+    const request = cookie => ({ headers: new Headers(cookie ? { cookie } : {}), nextUrl: new URL('https://web.example/api/brain/web/reports') });
+    const context = { params: Promise.resolve({ path: ['web', 'reports'] }) };
+    await withEnv(LIVE, async () => {
+      assert.equal((await GET(request(null), context)).status, 401);
+      assert.equal((await GET(request(`pb_session=${'x'.repeat(43)}`), context)).status, 401);
+      const alice = await auth.signInMember('pbk_alice');
+      assert.equal((await GET(request(`pb_member=${alice.cookie}`), context)).status, 200);
+      assert.deepEqual(brain.forwarded, ['pbk_alice']);
+      delete brain.members.pbk_alice;
+      assert.equal((await GET(request(`pb_member=${alice.cookie}`), context)).status, 401);
+      assert.deepEqual(brain.forwarded, ['pbk_alice']);
+    });
+  } finally { global.fetch = oldFetch; }
+});
+
+test('team state: server-rendered API calls carry the member key, never the server key, and skip the data cache', async () => {
+  const brain = fakeTeamBrain();
+  const oldFetch = global.fetch;
+  const seen = [];
+  global.fetch = async (url, options = {}) => {
+    if (!/\/api\/web-(login|session)$/.test(new URL(String(url)).pathname)) seen.push({ key: options.headers['X-API-Key'], cache: options.cache, next: options.next });
+    return brain.fetch(url, options);
+  };
+  try {
+    await withEnv(LIVE, async () => {
+      let jar = null;
+      const headers = { cookies: async () => ({ get: name => (name === 'pb_member' && jar ? { value: jar } : undefined) }) };
+      const api = load('lib/api.ts', { 'next/headers': headers });
+      // Not signed in: nothing reaches Brain.
+      assert.equal((await api.brainRead('/repositories')).status, 401);
+      assert.equal((await api.brainSend('POST', '/team/projects/members', {})).status, 401);
+      assert.equal(seen.length, 0);
+      jar = load('lib/web-auth.ts').sealMember('pbk_alice');
+      assert.equal((await api.brainRead('/repositories', { revalidate: 60 })).ok, true);
+      assert.equal((await api.brainSend('DELETE', '/team/projects/members/8')).ok, true);
+      assert.deepEqual(seen.map(s => s.key), ['pbk_alice', 'pbk_alice']);
+      assert.equal(seen[0].cache, 'no-store');
+      assert.equal(seen[0].next, undefined);
+    });
+  } finally { global.fetch = oldFetch; }
+});
+
+test('solo state is unchanged: the server key is used and the last member leaving restores the owner login', async () => {
+  const brain = fakeTeamBrain();
+  brain.team = false;
+  const oldFetch = global.fetch;
+  global.fetch = brain.fetch;
+  try {
+    const auth = load('lib/web-auth.ts');
+    await withEnv({ ...LIVE, WEB_OPEN_MODE: 'true' }, async () => {
+      assert.equal((await auth.loginState()).kind, 'brain');
+      assert.equal(await auth.brainKeyFor(null), 'fixture');
+      assert.equal(await auth.authorizeWebRequest(null), 200);
+      assert.equal((await auth.signInMember('pbk_alice')).status, 401);
+      assert.equal(await auth.memberFor(auth.sealMember('pbk_alice')), null);
+      // Team, then the last member leaves while this process still remembers team state.
+      brain.team = true;
+      auth.forgetLoginState();
+      const alice = await auth.signInMember('pbk_alice');
+      assert.equal(alice.status, 200);
+      brain.team = false;
+      assert.equal(await auth.authorizeWebRequest(null, null, null, alice.cookie), 401);
+      assert.equal((await auth.loginState()).kind, 'brain', 'the solo answer forgets the cached team state');
+      assert.equal(await auth.brainKeyFor(alice.cookie), 'fixture');
+    });
+  } finally { global.fetch = oldFetch; }
+});
+
+test('team sign-in through the proxy: httpOnly sealed cookie, raw key never in a response, sign-out clears it', async () => {
+  const brain = fakeTeamBrain();
+  const oldFetch = global.fetch;
+  global.fetch = brain.fetch;
+  try {
+    const { NextRequest } = require('next/server');
+    const auth = load('lib/web-auth.ts');
+    const { proxy } = load('proxy.ts', { './lib/web-auth': auth, '@/components/Icon': { MARK_TOKENS: [] } });
+    const post = fields => {
+      const body = new URLSearchParams(fields);
+      return new NextRequest('https://web.example/__login', { method: 'POST', body, headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'text/html' } });
+    };
+    const get = (path, cookie) => new NextRequest(`https://web.example${path}`, { headers: { accept: 'text/html', ...(cookie ? { cookie } : {}) } });
+    await withEnv(LIVE, async () => {
+      // Anonymous visitors get the member-key form.
+      const form = await proxy(get('/team'));
+      assert.equal(form.status, 401);
+      assert.match(await form.text(), /name="credential"/);
+      // A wrong key: the form again, no cookie.
+      const wrong = await proxy(post({ credential: 'pbk_mallory', next: '/team' }));
+      assert.equal(wrong.status, 401);
+      assert.equal(wrong.headers.get('set-cookie'), null);
+      // The right key: a sealed, httpOnly cookie and a redirect to where they were going.
+      const ok = await proxy(post({ credential: 'pbk_alice', next: '/team' }));
+      assert.equal(ok.status, 303);
+      assert.equal(new URL(ok.headers.get('location')).pathname, '/team');
+      const setCookie = ok.headers.get('set-cookie');
+      assert.match(setCookie, /pb_member=[^;]+/);
+      assert.match(setCookie, /HttpOnly/i);
+      assert.match(setCookie, /Secure/i);
+      assert.match(setCookie, /SameSite=lax/i);
+      assert.doesNotMatch(setCookie, /pbk_alice/);
+      const sealed = /pb_member=([^;]+)/.exec(setCookie)[1];
+      assert.equal(auth.openMember(decodeURIComponent(sealed)), 'pbk_alice');
+      // Signed in: the request goes through.
+      const through = await proxy(get('/team', `pb_member=${sealed}`));
+      assert.equal(through.headers.get('x-middleware-next'), '1');
+      // Revoked: the next page view shows the form and clears the stale cookie.
+      delete brain.members.pbk_alice;
+      const stale = await proxy(get('/team', `pb_member=${sealed}`));
+      assert.equal(stale.status, 401);
+      assert.match(stale.headers.get('set-cookie') ?? '', /pb_member=;/);
+      // Sign out clears both cookies.
+      const out = await proxy(get('/__logout', `pb_member=${sealed}`));
+      assert.equal(out.status, 303);
+      const cleared = out.headers.get('set-cookie');
+      assert.match(cleared, /pb_member=;/);
+      assert.match(cleared, /pb_session=;/);
+    });
+  } finally { global.fetch = oldFetch; }
 });

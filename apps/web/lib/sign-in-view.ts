@@ -15,13 +15,16 @@ export interface SignInView {
 export async function signInMode(): Promise<SignInMode> {
   const state = await loginState();
   if (state.kind === "brain") return state.mode;
-  if (state.kind === "env" || state.kind === "demo") return state.kind;
+  if (state.kind === "env" || state.kind === "demo" || state.kind === "team") return state.kind;
   return "unknown";
 }
 
 export async function getSignInView(): Promise<SignInView> {
   const state = await loginState({ fresh: true });
-  if (state.kind !== "brain") return { mode: state.kind === "env" || state.kind === "demo" ? state.kind : "unknown", user: null, pinned: [] };
+  if (state.kind !== "brain") {
+    const mode = state.kind === "env" || state.kind === "demo" || state.kind === "team" ? state.kind : "unknown";
+    return { mode, user: null, pinned: [] };
+  }
   const raw = await brainFetch<{ from_env?: unknown }>("/api/web-login", { fresh: true });
   const pinned = Array.isArray(raw?.from_env) ? raw.from_env.filter((k): k is string => typeof k === "string") : [];
   return { mode: state.mode, user: state.user, pinned };
