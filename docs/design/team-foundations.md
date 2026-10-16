@@ -89,11 +89,30 @@ storage only). How to operate it: [inviting team members](../operations/TEAM_INV
   graph, impact, drift, coupling and remediation routers need `read` on their
   `repository_id`/`repo_path` query. The `team_*` MCP tools are served next to
   the personal tools on one server; workers and the scheduler keep running.
-- Not yet scoped, kept with their existing checks: the repository listing,
-  `GET /diff-review/{job_id}`, `context-packs/{id}`, the freshness and ledger
-  routers, logs, downloads, notifications and provider routes; queued jobs do
-  not carry the initiator principal. No team executor, artifact download,
-  approval, merge or provider call exists.
+- The remaining personal routes follow the same rule. Harness tasks are
+  authorized on the task's own repository: reads need `read`, task creation
+  `task.create`, events, artifacts, validations, leases and handoffs
+  `run.request`, acceptance checkpoints and finalization `task.accept`; a task
+  listing or handoff query without a repository needs a team administrator.
+  `GET /jobs/{job_id}`, cached impact runs and `/late-interaction/status` need
+  `read` on the job's, run's or query's repository (an unreadable job or run
+  answers like a missing one). Graph build, activation and rollback, drift scans
+  and acknowledgements and remediation plans need `run.request`; drift review
+  and remediation approvals need `task.accept`. Learnings, repository skills and
+  skill outcomes need `knowledge.propose` on their repository or task (a global
+  skill or unscoped learning needs an administrator). Brain-wide memory (the
+  unfiltered decision, rule, episode and skill lists, episode and skill
+  approvals, learning deletion), web reports and health, and web-login changes
+  need a team administrator. The Telegram bridge refuses the shared key in team
+  state and answers only for repositories its poller principal can read. A
+  route that declares `repository_id` or `repo_path` is authorized only on the
+  keys it declares. Intentionally open: health, readiness and version, the
+  build's own quality benchmark, static action and lab-profile vocabularies,
+  service and MCP status, the web-login read and verify steps of sign-in, and
+  the signed merge webhook.
+- Not yet scoped: the web app's own logs, downloads and notifications, which
+  the Next.js server reaches with its server key. No team executor, artifact
+  download, approval, merge or provider call exists.
 
 The SQL upgrade was rehearsed from the current main schema in a disposable
 PostgreSQL database: a preexisting repository, principal and harness task kept
