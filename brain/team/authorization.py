@@ -129,6 +129,7 @@ class Authority:
     initiator_credential_id: int | None
     allowed: frozenset[Permission]
     run_id: uuid.UUID | None = None
+    team_state: TeamState = "team"
 
 
 async def authorize(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
@@ -241,7 +242,7 @@ async def team_administrator(session: AsyncSession, caller: ResolvedPrincipal, t
 
 def solo_authority(caller: ResolvedPrincipal) -> Authority:
     """The implicit administrator of a team of one: full authority, no credential checks."""
-    return Authority(caller.id, caller.id, caller.credential_id, FULL_AUTHORITY)
+    return Authority(caller.id, caller.id, caller.credential_id, FULL_AUTHORITY, team_state="solo")
 
 
 async def authorize_repository(session: AsyncSession, caller: ResolvedPrincipal, repository_id: int | None,

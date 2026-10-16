@@ -11,7 +11,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from apps.api.auth import require_api_key, require_scope
+from apps.api.auth import require_api_key, require_principal, require_scope
+from apps.api.registry_access import registry_authority
+from brain.auth.principals import ResolvedPrincipal
 from brain.experiments.models import (
     ExperimentOption,
     ExportNotAuthorizedError,
@@ -20,6 +22,7 @@ from brain.experiments.models import (
 )
 from brain.experiments.orchestrator import ExperimentManager, ExperimentStore
 from brain.lab.laboratory import ChangeLaboratory
+from brain.team.authorization import Authority, Permission
 from brain.workspace.models import Capability
 from brain.workspace.registry_store import RegistryStore
 
@@ -38,6 +41,21 @@ def _manager() -> ExperimentManager:
     return ExperimentManager(
         ExperimentStore(brain_dir / "experiments"), ChangeLaboratory(brain_dir)
     )
+
+
+async def _authorize(principal: ResolvedPrincipal, permission: Permission,
+                     repository_id: str | None) -> Authority:
+    """``permission`` on an experiment's registry repository; none or unknown means a team administrator."""
+    record = RegistryStore(Path(".brain/workspace")).get(repository_id) if repository_id else None
+    return await registry_authority(principal, permission, record)
+
+
+async def _authorized_experiment(manager: ExperimentManager, experiment_id: str,
+                                 principal: ResolvedPrincipal, permission: Permission):
+    """Load an experiment and authorize ``permission`` on its repository before revealing it."""
+    experiment = manager.get(experiment_id)
+    await _authorize(principal, permission, experiment.repository_id if experiment is not None else None)
+    return experiment if experiment is not None else _require_experiment(manager, experiment_id)
 
 
 def _require_repository(repository_id: str, *capabilities: Capability):
@@ -101,7 +119,8 @@ class ExportRequest(BaseModel):
 
 
 @router.post("", dependencies=[Depends(require_scope("experiments:write"))])
-async def create_experiment(req: CreateExperimentRequest):
+async def create_experiment(req: CreateExperimentRequest, principal: ResolvedPrincipal = Depends(require_principal)):
+    authority = await _authorize(principal, Permission.REQUEST_RUN, req.repository_id)
     record = _require_repository(
         req.repository_id,
         Capability.CREATE_WORKTREES,
@@ -131,7 +150,8 @@ async def create_experiment(req: CreateExperimentRequest):
         source_finding_id=req.source_finding_id,
         graph_generation=req.graph_generation,
         policy_version=req.policy_version,
-        creation_actor="api",
+        creation_actor=("api" if authority.team_state == "solo"
+                        else f"principal:{authority.initiator_id}"),
         validation_profile=req.validation_profile,
         max_parallel_options=req.max_parallel_options,
         retain_workspaces=req.retain_workspaces,
@@ -140,7 +160,10 @@ async def create_experiment(req: CreateExperimentRequest):
 
 
 @router.get("", dependencies=[Depends(require_scope("experiments:read"))])
-async def list_experiments(repository_id: Optional[str] = None):
+async def list_experiments(repository_id: Optional[str] = None,
+                           principal: ResolvedPrincipal = Depends(require_principal)):
+    # Team state: a repository filter needs read on it; the unfiltered list needs a team administrator.
+    await _authorize(principal, Permission.READ, repository_id)
     experiments = _manager().list_all()
     if repository_id:
         experiments = [e for e in experiments if e.repository_id == repository_id]
@@ -163,18 +186,16 @@ async def list_experiments(repository_id: Optional[str] = None):
 
 
 @router.get("/{experiment_id}", dependencies=[Depends(require_scope("experiments:read"))])
-async def get_experiment(experiment_id: str):
+async def get_experiment(experiment_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     manager = _manager()
-    return {
-        "status": "success",
-        "experiment": _require_experiment(manager, experiment_id).to_dict(),
-    }
+    experiment = await _authorized_experiment(manager, experiment_id, principal, Permission.READ)
+    return {"status": "success", "experiment": experiment.to_dict()}
 
 
 @router.post("/{experiment_id}/run", dependencies=[Depends(require_scope("experiments:write"))])
-async def run_experiment(experiment_id: str):
+async def run_experiment(experiment_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     manager = _manager()
-    experiment = _require_experiment(manager, experiment_id)
+    experiment = await _authorized_experiment(manager, experiment_id, principal, Permission.REQUEST_RUN)
     record = _require_repository(
         experiment.repository_id,
         Capability.CREATE_WORKTREES,
@@ -193,9 +214,9 @@ async def run_experiment(experiment_id: str):
 
 
 @router.post("/{experiment_id}/cancel", dependencies=[Depends(require_scope("experiments:write"))])
-async def cancel_experiment(experiment_id: str):
+async def cancel_experiment(experiment_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     manager = _manager()
-    _require_experiment(manager, experiment_id)
+    await _authorized_experiment(manager, experiment_id, principal, Permission.REQUEST_RUN)
     cancelled = manager.request_cancel(experiment_id)
     if cancelled is None:
         raise HTTPException(status_code=404, detail=f"Experiment '{experiment_id}' no longer exists")
@@ -203,9 +224,9 @@ async def cancel_experiment(experiment_id: str):
 
 
 @router.get("/{experiment_id}/comparison", dependencies=[Depends(require_scope("experiments:read"))])
-async def get_comparison(experiment_id: str):
+async def get_comparison(experiment_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     manager = _manager()
-    _require_experiment(manager, experiment_id)
+    await _authorized_experiment(manager, experiment_id, principal, Permission.READ)
     comparison = manager.get_comparison(experiment_id)
     if comparison is None:
         raise HTTPException(
@@ -215,24 +236,35 @@ async def get_comparison(experiment_id: str):
 
 
 @router.get("/{experiment_id}/recommendation", dependencies=[Depends(require_scope("experiments:read"))])
-async def get_recommendation(experiment_id: str):
+async def get_recommendation(experiment_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     manager = _manager()
-    _require_experiment(manager, experiment_id)
+    await _authorized_experiment(manager, experiment_id, principal, Permission.READ)
     return {"status": "success", "recommendation": manager.get_recommendation(experiment_id)}
 
 
 @router.post("/{experiment_id}/actions", dependencies=[Depends(require_scope("experiments:write"))])
-async def record_action(experiment_id: str, req: HumanActionRequest):
+async def record_action(experiment_id: str, req: HumanActionRequest,
+                        principal: ResolvedPrincipal = Depends(require_principal)):
     """Record a human workflow decision. Accepting an option does not apply it."""
     manager = _manager()
-    _require_experiment(manager, experiment_id)
+    # A review decision on a candidate patch: task acceptance in the ADR matrix (reviewer role).
+    experiment = manager.get(experiment_id)
+    authority = await _authorize(principal, Permission.ACCEPT,
+                                 experiment.repository_id if experiment is not None else None)
+    if experiment is None:
+        experiment = _require_experiment(manager, experiment_id)
     if req.action not in {a.value for a in HumanAction}:
         raise HTTPException(status_code=422, detail=f"Unknown action '{req.action}'")
+    actor = req.actor
+    if authority.team_state == "team":
+        actor = f"principal:{authority.initiator_id}"
+        if req.action == HumanAction.ACCEPT_FOR_EXPORT.value and experiment.creation_actor == actor:
+            raise HTTPException(status_code=403, detail="Independent experiment acceptance is required")
     try:
         experiment = manager.record_human_action(
             experiment_id,
             action=req.action,
-            actor=req.actor,
+            actor=actor,
             option_id=req.option_id,
             note=req.note,
         )
@@ -248,11 +280,12 @@ async def record_action(experiment_id: str, req: HumanActionRequest):
 
 
 @router.post("/{experiment_id}/export", dependencies=[Depends(require_scope("experiments:write"))])
-async def export_patch(experiment_id: str, req: ExportRequest):
+async def export_patch(experiment_id: str, req: ExportRequest,
+                       principal: ResolvedPrincipal = Depends(require_principal)):
     """Package an accepted patch for manual application. Nothing is written to
     the authoritative repository."""
     manager = _manager()
-    experiment = _require_experiment(manager, experiment_id)
+    experiment = await _authorized_experiment(manager, experiment_id, principal, Permission.REQUEST_RUN)
     record = _require_repository(experiment.repository_id, Capability.EXPORT_PATCH)
     try:
         export = manager.export_patch(

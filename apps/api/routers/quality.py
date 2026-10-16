@@ -121,6 +121,9 @@ def _number(mapping: dict[str, Any], key: str, low: float, high: float | None) -
         raise ValueError(key)
 
 
+# Intentionally not repository-scoped, in solo and team state alike: this is the
+# Brain build's own historical reference benchmark (aggregate numbers and hashes,
+# no repository content), identical for every authenticated caller.
 @router.get("/quality")
 async def web_quality() -> dict[str, Any]:
     return load_quality_evidence()

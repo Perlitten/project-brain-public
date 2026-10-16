@@ -10,12 +10,15 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from apps.api.auth import require_api_key, require_scope
+from apps.api.auth import require_api_key, require_principal, require_scope
+from apps.api.registry_access import registry_authority
+from brain.auth.principals import ResolvedPrincipal
 from brain.freshness.generation_deriver import GenerationDeriver
 from brain.freshness.incremental_planner import IncrementalPlanner
 from brain.freshness.models import ArtifactType, FreshnessState, RebuildDecision
 from brain.freshness.tracker import FreshnessTracker
 from brain.graph.generation_manager import GraphGenerationManager
+from brain.team.authorization import Permission
 from brain.workspace.models import Capability
 from brain.workspace.registry_store import RegistryStore
 
@@ -34,8 +37,10 @@ def _tracker() -> FreshnessTracker:
     return FreshnessTracker(Path(".brain/freshness"))
 
 
-def _resolve_repository(repository_id: str):
+async def _resolve_repository(repository_id: str, principal: ResolvedPrincipal, permission: Permission):
     record = _registry().get(repository_id)
+    # Authorize before the existence checks: in team state an unknown id is unattached (team administrator).
+    await registry_authority(principal, permission, record)
     if record is None:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
     if record.disabled:
@@ -51,9 +56,9 @@ class RebuildRequest(BaseModel):
 
 
 @router.get("/repositories/{repository_id}", dependencies=[Depends(require_scope("freshness:read"))])
-async def repository_freshness(repository_id: str):
+async def repository_freshness(repository_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     """Freshness of a repository's graph plus every tracked artifact."""
-    record = _resolve_repository(repository_id)
+    record = await _resolve_repository(repository_id, principal, Permission.READ)
     repo_path = Path(record.canonical_root)
     mgr = GraphGenerationManager(repo_path / ".brain")
 
@@ -82,22 +87,25 @@ async def repository_freshness(repository_id: str):
 
 
 @router.get("/artifacts/{artifact_id}", dependencies=[Depends(require_scope("freshness:read"))])
-async def artifact_freshness(artifact_id: str):
+async def artifact_freshness(artifact_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     """Evidence-based explanation of one artifact's freshness."""
     result = _tracker().explain(artifact_id)
+    owner = _registry().get(result["repository_id"]) if result.get("found") and result.get("repository_id") else None
+    await registry_authority(principal, Permission.READ, owner)
     if not result.get("found"):
         raise HTTPException(status_code=404, detail=f"Artifact '{artifact_id}' not tracked")
     return {"status": "success", "artifact": result}
 
 
 @router.post("/repositories/{repository_id}/rebuild", dependencies=[Depends(require_scope("freshness:write"))])
-async def rebuild_repository(repository_id: str, req: RebuildRequest):
+async def rebuild_repository(repository_id: str, req: RebuildRequest,
+                             principal: ResolvedPrincipal = Depends(require_principal)):
     """Derive a new graph generation. Human-authorized operational action.
 
     Requires the repository to hold the BUILD_GRAPH capability — a repository
     registered read-only cannot be rebuilt through the API.
     """
-    record = _resolve_repository(repository_id)
+    record = await _resolve_repository(repository_id, principal, Permission.REQUEST_RUN)
     if Capability.BUILD_GRAPH.value not in record.capabilities:
         raise HTTPException(
             status_code=403,
