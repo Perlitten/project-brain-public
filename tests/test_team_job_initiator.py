@@ -2,13 +2,14 @@
 (ADR docs/adr/team-collaboration.md, "Revocation, concurrency and approval")."""
 import contextlib
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import update
 
-from apps.api.routers import core_retrieval, jobs
-from apps.api.schemas import DiffReviewRequest, ReindexJobRequest
+from apps.api.routers import core_retrieval, jobs, scheduler
+from apps.api.schemas import DiffReviewRequest, GitMergeWebhook, ReindexJobRequest
 from brain.config.settings import settings
 from brain.database.models import ApiCredential
 from brain.team.authorization import Permission
@@ -80,6 +81,27 @@ async def test_api_call_sites_pass_the_callers_principal(monkeypatch):
     assert queue.enqueue.await_args.kwargs["initiator"] == JobInitiator("principal", 1, 1, "read")
     # The result is later authorized on the indexed repository id, not the path.
     assert queue.enqueue.await_args.args[1]["repository_id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_git_webhook_attributes_keyed_callers_and_keeps_the_signed_path_a_system_job(monkeypatch):
+    queue = AsyncMock()
+    queue.enqueue = AsyncMock(return_value="job-1")
+    monkeypatch.setattr(scheduler, "queue_for_job", lambda *a, **k: queue)
+    monkeypatch.setattr(scheduler, "repository_authority", AsyncMock())
+    monkeypatch.setattr(scheduler, "_api_key_principal", AsyncMock(return_value=caller(CONTRIBUTOR)))
+    monkeypatch.setattr(settings, "PROJECT_BRAIN_WEBHOOK_REF", "refs/heads/main")
+    body = GitMergeWebhook(ref="refs/heads/main", sha="abc", repo_path="/synthetic/A")
+    request = SimpleNamespace(body=AsyncMock(return_value=b"{}"), headers={})
+
+    for signed, expected, key in (
+        (False, JobInitiator("principal", 2, 2, "run.request"), "git-reindex:principal:2:2:abc"),
+        (True, JobInitiator.system("git_webhook"), "git-reindex:signed:abc"),
+    ):
+        monkeypatch.setattr(scheduler, "_github_signature_valid", lambda *_, ok=signed: ok)
+        await scheduler.git_merge_webhook(request, body)
+        assert queue.enqueue.await_args.kwargs["initiator"] == expected
+        assert queue.enqueue.await_args.kwargs["idempotency_key"] == key
 
 
 @pytest.mark.asyncio

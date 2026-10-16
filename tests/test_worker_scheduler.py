@@ -392,7 +392,7 @@ def test_git_merge_webhook_enqueues_reindex_on_a_valid_github_signature(webhook_
     args, kwargs = webhook_env.enqueue.await_args
     assert args[0] == "reindex"
     assert args[1]["source_revision"] == "abc123" and args[1]["benchmark_after"] is True
-    assert kwargs["idempotency_key"] == "git-reindex:abc123"
+    assert kwargs["idempotency_key"] == "git-reindex:signed:abc123"
 
 
 def test_git_merge_webhook_accepts_the_api_key(webhook_env, api_key_env):
@@ -488,4 +488,4 @@ def test_redelivered_merge_webhook_does_not_enqueue_a_second_reindex(monkeypatch
     assert [call[0] for call in queue.calls] == ["reindex"]
     assert responses[0].json()["job_id"] == responses[1].json()["job_id"]
     # The durable dedup lives in JobQueue.enqueue's SET NX claim keyed by
-    # git-reindex:{sha}; tests/test_worker_queue.py covers that contract.
+    # git-reindex:signed:{sha}; tests/test_worker_queue.py covers that contract.
