@@ -108,10 +108,10 @@ def remaining_app(factory, monkeypatch, tmp_path):
     monkeypatch.setattr(web, "reports_dir", lambda *_: tmp_path)
     monkeypatch.setattr(web, "check_health", AsyncMock(side_effect=_reached))
     # impact: two cached runs bound to the repositories they analyzed
-    for run_id, repo in (("run-a", "/synthetic/A"), ("run-b", "/synthetic/B")):
+    for run_id, repository_id in (("run-a", 1), ("run-b", 2)):
         monkeypatch.setitem(impact._IMPACT_CACHE, run_id, SimpleNamespace(
             to_dict=lambda: {"ok": True}, suggested_tests=[], impacted_entities=[]))
-        monkeypatch.setitem(impact._IMPACT_REPOSITORY, run_id, repo)
+        monkeypatch.setitem(impact._IMPACT_REPOSITORY_ID, run_id, repository_id)
     # graph, drift, remediation: the handler's first step proves authorization passed
     for module in (graph_v2, drift, remediation):
         monkeypatch.setattr(module, "_safe_resolve", _reached)

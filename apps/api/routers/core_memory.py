@@ -51,7 +51,6 @@ class SkillOutcomeRequest(BaseModel):
 @router.post("/skills/{skill_id}/outcomes", dependencies=[Depends(require_scope("core:write"))])
 async def record_skill_outcome_endpoint(skill_id: int, body: SkillOutcomeRequest,
                                         principal: ResolvedPrincipal = Depends(require_principal)):
-    from brain.memory.skill_outcomes import SkillOutcomeConflict, record_skill_outcome
     # An outcome is evidence from one harness task, like a lesson: knowledge.propose on that task's
     # repository; an unknown task leaves no repository, which only a team administrator may act on.
     if await team_access.current_team_state() == "team":
@@ -61,6 +60,16 @@ async def record_skill_outcome_endpoint(skill_id: int, body: SkillOutcomeRequest
         except ValueError:
             task = None
         await repository_authority(principal, Permission.PROPOSE, repo_path=task.repo_path if task else None)
+    return await record_skill_outcome_service(skill_id, body)
+
+
+async def record_skill_outcome_service(skill_id: int, body: SkillOutcomeRequest):
+    """Store a validated outcome after transport-specific authorization has completed.
+
+    The local stdio MCP server is a trusted in-process operator surface and calls this
+    service directly. HTTP callers must go through ``record_skill_outcome_endpoint``.
+    """
+    from brain.memory.skill_outcomes import SkillOutcomeConflict, record_skill_outcome
     try:
         return await record_skill_outcome(skill_id=skill_id, task_id=body.task_id, validation_id=body.validation_id,
                                           outcome=body.outcome, evidence=body.evidence.model_dump())
