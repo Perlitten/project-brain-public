@@ -27,6 +27,8 @@ export type SignInMode =
   | "password"
   /** Fixed by WEB_BASIC_AUTH in the deployment environment. */
   | "env"
+  /** The Brain has team members: each signs in with their own member key. */
+  | "team"
   /** Brain isn't answering, or the deployment is misconfigured. */
   | "unknown";
 

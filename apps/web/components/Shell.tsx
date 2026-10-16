@@ -23,7 +23,13 @@ export interface ShellRepo {
 
 const isActive = (href: string, path: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
-export function Shell({ repos, demo, mode, access, children }: { repos: ShellRepo[]; demo: boolean; mode: ActionsMode; access: SignInMode; children: ReactNode }) {
+/** Team state: who this browser is signed in as (names only; the key never reaches the client). */
+export interface ShellMember {
+  name: string;
+  admin: boolean;
+}
+
+export function Shell({ repos, demo, mode, access, member = null, children }: { repos: ShellRepo[]; demo: boolean; mode: ActionsMode; access: SignInMode; member?: ShellMember | null; children: ReactNode }) {
   const path = usePathname();
   const params = useSearchParams();
   const page = locate(path)?.item;
@@ -224,7 +230,13 @@ export function Shell({ repos, demo, mode, access, children }: { repos: ShellRep
             <span className="search-btn__text">Go or run…</span>
             <kbd>Ctrl K</kbd>
           </button>
-          {(access === "password" || access === "env") && (
+          {access === "team" && member && (
+            <Link className="access-chip chip chip--ok" href="/team" title={`Signed in as ${member.name}${member.admin ? " · team admin" : ""}. Brain checks this member's key on every request.`}>
+              <span className="chip__dot" aria-hidden="true" />
+              <span>{member.name}<span className="access-chip__more">{member.admin ? " · admin" : " · member"}</span></span>
+            </Link>
+          )}
+          {(access === "password" || access === "env" || access === "team") && (
             <a className="btn btn--ghost btn--sm" href="/__logout" title="Sign out of this browser">
               Sign out
             </a>

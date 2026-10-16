@@ -6,6 +6,7 @@ import { SectionTabs } from "@/components/SectionNav";
 import { getAccessView } from "@/lib/data";
 import { getAgentTarget } from "@/lib/setup-view";
 import { getSignInView } from "@/lib/sign-in-view";
+import { currentMember } from "@/lib/team-session";
 
 export const metadata = { title: "Access" };
 
@@ -13,6 +14,8 @@ export default async function Admin() {
   const [view, agent, signIn] = await Promise.all([getAccessView(), getAgentTarget(), getSignInView()]);
   const { summary: s, identities } = view;
   const target = { apiUrl: agent.publicApiUrl, repoPath: agent.repoPath };
+  // In team state only a team admin is offered new identities; Brain still checks the call.
+  const canCreate = signIn.mode !== "team" || (await currentMember())?.admin === true;
   return (
     <>
       <PageHead
@@ -39,15 +42,17 @@ export default async function Admin() {
         </div>
       )}
 
-      <Fold
-        id="new-identity"
-        title="New identity"
-        desc="Creates the identity and its first key. You’ll see the key once, right after."
-        cta="+ New identity"
-        open={view.readable && identities.length === 0}
-      >
-        <NewIdentityForm target={target} />
-      </Fold>
+      {canCreate && (
+        <Fold
+          id="new-identity"
+          title="New identity"
+          desc="Creates the identity and its first key. You’ll see the key once, right after."
+          cta="+ New identity"
+          open={view.readable && identities.length === 0}
+        >
+          <NewIdentityForm target={target} />
+        </Fold>
+      )}
 
       <Panel id="identities" title={`${identities.length} identit${identities.length === 1 ? "y" : "ies"}`} desc="Open one to see its keys, add a key or switch it off." flush>
         {!view.readable ? (

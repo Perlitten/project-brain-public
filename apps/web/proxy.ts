@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { loginPage } from "./lib/login-page";
-import { SESSION_COOKIE, authorizeWebRequest, lockReason, sessionFrom, signIn, webAuthResponse } from "./lib/web-auth";
+import {
+  MEMBER_COOKIE, MEMBER_MAX_AGE, SESSION_COOKIE, authorizeWebRequest, lockReason, loginState, memberFrom, sessionFrom, signIn,
+  signInMember, webAuthResponse,
+} from "./lib/web-auth";
 
 // Who may enter is decided in lib/web-auth.ts (WEB_BASIC_AUTH, or the login
 // set on Settings → Sign-in; with neither, open on a loopback-only dashboard or
@@ -8,6 +11,8 @@ import { SESSION_COOKIE, authorizeWebRequest, lockReason, sessionFrom, signIn, w
 // Browsers get a sign-in
 // page and a session cookie; scripts can still send HTTP Basic credentials
 // (curl -u user:password).
+// In team state each member signs in with their own member key instead; the
+// sealed key rides in the pb_member cookie and every request re-checks it.
 
 const LOGIN = "/__login";
 const LOGOUT = "/__logout";
@@ -20,8 +25,8 @@ function safeNext(value: unknown) {
   return value;
 }
 
-function page(next: string, failed: boolean | "throttled", user = "") {
-  return new NextResponse(loginPage({ action: LOGIN, next, failed, user }), {
+function page(next: string, failed: boolean | "throttled", user = "", team = false) {
+  return new NextResponse(loginPage({ action: LOGIN, next, failed, user, team }), {
     status: 401,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
@@ -61,12 +66,29 @@ async function gate(req: NextRequest): Promise<Response> {
   if (pathname === LOGOUT) {
     const res = NextResponse.redirect(new URL("/", req.url), 303);
     res.cookies.delete(SESSION_COOKIE);
+    res.cookies.delete(MEMBER_COOKIE);
     return res;
   }
 
   if (pathname === LOGIN && req.method === "POST") {
     const form = await req.formData().catch(() => null);
     const next = safeNext(form?.get("next"));
+    const credential = form?.get("credential");
+    if (typeof credential === "string" || (await loginState()).kind === "team") {
+      const member = await signInMember(typeof credential === "string" ? credential : "");
+      if (member.status === 503) return locked(req);
+      if (member.status === 401) return page(next, true, "", true);
+      const res = NextResponse.redirect(new URL(next, req.url), 303);
+      res.cookies.set(MEMBER_COOKIE, member.cookie, {
+        httpOnly: true,
+        secure: req.nextUrl.protocol === "https:",
+        sameSite: "lax",
+        path: "/",
+        maxAge: MEMBER_MAX_AGE,
+      });
+      res.cookies.delete(SESSION_COOKIE);
+      return res;
+    }
     const user = form?.get("username");
     const password = form?.get("password");
     const result = await signIn(typeof user === "string" ? user : "", typeof password === "string" ? password : "", req.headers.get("host"));
@@ -87,12 +109,18 @@ async function gate(req: NextRequest): Promise<Response> {
     return res;
   }
 
-  const status = await authorizeWebRequest(req.headers.get("authorization"), sessionFrom(req.headers.get("cookie")), req.headers.get("host"));
+  const cookie = req.headers.get("cookie");
+  const status = await authorizeWebRequest(req.headers.get("authorization"), sessionFrom(cookie), req.headers.get("host"), memberFrom(cookie));
   if (status === 200) return pathname === LOGIN ? NextResponse.redirect(new URL("/", req.url), 303) : NextResponse.next();
   if (status === 503) return locked(req);
 
   const wantsPage = (req.method === "GET" || req.method === "HEAD") && wantsHtml(req);
-  return wantsPage ? page(pathname === LOGIN ? "/" : safeNext(pathname + search), false) : webAuthResponse(401);
+  if (!wantsPage) return webAuthResponse(401);
+  const team = (await loginState()).kind === "team";
+  // A cookie that no longer opens (revoked, expired, re-keyed) is cleared so the browser stops sending it.
+  const res = page(pathname === LOGIN ? "/" : safeNext(pathname + search), false, "", team);
+  if (memberFrom(cookie)) res.cookies.delete(MEMBER_COOKIE);
+  return res;
 }
 
 // robots.txt stays reachable so crawlers can read "Disallow" even on a locked site.

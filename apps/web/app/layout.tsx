@@ -6,6 +6,7 @@ import { BOOT_SCRIPT, Boot } from "@/components/Boot";
 import { Shell, type ShellRepo } from "@/components/Shell";
 import { actionsMode } from "@/lib/actions/gate";
 import { signInMode } from "@/lib/sign-in-view";
+import { currentMember } from "@/lib/team-session";
 import { dataSource, getRepositoryFeed } from "@/lib/data";
 import { repositoryStatus } from "@/lib/repository-status";
 import "./globals.css";
@@ -50,7 +51,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // API bindings are runtime configuration (including pre-built containers).
   // Do not persist a build-time demo shell as the live dashboard's HTML.
   await connection();
-  const [feed, mode, access] = await Promise.all([getRepositoryFeed(), actionsMode(), signInMode()]);
+  const [feed, mode, access, member] = await Promise.all([getRepositoryFeed(), actionsMode(), signInMode(), currentMember()]);
   const repos: ShellRepo[] = feed.repositories.map((r) => ({
     slug: r.slug,
     name: r.name,
@@ -73,7 +74,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         <Boot lines={bootLines} />
         <Suspense>
-          <Shell repos={repos} demo={dataSource === "demo"} mode={mode} access={access}>
+          <Shell repos={repos} demo={dataSource === "demo"} mode={mode} access={access} member={member ? { name: member.name, admin: member.admin } : null}>
             {children}
           </Shell>
         </Suspense>

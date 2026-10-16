@@ -30,13 +30,18 @@ function ecg(period: number, width = 1200, base = 24) {
   return d;
 }
 
+const REVEAL = `<button class="reveal" type="button" aria-controls="password" aria-pressed="false" aria-label="Show password" title="Show password"><svg class="reveal__show" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="reveal__hide" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg></button>`;
+
 const LIT = 13;
 const BRICKS = 20;
 
 type Notice = { eyebrow: string; title: string; detail: string };
 
-/** `notice`: the site is locked for a reason no password can fix — explain it, no form. */
-export function loginPage({ action, next, failed, user = "", notice }: { action: string; next: string; failed: boolean | "throttled"; user?: string; notice?: Notice }) {
+/**
+ * `notice`: the site is locked for a reason no password can fix — explain it, no form.
+ * `team`: the Brain has team members, so each signs in with their own member key.
+ */
+export function loginPage({ action, next, failed, user = "", notice, team = false }: { action: string; next: string; failed: boolean | "throttled"; user?: string; notice?: Notice; team?: boolean }) {
   const tone = failed || notice ? "bad" : "idle";
   const d = ecg(failed ? 92 : 0);
   const throttled = failed === "throttled";
@@ -45,9 +50,29 @@ export function loginPage({ action, next, failed, user = "", notice }: { action:
   const title = notice ? escape(notice.title) : throttled ? "Too many wrong tries." : failed ? "That didn’t match." : "This Brain is private.";
   const detail = notice ? escape(notice.detail) : throttled
     ? "Sign-in for this name is paused for a few minutes. Wait, then try again."
-    : failed
-      ? "Check the username and password and try again."
-      : "Sign in to see what your agents know about your code.";
+    : team
+      ? failed
+        ? "Check the key, or ask a team admin for a new one: it may have been revoked."
+        : "This Brain has a team. Sign in with your own member key."
+      : failed
+        ? "Check the username and password and try again."
+        : "Sign in to see what your agents know about your code.";
+  const fields = team
+    ? `<label class="field"><span class="field__label">Member key</span>
+        <span class="field__box">
+          <input id="password" name="credential" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required autofocus>
+          ${REVEAL}
+        </span>
+      </label>`
+    : `<label class="field"><span class="field__label">Username</span>
+        <input id="username" name="username" value="${escape(user)}" autocomplete="username" autocapitalize="none" spellcheck="false" required${user ? "" : " autofocus"}>
+      </label>
+      <label class="field"><span class="field__label">Password</span>
+        <span class="field__box">
+          <input id="password" name="password" type="password" autocomplete="current-password" required${user ? " autofocus" : ""}>
+          ${REVEAL}
+        </span>
+      </label>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -274,15 +299,7 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
     </div>
     ${notice ? "" : `<form method="post" action="${escape(action)}" id="login">
       <input type="hidden" name="next" value="${escape(next)}">
-      <label class="field"><span class="field__label">Username</span>
-        <input id="username" name="username" value="${escape(user)}" autocomplete="username" autocapitalize="none" spellcheck="false" required${user ? "" : " autofocus"}>
-      </label>
-      <label class="field"><span class="field__label">Password</span>
-        <span class="field__box">
-          <input id="password" name="password" type="password" autocomplete="current-password" required${user ? " autofocus" : ""}>
-          <button class="reveal" type="button" aria-controls="password" aria-pressed="false" aria-label="Show password" title="Show password"><svg class="reveal__show" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="reveal__hide" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg></button>
-        </span>
-      </label>
+      ${fields}
       <button class="btn" type="submit">Sign in</button>
     </form>`}
     <svg class="pulse" viewBox="0 0 1200 40" preserveAspectRatio="none" aria-hidden="true">

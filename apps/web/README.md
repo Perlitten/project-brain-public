@@ -53,6 +53,39 @@ do not rewrite it to `localhost`).
 Scripts can authenticate with HTTP Basic (`curl -u user:password`). Refusals from the proxy and
 `/api/brain/*` are JSON `{ "error", "detail" }` with status 401 or 503.
 
+### Team sign-in
+
+Once the Brain has a verified team member it refuses the shared key the dashboard runs with
+(`Named credential required`). The dashboard notices that refusal and switches to team sign-in;
+`WEB_BASIC_AUTH` and the owner login stop applying until the last member is gone.
+
+- Each member signs in with their **own member key** (a `pbk_` credential). The dashboard checks
+  it with `GET /api/web-session` and keeps it in the `pb_member` cookie: `httpOnly`, `SameSite=Lax`,
+  `Secure` over https, sealed with AES-256-GCM under a key derived from `BRAIN_API_KEY`, valid for
+  7 days. Browser JavaScript can neither read nor forge it. Rotating `BRAIN_API_KEY` signs every
+  member out.
+- Every page render, `/api/brain/*` call and dashboard action sends that member's key, never the
+  server key, so Brain authorizes each call as the member. A request without a valid member cookie
+  forwards nothing. Member responses skip the data cache.
+- Each request re-checks the key with Brain, so revoking a member or their key takes effect on the
+  next request. The stale cookie is then cleared. **Sign out** in the top bar deletes the cookie.
+- **Team** (sidebar) shows who you are. A team admin can add members, issue a member key (shown
+  once), set project roles and revoke members through the `/team` API. Brain still checks every call.
+
+Bootstrap the first admin from the CLI, then sign in with their key:
+
+```bash
+python scripts/mint_api_credential.py --name alice --kind human --scopes "*"   # prints the key once
+brain team member add --principal alice --admin
+```
+
+A key from `brain team member add --mint-key` carries team scopes only. That is enough for agents
+and the `/team` API, but most dashboard pages also need read scopes. Issue dashboard keys from the
+Team page instead: they get the team scopes plus dashboard read scopes, and admins also get
+`principals:read`/`principals:write`. If `BRAIN_API_KEY` is itself a member's `pbk_` key, Brain
+accepts it, so the dashboard stays in solo mode and acts as that member. Use the shared server key
+or a service credential instead.
+
 ## Development
 
 Requires Node.js 20.9 or newer.
