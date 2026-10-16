@@ -1,19 +1,26 @@
 """Read paths that list or fetch by id follow project membership once the team has
 members: the repository listing, diff-review results and context packs
 (ADR docs/adr/team-collaboration.md)."""
+import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from sqlalchemy import update
 
 from apps.api import auth, team_access
 from apps.api.routers import core_retrieval, web
+from brain.auth.principals import resolve_credential
 from brain.config.settings import settings
 from brain.database.models import ContextPack, IndexingRun
+from brain.team.authorization import Permission, TeamDenied, authorize_repository
+from brain.team.models import ProjectMember, TeamProject
+from brain.team.store import create_task, request_run
 from tests.test_team_transport import (ADMIN, CONTRIBUTOR, LEGACY, OUTSIDER, READER, add_outsider_and_unattached_repo,
                                        client_for, live_team_state, membership_driven, revoke_everyone)
+from tests.test_team_foundations import caller, run_payload, task_payload
 from tests.test_team_foundations import team_db as team_fixture
 
 team_db = team_fixture
@@ -168,3 +175,72 @@ async def test_team_read_paths_refuse_the_shared_key(read_scope_db, monkeypatch)
             denied = await client.get(path, params=params, headers=LEGACY)
             assert denied.status_code == 403, path
             assert "named credential required" in denied.json()["detail"].lower()
+
+
+async def authorized_repository_ids(factory, raw_key, repository_ids):
+    """Repositories for which the per-repository ``authorize_repository`` check grants ``read``."""
+    allowed = set()
+    async with factory() as session:
+        principal = await resolve_credential(session, raw_key)
+        for repository_id in repository_ids:
+            try:
+                await authorize_repository(session, principal, repository_id, Permission.READ)
+            except TeamDenied:
+                continue
+            allowed.add(repository_id)
+    return principal, allowed
+
+
+def break_project_a(case, a):
+    """One live-state change to project A, applied after the run was issued."""
+    now = datetime.now(timezone.utc)
+    return {
+        "unchanged": [],
+        "reader_revoked": [update(ProjectMember).where(ProjectMember.project_id == a, ProjectMember.principal_id == 1)
+                           .values(revoked_at=now)],
+        "initiator_revoked": [update(ProjectMember).where(ProjectMember.project_id == a,
+                                                          ProjectMember.principal_id == 2).values(revoked_at=now)],
+        "project_disabled": [update(TeamProject).where(TeamProject.id == a).values(disabled_at=now)],
+        "policy_without_read": [update(TeamProject).where(TeamProject.id == a)
+                                .values(permissions=[str(p) for p in Permission if p is not Permission.READ])],
+        "policy_invalid": [update(TeamProject).where(TeamProject.id == a).values(permissions=["read", "bogus"])],
+    }[case]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("case", "reader_sees", "run_sees"), [
+    ("unchanged", {1}, {1}),
+    ("reader_revoked", set(), {1}),
+    ("initiator_revoked", {1}, set()),
+    ("project_disabled", set(), set()),
+    ("policy_without_read", set(), set()),
+    ("policy_invalid", set(), set()),
+])
+async def test_team_listing_filter_matches_per_repository_authorization(read_scope_db, monkeypatch, case,
+                                                                        reader_sees, run_sees):
+    """The batched listing filter grants ``read`` exactly where ``authorize_repository`` does.
+
+    Team administrators are left out on purpose: the listing shows them every
+    repository, while by-id reads still require a project role."""
+    factory, a, _, artifact = read_scope_db
+    membership_driven(monkeypatch)
+    async with factory() as session, session.begin():
+        task = await create_task(session, caller(2), a, task_payload())
+        run = await request_run(session, caller(2), a, uuid.UUID(task["id"]), run_payload())
+    async with factory() as session, session.begin():
+        for statement in break_project_a(case, a):
+            await session.execute(statement)
+    app = read_app(factory, artifact, monkeypatch)
+    repositories = [1, 2, 3]
+    keys = {"reader": "fixture-1", "contributor": "fixture-2", "reviewer": "fixture-3", "outsider": "fixture-5",
+            "run": run["credential"]}
+    authorized = {}
+    for name, raw_key in keys.items():
+        principal, authorized[name] = await authorized_repository_ids(factory, raw_key, repositories)
+        assert await core_retrieval._readable_repository_ids(principal, repositories) == authorized[name], name
+    assert (authorized["reader"], authorized["run"], authorized["outsider"]) == (reader_sees, run_sees, set())
+    async with client_for(app) as client:
+        # Human members see the same set through the route, and a corrupt policy hides A instead of failing.
+        # Run keys carry only team:* scopes, so the route refuses them before the filter (core:read).
+        for name in ("reader", "contributor", "reviewer", "outsider"):
+            assert await repository_ids(client, {"X-API-Key": keys[name]}) == sorted(authorized[name]), name
