@@ -17,11 +17,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import team_administrator_access
 from brain.auth.principals import mint_credential
 from brain.database.models import ApiCredential, Principal
 from brain.database.session import async_session_factory
 
-router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_api_key)])
+router = APIRouter(prefix="/admin", tags=["admin"],
+                   dependencies=[Depends(require_api_key), Depends(team_administrator_access())])
 
 
 class MintCredentialRequest(BaseModel):

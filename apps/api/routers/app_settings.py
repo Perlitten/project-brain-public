@@ -18,10 +18,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field as PydanticField
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.team_access import team_administrator_access
 from brain.config.settings import settings
 from brain.onboarding.envfile import check_endpoint_host, setup_env_path, update_env_file
 
-router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_api_key)])
+router = APIRouter(prefix="/api/settings", tags=["settings"],
+                   dependencies=[Depends(require_api_key), Depends(team_administrator_access())])
 
 Kind = Literal["bool", "int", "float", "text", "url", "secret"]
 
