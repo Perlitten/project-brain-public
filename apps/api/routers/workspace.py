@@ -11,8 +11,11 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from apps.api.auth import require_api_key, require_scope
+from apps.api.auth import require_api_key, require_principal, require_scope
+from apps.api.registry_access import registry_authority, team_admin_access
+from brain.auth.principals import ResolvedPrincipal
 from brain.lab.laboratory import BUILTIN_PROFILES
+from brain.team.authorization import Permission
 from brain.workspace.capabilities import CapabilitiesManager
 from brain.workspace.models import (
     TrustLevel,
@@ -49,7 +52,9 @@ class UpdateCapabilitiesRequest(BaseModel):
     expected_version: int
 
 
-@router.get("/repositories", dependencies=[Depends(require_scope("workspace:read"))])
+# The registry listing spans every repository: a team administrator once members exist
+# (filtering it by membership is a follow-up, like the indexed-repository listing).
+@router.get("/repositories", dependencies=[Depends(require_scope("workspace:read")), Depends(team_admin_access)])
 async def list_repositories():
     """List all registered repositories."""
     store = _get_store()
@@ -61,7 +66,7 @@ async def list_repositories():
     }
 
 
-@router.post("/repositories", dependencies=[Depends(require_scope("workspace:write"))])
+@router.post("/repositories", dependencies=[Depends(require_scope("workspace:write")), Depends(team_admin_access)])
 async def register_repository(req: RegisterRequest):
     """Register a new repository.
 
@@ -134,16 +139,19 @@ async def register_repository(req: RegisterRequest):
 
 
 @router.get("/repositories/{repository_id}", dependencies=[Depends(require_scope("workspace:read"))])
-async def get_repository(repository_id: str):
+async def get_repository(repository_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     """Get repository details."""
     store = _get_store()
     record = store.get(repository_id)
+    await registry_authority(principal, Permission.READ, record)
     if not record:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
     return {"status": "success", "repository": record.to_dict()}
 
 
-@router.post("/repositories/{repository_id}/disable", dependencies=[Depends(require_scope("workspace:write"))])
+# Trust and lifecycle of a registered repository are registry administration, not a project role.
+@router.post("/repositories/{repository_id}/disable",
+             dependencies=[Depends(require_scope("workspace:write")), Depends(team_admin_access)])
 async def disable_repository(repository_id: str, reason: str = Query("manual disable")):
     """Disable a repository."""
     store = _get_store()
@@ -155,10 +163,11 @@ async def disable_repository(repository_id: str, reason: str = Query("manual dis
 
 
 @router.get("/repositories/{repository_id}/capabilities", dependencies=[Depends(require_scope("workspace:read"))])
-async def get_capabilities(repository_id: str):
+async def get_capabilities(repository_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     """Get repository capabilities with validation."""
     store = _get_store()
     record = store.get(repository_id)
+    await registry_authority(principal, Permission.READ, record)
     if not record:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
 
@@ -175,9 +184,11 @@ async def get_capabilities(repository_id: str):
 
 
 @router.get("/repositories/{repository_id}/events", dependencies=[Depends(require_scope("workspace:read"))])
-async def get_repository_events(repository_id: str, limit: int = Query(50, le=500)):
+async def get_repository_events(repository_id: str, limit: int = Query(50, le=500),
+                                principal: ResolvedPrincipal = Depends(require_principal)):
     """Get audit events for a repository."""
     store = _get_store()
+    await registry_authority(principal, Permission.READ, store.get(repository_id))
     events = store.list_events(repository_id=repository_id, limit=limit)
     return {
         "status": "success",
@@ -186,7 +197,7 @@ async def get_repository_events(repository_id: str, limit: int = Query(50, le=50
     }
 
 
-@router.get("/verify", dependencies=[Depends(require_scope("workspace:read"))])
+@router.get("/verify", dependencies=[Depends(require_scope("workspace:read")), Depends(team_admin_access)])
 async def verify_registry():
     """Verify registry integrity."""
     store = _get_store()

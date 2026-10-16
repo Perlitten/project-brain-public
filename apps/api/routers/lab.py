@@ -12,9 +12,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from apps.api.auth import require_api_key, require_scope
+from apps.api.auth import require_api_key, require_principal, require_scope
+from apps.api.registry_access import registry_authority, team_admin_access
+from brain.auth.principals import ResolvedPrincipal
 from brain.lab.laboratory import ChangeLaboratory
 from brain.lab.models import PatchRecord, PatchSource
+from brain.team.authorization import Permission
 from brain.workspace.models import Capability
 from brain.workspace.registry_store import RegistryStore
 
@@ -33,6 +36,11 @@ def _laboratory() -> ChangeLaboratory:
 
 def _registry() -> RegistryStore:
     return RegistryStore(Path(".brain/workspace"))
+
+
+async def _authorize(principal: ResolvedPrincipal, permission: Permission, repository_id: str | None) -> None:
+    """``permission`` on the registry repository a lab object belongs to; unknown means a team administrator."""
+    await registry_authority(principal, permission, _registry().get(repository_id) if repository_id else None)
 
 
 def _require_repository(repository_id: str, *capabilities: Capability):
@@ -70,7 +78,7 @@ async def list_profiles():
     return {"status": "success", "profiles": _laboratory().list_profiles()}
 
 
-@router.get("/workspaces", dependencies=[Depends(require_scope("lab:read"))])
+@router.get("/workspaces", dependencies=[Depends(require_scope("lab:read")), Depends(team_admin_access)])
 async def list_workspaces():
     lab = _laboratory()
     return {
@@ -81,16 +89,18 @@ async def list_workspaces():
 
 
 @router.get("/workspaces/{workspace_id}", dependencies=[Depends(require_scope("lab:read"))])
-async def get_workspace(workspace_id: str):
+async def get_workspace(workspace_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     record = _laboratory().manager.get_workspace(workspace_id)
+    await _authorize(principal, Permission.READ, record.repository_id if record is not None else None)
     if record is None:
         raise HTTPException(status_code=404, detail=f"Workspace '{workspace_id}' not found")
     return {"status": "success", "workspace": record.to_dict()}
 
 
 @router.post("/validate", dependencies=[Depends(require_scope("lab:write"))])
-async def validate_patch(req: ValidateRequest):
+async def validate_patch(req: ValidateRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     """Validate a candidate patch inside a fresh disposable workspace."""
+    await _authorize(principal, Permission.REQUEST_RUN, req.repository_id)
     record = _require_repository(
         req.repository_id,
         Capability.CREATE_WORKTREES,
@@ -127,24 +137,27 @@ async def validate_patch(req: ValidateRequest):
 
 
 @router.get("/sessions/{session_id}", dependencies=[Depends(require_scope("lab:read"))])
-async def get_session(session_id: str):
+async def get_session(session_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     session = _laboratory().get_session(session_id)
+    await _authorize(principal, Permission.READ, (session or {}).get("repository_id"))
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
     return {"status": "success", "session": session}
 
 
 @router.post("/workspaces/{workspace_id}/cleanup", dependencies=[Depends(require_scope("lab:write"))])
-async def cleanup_workspace(workspace_id: str):
+async def cleanup_workspace(workspace_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     """Dispose of a workspace. Quarantines instead of deleting when ownership
     cannot be proven."""
+    workspace = _laboratory().manager.get_workspace(workspace_id)
+    await _authorize(principal, Permission.REQUEST_RUN, workspace.repository_id if workspace is not None else None)
     report = _laboratory().manager.clean_workspace(workspace_id, reason="api cleanup")
     if not report.removed and not report.quarantined:
         raise HTTPException(status_code=404, detail=report.reason)
     return {"status": "success", "cleanup": report.to_dict()}
 
 
-@router.post("/recover", dependencies=[Depends(require_scope("lab:write"))])
+@router.post("/recover", dependencies=[Depends(require_scope("lab:write")), Depends(team_admin_access)])
 async def recover_orphans():
     """Expire due workspaces and reconcile orphan directories."""
     lab = _laboratory()
