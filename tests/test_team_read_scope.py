@@ -22,11 +22,11 @@ pytestmark = pytest.mark.team_state
 READ_SCOPE_TABLES = [ContextPack.__table__, IndexingRun.__table__]
 JOBS = {
     "job-a": {"type": "diff_review", "status": "completed", "result": {"repo": "A"},
-              "params": {"repo_path": "/synthetic/A", "base": "main", "head": "HEAD"}},
+              "params": {"repository_id": 1, "repo_path": "/synthetic/A", "base": "main", "head": "HEAD"}},
     "job-b": {"type": "diff_review", "status": "completed", "result": {"repo": "B"},
-              "params": {"repo_path": "/synthetic/B", "base": "main", "head": "HEAD"}},
+              "params": {"repository_id": 2, "repo_path": "/synthetic/B", "base": "main", "head": "HEAD"}},
     "job-c": {"type": "diff_review", "status": "completed", "result": {"repo": "C"},
-              "params": {"repo_path": "/synthetic/C", "base": "main", "head": "HEAD"}},
+              "params": {"repository_id": 3, "repo_path": "/synthetic/C", "base": "main", "head": "HEAD"}},
 }
 
 

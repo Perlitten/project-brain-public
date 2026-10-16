@@ -22,7 +22,7 @@ from apps.api.schemas import (
     RelatedRequest,
     SearchRequest,
 )
-from apps.api.team_access import repository_authority
+from apps.api.team_access import current_team_state, repository_authority
 from brain.analyzers.impact_analyzer import ImpactAnalyzer
 from brain.auth.principals import ResolvedPrincipal
 from brain.config.paths import get_repo_root, resolve_repo_path
@@ -30,9 +30,18 @@ from brain.config.settings import settings
 from brain.context.context_pack_builder import ContextPackBuilder
 from brain.context.budget import BudgetedPayloadBuilder, truncate_utf8
 from brain.context.runtime_context_builder import RuntimeContextBuilder
-from brain.team.authorization import Permission, TeamDenied, authorize_repository
+from brain.team.authorization import (
+    ROLE_PERMISSIONS,
+    Permission,
+    TeamDenied,
+    authorize_repository,
+    human_member,
+    live_credential,
+)
+from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamProject, TeamTaskBinding
 from brain.database.models import Repository
 from brain.database.repository_utils import require_repository_by_path
+from brain.database.repository_utils import find_repository_id
 from brain.database.session import async_session_factory
 from brain.graph.graph_client import GraphClient
 from brain.indexers.file_indexer import FileIndexer
@@ -678,6 +687,15 @@ async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal 
         from brain.database.session import redis_client
         from brain.workers.queue import queue_for_job
 
+        # Team authorization must follow the indexed repository identity, not a
+        # path that can be moved or later reused while the review is running.
+        # Keep ``None`` for an unattached repository: in team state that is the
+        # same administrator-only scope used when the job was submitted.
+        repository_id = None
+        if principal.credential_id is not None:
+            async with async_session_factory() as session:
+                repository_id = await find_repository_id(session, body.repo_path)
+
         queue = queue_for_job(
             redis_client,
             settings.WORKER_REDIS_PREFIX,
@@ -686,7 +704,7 @@ async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal 
         )
         job_id = await queue.enqueue(
             "diff_review",
-            {"repo_path": body.repo_path, "base": body.base, "head": body.head},
+            {"repository_id": repository_id, "repo_path": body.repo_path, "base": body.base, "head": body.head},
         )
         return {
             "status": "processing",
@@ -720,9 +738,16 @@ async def get_diff_review_result(job_id: str, principal: ResolvedPrincipal = Dep
         params = job.get("params") or {}
         repository_id = params.get("repository_id")
         try:
-            await repository_authority(principal, Permission.READ,
-                                       repository_id=repository_id if isinstance(repository_id, int) else None,
-                                       repo_path=params.get("repo_path"))
+            if "repository_id" in params:
+                await repository_authority(
+                    principal,
+                    Permission.READ,
+                    repository_id=repository_id if isinstance(repository_id, int) else None,
+                )
+            else:
+                # Compatibility for jobs queued before repository identity was
+                # persisted. New jobs never authorize through the mutable path.
+                await repository_authority(principal, Permission.READ, repo_path=params.get("repo_path"))
         except HTTPException as exc:
             raise HTTPException(status_code=404, detail="Review job not found") from exc
         status = job.get("status", "unknown")
@@ -797,20 +822,67 @@ async def _readable_repository_ids(principal: ResolvedPrincipal, repository_ids:
 
     Solo state and team administrators pass the unscoped check and see all; any
     other team member sees the repositories their project roles grant."""
-    try:
-        await repository_authority(principal, Permission.READ)
+    if await current_team_state() == "solo":
         return None
-    except HTTPException:
-        pass
-    readable: set[int] = set()
+    if not repository_ids:
+        return set()
+
     async with async_session_factory() as session:
-        for repository_id in repository_ids:
+        try:
+            live = await live_credential(session, principal.id, principal.credential_id)
+        except TeamDenied:
+            return set()
+
+        # A run is bound to exactly one task repository. One normal authority
+        # check preserves the delegation-chain and task-binding rules without
+        # multiplying it by the installation's repository count.
+        if live.kind == "run":
+            repository_id = (await session.execute(
+                select(TeamTaskBinding.repository_id)
+                .join(AgentRun, AgentRun.task_id == TeamTaskBinding.task_id)
+                .where(AgentRun.principal_id == live.id, AgentRun.credential_id == live.credential_id)
+            )).scalar_one_or_none()
+            if repository_id is None or repository_id not in repository_ids:
+                return set()
             try:
                 await authorize_repository(session, principal, repository_id, Permission.READ)
             except TeamDenied:
-                continue
-            readable.add(repository_id)
-    return readable
+                return set()
+            return {repository_id}
+
+        if live.kind != "human" or not live.has_scope("team:read"):
+            return set()
+        try:
+            member = await human_member(session, live, 1)
+        except TeamDenied:
+            return set()
+        if member.is_admin and live.has_scope("team:admin"):
+            return None
+
+        # Fetch every candidate's project policy and this principal's role in
+        # one joined query, then apply the same role/policy intersection as
+        # ``authorize``. This avoids a complete authorization query sequence
+        # for every repository row.
+        rows = (await session.execute(
+            select(ProjectRepository.repository_id, ProjectMember.role, TeamProject.permissions)
+            .join(TeamProject, TeamProject.id == ProjectRepository.project_id)
+            .join(
+                ProjectMember,
+                (ProjectMember.project_id == ProjectRepository.project_id)
+                & (ProjectMember.principal_id == live.id),
+            )
+            .where(
+                ProjectRepository.repository_id.in_(repository_ids),
+                ProjectMember.revoked_at.is_(None),
+                TeamProject.disabled_at.is_(None),
+            )
+        )).all()
+        return {
+            repository_id
+            for repository_id, role, policy in rows
+            if Permission.READ in ROLE_PERMISSIONS.get(role, frozenset())
+            and Permission.READ in {Permission(item) for item in (policy or [])}
+        }
 
 
 @router.get("/repositories", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
