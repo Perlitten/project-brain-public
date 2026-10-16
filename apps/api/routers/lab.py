@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import registry_authority, team_admin_access
+from apps.api.registry_access import registry_authority
+from apps.api.team_access import team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.lab.laboratory import ChangeLaboratory
 from brain.lab.models import PatchRecord, PatchSource
@@ -78,7 +79,7 @@ async def list_profiles():
     return {"status": "success", "profiles": _laboratory().list_profiles()}
 
 
-@router.get("/workspaces", dependencies=[Depends(require_scope("lab:read")), Depends(team_admin_access)])
+@router.get("/workspaces", dependencies=[Depends(require_scope("lab:read")), Depends(team_administrator_access())])
 async def list_workspaces():
     lab = _laboratory()
     return {
@@ -157,7 +158,7 @@ async def cleanup_workspace(workspace_id: str, principal: ResolvedPrincipal = De
     return {"status": "success", "cleanup": report.to_dict()}
 
 
-@router.post("/recover", dependencies=[Depends(require_scope("lab:write")), Depends(team_admin_access)])
+@router.post("/recover", dependencies=[Depends(require_scope("lab:write")), Depends(team_administrator_access())])
 async def recover_orphans():
     """Expire due workspaces and reconcile orphan directories."""
     lab = _laboratory()

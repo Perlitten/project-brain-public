@@ -10,8 +10,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import registry_authority, team_admin_access
-from apps.api.team_access import repository_authority
+from apps.api.registry_access import registry_authority
+from apps.api.team_access import repository_authority, team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.ledger.ledger import EvidenceLedger
 from brain.ledger.store import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
@@ -76,13 +76,13 @@ async def list_events(
     )
 
 
-@router.get("/verify", dependencies=[Depends(require_scope("ledger:read")), Depends(team_admin_access)])
+@router.get("/verify", dependencies=[Depends(require_scope("ledger:read")), Depends(team_administrator_access())])
 async def verify_chain():
     """Full chain verification with typed issue codes."""
     return _ledger().verify()
 
 
-@router.get("/health", dependencies=[Depends(require_scope("ledger:read")), Depends(team_admin_access)])
+@router.get("/health", dependencies=[Depends(require_scope("ledger:read")), Depends(team_administrator_access())])
 async def ledger_health():
     return _ledger().health()
 
@@ -99,7 +99,7 @@ async def get_event(event_id: str, principal: ResolvedPrincipal = Depends(requir
 
 
 @router.get("/entities/{entity_type}/{entity_id}",
-            dependencies=[Depends(require_scope("ledger:read")), Depends(team_admin_access)])
+            dependencies=[Depends(require_scope("ledger:read")), Depends(team_administrator_access())])
 async def entity_history(
     entity_type: str,
     entity_id: str,

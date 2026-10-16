@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 from fastapi import FastAPI
+from sqlalchemy import update
 
 from apps.api import auth, team_access
 from apps.api.routers import (
@@ -21,6 +22,7 @@ from apps.api.routers import (
     workspace,
 )
 from brain.config.settings import settings
+from brain.database.models import ApiCredential
 from brain.workspace.models import RepositoryRecord
 from tests.test_team_foundations import team_db as team_fixture
 from tests.test_team_transport import live_team_state, membership_driven, revoke_everyone
@@ -31,6 +33,7 @@ pytestmark = pytest.mark.team_state
 LEGACY = {"X-API-Key": "fixture-legacy"}
 READER, CONTRIBUTOR, ADMIN = ({"X-API-Key": f"fixture-{i}"} for i in (1, 2, 4))
 DENIED = "Repository access denied"
+ADMIN_REQUIRED = "Team administrator required"
 
 
 def _record(repository_id: str, root: str) -> RepositoryRecord:
@@ -112,17 +115,19 @@ SCOPED_READS = (
     ("/experiments", {"repository_id": "{repo}"}),
 )
 
-# Global or cross-repository routes: a team administrator once members exist.
+# Global or cross-repository routes: a team administrator once members exist. Routes that are global
+# by definition declare team_administrator_access(); an unfiltered call to a filterable list is the
+# unscoped repository_authority surface. Both rest on brain.team.authorization.team_administrator.
 UNSCOPED = (
-    ("GET", "/ledger/events", None),
-    ("GET", "/ledger/verify", None),
-    ("GET", "/workspace/repositories", None),
-    ("GET", "/workspace/verify", None),
-    ("GET", "/operations/canary/status", None),
-    ("GET", "/lab/workspaces", None),
-    ("GET", "/experiments", None),
-    ("GET", "/portfolio", None),
-    ("GET", "/improvement/status", None),
+    ("GET", "/ledger/events", DENIED),
+    ("GET", "/ledger/verify", ADMIN_REQUIRED),
+    ("GET", "/workspace/repositories", ADMIN_REQUIRED),
+    ("GET", "/workspace/verify", ADMIN_REQUIRED),
+    ("GET", "/operations/canary/status", ADMIN_REQUIRED),
+    ("GET", "/lab/workspaces", ADMIN_REQUIRED),
+    ("GET", "/experiments", DENIED),
+    ("GET", "/portfolio", ADMIN_REQUIRED),
+    ("GET", "/improvement/status", ADMIN_REQUIRED),
 )
 
 
@@ -189,11 +194,11 @@ async def test_team_unscoped_routes_need_a_team_administrator(team_db, monkeypat
     membership_driven(monkeypatch)
     app = repo_app(factory, monkeypatch, tmp_path)
     async with client_for(app) as client:
-        for method, path, body in UNSCOPED:
+        for method, path, detail in UNSCOPED:
             for headers in (READER, CONTRIBUTOR):
-                refused = await client.request(method, path, json=body, headers=headers)
-                assert refused.status_code == 403 and DENIED in refused.json()["detail"], (path, refused.text)
-            allowed = await client.request(method, path, json=body, headers=ADMIN)
+                refused = await client.request(method, path, headers=headers)
+                assert refused.status_code == 403 and detail in refused.json()["detail"], (path, refused.text)
+            allowed = await client.request(method, path, headers=ADMIN)
             assert allowed.status_code == 200, (path, allowed.text)
         # Naming one's own repository in the query string does not open a global route.
         for path in ("/portfolio", "/improvement/status", "/workspace/repositories", "/operations/canary/status"):
@@ -206,6 +211,24 @@ async def test_team_unscoped_routes_need_a_team_administrator(team_db, monkeypat
         # Intentionally open: the build's reference benchmark and the static lab profiles.
         assert (await client.get("/api/web/quality", headers=READER)).status_code == 200
         assert (await client.get("/lab/profiles", headers=READER)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_team_administrator_flag_without_team_admin_scope_is_refused(team_db, monkeypatch, tmp_path):
+    factory, _, _ = team_db
+    membership_driven(monkeypatch)
+    # Principal 4 stays flagged is_admin, but its credential no longer carries team:admin.
+    async with factory() as session, session.begin():
+        await session.execute(update(ApiCredential).where(ApiCredential.id == 4).values(
+            scopes=["ledger:read", "workspace:read", "operations:read", "lab:read", "experiments:read",
+                    "portfolio:read", "improvement:read", "team:read"]))
+    app = repo_app(factory, monkeypatch, tmp_path)
+    async with client_for(app) as client:
+        for method, path, detail in UNSCOPED:
+            response = await client.request(method, path, headers=ADMIN)
+            assert response.status_code == 403 and detail in response.json()["detail"], (path, response.text)
+        # With team:read its contributor role on project B still opens B's repository.
+        assert (await client.get("/workspace/repositories/repo-b", headers=ADMIN)).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -244,8 +267,8 @@ async def test_solo_state_is_unchanged(team_db, monkeypatch, tmp_path):
                     assert response.status_code == 200, (url, response.text)
                 rebuild = await client.post(f"/freshness/repositories/{repo}/rebuild", json={}, headers=headers)
                 assert rebuild.status_code == 403 and "lacks capability" in rebuild.json()["detail"]
-            for method, path, body in UNSCOPED:
-                response = await client.request(method, path, json=body, headers=headers)
+            for method, path, _ in UNSCOPED:
+                response = await client.request(method, path, headers=headers)
                 assert response.status_code == 200, (path, response.text)
             # Unknown ids keep their plain 404 instead of an authorization refusal.
             assert (await client.get("/freshness/repositories/repo-zzz", headers=headers)).status_code == 404

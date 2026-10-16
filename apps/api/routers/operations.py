@@ -10,7 +10,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends
 from brain.operations.nightly import NightlyOperationsManager
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import registry_authority, team_admin_access
+from apps.api.registry_access import registry_authority
+from apps.api.team_access import team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.team.authorization import Permission
 from brain.workspace.registry_store import RegistryStore
@@ -19,17 +20,17 @@ router = APIRouter(prefix="/operations", tags=["operations"])
 mgr = NightlyOperationsManager()
 
 
-@router.get("/nightly/latest", dependencies=[Depends(require_scope("operations:read")), Depends(team_admin_access)])
+@router.get("/nightly/latest", dependencies=[Depends(require_scope("operations:read")), Depends(team_administrator_access())])
 def get_latest_night_digest(authenticated: bool = Depends(require_api_key)):
     return mgr.generate_single_digest().model_dump()
 
 
-@router.get("/incidents", dependencies=[Depends(require_scope("operations:read")), Depends(team_admin_access)])
+@router.get("/incidents", dependencies=[Depends(require_scope("operations:read")), Depends(team_administrator_access())])
 def list_incidents(authenticated: bool = Depends(require_api_key)):
     return {"incidents": [i.model_dump() for i in mgr._incidents.values()]}
 
 
-@router.get("/freshness", dependencies=[Depends(require_scope("operations:read")), Depends(team_admin_access)])
+@router.get("/freshness", dependencies=[Depends(require_scope("operations:read")), Depends(team_administrator_access())])
 def list_operations_freshness(authenticated: bool = Depends(require_api_key)):
     return {"freshness_reports": [f.model_dump() for f in mgr._freshness.values()]}
 
@@ -43,12 +44,12 @@ async def repair_repository_vectors(repository_id: str, authenticated: bool = De
     return job.model_dump()
 
 
-@router.post("/jobs/{job_id}/retry", dependencies=[Depends(require_scope("operations:write")), Depends(team_admin_access)])
+@router.post("/jobs/{job_id}/retry", dependencies=[Depends(require_scope("operations:write")), Depends(team_administrator_access())])
 def retry_failed_job(job_id: str, authenticated: bool = Depends(require_api_key)):
     return {"job_id": job_id, "status": "retried", "action": "enqueued_with_checkpoint"}
 
 
-@router.get("/canary/status", dependencies=[Depends(require_scope("operations:read")), Depends(team_admin_access)])
+@router.get("/canary/status", dependencies=[Depends(require_scope("operations:read")), Depends(team_administrator_access())])
 def get_canary_status(authenticated: bool = Depends(require_api_key)):
     return {
         "status": "active",
@@ -60,7 +61,7 @@ def get_canary_status(authenticated: bool = Depends(require_api_key)):
     }
 
 
-@router.post("/canary/rollback", dependencies=[Depends(require_scope("operations:write")), Depends(team_admin_access)])
+@router.post("/canary/rollback", dependencies=[Depends(require_scope("operations:write")), Depends(team_administrator_access())])
 def trigger_canary_rollback(reason: str = "manual_trigger", authenticated: bool = Depends(require_api_key)):
     return {
         "status": "rolled_back",

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from apps.api.auth import require_api_key, require_scope
-from apps.api.registry_access import team_admin_access
+from apps.api.team_access import team_administrator_access
 from brain.portfolio.graph_builder import PortfolioCoupling, PortfolioGraphBuilder
 from brain.portfolio.models import parse_portfolio_config
 from brain.portfolio.store import PortfolioStore
@@ -16,7 +16,7 @@ router = APIRouter(
     prefix="/portfolio",
     tags=["portfolio"],
     # A portfolio spans repositories: every route needs a team administrator once members exist.
-    dependencies=[Depends(require_api_key), Depends(require_scope("portfolio:read")), Depends(team_admin_access)],
+    dependencies=[Depends(require_api_key), Depends(require_scope("portfolio:read")), Depends(team_administrator_access())],
 )
 
 

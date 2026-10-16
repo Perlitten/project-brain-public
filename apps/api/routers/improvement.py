@@ -3,7 +3,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from apps.api.auth import require_api_key, require_scope
-from apps.api.registry_access import team_admin_access
+from apps.api.team_access import team_administrator_access
 from brain._version import __version__
 from brain.improvement.promotion import LexicographicPromotionEngine
 from brain.improvement.registry.registry import BundleRegistry
@@ -14,7 +14,7 @@ from brain.improvement.weekly_factory import WeeklyImprovementFactory
 
 # The improvement control plane is system-global (bundles, tournaments, promotion): a team
 # administrator once members exist.
-router = APIRouter(prefix="/improvement", tags=["improvement"], dependencies=[Depends(team_admin_access)])
+router = APIRouter(prefix="/improvement", tags=["improvement"], dependencies=[Depends(team_administrator_access())])
 
 control_store = RelationalControlPlaneStore()
 registry = BundleRegistry()

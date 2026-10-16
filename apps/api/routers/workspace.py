@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import registry_authority, team_admin_access
+from apps.api.registry_access import registry_authority
+from apps.api.team_access import team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.lab.laboratory import BUILTIN_PROFILES
 from brain.team.authorization import Permission
@@ -54,7 +55,7 @@ class UpdateCapabilitiesRequest(BaseModel):
 
 # The registry listing spans every repository: a team administrator once members exist
 # (filtering it by membership is a follow-up, like the indexed-repository listing).
-@router.get("/repositories", dependencies=[Depends(require_scope("workspace:read")), Depends(team_admin_access)])
+@router.get("/repositories", dependencies=[Depends(require_scope("workspace:read")), Depends(team_administrator_access())])
 async def list_repositories():
     """List all registered repositories."""
     store = _get_store()
@@ -66,7 +67,7 @@ async def list_repositories():
     }
 
 
-@router.post("/repositories", dependencies=[Depends(require_scope("workspace:write")), Depends(team_admin_access)])
+@router.post("/repositories", dependencies=[Depends(require_scope("workspace:write")), Depends(team_administrator_access())])
 async def register_repository(req: RegisterRequest):
     """Register a new repository.
 
@@ -151,7 +152,7 @@ async def get_repository(repository_id: str, principal: ResolvedPrincipal = Depe
 
 # Trust and lifecycle of a registered repository are registry administration, not a project role.
 @router.post("/repositories/{repository_id}/disable",
-             dependencies=[Depends(require_scope("workspace:write")), Depends(team_admin_access)])
+             dependencies=[Depends(require_scope("workspace:write")), Depends(team_administrator_access())])
 async def disable_repository(repository_id: str, reason: str = Query("manual disable")):
     """Disable a repository."""
     store = _get_store()
@@ -197,7 +198,7 @@ async def get_repository_events(repository_id: str, limit: int = Query(50, le=50
     }
 
 
-@router.get("/verify", dependencies=[Depends(require_scope("workspace:read")), Depends(team_admin_access)])
+@router.get("/verify", dependencies=[Depends(require_scope("workspace:read")), Depends(team_administrator_access())])
 async def verify_registry():
     """Verify registry integrity."""
     store = _get_store()
