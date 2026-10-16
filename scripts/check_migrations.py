@@ -38,6 +38,8 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("team_task_bindings", "request_digest"),
     ("agent_runs", "initiator_credential_id"),
     ("team_invitations", "token_hash"),
+    # Every credential resolution reads the restore fence (brain.team.restore_fence).
+    ("team_access_fences", "cleared_at"),
 ]
 
 

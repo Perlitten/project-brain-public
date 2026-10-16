@@ -169,6 +169,8 @@ no automatic adoption or backfill grants. Explicit operator provisioning/binding
 is required. Team tables are not supported in Lite; a Lite Brain is always a
 team of one and rejects the strict flag. Back up before updates; restore additive ledger
 and identity rows with PostgreSQL, retain source revision and rebuild graph.
+A restored team snapshot stays fenced (no credential honoured) until an operator
+reconciles post-snapshot changes and attests the result (`brain team reconcile`).
 Demonstrate legacy-row preservation, repeat initialization and disposable restore;
 green ADR/CI is not team readiness.
 

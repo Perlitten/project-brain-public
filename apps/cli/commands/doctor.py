@@ -15,7 +15,7 @@ import typer
 
 from brain.config.paths import context_packs_dir, reports_dir
 from brain.config.settings import settings
-from brain.database.session import check_health
+from brain.database.session import async_engine, check_health
 from brain.llm.presets import (
     is_openai_compatible,
     normalize_provider_name,
@@ -24,6 +24,7 @@ from brain.llm.presets import (
     supported_provider_names,
 )
 from brain.onboarding.provider_check import FREE_PROVIDER_HINT, MOCK_LABEL
+from brain.team.restore_fence import current_team_access
 from brain.version import build_info
 
 _FAIL = "FAIL"
@@ -201,6 +202,27 @@ def _check_provider(failures: list[str]) -> None:
             _report(_PASS, f"{kind} provider '{provider}' has {key_name} set", failures)
 
 
+def _check_team_access(failures: list[str]) -> None:
+    """A restored team snapshot honours no credential until `brain team reconcile`."""
+    if settings.BRAIN_STORAGE_MODE != "full":
+        return
+
+    async def probe() -> str:
+        # Pooled connections belong to the event loop _check_services already closed.
+        await async_engine.dispose(close=False)
+        return await current_team_access()
+
+    try:
+        state = asyncio.run(probe())
+    except Exception:  # noqa: BLE001 — PostgreSQL reachability is reported by _check_services
+        return
+    if state == "pending_reconciliation":
+        _report(_FAIL, "team access is fenced after a restore — no credential works until you review and clear it "
+                       "with `brain team reconcile` (docs/runbooks/backup-restore.md)", failures)
+    else:
+        _report(_PASS, "team access open (no pending restore fence)", failures)
+
+
 def _check_api_auth(failures: list[str]) -> None:
     if settings.PROJECT_BRAIN_API_KEY:
         _report(_PASS, "PROJECT_BRAIN_API_KEY set — API requests are authenticated", failures)
@@ -223,6 +245,7 @@ def doctor_command():
     _check_provider(failures)
     _check_api_auth(failures)
     _check_services(failures)
+    _check_team_access(failures)
 
     if failures:
         typer.secho(f"\n{len(failures)} check(s) failed — fix the items above and re-run `brain doctor`.", fg=typer.colors.RED, bold=True)

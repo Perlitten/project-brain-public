@@ -18,6 +18,22 @@ class Team(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
 
 
+class TeamAccessFence(Base):
+    """A restore fence: while any row has ``cleared_at IS NULL`` no named credential is honoured.
+
+    ``scripts/restore_database.py`` writes one inside the restore transaction
+    whenever the snapshot holds team members, because revocations made after
+    the snapshot are not in it. ``brain team reconcile`` clears it. The
+    restore SQL (``scripts/team_restore_fence.sql``) repeats this DDL for
+    dumps taken before the table existed; keep the two in step."""
+    __tablename__ = "team_access_fences"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    fenced_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+    cleared_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    cleared_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class TeamMember(Base):
     __tablename__ = "team_members"
     principal_id: Mapped[int] = mapped_column(ForeignKey("principals.id"), primary_key=True)

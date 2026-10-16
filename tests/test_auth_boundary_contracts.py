@@ -11,13 +11,15 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from apps.api import auth
 from brain.auth import principals
 from brain.database.models import ApiCredential, Base, Principal
+from brain.team.models import TeamAccessFence
 
 
 @pytest_asyncio.fixture
 async def credential_store(tmp_path, monkeypatch):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'auth.db'}")
     async with engine.begin() as connection:
-        await connection.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[Principal.__table__, ApiCredential.__table__]))
+        await connection.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[Principal.__table__, ApiCredential.__table__,
+                                                                                    TeamAccessFence.__table__]))
     factory = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr(auth, "async_session_factory", factory)
     monkeypatch.setattr(auth.settings, "PROJECT_BRAIN_API_KEY", "test-legacy-key")

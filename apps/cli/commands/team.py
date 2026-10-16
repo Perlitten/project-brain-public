@@ -20,7 +20,7 @@ import typer
 
 from brain.config.settings import settings
 from brain.database.session import async_session_factory, init_db
-from brain.team import invitations, provisioning
+from brain.team import invitations, provisioning, restore_fence
 from brain.team.authorization import TeamConflict
 from brain.team.provisioning import TeamNotFound
 
@@ -314,3 +314,30 @@ def accept_invite_cmd(
     else:
         typer.secho("Invitation was already accepted; the credential was shown only on first acceptance.",
                     fg=typer.colors.YELLOW, err=True)
+
+
+@team_cli.command(name="reconcile")
+def reconcile_cmd(
+    attest: Optional[str] = typer.Option(
+        None, "--attest", help="Digest printed by the review run; clears the restore fence if the state still matches."),
+    keep_credentials: bool = typer.Option(
+        False, "--keep-credentials",
+        help="Keep restored credentials, OAuth refresh tokens and runs. Only for a snapshot known to be current "
+             "(taken with the API stopped right before this restore); default: revoke them all."),
+):
+    """Review, then clear the access fence a team restore leaves behind.
+
+    Without --attest this only prints the restored authorization state and its
+    digest. Correct the state first with the other `brain team` commands
+    (revoke members and roles changed after the snapshot), then run again with
+    --attest <digest>. Mint new member keys after reconciling."""
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            if not await restore_fence.fence_table_exists(session):
+                return {"team_access": "open", "fences": []}
+            if attest is None:
+                return (await restore_fence.review(session)).summary()
+            return await restore_fence.reconcile(session, attest=attest, keep_credentials=keep_credentials)
+
+    _emit(_run(run()))

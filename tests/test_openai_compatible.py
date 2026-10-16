@@ -471,6 +471,7 @@ runner = CliRunner()
 def _doctor(tmp_path, **overrides):
     cfg = _cfg(
         ENVIRONMENT="local",
+        BRAIN_STORAGE_MODE="lite",
         TARGET_REPO_PATH=str(tmp_path),
         CONTEXT_PACK_OUTPUT_DIR=str(tmp_path / "context_packs"),
         REPORT_OUTPUT_DIR=str(tmp_path / "reports"),

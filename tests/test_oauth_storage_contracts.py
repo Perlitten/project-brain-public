@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from brain.auth import oauth_store
 from brain.auth.principals import hash_credential, resolve_credential
+from brain.config.settings import settings
 from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken, Principal
+from brain.team.models import TeamAccessFence
 
 
 @pytest_asyncio.fixture
@@ -17,7 +19,8 @@ async def oauth_storage(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
     async with engine.begin() as connection:
         await connection.run_sync(lambda sync: Principal.metadata.create_all(
-            sync, tables=[model.__table__ for model in (Principal, ApiCredential, OAuthClient, OAuthRefreshToken)],
+            sync, tables=[model.__table__ for model in (Principal, ApiCredential, OAuthClient, OAuthRefreshToken,
+                                                       TeamAccessFence)],
         ))
     try:
         yield async_sessionmaker(engine, expire_on_commit=False), path
@@ -101,6 +104,25 @@ async def test_pair_rotation_preserves_attribution_and_revocation_stays_with_its
         await oauth_store.revoke(session, "unknown-token")
         assert await oauth_store.load_access(session, other.access_token) is not None
         assert await oauth_store.load_refresh(session, other.refresh_token) is not None
+
+
+@pytest.mark.asyncio
+async def test_restore_fence_refuses_existing_oauth_access_tokens(oauth_storage, monkeypatch):
+    sessions, _ = oauth_storage
+    monkeypatch.setattr(settings, "BRAIN_STORAGE_MODE", "lite")
+    async with sessions() as session, session.begin():
+        pair = await oauth_store.issue_tokens(
+            session, client_id="restored", client_name="Restored", scopes=["core:read"], subject=None,
+            access_ttl=timedelta(hours=1), refresh_ttl=timedelta(days=1),
+        )
+    async with sessions() as session:
+        assert await oauth_store.load_access(session, pair.access_token) is not None
+
+    monkeypatch.setattr(settings, "BRAIN_STORAGE_MODE", "full")
+    async with sessions() as session, session.begin():
+        session.add(TeamAccessFence(reason="restored snapshot"))
+    async with sessions() as session:
+        assert await oauth_store.load_access(session, pair.access_token) is None
 
 
 @pytest.mark.asyncio

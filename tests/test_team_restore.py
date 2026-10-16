@@ -12,11 +12,13 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from brain.auth.principals import ResolvedPrincipal, hash_credential
+from brain.auth.principals import ResolvedPrincipal, hash_credential, resolve_credential
 from brain.database.harness_models import AgentTask
 from brain.database.models import ApiCredential
-from brain.team.authorization import Permission, TeamConflict, TeamDenied, authorize, change_policy, change_role
-from brain.team.models import AgentRun, TeamMember
+from brain.team import provisioning, restore_fence
+from brain.team.authorization import (Permission, TeamConflict, TeamDenied, authorize, change_policy, change_role,
+                                      team_state)
+from brain.team.models import AgentRun, TeamAccessFence, TeamMember
 from brain.team.store import create_task, list_tasks, request_run
 from scripts.backup_runner import run_backup
 from scripts.restore_database import restore_database
@@ -31,6 +33,8 @@ async def snapshot(factory):
     async with factory() as session:
         result = {}
         for table in TABLES:
+            if table is TeamAccessFence.__table__:
+                continue  # The restore adds its fence; every other row must match the snapshot.
             rows = (await session.execute(select(table).order_by(*table.primary_key.columns))).mappings().all()
             result[table.fullname] = json.loads(json.dumps([dict(row) for row in rows], default=str, sort_keys=True))
         return result
@@ -95,11 +99,53 @@ async def test_team_backup_restore_preserves_authority_and_retry(team_db, tmp_pa
     dump = backup_dir / "postgres_dump.sql"
     assert root["credential"] not in dump.read_text()
     assert child["credential"] not in dump.read_text()
+    # Revoked after the snapshot: the dump still holds member 1 and their key as live.
+    async with source() as session, session.begin():
+        await provisioning.revoke_member(session, principal=await provisioning.resolve_principal(session, 1))
+        await session.execute(update(ApiCredential).where(ApiCredential.id == 1).values(revoked_at=NOW))
     config = configuration(RESTORE_DATABASE)
     engine = create_async_engine(url.set(database=RESTORE_DATABASE), poolclass=NullPool)
     restored = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        await asyncio.to_thread(restore_database, backup_dir, config, RESTORE_DATABASE)
+        assert await asyncio.to_thread(restore_database, backup_dir, config, RESTORE_DATABASE) == "pending_reconciliation"
+        assert await snapshot(restored) == before
+        async with restored() as session, session.begin():
+            assert (await session.get(ApiCredential, 1)).revoked_at is None
+            assert await restore_fence.access_fenced(session) and await team_state(session) == "team"
+            for raw in ("fixture-1", "fixture-2", "fixture-4"):
+                assert await resolve_credential(session, raw) is None
+            with pytest.raises(TeamDenied, match="fenced"):
+                await authorize(session, child_caller, project_a, Permission.READ, task_id=task_id)
+            reviewed = await restore_fence.review(session)
+            assert {m["principal_id"]: m["revoked"] for m in reviewed.state["members"]}[1] is False
+            # The operator replays the post-snapshot revocation, then attests the corrected state.
+            await provisioning.revoke_member(session, principal=await provisioning.resolve_principal(session, 1))
+            with pytest.raises(TeamConflict, match="attested digest"):
+                await restore_fence.reconcile(session, attest=reviewed.digest)
+        async with restored() as session, session.begin():
+            reconciled = await restore_fence.reconcile(session, attest=(await restore_fence.review(session)).digest)
+            assert reconciled["credentials"] == "rotated" and reconciled["revoked"]["credentials"] > 0
+        async with restored() as session, session.begin():
+            assert not await restore_fence.access_fenced(session)
+            for raw in ("fixture-1", "fixture-2", "fixture-4"):
+                assert await resolve_credential(session, raw) is None
+            with pytest.raises(TeamDenied):
+                await authorize(session, child_caller, project_a, Permission.READ, task_id=task_id)
+            rekeyed = {}
+            for name in ("human-1", "human-2"):
+                raw, _ = await provisioning.create_human_principal(session, name)
+                rekeyed[name] = await resolve_credential(session, raw)
+            with pytest.raises(TeamDenied):
+                await authorize(session, rekeyed["human-1"], project_a, Permission.READ)
+            await authorize(session, rekeyed["human-2"], project_a, Permission.READ)
+
+        # A snapshot known to be current (rollback with the API stopped) may keep its credentials.
+        assert await asyncio.to_thread(restore_database, backup_dir, config, RESTORE_DATABASE) == "pending_reconciliation"
+        assert await snapshot(restored) == before
+        async with restored() as session, session.begin():
+            kept = await restore_fence.reconcile(session, attest=(await restore_fence.review(session)).digest,
+                                                 keep_credentials=True)
+            assert kept["credentials"] == "kept" and set(kept["revoked"].values()) == {0}
         assert await snapshot(restored) == before
         async with restored() as session, session.begin():
             assert await create_task(session, caller(2), project_a, task_payload()) == task
@@ -148,6 +194,7 @@ async def test_team_backup_restore_preserves_authority_and_retry(team_db, tmp_pa
             "tables": len(before), "rows": sum(map(len, before.values())),
             "snapshot_sha256": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
             "role_superuser": False, "postgres_restore": "passed", "neo4j_restore": "not tested",
+            "restore_fence": "post-snapshot revocation denied until reconcile; rotation and keep paths",
             "authority_denials": 7, "stale_version_conflicts": 2,
             "task_run_retry": "no duplicate or raw credential replay", "target_integrity_checks": "passed",
             "new_request_sequences": "passed", "execution_available": False,

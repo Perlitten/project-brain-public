@@ -23,6 +23,7 @@ from brain.late_interaction.operator_status import (
 from brain.late_interaction.provider import LfmColbertProvider
 from brain.llm.presets import llm_provider_ready
 from brain.team.authorization import Permission
+from brain.team.restore_fence import current_team_access
 from brain.version import build_info
 from brain.workers.queue import worker_liveness, worker_pool_status
 
@@ -51,10 +52,16 @@ async def health_check():
         mode = await current_team_state()
     except Exception as exc:  # noqa: BLE001 — the database outage is already reported in details
         mode = f"unknown ({type(exc).__name__})"
+    try:
+        # "pending_reconciliation" after a team restore until `brain team reconcile` (no credential works).
+        team_access = await current_team_access()
+    except Exception as exc:  # noqa: BLE001 — the database outage is already reported in details
+        team_access = f"unknown ({type(exc).__name__})"
     return {
         "status": status,
         "version": __version__,
         "mode": mode,
+        "team_access": team_access,
         "details": details,
         "worker": worker,
         "scheduler": {

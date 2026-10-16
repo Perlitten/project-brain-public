@@ -1,4 +1,8 @@
-"""Verify a backup, then restore PostgreSQL to an explicitly confirmed database."""
+"""Verify a backup, then restore PostgreSQL to an explicitly confirmed database.
+
+A snapshot with team members is restored behind an access fence
+(``scripts/team_restore_fence.sql``): revocations made after the snapshot are
+not in it, so no credential is honoured until ``brain team reconcile``."""
 
 from __future__ import annotations
 
@@ -15,8 +19,11 @@ from sqlalchemy.engine import URL
 from scripts.recovery_config import load_recovery_config
 from scripts.restore_verification_drill import verify_restore_drill
 
+FENCE_SQL = Path(__file__).with_name("team_restore_fence.sql")
 
-def restore_database(backup_dir: Path, config_path: str | None, confirmed_database: str) -> None:
+
+def restore_database(backup_dir: Path, config_path: str | None, confirmed_database: str) -> str:
+    """Restore and return the team access state: ``"open"`` or ``"pending_reconciliation"``."""
     config = load_recovery_config(config_path)
     database = config.postgres_url.database
     if not database or database != confirmed_database or database in {"postgres", "template0", "template1"}:
@@ -31,6 +38,10 @@ def restore_database(backup_dir: Path, config_path: str | None, confirmed_databa
         raise ValueError("Backup manifest does not verify postgres_dump.sql; database was not changed")
     if not (backup_dir / "postgres_dump.sql").is_file():
         raise ValueError("PostgreSQL dump is missing; database was not changed")
+    if not FENCE_SQL.is_file():
+        raise ValueError("Team restore fence SQL is missing; database was not changed")
+    fence_reason = (f"restored from the backup taken {manifest.get('timestamp') or 'at an unknown time'}; "
+                    "changes after that snapshot are unknown")
     psql = shutil.which("psql")
     if not psql:
         raise ValueError("psql not found; database was not changed")
@@ -44,10 +55,10 @@ def restore_database(backup_dir: Path, config_path: str | None, confirmed_databa
     quoted_database = database.replace('"', '""')
     literal_database = database.replace("'", "''")
 
-    def execute(url: str, *args: str) -> None:
+    def execute(url: str, *args: str) -> str:
         try:
-            subprocess.run([psql, "--dbname", url, "-X", "--set", "ON_ERROR_STOP=1", *args],
-                           check=True, capture_output=True, timeout=300, env=env)
+            return subprocess.run([psql, "--dbname", url, "-X", "--set", "ON_ERROR_STOP=1", *args],
+                                  check=True, capture_output=True, text=True, timeout=300, env=env).stdout
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(f"PostgreSQL restore step failed (exit {exc.returncode}); check the target separately") from None
 
@@ -55,7 +66,14 @@ def restore_database(backup_dir: Path, config_path: str | None, confirmed_databa
     execute(admin, "-c", f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='{literal_database}' AND pid<>pg_backend_pid()")
     execute(admin, "-c", f'DROP DATABASE IF EXISTS "{quoted_database}"')
     execute(admin, "-c", f'CREATE DATABASE "{quoted_database}"')
-    execute(connection_url(database), "--single-transaction", "-f", str(backup_dir / "postgres_dump.sql"))
+    target = connection_url(database)
+    # One transaction: the snapshot never becomes visible without its fence.
+    execute(target, "--single-transaction", "--set", f"fence_reason={fence_reason}",
+            "-f", str(backup_dir / "postgres_dump.sql"), "-f", str(FENCE_SQL))
+    if execute(target, "-t", "-A", "-c", "SELECT pg_catalog.to_regclass('public.team_access_fences') IS NOT NULL").strip() != "t":
+        return "open"
+    active = execute(target, "-t", "-A", "-c", "SELECT count(*) FROM public.team_access_fences WHERE cleared_at IS NULL")
+    return "pending_reconciliation" if int(active.strip() or 0) else "open"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,11 +83,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--confirm-database", required=True, help="Exact target DB name to drop and recreate")
     args = parser.parse_args(argv)
     try:
-        restore_database(args.backup_dir, args.config, args.confirm_database)
+        team_access = restore_database(args.backup_dir, args.config, args.confirm_database)
     except (ValueError, RuntimeError) as exc:
         print(f"Restore failed: {exc}", file=sys.stderr)
         return 1
     print("PostgreSQL restored; Neo4j export is verified but NOT restored. Reindex the repository before restarting writes.")
+    if team_access == "pending_reconciliation":
+        print("Team access is FENCED: the snapshot has team members and changes after it are unknown. "
+              "No credential is honoured until `brain team reconcile` (see docs/runbooks/backup-restore.md).")
     return 0
 
 
