@@ -33,10 +33,10 @@ from datetime import datetime, timedelta
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from brain.auth.principals import hash_credential, mint_credential
+from brain.auth.principals import ResolvedPrincipal, hash_credential, mint_credential
 from brain.database.models import ApiCredential, Principal
 from brain.team.authorization import ROLE_PERMISSIONS, TeamConflict, TeamDenied, fresh
-from brain.team.models import ProjectMember, TeamInvitation, TeamMember, TeamProject
+from brain.team.models import ProjectMember, Team, TeamInvitation, TeamMember, TeamProject
 from brain.team.provisioning import (
     TEAM_ID,
     TeamNotFound,
@@ -127,7 +127,12 @@ async def create_invitation(session: AsyncSession, *, invited_by: str, invited_b
                             email: str | None = None, name: str | None = None,
                             expires_hours: int = DEFAULT_TTL_HOURS, team_id: int = TEAM_ID) -> tuple[str, dict]:
     """Issue an invitation; returns the plaintext token (shown once) and the public view."""
-    await require_team(session, team_id)
+    # Serialize the check-and-insert sequence on the shared parent row. A partial
+    # uniqueness constraint cannot express "unaccepted, unrevoked and unexpired",
+    # and without this lock concurrent administrators could mint two live tokens
+    # for the same principal name.
+    if await fresh(session, Team, Team.id == team_id, exclusive=True) is None:
+        raise TeamNotFound("Team is not initialized; run `brain team init` first")
     if role not in ROLE_PERMISSIONS:
         raise TeamConflict("Unknown project role")
     if not 1 <= expires_hours <= MAX_TTL_HOURS:
@@ -175,7 +180,53 @@ async def create_invitation(session: AsyncSession, *, invited_by: str, invited_b
 async def list_invitations(session: AsyncSession, team_id: int = TEAM_ID) -> list[dict]:
     rows = (await session.execute(select(TeamInvitation).where(TeamInvitation.team_id == team_id)
                                   .order_by(TeamInvitation.created_at, TeamInvitation.id))).scalars().all()
-    return [await describe(session, invitation) for invitation in rows]
+    principal_ids = {row.accepted_principal_id for row in rows if row.accepted_principal_id is not None}
+    credential_ids = {row.accepted_credential_id for row in rows if row.accepted_credential_id is not None}
+    principals = {}
+    members = {}
+    credentials = {}
+    if principal_ids:
+        principal_rows = (await session.execute(select(Principal).where(Principal.id.in_(principal_ids)))).scalars()
+        member_rows = (await session.execute(
+            select(TeamMember).where(TeamMember.principal_id.in_(principal_ids))
+        )).scalars()
+        principals = {row.id: row for row in principal_rows}
+        members = {row.principal_id: row for row in member_rows}
+    if credential_ids:
+        credential_rows = (await session.execute(
+            select(ApiCredential).where(ApiCredential.id.in_(credential_ids))
+        )).scalars()
+        credentials = {row.id: row for row in credential_rows}
+    return [
+        invitation_dict(
+            row,
+            derive_state(
+                row,
+                principals.get(row.accepted_principal_id),
+                members.get(row.accepted_principal_id),
+                credentials.get(row.accepted_credential_id),
+            ),
+        )
+        for row in rows
+    ]
+
+
+async def accepted_principal(session: AsyncSession, invitation_id: uuid.UUID) -> ResolvedPrincipal:
+    """Identity attributed to a successful redemption without marking its new key as used."""
+    invitation = await fresh(session, TeamInvitation, TeamInvitation.id == invitation_id)
+    if invitation is None or invitation.accepted_principal_id is None:
+        raise TeamConflict("Accepted invitation identity is unavailable")
+    principal, _, credential = await _issued(session, invitation)
+    if principal is None or credential is None:
+        raise TeamConflict("Accepted invitation identity is unavailable")
+    return ResolvedPrincipal(
+        id=principal.id,
+        name=principal.name,
+        kind=principal.kind,
+        scopes=frozenset(credential.scopes or []),
+        org_id=principal.org_id,
+        credential_id=credential.id,
+    )
 
 
 async def _accepted_result(session: AsyncSession, invitation: TeamInvitation, credential: str | None) -> dict:

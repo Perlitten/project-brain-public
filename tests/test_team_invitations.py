@@ -4,11 +4,13 @@ import json
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 import httpx
 import pytest
 from sqlalchemy import func, select, update
 from typer.testing import CliRunner
 
+from apps.api.audit_middleware import AuditLogMiddleware
 from apps.api.routers import team_invitations
 from apps.cli.commands import team as team_commands
 from apps.cli.main import cli
@@ -104,6 +106,26 @@ async def test_create_accept_retry_and_activation(team_db, monkeypatch):
         count = (await session.execute(select(func.count()).select_from(ApiCredential)
                                        .where(ApiCredential.principal_id == row.accepted_principal_id))).scalar_one()
         assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_successful_accept_is_attributed_to_the_invitee_in_the_audit_log(team_db, monkeypatch):
+    factory, _, _ = team_db
+    app = invite_app(factory, monkeypatch)
+    audit = AsyncMock()
+    monkeypatch.setattr("apps.api.audit_middleware.record_audit_event", audit)
+    app.add_middleware(AuditLogMiddleware)
+    async with client_for(app) as client:
+        _, token = await invite(client, name="audited-invitee")
+        audit.reset_mock()
+        accepted = await accept(client, token)
+        assert accepted.status_code == 200
+    assert audit.await_count == 1
+    recorded = audit.await_args.kwargs
+    assert recorded["path"] == "/team/invitations/accept"
+    assert recorded["principal_name"] == "audited-invitee"
+    assert recorded["principal_id"] == accepted.json()["member"]["principal_id"]
+    assert recorded["credential_id"] is not None
 
 
 @pytest.mark.asyncio
@@ -367,6 +389,9 @@ def test_cli_accept_against_a_remote_api(monkeypatch):
     monkeypatch.setattr(team_commands.httpx, "post", denied)
     result = runner.invoke(cli, ["team", "invite", "accept", "pbi_token", "--api-url", "http://127.0.0.1:8000"])
     assert result.exit_code == 1 and invitations.REJECTED in result.output
+    for unsafe in ("https://brain.example.test/base?tenant=x", "https://brain.example.test/base#fragment"):
+        result = runner.invoke(cli, ["team", "invite", "accept", "pbi_token", "--api-url", unsafe])
+        assert result.exit_code == 1 and "https" in result.output
 
 
 @pytest.mark.asyncio
@@ -391,3 +416,31 @@ async def test_postgres_concurrent_accepts_issue_exactly_one_member(team_db):
         principals = (await session.execute(select(func.count()).select_from(Principal)
                                             .where(Principal.name == "frank"))).scalar_one()
         assert credentials == 1 and principals == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not os.getenv("TEST_TEAM_POSTGRES_URL"), reason="row-lock concurrency needs PostgreSQL")
+async def test_postgres_concurrent_creates_issue_one_pending_invitation(team_db):
+    factory, _, _ = team_db
+
+    async def attempt():
+        try:
+            async with factory() as session, session.begin():
+                return await invitations.create_invitation(
+                    session, invited_by="principal:4", name="one-pending-token"
+                )
+        except TeamConflict as exc:
+            return exc
+
+    results = await asyncio.gather(attempt(), attempt())
+    assert sum(isinstance(result, tuple) for result in results) == 1
+    assert sum(isinstance(result, TeamConflict) for result in results) == 1
+    async with factory() as session:
+        count = (await session.execute(
+            select(func.count()).select_from(TeamInvitation).where(
+                TeamInvitation.principal_name == "one-pending-token",
+                TeamInvitation.accepted_at.is_(None),
+                TeamInvitation.revoked_at.is_(None),
+            )
+        )).scalar_one()
+        assert count == 1

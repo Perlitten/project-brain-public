@@ -137,6 +137,9 @@ async def accept_invitation(body: InvitationAcceptRequest, request: Request, res
         require_team_storage()
         async with async_session_factory() as session, session.begin():
             result = await invitations.accept_invitation(session, body.token)
+            request.state.principal = await invitations.accepted_principal(
+                session, uuid.UUID(result["invitation"]["id"])
+            )
     except invitations.InvitationRejected as exc:
         raise HTTPException(403, invitations.REJECTED) from exc
     except TeamDenied as exc:

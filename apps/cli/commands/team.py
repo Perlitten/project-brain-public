@@ -267,6 +267,8 @@ def _safe_api_url(url: str) -> bool:
         parsed = urlsplit(url)
         if not parsed.hostname or parsed.username is not None or parsed.password is not None:
             return False
+        if parsed.query or parsed.fragment:
+            return False
         _ = parsed.port
         if parsed.scheme == "https":
             return True
