@@ -171,6 +171,8 @@ async def load_refresh(session: AsyncSession, raw: str) -> Optional[StoredRefres
 
 async def load_access(session: AsyncSession, raw: str) -> Optional[StoredAccess]:
     """An OAuth-issued access credential with the client it was issued to."""
+    if await access_fenced(session):
+        return None
     row = (
         await session.execute(
             select(ApiCredential, OAuthRefreshToken.client_id)
