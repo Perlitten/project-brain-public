@@ -7,7 +7,7 @@ from design or green CI alone.
 
 | Requirement / acceptance | Current code to reuse | M1 target | Remaining stage/proof |
 |---|---|---|---|
-| Verified authorship; no shared-admin bypass | `brain/auth/principals.py`, API auth | Trusted verified identity records; actor derived from live credential, not input | Real invitation/OIDC M5/pilot |
+| Verified authorship; no shared-admin bypass | `brain/auth/principals.py`, API auth, `brain/team/invitations.py` | Trusted verified identity records and token-possession invitations; actor derived from live credential, not input | OIDC M5/pilot |
 | Reader write/execution denial | Domain scopes, workspace capabilities | Project role/policy intersection; legacy/execution refusal | Bounded execution M2 |
 | A/B isolation across API/Web/MCP | Native MCP forwards caller credential | Repository-scoped routes authorize the project per request once members exist | Cache/log/artifact adapters, unscoped routers M2–M5 |
 | No run/delegation escalation | Hashed credentials; harness task ledger | Durable task/run grants and narrowed parent chain | Real executor tool capabilities M2 |
@@ -36,9 +36,38 @@ access follows `ProjectRepository -> TeamProject -> member role`; an
 unattached repository or an unscoped call needs a team administrator.
 `BRAIN_TEAM_MODE=true` remains as a deprecated strictness alias that treats an
 empty team as a team (logged once as a deprecation warning); Lite rejects it.
-Trusted operators provision verified membership and named credentials; there is
-no public invitation, SSO, or self-registration flow. An issuer/subject stored
-by a trusted operator is not evidence that OIDC has been integrated.
+Trusted operators provision verified membership and named credentials, directly
+or through single-use invitations (below); there is no SSO or self-registration
+flow. An issuer/subject stored by a trusted operator or an invitation is not
+evidence that OIDC has been integrated.
+
+### Invitations (invited -> verified -> active -> revoked)
+
+`brain/team/invitations.py`, `apps/api/routers/team_invitations.py`
+(`POST/GET /team/invitations`, `POST /team/invitations/{id}/revoke`,
+`POST /team/invitations/accept`) and `brain team invite create|list|revoke|accept`.
+Additive table `team_invitations` (created with the other team tables, full
+storage only). How to operate it: [inviting team members](../operations/TEAM_INVITATIONS.md).
+
+- A team administrator (API) or the server operator (CLI) issues a `pbi_` token
+  for an operator-chosen principal name, optional unverified email, project
+  roles and expiry (72 h default, 720 h max). Only its SHA-256 hash is stored;
+  the token is returned once with `Cache-Control: no-store`.
+- Redemption is unauthenticated, throttled per client IP (10 per 5 minutes),
+  row-locked and single use; the hash is compared in constant time and every
+  rejected token gets one answer. It creates a human principal, a verified
+  member (issuer `brain-invitation`, subject `invitation:<id>`), the project
+  roles and one named credential shown once. A retry returns the same member
+  without a credential. "Verified" means possession of that token, nothing more.
+- Redemption fails if the inviting administrator is no longer a live admin.
+- State is derived from the row and the issued credential; provenance keeps the
+  inviter, acceptor and timestamps. Revoking a redeemed invitation requires an
+  explicit `revoke_member`, which revokes the membership, project roles and all
+  credentials of that principal; administrators cannot revoke themselves.
+- Lock-out guard: the API refuses invitations in the solo state, and the first
+  member must be an administrator, so the first invitation is issued and
+  redeemed by the operator on the server before the shared key is retired.
+- No MCP tools: one-time secrets must not land in agent transcripts.
 
 - `brain/team/models.py` adds single-team/project/member/repository/task bindings
   and per-run provenance in the existing database and harness schema. The task

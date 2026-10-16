@@ -183,8 +183,11 @@ green ADR/CI is not team readiness.
   harness ledger and decisions/rules landed in 2026-10. The unified model
   (2026-10-15) routed search/context/memory/jobs and the repository-scoped
   routers through `authorize()` and removed the boundary wall, so the OAuth
-  endpoints no longer need an exemption. Still open: initiator on queued jobs,
-  merging `brain/workspace` with `brain/team`, member UI, SSO/invitations.
+  endpoints no longer need an exemption. Single-use invitations (invited ->
+  verified -> active -> revoked; verified = token possession for an
+  operator-chosen identity, not OIDC) landed 2026-10-16 via API and CLI.
+  Still open: initiator on queued jobs, merging `brain/workspace` with
+  `brain/team`, member UI, SSO, invitation UX.
 - **M2 after M1:** bounded real executors, run tools/secrets/egress/budget capabilities,
   revocation checkpoints, environments, timeout/cancel/crash fencing.
 - **M3 after M1/M2:** same-task subtasks/dependencies/coordinator, semantic overlap,

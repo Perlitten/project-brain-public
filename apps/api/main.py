@@ -122,9 +122,10 @@ app = FastAPI(
     openapi_url="/openapi.json" if _api_docs_enabled else None,
 )
 
-from apps.api.routers import team  # noqa: E402
+from apps.api.routers import team, team_invitations  # noqa: E402
 
 app.include_router(team.router)
+app.include_router(team_invitations.router)
 
 
 # --- Security headers middleware ---

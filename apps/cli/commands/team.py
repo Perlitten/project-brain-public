@@ -10,13 +10,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
+from ipaddress import ip_address
 from typing import Optional
+from urllib.parse import urlsplit
 
+import httpx
 import typer
 
 from brain.config.settings import settings
 from brain.database.session import async_session_factory, init_db
-from brain.team import provisioning
+from brain.team import invitations, provisioning
 from brain.team.authorization import TeamConflict
 from brain.team.provisioning import TeamNotFound
 
@@ -24,9 +28,11 @@ team_cli = typer.Typer(help="Provision the experimental team layer (operator-onl
 project_cli = typer.Typer(help="Team projects.")
 member_cli = typer.Typer(help="Team members and project roles.")
 repo_cli = typer.Typer(help="Repositories attached to projects.")
+invite_cli = typer.Typer(help="Single-use invitations that turn their holder into a verified member.")
 team_cli.add_typer(project_cli, name="project")
 team_cli.add_typer(member_cli, name="member")
 team_cli.add_typer(repo_cli, name="repo")
+team_cli.add_typer(invite_cli, name="invite")
 
 
 def _fail(message: str) -> None:
@@ -40,7 +46,7 @@ def _run(coro):
         _fail("Team provisioning requires BRAIN_STORAGE_MODE=full (Postgres).")
     try:
         return asyncio.run(coro)
-    except (TeamConflict, TeamNotFound) as exc:
+    except (TeamConflict, TeamNotFound, invitations.InvitationRejected) as exc:
         _fail(str(exc))
 
 
@@ -191,3 +197,118 @@ def list_repos_cmd(project: str = typer.Option(..., "--project", help="Project i
             return await provisioning.list_project_repositories(session, target.id)
 
     _emit(_run(run()))
+
+
+CLI_OPERATOR = "operator:cli"
+
+
+def _show_once(label: str, secret: str) -> None:
+    typer.secho(f"{label} (shown once, never stored in plaintext):", fg=typer.colors.YELLOW, err=True)
+    typer.echo(secret, err=True)
+
+
+@invite_cli.command(name="create")
+def create_invite_cmd(
+    project: Optional[list[str]] = typer.Option(None, "--project", help="Grant a role in this project (repeatable)."),
+    role: str = typer.Option("contributor", "--role", help="Project role: reader, contributor or reviewer."),
+    admin: bool = typer.Option(False, "--admin", help="The invitee administers the team."),
+    email: Optional[str] = typer.Option(None, "--email", help="Recorded for the operator; not verified."),
+    name: Optional[str] = typer.Option(None, "--name", help="Principal name of the invitee; default: generated."),
+    expires_hours: int = typer.Option(invitations.DEFAULT_TTL_HOURS, "--expires-hours",
+                                      help=f"Hours until the token expires (1-{invitations.MAX_TTL_HOURS})."),
+):
+    """Issue an invitation and print its single-use token once (to stderr)."""
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            return await invitations.create_invitation(
+                session, invited_by=CLI_OPERATOR, projects=project or [], role=role, is_admin=admin, email=email,
+                name=name, expires_hours=expires_hours)
+
+    token, invitation = _run(run())
+    _emit(invitation)
+    _show_once("Invitation token", token)
+
+
+@invite_cli.command(name="list")
+def list_invites_cmd():
+    """List invitations with their derived state (tokens are never shown)."""
+
+    async def run():
+        async with async_session_factory() as session:
+            return await invitations.list_invitations(session)
+
+    _emit(_run(run()))
+
+
+@invite_cli.command(name="revoke")
+def revoke_invite_cmd(
+    invitation_id: str = typer.Argument(..., help="Invitation id."),
+    revoke_member: bool = typer.Option(False, "--revoke-member",
+                                       help="Required once accepted: also revoke the member and their credentials."),
+):
+    """Revoke an invitation (and, for an accepted one, the access it granted)."""
+    try:
+        target = uuid.UUID(invitation_id)
+    except ValueError:
+        _fail("Invitation id must be a UUID")
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            return await invitations.revoke_invitation(session, target, revoked_by=CLI_OPERATOR,
+                                                       revoke_issued_member=revoke_member)
+
+    _emit(_run(run()))
+
+
+def _safe_api_url(url: str) -> bool:
+    """https anywhere, plain http only to loopback: the token must not cross a network in cleartext."""
+    try:
+        parsed = urlsplit(url)
+        if not parsed.hostname or parsed.username is not None or parsed.password is not None:
+            return False
+        _ = parsed.port
+        if parsed.scheme == "https":
+            return True
+        return parsed.scheme == "http" and (parsed.hostname == "localhost" or ip_address(parsed.hostname).is_loopback)
+    except ValueError:
+        return False
+
+
+@invite_cli.command(name="accept")
+def accept_invite_cmd(
+    token: Optional[str] = typer.Argument(None, help="Invitation token; prompted for (hidden) when omitted."),
+    api_url: Optional[str] = typer.Option(None, "--api-url", envvar="BRAIN_API_URL",
+                                          help="Brain API to redeem against; default: this machine's database."),
+):
+    """Redeem an invitation and print the new member credential once (to stderr)."""
+    secret = token or typer.prompt("Invitation token", hide_input=True)
+    if api_url:
+        if not _safe_api_url(api_url):
+            _fail("--api-url must use https (plain http only to loopback)")
+        try:
+            response = httpx.post(f"{api_url.rstrip('/')}/team/invitations/accept", json={"token": secret},
+                                  timeout=30.0)
+        except httpx.HTTPError as exc:
+            _fail(f"Could not reach the Brain API: {type(exc).__name__}")
+        if response.status_code != 200:
+            try:
+                detail = response.json().get("detail")
+            except ValueError:
+                detail = None
+            _fail(f"Invitation not accepted (HTTP {response.status_code}): {detail or response.reason_phrase}")
+        result = response.json()
+    else:
+
+        async def run():
+            async with async_session_factory() as session, session.begin():
+                return await invitations.accept_invitation(session, secret)
+
+        result = _run(run())
+    credential = result.pop("credential", None)
+    _emit(result)
+    if credential:
+        _show_once("New member credential", credential)
+    else:
+        typer.secho("Invitation was already accepted; the credential was shown only on first acceptance.",
+                    fg=typer.colors.YELLOW, err=True)
