@@ -58,9 +58,10 @@ class JobInitiator:
     @classmethod
     def from_job(cls, job: Mapping[str, Any]) -> JobInitiator | None:
         """``None`` for a legacy job. Malformed ids read as missing and fail re-authorization."""
-        origin = str(job.get("initiator_origin") or "")
-        if origin not in ("principal", "system"):
+        stored = str(job.get("initiator_origin") or "")
+        if stored not in ("principal", "system"):
             return None
+        origin: Origin = "principal" if stored == "principal" else "system"
         return cls(origin, _int_or_none(job.get("initiator_principal_id")),
                    _int_or_none(job.get("initiator_credential_id")),
                    str(job.get("initiator_permission") or ""), str(job.get("initiator_source") or ""))
