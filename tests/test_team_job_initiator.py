@@ -1,5 +1,6 @@
 """Queued jobs carry their initiator, and the worker re-authorizes it before every attempt
 (ADR docs/adr/team-collaboration.md, "Revocation, concurrency and approval")."""
+import contextlib
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
@@ -71,10 +72,14 @@ async def test_api_call_sites_pass_the_callers_principal(monkeypatch):
         assert call.kwargs["initiator"] == JobInitiator("principal", 2, 2, "run.request")
 
     monkeypatch.setattr("brain.workers.queue.queue_for_job", lambda *a, **k: queue)
+    monkeypatch.setattr(core_retrieval, "async_session_factory", contextlib.nullcontext)
+    monkeypatch.setattr(core_retrieval, "find_repository_id", AsyncMock(return_value=1))
     await core_retrieval.review_git_diff(DiffReviewRequest(repo_path="/synthetic/A", base="main", head="HEAD"),
                                          principal=caller(READER))
     # Diff review is admitted on read, so execution re-checks read, not run.request.
     assert queue.enqueue.await_args.kwargs["initiator"] == JobInitiator("principal", 1, 1, "read")
+    # The result is later authorized on the indexed repository id, not the path.
+    assert queue.enqueue.await_args.args[1]["repository_id"] == 1
 
 
 @pytest.mark.asyncio
