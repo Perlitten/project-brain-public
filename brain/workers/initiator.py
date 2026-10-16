@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping, cast
+from typing import Any, Literal, Mapping
 
 from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
@@ -58,10 +58,11 @@ class JobInitiator:
     @classmethod
     def from_job(cls, job: Mapping[str, Any]) -> JobInitiator | None:
         """``None`` for a legacy job. Malformed ids read as missing and fail re-authorization."""
-        origin = str(job.get("initiator_origin") or "")
-        if origin not in ("principal", "system"):
+        stored = str(job.get("initiator_origin") or "")
+        if stored not in ("principal", "system"):
             return None
-        return cls(cast(Origin, origin), _int_or_none(job.get("initiator_principal_id")),
+        origin: Origin = "principal" if stored == "principal" else "system"
+        return cls(origin, _int_or_none(job.get("initiator_principal_id")),
                    _int_or_none(job.get("initiator_credential_id")),
                    str(job.get("initiator_permission") or ""), str(job.get("initiator_source") or ""))
 
