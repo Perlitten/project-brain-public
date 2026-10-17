@@ -44,8 +44,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from brain.config.settings import settings
 from brain.database.harness_models import AgentTask
 from brain.database.models import ApiCredential, OAuthRefreshToken, Principal
-from brain.team.models import (AgentRun, ProjectMember, ProjectRepository, TeamAccessFence, TeamInvitation, TeamMember,
-                               TeamProject, TeamTaskBinding)
+from brain.team.models import (AgentRun, ProjectMember, ProjectRepository, TeamAccessFence, TeamIdentity, TeamInvitation,
+                               TeamMember, TeamProject, TeamTaskBinding)
 
 FENCED = "Team access is fenced after a restore: run `brain team reconcile`"
 
@@ -99,6 +99,7 @@ class Review:
             "digest": self.digest,
             "fences": state["fences"],
             "members": state["members"],
+            "sso_identities": state["sso_identities"],
             "projects": state["projects"],
             "project_members": state["project_members"],
             "repositories": state["repositories"],
@@ -113,15 +114,17 @@ class Review:
 async def review(session: AsyncSession) -> Review:
     """Snapshot of every row that decides who may do what, and a SHA-256 over it.
 
-    The digest covers the active fences, team and project membership, project
-    policy, repository links, task status and cancellation, and the ids of
-    every unrevoked credential, refresh token, run delegation and pending
-    invitation. Any change between review and ``reconcile`` changes the digest."""
+    The digest covers the active fences, team and project membership, SSO
+    identity bindings, project policy, repository links, task status and
+    cancellation, and the ids of every unrevoked credential, refresh token, run
+    delegation and pending invitation. Any change between review and ``reconcile`` changes the digest."""
     fences = (await session.execute(select(TeamAccessFence).where(TeamAccessFence.cleared_at.is_(None))
                                     .order_by(TeamAccessFence.id))).scalars().all()
     members = (await session.execute(select(TeamMember, Principal.name)
                                      .join(Principal, Principal.id == TeamMember.principal_id)
                                      .order_by(TeamMember.principal_id))).all()
+    identities = (await session.execute(select(TeamIdentity)
+                                        .order_by(TeamIdentity.issuer, TeamIdentity.subject))).scalars().all()
     projects = (await session.execute(select(TeamProject).order_by(TeamProject.name, TeamProject.id))).scalars().all()
     roles = (await session.execute(select(ProjectMember)
                                    .order_by(ProjectMember.project_id, ProjectMember.principal_id))).scalars().all()
@@ -145,6 +148,9 @@ async def review(session: AsyncSession) -> Review:
         "members": [{"principal_id": m.principal_id, "name": name, "team_id": m.team_id, "is_admin": bool(m.is_admin),
                      "verified": m.verified_at is not None, "revoked": m.revoked_at is not None,
                      "issuer": m.verification_issuer, "subject": m.verification_subject} for m, name in members],
+        # Who may sign in with SSO as which member (brain.team.oidc).
+        "sso_identities": [{"principal_id": i.principal_id, "issuer": i.issuer, "subject": i.subject}
+                           for i in identities],
         "projects": [{"id": str(p.id), "name": p.name, "permissions": sorted(p.permissions or []),
                       "version": p.version, "disabled": p.disabled_at is not None} for p in projects],
         "project_members": [{"project_id": str(r.project_id), "principal_id": r.principal_id, "role": r.role,

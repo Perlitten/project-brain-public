@@ -10,9 +10,16 @@ once; only its SHA-256 is stored.
 unrevoked, single-use token an administrator issued for that identity. The
 server then creates the human principal, records team membership under the
 issuer ``brain-invitation`` with subject ``invitation:<id>``, grants the
-project roles and returns a named member credential once. It is not OIDC and
-not proof that the invitee controls the email address; whoever holds the
-token becomes the member, so deliver it over a channel you trust.
+project roles and returns a named member credential once. It is not proof
+that the invitee controls the email address; whoever holds the token becomes
+the member, so deliver it over a channel you trust.
+
+With OIDC single sign-on configured (``brain.team.oidc``) an invitation that
+names an email can instead be accepted through the identity provider: the
+token selects the invitation, the ID token must carry a verified email equal
+to the invited one (case-insensitive), and the member is recorded under the
+provider's issuer and subject (``accept_invitation_oidc``). Operators can make
+that path mandatory (``BRAIN_OIDC_REQUIRE_FOR_INVITATIONS``).
 
 The state is derived, never stored: ``revoked`` (invitation revoked, or the
 issued membership, principal or credential no longer live), ``active`` (the
@@ -34,9 +41,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import ResolvedPrincipal, hash_credential, mint_credential
+from brain.config.settings import settings
 from brain.database.models import ApiCredential, Principal
 from brain.team.authorization import ROLE_PERMISSIONS, TeamConflict, TeamDenied, fresh
-from brain.team.models import ProjectMember, Team, TeamInvitation, TeamMember, TeamProject
+from brain.team.models import ProjectMember, Team, TeamIdentity, TeamInvitation, TeamMember, TeamProject
 from brain.team.provisioning import (
     TEAM_ID,
     TeamNotFound,
@@ -63,10 +71,25 @@ MAX_PROJECTS = 16
 NAME_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9._@+-]{0,63}")
 EMAIL_PATTERN = re.compile(r"[^@\s]{1,64}@[^@\s]{1,189}")
 REJECTED = "Invitation token is invalid, expired or revoked"
+OIDC_REQUIRED = ("This Brain accepts invitations only through single sign-on; "
+                 "open the invitation link in the dashboard (/auth/oidc/start?invitation=...)")
+EMAIL_MISMATCH = "The single sign-on account's verified email does not match this invitation"
 
 
 class InvitationRejected(TeamDenied):
     """The presented token is unknown, expired, revoked or its membership was revoked (one uniform answer)."""
+
+
+def oidc_required() -> bool:
+    """Operator policy: with SSO enabled, invitations are accepted only through it."""
+    return bool(settings.BRAIN_OIDC_ENABLED and settings.BRAIN_OIDC_REQUIRE_FOR_INVITATIONS)
+
+
+def same_email(left: str | None, right: str | None) -> bool:
+    """Exact, case-insensitive address equality (no plus-address or dot folding)."""
+    if not left or not right:
+        return False
+    return left.strip().lower() == right.strip().lower()
 
 
 def generate_token() -> str:
@@ -117,7 +140,9 @@ def invitation_dict(invitation: TeamInvitation, state: str) -> dict:
             "expires_at": _iso(invitation.expires_at), "invited_by": invitation.invited_by,
             "invited_by_principal_id": invitation.invited_by_principal_id,
             "accepted_at": _iso(invitation.accepted_at), "accepted_principal_id": invitation.accepted_principal_id,
-            "revoked_at": _iso(invitation.revoked_at), "revoked_by": invitation.revoked_by}
+            "revoked_at": _iso(invitation.revoked_at), "revoked_by": invitation.revoked_by,
+            "verified_via": ("oidc" if invitation.verified_issuer else "token") if invitation.accepted_at else None,
+            "verified_issuer": invitation.verified_issuer, "verified_subject": invitation.verified_subject}
 
 
 async def describe(session: AsyncSession, invitation: TeamInvitation) -> dict:
@@ -152,6 +177,9 @@ async def create_invitation(session: AsyncSession, *, invited_by: str, invited_b
         email = email.strip() or None
         if email is not None and not EMAIL_PATTERN.fullmatch(email):
             raise TeamConflict("Email address is malformed")
+    if email is None and oidc_required():
+        raise TeamConflict("Invitations are accepted only through single sign-on here, "
+                           "so an invitation needs the invitee's email address")
     name = (name or "").strip() or f"invitee-{secrets.token_hex(6)}"
     if not NAME_PATTERN.fullmatch(name):
         raise TeamConflict("Principal name must start with a letter and use only letters, digits and ._@+-")
@@ -250,10 +278,13 @@ async def accept_invitation(session: AsyncSession, raw_token: str) -> dict:
 
     Retrying with the same token after success returns the same member with
     ``credential: None``. The invitation row is locked, so concurrent
-    redemptions serialize and issue exactly one credential."""
+    redemptions serialize and issue exactly one credential. Refused when the
+    operator requires single sign-on for invitations."""
     raw_token = (raw_token or "").strip()
     if not raw_token.startswith(TOKEN_PREFIX) or len(raw_token) > MAX_TOKEN_LENGTH:
         raise InvitationRejected(REJECTED)
+    if oidc_required():
+        raise TeamConflict(OIDC_REQUIRED)
     if await access_fenced(session):
         raise TeamConflict(FENCED)
     digest = hash_credential(raw_token)
@@ -266,6 +297,68 @@ async def accept_invitation(session: AsyncSession, raw_token: str) -> dict:
         return await _accepted_result(session, invitation, None)
     if invitation.expires_at <= _now():
         raise InvitationRejected(REJECTED)
+    raw_key = await _redeem(session, invitation, issuer=INVITATION_ISSUER, subject=_subject(invitation))
+    return await _accepted_result(session, invitation, raw_key)
+
+
+async def pending_invitation(session: AsyncSession, raw_token: str) -> TeamInvitation:
+    """The unaccepted, unrevoked, unexpired invitation a token names (read-only; SSO start uses it)."""
+    raw_token = (raw_token or "").strip()
+    if not raw_token.startswith(TOKEN_PREFIX) or len(raw_token) > MAX_TOKEN_LENGTH:
+        raise InvitationRejected(REJECTED)
+    if await access_fenced(session):
+        raise TeamConflict(FENCED)
+    digest = hash_credential(raw_token)
+    invitation = (await session.execute(
+        select(TeamInvitation).where(TeamInvitation.token_hash == digest))).scalar_one_or_none()
+    if (invitation is None or not hmac.compare_digest(invitation.token_hash, digest) or invitation.revoked_at
+            or invitation.accepted_at is not None or invitation.expires_at <= _now()):
+        raise InvitationRejected(REJECTED)
+    return invitation
+
+
+async def accept_invitation_oidc(session: AsyncSession, invitation_id: uuid.UUID, *, issuer: str, subject: str,
+                                 email: str, ttl_days: int | None = None) -> dict | None:
+    """Accept an invitation for an identity the OIDC provider vouched for.
+
+    The caller has already validated the ID token (signature, issuer,
+    audience, expiry, nonce, ``email_verified``). The invitation must name an
+    email equal to the token's email; the member is recorded under
+    ``issuer``/``subject`` and that identity is bound for SSO sign-in. Returns
+    ``None`` when this same identity already accepted the invitation (the
+    caller signs it in instead)."""
+    if await access_fenced(session):
+        raise TeamConflict(FENCED)
+    invitation = await fresh(session, TeamInvitation, TeamInvitation.id == invitation_id, exclusive=True)
+    if invitation is None or invitation.revoked_at:
+        raise InvitationRejected(REJECTED)
+    if invitation.accepted_at is not None:
+        if ((invitation.verified_issuer, invitation.verified_subject) == (issuer, subject)
+                and derive_state(invitation, *await _issued(session, invitation)) != "revoked"):
+            return None
+        raise InvitationRejected(REJECTED)
+    if invitation.expires_at <= _now():
+        raise InvitationRejected(REJECTED)
+    if not invitation.email:
+        raise TeamConflict("This invitation names no email address, so single sign-on cannot verify it; "
+                           "ask an administrator for an invitation with your email")
+    if not same_email(invitation.email, email):
+        raise TeamDenied(EMAIL_MISMATCH)
+    if await fresh(session, TeamIdentity, TeamIdentity.issuer == issuer, TeamIdentity.subject == subject) is not None:
+        raise TeamConflict("This single sign-on account is already linked to a team member; sign in instead")
+    raw_key = await _redeem(session, invitation, issuer=issuer, subject=subject, ttl_days=ttl_days)
+    invitation.verified_issuer = issuer
+    invitation.verified_subject = subject
+    session.add(TeamIdentity(team_id=invitation.team_id, principal_id=invitation.accepted_principal_id,
+                             issuer=issuer, subject=subject, email=email.strip(), invitation_id=invitation.id,
+                             bound_by=f"invitation:{invitation.id}", last_login_at=_now()))
+    await session.flush()
+    return await _accepted_result(session, invitation, raw_key)
+
+
+async def _redeem(session: AsyncSession, invitation: TeamInvitation, *, issuer: str, subject: str,
+                  ttl_days: int | None = None) -> str:
+    """Create the member an open (locked, unexpired) invitation describes; returns the new raw credential."""
     await require_team(session, invitation.team_id)
     if invitation.invited_by_principal_id is not None:
         # An invitation carries its issuer's authority: once that administrator
@@ -285,10 +378,11 @@ async def accept_invitation(session: AsyncSession, raw_token: str) -> dict:
             raise TeamConflict("An invited project no longer exists or is disabled; ask for a new invitation")
         projects.append(project)
     raw_key, credential = await mint_credential(session, name=invitation.principal_name,
-                                                scopes=member_scopes(invitation.is_admin), kind="human")
+                                                scopes=member_scopes(invitation.is_admin), kind="human",
+                                                ttl_days=ttl_days)
     await session.flush()
     principal = await fresh(session, Principal, Principal.id == credential.principal_id)
-    await add_member(session, principal=principal, issuer=INVITATION_ISSUER, subject=_subject(invitation),
+    await add_member(session, principal=principal, issuer=issuer, subject=subject,
                      is_admin=bool(invitation.is_admin), team_id=invitation.team_id)
     for project in projects:
         await assign_project_member(session, project_id=project.id, principal_id=principal.id, role=invitation.role)
@@ -296,7 +390,7 @@ async def accept_invitation(session: AsyncSession, raw_token: str) -> dict:
     invitation.accepted_principal_id = principal.id
     invitation.accepted_credential_id = credential.id
     await session.flush()
-    return await _accepted_result(session, invitation, raw_key)
+    return raw_key
 
 
 async def revoke_invitation(session: AsyncSession, invitation_id: uuid.UUID, *, revoked_by: str,

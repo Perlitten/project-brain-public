@@ -40,20 +40,24 @@ type Notice = { eyebrow: string; title: string; detail: string };
 /**
  * `notice`: the site is locked for a reason no password can fix — explain it, no form.
  * `team`: the Brain has team members, so each signs in with their own member key.
+ * `sso`: where "Sign in with SSO" starts single sign-on (offered only when the Brain has it on).
+ * `message`: why single sign-on failed; replaces the usual explanation.
  */
-export function loginPage({ action, next, failed, user = "", notice, team = false }: { action: string; next: string; failed: boolean | "throttled"; user?: string; notice?: Notice; team?: boolean }) {
+export function loginPage({ action, next, failed, user = "", notice, team = false, sso, message }: { action: string; next: string; failed: boolean | "throttled"; user?: string; notice?: Notice; team?: boolean; sso?: string; message?: string }) {
   const tone = failed || notice ? "bad" : "idle";
   const d = ecg(failed ? 92 : 0);
   const throttled = failed === "throttled";
   const log = ["› waking up project brain", "› site is locked", notice ? "› sign-in unavailable" : throttled ? "› too many tries · paused" : failed ? "› sign-in refused · try again" : "› waiting for sign-in"];
   const eyebrow = notice ? escape(notice.eyebrow) : throttled ? "Paused" : failed ? "Access denied" : "Locked";
-  const title = notice ? escape(notice.title) : throttled ? "Too many wrong tries." : failed ? "That didn’t match." : "This Brain is private.";
-  const detail = notice ? escape(notice.detail) : throttled
+  const title = notice ? escape(notice.title) : throttled ? "Too many wrong tries." : message ? "Single sign-on didn’t work." : failed ? "That didn’t match." : "This Brain is private.";
+  const detail = notice ? escape(notice.detail) : message ? escape(message) : throttled
     ? "Sign-in for this name is paused for a few minutes. Wait, then try again."
     : team
       ? failed
         ? "Check the key, or ask a team admin for a new one: it may have been revoked."
-        : "This Brain has a team. Sign in with your own member key."
+        : sso
+          ? "This Brain has a team. Sign in through your organization, or with your own member key."
+          : "This Brain has a team. Sign in with your own member key."
       : failed
         ? "Check the username and password and try again."
         : "Sign in to see what your agents know about your code.";
@@ -214,6 +218,12 @@ input:focus-visible { border-color: var(--teal-fg); box-shadow: 0 0 0 3px color-
 .btn:active:not(:disabled) { transform: scale(0.97); background: var(--teal-press); }
 .btn:disabled { cursor: progress; opacity: 0.6; }
 .btn kbd { font: 400 11px / 1 var(--mono); opacity: 0.6; }
+.btn--ghost { background: transparent; color: var(--text-1); border-color: var(--border-default); text-decoration: none; }
+.btn--ghost:hover:not(:disabled) { background: var(--gray-4); border-color: var(--border-strong); }
+.btn--ghost:active:not(:disabled) { background: var(--gray-5); }
+.sso { position: relative; z-index: 3; display: grid; gap: 12px; }
+.sso__or { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text-3); }
+.sso__or::before, .sso__or::after { content: ""; flex: 1; height: 1px; background: var(--border-subtle); }
 
 /* pulse along the bottom of the verdict */
 .pulse { position: absolute; left: 3px; bottom: 6px; height: 34px; width: calc(100% - 3px); pointer-events: none; overflow: visible; }
@@ -302,6 +312,10 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
       ${fields}
       <button class="btn" type="submit">Sign in</button>
     </form>`}
+    ${notice || !sso ? "" : `<div class="sso">
+      <span class="sso__or">or</span>
+      <a class="btn btn--ghost" href="${escape(sso)}" rel="nofollow">Sign in with SSO</a>
+    </div>`}
     <svg class="pulse" viewBox="0 0 1200 40" preserveAspectRatio="none" aria-hidden="true">
       <defs>
         <linearGradient id="pulse-g"><stop offset="0" stop-color="#000"/><stop offset="0.85" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>

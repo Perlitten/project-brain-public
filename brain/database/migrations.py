@@ -38,6 +38,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_decision_title_uniqueness(conn)
     await _ensure_memory_authorship_columns(conn)
     await _ensure_team_dissolved_column(conn)
+    await _ensure_team_invitation_oidc_columns(conn)
     await _backfill_non_current_knowledge_authority(conn)
     await _ensure_insights_table(conn)
     await _ensure_harness_reliability_columns(conn)
@@ -256,6 +257,23 @@ async def _ensure_team_dissolved_column(conn: AsyncConnection) -> None:
             await conn.execute(text("ALTER TABLE teams ADD COLUMN dissolved_at TIMESTAMP"))
     else:
         await conn.execute(text("ALTER TABLE IF EXISTS teams ADD COLUMN IF NOT EXISTS dissolved_at TIMESTAMPTZ"))
+
+
+async def _ensure_team_invitation_oidc_columns(conn: AsyncConnection) -> None:
+    """An invitation accepted through OIDC records the identity provider and subject that vouched for it."""
+    columns = ("verified_issuer", "verified_subject")
+    if conn.dialect.name == "sqlite":
+        existing = (await conn.execute(text("PRAGMA table_info(team_invitations)"))).fetchall()
+        if not existing:
+            return
+        names = {row[1] for row in existing}
+        for column in columns:
+            if column not in names:
+                await conn.execute(text(f"ALTER TABLE team_invitations ADD COLUMN {column} VARCHAR(255)"))
+    else:
+        for column in columns:
+            await conn.execute(text(
+                f"ALTER TABLE IF EXISTS team_invitations ADD COLUMN IF NOT EXISTS {column} VARCHAR(255)"))
 
 
 async def _ensure_decision_title_uniqueness(conn: AsyncConnection) -> None:

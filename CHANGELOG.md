@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Add optional, off-by-default OpenID Connect single sign-on for team members
+  ([TEAM_SSO.md](docs/operations/TEAM_SSO.md)): authorization-code flow with
+  PKCE, state, nonce and a browser binding; ID tokens validated against the
+  provider's JWKS (`pyjwt[crypto]`, now a direct dependency). An invitation
+  that names an email can be accepted at `/auth/oidc/start?invitation=...`
+  only by the account whose verified email matches; bound members get
+  **Sign in with SSO** on the dashboard with the same session and scopes as a
+  member key. `BRAIN_OIDC_REQUIRE_FOR_INVITATIONS` refuses token-only
+  acceptance. Operators bind existing members with
+  `brain team member sso-bind`. No auto-provisioning.
+
 - Team mode is an **experimental preview** on `main` (not in v0.9.2, not
   deployed, not piloted). Add the [team mode walkthrough](docs/TEAM.md) from
   `brain team init` to revocation, with its known limitations, and a team-mode

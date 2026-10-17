@@ -37,9 +37,13 @@ unattached repository or an unscoped call needs a team administrator.
 `BRAIN_TEAM_MODE=true` remains as a deprecated strictness alias that treats an
 empty team as a team (logged once as a deprecation warning); Lite rejects it.
 Trusted operators provision verified membership and named credentials, directly
-or through single-use invitations (below); there is no SSO or self-registration
-flow. An issuer/subject stored by a trusted operator or an invitation is not
-evidence that OIDC has been integrated.
+or through single-use invitations (below); there is no self-registration flow.
+An issuer/subject stored by a trusted operator or a token-only invitation is not
+evidence of an identity provider. Optional OIDC single sign-on (off by default,
+[TEAM_SSO.md](../operations/TEAM_SSO.md)) accepts an emailed invitation only for
+the IdP account that proves the invited email, records the IdP issuer/subject
+as the member's verification, and maps a bound IdP account to an active member
+for dashboard sign-in; it never provisions members.
 
 ### Invitations (invited -> verified -> active -> revoked)
 

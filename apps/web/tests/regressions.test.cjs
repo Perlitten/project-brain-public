@@ -1269,3 +1269,127 @@ test('team sign-in through the proxy: httpOnly sealed cookie, raw key never in a
     });
   } finally { global.fetch = oldFetch; }
 });
+
+// Team single sign-on (lib/oidc.ts): a team Brain that also speaks /team/oidc/*.
+// The provider round trip itself is the API's job (tests/test_team_oidc.py); here
+// the browser half: state + binding cookie, no server key, sealed member cookie.
+function fakeSsoBrain() {
+  const brain = fakeTeamBrain();
+  const teamFetch = brain.fetch;
+  Object.assign(brain, { sso: true, starts: [], callbacks: [], refuse: null, credential: 'pbk_alice' });
+  brain.fetch = async (url, options = {}) => {
+    const u = new URL(String(url));
+    if (!u.pathname.startsWith('/team/oidc/')) return teamFetch(url, options);
+    assert.equal(options.headers['X-API-Key'], undefined, 'single sign-on never sends the dashboard key');
+    if (u.pathname === '/team/oidc/config') return Response.json({ enabled: brain.sso, required_for_invitations: false });
+    if (!brain.sso) return Response.json({ detail: 'Single sign-on is not enabled' }, { status: 404 });
+    const body = JSON.parse(options.body);
+    if (u.pathname === '/team/oidc/start') {
+      brain.starts.push(body);
+      return Response.json({ authorization_url: `https://idp.example/authorize?state=${'s'.repeat(32)}`, state: 's'.repeat(32), purpose: body.invitation ? 'invitation' : 'signin' });
+    }
+    brain.callbacks.push(body);
+    if (brain.refuse) return Response.json({ detail: brain.refuse }, { status: 403 });
+    assert.equal(body.binding, brain.starts.at(-1).binding, 'the callback carries the binding from the start');
+    return Response.json({ mode: 'signin', credential: brain.credential, member: { id: 7, name: 'alice' } });
+  };
+  return brain;
+}
+
+async function withSso(run) {
+  const brain = fakeSsoBrain();
+  const oldFetch = global.fetch;
+  global.fetch = brain.fetch;
+  try {
+    const { NextRequest } = require('next/server');
+    const auth = load('lib/web-auth.ts');
+    const oidc = load('lib/oidc.ts', { './web-auth': auth });
+    const { proxy } = load('proxy.ts', { './lib/web-auth': auth, './lib/oidc': oidc, '@/components/Icon': { MARK_TOKENS: [] } });
+    const get = (path, cookie) => new NextRequest(`https://web.example${path}`, { headers: { accept: 'text/html', ...(cookie ? { cookie } : {}) } });
+    const cookieOf = (res, name) => res.headers.getSetCookie().find(c => c.startsWith(`${name}=`));
+    await withEnv(LIVE, () => run({ brain, auth, oidc, proxy, get, cookieOf }));
+  } finally { global.fetch = oldFetch; }
+}
+
+test('team SSO: the sign-in page offers "Sign in with SSO" only when the Brain has it on', () => withSso(async ({ brain, oidc, proxy, get }) => {
+  const on = await (await proxy(get('/team?tab=members'))).text();
+  assert.match(on, /Sign in with SSO/);
+  assert.match(on, /href="\/auth\/oidc\/start\?next=%2Fteam%3Ftab%3Dmembers"/);
+  assert.match(on, /name="credential"/, 'the member-key form stays');
+  brain.sso = false;
+  oidc.forgetSso();
+  assert.doesNotMatch(await (await proxy(get('/team'))).text(), /Sign in with SSO/);
+}));
+
+test('team SSO: start sends the browser to the provider with a binding cookie, invitation in the body', () => withSso(async ({ brain, proxy, get, cookieOf }) => {
+  const res = await proxy(get('/auth/oidc/start?invitation=pbi_example&next=/team'));
+  assert.equal(res.status, 303);
+  assert.equal(new URL(res.headers.get('location')).origin, 'https://idp.example');
+  assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.equal(brain.starts.length, 1);
+  assert.equal(brain.starts[0].invitation, 'pbi_example');
+  assert.ok(brain.starts[0].binding.length >= 43, 'a 256-bit binding secret');
+  const flow = cookieOf(res, 'pb_oidc');
+  assert.match(flow, /HttpOnly/i);
+  assert.match(flow, /Secure/i);
+  assert.match(flow, /SameSite=lax/i);
+  assert.match(flow, /Path=\/auth\/oidc/);
+  assert.match(flow, /Max-Age=600/);
+  const decode = cookie => JSON.parse(Buffer.from(decodeURIComponent(/pb_oidc=([^;]+)/.exec(cookie)[1]), 'base64url').toString('utf8'));
+  assert.equal(decode(flow).n, '/team');
+  // Never a sign-in loop: an /auth/oidc "next" falls back to "/".
+  const loop = await proxy(get('/auth/oidc/start?next=/auth/oidc/callback'));
+  assert.equal(decode(cookieOf(loop, 'pb_oidc')).n, '/');
+  brain.sso = false;
+  const off = await proxy(get('/auth/oidc/start'));
+  assert.equal(off.status, 404);
+  assert.match(await off.text(), /Single sign-on is not enabled on this Brain/);
+}));
+
+test('team SSO: the callback opens a member session only for the browser that started it', () => withSso(async ({ brain, auth, proxy, get, cookieOf }) => {
+  const start = await proxy(get('/auth/oidc/start?next=/team'));
+  const flow = /pb_oidc=([^;]+)/.exec(cookieOf(start, 'pb_oidc'))[1];
+  const state = 's'.repeat(32);
+  // No cookie (another browser) or a different state: refused before Brain is asked.
+  for (const [path, cookie] of [[`/auth/oidc/callback?state=${state}&code=c1`, null], [`/auth/oidc/callback?state=${'t'.repeat(32)}&code=c1`, `pb_oidc=${flow}`]]) {
+    const refused = await proxy(get(path, cookie));
+    assert.equal(refused.status, 401);
+    assert.match(await refused.text(), /started in another browser/);
+    assert.match(cookieOf(refused, 'pb_oidc'), /pb_oidc=;/);
+  }
+  assert.equal(brain.callbacks.length, 0);
+  // The provider said no.
+  const denied = await proxy(get('/auth/oidc/callback?error=access_denied&state=x', `pb_oidc=${flow}`));
+  assert.match(await denied.text(), /Sign-in was cancelled at the identity provider/);
+  const odd = await proxy(get('/auth/oidc/callback?error=%3Cscript%3E', `pb_oidc=${flow}`));
+  assert.doesNotMatch(await odd.text(), /<script>alert|\(%3Cscript|\(<script>\)/);
+  // Brain refuses the identity: its reason is shown, escaped.
+  brain.refuse = 'Your <b>email</b> does not match this invitation';
+  const mismatch = await proxy(get(`/auth/oidc/callback?state=${state}&code=c1`, `pb_oidc=${flow}`));
+  assert.equal(mismatch.status, 403);
+  const html = await mismatch.text();
+  assert.match(html, /Single sign-on didn’t work/);
+  assert.match(html, /Your &lt;b&gt;email&lt;\/b&gt; does not match this invitation/);
+  assert.equal(cookieOf(mismatch, 'pb_member'), undefined);
+  // Accepted: a sealed member cookie, the flow cookie cleared, back to where they were going.
+  brain.refuse = null;
+  const ok = await proxy(get(`/auth/oidc/callback?state=${state}&code=c2`, `pb_oidc=${flow}`));
+  assert.equal(ok.status, 303);
+  assert.equal(new URL(ok.headers.get('location')).pathname, '/team');
+  assert.equal(ok.headers.get('referrer-policy'), 'no-referrer');
+  assert.deepEqual(brain.callbacks.at(-1), { state, code: 'c2', binding: brain.starts[0].binding });
+  const member = cookieOf(ok, 'pb_member');
+  assert.match(member, /HttpOnly/i);
+  assert.doesNotMatch(member, /pbk_alice/);
+  const sealed = /pb_member=([^;]+)/.exec(member)[1];
+  assert.equal(auth.openMember(decodeURIComponent(sealed)), 'pbk_alice');
+  assert.match(cookieOf(ok, 'pb_oidc'), /pb_oidc=;/);
+  assert.match(cookieOf(ok, 'pb_session'), /pb_session=;/);
+  assert.equal((await proxy(get('/team', `pb_member=${sealed}`))).headers.get('x-middleware-next'), '1');
+  // A credential Brain then refuses (revoked in between) never becomes a cookie.
+  brain.credential = 'pbk_mallory';
+  const revoked = await proxy(get(`/auth/oidc/callback?state=${state}&code=c3`, `pb_oidc=${flow}`));
+  assert.equal(revoked.status, 401);
+  assert.equal(cookieOf(revoked, 'pb_member'), undefined);
+}));

@@ -140,6 +140,22 @@ class Settings(BaseSettings):
     BRAIN_PUBLIC_URL: Optional[str] = None
     BRAIN_PUBLIC_HOST: Optional[str] = None
 
+    # Generic OpenID Connect single sign-on for team members
+    # (brain/team/oidc.py, docs/operations/TEAM_SSO.md). Off by default. The
+    # issuer must publish /.well-known/openid-configuration; the redirect URI is
+    # the web UI callback and defaults to BRAIN_WEB_URL + /auth/oidc/callback.
+    BRAIN_OIDC_ENABLED: bool = False
+    BRAIN_OIDC_ISSUER: Optional[str] = None
+    BRAIN_OIDC_CLIENT_ID: Optional[str] = None
+    BRAIN_OIDC_CLIENT_SECRET: Optional[str] = None
+    BRAIN_OIDC_REDIRECT_URI: Optional[str] = None
+    BRAIN_OIDC_SCOPES: str = "openid email profile"
+    # Comma-separated email domains allowed to use SSO; empty allows any domain.
+    BRAIN_OIDC_ALLOWED_EMAIL_DOMAINS: str = ""
+    # With SSO on: refuse token-only invitation acceptance (and invitations
+    # without an email), so every new member proves the invited address.
+    BRAIN_OIDC_REQUIRE_FOR_INVITATIONS: bool = False
+
     # PostgreSQL Configuration
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5433
@@ -782,6 +798,32 @@ class Settings(BaseSettings):
             raise ValueError(
                 "the LFM deep lane requires an approved corpus lineage id"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_oidc(self):
+        if not self.BRAIN_OIDC_ENABLED:
+            return self
+        if not (self.BRAIN_OIDC_ISSUER or "").strip():
+            raise ValueError("BRAIN_OIDC_ENABLED requires BRAIN_OIDC_ISSUER")
+        if not (self.BRAIN_OIDC_CLIENT_ID or "").strip():
+            raise ValueError("BRAIN_OIDC_ENABLED requires BRAIN_OIDC_CLIENT_ID")
+        redirect = (self.BRAIN_OIDC_REDIRECT_URI or "").strip()
+        if not redirect and (self.BRAIN_WEB_URL or "").strip():
+            redirect = self.BRAIN_WEB_URL.strip().rstrip("/") + "/auth/oidc/callback"
+        if not redirect:
+            raise ValueError("BRAIN_OIDC_ENABLED requires BRAIN_OIDC_REDIRECT_URI or BRAIN_WEB_URL")
+        loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+        self.BRAIN_OIDC_ISSUER = self.BRAIN_OIDC_ISSUER.strip().rstrip("/")
+        for name, value in (("BRAIN_OIDC_ISSUER", self.BRAIN_OIDC_ISSUER), ("BRAIN_OIDC_REDIRECT_URI", redirect)):
+            parsed = urlparse(value)
+            if not parsed.hostname or parsed.username or parsed.password:
+                raise ValueError(f"{name} must be an absolute URL without credentials")
+            if parsed.scheme != "https" and not (parsed.scheme == "http" and parsed.hostname.lower() in loopback_hosts):
+                raise ValueError(f"{name} must use https (http is allowed only for loopback hosts)")
+        self.BRAIN_OIDC_REDIRECT_URI = redirect
+        if "openid" not in self.BRAIN_OIDC_SCOPES.split():
+            raise ValueError("BRAIN_OIDC_SCOPES must include openid")
         return self
 
     @model_validator(mode="after")

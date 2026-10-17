@@ -198,9 +198,12 @@ team down.
 These mirror the known gaps on the [status page](design/team-status.md),
 which is the source of truth.
 
-- **No SSO or OIDC, and the email is never checked.** "Verified" means the
+- **Without single sign-on the email is never checked.** "Verified" means the
   person presented an invitation token for an identity the administrator
-  chose, or an operator added them on the server.
+  chose, or an operator added them on the server. Optional OIDC single sign-on
+  (off by default) checks the invited email at your identity provider and lets
+  members **Sign in with SSO**; one provider per Brain, see
+  [Team single sign-on](operations/TEAM_SSO.md).
 - **No invitation UI.** Invitations exist only in the CLI and the API. The
   dashboard Team page adds members directly.
 - **One API process.** The invitation-accept throttle (10 attempts per client
