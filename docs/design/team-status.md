@@ -1,6 +1,8 @@
 # Team mode: current status
 
-Snapshot: 2026-10-17, `main` at `2e66c66` (after PR #122). Update this file in
+Snapshot: 2026-10-17, `main` after PRs #124–#130 (member scopes, revocation
+hardening, webhook fetch, memory provenance, freshness envelope, preview
+label, solo deploy prep). Update this file in
 the same PR as any team-mode change; it is the one place that answers "what
 stage is team mode at". The contract is the [ADR](../adr/team-collaboration.md);
 the per-requirement evidence is the [foundations matrix](team-foundations.md).
@@ -23,7 +25,7 @@ and the ADR says plainly that green CI is not team readiness.
 | M1 | Verified identity, membership, centralized authorization, provisioning, invitations, restore fence | Core implemented; known authorization gaps remain; not deployed |
 | M2 | Bounded real executors, tool/secret/egress/budget capabilities, revocation checkpoints | Not started; execution is denied |
 | M3 | Subtasks, coordinator, overlap detection, integration queue | Not started |
-| M4 | Governed versioned memory, independent review | In progress: author/updated_by on every memory object, supersede + `expected_version` CAS for decisions and rules, team-admin gate for `system_global`, G2 needs two distinct principals in team state, no self-approval (branch `memory/provenance-supersede`) |
+| M4 | Governed versioned memory, independent review | In progress: author/updated_by on every memory object, supersede + `expected_version` CAS for decisions and rules, team-admin gate for `system_global`, G2 needs two distinct principals in team state, no self-approval ([#129](https://github.com/Perlitten/project-brain-public/pull/129)). Not yet: personal/proposed tier, review queue |
 | M5 | Invitation/board/conflict UX, cloud packaging, upgrade/restore diagnostics | Not started (only the admin Team page exists) |
 | M6 | Pilot with 3–5 people on two projects | Not started |
 
@@ -50,11 +52,11 @@ is in [SECURITY.md](../../SECURITY.md#team-mode-experimental-preview).
 | Remaining personal routes scoped in team state | [#120](https://github.com/Perlitten/project-brain-public/pull/120) |
 | Dashboard members sign in with their own key; admin Team page (add, role, revoke) | [#121](https://github.com/Perlitten/project-brain-public/pull/121) |
 | A team snapshot restored with `scripts/restore_database.py` stays fenced until `brain team reconcile --attest`; plain `psql` does not add the fence ([runbook](../runbooks/backup-restore.md#restoring-a-team-brain)) | [#122](https://github.com/Perlitten/project-brain-public/pull/122) |
-| CLI and invitation keys carry the same scopes as dashboard keys; members read global decisions and rules plus those of repositories they can read (`/decisions`, `/rules`, MCP `brain://decisions`, `brain://rules`) | this branch (`team/member-scopes`) |
-| Member keys get `jobs:write` (queueing still needs Contributor or Reviewer on the repository); team-admin keys also get `setup:write` and `operations:write`, so "Run now", setup and retries work from the dashboard. Keys minted before this change lack these scopes and must be re-issued | this branch |
-| Dashboard for non-admin members: navigation and pages limited to projects they have a role on; Settings, Setup, Quality, Logs, Runs, Reranker, Admin and reports show "Team admins only"; no setup links | this branch |
-| Dashboard shows "unavailable" instead of a false "none" when Brain does not answer (jobs, findings, memory, packs, runs, MCP tools, graph, team roles) | this branch |
-| Revocation hardening (below) | this PR (`team/revocation-hardening`) |
+| CLI and invitation keys carry the same scopes as dashboard keys; members read global decisions and rules plus those of repositories they can read (`/decisions`, `/rules`, MCP `brain://decisions`, `brain://rules`) | [#124](https://github.com/Perlitten/project-brain-public/pull/124) |
+| Member keys get `jobs:write` (queueing still needs Contributor or Reviewer on the repository); team-admin keys also get `setup:write` and `operations:write`, so "Run now", setup and retries work from the dashboard. Keys minted before this change lack these scopes and must be re-issued | [#124](https://github.com/Perlitten/project-brain-public/pull/124) |
+| Dashboard for non-admin members: navigation and pages limited to projects they have a role on; Settings, Setup, Quality, Logs, Runs, Reranker, Admin and reports show "Team admins only"; no setup links | [#124](https://github.com/Perlitten/project-brain-public/pull/124) |
+| Dashboard shows "unavailable" instead of a false "none" when Brain does not answer (jobs, findings, memory, packs, runs, MCP tools, graph, team roles) | [#124](https://github.com/Perlitten/project-brain-public/pull/124) |
+| Revocation hardening (below) | [#127](https://github.com/Perlitten/project-brain-public/pull/127) |
 
 ### Revocation hardening
 
@@ -83,7 +85,29 @@ is in [SECURITY.md](../../SECURITY.md#team-mode-experimental-preview).
 - **Telegram bridge**: in team state an `app: …` prefix or project slug only
   resolves to repositories the poller's own credential may read.
 
-Tests: 13 `tests/test_team_*.py` files, about 100 test functions, plus the
+### Memory provenance and freshness (beyond M1)
+
+These close the memory and freshness gaps found in the 2026-10-17 audit; they
+serve solo and team state alike.
+
+- **Webhook reindex follows origin** ([#128](https://github.com/Perlitten/project-brain-public/pull/128)): the post-merge job runs
+  `git fetch origin` and checks out the delivered commit before indexing
+  (`BRAIN_WEBHOOK_FETCH_SOURCE`, default `true`) instead of failing on a sha
+  mismatch; `/repositories` reports `commits_behind_origin`.
+- **Memory provenance** ([#129](https://github.com/Perlitten/project-brain-public/pull/129)): `author_principal_id` and
+  `updated_by_principal_id` on decisions, rules, learnings, episodes and skills; editing a decision or rule
+  keeps its id, bumps `version` and keeps the old content as a superseded
+  history row; `expected_version` gives
+  compare-and-set (HTTP 409 on a stale write); team-admin gate for
+  `system_global`; in team state G2 approval needs two distinct principals and
+  nobody approves their own proposal.
+- **Freshness envelope** ([#130](https://github.com/Perlitten/project-brain-public/pull/130)): MCP tool replies and retrieval responses carry
+  a `freshness` block: `state` (`fresh`, `stale_served` or `unknown`) with a
+  `reason`, the indexed commit, its age and, where known, commits behind origin, with `BRAIN_FRESHNESS_MAX_AGE_S`
+  (default 7 days) as the age threshold.
+
+Tests: 13 `tests/test_team_*.py` files, about 107 test functions, plus
+`tests/test_memory_provenance.py`, `tests/test_webhook_fetch.py` and the
 PostgreSQL-only restore and concurrency cases that CI runs.
 
 ## Known gaps (checked against `main` on 2026-10-17)
@@ -103,10 +127,14 @@ PostgreSQL-only restore and concurrency cases that CI runs.
 - **`/late-interaction/status` returns 500** (not 4xx) when a repository path is
   outside the allowed roots; the dashboard's Reranker page then shows
   "unavailable".
-- **Index freshness follows origin only through the webhook.** The post-merge
-  reindex now fetches `origin` and checks out the delivered commit
-  (`BRAIN_WEBHOOK_FETCH_SOURCE`), and `/repositories` reports
-  `commits_behind_origin`; a read-only mount still has to be updated on the host.
+- **Index freshness follows origin only through the webhook.** Without a
+  webhook delivery nothing fetches. The fetch also needs a writable git
+  checkout with an `origin` remote: the production compose mounts the target
+  repository read-only (`/repo:ro`), so there the job fails until the mount is
+  writable or `BRAIN_WEBHOOK_FETCH_SOURCE=false` restores the old behaviour.
+- **No `/team/me` or team activity feed** yet: a member cannot see their own
+  roles and projects in one call, and there is no shared log of who changed
+  which memory.
 
 ## Next steps, in order
 
