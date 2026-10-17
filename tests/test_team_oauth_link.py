@@ -18,7 +18,7 @@ from brain.auth import oauth_store
 from brain.auth.principals import resolve_credential
 from brain.config.settings import settings
 from brain.database.models import ApiCredential, OAuthRefreshToken, Principal
-from brain.team import oauth_link
+from brain.team import oauth_link, provisioning
 from brain.team.authorization import TeamDenied
 from brain.team.models import ProjectMember, TeamMember
 from brain.team.provisioning import CREDENTIAL_ISSUER, WEB_LOGIN_ISSUER
@@ -236,6 +236,7 @@ async def test_solo_brain_grants_personal_scopes_when_client_asks_for_every_adve
     monkeypatch.setattr(settings, "PROJECT_BRAIN_API_KEY", "owner-key")  # production-like: not dev-open
     async with factory() as session, session.begin():
         await session.execute(update(TeamMember).values(revoked_at=datetime.now(timezone.utc)))
+        await provisioning.dissolve_team(session)  # revoking the last member alone keeps team state
     await register_client(factory)
     provider = mcp_oauth.BrainOAuthProvider("http://localhost")
     # Registered without a scope: the registration default is every supported scope.
