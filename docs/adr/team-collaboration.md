@@ -53,7 +53,9 @@ Not covered by this decision and tracked as follow-ups: an initiator principal
 on queued jobs, merging `brain/workspace` with `brain/team`, member management
 UI, SSO/invitations, filtering the repository listing by membership, scoping
 diff-review job polling and `context-packs/{id}`, and the freshness/ledger
-routers, which have no repository scope yet.
+routers, which have no repository scope yet. As of 2026-10-17 all of these
+except the `brain/workspace` merge and SSO have landed; the current list is in
+[team status](../design/team-status.md).
 
 | Existing mechanism | Reuse / missing contract |
 |---|---|
@@ -62,7 +64,7 @@ routers, which have no repository scope yet.
 | `brain/database/models.py::Repository` | Durable integer primary key; paths are locations, not identity. Do not derive team repository identity from a path hash. |
 | `brain/database/harness_models.py`, `brain/memory/harness_store.py` | Authoritative durable task/event/artifact/validation/lease ledger. Extend its scope/run provenance, not create another orchestration database. |
 | `brain/workspace/{registry_store,capabilities,path_sandbox}.py` | Repository trust/tool capabilities and filesystem checks; not human project membership. Worktree isolation is not security containment. |
-| `brain/workers/{queue,db_fencing,worker,tasks}.py` | Lease/DB fence/retry mechanisms; ownership does not imply project permission. Job submission is authorized at the API; queued jobs carry no initiator yet (follow-up). |
+| `brain/workers/{queue,db_fencing,worker,tasks}.py` | Lease/DB fence/retry mechanisms; ownership does not imply project permission. Job submission is authorized at the API; queued jobs record their initiator and are re-authorized before execution. |
 | `brain/memory/{rule_store,decision_store,consolidation,validated_evidence}.py` | Scoped memory, evidence and promotion machinery; not yet project-authorized governed normative memory. |
 | `apps/web`, API web routers, MCP tools/resources | Repository-scoped routes authorize the project scope per request; paths without a repository scope keep their existing checks and are listed as follow-ups. |
 | `scripts/{backup_runner,restore_database,restore_verification_drill}.py` | Explicit full backup/PG restore. Neo4j rebuild requires retained revision; Redis queue is not in this backup. Artifact validation is not live-restore proof. |
@@ -188,8 +190,11 @@ green ADR/CI is not team readiness.
   endpoints no longer need an exemption. Single-use invitations (invited ->
   verified -> active -> revoked; verified = token possession for an
   operator-chosen identity, not OIDC) landed 2026-10-16 via API and CLI.
-  Still open: initiator on queued jobs, merging `brain/workspace` with
-  `brain/team`, member UI, SSO, invitation UX.
+  Queued jobs record their initiator and are re-authorized before execution;
+  dashboard members sign in as themselves and admins manage them on a Team
+  page; a restored team snapshot stays fenced until `brain team reconcile`.
+  Still open: merging `brain/workspace` with `brain/team`, SSO, invitation UX,
+  deployment. Current status: [team status](../design/team-status.md).
 - **M2 after M1:** bounded real executors, run tools/secrets/egress/budget capabilities,
   revocation checkpoints, environments, timeout/cancel/crash fencing.
 - **M3 after M1/M2:** same-task subtasks/dependencies/coordinator, semantic overlap,
