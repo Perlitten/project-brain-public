@@ -50,6 +50,8 @@ async def test_observation_is_recorded_as_unvalidated_l1_event(monkeypatch, api_
     assert payload["statement"] == "Worker needs a restart after settings change"
     assert kwargs["classification"] == "learning"
     assert kwargs["idempotency_key"] == "observation-0001"
+    # Provenance: the caller's principal id rides along (None for the synthetic dev principal).
+    assert kwargs["author_principal_id"] == api_principal.author_id
     assert result["event_type"] == "observed_lesson"
 
 

@@ -104,6 +104,8 @@ class DecisionCreate(BaseModel):
     affected_features: Optional[List[str]] = None
     affected_modules: Optional[List[str]] = None
     affected_files: Optional[List[str]] = None
+    # Compare-and-swap: the version last read (0 = must not exist yet); 409 on mismatch.
+    expected_version: Optional[int] = Field(None, ge=0)
 
 
 class RuleCreate(BaseModel):
@@ -115,6 +117,8 @@ class RuleCreate(BaseModel):
     status: Optional[str] = "active"
     applies_to: Optional[Dict[str, Any]] = None
     rule_id: Optional[str] = None
+    # Compare-and-swap: the version last read (0 = must not exist yet); 409 on mismatch.
+    expected_version: Optional[int] = Field(None, ge=0)
 
 
 class FeatureCreate(BaseModel):

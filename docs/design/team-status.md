@@ -24,7 +24,7 @@ and the ADR says plainly that green CI is not team readiness.
 | M1 | Verified identity, membership, centralized authorization, provisioning, invitations, restore fence | Core implemented; known authorization gaps remain; not deployed |
 | M2 | Bounded real executors, tool/secret/egress/budget capabilities, revocation checkpoints | Not started; execution is denied |
 | M3 | Subtasks, coordinator, overlap detection, integration queue | Not started |
-| M4 | Governed versioned memory, independent review | Not started |
+| M4 | Governed versioned memory, independent review | In progress: author/updated_by on every memory object, supersede + `expected_version` CAS for decisions and rules, team-admin gate for `system_global`, G2 needs two distinct principals in team state, no self-approval (branch `memory/provenance-supersede`) |
 | M5 | Invitation/board/conflict UX, cloud packaging, upgrade/restore diagnostics | Not started (only the admin Team page exists) |
 | M6 | Pilot with 3–5 people on two projects | Not started |
 

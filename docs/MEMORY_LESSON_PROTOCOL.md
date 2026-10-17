@@ -49,7 +49,10 @@ Gates run in order and the first failure decides:
   of reinforcing the wrong fact. If that check fails, the conservative outcome
   is to link.
 - **G2 evidence**: 2 validated or 3 unvalidated events (see tiers). Bypassed
-  when the operator forces approval, because a human decides then.
+  when the operator forces approval, because a human decides then. In team
+  state the events must also come from at least 2 distinct principals
+  (`MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM`; the solo setting defaults
+  to 0 = off): one person's repeated claim is not independent evidence.
 - **G3 contradiction**: the summarizer names the active learnings the new
   statement contradicts; unnamed contradictions fall back to the nearest
   learning when it is at least 0.5 similar. A resolved contradiction
@@ -112,6 +115,13 @@ outcome per skill. Repeating the same evidence is idempotent; changing the
 evidence or result returns conflict. Retrieval never changes usage counters.
 Counters describe reported outcomes, not independently adjudicated efficacy.
 
+Every memory object (episode, learning, skill, decision, rule) carries
+`author_principal_id` / `updated_by_principal_id` and `created_at` / `updated_at`;
+L1 events carry the author in their payload. Decisions and rules never overwrite
+in place: a changed re-post keeps the old content in a `superseded` history row,
+bumps `version` and names the editor, and an optional `expected_version`
+(compare-and-swap, 0 = must not exist) returns 409 on a mismatch. In team state
+the author of the evidence may not approve their own pending episode or skill.
 `POST /decisions` and `POST /rules` record the authenticated principal as the
 author (`author_principal_id`; NULL for the legacy shared key and CLI writes).
 A `system_global` decision additionally needs the `core:admin` scope, which the

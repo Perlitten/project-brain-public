@@ -245,6 +245,24 @@ async def team_administrator(session: AsyncSession, caller: ResolvedPrincipal, t
     return member
 
 
+async def principal_is_team_administrator(session: AsyncSession, principal_id: int | None,
+                                          team_id: int = 1) -> bool:
+    """Whether ``principal_id`` is a live, verified team administrator.
+
+    A credential-free check for background jobs (memory consolidation) that act on
+    behalf of a recorded principal rather than a live caller: it answers the
+    membership question only, never scope or credential liveness. Solo state is a
+    team of one, so it answers True there."""
+    if await team_state(session, team_id) == "solo":
+        return True
+    if principal_id is None:
+        return False
+    member = (await session.execute(
+        select(TeamMember).where(TeamMember.principal_id == principal_id, TeamMember.team_id == team_id)
+    )).scalar_one_or_none()
+    return bool(member and member.is_admin and member.verified_at and not member.revoked_at)
+
+
 def solo_authority(caller: ResolvedPrincipal) -> Authority:
     """The implicit administrator of a team of one: full authority, no credential checks."""
     return Authority(caller.id, caller.id, caller.credential_id, FULL_AUTHORITY, team_state="solo")

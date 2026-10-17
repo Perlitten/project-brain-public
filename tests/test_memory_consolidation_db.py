@@ -22,6 +22,7 @@ from brain.embeddings.constants import EMBEDDING_DIMENSION
 from brain.embeddings.pgvector_sql import pgvector_index_dimension
 from brain.memory import consolidation
 from brain.memory.consolidation import EpisodeStateError, approve_episode, reject_episode
+from brain.memory.provenance import SelfApprovalError
 from brain.memory.learning_retrieval import select_learnings_for_context
 from brain.memory.learning_store import LearningStore
 
@@ -83,9 +84,11 @@ async def memory_db(monkeypatch):
         task_id = task.id
         owned_task_ids.append(task_id)
 
-    async def add_events(n, validated=True):
+    async def add_events(n, validated=True, authors=None):
         # validated=True models POST /lessons (evidence-linked); False models
-        # POST /observations or a mirrored handoff summary.
+        # POST /observations or a mirrored handoff summary. ``authors`` are the
+        # principal ids HarnessStore.add_event stamps into the payload.
+        authors = list(authors or [None] * n)
         async with sessions() as session:
             events = [
                 AgentTaskEvent(
@@ -93,9 +96,10 @@ async def memory_db(monkeypatch):
                     event_type="validated_lesson" if validated else "observed_lesson",
                     actor="test",
                     classification="learning",
-                    payload_json={"summary": "embedding dim is 2048", "reported_validation": validated},
+                    payload_json={"summary": "embedding dim is 2048", "reported_validation": validated,
+                                  **({"author_principal_id": author} if author is not None else {})},
                 )
-                for _ in range(n)
+                for author in authors
             ]
             session.add_all(events)
             await session.commit()
@@ -303,6 +307,69 @@ async def test_rule_target_is_projected_into_rule_store(memory_db):
     assert rule is not None and rule.repo_path == "/tmp/consolidation-test"
     assert rule.applies_to == {"source": "memory_consolidation", "learning_id": entry["learning_id"]}
     assert rule.type == "learned"
+
+
+@pytest.mark.asyncio
+async def test_episode_and_learning_are_attributed_to_the_sole_author(memory_db):
+    await memory_db.add_events(2, authors=[11, 11])
+    report = await memory_db.run()
+    assert len(report["promoted"]) == 1 and report["team_state"] == "solo"
+    async with memory_db.sessions() as session:
+        episode = (await session.execute(select(MemoryEpisode))).scalar_one()
+        learning = (await session.execute(select(Learning))).scalar_one()
+    assert episode.author_principal_id == 11 and episode.updated_by_principal_id == 11
+    assert learning.author_principal_id == 11 and learning.updated_by_principal_id == 11
+    assert all(ref["author_principal_id"] == 11 for ref in learning.evidence)
+
+
+@pytest.mark.asyncio
+async def test_team_state_g2_needs_two_principals_and_mixed_authorship_stays_unattributed(memory_db):
+    with patch.object(consolidation, "_memory_team_state", AsyncMock(return_value="team")):
+        await memory_db.add_events(2, authors=[11, 11])
+        one_voice = await memory_db.run()
+        assert one_voice["team_state"] == "team" and one_voice["promoted"] == []
+        assert len(one_voice["rejected"]) == 1
+        assert any("distinct principal" in r for r in one_voice["rejected"][0]["reasons"])
+        assert await memory_db.count(Learning) == 0
+
+        await memory_db.add_events(2, authors=[11, 12])
+        two_voices = await memory_db.run()
+    assert len(two_voices["promoted"]) == 1
+    async with memory_db.sessions() as session:
+        learning = (await session.execute(select(Learning))).scalar_one()
+        episode = await session.get(MemoryEpisode, two_voices["promoted"][0]["episode_id"])
+    # Two authors: the learning belongs to the team, not to either principal.
+    assert learning.author_principal_id is None and episode.author_principal_id is None
+
+
+@pytest.mark.asyncio
+async def test_team_state_rejects_self_approval_and_records_the_reviewer(memory_db):
+    await memory_db.add_events(2, authors=[11, 11])
+    report = await memory_db.run(require_approval=True)
+    episode_id = report["needs_approval"][0]["episode_id"]
+
+    with pytest.raises(SelfApprovalError):
+        await approve_episode(episode_id, "my own claim", principal_id=11, team_state="team")
+    assert await memory_db.count(Learning) == 0
+    async with memory_db.sessions() as session:
+        assert (await session.get(MemoryEpisode, episode_id)).status == "pending"
+
+    decided = await approve_episode(episode_id, "reproduced it", principal_id=12, team_state="team")
+    assert decided["status"] == "promoted"
+    async with memory_db.sessions() as session:
+        episode = await session.get(MemoryEpisode, episode_id)
+        learning = await session.get(Learning, decided["learning_id"])
+    assert episode.author_principal_id == 11 and episode.updated_by_principal_id == 12
+    assert learning.author_principal_id == 11 and learning.updated_by_principal_id == 12
+
+    # Solo state is a team of one: the author may approve their own pending episode.
+    await memory_db.add_events(2, validated=False, authors=[11, 11])
+    await memory_db.add_events(1, validated=False, authors=[11])
+    second = await memory_db.run(require_approval=True)
+    if second["needs_approval"]:
+        own = await approve_episode(second["needs_approval"][0]["episode_id"], "ok", principal_id=11,
+                                    team_state="solo")
+        assert own["status"] == "promoted"
 
 
 @pytest.mark.asyncio
