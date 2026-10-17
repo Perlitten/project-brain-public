@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Add the first slice of bounded team execution (M2), **off by default**. With
+  `BRAIN_EXECUTION_ENABLED`, an execution root and an operator tool allowlist set,
+  a team administrator can grant a Contributor or Reviewer execution on one project
+  (`brain team execution grant`); the requester of a run can then ask Brain to run a
+  fixed list of allowlisted tools in a fresh clone at the task's base SHA. Every tool
+  call and ledger write re-checks the whole authority chain, so a revocation stops
+  the run; a lease with a fencing token keeps a crashed or expired worker from
+  committing. Secrets are passed by reference and never stored. The subprocess
+  backend is not containment and refuses egress. See
+  [bounded team execution](docs/operations/TEAM_EXECUTION.md).
+
 - Team mode is an **experimental preview** on `main` (not in v0.9.2, not
   deployed, not piloted). Add the [team mode walkthrough](docs/TEAM.md) from
   `brain team init` to revocation, with its known limitations, and a team-mode

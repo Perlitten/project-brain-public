@@ -354,6 +354,15 @@ async def run_worker() -> None:
         # Redis is the queue dependency. Keep consuming self-diagnosis jobs when
         # PostgreSQL/Neo4j is down so the owner still receives the outage.
         logger.error(f"Worker schema initialization deferred: {type(exc).__name__}: {exc}")
+    if settings.BRAIN_EXECUTION_ENABLED and settings.BRAIN_STORAGE_MODE == "full":
+        try:
+            from brain.database.session import async_session_factory
+            from brain.team.execution import recover_orphaned_runs
+
+            # A restarted worker fences executions whose owner died; they are never resumed.
+            await recover_orphaned_runs(async_session_factory)
+        except Exception as exc:
+            logger.error(f"Team execution recovery deferred: {type(exc).__name__}: {exc}")
     validated_index = None
     if settings.LATE_INTERACTION_REMOTE_ENABLED:
         try:

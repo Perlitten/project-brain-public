@@ -57,7 +57,18 @@ SEPARATE_OPERATIONS = {
     ("delete", "/team/projects/{project_id}/members/{principal_id}"): "project administrator check in handler; test_team_provisioning",
     ("get", "/team/projects/{project_id}/repositories"): "project administrator check in handler; test_team_provisioning",
     ("post", "/team/projects/{project_id}/repositories"): "project administrator check in handler; test_team_provisioning",
-    ("get", "/team/invitations"): "team administrator check in handler; test_team_invitations",
+    ("get", "/team/projects/{project_id}/execution-grants"): "project administrator check in handler; test_team_execution",
+    ("put", "/team/projects/{project_id}/members/{principal_id}/execution"):
+        "project administrator check in handler; test_team_execution",
+    ("delete", "/team/projects/{project_id}/members/{principal_id}/execution"):
+        "project administrator check in handler; test_team_execution",
+    ("post", "/team/projects/{project_id}/tasks/{task_id}/runs/{run_id}/execution"):
+        "operator switch, per-member grant and task-bound delegation; test_team_execution",
+    ("get", "/team/projects/{project_id}/tasks/{task_id}/runs/{run_id}/execution"):
+        "live team membership/project policy; test_team_execution",
+    ("post", "/team/projects/{project_id}/tasks/{task_id}/runs/{run_id}/execution/cancel"):
+        "requester, initiator or project administrator; test_team_execution",
+    ("get", "/team/invitations"):"team administrator check in handler; test_team_invitations",
     ("post", "/team/invitations"): "team administrator check in handler; test_team_invitations",
     ("post", "/team/invitations/{invitation_id}/revoke"): "team administrator check in handler; test_team_invitations",
     ("post", "/team/invitations/accept"): "single-use invitation token, throttled; test_team_invitations",

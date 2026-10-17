@@ -364,3 +364,68 @@ def dissolve_cmd(
             return {**provisioning.team_dict(team), "dissolved_at": provisioning._iso(team.dissolved_at)}
 
     _emit(_run(run()))
+
+
+execution_cli = typer.Typer(help="Bounded execution grants (M2; off unless BRAIN_EXECUTION_ENABLED). "
+                                 "See docs/operations/TEAM_EXECUTION.md.")
+team_cli.add_typer(execution_cli, name="execution")
+
+
+@execution_cli.command(name="grant")
+def grant_execution_cmd(
+    project: str = typer.Option(..., "--project", help="Project id or name."),
+    principal: str = typer.Option(..., "--principal", help="Principal id or name (Contributor or Reviewer)."),
+):
+    """Allow runs initiated by this member on this project to execute (no role implies it)."""
+    from brain.team import execution
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            target = await provisioning.resolve_project(session, project)
+            identity = await provisioning.resolve_principal(session, principal)
+            grant = await execution.set_grant(session, target.id, identity.id, CLI_OPERATOR)
+            return execution.grant_dict(grant)
+
+    _emit(_run(run()))
+
+
+@execution_cli.command(name="revoke")
+def revoke_execution_cmd(
+    project: str = typer.Option(..., "--project", help="Project id or name."),
+    principal: str = typer.Option(..., "--principal", help="Principal id or name."),
+):
+    """Revoke an execution grant; running executions stop at their next checkpoint."""
+    from brain.team import execution
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            target = await provisioning.resolve_project(session, project)
+            identity = await provisioning.resolve_principal(session, principal)
+            grant = await execution.revoke_grant(session, target.id, identity.id, CLI_OPERATOR)
+            return execution.grant_dict(grant)
+
+    _emit(_run(run()))
+
+
+@execution_cli.command(name="list")
+def list_execution_cmd(project: str = typer.Option(..., "--project", help="Project id or name.")):
+    """List execution grants on a project, including revoked ones."""
+    from brain.team import execution
+
+    async def run():
+        async with async_session_factory() as session:
+            target = await provisioning.resolve_project(session, project)
+            return await execution.list_grants(session, target.id)
+
+    _emit(_run(run()))
+
+
+@execution_cli.command(name="recover")
+def recover_execution_cmd():
+    """Fence executions whose worker stopped renewing its lease (the worker also does this at start)."""
+    from brain.team import execution
+
+    async def run():
+        return {"fenced": await execution.recover_orphaned_runs(async_session_factory)}
+
+    _emit(_run(run()))

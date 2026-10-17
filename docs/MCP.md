@@ -67,7 +67,8 @@ Local stdio exposes 13 tools. The HTTP-backed stdio bridge and native `/mcp`
 add `get_diff_review`, for the asynchronous review flow, and the three
 `team_*` tools of the [experimental team mode](TEAM.md): 17 tools in all. The
 `team_*` tools answer only for verified team members within their project
-roles; `team_request_run` records a run but nothing executes it yet.
+roles; `team_request_run` records a run. MCP has no tool to execute it; the first,
+off-by-default execution slice is HTTP only ([bounded team execution](operations/TEAM_EXECUTION.md)).
 
 | Tool | Purpose |
 |---|---|

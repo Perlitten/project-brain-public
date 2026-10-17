@@ -19,7 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from brain.auth.principals import mint_credential
 from brain.database.models import ApiCredential, OAuthRefreshToken, Principal, Repository
 from brain.team.authorization import ROLE_PERMISSIONS, Permission, TeamConflict, TeamDenied, fresh, permissions
-from brain.team.models import AgentRun, ProjectMember, ProjectRepository, Team, TeamMember, TeamProject
+from brain.team.models import (AgentRun, ProjectMember, ProjectRepository, Team, TeamExecutionGrant, TeamMember,
+                               TeamProject)
 
 TEAM_ID = 1
 # Issuer recorded for members an operator verified against a Brain credential
@@ -205,8 +206,13 @@ async def revoke_principal_access(session: AsyncSession, principal: Principal) -
     would otherwise stay live for solo surfaces and for any later fallback.
     This revokes the principal's own credentials (named keys and OAuth access
     tokens), the refresh tokens that could mint new ones, and the runs it
-    initiated together with their run credentials, in the caller's transaction."""
+    initiated together with their run credentials, in the caller's transaction.
+    Execution grants on every project are revoked too, so a re-added member
+    needs a fresh grant."""
     now = _now()
+    await session.execute(update(TeamExecutionGrant).where(
+        TeamExecutionGrant.principal_id == principal.id, TeamExecutionGrant.revoked_at.is_(None))
+        .values(revoked_at=now, revoked_by="system:member-revoked", version=TeamExecutionGrant.version + 1))
     credential_ids = select(ApiCredential.id).where(ApiCredential.principal_id == principal.id)
     runs = (await session.execute(select(AgentRun).where(AgentRun.initiator_id == principal.id,
                                                          AgentRun.revoked_at.is_(None))
@@ -358,6 +364,11 @@ async def revoke_project_member(session: AsyncSession, *, project_id: uuid.UUID,
     if membership.revoked_at is None:
         membership.revoked_at = _now()
         membership.version += 1
+        await session.execute(update(TeamExecutionGrant).where(
+            TeamExecutionGrant.project_id == project_id, TeamExecutionGrant.principal_id == principal_id,
+            TeamExecutionGrant.revoked_at.is_(None))
+            .values(revoked_at=membership.revoked_at, revoked_by="system:project-member-revoked",
+                    version=TeamExecutionGrant.version + 1))
         await session.flush()
     return membership
 

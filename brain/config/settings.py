@@ -238,6 +238,22 @@ class Settings(BaseSettings):
     OBSIDIAN_VAULT_PATH: Optional[str] = None
     # Allow O(n) JSON cosine fallback only in explicit dev mode
     ALLOW_EMBEDDING_JSON_FALLBACK: bool = False
+    # Team M2 bounded execution (docs/operations/TEAM_EXECUTION.md). Off by default; enabling it
+    # also needs a per-member execution grant on the project. Each run gets its own clone under
+    # BRAIN_EXECUTION_ROOT. Tools: JSON object name -> {"argv": [...], "allow_args": bool}.
+    # Secrets: JSON object reference -> name of a server environment variable (the value never
+    # leaves the server). Egress: comma-separated hosts; the subprocess backend enforces no
+    # network boundary, so any requested egress is refused there.
+    BRAIN_EXECUTION_ENABLED: bool = False
+    BRAIN_EXECUTION_ROOT: Optional[str] = None
+    BRAIN_EXECUTION_TOOLS: str = "{}"
+    BRAIN_EXECUTION_SECRETS: str = "{}"
+    BRAIN_EXECUTION_EGRESS: str = ""
+    BRAIN_EXECUTION_MAX_WALL_SECONDS: int = 900
+    BRAIN_EXECUTION_MAX_STEPS: int = 20
+    BRAIN_EXECUTION_STEP_TIMEOUT_SECONDS: int = 300
+    BRAIN_EXECUTION_MAX_OUTPUT_BYTES: int = 65536
+    BRAIN_EXECUTION_LEASE_SECONDS: int = 60
     # Deterministic retrieval: skip LLM for task classification/keyword extraction
     RETRIEVAL_USE_LLM_CLASSIFICATION: bool = False
     # Optional LLM rerank for top-30 -> top-10 (deterministic fallback always available)
