@@ -313,6 +313,14 @@ async def run_health_check(params: Dict[str, Any]) -> Dict[str, Any]:
         harness_reconciliation = {
             "error": f"{type(exc).__name__}: {exc}"[:260],
         }
+    try:
+        from brain.telemetry.tool_calls import prune_tool_calls
+        tool_call_retention: Dict[str, Any] = {
+            "deleted": await prune_tool_calls(settings.MCP_TOOL_CALLS_RETENTION_DAYS),
+            "retention_days": settings.MCP_TOOL_CALLS_RETENTION_DAYS,
+        }
+    except Exception as exc:  # Housekeeping must not fail the health check.
+        tool_call_retention = {"error": f"{type(exc).__name__}: {exc}"[:260]}
     services = await check_health()
     all_healthy = all(svc.get("status") == "healthy" for svc in services.values())
 
@@ -344,6 +352,7 @@ async def run_health_check(params: Dict[str, Any]) -> Dict[str, Any]:
         "stale_embeddings": stale,
         "missing_embeddings": missing,
         "harness_reconciliation": harness_reconciliation,
+        "tool_call_retention": tool_call_retention,
     }
 
 
