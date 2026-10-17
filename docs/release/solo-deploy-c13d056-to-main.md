@@ -120,6 +120,10 @@ BRAIN_STALE_CONTEXT_POLICY=strict_block
 BRAIN_TEAM_MODE=false
 # Widen the image rollback window for this release.
 BRAIN_IMAGE_RETENTION=10
+# New default (PR #128): the post-merge webhook job runs `git fetch origin` and checks
+# out the delivered commit. A tar-deployed /app normally has no git origin to fetch,
+# and /repo is mounted read-only, so keep the c13d056 behaviour.
+BRAIN_WEBHOOK_FETCH_SOURCE=false
 ```
 
 Changes that cannot be pinned, and that you should know about:
@@ -144,6 +148,17 @@ Changes that cannot be pinned, and that you should know about:
   one LLM call per file. This is what makes a post-deploy reindex finish in
   minutes rather than over an hour. Set it to `inline` only to reproduce the
   old indexing exactly.
+- **Merged after this checklist was first written** (PRs #124, #127–#130). On
+  first boot `brain/database/migrations.py` only adds columns (nullable, or
+  `version` with default 1):
+  `teams.dissolved_at`; `updated_by_principal_id` and `version` on decisions
+  and rules, plus their supersede links; `author_principal_id` and
+  `updated_by_principal_id` on memory learnings, episodes and skills. Existing
+  rows keep NULL authorship and start at version 1. MCP and retrieval replies
+  gain a `freshness` field (`BRAIN_FRESHNESS_MAX_AGE_S`, default 7 days).
+  Behaviour change in solo too: editing a decision or rule keeps its id, bumps
+  `version` and copies the old content into a superseded history row instead
+  of overwriting it.
 - `MCP_TOOL_CALLS_RETENTION_DAYS` is new, default 30. The daily `health_check`
   deletes older rows from `mcp_tool_calls`, a table that is new on prod.
 
