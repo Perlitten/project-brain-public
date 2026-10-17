@@ -174,8 +174,9 @@ claim of parity with the full Neo4j deployment or a published v0.9.2 feature.
 
 ### Is this production-ready?
 
-It is early single-user, self-hosted software for a trusted operator, not a
-multi-tenant team service. The published release has installation, indexing and
+It is early, self-hosted software run by a trusted operator, not a multi-tenant
+service. Team mode on `main` is an [experimental preview](TEAM.md): not in
+v0.9.2, not deployed and not piloted. The published release has installation, indexing and
 MCP smoke coverage. Public exposure requires TLS and the scoped-key
 discipline in [Deployment](operations/DEPLOYMENT.md). Production operation and useful coding outcomes
 must be evaluated for your own workflow; passing tests do not establish them.

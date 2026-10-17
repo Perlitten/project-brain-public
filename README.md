@@ -45,8 +45,10 @@ can inspect. The agent still reads current source and runs the relevant checks.
 - **Makes state visible.** Inspect projects, indexing, code relationships,
   context packs and memory from the dashboard.
 
-This is early, single-user software for a trusted operator. It complements your
-coding agent, Git and CI. It is not a multi-tenant service.
+This is early software run by a trusted operator, built for one developer; an
+[experimental team mode](docs/TEAM.md) on `main` lets a small team of trusted
+people share one Brain. It complements your coding agent, Git and CI. It is not
+a multi-tenant service.
 
 ## Quickstart
 
@@ -144,20 +146,25 @@ agents automatically call Brain in every session: configure your client workflow
 
 ## From one developer to a team
 
+> **Experimental preview, `main` only, not in v0.9.2.** Not deployed or
+> piloted with real people; no SSO, and runs are recorded but never executed.
+
 A Brain starts as a team of one: with no team members registered, every
 authenticated caller (the shared `PROJECT_BRAIN_API_KEY` included) can use
 every indexed repository, and `/health` reports `"mode": "solo"`. Boundaries
-switch on when the first verified member is added with `brain team member add`:
-the shared key is then refused, each repository is reachable through the
-project it is attached to, and member roles (reader, contributor, reviewer,
-administrator) decide who may search, propose knowledge or request runs.
-Provisioning is an operator action through the CLI or the `team:admin` API;
-there is no invitation or SSO flow yet. Design and limits:
-[ADR: team collaboration](docs/adr/team-collaboration.md).
+switch on when the first verified member joins, by redeeming a single-use
+invitation or being added with `brain team member add`: the shared key is then
+refused, each repository is reachable through the project it is attached to,
+and member roles (reader, contributor, reviewer, administrator) decide who may
+search, propose knowledge or request runs. Invitations are created with the
+CLI or the `team:admin` API; there is no SSO and no invitation UI. In team
+state the dashboard signs each member in with their own key and sends it on
+every call, so Brain applies that member's roles.
 
-In team state the dashboard signs each member in with their own key and sends
-it on every call, so Brain applies that member's roles. See
-[team sign-in](apps/web/README.md#team-sign-in).
+The [team mode walkthrough](docs/TEAM.md) covers the whole path, from
+`brain team init` to revoking a member, with its known limitations. Stage and
+gaps: [team-mode status](docs/design/team-status.md); design:
+[ADR: team collaboration](docs/adr/team-collaboration.md).
 
 ## See the product
 
@@ -232,6 +239,7 @@ installation and operating guides from historical research and release records.
 - [Getting started](docs/GETTING_STARTED.md) and [MCP](docs/MCP.md)
 - [FAQ](docs/FAQ.md), [Memory](docs/MEMORY.md) and [Roadmap](docs/ROADMAP.md)
 - [Deployment](docs/operations/DEPLOYMENT.md) and [backup / restore](docs/runbooks/backup-restore.md)
+- [Team mode walkthrough](docs/TEAM.md) (experimental preview, `main` only)
 - [Contributing](.github/CONTRIBUTING.md), [issues](https://github.com/Perlitten/project-brain-public/issues) and [Code of conduct](.github/CODE_OF_CONDUCT.md)
 - [Security reporting](SECURITY.md) and [Changelog](CHANGELOG.md)
 

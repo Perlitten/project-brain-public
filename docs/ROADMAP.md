@@ -17,7 +17,10 @@ Direction, not commitments — items move between releases.
 
 ## Later
 
-- Team features: per-user memory scopes, audit trails
+- Team mode: an [experimental preview](TEAM.md) is on `main` (members,
+  projects, invitations, per-project authorization). Still to come: SSO, an
+  invitation UI, executors, deployment and a pilot; see
+  [team-mode status](design/team-status.md)
 - Managed hosting option for people who don't want a VPS
 - Graph mining: architecture rule suggestions from coupling history
 

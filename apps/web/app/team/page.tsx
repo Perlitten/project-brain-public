@@ -8,7 +8,7 @@ import { getTeamView } from "@/lib/team-view";
 
 export const metadata = { title: "Team" };
 
-const LEDE = "Everyone on the team signs in to this dashboard with their own key. Brain checks that key on every request, so revoking a member locks them out at once.";
+const LEDE = "Experimental preview (main only, not in v0.9.2). Everyone on the team signs in to this dashboard with their own key. Brain checks that key on every request, so revoking a member locks them out of the dashboard at once; revoke their key under Access to stop their agents too.";
 
 export default async function Team() {
   const [mode, member] = await Promise.all([signInMode(), currentMember()]);
@@ -32,8 +32,7 @@ export default async function Team() {
             <CodeBlock
               label="On the Brain server"
               code={`brain team init --name "My team"
-python scripts/mint_api_credential.py --name alice --kind human --scopes "*"
-brain team member add --principal alice --admin`}
+brain team member add --principal alice --admin --mint-key`}
             />
             <p className="field__hint">
               Keep the printed key: it is the first admin’s dashboard sign-in. Admins then add everyone else here, on the Team page.

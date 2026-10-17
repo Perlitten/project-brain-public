@@ -55,6 +55,10 @@ Scripts can authenticate with HTTP Basic (`curl -u user:password`). Refusals fro
 
 ### Team sign-in
 
+> **Experimental preview, `main` only, not in v0.9.2.** The end-to-end operator path (invite,
+> sign-in, MCP, revoke) and the known limitations are in the
+> [team mode walkthrough](../../docs/TEAM.md).
+
 Once the Brain has a verified team member it refuses the shared key the dashboard runs with
 (`Named credential required`). The dashboard notices that refusal and switches to team sign-in;
 `WEB_BASIC_AUTH` and the owner login stop applying until the last member is gone.
@@ -68,21 +72,25 @@ Once the Brain has a verified team member it refuses the shared key the dashboar
   server key, so Brain authorizes each call as the member. A request without a valid member cookie
   forwards nothing. Member responses skip the data cache.
 - Each request re-checks the key with Brain, so revoking a member or their key takes effect on the
-  next request. The stale cookie is then cleared. **Sign out** in the top bar deletes the cookie.
+  next request. The stale cookie is then cleared. Revoking the membership locks the member out of
+  the dashboard but leaves the key itself valid; revoke the key under **Settings → Access** to stop
+  their agents as well. **Sign out** in the top bar deletes the cookie.
 - **Team** (sidebar) shows who you are. A team admin can add members, issue a member key (shown
   once), set project roles and revoke members through the `/team` API. Brain still checks every call.
 
-Bootstrap the first admin from the CLI, then sign in with their key:
+Bootstrap the first admin on the Brain server, then sign in with their key:
 
 ```bash
-python scripts/mint_api_credential.py --name alice --kind human --scopes "*"   # prints the key once
-brain team member add --principal alice --admin
+brain team init --name "My team"
+brain team member add --principal alice --admin --mint-key   # prints the key once
 ```
 
-A key from `brain team member add --mint-key` carries team scopes only. That is enough for agents
-and the `/team` API, but most dashboard pages also need read scopes. Issue dashboard keys from the
-Team page instead: they get the team scopes plus dashboard read scopes, and admins also get
-`principals:read`/`principals:write`. If `BRAIN_API_KEY` is itself a member's `pbk_` key, Brain
+Redeeming an `--admin` invitation (`brain team invite create --admin`, then `brain team invite
+accept`) works too. Keys from the Team page, from `--mint-key` and from invitations carry the same
+scopes: the team scopes, the dashboard read scopes and `core:write` for search, context and ask;
+admins also get `principals:read`/`principals:write`, `setup:write` and `operations:write`. A
+member key minted before PR #124 carries team scopes only and cannot open the dashboard; issue a
+new one. If `BRAIN_API_KEY` is itself a member's `pbk_` key, Brain
 accepts it, so the dashboard stays in solo mode and acts as that member. Use the shared server key
 or a service credential instead.
 
