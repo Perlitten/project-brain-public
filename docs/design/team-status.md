@@ -42,8 +42,36 @@ and the ADR says plainly that green CI is not team readiness.
 | Remaining personal routes scoped in team state | [#120](https://github.com/Perlitten/project-brain-public/pull/120) |
 | Dashboard members sign in with their own key; admin Team page (add, role, revoke) | [#121](https://github.com/Perlitten/project-brain-public/pull/121) |
 | A team snapshot restored with `scripts/restore_database.py` stays fenced until `brain team reconcile --attest`; plain `psql` does not add the fence ([runbook](../runbooks/backup-restore.md#restoring-a-team-brain)) | [#122](https://github.com/Perlitten/project-brain-public/pull/122) |
+| Revocation hardening (below) | this PR (`team/revocation-hardening`) |
 
-Tests: 12 `tests/test_team_*.py` files, about 90 test functions, plus the
+### Revocation hardening
+
+- **Revoking a member revokes everything acting for it**, in the same
+  transaction, on every path (`DELETE /team/projects/members/{id}`,
+  `brain team member revoke`, invitation revoke with `revoke_member`): all of
+  the principal's credentials (named keys and OAuth access tokens), its OAuth
+  refresh tokens, and the runs it initiated together with their run
+  credentials (`brain/team/provisioning.py::revoke_principal_access`).
+- **No automatic return to solo.** Revoking the last member keeps
+  `team_state() == "team"`, so a surviving key never becomes the implicit
+  administrator. Only `brain team dissolve --yes` records `teams.dissolved_at`
+  and returns to solo; it is refused while any member is live, and a member
+  added later turns the team back on.
+- **Admin credential minting** (`/admin/principals…`) refuses `*` (HTTP 422),
+  refuses scopes the caller does not hold (403), and in team state refuses
+  minting for another team member (403); member keys come from invitations or
+  the operator CLI.
+- **Admin disable/revoke** in team state refuses disabling one's own principal
+  or revoking the credential in use (409), and refuses any change that would
+  leave no live administrator credential (409, team row locked).
+- **Dashboard password login** (`GET /api/web-login`, `POST /api/web-login/verify`)
+  needs the team administrator in team state, like the write routes. The
+  dashboard's password sign-in therefore works in team state only when its
+  server key is an administrator credential; members sign in with their own key.
+- **Telegram bridge**: in team state an `app: …` prefix or project slug only
+  resolves to repositories the poller's own credential may read.
+
+Tests: 13 `tests/test_team_*.py` files, about 100 test functions, plus the
 PostgreSQL-only restore and concurrency cases that CI runs.
 
 ## Known gaps (checked against `main` on 2026-10-17)
@@ -70,6 +98,10 @@ PostgreSQL-only restore and concurrency cases that CI runs.
   human membership are still two separate models.
 - **Not exercised end to end**: production upgrade/restore, external identities
   and secrets, real multi-person use.
+- **Index freshness follows origin only through the webhook.** The post-merge
+  reindex now fetches `origin` and checks out the delivered commit
+  (`BRAIN_WEBHOOK_FETCH_SOURCE`), and `/repositories` reports
+  `commits_behind_origin`; a read-only mount still has to be updated on the host.
 
 ## Next steps, in order
 

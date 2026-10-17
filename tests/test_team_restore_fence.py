@@ -60,7 +60,8 @@ async def test_reconcile_replays_revocations_and_rotates_credentials(team_db):
         assert await restore_fence.access_fenced(session)
         current = await restore_fence.review(session)
         result = await restore_fence.reconcile(session, attest=current.digest.upper())
-        assert result["credentials"] == "rotated" and result["revoked"]["credentials"] == 4
+        # Replaying member 1's revocation already revoked its credential; reconcile rotates the other three.
+        assert result["credentials"] == "rotated" and result["revoked"]["credentials"] == 3
     async with factory() as session, session.begin():
         assert not await restore_fence.access_fenced(session)
         assert (await session.execute(select(ApiCredential).where(ApiCredential.revoked_at.is_(None)))).first() is None

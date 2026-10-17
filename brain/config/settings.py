@@ -470,6 +470,13 @@ class Settings(BaseSettings):
     PROJECT_BRAIN_WEBHOOK_REF: str = "refs/heads/main"
     # Blank = the indexed repository (TARGET_REPO_PATH); see _default_repo_paths.
     PROJECT_BRAIN_GIT_REPO_PATH: str = ""
+    # A reindex job that names a source revision (the git-merge webhook always
+    # does) fetches origin and detaches the checkout at that revision before
+    # indexing. Off: the job fails when the checkout HEAD is not that revision,
+    # as it did before. A read-only or dirty checkout fails with a clear error
+    # either way; it is never modified.
+    BRAIN_WEBHOOK_FETCH_SOURCE: bool = True
+    BRAIN_WEBHOOK_FETCH_TIMEOUT_S: int = 120
 
     @field_validator("POSTGRES_POOL_SIZE")
     @classmethod

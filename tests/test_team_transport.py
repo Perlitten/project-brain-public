@@ -19,6 +19,7 @@ from brain.auth.principals import hash_credential
 from brain.config.settings import Settings, settings
 from brain.database.models import ApiCredential, Principal, Repository
 from brain.memory.provenance import MemoryWriteResult
+from brain.team import provisioning
 from brain.team.authorization import team_state
 from brain.team.models import TeamMember
 from brain.workers.scheduler import run_scheduler
@@ -37,9 +38,14 @@ def membership_driven(monkeypatch):
     monkeypatch.setattr(settings, "BRAIN_TEAM_MODE", False)
 
 
-async def revoke_everyone(factory):
+async def revoke_everyone(factory, *, dissolve: bool = True):
+    """Revoke every membership row; by default also dissolve the team, the operator's explicit return to solo.
+
+    Revoking the last member alone keeps team state (``brain team dissolve``)."""
     async with factory() as session, session.begin():
         await session.execute(update(TeamMember).values(revoked_at=datetime.now(timezone.utc)))
+        if dissolve:
+            await provisioning.dissolve_team(session)
 
 
 async def add_outsider_and_unattached_repo(factory):
@@ -103,7 +109,10 @@ async def test_team_state_follows_live_membership_and_strict_flag(team_db, monke
     async with factory() as session:
         assert await team_state(session) == "team"
     assert await team_access.current_team_state() == "team"
-    await revoke_everyone(factory)
+    await revoke_everyone(factory, dissolve=False)
+    assert await team_access.current_team_state() == "team"  # never back to solo on its own
+    async with factory() as session, session.begin():
+        await provisioning.dissolve_team(session)
     assert await team_access.current_team_state() == "solo"
     monkeypatch.setattr(settings, "BRAIN_TEAM_MODE", True)  # deprecated strictness alias
     assert await team_access.current_team_state() == "team"

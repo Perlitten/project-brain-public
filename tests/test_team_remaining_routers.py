@@ -119,7 +119,7 @@ def remaining_app(factory, monkeypatch, tmp_path):
     monkeypatch.setattr(web_login, "_write", lambda values: None)
     # telegram bridge: project slug names the repository; ask_project answers from a stub once authorized
     monkeypatch.setattr(telegram_bridge, "_resolve_repo", AsyncMock(
-        side_effect=lambda question, slug: ({"A": "/synthetic/A", "B": "/synthetic/B"}[slug], question)))
+        side_effect=lambda question, slug, _principal=None: ({"A": "/synthetic/A", "B": "/synthetic/B"}[slug], question)))
     monkeypatch.setattr(core_retrieval, "_agent_v2_mode", lambda: "on")
     monkeypatch.setattr(core_retrieval, "_ask_v2", AsyncMock(return_value={"answer": "fine"}))
     app = FastAPI()
@@ -313,8 +313,9 @@ async def test_team_brain_wide_routes_need_a_team_administrator(team_db, monkeyp
                 assert refused.status_code == 403 and ADMIN_REQUIRED in refused.text, (path, refused.text)
             allowed = await client.request(method, path, json=body, headers=ADMIN)
             assert _authorized(allowed), (path, allowed.text)
-        # The sign-in flow itself stays reachable to members.
-        assert (await client.get("/api/web-login", headers=READER)).status_code == 200
+        # Reading the login and checking passwords is administration too (tests/test_team_revocation.py).
+        assert (await client.get("/api/web-login", headers=READER)).status_code == 403
+        assert (await client.get("/api/web-login", headers=ADMIN)).status_code == 200
 
 
 @pytest.mark.asyncio
