@@ -13,10 +13,10 @@ const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
 // Who may open the dashboard, in order of precedence:
 //   1. WEB_BASIC_AUTH="user:password" in the deployment environment — fixed,
 //      changed only by editing that variable.
-//   2. The login set on Settings → Sign-in, kept by the Brain API
+//   2. The login set on Settings → Access → Dashboard sign-in, kept by the Brain API
 //      (/api/web-login, scrypt hash in the server's .env).
 //   3. Nothing set: open mode (anyone gets in and can set the first password
-//      from Settings → Sign-in) when the dashboard listens on loopback only
+//      from Settings → Access → Dashboard sign-in) when the dashboard listens on loopback only
 //      (`npm run dev` / `npm run start` default, see scripts/serve.mjs), or when
 //      WEB_OPEN_MODE=true. Anywhere else the dashboard stays LOCKED (503
 //      "unconfigured"), so an anonymous visitor can neither read data nor set
@@ -333,7 +333,7 @@ export async function lockReason(host: string | null = null): Promise<{ reason: 
 }
 
 export const UNCONFIGURED_DETAIL =
-  "No dashboard sign-in is configured. Set WEB_BASIC_AUTH=user:password in the dashboard's environment, or set a login through the Brain API (PUT /api/web-login), or open the dashboard on this machine (npm run dev / npm run start listen on 127.0.0.1) to set one from Settings → Sign-in.";
+  "No dashboard sign-in is configured. Set WEB_BASIC_AUTH=user:password in the dashboard's environment, or set a login through the Brain API (PUT /api/web-login), or open the dashboard on this machine (npm run dev / npm run start listen on 127.0.0.1) to set one from Settings → Access → Dashboard sign-in.";
 
 export async function authorizeWebRequest(header: string | null, session: string | null = null, host: string | null = null,
   member: string | null = null): Promise<200 | 401 | 503> {

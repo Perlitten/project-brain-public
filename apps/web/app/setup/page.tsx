@@ -1,3 +1,4 @@
+import { adminOnlyPage } from "@/components/AdminOnly";
 import { Term } from "@/components/Term";
 import { SetupSteps } from "@/components/setup/SetupSteps";
 import { PageHead, StatusLine } from "@/components/ui";
@@ -9,6 +10,8 @@ import { getSetupView } from "@/lib/setup-view";
 export const metadata = { title: "Set up Brain" };
 
 export default async function Setup() {
+  const gate = await adminOnlyPage("Set up Brain");
+  if (gate) return gate;
   const [view, clients] = await Promise.all([getSetupView(), getClientConfigs()]);
   const steps = view.steps;
   const uncommitted = view.mode === "live" ? await getLatestUncommittedChanges(view.repoPath) : null;

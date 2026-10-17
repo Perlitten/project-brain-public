@@ -161,6 +161,28 @@ async def test_team_admin_member_key_writes_global_decisions(team_db, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_real_member_keys_queue_jobs_by_role_and_admin_keys_reach_admin_jobs(team_db, monkeypatch):
+    """Keys minted with member_scopes (dashboard, CLI, invitation) can use the dashboard's job buttons:
+    the role decides each repository, and a job without one still needs a team administrator."""
+    factory, _, _ = team_db
+    membership_driven(monkeypatch)
+    async with factory() as session, session.begin():
+        for key, is_admin in (("fixture-1", False), ("fixture-2", False), ("fixture-4", True)):
+            await session.execute(update(ApiCredential).where(ApiCredential.key_hash == hash_credential(key))
+                                  .values(scopes=member_scopes(is_admin)))
+    app = personal_app(factory, monkeypatch)
+    async with client_for(app) as client:
+        reindex_a = {"repo_path": "/synthetic/A"}
+        assert (await client.post("/jobs/reindex", json=reindex_a, headers=READER)).status_code == 403
+        assert (await client.post("/jobs/reindex", json=reindex_a, headers=CONTRIBUTOR)).status_code == 200
+        for headers, expected in ((CONTRIBUTOR, 403), (ADMIN, 200)):
+            assert (await client.post("/jobs/reindex", headers=headers)).status_code == expected
+    assert {"jobs:write"} <= set(member_scopes(False))
+    assert not {"setup:write", "operations:write"} & set(member_scopes(False))
+    assert {"setup:write", "operations:write"} <= set(member_scopes(True))
+
+
+@pytest.mark.asyncio
 async def test_team_state_outsider_denied_reader_reads_contributor_writes(team_db, monkeypatch):
     factory, a, _ = team_db
     membership_driven(monkeypatch)

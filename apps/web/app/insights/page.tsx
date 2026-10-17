@@ -1,3 +1,5 @@
+import { scopeMemberToProject } from "@/lib/member-scope";
+import { restrictedMember } from "@/lib/team-session";
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { Term } from "@/components/Term";
@@ -21,7 +23,8 @@ const kindWords: Record<Insight["kind"], ReactNode> = {
 
 export default async function Insights({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
-  const result = await getPagedInsights(typeof params.repo === "string" ? params.repo : undefined, getListQuery(params));
+  await scopeMemberToProject("/insights", params);
+  const [result, member] = await Promise.all([getPagedInsights(typeof params.repo === "string" ? params.repo : undefined, getListQuery(params)), restrictedMember()]);
   const insights = result.items;
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
 
@@ -47,13 +50,16 @@ export default async function Insights({ searchParams }: { searchParams: Promise
     <>
       <PageHead
         title="Findings"
-        lede="Places in connected repositories that are getting harder to change. Findings cover the whole service and are not tied to one project."
+        lede={typeof params.repo === "string" ? "Places in this project’s code that are getting harder to change." : "Places in connected repositories that are getting harder to change, across every project."}
       />
       <SectionTabs section="projects" active="/insights" />
-      {insights.length === 0 && !hasQuery && (
-        <EmptyState title="No findings yet" body="Brain hasn’t flagged anything in this code. Findings appear after a repository is indexed — run `brain index` or connect a project in Setup." action={<Link className="btn btn--neutral" href="/setup">Set up indexing</Link>} />
+      {result.available === false && (
+        <EmptyState title="Findings unavailable" body="Brain didn’t return its findings just now. Reload in a moment; nothing here means the code is clean." />
       )}
-      {(insights.length > 0 || hasQuery) && (
+      {result.available !== false && insights.length === 0 && !hasQuery && (
+        <EmptyState title="No findings yet" body="Brain hasn’t flagged anything in this code. Findings appear after a repository is indexed — run `brain index` or connect a project in Setup." action={member ? undefined : <Link className="btn btn--neutral" href="/setup">Set up indexing</Link>} />
+      )}
+      {result.available !== false && (insights.length > 0 || hasQuery) && (
       <ListFrame
         listTag="div"
         listClass="cards"

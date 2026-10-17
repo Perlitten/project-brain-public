@@ -42,6 +42,9 @@ and the ADR says plainly that green CI is not team readiness.
 | Dashboard members sign in with their own key; admin Team page (add, role, revoke) | [#121](https://github.com/Perlitten/project-brain-public/pull/121) |
 | A team snapshot restored with `scripts/restore_database.py` stays fenced until `brain team reconcile --attest`; plain `psql` does not add the fence ([runbook](../runbooks/backup-restore.md#restoring-a-team-brain)) | [#122](https://github.com/Perlitten/project-brain-public/pull/122) |
 | CLI and invitation keys carry the same scopes as dashboard keys; members read global decisions and rules plus those of repositories they can read (`/decisions`, `/rules`, MCP `brain://decisions`, `brain://rules`) | this branch (`team/member-scopes`) |
+| Member keys get `jobs:write` (queueing still needs Contributor or Reviewer on the repository); team-admin keys also get `setup:write` and `operations:write`, so "Run now", setup and retries work from the dashboard. Keys minted before this change lack these scopes and must be re-issued | this branch |
+| Dashboard for non-admin members: navigation and pages limited to projects they have a role on; Settings, Setup, Quality, Logs, Runs, Reranker, Admin and reports show "Team admins only"; no setup links | this branch |
+| Dashboard shows "unavailable" instead of a false "none" when Brain does not answer (jobs, findings, memory, packs, runs, MCP tools, graph, team roles) | this branch |
 
 Tests: 12 `tests/test_team_*.py` files, about 90 test functions, plus the
 PostgreSQL-only restore and concurrency cases that CI runs.
@@ -60,6 +63,9 @@ PostgreSQL-only restore and concurrency cases that CI runs.
   human membership are still two separate models.
 - **Not exercised end to end**: production upgrade/restore, external identities
   and secrets, real multi-person use.
+- **`/late-interaction/status` returns 500** (not 4xx) when a repository path is
+  outside the allowed roots; the dashboard's Reranker page then shows
+  "unavailable".
 
 ## Next steps, in order
 

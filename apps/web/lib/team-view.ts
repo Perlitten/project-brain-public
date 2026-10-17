@@ -19,6 +19,8 @@ export interface TeamProjectRow {
   id: string;
   name: string;
   disabled: boolean;
+  /** Brain didn't return this project's member list: roles in it are unknown, not "no access". */
+  unread?: boolean;
 }
 
 export type TeamView =
@@ -77,7 +79,10 @@ export async function getTeamView(): Promise<TeamView> {
   const live = projectRows.filter((p) => !p.disabled);
   const lists = await Promise.all(live.map((p) => brainRead<RawProjectMember[]>(`/team/projects/${p.id}/members`, { fresh: true })));
   lists.forEach((res, i) => {
-    if (!res.ok || !Array.isArray(res.data)) return;
+    if (!res.ok || !Array.isArray(res.data)) {
+      live[i].unread = true;
+      return;
+    }
     for (const pm of res.data) {
       const row = typeof pm?.principal_id === "number" ? byId.get(pm.principal_id) : undefined;
       if (row && !pm.revoked_at && PROJECT_ROLES.includes(pm.role as ProjectRole)) row.roles[live[i].id] = pm.role as ProjectRole;

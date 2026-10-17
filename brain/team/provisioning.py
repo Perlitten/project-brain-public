@@ -29,14 +29,18 @@ CREDENTIAL_ISSUER = "brain-credential"
 # Issuer for members verified against the web UI login (approver subject ``web:<user>``).
 WEB_LOGIN_ISSUER = "brain-web-login"
 ADMIN_SCOPE = "team:admin"
-# What a member's own dashboard and MCP client read, plus recording decisions and rules. Project roles
-# still decide every repository; kept equal to DASHBOARD_SCOPES in apps/web/lib/team-scopes.ts.
+# What a member's own dashboard and MCP client read, plus recording decisions and rules and queuing
+# jobs. Project roles still decide every repository (a job needs the run.request permission on its
+# repository; one without a repository needs a team administrator); kept equal to DASHBOARD_SCOPES in
+# apps/web/lib/team-scopes.ts.
 MEMBER_CORE_SCOPES = frozenset({
     "control:read", "core:write", "coupling:read", "drift:read", "freshness:read", "graph:read", "harness:read",
-    "impact:read", "jobs:read", "ledger:read", "operations:read", "portfolio:read", "setup:read", "workspace:read",
+    "impact:read", "jobs:write", "ledger:read", "operations:read", "portfolio:read", "setup:read", "workspace:read",
 })
-# Extra for team admins: run the Team page (members, roles) and issue member keys.
-ADMIN_EXTRA_SCOPES = frozenset({"principals:read", "principals:write", ADMIN_SCOPE})
+# Extra for team admins: run the Team page (members, roles), issue member keys, and use the
+# administrative dashboard screens (Setup, Settings, Access, job retries). Those routes also require
+# a live team administrator, so the scopes alone grant nothing to a member who is not one.
+ADMIN_EXTRA_SCOPES = frozenset({"operations:write", "principals:read", "principals:write", "setup:write", ADMIN_SCOPE})
 
 
 class TeamNotFound(LookupError):

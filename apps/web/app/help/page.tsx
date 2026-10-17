@@ -49,8 +49,8 @@ function faq(repo?: string): { q: string; a: ReactNode }[] {
       a: (
         <>
           <p>
-            Brain answers from the last commit it read. Re-index from the <Link className="link" href={link("/")}>Dashboard</Link>, or press{" "}
-            <kbd>Ctrl</kbd> <kbd>K</kbd> and choose “Re-index the repository”. Later runs only re-read what changed.
+            Brain answers from the last commit it read. Press <kbd>Ctrl</kbd> <kbd>K</kbd> and choose “Re-index the repository” (on a team this needs a Contributor or Reviewer role on the project), or{" "}
+            use the index step in <Link className="link" href="/setup#indexed">Setup</Link> (team admins). Later runs only re-read what changed.
           </p>
           <p>
             Brain reads committed source only. If a re-index refuses the repository, commit your source edits first; ignored build output such as{" "}
@@ -149,8 +149,8 @@ export default async function Help({ searchParams }: { searchParams: Promise<{ r
       <Panel id="about" title="About Brain">
         <p className="help__about">
           Project Brain reads the committed source of your repositories and gives your coding agents context through MCP: the relevant code, the
-          decisions and rules you recorded, and what a change may affect. It runs on your own server; it is early, single-user software for a trusted
-          operator.
+          decisions and rules you recorded, and what a change may affect. It runs on your own server, for one operator or a small team whose members
+          each see only the projects they have a role on. It is early software; run it for people you trust.
         </p>
         <dl className="kv">
           <dt>Version</dt>

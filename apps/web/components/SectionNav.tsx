@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { withProject } from "@/lib/nav";
+import { adminOnly, withProject } from "@/lib/nav";
+import { useRestrictedMember } from "./MemberScope";
 
 export type SectionNavItem = { href: string; label: string; active?: boolean };
 
@@ -33,8 +34,10 @@ const SECTIONS = {
 } as const;
 
 export function SectionTabs({ section, active }: { section: keyof typeof SECTIONS; active: string }) {
+  const restricted = useRestrictedMember();
   const s = SECTIONS[section];
+  const items = s.items.filter(([href]) => !restricted || !adminOnly(href));
   // A single-destination section is not a choice, so it draws no tab strip.
-  if (s.items.length < 2) return null;
-  return <SectionNav label={s.label} items={s.items.map(([href, label]) => ({ href, label, active: href === active }))} />;
+  if (items.length < 2) return null;
+  return <SectionNav label={s.label} items={items.map(([href, label]) => ({ href, label, active: href === active }))} />;
 }

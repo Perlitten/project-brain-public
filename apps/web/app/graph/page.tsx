@@ -13,7 +13,8 @@ const VIEWS = ["map", "connections"] as const;
 export default async function Graph({ searchParams }: { searchParams: Promise<{ repo?: string; view?: string }> }) {
   const { repo, view } = await searchParams;
   const tab = pickTab(VIEWS, view);
-  const edges = await getModuleEdges(repo);
+  const read = await getModuleEdges(repo);
+  const edges = read ?? [];
   const violations = edges.filter((e) => e.violation).length;
   const sorted = [...edges].sort((a, b) => Number(b.violation) - Number(a.violation) || b.weight - a.weight);
   // Rule breaks and the strongest links up front; the long tail is paged.
@@ -35,7 +36,11 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
         }
       />
       <SectionTabs section="projects" active="/graph" />
-      {edges.length === 0 ? (
+      {read === null ? (
+        <Panel id="map" title="Module map">
+          <EmptyState title="Code map unavailable" body="Brain didn’t return the module graph just now — its graph store may be down. Reload in a moment." />
+        </Panel>
+      ) : edges.length === 0 ? (
         <Panel id="map" title="Module map">
           <EmptyState
             title="No code map yet"

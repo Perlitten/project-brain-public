@@ -1,5 +1,5 @@
 "use server";
-// Settings → Sign-in: set, change or remove the dashboard's login. The Brain
+// Settings → Access → Dashboard sign-in: set, change or remove the dashboard's login. The Brain
 // API keeps it (scrypt hash in the server's .env); this browser gets a fresh
 // session cookie so it stays signed in while every other browser is signed out.
 import { cookies, headers } from "next/headers";

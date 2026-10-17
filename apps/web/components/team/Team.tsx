@@ -147,7 +147,7 @@ export function MemberTable({ members, projects, selfId }: { members: TeamMember
                 </span>
               </td>
               {live.map((p) => (
-                <td key={p.id}>{m.revoked ? <span className="sub">—</span> : <RoleSelect project={p} member={m} />}</td>
+                <td key={p.id}>{m.revoked ? <span className="sub">—</span> : p.unread ? <span className="sub" title="Brain didn’t return this project’s members just now. Reload in a moment.">unavailable</span> : <RoleSelect project={p} member={m} />}</td>
               ))}
               <td className="r">
                 {!m.revoked && m.id !== selfId && (
