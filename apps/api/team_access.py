@@ -14,7 +14,8 @@ administrative routes that belong to no repository declare
 ``Depends(team_administrator_access())``; status routes that members may
 still read call ``is_team_administrator`` to trim what they return, and
 listings call ``readable_repository_ids`` / ``readable_repository_scopes``
-to keep the rows of repositories the caller may read.
+to keep the rows of repositories the caller may read (query-scoped listings
+mark themselves ``filters_unreadable`` so members may call them unscoped).
 """
 from __future__ import annotations
 
@@ -98,11 +99,23 @@ def _query_scope(request: Request) -> tuple[int | None, str | None]:
     return repository_id, repo_path
 
 
+def filters_unreadable(endpoint):
+    """Mark a listing that, called without a repository, keeps only the rows the caller may read.
+
+    ``repository_access`` then lets the unscoped call through instead of requiring a team
+    administrator; the handler filters with ``readable_repository_ids`` / ``readable_repository_scopes``."""
+    endpoint.filters_unreadable = True
+    return endpoint
+
+
 def repository_access(permission: Permission):
     """Dependency: authorize ``permission`` on the repository named by the query string."""
 
-    async def dependency(request: Request, principal: ResolvedPrincipal = Depends(require_principal)) -> Authority:
+    async def dependency(request: Request, principal: ResolvedPrincipal = Depends(require_principal)) -> Authority | None:
         repository_id, repo_path = _query_scope(request)
+        endpoint = getattr(request.scope.get("route"), "endpoint", None)
+        if repository_id is None and repo_path is None and getattr(endpoint, "filters_unreadable", False):
+            return None
         return await repository_authority(principal, permission, repository_id=repository_id, repo_path=repo_path)
 
     return dependency

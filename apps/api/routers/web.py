@@ -20,7 +20,7 @@ from sqlalchemy import String, case, cast, func, literal, select
 
 from apps.api import team_access
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.team_access import repository_access, repository_authority, team_administrator_access
+from apps.api.team_access import filters_unreadable, repository_access, repository_authority, team_administrator_access
 from apps.api.helpers import (
     get_db_counts,
     get_embedding_retrieval_health,
@@ -345,6 +345,7 @@ def shape_context_pack(pack: Any, resolved: Path | None, index_commit: str | Non
 
 
 @router.get("/context-packs", dependencies=[REPOSITORY_READ])
+@filters_unreadable
 async def web_context_packs(
     limit: int = Query(50, ge=1, le=500),
     page: int = Query(1, ge=1),
@@ -352,6 +353,7 @@ async def web_context_packs(
     q: str | None = Query(None, max_length=500),
     repository_id: int | None = None,
     status: str | None = Query(None, max_length=50),
+    principal: ResolvedPrincipal = Depends(require_principal),
 ) -> dict[str, Any]:
     # Direct callers in the unit suite invoke the coroutine without FastAPI's
     # dependency conversion, so Query defaults may still be present.
@@ -364,6 +366,12 @@ async def web_context_packs(
         base = select(ContextPack)
         if repository_id is not None:
             base = base.where(ContextPack.repository_id == repository_id)
+        elif isinstance(principal, ResolvedPrincipal):
+            # Every repository: a team member sees the packs of repositories they can read.
+            all_ids = list((await session.execute(select(Repository.id))).scalars())
+            readable = await team_access.readable_repository_ids(principal, all_ids)
+            if readable is not None:
+                base = base.where(ContextPack.repository_id.in_(readable))
         if query:
             needle = f"%{query}%"
             base = base.where(

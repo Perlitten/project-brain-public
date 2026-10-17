@@ -195,7 +195,9 @@ async def test_team_context_packs_follow_the_pack_repository(read_scope_db, monk
     async with client_for(app) as client:
         assert await pack_ids(client, READER, repository_id=1) == [1]
         assert (await client.get("/api/web/context-packs", params={"repository_id": 2}, headers=READER)).status_code == 403
-        assert (await client.get("/api/web/context-packs", headers=READER)).status_code == 403
+        # Unscoped, a member sees the packs of the repositories they can read; admins see every pack.
+        assert await pack_ids(client, READER) == [1]
+        assert await pack_ids(client, OUTSIDER) == []
         assert await pack_ids(client, ADMIN) == [1, 2, 3]
         own = await client.get("/api/web/context-packs/1", params={"repository_id": 1}, headers=READER)
         assert own.status_code == 200 and own.json()["pack"]["task"] == "pack A"
