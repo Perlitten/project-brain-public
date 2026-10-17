@@ -33,8 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from brain.database.harness_models import AgentTask
-from brain.database.models import Decision, Learning, MemoryEpisode, MemorySkill, Principal, Rule
-from brain.database.repository_utils import find_repository_id
+from brain.database.models import Decision, Learning, MemoryEpisode, MemorySkill, Principal, Repository, Rule
+from brain.database.repository_utils import find_repository_id, repository_path_candidates
 from brain.memory.repo_scope import normalize_repo_scope
 from brain.team.models import AgentRun, ProjectRepository, TeamActivityEvent, TeamInvitation, TeamTaskBinding
 
@@ -96,6 +96,7 @@ class ActivityScope:
     project_ids: frozenset[uuid.UUID] | None
     include_global: bool = True
     unscoped: bool = False
+    task_id: uuid.UUID | None = None
 
     @classmethod
     def everything(cls) -> "ActivityScope":
@@ -153,9 +154,20 @@ async def _scope_spellings(session: AsyncSession, columns: list, wanted: frozens
             if spelling in seen or normalize_repo_scope(spelling) is None:
                 continue
             seen.add(spelling)
-            repository_id = await find_repository_id(session, spelling)
-            if repository_id is not None and repository_id in wanted:
-                resolved[spelling] = repository_id
+    candidates = {spelling: set(repository_path_candidates(spelling)) for spelling in seen}
+    every_candidate = sorted({candidate for values in candidates.values() for candidate in values})
+    if not every_candidate:
+        return resolved
+    repositories = (await session.execute(
+        select(Repository.id, Repository.path).where(
+            Repository.id.in_(sorted(wanted)), Repository.path.in_(every_candidate)
+        )
+    )).all()
+    by_path = {path: repository_id for repository_id, path in repositories}
+    for spelling, values in candidates.items():
+        repository_id = next((by_path[value] for value in values if value in by_path), None)
+        if repository_id is not None:
+            resolved[spelling] = repository_id
     return resolved
 
 
@@ -241,7 +253,7 @@ def _authored_streams(model, text_column, label: str, query: ActivityQuery, loca
     for action, occurred, actor, condition in (
             ("created", model.created_at, model.author_principal_id, true()),
             ("updated", model.updated_at, model.updated_by_principal_id,
-             and_(model.updated_by_principal_id.is_not(None), model.updated_at > model.created_at))):
+             model.updated_at > model.created_at)):
         if not _wanted(f"{label}.{action}", query.kinds):
             continue
         statement = (select(model.id, text_column.label("text"), model.status, model.repo_scope,
@@ -255,7 +267,8 @@ def _authored_streams(model, text_column, label: str, query: ActivityQuery, loca
                           f"{label.capitalize()} {verb}: {_clip(row.text)}",
                           subject={"type": label, "id": str(row.id), "title": _clip(row.text, 255),
                                    "status": row.status},
-                          repo_path=row.repo_scope)
+                          repo_path=row.repo_scope,
+                          actor_label="system" if action == "updated" and row.actor_id is None else None)
         streams.append(_Stream(f"{label}.{action}", statement, build, paths=lambda row: row.repo_scope))
     return streams
 
@@ -329,6 +342,8 @@ def _task_streams(query: ActivityQuery, scope: ActivityScope) -> list[_Stream]:
         repository = TeamTaskBinding.repository_id.in_(sorted(scope.repository_ids))
     else:
         repository = false()
+    if scope.task_id is not None:
+        repository = and_(repository, TeamTaskBinding.task_id == scope.task_id)
     streams: list[_Stream] = []
     if _wanted("task.created", query.kinds):
         occurred = AgentTask.created_at
@@ -372,6 +387,8 @@ def _task_streams(query: ActivityQuery, scope: ActivityScope) -> list[_Stream]:
 
 
 def _recorded_stream(query: ActivityQuery, scope: ActivityScope) -> list[_Stream]:
+    if scope.task_id is not None:
+        return []
     families = [family for family in sorted(TABLE_FAMILIES)
                 if _family_allowed(family, scope) and any(_wanted(kind, query.kinds) for kind in KINDS[family])]
     if not families:
@@ -416,11 +433,19 @@ async def list_activity(session: AsyncSession, scope: ActivityScope, query: Acti
     offset = max(0, min(query.offset, MAX_OFFSET))
     window = offset + limit + 1
 
-    memory_columns = [Decision.repo_path, Rule.repo_path, Learning.repo_scope]
-    if scope.administrator:
-        memory_columns += [MemoryEpisode.repo_scope, MemorySkill.repo_scope]
+    memory_columns = []
+    if _family_allowed("decision", scope) and any(_wanted(kind, query.kinds) for kind in KINDS["decision"]):
+        memory_columns.append(Decision.repo_path)
+    if _family_allowed("rule", scope) and any(_wanted(kind, query.kinds) for kind in KINDS["rule"]):
+        memory_columns.append(Rule.repo_path)
+    if any(_wanted(kind, query.kinds) for kind in KINDS["learning"]):
+        memory_columns.append(Learning.repo_scope)
+    if scope.administrator and any(_wanted(kind, query.kinds) for kind in KINDS["episode"]):
+        memory_columns.append(MemoryEpisode.repo_scope)
+    if scope.administrator and any(_wanted(kind, query.kinds) for kind in KINDS["skill"]):
+        memory_columns.append(MemorySkill.repo_scope)
     spellings: dict[str, int] = {}
-    if scope.repository_ids is not None:
+    if scope.repository_ids is not None and memory_columns:
         spellings = await _scope_spellings(session, memory_columns, scope.repository_ids)
 
     streams: list[_Stream] = []
@@ -507,13 +532,15 @@ async def _describe(session: AsyncSession, page: list, spellings: dict[str, int]
 async def record_event(session: AsyncSession, *, kind: str, summary: str, audience: str,
                        actor_principal_id: int | None = None, actor_label: str | None = None,
                        subject_principal_id: int | None = None, project_id: uuid.UUID | None = None,
-                       repository_id: int | None = None, details: dict | None = None) -> TeamActivityEvent:
+                       repository_id: int | None = None, details: dict | None = None,
+                       dedupe_key: str | None = None) -> TeamActivityEvent:
     """Append one row to ``team_activity_events`` in the caller's transaction."""
     if kind not in ALL_KINDS or kind.split(".", 1)[0] not in TABLE_FAMILIES:
         raise ValueError(f"{kind!r} is not a recorded activity kind")
     if audience not in {"admin", "repository"}:
         raise ValueError(f"Unknown activity audience {audience!r}")
     row = TeamActivityEvent(kind=kind, summary=summary[:255], audience=audience,
+                            dedupe_key=dedupe_key[:255] if dedupe_key else None,
                             actor_principal_id=actor_principal_id if actor_principal_id and actor_principal_id > 0
                             else None,
                             actor_label=(actor_label or None) and actor_label[:160],

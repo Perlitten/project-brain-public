@@ -1,5 +1,6 @@
 """``/team/me`` and ``/team/activity``: identity in solo and team state, and a feed whose
 scope is decided by the central team-access helpers before any event is read."""
+import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
@@ -13,12 +14,14 @@ from apps.api import auth, team_access
 from apps.api.routers import jobs, team, team_me
 from brain.auth.principals import hash_credential
 from brain.config.settings import settings
-from brain.database.models import ApiCredential, Decision, Learning, MemoryEpisode, MemorySkill, Rule
+from brain.database.models import ApiCredential, Decision, Learning, MemoryEpisode, MemorySkill, Principal, Rule
 from brain.team import provisioning
+from brain.team import activity as team_activity
 from brain.team.activity import record_event
 from brain.team.authorization import team_state
 from brain.team.models import TeamActivityEvent, TeamInvitation, TeamMember
-from tests.test_team_foundations import team_db as team_fixture
+from brain.team.store import create_task, request_run
+from tests.test_team_foundations import caller, run_payload, task_payload, team_db as team_fixture
 
 team_db = team_fixture
 pytestmark = pytest.mark.team_state
@@ -151,6 +154,40 @@ async def test_me_lists_project_roles_permissions_and_repositories(activity_db, 
     assert admin["is_team_admin"] is True and admin["access"]["repositories"] == "all"
     assert [p["id"] for p in admin["projects"]] == [str(b)]
     assert core_only["scopes"] == ["core:read"] and core_only["effective_scopes"] == ["core:read"]
+    assert core_only["projects"][0]["effective_permissions"] == []
+
+
+@pytest.mark.asyncio
+async def test_activity_rejects_a_service_credential_even_with_team_read(activity_db, monkeypatch):
+    factory, _, _ = activity_db
+    app = activity_app(factory, monkeypatch)
+    async with factory() as session, session.begin():
+        session.add(Principal(id=10, name="service-10", kind="service"))
+        session.add(ApiCredential(id=10, principal_id=10, key_hash=hash_credential("fixture-service"),
+                                  scopes=["team:read"]))
+    async with client_for(app) as client:
+        response = await client.get("/team/activity", headers={"X-API-Key": "fixture-service"})
+    assert response.status_code == 403
+    assert "Team member required" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_run_activity_is_restricted_to_its_bound_task(activity_db, monkeypatch):
+    factory, a, _ = activity_db
+    app = activity_app(factory, monkeypatch)
+    async with factory() as session, session.begin():
+        first = await create_task(session, caller(2), a, task_payload("activity-task-1"))
+        second = await create_task(session, caller(2), a, task_payload("activity-task-2"))
+        first_run = await request_run(session, caller(2), a, uuid.UUID(first["id"]),
+                                      run_payload("activity-run-1", ["read"]))
+        await request_run(session, caller(2), a, uuid.UUID(second["id"]),
+                          run_payload("activity-run-2", ["read"]))
+    async with client_for(app) as client:
+        response = await client.get("/team/activity", params={"kind": ["task", "run"]},
+                                    headers={"X-API-Key": first_run["credential"]})
+    assert response.status_code == 200, response.text
+    subjects = response.json()["events"]
+    assert {event["subject"].get("task_id", event["subject"]["id"]) for event in subjects} == {first["id"]}
 
 
 @pytest.mark.asyncio
@@ -239,6 +276,8 @@ async def test_queued_jobs_name_their_initiator_and_follow_repository_access(act
     async with client_for(app) as client:
         queued = await client.post("/jobs/reindex", json={"repo_path": "/synthetic/A"}, headers=CONTRIBUTOR)
         assert queued.status_code == 200
+        repeated = await client.post("/jobs/reindex", json={"repo_path": "/synthetic/A"}, headers=CONTRIBUTOR)
+        assert repeated.status_code == 200 and repeated.json()["job_id"] == queued.json()["job_id"]
         reader = (await client.get("/team/activity", params={"kind": "job"}, headers=READER)).json()
         assert (await client.post("/jobs/reindex", json={"repo_path": "/synthetic/B"}, headers=ADMIN)).status_code == 200
         reader_after = (await client.get("/team/activity", params={"kind": "job"}, headers=READER)).json()
@@ -247,6 +286,32 @@ async def test_queued_jobs_name_their_initiator_and_follow_repository_access(act
     assert job["repository_id"] == 1 and job["details"]["job_type"] == "reindex"
     assert job["details"]["job_id"] == "job-synthetic"
     assert len(reader_after["events"]) == 1  # the job in B stays out of the reader's feed
+
+
+@pytest.mark.asyncio
+async def test_job_only_feed_does_not_scan_memory_scopes(activity_db, monkeypatch):
+    factory, _, _ = activity_db
+    app = activity_app(factory, monkeypatch)
+    scan = AsyncMock(return_value={})
+    monkeypatch.setattr(team_activity, "_scope_spellings", scan)
+    async with client_for(app) as client:
+        response = await client.get("/team/activity", params={"kind": "job"}, headers=READER)
+    assert response.status_code == 200
+    scan.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unattributed_memory_update_is_reported_as_system(activity_db, monkeypatch):
+    factory, _, _ = activity_db
+    app = activity_app(factory, monkeypatch)
+    async with factory() as session, session.begin():
+        session.add(Learning(id=9, statement="automated learning update", repo_scope="/synthetic/A",
+                             author_principal_id=2, updated_by_principal_id=None,
+                             created_at=T0, updated_at=T0 + timedelta(minutes=5)))
+    async with client_for(app) as client:
+        page = (await client.get("/team/activity", params={"kind": "learning"}, headers=READER)).json()
+    updated = next(event for event in page["events"] if event["kind"] == "learning.updated")
+    assert updated["actor"] is None and updated["actor_label"] == "system"
 
 
 @pytest.mark.asyncio

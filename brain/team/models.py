@@ -166,4 +166,5 @@ class TeamActivityEvent(Base):
     project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     repository_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

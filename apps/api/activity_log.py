@@ -36,6 +36,7 @@ async def record_job_queued(principal: ResolvedPrincipal, job_type: str, job_id:
                 actor_principal_id=author, actor_label=None if author else principal.actor,
                 repository_id=repository_id,
                 details={"job_id": job_id, "job_type": job_type, "repo_path": repo_path},
+                dedupe_key=f"job:{job_id}",
             )
     except Exception as exc:  # noqa: BLE001 - the job is already queued; the record is best effort
         logger.warning("Could not record job activity for %s: %s: %s", job_id, type(exc).__name__, exc)

@@ -21,8 +21,9 @@ from brain.config.settings import settings
 from brain.database.models import Repository
 from brain.team.activity import (DEFAULT_LIMIT, MAX_LIMIT, MAX_OFFSET, ActivityQuery, ActivityScope, UnknownKind,
                                  list_activity, parse_kinds)
-from brain.team.authorization import FULL_AUTHORITY, ROLE_PERMISSIONS, Permission, TeamDenied, require_team_storage
-from brain.team.models import ProjectMember, ProjectRepository, TeamMember, TeamProject
+from brain.team.authorization import (FULL_AUTHORITY, ROLE_PERMISSIONS, Permission, TeamDenied, human_member,
+                                      live_credential, require_team_storage)
+from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamMember, TeamProject
 
 router = APIRouter(prefix="/team", tags=["experimental-team"])
 
@@ -48,15 +49,15 @@ def _policy(values: list[str] | None) -> frozenset[Permission]:
         return frozenset()  # an invalid policy grants nothing, as ``authorize`` denies it
 
 
-async def _memberships(principal_id: int) -> tuple[dict | None, list[dict]]:
+async def _memberships(principal: ResolvedPrincipal) -> tuple[dict | None, list[dict]]:
     """The caller's team membership row and live project roles, with each project's repositories."""
     async with team_access.async_session_factory() as session:
-        member = (await session.execute(select(TeamMember).where(TeamMember.principal_id == principal_id,
+        member = (await session.execute(select(TeamMember).where(TeamMember.principal_id == principal.id,
                                                                  TeamMember.team_id == 1))).scalar_one_or_none()
         rows = (await session.execute(
             select(ProjectMember.role, TeamProject)
             .join(TeamProject, TeamProject.id == ProjectMember.project_id)
-            .where(ProjectMember.principal_id == principal_id, ProjectMember.revoked_at.is_(None))
+            .where(ProjectMember.principal_id == principal.id, ProjectMember.revoked_at.is_(None))
             .order_by(TeamProject.name)
         )).all()
         project_ids = [project.id for _, project in rows]
@@ -76,6 +77,8 @@ async def _memberships(principal_id: int) -> tuple[dict | None, list[dict]]:
             "verified_at": member.verified_at.isoformat() if member.verified_at else None,
         }
     projects: list[dict] = []
+    credential_permissions = frozenset(permission for permission in Permission
+                                       if principal.has_scope(f"team:{permission.value}"))
     for role, project in rows:
         role_permissions = ROLE_PERMISSIONS.get(role, frozenset())
         policy = _policy(project.permissions)
@@ -84,7 +87,9 @@ async def _memberships(principal_id: int) -> tuple[dict | None, list[dict]]:
             "id": str(project.id), "name": project.name, "role": role, "disabled": disabled,
             "role_permissions": _permission_list(role_permissions),
             "project_policy": _permission_list(policy),
-            "effective_permissions": [] if disabled else _permission_list(role_permissions & policy),
+            "effective_permissions": [] if disabled else _permission_list(
+                role_permissions & policy & credential_permissions
+            ),
             "repositories": repositories.get(project.id, []),
         })
     return membership, projects
@@ -98,7 +103,7 @@ async def team_me(principal: ResolvedPrincipal = Depends(require_principal)):
     membership: dict | None = None
     projects: list[dict] = []
     if settings.BRAIN_STORAGE_MODE == "full" and principal.id > 0:
-        membership, projects = await _memberships(principal.id)
+        membership, projects = await _memberships(principal)
     access: dict[str, object]
     if state == "solo":
         access = {"repositories": "all", "permissions": _permission_list(FULL_AUTHORITY),
@@ -138,6 +143,28 @@ async def _activity_scope(principal: ResolvedPrincipal, *, project_id: uuid.UUID
                           repository_id: int | None) -> ActivityScope:
     """What the caller may read, from the central team-access helpers, before any event is fetched."""
     administrator = await team_access.is_team_administrator(principal)
+    task_id: uuid.UUID | None = None
+    if not administrator:
+        try:
+            async with team_access.async_session_factory() as session:
+                live = await live_credential(session, principal.id, principal.credential_id)
+                if live.kind == "human":
+                    await human_member(session, live, 1)
+                elif live.kind == "run":
+                    run = (await session.execute(select(AgentRun).where(
+                        AgentRun.principal_id == live.id,
+                        AgentRun.credential_id == live.credential_id,
+                        AgentRun.revoked_at.is_(None),
+                    ))).scalar_one_or_none()
+                    if run is None:
+                        raise TeamDenied("Run identity mismatch")
+                    initiator = await live_credential(session, run.initiator_id, run.initiator_credential_id)
+                    await human_member(session, initiator, 1)
+                    task_id = run.task_id
+                else:
+                    raise TeamDenied("Verified team membership is required")
+        except TeamDenied as exc:
+            raise HTTPException(403, f"Team member required: {exc}") from exc
     project_ids: frozenset[uuid.UUID] | None = None
     repository_ids: frozenset[int] | None = None
     narrowed = project_id is not None or repository_id is not None
@@ -164,7 +191,7 @@ async def _activity_scope(principal: ResolvedPrincipal, *, project_id: uuid.UUID
 
     if narrowed:
         return ActivityScope(administrator=administrator, repository_ids=repository_ids, project_ids=project_ids,
-                             include_global=False, unscoped=False)
+                             include_global=False, unscoped=False, task_id=task_id)
     if administrator:
         return ActivityScope.everything()
     async with team_access.async_session_factory() as session:
@@ -175,7 +202,7 @@ async def _activity_scope(principal: ResolvedPrincipal, *, project_id: uuid.UUID
         administrator=False,
         repository_ids=None if readable is None else frozenset(readable),
         project_ids=None if readable_projects is None else frozenset(readable_projects),
-        include_global=True, unscoped=False,
+        include_global=task_id is None, unscoped=False, task_id=task_id,
     )
 
 
