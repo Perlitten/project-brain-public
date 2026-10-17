@@ -119,7 +119,7 @@ function view({ outcome, signedIn = false, notice, token = "", alternatives = []
         body: steps(["done", "failed", "todo"]) + form(token, alternatives), log: ["› invitation link opened", "› accept refused"] };
     case "unavailable":
       return { status: 503, tone: "bad", eyebrow: "Unavailable", heading: "Brain isn’t answering.", alert: true,
-        detail: "Your invitation wasn’t used. Try again in a minute.",
+        detail: "Brain may or may not have accepted the invitation before the connection failed. Try again in a minute. If it then says the invitation was already used and you never received a member key, ask a team admin to revoke that member and invite you again.",
         body: steps(["done", "failed", "todo"]) + form(token, alternatives), log: ["› invitation link opened", "› brain unreachable"], pulse: 92 };
   }
 }

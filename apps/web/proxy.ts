@@ -155,8 +155,10 @@ function sameOrigin(req: NextRequest) {
   const origin = req.headers.get("origin");
   if (!origin) return req.headers.get("sec-fetch-site") === "same-origin";
   const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host).split(",")[0].trim().toLowerCase();
+  const protocol = (req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol).split(",")[0].trim().toLowerCase().replace(/:$/, "");
+  if (protocol !== "http" && protocol !== "https") return false;
   try {
-    return new URL(origin).host.toLowerCase() === host;
+    return new URL(origin).origin.toLowerCase() === new URL(`${protocol}://${host}`).origin.toLowerCase();
   } catch {
     return false;
   }

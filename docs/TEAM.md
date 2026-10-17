@@ -233,9 +233,9 @@ which is the source of truth.
 - **No SSO or OIDC, and the email is never checked.** "Verified" means the
   person presented an invitation token for an identity the administrator
   chose, or an operator added them on the server.
-- **One API process.** The invitation-accept throttle (10 attempts per client
-  IP per 5 minutes) lives in process memory; run a single API process. Native
-  MCP sessions need a single worker as well.
+- **One API worker for native MCP.** Native MCP sessions need a single
+  worker. The invitation-accept throttle (10 attempts per client IP per 5
+  minutes) is shared through Redis, so it holds across API processes.
 - **Dashboard invitees share one throttle.** The `/invite` page calls the API
   from the dashboard server, so the API sees every invitee as the dashboard's
   IP: together they get 10 accept attempts per 5 minutes. Redeeming a token

@@ -3,10 +3,11 @@ and the late-interaction operator status."""
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.repo_paths import repo_path_errors_as_400
 from apps.api.team_access import current_team_state, repository_access
 from brain import __version__
 from brain.config.paths import resolve_repo_path
@@ -187,5 +188,10 @@ async def api_version():
                                                       Depends(repository_access(Permission.READ))])
 async def late_interaction_status(repo_path: str):
     """Operator evidence for canary coverage, provider health and fail-open use."""
-    repository = await require_repository_by_path(resolve_repo_path(repo_path))
+    with repo_path_errors_as_400():
+        target = resolve_repo_path(repo_path)
+    try:
+        repository = await require_repository_by_path(target)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return await collect_late_interaction_operator_status(repository)

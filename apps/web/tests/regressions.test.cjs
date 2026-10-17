@@ -1269,3 +1269,28 @@ test('team sign-in through the proxy: httpOnly sealed cookie, raw key never in a
     });
   } finally { global.fetch = oldFetch; }
 });
+
+test('reranker page explains a refused project folder instead of reporting an outage', async () => {
+  let status = 400;
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async () => null,
+      readFailureNote: () => '',
+      brainRead: async path => {
+        if (path.startsWith('/repositories')) return { ok: true, status: 200, data: { repositories: [{ id: 1, name: 'repo', path: '/outside/repo' }] } };
+        if (path.startsWith('/late-interaction/status')) return { ok: false, status, reason: 'http_error' };
+        return { ok: false, status: 404, reason: 'not_found' };
+      },
+    },
+  });
+  const refused = await data.getReranker('1');
+  assert.equal(refused.available, false);
+  assert.match(refused.unavailableReason, /outside the repository folders the server may read/);
+  // Any other failure is still the generic outage, with no folder explanation.
+  status = 500;
+  const outage = await data.getReranker('1');
+  assert.equal(outage.available, false);
+  assert.equal(outage.unavailableReason, undefined);
+});

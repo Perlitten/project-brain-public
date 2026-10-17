@@ -254,7 +254,8 @@ test('refusals: wrong/expired/revoked, throttled, conflict and an outage each sa
     assert.equal(down.status, 503);
     const downHtml = await down.text();
     assert.match(downHtml, /Brain isn’t answering/);
-    assert.match(downHtml, /wasn’t used/);
+    assert.match(downHtml, /may or may not have accepted/);
+    assert.doesNotMatch(downHtml, /invitation wasn’t used/);
 
     const malformed = await proxy(post({ token: 'hello' }));
     assert.equal(malformed.status, 400);
@@ -266,7 +267,7 @@ test('a cross-site POST to /invite is refused before Brain is asked (login CSRF)
   const brain = fakeBrain();
   await withEnv(LIVE, () => withFetch(brain.fetch, async () => {
     const { proxy, post } = inviteProxy();
-    for (const req of [post({ token: TOKEN }, { origin: 'https://evil.example' }), post({ token: TOKEN }, { origin: null }), post({ token: TOKEN }, { origin: null, site: 'cross-site' }), post({ token: TOKEN }, { origin: 'null' })]) {
+    for (const req of [post({ token: TOKEN }, { origin: 'https://evil.example' }), post({ token: TOKEN }, { origin: 'http://web.example' }), post({ token: TOKEN }, { origin: null }), post({ token: TOKEN }, { origin: null, site: 'cross-site' }), post({ token: TOKEN }, { origin: 'null' })]) {
       const res = await proxy(req);
       assert.equal(res.status, 403);
       assert.equal(res.headers.get('set-cookie'), null);
@@ -275,6 +276,14 @@ test('a cross-site POST to /invite is refused before Brain is asked (login CSRF)
     // Same-origin without an Origin header (older browsers send Sec-Fetch-Site instead).
     assert.equal((await proxy(post({ token: TOKEN }, { origin: null, site: 'same-origin' }))).status, 200);
   }));
+});
+
+test('the Team page pauses invitation creation when projects are unavailable', () => {
+  const page = fs.readFileSync(path.join(root, 'app/team/page.tsx'), 'utf8');
+  const form = fs.readFileSync(path.join(root, 'components/team/Invitations.tsx'), 'utf8');
+  assert.match(page, /projectsAvailable=\{view\.kind === "ok"\}/);
+  assert.match(form, /invitation creation is paused/);
+  assert.match(form, /disabled=\{!projectsAvailable \|\| pending \|\| mode !== "on"\}/);
 });
 
 test('/invite explains itself on demo data, when misconfigured and when dashboard changes are switched off', async () => {

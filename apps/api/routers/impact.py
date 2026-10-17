@@ -6,6 +6,7 @@ from typing import Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_principal, require_scope
+from apps.api.repo_paths import repo_path_errors_as_400
 from apps.api.team_access import repository_access, repository_authority
 from brain.auth.principals import ResolvedPrincipal
 from brain.database.repository_utils import find_repository_id
@@ -25,9 +26,10 @@ _IMPACT_REPOSITORY_ID: Dict[str, Optional[int]] = {}
 
 
 def _safe_resolve(repo_path_arg: Optional[str]) -> Path:
-    if repo_path_arg:
-        return validate_secure_repo_path(repo_path_arg)
-    return resolve_repo_path()
+    with repo_path_errors_as_400():
+        if repo_path_arg:
+            return validate_secure_repo_path(repo_path_arg)
+        return resolve_repo_path()
 
 
 @router.post("/analyze", dependencies=[Depends(require_scope("impact:write"))])

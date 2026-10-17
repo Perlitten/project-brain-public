@@ -18,7 +18,7 @@ const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 /** Brain stores UTC; minutes are enough to tell invitations apart. */
 const when = (iso: string | null) => (iso ? `${iso.slice(0, 16).replace("T", " ")} UTC` : "—");
 
-export function InviteForm({ projects }: { projects: TeamProjectRow[] }) {
+export function InviteForm({ projects, projectsAvailable = true }: { projects: TeamProjectRow[]; projectsAvailable?: boolean }) {
   const live = projects.filter((p) => !p.disabled);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -51,19 +51,19 @@ export function InviteForm({ projects }: { projects: TeamProjectRow[] }) {
             <span className="field__label">
               Name <em>optional</em>
             </span>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="alice" maxLength={64} spellCheck={false} />
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="alice" maxLength={64} spellCheck={false} disabled={!projectsAvailable} />
             <span className="field__hint">Their member name. Letters, digits and . _ @ + -, starting with a letter. Left empty, Brain picks one.</span>
           </label>
           <label className="field">
             <span className="field__label">
               Email <em>optional</em>
             </span>
-            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="alice@example.com" maxLength={254} spellCheck={false} />
+            <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="alice@example.com" maxLength={254} spellCheck={false} disabled={!projectsAvailable} />
             <span className="field__hint">A note for you: Brain doesn’t send mail, and whoever holds the link can accept it.</span>
           </label>
           <label className="field">
             <span className="field__label">Valid for</span>
-            <select className="select" value={hours} onChange={(e) => setHours(Number(e.target.value))}>
+            <select className="select" value={hours} onChange={(e) => setHours(Number(e.target.value))} disabled={!projectsAvailable}>
               {INVITE_EXPIRY_CHOICES.map((c) => (
                 <option key={c.hours} value={c.hours}>
                   {c.label}
@@ -76,7 +76,9 @@ export function InviteForm({ projects }: { projects: TeamProjectRow[] }) {
         <div className="form__row">
           <div className="field">
             <span className="field__label">Projects</span>
-            {live.length === 0 ? (
+            {!projectsAvailable ? (
+              <span className="field__hint">Projects couldn’t be read right now, so invitation creation is paused. Reload before inviting someone.</span>
+            ) : live.length === 0 ? (
               <span className="field__hint">No projects yet. They join the team with no project; give them a role once there is one.</span>
             ) : (
               <div className="btn-row" role="group" aria-label="Projects">
@@ -85,7 +87,7 @@ export function InviteForm({ projects }: { projects: TeamProjectRow[] }) {
                     <input
                       type="checkbox"
                       checked={picked.includes(p.id)}
-                      disabled={!picked.includes(p.id) && picked.length >= MAX_PROJECTS}
+                      disabled={!projectsAvailable || (!picked.includes(p.id) && picked.length >= MAX_PROJECTS)}
                       onChange={(e) => toggle(p.id, e.target.checked)}
                     />
                     {p.name}
@@ -96,7 +98,7 @@ export function InviteForm({ projects }: { projects: TeamProjectRow[] }) {
           </div>
           <label className="field">
             <span className="field__label">Role in those projects</span>
-            <select className="select" value={role} onChange={(e) => setRole(e.target.value as ProjectRole)} disabled={picked.length === 0}>
+            <select className="select" value={role} onChange={(e) => setRole(e.target.value as ProjectRole)} disabled={!projectsAvailable || picked.length === 0}>
               {PROJECT_ROLES.map((r) => (
                 <option key={r} value={r}>
                   {cap(r)}
@@ -107,11 +109,11 @@ export function InviteForm({ projects }: { projects: TeamProjectRow[] }) {
           </label>
         </div>
         <label className="check">
-          <input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} />
+          <input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} disabled={!projectsAvailable} />
           Team admin — can add and revoke members and change project roles
         </label>
         <div className="btn-row">
-          <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on"}>
+          <button type="submit" className="btn btn--primary" disabled={!projectsAvailable || pending || mode !== "on"}>
             {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="plus" size={15} />}
             Create invitation
           </button>

@@ -83,7 +83,7 @@ brain team member add --principal alice --admin --mint-key`}
       </Fold>
 
       <Fold id="invite-member" title="Invite a member" desc="Creates a one-time link. They open it, become a member and pick up their own key; nobody else sees it." cta="+ Invite">
-        <InviteForm projects={view.kind === "ok" ? view.projects : []} />
+        <InviteForm projects={view.kind === "ok" ? view.projects : []} projectsAvailable={view.kind === "ok"} />
       </Fold>
 
       <Panel id="members" title={`${active.length} member${active.length === 1 ? "" : "s"}`} desc="Pick a role per project; revoking signs the member out on their next request." flush>

@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.repo_paths import repo_path_errors_as_400
 from apps.api.team_access import repository_access
 from brain.team.authorization import Permission
 from brain.config.paths import resolve_repo_path, validate_secure_repo_path
@@ -21,9 +22,10 @@ router = APIRouter(prefix="/insights/coupling", tags=["coupling-intelligence"], 
 
 
 def _safe_resolve(repo_path_arg: Optional[str]) -> Path:
-    if repo_path_arg:
-        return validate_secure_repo_path(repo_path_arg)
-    return resolve_repo_path()
+    with repo_path_errors_as_400():
+        if repo_path_arg:
+            return validate_secure_repo_path(repo_path_arg)
+        return resolve_repo_path()
 
 
 def _get_active_store_and_subsystems(repo_path: Path):
