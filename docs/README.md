@@ -22,6 +22,7 @@ Release-specific and experimental records are separated at the end.
 - [Team mode walkthrough](TEAM.md) (experimental preview, `main` only): projects, invitations,
   member sign-in, MCP and revocation, with known limitations; reference:
   [inviting team members](operations/TEAM_INVITATIONS.md),
+  optional [single sign-on (OIDC)](operations/TEAM_SSO.md),
   [bounded team execution](operations/TEAM_EXECUTION.md) (off by default).
 - [Agent deployment](operations/AGENT_DEPLOYMENT.md): operational gates for an agent running deployment.
 - [Operator runbook](../deploy/RUNBOOK.md) and [backup / restore](runbooks/backup-restore.md).

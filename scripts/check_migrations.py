@@ -53,6 +53,11 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("team_task_bindings", "request_digest"),
     ("agent_runs", "initiator_credential_id"),
     ("team_invitations", "token_hash"),
+    # OIDC acceptance provenance (brain.team.oidc); new tables come from create_all.
+    ("team_invitations", "verified_issuer"),
+    ("team_invitations", "verified_subject"),
+    ("team_identities", "subject"),
+    ("team_oidc_flows", "binding_hash"),
     # Every credential resolution reads the restore fence (brain.team.restore_fence).
     ("team_access_fences", "cleared_at"),
     # A team never falls back to solo on its own (brain.team.authorization.team_state).

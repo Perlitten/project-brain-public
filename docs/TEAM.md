@@ -278,18 +278,22 @@ the server can.
 These mirror the known gaps on the [status page](design/team-status.md),
 which is the source of truth.
 
-- **No SSO or OIDC, and the email is never checked.** "Verified" means the
+- **Without single sign-on the email is never checked.** "Verified" means the
   person presented an invitation token for an identity the administrator
-  chose, or an operator added them on the server.
+  chose, or an operator added them on the server. Optional OIDC single sign-on
+  (off by default) checks the invited email at your identity provider and lets
+  members **Sign in with SSO**; one provider per Brain, see
+  [Team single sign-on](operations/TEAM_SSO.md).
 - **One API worker for native MCP.** Native MCP sessions need a single
   worker. The invitation-accept throttle (10 attempts per client IP per 5
-  minutes) is shared through Redis, so it holds across API processes.
+  minutes) and the single sign-on throttle are shared through Redis, so they
+  hold across API processes.
 - **Dashboard invitees share one throttle.** The `/invite` page calls the API
   from the dashboard server, so the API sees every invitee as the dashboard's
   IP: together they get 10 accept attempts per 5 minutes. Redeeming a token
   with the CLI counts against the invitee's own IP instead.
 - **Invitations are not emailed.** The administrator copies the link and sends
-  it; the email field is a note.
+  it; without single sign-on the email field is a note.
 - **Execution is off by default.** Tasks and run requests are recorded with their
   provenance. The first M2 slice can run operator-allowlisted tools for a run once
   the operator enables it and an administrator grants a member; its subprocess
