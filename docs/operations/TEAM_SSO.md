@@ -134,7 +134,9 @@ restore.
   the string `"true"` that some IdPs send), and the allowed domains. Discovery must return the configured issuer and https
   endpoints on any host.
 - `POST /team/oidc/start` and `/team/oidc/callback` share a throttle of 30
-  attempts per 5 minutes per client address. They carry no credential and
+  attempts per 5 minutes per client address, kept in Redis so every API process
+  counts against the same limit (`429` with `Retry-After`; if Redis fails, the
+  limit falls back to each process). They carry no credential and
   answer `Cache-Control: no-store`. Invitation tokens and codes travel in JSON
   bodies to the API, never in its URLs.
 
@@ -149,9 +151,9 @@ makes each one visible and tested against a fake IdP
 ## Limitations
 
 - One identity provider per Brain.
-- The throttle is in-process per API instance and keyed by the socket peer: all
-  dashboard users share the dashboard's address. A burst from one person can
-  delay others for a few minutes.
+- The throttle is keyed by the socket peer: all dashboard users share the
+  dashboard's address. A burst from one person can delay others for a few
+  minutes.
 - The invitation token sits in the query of the `/auth/oidc/start` link, so it
   can appear in dashboard access logs and browser history until it is redeemed
   (the dashboard redirects immediately with `Referrer-Policy: no-referrer`).

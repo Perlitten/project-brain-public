@@ -383,9 +383,10 @@ async def _redeem(session: AsyncSession, invitation: TeamInvitation, *, issuer: 
     await session.flush()
     principal = await fresh(session, Principal, Principal.id == credential.principal_id)
     await add_member(session, principal=principal, issuer=issuer, subject=subject,
-                     is_admin=bool(invitation.is_admin), team_id=invitation.team_id)
+                     is_admin=bool(invitation.is_admin), team_id=invitation.team_id, actor_id=principal.id)
     for project in projects:
-        await assign_project_member(session, project_id=project.id, principal_id=principal.id, role=invitation.role)
+        await assign_project_member(session, project_id=project.id, principal_id=principal.id, role=invitation.role,
+                                    actor_id=principal.id)
     invitation.accepted_at = _now()
     invitation.accepted_principal_id = principal.id
     invitation.accepted_credential_id = credential.id
@@ -417,7 +418,9 @@ async def revoke_invitation(session: AsyncSession, invitation_id: uuid.UUID, *, 
             raise TeamConflict("Administrators cannot revoke their own membership")
         principal, member, _ = await _issued(session, invitation)
         if member is not None and principal is not None:
-            await revoke_member(session, principal=principal)
+            label, _, number = revoked_by.partition(":")
+            await revoke_member(session, principal=principal,
+                                actor_id=int(number) if label == "principal" and number.isdigit() else None)
         elif principal is not None:
             await revoke_principal_access(session, principal)
     invitation.revoked_at = now

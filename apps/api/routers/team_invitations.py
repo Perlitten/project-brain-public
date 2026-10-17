@@ -10,21 +10,22 @@ member add --admin --mint-key``). Accepting needs no API key: the token is the
 credential. It is read from the JSON body, never the URL, so access logs never
 carry it. Attempts are throttled per client address (socket peer;
 X-Forwarded-For is ignored because no trusted-proxy setting exists). The
-counter is in-process: one API process per Brain, behind a proxy it acts as
-one shared limit.
+attempt log is kept in Redis, so every API process shares one limit
+(``apps/api/invitation_throttle.py``); Lite, which has no team and runs one
+process, keeps it in memory. A throttled attempt gets HTTP 429 with
+``Retry-After``.
 """
 from __future__ import annotations
 
-import time
 import uuid
-from collections import defaultdict, deque
-from typing import Annotated, Deque, Dict, Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 
 from apps.api.auth import require_principal
+from apps.api.invitation_throttle import AcceptThrottle, default_throttle, retry_after_header
 from brain.auth.principals import ResolvedPrincipal
 from brain.database.session import async_session_factory
 from brain.team import invitations
@@ -35,7 +36,7 @@ router = APIRouter(prefix="/team/invitations", tags=["experimental-team"])
 
 ACCEPT_LIMIT = 10
 ACCEPT_WINDOW_S = 300
-_attempts: Dict[str, Deque[float]] = defaultdict(deque)
+_throttle: AcceptThrottle | None = None
 
 ProjectRef = Annotated[str, Field(min_length=1, max_length=128)]
 
@@ -87,17 +88,15 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client and request.client.host else "unknown"
 
 
-def _throttled(ip: str) -> bool:
-    now = time.monotonic()
-    for key in [key for key, window in _attempts.items() if not window or window[-1] < now - ACCEPT_WINDOW_S]:
-        del _attempts[key]
-    window = _attempts[ip]
-    while window and window[0] < now - ACCEPT_WINDOW_S:
-        window.popleft()
-    if len(window) >= ACCEPT_LIMIT:
-        return True
-    window.append(now)
-    return False
+def accept_throttle(request: Request) -> AcceptThrottle:
+    """The app's throttle if one was installed on ``app.state``, else the process-wide default."""
+    global _throttle
+    installed = getattr(request.app.state, "invitation_throttle", None)
+    if installed is not None:
+        return installed
+    if _throttle is None:
+        _throttle = default_throttle()
+    return _throttle
 
 
 @router.post("")
@@ -131,8 +130,11 @@ async def revoke_invitation(invitation_id: uuid.UUID, body: InvitationRevokeRequ
 
 @router.post("/accept")
 async def accept_invitation(body: InvitationAcceptRequest, request: Request, response: Response):
-    if _throttled(_client_ip(request)):
-        raise HTTPException(429, "Too many invitation attempts; try again later")
+    retry_after = await accept_throttle(request).hit(_client_ip(request), limit=ACCEPT_LIMIT,
+                                                     window_s=ACCEPT_WINDOW_S)
+    if retry_after is not None:
+        raise HTTPException(429, "Too many invitation attempts; try again later",
+                            headers={"Retry-After": retry_after_header(retry_after)})
     try:
         require_team_storage()
         async with async_session_factory() as session, session.begin():

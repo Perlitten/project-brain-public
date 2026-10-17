@@ -31,6 +31,9 @@ const nested: NavItem[] = [
   { key: "runs", href: "/runs", label: "Agent tasks", icon: "automation", hint: "Tasks agents ran with Brain's help", repoScoped: true, section: "logs" },
   { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "The tools agents can call and how they perform", section: "settings" },
   { key: "admin", href: "/admin", label: "Access", icon: "key", hint: "API keys and what each one may do", section: "settings" },
+  // Before "team" so /team/me and /team/activity resolve to their own entries; members can open both.
+  { key: "team-me", href: "/team/me", label: "Me", icon: "key", hint: "Your team role, project roles and key permissions", section: "settings" },
+  { key: "team-activity", href: "/team/activity", label: "Team activity", icon: "activity", hint: "Who changed memory, membership, tasks and jobs", section: "settings" },
   { key: "team", href: "/team", label: "Team", icon: "key", hint: "Team members, their project roles and dashboard keys", section: "settings" },
   // Reached from the rail footer and the palette, not a daily destination.
   { key: "help", href: "/help", label: "Help", icon: "help", hint: "About this server, common problems, glossary and guides" },

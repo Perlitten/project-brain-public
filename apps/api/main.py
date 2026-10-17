@@ -122,10 +122,11 @@ app = FastAPI(
     openapi_url="/openapi.json" if _api_docs_enabled else None,
 )
 
-from apps.api.routers import team, team_invitations, team_oidc  # noqa: E402
+from apps.api.routers import team, team_invitations, team_me, team_oidc  # noqa: E402
 
 app.include_router(team.router)
 app.include_router(team_invitations.router)
+app.include_router(team_me.router)
 app.include_router(team_oidc.router)
 
 # Per-member dashboard identity (apps/web keeps the member's credential, this says who it is).

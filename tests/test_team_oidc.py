@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import ValidationError
 from sqlalchemy import select, update
 
+from apps.api.invitation_throttle import InProcessWindow
 from apps.api.routers import team_invitations, team_oidc, web_session
 from brain.config.settings import Settings, settings
 from brain.database.models import ApiCredential
@@ -100,12 +101,10 @@ def idp(monkeypatch):
     monkeypatch.setattr(settings, "BRAIN_OIDC_ALLOWED_EMAIL_DOMAINS", "")
     monkeypatch.setattr(settings, "BRAIN_OIDC_REQUIRE_FOR_INVITATIONS", False)
     oidc.reset_caches()
-    team_oidc._attempts.clear()
-    team_invitations._attempts.clear()
+    monkeypatch.setattr(team_oidc, "_throttle", InProcessWindow())
+    monkeypatch.setattr(team_invitations, "_throttle", InProcessWindow())
     yield provider
     oidc.reset_caches()
-    team_oidc._attempts.clear()
-    team_invitations._attempts.clear()
 
 
 def sso_app(factory, monkeypatch):
@@ -343,8 +342,9 @@ async def test_start_is_throttled_per_address(team_db, monkeypatch, idp):
     factory, _, _ = team_db
     monkeypatch.setattr(team_oidc, "OIDC_LIMIT", 2)
     async with client_for(sso_app(factory, monkeypatch)) as client:
-        codes = [(await client.post("/team/oidc/start", json={"binding": BINDING})).status_code for _ in range(3)]
-    assert codes == [200, 200, 429]
+        answers = [await client.post("/team/oidc/start", json={"binding": BINDING}) for _ in range(3)]
+    assert [answer.status_code for answer in answers] == [200, 200, 429]
+    assert int(answers[-1].headers["Retry-After"]) >= 1
 
 
 # --- invitations --------------------------------------------------------------------------------------------------
@@ -524,3 +524,14 @@ def test_cli_sso_bind_list_unbind(team_db, monkeypatch, idp):
     removed = invoke("sso-unbind", "--principal", "human-2")
     assert removed.exit_code == 0 and json.loads(removed.output) == {"principal": "human-2", "removed": 1}
     assert json.loads(invoke("sso-list").output) == []
+
+
+def test_sso_throttle_is_shared_under_full_storage(monkeypatch):
+    monkeypatch.setattr(team_oidc, "_throttle", None)
+    monkeypatch.setattr(settings, "BRAIN_STORAGE_MODE", "full")
+    shared = team_oidc.oidc_throttle()
+    assert isinstance(shared, team_oidc.RedisWindow)
+    assert shared._prefix == team_oidc.OIDC_KEY_PREFIX != "brain:team:invitation-accept:"
+    monkeypatch.setattr(team_oidc, "_throttle", None)
+    monkeypatch.setattr(settings, "BRAIN_STORAGE_MODE", "lite")
+    assert isinstance(team_oidc.oidc_throttle(), InProcessWindow)

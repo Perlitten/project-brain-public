@@ -7,7 +7,9 @@ credential gets one. The dashboard's ``/auth/oidc/start`` and
 the binding with both calls, so a stolen authorization code cannot be redeemed
 from another browser. Invitation tokens and codes travel in JSON bodies, never
 in this API's URLs. Start and callback share a per-address throttle (socket
-peer, in-process, like invitation acceptance). Answers are ``no-store``.
+peer), kept in Redis like invitation acceptance so every API process counts
+against one limit (``apps/api/invitation_throttle.py``; in memory under Lite).
+A throttled attempt gets HTTP 429 with ``Retry-After``. Answers are ``no-store``.
 
 * ``GET /team/oidc/config`` - whether SSO is offered (``enabled``) and whether
   invitations require it.
@@ -19,13 +21,12 @@ peer, in-process, like invitation acceptance). Answers are ``no-store``.
 """
 from __future__ import annotations
 
-import time
-from collections import defaultdict, deque
-from typing import Deque, Dict
-
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
+
+from apps.api.invitation_throttle import AcceptThrottle, InProcessWindow, RedisWindow, retry_after_header
+from brain.config.settings import settings
 
 from brain.database.session import async_session_factory
 from brain.team import invitations, oidc
@@ -36,7 +37,8 @@ router = APIRouter(prefix="/team/oidc", tags=["experimental-team"])
 
 OIDC_LIMIT = 30
 OIDC_WINDOW_S = 300
-_attempts: Dict[str, Deque[float]] = defaultdict(deque)
+OIDC_KEY_PREFIX = "brain:team:oidc:"
+_throttle: AcceptThrottle | None = None
 
 
 class OidcStartRequest(BaseModel):
@@ -56,17 +58,24 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client and request.client.host else "unknown"
 
 
-def _throttled(ip: str) -> bool:
-    now = time.monotonic()
-    for key in [key for key, window in _attempts.items() if not window or window[-1] < now - OIDC_WINDOW_S]:
-        del _attempts[key]
-    window = _attempts[ip]
-    while window and window[0] < now - OIDC_WINDOW_S:
-        window.popleft()
-    if len(window) >= OIDC_LIMIT:
-        return True
-    window.append(now)
-    return False
+def oidc_throttle() -> AcceptThrottle:
+    """Shared Redis window under full storage (its own key prefix), the in-process window under Lite."""
+    global _throttle
+    if _throttle is None:
+        if settings.BRAIN_STORAGE_MODE == "lite":
+            _throttle = InProcessWindow()
+        else:
+            from brain.database.session import redis_client
+
+            _throttle = RedisWindow(redis_client, prefix=OIDC_KEY_PREFIX)
+    return _throttle
+
+
+async def _check_throttle(request: Request) -> None:
+    retry_after = await oidc_throttle().hit(_client_ip(request), limit=OIDC_LIMIT, window_s=OIDC_WINDOW_S)
+    if retry_after is not None:
+        raise HTTPException(429, "Too many sign-in attempts; try again later",
+                            headers={"Retry-After": retry_after_header(retry_after)})
 
 
 def _refusal(exc: Exception) -> HTTPException:
@@ -101,8 +110,7 @@ async def oidc_config(response: Response) -> dict[str, bool]:
 async def oidc_start(body: OidcStartRequest, request: Request, response: Response) -> dict:
     if oidc.oidc_config() is None:
         raise HTTPException(404, oidc.DISABLED)
-    if _throttled(_client_ip(request)):
-        raise HTTPException(429, "Too many sign-in attempts; try again later")
+    await _check_throttle(request)
     try:
         require_team_storage()
         async with async_session_factory() as session, session.begin():
@@ -117,8 +125,7 @@ async def oidc_start(body: OidcStartRequest, request: Request, response: Respons
 async def oidc_callback(body: OidcCallbackRequest, request: Request, response: Response) -> dict:
     if oidc.oidc_config() is None:
         raise HTTPException(404, oidc.DISABLED)
-    if _throttled(_client_ip(request)):
-        raise HTTPException(429, "Too many sign-in attempts; try again later")
+    await _check_throttle(request)
     try:
         require_team_storage()
         # 1. Spend the request first and commit, so a code can be tried only once.

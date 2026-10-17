@@ -62,6 +62,8 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("team_access_fences", "cleared_at"),
     # A team never falls back to solo on its own (brain.team.authorization.team_state).
     ("teams", "dissolved_at"),
+    # Membership, role and queued-job history for the team activity feed (brain.team.activity).
+    ("team_activity_events", "audience"),
 ]
 
 
