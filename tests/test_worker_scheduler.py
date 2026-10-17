@@ -72,6 +72,8 @@ def _baseline_schedules(monkeypatch):
     """Pin the four always-on schedules: memory consolidation is on by default
     since 2026-10-10 and is covered by its own explicit toggle test below."""
     monkeypatch.setattr(settings, "MEMORY_CONSOLIDATION_ENABLED", False)
+    # The origin poll (every 5 min by default) has its own tests in test_origin_poll.py.
+    monkeypatch.setattr(settings, "BRAIN_ORIGIN_POLL_INTERVAL_S", 0)
 
 
 @pytest.fixture

@@ -711,13 +711,28 @@ class FileIndexer:
             return
 
     async def index_repository(self, repo_path: Union[str, Path], clean: bool = False,
-                               expected_revision: str = "") -> Repository:
+                               expected_revision: str = "", source_root: Optional[Path] = None,
+                               source_commit: Optional[str] = None) -> Repository:
+        """Index ``repo_path``.
+
+        ``source_root`` plus ``source_commit`` pin the content to an exported
+        commit (a Brain-owned mirror of a read-only or origin-less checkout):
+        the repository keeps its identity, the files are read from the export
+        and the run is recorded against ``source_commit``.
+        """
         path_obj = Path(repo_path).resolve()
-        if not path_obj.is_dir():
+        pinned = source_root is not None and bool(source_commit)
+        if not path_obj.is_dir() and not pinned:
             raise ValueError("Repository source directory does not exist")
         async with self._repository_run_lock:
             self._reset_progress()
             async with repository_index_lock(path_obj.as_posix()):
+                if source_root is not None and source_commit:
+                    self._uncommitted_changes = 0
+                    return await self._index_repository(
+                        path_obj, clean, expected_revision,
+                        source_root=Path(source_root), source_commit=source_commit,
+                    )
                 # A developer's checkout is usually mid-edit. Index the committed
                 # HEAD from a private snapshot instead of refusing: provenance stays
                 # exact (one commit), and the run reports what is not indexed yet.
@@ -734,7 +749,8 @@ class FileIndexer:
                 return await self._index_repository(path_obj, clean, expected_revision)
 
     async def _index_repository(self, path_obj: Path, clean: bool, expected_revision: str,
-                                source_root: Optional[Path] = None) -> Repository:
+                                source_root: Optional[Path] = None,
+                                source_commit: Optional[str] = None) -> Repository:
         """Scan a repository, identify new or changed files, index them and save to database.
 
         ``path_obj`` is the repository's identity; ``source_root`` (default: the
@@ -743,7 +759,7 @@ class FileIndexer:
         src = source_root or path_obj
         await self._reset_late_dual_write_circuit()
         repo_name = path_obj.name
-        commit_hash = get_git_commit_hash(path_obj)
+        commit_hash = source_commit or get_git_commit_hash(path_obj)
         if expected_revision and not revision_matches(expected_revision, commit_hash):
             raise ValueError("Repository source revision does not match requested revision")
         if settings.ENVIRONMENT.lower() == "production" and commit_hash == "unverifiable":
@@ -850,7 +866,8 @@ class FileIndexer:
                 embeddings = await verify_embeddings(repo_id, path_obj.as_posix())
                 final_files = sorted(await asyncio.to_thread(_scan_repo_files, src))
                 final_hashes = await asyncio.to_thread(_source_content_snapshot, src, final_files)
-                source_verified = (get_git_commit_hash(path_obj) == commit_hash
+                # A pinned export is immutable: the checkout HEAD is not its identity.
+                source_verified = ((source_commit is not None or get_git_commit_hash(path_obj) == commit_hash)
                     and await asyncio.to_thread(git_source_is_clean, src, final_files)
                     and final_hashes == self._source_content_hashes)
                 projection_status = compute_run_status(processed=self.file_counts["indexed"],
@@ -867,7 +884,8 @@ class FileIndexer:
                     "embedding_verification": embeddings,
                     "counts": self.progress,
                     "file_counts": self.file_counts,
-                    "indexed_from": "HEAD" if source_root is not None else "working_tree",
+                    "indexed_from": ("mirror" if source_commit is not None else "HEAD" if source_root is not None
+                                     else "working_tree"),
                     "uncommitted_changes": getattr(self, "_uncommitted_changes", 0),
                 }
                 self.progress["phase"] = status

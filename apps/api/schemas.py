@@ -182,6 +182,12 @@ class MemoryConsolidationJobRequest(BaseModel):
     dry_run: bool = False
 
 
+class OriginPollJobRequest(BaseModel):
+    """Poll origin now. Without ``repo_path`` every attached repository is polled."""
+
+    repo_path: Optional[str] = Field(default=None, max_length=1000)
+
+
 class SelfDiagnosisJobRequest(BaseModel):
     repo_path: Optional[str] = None
     use_llm: Optional[bool] = None
