@@ -7,7 +7,7 @@
 
 import { MARK_TOKENS } from "@/components/Icon";
 
-const escape = (s: string) =>
+export const escape = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 const MARK = MARK_TOKENS.map(
@@ -43,7 +43,6 @@ type Notice = { eyebrow: string; title: string; detail: string };
  */
 export function loginPage({ action, next, failed, user = "", notice, team = false }: { action: string; next: string; failed: boolean | "throttled"; user?: string; notice?: Notice; team?: boolean }) {
   const tone = failed || notice ? "bad" : "idle";
-  const d = ecg(failed ? 92 : 0);
   const throttled = failed === "throttled";
   const log = ["› waking up project brain", "› site is locked", notice ? "› sign-in unavailable" : throttled ? "› too many tries · paused" : failed ? "› sign-in refused · try again" : "› waiting for sign-in"];
   const eyebrow = notice ? escape(notice.eyebrow) : throttled ? "Paused" : failed ? "Access denied" : "Locked";
@@ -73,6 +72,34 @@ export function loginPage({ action, next, failed, user = "", notice, team = fals
           ${REVEAL}
         </span>
       </label>`;
+  const body = notice ? "" : `<form method="post" action="${escape(action)}" id="login">
+      <input type="hidden" name="next" value="${escape(next)}">
+      ${fields}
+      <button class="btn" type="submit">Sign in</button>
+    </form>`;
+  return gateDocument({ pageTitle: "Sign in", tone, eyebrow, heading: title, detail, alert: Boolean(failed || notice), body, log, pulse: failed ? 92 : 0 });
+}
+
+/** One self-contained gate screen; `heading`, `detail` and `body` are trusted HTML (escape what you interpolate). */
+export interface GateDoc {
+  pageTitle: string;
+  tone: "idle" | "bad" | "ok" | "warn";
+  eyebrow: string;
+  heading: string;
+  detail: string;
+  /** Announce the heading to screen readers (refusals, errors). */
+  alert?: boolean;
+  body: string;
+  log: string[];
+  /** Pulse period: 0 is flat, smaller races. */
+  pulse?: number;
+  extraCss?: string;
+  extraScript?: string;
+}
+
+/** The sign-in page's document shell, shared with other pages proxy.ts answers before any layout renders (lib/invite-page.ts). */
+export function gateDocument({ pageTitle, tone, eyebrow, heading, detail, alert = false, body, log, pulse = 0, extraCss = "", extraScript = "" }: GateDoc) {
+  const d = ecg(pulse);
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -81,7 +108,7 @@ export function loginPage({ action, next, failed, user = "", notice, team = fals
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#05080B">
 <meta name="robots" content="noindex">
-<title>Sign in · Project Brain</title>
+<title>${escape(pageTitle)} · Project Brain</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/Outfit-600-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
@@ -281,6 +308,7 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
 @keyframes brick { from { background: var(--gray-5); box-shadow: none; } }
 @keyframes blink { 50% { opacity: 0.25; } }
 @keyframes shake { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
+${extraCss}
 </style>
 </head>
 <body>
@@ -294,14 +322,10 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
   <section class="verdict verdict--${tone}" aria-labelledby="verdict">
     <div class="verdict__main">
       <p class="eyebrow" style="margin:0" data-decode>${eyebrow}</p>
-      <h1 id="verdict"${failed || notice ? ' role="alert"' : ""}>${title}</h1>
+      <h1 id="verdict"${alert ? ' role="alert"' : ""}>${heading}</h1>
       <p class="detail">${detail}</p>
     </div>
-    ${notice ? "" : `<form method="post" action="${escape(action)}" id="login">
-      <input type="hidden" name="next" value="${escape(next)}">
-      ${fields}
-      <button class="btn" type="submit">Sign in</button>
-    </form>`}
+    ${body}
     <svg class="pulse" viewBox="0 0 1200 40" preserveAspectRatio="none" aria-hidden="true">
       <defs>
         <linearGradient id="pulse-g"><stop offset="0" stop-color="#000"/><stop offset="0.85" stop-color="#fff"/><stop offset="1" stop-color="#000"/></linearGradient>
@@ -314,7 +338,7 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
     </svg>
   </section>
 
-  <div class="log${failed || notice ? " log--bad" : ""}" aria-hidden="true">
+  <div class="log${tone === "bad" ? " log--bad" : ""}" aria-hidden="true">
     <ol>${log.map((l, i) => `<li style="--l:${i};--len:${l.length}">${l}</li>`).join("")}</ol>
     <div class="meter">${Array.from({ length: BRICKS }, (_, i) => `<span class="${i < LIT ? "on" : i === LIT ? "wait" : ""}" style="--i:${i}"></span>`).join("")}</div>
   </div>
@@ -367,7 +391,10 @@ html[data-going] .meter span { background: var(--teal-fg); box-shadow: 0 0 8px c
     setTimeout(function () { requestAnimationFrame(tick); }, 380);
   });
 })();
-</script>
+</script>${extraScript ? `
+<script>
+${extraScript}
+</script>` : ""}
 </body>
 </html>`;
 }

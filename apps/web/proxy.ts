@@ -1,8 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { acceptInvitation } from "./lib/invite-accept";
+import { invitePage, type InvitePageInput } from "./lib/invite-page";
+import { INVITE_PATH } from "./lib/invitations";
 import { loginPage } from "./lib/login-page";
 import {
-  MEMBER_COOKIE, MEMBER_MAX_AGE, SESSION_COOKIE, authorizeWebRequest, lockReason, loginState, memberFrom, sessionFrom, signIn,
-  signInMember, webAuthResponse,
+  MEMBER_COOKIE, MEMBER_MAX_AGE, SESSION_COOKIE, authorizeWebRequest, forgetLoginState, lockReason, loginState, memberFor, memberFrom,
+  sessionFrom, signIn, signInMember, webAuthResponse,
 } from "./lib/web-auth";
 
 // Who may enter is decided in lib/web-auth.ts (WEB_BASIC_AUTH, or the login
@@ -30,6 +33,18 @@ function page(next: string, failed: boolean | "throttled", user = "", team = fal
     status: 401,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
+}
+
+// The member session, set by the sign-in form and by an accepted invitation alike.
+function setMemberCookie(res: NextResponse, req: NextRequest, cookie: string) {
+  res.cookies.set(MEMBER_COOKIE, cookie, {
+    httpOnly: true,
+    secure: req.nextUrl.protocol === "https:",
+    sameSite: "lax",
+    path: "/",
+    maxAge: MEMBER_MAX_AGE,
+  });
+  res.cookies.delete(SESSION_COOKIE);
 }
 
 const wantsHtml = (req: NextRequest) => (req.headers.get("accept") ?? "").includes("text/html");
@@ -70,6 +85,8 @@ async function gate(req: NextRequest): Promise<Response> {
     return res;
   }
 
+  if (pathname === INVITE_PATH) return invite(req);
+
   if (pathname === LOGIN && req.method === "POST") {
     const form = await req.formData().catch(() => null);
     const next = safeNext(form?.get("next"));
@@ -79,14 +96,7 @@ async function gate(req: NextRequest): Promise<Response> {
       if (member.status === 503) return locked(req);
       if (member.status === 401) return page(next, true, "", true);
       const res = NextResponse.redirect(new URL(next, req.url), 303);
-      res.cookies.set(MEMBER_COOKIE, member.cookie, {
-        httpOnly: true,
-        secure: req.nextUrl.protocol === "https:",
-        sameSite: "lax",
-        path: "/",
-        maxAge: MEMBER_MAX_AGE,
-      });
-      res.cookies.delete(SESSION_COOKIE);
+      setMemberCookie(res, req, member.cookie);
       return res;
     }
     const user = form?.get("username");
@@ -121,6 +131,79 @@ async function gate(req: NextRequest): Promise<Response> {
   const res = page(pathname === LOGIN ? "/" : safeNext(pathname + search), false, "", team);
   if (memberFrom(cookie)) res.cookies.delete(MEMBER_COOKIE);
   return res;
+}
+
+// ── /invite: an invitee redeems their token and is signed in as the new member ──
+// Public on purpose (the token is the credential), and answered here, before
+// any layout, server action or server key is involved. Brain decides the
+// invitation (lib/invite-accept.ts sends no API key); this only shows the
+// outcome and, on success, signs the browser in exactly like the member-key
+// form above. The page is extendable with other ways to join through
+// `alternatives` (lib/invite-page.ts).
+
+function invitePageResponse(input: InvitePageInput) {
+  const { status, html } = invitePage(input);
+  return new NextResponse(html, {
+    status,
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-frame-options": "DENY" },
+  });
+}
+
+// A cross-site form must not sign a browser into someone else's membership
+// (login CSRF), so the POST has to come from this very page.
+function sameOrigin(req: NextRequest) {
+  const origin = req.headers.get("origin");
+  if (!origin) return req.headers.get("sec-fetch-site") === "same-origin";
+  const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host).split(",")[0].trim().toLowerCase();
+  try {
+    return new URL(origin).host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
+}
+
+async function inviteNotice(): Promise<InvitePageInput["notice"]> {
+  const state = await loginState();
+  if (state.kind === "demo") {
+    return { eyebrow: "Demo data", title: "Invitations need a live Brain.", detail: "This dashboard shows demo data and isn’t connected to a Brain, so there is no team to join here. Open the link your admin sent on the dashboard they use." };
+  }
+  if (state.kind === "misconfigured") return { eyebrow: "Misconfigured", title: "This dashboard is misconfigured.", detail: state.reason };
+  if (process.env.BRAIN_WEB_ACTIONS?.trim() === "0") {
+    return { eyebrow: "Switched off", title: "Invitations can’t be accepted here.", detail: "Changes from this dashboard are switched off (BRAIN_WEB_ACTIONS=0). Accept the invitation with the CLI instead: brain team invite accept --api-url <your Brain URL>." };
+  }
+  return undefined;
+}
+
+async function invite(req: NextRequest): Promise<Response> {
+  if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "POST") {
+    return new NextResponse(null, { status: 405, headers: { allow: "GET, HEAD, POST" } });
+  }
+  const notice = await inviteNotice();
+  if (notice) return invitePageResponse({ notice });
+  if (req.method !== "POST") return invitePageResponse({});
+  if (!sameOrigin(req)) {
+    return invitePageResponse({ notice: { status: 403, eyebrow: "Refused", title: "Accept the invitation from its own page.", detail: "This form came from another site. Open your invitation link in this browser and accept it there." } });
+  }
+  const form = await req.formData().catch(() => null);
+  const raw = form?.get("token");
+  const token = typeof raw === "string" ? raw.trim() : "";
+  const outcome = await acceptInvitation(token);
+  if (outcome.kind === "accepted") {
+    // Brain may have just become a team: ask afresh rather than trust the cached solo answer.
+    forgetLoginState();
+    const member = await signInMember(outcome.key);
+    if (member.status !== 200) return invitePageResponse({ outcome, signedIn: false });
+    const res = invitePageResponse({ outcome, signedIn: true });
+    setMemberCookie(res, req, member.cookie);
+    return res;
+  }
+  if (outcome.kind === "already") {
+    // A reload of the success page resubmits the form: say so if this browser is that member.
+    const current = await memberFor(memberFrom(req.headers.get("cookie")));
+    return invitePageResponse({ outcome, signedIn: current?.name === outcome.name });
+  }
+  const notTheToken = outcome.kind === "throttled" || outcome.kind === "unavailable" || outcome.kind === "conflict";
+  return invitePageResponse({ outcome, token: notTheToken ? token : "" });
 }
 
 // robots.txt stays reachable so crawlers can read "Disallow" even on a locked site.

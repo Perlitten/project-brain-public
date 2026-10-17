@@ -72,12 +72,17 @@ curl -sS -X POST "$BRAIN_API_URL/team/invitations" -H "X-API-Key: $ADMIN_KEY" \
 # -> {"invitation": {...}, "token": "pbi_..."}   (Cache-Control: no-store)
 ```
 
-or on the server: `brain team invite create --name alice --project core --role reader`.
+or on the server: `brain team invite create --name alice --project core --role reader`,
+or from the dashboard: **Team → Invite a member**, which shows an invitation link
+(`https://<dashboard>/invite#token=pbi_…`) once.
 Roles are the project roles (`reader`, `contributor`, `reviewer`) and only narrow
 the project's policy; `is_admin` / `--admin` grants team administration.
 
-The invitee redeems with `brain team invite accept --api-url <https URL>` or
-`POST /team/invitations/accept` with `{"token": "pbi_..."}`. No credential is
+The invitee redeems by opening that link on the dashboard (`/invite`: it shows the
+member key once and signs them in), with `brain team invite accept --api-url <https URL>`,
+or with `POST /team/invitations/accept` and `{"token": "pbi_..."}`. Through the
+dashboard every invitee reaches the API from the dashboard server's IP, so they
+share one throttle budget of 10 attempts per 5 minutes. No credential is
 needed for that call. The CLI accepts plain `http` only to loopback. A retry with
 the same token after success returns the same member with `"credential": null`;
 the credential cannot be recovered, only revoked and reissued.
@@ -89,7 +94,7 @@ invitation is needed.
 ## Listing and revoking
 
 ```bash
-brain team invite list                                   # or GET /team/invitations
+brain team invite list                                   # or GET /team/invitations, or the Team page
 brain team invite revoke <invitation-id>                 # pending invitation
 brain team invite revoke <invitation-id> --revoke-member # already redeemed
 ```
