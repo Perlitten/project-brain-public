@@ -10,8 +10,7 @@ the per-requirement evidence is the [foundations matrix](team-foundations.md).
 The core of **M1** (identity, membership and fail-closed authorization) is on
 `main`: a solo Brain is a team of one, and adding the first verified member
 switches repository-scoped API, MCP and dashboard requests to per-project
-authorization. M1 is not complete while the gaps below remain, including web
-logs, downloads and notifications that still use the server key. Execution
+authorization. M1 is not complete while the gaps below remain. Execution
 (M2) and everything after it has not started. Team mode is **not deployed** and
 has **not been tried with real people**; green CI is the only evidence so far,
 and the ADR says plainly that green CI is not team readiness.
@@ -42,6 +41,10 @@ and the ADR says plainly that green CI is not team readiness.
 | Remaining personal routes scoped in team state | [#120](https://github.com/Perlitten/project-brain-public/pull/120) |
 | Dashboard members sign in with their own key; admin Team page (add, role, revoke) | [#121](https://github.com/Perlitten/project-brain-public/pull/121) |
 | A team snapshot restored with `scripts/restore_database.py` stays fenced until `brain team reconcile --attest`; plain `psql` does not add the fence ([runbook](../runbooks/backup-restore.md#restoring-a-team-brain)) | [#122](https://github.com/Perlitten/project-brain-public/pull/122) |
+| CLI and invitation keys carry the same scopes as dashboard keys; members read global decisions and rules plus those of repositories they can read (`/decisions`, `/rules`, MCP `brain://decisions`, `brain://rules`) | this branch (`team/member-scopes`) |
+| Member keys get `jobs:write` (queueing still needs Contributor or Reviewer on the repository); team-admin keys also get `setup:write` and `operations:write`, so "Run now", setup and retries work from the dashboard. Keys minted before this change lack these scopes and must be re-issued | this branch |
+| Dashboard for non-admin members: navigation and pages limited to projects they have a role on; Settings, Setup, Quality, Logs, Runs, Reranker, Admin and reports show "Team admins only"; no setup links | this branch |
+| Dashboard shows "unavailable" instead of a false "none" when Brain does not answer (jobs, findings, memory, packs, runs, MCP tools, graph, team roles) | this branch |
 
 Tests: 12 `tests/test_team_*.py` files, about 90 test functions, plus the
 PostgreSQL-only restore and concurrency cases that CI runs.
@@ -54,26 +57,19 @@ PostgreSQL-only restore and concurrency cases that CI runs.
   ([TEAM_INVITATIONS.md](../operations/TEAM_INVITATIONS.md)).
 - **No invitation UI.** Invitations exist only in the API and CLI; the
   dashboard Team page adds members directly and shows their key once.
-- **`brain team member add --mint-key` keys cannot use the dashboard.** The CLI
-  grants only `team:*` scopes (`brain/team/provisioning.py::member_scopes`),
-  while dashboard keys also need `DASHBOARD_SCOPES`
-  (`apps/web/lib/team-scopes.ts`).
-- **MCP resources `brain://rules` and `brain://decisions` fail for
-  non-admin members.** They request the unfiltered lists
-  (`apps/mcp_server/protocol.py`), which require a team administrator in team
-  state.
 - **Invitation acceptance throttle is per process**
   (`apps/api/routers/team_invitations.py`); correct only with one API process.
-- **Web app logs, downloads and notifications** are still reached with the
-  Next.js server key and are not scoped per member.
 - **`brain/workspace` and `brain/team` are not merged**: repository trust and
   human membership are still two separate models.
 - **Not exercised end to end**: production upgrade/restore, external identities
   and secrets, real multi-person use.
+- **`/late-interaction/status` returns 500** (not 4xx) when a repository path is
+  outside the allowed roots; the dashboard's Reranker page then shows
+  "unavailable".
 
 ## Next steps, in order
 
-1. Close the small M1 gaps above (CLI key scopes, MCP resources, invitation UI).
+1. Close the remaining small M1 gap: the invitation UI.
 2. Deploy to production in solo state and confirm nothing changed for the owner.
 3. Add one real member on one project and walk the invite → sign-in → revoke path.
 4. Then complete M2 through M5; run the M6 pilot only after those prerequisite

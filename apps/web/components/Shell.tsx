@@ -7,10 +7,11 @@ import type { Tone } from "@/lib/types";
 import type { ActionResult, ActionsMode, SignInMode } from "@/lib/actions/types";
 import { startBenchmark, startHealthCheck, startInsights, startReindex, startSelfDiagnosis } from "@/lib/actions/jobs";
 import { verifyProviders } from "@/lib/actions/setup";
-import { activeSection, allNavItems, locate, navGroups, withProject } from "@/lib/nav";
+import { activeSection, adminOnly, allNavItems, locate, navGroups, withProject } from "@/lib/nav";
 import { ActionsProvider, LOCK_REASON, Toaster, dismissToast, report, toast } from "./act";
 import { Ambient } from "./Ambient";
 import { BrandMark, Icon, type IconName } from "./Icon";
+import { RestrictedMemberProvider, useRestrictedMember } from "./MemberScope";
 import { RailPulse } from "./RailPulse";
 
 export interface ShellRepo {
@@ -33,7 +34,11 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
   const path = usePathname();
   const params = useSearchParams();
   const page = locate(path)?.item;
-  const allowsAllRepos = ["command", "projects", "packs", "memory", "runs", "logs"].includes(page?.key ?? "");
+  // A member who is not a team admin may only read their projects: the pages
+  // that list rows they can read keep "All projects"; the dashboard, which
+  // Brain only totals for an admin, opens on their first project.
+  const restricted = access === "team" && member !== null && !member.admin;
+  const allowsAllRepos = (restricted ? ["projects", "packs", "memory"] : ["command", "projects", "insights", "packs", "memory", "runs", "logs"]).includes(page?.key ?? "");
   const repoSlug = params.get("repo") ?? (page?.repoScoped && !allowsAllRepos ? repos[0]?.slug : undefined);
   const repo = repos.find((r) => r.slug === repoSlug || r.name.toLowerCase() === repoSlug?.toLowerCase());
   const [drawer, setDrawer] = useState(false);
@@ -119,6 +124,7 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
   const scoped = Boolean(current?.repoScoped) && repos.length > 0;
 
   return (
+    <RestrictedMemberProvider value={restricted}>
     <ActionsProvider mode={mode}>
     <div className={`shell${drawer ? " shell--drawer" : ""}${slim ? " shell--slim" : ""}`}>
       <Ambient />
@@ -272,12 +278,14 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
       <Toaster />
     </div>
     </ActionsProvider>
+    </RestrictedMemberProvider>
   );
 }
 
 // The active marker is one element that travels between items, so a route
 // change reads as movement from where you were to where you are.
 function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: string) => string; slim: boolean }) {
+  const restricted = useRestrictedMember();
   const ref = useRef<HTMLElement>(null);
   const [mark, setMark] = useState<{ y: number; h: number } | null>(null);
   const [ready, setReady] = useState(false);
@@ -305,11 +313,14 @@ function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: stri
         <div className="nav__group" key={g.label}>
           <p className="nav__label">{g.label}</p>
           {g.items.map((item) => {
+            // Settings opens on the Team page, the one settings page a member has.
+            if (restricted && adminOnly(item.href) && item.key !== "settings") return null;
+            const href = restricted && item.key === "settings" ? "/team" : item.href;
             const on = activeSection(path) === item.key;
             return (
               <Link
                 key={item.key}
-                href={withRepo(item.href)}
+                href={withRepo(href)}
                 className={`nav__item${on ? " is-on" : ""}`}
                 aria-current={on ? "page" : undefined}
                 title={`${item.label} — ${item.hint}`}
@@ -365,6 +376,7 @@ function Palette({
   scoped: boolean;
   repoPath?: string;
 }) {
+  const restricted = useRestrictedMember();
   const router = useRouter();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
@@ -379,7 +391,7 @@ function Palette({
   }, []);
 
   const entries = useMemo<Entry[]>(() => {
-    const pages: Entry[] = allNavItems.map((i) => ({
+    const pages: Entry[] = allNavItems.filter((i) => !restricted || !adminOnly(i.href)).map((i) => ({
       id: i.key,
       label: i.label,
       hint: i.hint,
@@ -387,7 +399,8 @@ function Palette({
       icon: i.icon,
       group: "Go to",
     }));
-    const commands: Entry[] = COMMANDS.map((c) => ({ ...c,
+    // Server-wide jobs need a team admin; a member may still re-index a project they edit.
+    const commands: Entry[] = COMMANDS.filter((c) => !restricted || c.id === "reindex").map((c) => ({ ...c,
       run: c.id === "reindex" ? () => repoPath ? startReindex({ repoPath }) : Promise.resolve({ ok: false, message: "Select an existing repository before re-indexing." }) : c.run,
       hint: c.id === "reindex" ? `Read changes in ${repoPath ?? "a repository — select one first"}` : `${c.hint} · Brain service / default repository`,
       id: `run-${c.id}`, group: "Run" }));
@@ -403,7 +416,7 @@ function Palette({
     return [...pages, ...commands, ...repoEntries].filter(
       (e) => !needle || e.label.toLowerCase().includes(needle) || e.hint.toLowerCase().includes(needle),
     );
-  }, [q, repos, withRepo, path, scoped, repoPath]);
+  }, [q, repos, withRepo, path, scoped, repoPath, restricted]);
 
   useEffect(() => setSel(0), [q]);
   useEffect(() => {

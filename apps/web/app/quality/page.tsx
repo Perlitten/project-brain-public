@@ -1,3 +1,4 @@
+import { adminOnlyPage } from "@/components/AdminOnly";
 import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { PageTabs, pickTab } from "@/components/PageTabs";
@@ -18,6 +19,8 @@ const VIEWS = ["benchmark", "reports"] as const;
 // first one's only job was to link to the second, so they are one screen with
 // two tabs; /reports still resolves here.
 export default async function Quality({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const gate = await adminOnlyPage("Quality");
+  if (gate) return gate;
   const params = await searchParams;
   const tab = pickTab(VIEWS, typeof params.view === "string" ? params.view : undefined);
   const query = getListQuery(params);
@@ -43,7 +46,7 @@ export default async function Quality({ searchParams }: { searchParams: Promise<
         current={tab}
         tabs={[
           { id: "benchmark", label: "Benchmark" },
-          { id: "reports", label: "Reports", badge: result.paging.total },
+          { id: "reports", label: "Reports", badge: result.available === false ? "—" : result.paging.total },
         ]}
       />
       {tab === "benchmark" ? (
@@ -57,7 +60,9 @@ export default async function Quality({ searchParams }: { searchParams: Promise<
         </Panel>
       ) : (
         <Panel id="reports" title="Saved reports" desc="Evaluations and checks recorded across the Brain service." flush>
-          {reports.length || hasQuery ? (
+          {result.available === false ? (
+            <EmptyState title="Reports unavailable" body="Brain didn’t return its saved reports just now. Reload in a moment." />
+          ) : reports.length || hasQuery ? (
             <Table
               paging={result.paging}
               filter={{ search: (r) => `${r.title} ${r.id}`, noun: ["report", "reports"] }}

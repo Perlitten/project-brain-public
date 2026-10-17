@@ -8,6 +8,7 @@ const TRIGGERS: Record<string, string> = {
   health_check: "/jobs/health-check",
   self_diagnosis: "/jobs/self-diagnosis",
   benchmark: "/jobs/benchmark",
+  memory_consolidation: "/jobs/memory-consolidation",
 };
 
 export async function runScheduledJob(jobType: string): Promise<ActionResult> {

@@ -18,8 +18,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 from sqlalchemy import String, case, cast, func, literal, select
 
+from apps.api import team_access
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.team_access import repository_access, repository_authority, team_administrator_access
+from apps.api.team_access import filters_unreadable, repository_access, repository_authority, team_administrator_access
 from apps.api.helpers import (
     get_db_counts,
     get_embedding_retrieval_health,
@@ -41,16 +42,18 @@ WEB_READ_SCOPE = "core:read"
 router = APIRouter(
     prefix="/api/web",
     tags=["web"],
-    # ``repository_id`` in the query string selects the repository; without it the
-    # screen spans every repository, which needs a team administrator once members exist.
-    dependencies=[Depends(require_api_key), Depends(require_scope(WEB_READ_SCOPE)),
-                  Depends(repository_access(Permission.READ))],
+    dependencies=[Depends(require_api_key), Depends(require_scope(WEB_READ_SCOPE))],
 )
+# Most screens are repository-scoped; without ``repository_id`` they span the
+# whole Brain and therefore require a team administrator. Decisions and rules
+# are the exception: their handlers filter an unscoped listing to the caller's
+# readable repositories plus global memory.
+REPOSITORY_READ = Depends(repository_access(Permission.READ))
 # Reports and orchestration health span the whole Brain whatever repository the query names.
 TEAM_ADMIN = Depends(team_administrator_access())
 
 
-@router.get("/dashboard")
+@router.get("/dashboard", dependencies=[REPOSITORY_READ])
 async def web_dashboard(period: str = Query("24h"), repository_id: int | None = Query(None, ge=1)) -> dict[str, Any]:
     from apps.api.telemetry import dashboard_metrics
     days = {"24h": 1, "7d": 7, "30d": 30}.get(period)
@@ -89,7 +92,7 @@ async def web_dashboard(period: str = Query("24h"), repository_id: int | None = 
     return result
 
 
-@router.get("/agent-value")
+@router.get("/agent-value", dependencies=[REPOSITORY_READ])
 async def web_agent_value(period: str = Query("30d"), repository_id: int | None = Query(None, ge=1)) -> dict[str, Any]:
     """Is Brain useful to the agents using it — adoption, pack economy, memory reach.
 
@@ -341,7 +344,8 @@ def shape_context_pack(pack: Any, resolved: Path | None, index_commit: str | Non
     }
 
 
-@router.get("/context-packs")
+@router.get("/context-packs", dependencies=[REPOSITORY_READ])
+@filters_unreadable
 async def web_context_packs(
     limit: int = Query(50, ge=1, le=500),
     page: int = Query(1, ge=1),
@@ -349,6 +353,7 @@ async def web_context_packs(
     q: str | None = Query(None, max_length=500),
     repository_id: int | None = None,
     status: str | None = Query(None, max_length=50),
+    principal: ResolvedPrincipal = Depends(require_principal),
 ) -> dict[str, Any]:
     # Direct callers in the unit suite invoke the coroutine without FastAPI's
     # dependency conversion, so Query defaults may still be present.
@@ -361,6 +366,12 @@ async def web_context_packs(
         base = select(ContextPack)
         if repository_id is not None:
             base = base.where(ContextPack.repository_id == repository_id)
+        elif isinstance(principal, ResolvedPrincipal):
+            # Every repository: a team member sees the packs of repositories they can read.
+            all_ids = list((await session.execute(select(Repository.id))).scalars())
+            readable = await team_access.readable_repository_ids(principal, all_ids)
+            if readable is not None:
+                base = base.where(ContextPack.repository_id.in_(readable))
         if query:
             needle = f"%{query}%"
             base = base.where(
@@ -443,7 +454,7 @@ async def web_context_packs(
     }
 
 
-@router.get("/context-packs/{pack_id}")
+@router.get("/context-packs/{pack_id}", dependencies=[REPOSITORY_READ])
 async def web_context_pack_detail(pack_id: int,
                                   principal: ResolvedPrincipal = Depends(require_principal)) -> dict[str, Any]:
     async with async_session_factory() as session:
@@ -533,7 +544,8 @@ def _rule_severity(value: Any) -> str:
 @router.get("/decisions")
 async def web_decisions(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=500),
                         q: str | None = Query(None, max_length=500), status: str | None = Query(None, max_length=50),
-                        repository_id: int | None = None) -> dict[str, Any]:
+                        repository_id: int | None = None,
+                        principal: ResolvedPrincipal = Depends(require_principal)) -> dict[str, Any]:
     async with async_session_factory() as session:
         base = select(Decision)
         if repository_id is not None:
@@ -545,21 +557,16 @@ async def web_decisions(page: int = Query(1, ge=1), page_size: int = Query(50, g
             needle = f"%{q.strip()}%"
             text = cast(Decision.id, String) + literal(" ") + func.coalesce(Decision.title, "") + literal(" ") + func.coalesce(Decision.description, "")
             base = base.where(text.ilike(needle))
-        status_expr = case((func.lower(Decision.status).in_(("active", "accepted")), "accepted"),
-                           (func.lower(Decision.status).in_(("proposed", "draft", "pending")), "proposed"),
-                           (func.lower(Decision.status).in_(("deprecated", "superseded", "historical", "replaced", "inactive", "rejected")), "superseded"),
-                           else_=func.coalesce(func.nullif(func.lower(Decision.status), ""), "unknown")).label("status")
-        facet_stmt = select(status_expr, func.count()).select_from(Decision)
-        if base.whereclause is not None:
-            facet_stmt = facet_stmt.where(base.whereclause)
-        facet_rows = (await session.execute(facet_stmt.group_by(status_expr))).all()
-        filtered = base
-        if status:
-            filtered = filtered.where(status_expr == _decision_status(status))
-        total = int((await session.execute(select(func.count()).select_from(filtered.subquery()))).scalar() or 0)
-        rows = (await session.execute(filtered.order_by(Decision.id).offset((page - 1) * page_size).limit(page_size))).scalars().all()
+        rows = list((await session.execute(base.order_by(Decision.id))).scalars().all())
+    readable = await team_access.readable_memory_rows(principal, rows)
+    facets: dict[str, int] = defaultdict(int)
+    for row in readable:
+        facets[_decision_status(row.status)] += 1
+    filtered = [row for row in readable if not status or _decision_status(row.status) == _decision_status(status)]
+    total = len(filtered)
+    rows = filtered[(page - 1) * page_size:page * page_size]
     return {"total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),
-            "facets": {"status": {str(k): int(v) for k, v in facet_rows}}, "scope": "repository" if repository_id is not None else "global",
+            "facets": {"status": dict(facets)}, "scope": "repository" if repository_id is not None else "global",
             "decisions": [{"id": r.id, "title": r.title, "description": r.description, "status": _decision_status(r.status), "raw_status": r.status,
                            "repo_path": r.repo_path, "date": r.date.isoformat() if r.date else None, "reason": r.reason,
                            "consequences": r.consequences, "affected_features": r.affected_features, "affected_modules": r.affected_modules,
@@ -569,7 +576,8 @@ async def web_decisions(page: int = Query(1, ge=1), page_size: int = Query(50, g
 @router.get("/rules")
 async def web_rules(page: int = Query(1, ge=1, le=1000000), page_size: int = Query(50, ge=1, le=500),
                     q: str | None = Query(None, max_length=500), status: str | None = Query(None, max_length=50),
-                    severity: str | None = Query(None, max_length=50), repository_id: int | None = None) -> dict[str, Any]:
+                    severity: str | None = Query(None, max_length=50), repository_id: int | None = None,
+                    principal: ResolvedPrincipal = Depends(require_principal)) -> dict[str, Any]:
     async with async_session_factory() as session:
         base = select(Rule).where(func.coalesce(func.lower(Rule.status), "").not_in(("inactive", "disabled", "deprecated")))
         if repository_id is not None:
@@ -583,15 +591,14 @@ async def web_rules(page: int = Query(1, ge=1, le=1000000), page_size: int = Que
             base = base.where(text.ilike(needle))
         if status:
             base = base.where(func.lower(Rule.status) == status.lower())
-        severity_expr = case((func.lower(Rule.severity).in_(("high", "error", "critical", "block", "blocker")), "block"),
-                             (func.lower(Rule.severity).in_(("medium", "warn", "warning")), "warn"), else_="advise").label("severity")
-        facet_stmt = select(severity_expr, func.count()).select_from(Rule)
-        if base.whereclause is not None:
-            facet_stmt = facet_stmt.where(base.whereclause)
-        facet_rows = (await session.execute(facet_stmt.group_by(severity_expr))).all()
-        filtered = base.where(severity_expr == _rule_severity(severity)) if severity else base
-        total = int((await session.execute(select(func.count()).select_from(filtered.subquery()))).scalar() or 0)
-        rows = (await session.execute(filtered.order_by(Rule.id).offset((page - 1) * page_size).limit(page_size))).scalars().all()
+        rows = list((await session.execute(base.order_by(Rule.id))).scalars().all())
+    readable = await team_access.readable_memory_rows(principal, rows)
+    facets: dict[str, int] = defaultdict(int)
+    for row in readable:
+        facets[_rule_severity(row.severity)] += 1
+    filtered = [row for row in readable if not severity or _rule_severity(row.severity) == _rule_severity(severity)]
+    total = len(filtered)
+    rows = filtered[(page - 1) * page_size:page * page_size]
     # How each rule on this page has been used. Counted only for the page, so a
     # large rule set costs the same as a small one. Usage keys are omitted
     # entirely until something has been recorded: a rendered 0 would claim the
@@ -613,7 +620,7 @@ async def web_rules(page: int = Query(1, ge=1, le=1000000), page_size: int = Que
         return shaped
 
     return {"total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),
-            "facets": {"severity": {str(k): int(v) for k, v in facet_rows}}, "scope": "repository" if repository_id is not None else "global",
+            "facets": {"severity": dict(facets)}, "scope": "repository" if repository_id is not None else "global",
             "usage": {"measurement_started_at": usage["measurement_started_at"], "window_days": 30},
             "rules": [shape(r) for r in rows]}
 
@@ -757,7 +764,7 @@ def shape_index_run(run: Any) -> dict[str, Any]:
     }
 
 
-@router.get("/index-runs")
+@router.get("/index-runs", dependencies=[REPOSITORY_READ])
 async def web_index_runs(
     repository_id: int | None = None,
     limit: int = Query(20, ge=1, le=200),
@@ -869,7 +876,7 @@ async def load_file_import_edges(repository_id: int) -> list[tuple[str, str]]:
     return edges
 
 
-@router.get("/module-graph")
+@router.get("/module-graph", dependencies=[REPOSITORY_READ])
 async def web_module_graph(repository_id: int | None = None) -> dict[str, Any]:
     from brain.insights.drift_rules import get_default_rule_registry
 
@@ -917,7 +924,7 @@ def aggregate_modules(rows: list[tuple[Any, ...]], config: Any) -> list[dict[str
     return sorted(modules.values(), key=lambda item: (-item["chunks"], item["name"]))
 
 
-@router.get("/modules")
+@router.get("/modules", dependencies=[REPOSITORY_READ])
 async def web_modules(repository_id: int | None = None) -> dict[str, Any]:
     from brain.embeddings.config import get_embedding_config
 
@@ -1026,7 +1033,7 @@ def build_coverage(embedding_health: dict[str, Any], total_chunks: int | None) -
     }
 
 
-@router.get("/overview")
+@router.get("/overview", dependencies=[REPOSITORY_READ])
 async def web_overview(
     repository_id: int | None = None,
     jobs_limit: int = Query(10, ge=1, le=100),

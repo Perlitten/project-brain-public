@@ -14,7 +14,8 @@ const jobWords: Record<string, string> = {
   nightly_maintenance: "Nightly maintenance",
 };
 
-export function BackgroundJobs({ jobs }: { jobs: Job[] }) {
+export function BackgroundJobs({ jobs, unavailable = false }: { jobs: Job[]; unavailable?: boolean }) {
+  if (!jobs.length && unavailable) return <EmptyState title="Background jobs unavailable" body="Brain didn’t return its recent jobs just now. Reload in a moment." />;
   if (!jobs.length) return <EmptyState title="No background jobs reported" body="Recent indexing, maintenance and checks will appear here." />;
   return <ul aria-label="Recent background jobs">
     {jobs.map((job) => <li key={job.id} className="ledger__row job-row">

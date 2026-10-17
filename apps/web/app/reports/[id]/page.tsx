@@ -1,9 +1,12 @@
+import { adminOnlyPage } from "@/components/AdminOnly";
 import { notFound } from "next/navigation";
 import { ArtifactReader } from "@/components/ArtifactReader";
 import { artifactBack, getArtifact, validArtifactId } from "@/lib/artifacts";
 
 export const metadata = { title: "Report" };
 export default async function Report({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ back?: string }> }) {
+  const gate = await adminOnlyPage("Report");
+  if (gate) return gate;
   const { id } = await params;
   if (!validArtifactId("reports", id)) notFound();
   const [artifact, query] = await Promise.all([getArtifact("reports", id), searchParams]);

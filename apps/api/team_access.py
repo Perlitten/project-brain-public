@@ -12,27 +12,47 @@ Handlers that read their scope from the request body call
 parameter declare ``Depends(repository_access(permission))``. Global and
 administrative routes that belong to no repository declare
 ``Depends(team_administrator_access())``; status routes that members may
-still read call ``is_team_administrator`` to trim what they return.
+still read call ``is_team_administrator`` to trim what they return, and
+listings call ``readable_repository_ids`` / ``readable_repository_scopes``
+to keep the rows of repositories the caller may read (query-scoped listings
+mark themselves ``filters_unreadable`` so members may call them unscoped).
 """
 from __future__ import annotations
 
+from typing import Protocol, TypeVar
+
 from fastapi import Depends, HTTPException, Request
+from sqlalchemy import select
 
 from apps.api import auth
 from apps.api.auth import require_principal
 from brain.auth.principals import ResolvedPrincipal
+from brain.database.models import Repository
 from brain.database.repository_utils import find_repository_id
 from brain.database.session import async_session_factory
+from brain.memory.repo_scope import normalize_repo_scope
 from brain.team.authorization import (
+    ROLE_PERMISSIONS,
     Authority,
     Permission,
     TeamDenied,
     TeamState,
     authorize_repository,
+    human_member,
+    live_credential,
+    permissions,
     solo_authority,
     team_administrator,
     team_state,
 )
+from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamProject, TeamTaskBinding
+
+
+class MemoryScopedRow(Protocol):
+    repo_path: str | None
+
+
+MemoryRow = TypeVar("MemoryRow", bound=MemoryScopedRow)
 
 
 async def current_team_state() -> TeamState:
@@ -79,14 +99,161 @@ def _query_scope(request: Request) -> tuple[int | None, str | None]:
     return repository_id, repo_path
 
 
+def filters_unreadable(endpoint):
+    """Mark a listing that, called without a repository, keeps only the rows the caller may read.
+
+    ``repository_access`` then lets the unscoped call through instead of requiring a team
+    administrator; the handler filters with ``readable_repository_ids`` / ``readable_repository_scopes``."""
+    endpoint.filters_unreadable = True
+    return endpoint
+
+
 def repository_access(permission: Permission):
     """Dependency: authorize ``permission`` on the repository named by the query string."""
 
-    async def dependency(request: Request, principal: ResolvedPrincipal = Depends(require_principal)) -> Authority:
+    async def dependency(request: Request, principal: ResolvedPrincipal = Depends(require_principal)) -> Authority | None:
         repository_id, repo_path = _query_scope(request)
+        endpoint = getattr(request.scope.get("route"), "endpoint", None)
+        if repository_id is None and repo_path is None and getattr(endpoint, "filters_unreadable", False):
+            return None
         return await repository_authority(principal, permission, repository_id=repository_id, repo_path=repo_path)
 
     return dependency
+
+
+async def readable_repository_ids(principal: ResolvedPrincipal, repository_ids: list[int]) -> set[int] | None:
+    """Ids among ``repository_ids`` the caller may ``read``; ``None`` means every repository.
+
+    Solo state and team administrators pass the unscoped check and see all; any
+    other team member sees the repositories their project roles grant."""
+    if await current_team_state() == "solo":
+        return None
+
+    async with async_session_factory() as session:
+        try:
+            live = await live_credential(session, principal.id, principal.credential_id)
+        except TeamDenied:
+            return set()
+
+        # A run is bound to exactly one task repository. One normal authority
+        # check preserves the delegation-chain and task-binding rules without
+        # multiplying it by the installation's repository count.
+        if live.kind == "run":
+            repository_id = (await session.execute(
+                select(TeamTaskBinding.repository_id)
+                .join(AgentRun, AgentRun.task_id == TeamTaskBinding.task_id)
+                .where(AgentRun.principal_id == live.id, AgentRun.credential_id == live.credential_id)
+            )).scalar_one_or_none()
+            if repository_id is None or repository_id not in repository_ids:
+                return set()
+            try:
+                await authorize_repository(session, principal, repository_id, Permission.READ)
+            except TeamDenied:
+                return set()
+            return {repository_id}
+
+        if live.kind != "human" or not live.has_scope("team:read"):
+            return set()
+        try:
+            member = await human_member(session, live, 1)
+        except TeamDenied:
+            return set()
+        if member.is_admin and live.has_scope("team:admin"):
+            return None
+        if not repository_ids:
+            return set()
+
+        # Fetch every candidate's project policy and this principal's role in
+        # one joined query, then apply the same role/policy intersection as
+        # ``authorize``. This avoids a complete authorization query sequence
+        # for every repository row.
+        rows = (await session.execute(
+            select(ProjectRepository.repository_id, ProjectMember.role, TeamProject.permissions)
+            .join(TeamProject, TeamProject.id == ProjectRepository.project_id)
+            .join(
+                ProjectMember,
+                (ProjectMember.project_id == ProjectRepository.project_id)
+                & (ProjectMember.principal_id == live.id),
+            )
+            .where(
+                ProjectRepository.repository_id.in_(repository_ids),
+                ProjectMember.revoked_at.is_(None),
+                TeamProject.disabled_at.is_(None),
+            )
+        )).all()
+        return {
+            repository_id
+            for repository_id, role, policy in rows
+            if Permission.READ in ROLE_PERMISSIONS.get(role, frozenset())
+            and Permission.READ in _policy_permissions(policy)
+        }
+
+
+def _policy_permissions(policy: list[str] | None) -> frozenset[Permission]:
+    """A project's granted permissions; an invalid policy grants nothing, as ``authorize`` denies it."""
+    try:
+        return permissions(policy or [])
+    except TeamDenied:
+        return frozenset()
+
+
+async def readable_repository_scopes(principal: ResolvedPrincipal) -> set[str] | None:
+    """Normalized paths of the indexed repositories the caller may ``read``; ``None`` means every one.
+
+    For memory keyed by ``repo_path`` (decisions, rules): global rows stay visible to every
+    member, repository rows only where ``readable_repository_ids`` grants the repository."""
+    if await current_team_state() == "solo":
+        return None
+    async with async_session_factory() as session:
+        repositories = (await session.execute(select(Repository.id, Repository.path))).all()
+    readable = await readable_repository_ids(principal, [repository_id for repository_id, _ in repositories])
+    if readable is None:
+        return None
+    return {
+        scope
+        for repository_id, path in repositories
+        if repository_id in readable and (scope := normalize_repo_scope(path)) is not None
+    }
+
+
+async def readable_memory_rows(principal: ResolvedPrincipal, rows: list[MemoryRow]) -> list[MemoryRow]:
+    """Global memory plus repository rows readable by a live human team member.
+
+    Memory keeps the path spelling submitted by the writer, while repository
+    authorization accepts relative, slash-normalized and real-path aliases.
+    Resolve each distinct stored spelling through that same lookup before
+    applying the batched repository permissions.
+    """
+    if await current_team_state() == "solo":
+        return rows
+
+    async with async_session_factory() as session:
+        try:
+            live = await live_credential(session, principal.id, principal.credential_id)
+            if live.kind != "human" or not live.has_scope("team:read"):
+                raise TeamDenied("Verified team membership is required")
+            member = await human_member(session, live, 1)
+        except TeamDenied as exc:
+            raise HTTPException(status_code=403, detail=f"Team member required: {exc}") from exc
+
+        if member.is_admin and live.has_scope("team:admin"):
+            return rows
+
+        repository_by_scope: dict[str, int | None] = {}
+        for row in rows:
+            scope = normalize_repo_scope(row.repo_path)
+            if scope is not None and scope not in repository_by_scope:
+                repository_by_scope[scope] = await find_repository_id(session, row.repo_path or scope)
+
+    candidate_ids = sorted({repository_id for repository_id in repository_by_scope.values()
+                            if repository_id is not None})
+    readable = await readable_repository_ids(principal, candidate_ids)
+    if readable is None:
+        return rows
+    return [
+        row for row in rows
+        if (scope := normalize_repo_scope(row.repo_path)) is None or repository_by_scope.get(scope) in readable
+    ]
 
 
 async def is_team_administrator(principal: ResolvedPrincipal) -> bool:
