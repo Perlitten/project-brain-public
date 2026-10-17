@@ -230,6 +230,9 @@ const queryString = (q: ListQuery) => {
   if (q.status) p.set("status", q.status);
   return p.toString();
 };
+// What a list getter returns when Brain didn't answer: the screen says the list is
+// unavailable instead of claiming that nothing was recorded.
+const unread = (q: ListQuery): Paged<never> => ({ items: [], paging: { ...q, total: 0, facets: {} }, available: false });
 const pageResult = <T>(data: Json, key: string, q: ListQuery, map: (v: Json) => T): Paged<T> => ({
   items: list(data, key).map(map),
   paging: pagingFrom(data, q),
@@ -610,9 +613,10 @@ export const getLatestUncommittedChanges = async (repoPath?: string): Promise<nu
   });
 };
 
-export const getJobs = async (slug?: string | null): Promise<Job[]> => {
+/** Recent jobs for a project; null when Brain didn't answer, so a screen can say so instead of "none". */
+export const getJobs = async (slug?: string | null): Promise<Job[] | null> => {
   if (!apiConfigured) return mock.jobs;
-  return live<Job[]>([], async () => {
+  return live<Job[] | null>(null, async () => {
     const repo = pickRepo(await fetchRepos(), slug);
     if (slug && !repo) return [];
     return loadJobs(repo?.id, str(repo?.name));
@@ -660,7 +664,7 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
     const rows = mock.agentRuns.filter((r) => !slug || r.repo === slug);
     return demoPage(rows, q, (r) => `${r.task} ${r.id} ${r.agent}`, (r) => r.status);
   }
-  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+  return live(unread(q), async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
     if (slug && !repo) return null;
     const params = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
@@ -684,7 +688,7 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
 
 export const getPagedEvents = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<LedgerEvent>> => {
   const q = getListQuery(input);
-  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+  return live(unread(q), async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
     if (slug && !repo) return null;
     const base = new URLSearchParams({ limit: String(q.size), offset: String((q.page - 1) * q.size), descending: "true" });
@@ -833,11 +837,12 @@ export const getInsights = async (): Promise<Insight[]> => {
   return live<Insight[]>([], () => loadInsights());
 };
 
-export const getModuleEdges = async (slug?: string | null): Promise<ModuleEdge[]> => {
+/** The selected project's module dependencies; `null` when Brain didn't answer (e.g. its graph store is down). */
+export const getModuleEdges = async (slug?: string | null): Promise<ModuleEdge[] | null> => {
   if (!apiConfigured) return mock.moduleEdges;
-  return live<ModuleEdge[]>([], async () => {
+  return live<ModuleEdge[] | null>(null, async () => {
     const repo = pickRepo(await fetchRepos(), slug);
-    if (!repo) return null;
+    if (!repo) return [];
     const data = await brainFetch<Json>(`/api/web/module-graph?repository_id=${repo.id}`);
     if (!data) return null;
     return list(data, "edges")
@@ -846,9 +851,10 @@ export const getModuleEdges = async (slug?: string | null): Promise<ModuleEdge[]
   });
 };
 
-export const getMcpTools = async (): Promise<McpTool[]> => {
+/** Agent tools Brain reports; `null` when the status endpoint didn't answer. */
+export const getMcpTools = async (): Promise<McpTool[] | null> => {
   if (!apiConfigured) return mock.mcpTools;
-  return live<McpTool[]>([], async () => {
+  return live<McpTool[] | null>(null, async () => {
     const data = await brainFetch<Json>("/api/status/mcp");
     if (!data) return null;
     const online = data.available === true;
@@ -899,7 +905,7 @@ export const getReports = async (): Promise<Report[]> => {
 export const getPagedIndexRuns = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<IndexRun>> => {
   const q = getListQuery(input);
   if (!apiConfigured) return demoPage(slug && !mock.repositories.some((r) => r.slug === slug) ? [] : mock.indexRuns, q, (r) => `#${r.id} ${r.revision} ${r.startedAt} ${r.trigger}`, (r) => r.status);
-  return live<Paged<IndexRun>>({ items: [], paging: { ...q, total: 0, facets: {} }, available: false }, async () => {
+  return live<Paged<IndexRun>>(unread(q), async () => {
     const repo = pickRepo(await fetchRepos(), slug);
     if (!repo) return null;
     const data = await brainFetch<Json>(`/api/web/index-runs?repository_id=${repo.id}&${queryString(q)}`, { fresh: true });
@@ -916,7 +922,7 @@ export const getPagedContextPacks = async (input: Partial<ListQuery> = {}, slug?
     const rows = mock.contextPacks.filter((p) => !slug || p.repo === slug);
     return demoPage(rows, q, (p) => `${p.task} ${p.id} ${p.consumer}`, (p) => p.stale === true ? "outdated" : p.stale === false ? "fresh" : "unknown");
   }
-  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+  return live(unread(q), async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
     if (slug && !repo) return null;
     const data = await brainFetch<Json>(`/api/web/context-packs?${queryString(q)}${repo ? `&repository_id=${repo.id}` : ""}`, { fresh: true });
@@ -930,7 +936,7 @@ export const getPagedReports = async (input: Partial<ListQuery> = {}): Promise<P
     const rows = mock.reports;
     return demoPage(rows, q, (r) => `${r.title} ${r.id}`);
   }
-  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+  return live(unread(q), async () => {
     const data = await brainFetch<Json>(`/api/web/reports?${queryString(q)}`, { fresh: true });
     return data ? pageResult(data, "reports", q, (r) => ({ id: str(r.id), title: str(r.title) || str(r.id) || "Untitled report", kind: str(r.kind) || "report", createdAt: fmtWhen(r.created_at), size: fmtBytes(num(r.size_bytes)) })) : null;
   });
@@ -942,9 +948,16 @@ export const getPagedInsights = async (slug: string | null | undefined, input: P
     const rows = mock.insights;
     return demoPage(rows, q, (i) => `${i.title} ${i.evidence} ${i.module} ${i.kind}`, (i) => i.tone);
   }
-  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+  const none = { items: [], paging: { ...q, total: 0, facets: {} } };
+  return live(unread(q), async () => {
     const params = new URLSearchParams(queryString({ ...q, status: "" }));
     if (q.status) params.set("severity", q.status);
+    if (slug) {
+      // Findings of the selected project only; an unknown project shows none rather than every project's.
+      const repo = pickRepo(await fetchRepos(), slug);
+      if (!repo) return none;
+      params.set("repository_id", String(repo.id));
+    }
     const data = await brainFetch<Json>(`/insights?${params}`, { fresh: true });
     return data ? pageResult(data, "insights", q, (i) => {
       const evidence = arr(i.evidence), first = obj(evidence[0]);
@@ -959,7 +972,7 @@ export const getPagedDecisions = async (slug: string | null | undefined, input: 
     const rows = mock.decisions.filter((d) => !slug || d.repo === slug);
     return demoPage(rows, q, (d) => `${d.title} ${d.summary} ${d.scope} ${d.id}`, (d) => d.status);
   }
-  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+  return live(unread(q), async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
     const scope = repo ? `&repository_id=${repo.id}` : "";
     const data = await brainFetch<Json>(`/api/web/decisions?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${q.status ? `&status=${q.status}` : ""}${scope}`, { fresh: true });
@@ -973,7 +986,7 @@ export const getPagedRules = async (slug: string | null | undefined, input: Part
     const rows = mock.rules.filter((r) => !slug || r.repo === slug);
     return demoPage(rows, q, (r) => `${r.rule} ${r.id} ${r.scope}`, (r) => r.severity);
   }
-  return live({ items: [], paging: { ...q, total: 0, facets: {} } }, async () => {
+  return live(unread(q), async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
     const scope = repo ? `&repository_id=${repo.id}` : "";
     const severity = q.status && ["block", "warn", "advise"].includes(q.status) ? `&severity=${q.status}` : "";
@@ -1124,7 +1137,6 @@ export const getReranker = async (slug?: string | null): Promise<RerankerStatus>
     coverage: { label: "Ready for precise ranking", value: "—", parts: [] },
     p50ms: 0,
     p95ms: 0,
-    ndcgLift: "—",
     queries24h: 0,
     available: false,
   };
@@ -1195,7 +1207,6 @@ export const getReranker = async (slug?: string | null): Promise<RerankerStatus>
       },
       p50ms: Math.round(int(metrics.rerank_latency_ms_p50)),
       p95ms: Math.round(int(metrics.rerank_latency_ms_p95)),
-      ndcgLift: "—",
       queries24h: int(metrics.rerank_requests),
       queriesWindow: "since the API last restarted",
       service: pStatus && !notSetUp ? (serviceUp ? { tone: "ok", text: "Model service ready" } : { tone: "bad", text: `Model service ${pStatus}` }) : undefined,

@@ -14,7 +14,7 @@ export const TEAM_ROLE_SCOPES = [
   "team:task.create",
 ];
 
-/** What the dashboard's own screens read, plus recording decisions and rules. */
+/** What the dashboard's own screens read, plus recording decisions and rules and queuing jobs (Brain checks the role per repository). */
 export const DASHBOARD_SCOPES = [
   "control:read",
   "core:write",
@@ -24,7 +24,7 @@ export const DASHBOARD_SCOPES = [
   "graph:read",
   "harness:read",
   "impact:read",
-  "jobs:read",
+  "jobs:write",
   "ledger:read",
   "operations:read",
   "portfolio:read",
@@ -32,8 +32,8 @@ export const DASHBOARD_SCOPES = [
   "workspace:read",
 ];
 
-/** Extra for team admins: run the Team page (members, roles) and issue member keys. */
-export const TEAM_ADMIN_SCOPES = ["principals:read", "principals:write", "team:admin"];
+/** Extra for team admins: the Team page, member keys, and the admin screens (Setup, Settings, Access, job retries). */
+export const TEAM_ADMIN_SCOPES = ["operations:write", "principals:read", "principals:write", "setup:write", "team:admin"];
 
 export function memberKeyScopes(admin: boolean): string[] {
   return [...new Set([...TEAM_ROLE_SCOPES, ...DASHBOARD_SCOPES, ...(admin ? TEAM_ADMIN_SCOPES : [])])].sort();

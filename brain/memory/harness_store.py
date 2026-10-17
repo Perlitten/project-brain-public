@@ -420,7 +420,12 @@ class HarnessStore:
         idempotency_key: Optional[str] = None,
         causal_parent_id: Optional[int] = None,
         expected_task_version: Optional[int] = None,
+        author_principal_id: Optional[int] = None,
     ) -> AgentTaskEvent:
+        # Provenance travels inside the payload: consolidation reads it back into the
+        # evidence refs of the episode/learning it distils (brain/memory/provenance.py).
+        if author_principal_id is not None:
+            payload = {**(payload or {}), "author_principal_id": author_principal_id}
         async with async_session_factory() as session:
             if idempotency_key:
                 existing_result = await session.execute(

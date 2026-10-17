@@ -9,7 +9,8 @@ export const metadata = { title: "Agent tools" };
 const health = { ok: "healthy", warn: "slow", bad: "failing", info: "not measured", idle: "unused" } as const;
 
 export default async function Mcp() {
-  const tools = await getMcpTools();
+  const read = await getMcpTools();
+  const tools = read ?? [];
   const tracked = tools.some((t) => t.calls24h !== undefined || t.errorRate !== undefined);
   const troubled = tools.filter((t) => t.status === "warn" || t.status === "bad").length;
   return (
@@ -17,7 +18,9 @@ export default async function Mcp() {
       <PageHead
         title="Agent tools"
         status={
-          tools.length === 0
+          read === null
+            ? { tone: "warn", text: "Tool status unavailable" }
+            : tools.length === 0
             ? { tone: "idle", text: "No agent tools reported" }
             : troubled
               ? { tone: "warn", text: `${troubled} tool${troubled > 1 ? "s are" : " is"} slow or failing` }
@@ -35,7 +38,9 @@ export default async function Mcp() {
       />
       <SectionTabs section="settings" active="/mcp" />
       <Panel id="tools" title="Tools" desc={tracked ? "Last 24 hours. An error rate above 5% is shown in red." : "What your agent can ask Brain for. This server doesn’t count calls yet, so usage and errors aren’t shown."} flush>
-        {tools.length === 0 ? (
+        {read === null ? (
+          <EmptyState title="Tool status unavailable" body="Brain didn’t answer the agent-tool status request just now. Reload in a moment." />
+        ) : tools.length === 0 ? (
           <EmptyState title="No tools to show" body="Brain didn’t report any agent tools. Check that its MCP server is running." />
         ) : (
         <Table

@@ -3,6 +3,7 @@ members: the repository listing, diff-review results and context packs
 (ADR docs/adr/team-collaboration.md)."""
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -14,7 +15,7 @@ from apps.api import auth, team_access
 from apps.api.routers import core_retrieval, web
 from brain.auth.principals import resolve_credential
 from brain.config.settings import settings
-from brain.database.models import ContextPack, IndexingRun
+from brain.database.models import ContextPack, Decision, IndexingRun, Repository, Rule
 from brain.team.authorization import Permission, TeamDenied, authorize_repository
 from brain.team.models import ProjectMember, TeamProject
 from brain.team.store import create_task, request_run
@@ -26,7 +27,7 @@ from tests.test_team_foundations import team_db as team_fixture
 team_db = team_fixture
 pytestmark = pytest.mark.team_state
 
-READ_SCOPE_TABLES = [ContextPack.__table__, IndexingRun.__table__]
+READ_SCOPE_TABLES = [ContextPack.__table__, IndexingRun.__table__, Decision.__table__, Rule.__table__]
 JOBS = {
     "job-a": {"type": "diff_review", "status": "completed", "result": {"repo": "A"},
               "params": {"repository_id": 1, "repo_path": "/synthetic/A", "base": "main", "head": "HEAD"}},
@@ -120,6 +121,53 @@ async def test_team_repository_listing_follows_project_membership(read_scope_db,
 
 
 @pytest.mark.asyncio
+async def test_team_unscoped_web_memory_is_member_filtered_and_resolves_relative_aliases(
+        read_scope_db, monkeypatch, tmp_path):
+    factory, _, _, artifact = read_scope_db
+    membership_driven(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    async with factory() as session, session.begin():
+        await session.execute(update(Repository).where(Repository.id == 1).values(path=str(tmp_path / "A")))
+        session.add_all([
+            Decision(id=101, title="global", repo_path=None, status="active"),
+            Decision(id=102, title="relative A", repo_path="A", status="active"),
+            Decision(id=103, title="B", repo_path="/synthetic/B", status="active"),
+            Rule(id="global", name="global", repo_path=None, status="active"),
+            Rule(id="relative-a", name="relative A", repo_path="A", status="active"),
+            Rule(id="repo-b", name="B", repo_path="/synthetic/B", status="active"),
+        ])
+    app = read_app(factory, artifact, monkeypatch)
+    monkeypatch.setattr(web, "_rule_usage_for_page", AsyncMock(
+        return_value={"measurement_started_at": None, "counts": {}}))
+    async with client_for(app) as client:
+        decisions = await client.get("/api/web/decisions", headers=READER)
+        assert decisions.status_code == 200, decisions.text
+        assert [row["id"] for row in decisions.json()["decisions"]] == [101, 102]
+        rules = await client.get("/api/web/rules", headers=READER)
+        assert rules.status_code == 200, rules.text
+        assert [row["id"] for row in rules.json()["rules"]] == ["global", "relative-a"]
+        assert (await client.get("/api/web/decisions", headers=OUTSIDER)).status_code == 403
+        admin = await client.get("/api/web/decisions", headers=ADMIN)
+        assert [row["id"] for row in admin.json()["decisions"]] == [101, 102, 103]
+
+
+@pytest.mark.asyncio
+async def test_direct_indexing_requires_run_request(read_scope_db, monkeypatch):
+    factory, _, _, artifact = read_scope_db
+    membership_driven(monkeypatch)
+    app = read_app(factory, artifact, monkeypatch)
+    monkeypatch.setattr(core_retrieval, "resolve_repo_path", lambda path: path)
+    indexed = AsyncMock(return_value=SimpleNamespace(id=1, path="/synthetic/A", last_indexed_commit="abc"))
+    monkeypatch.setattr(core_retrieval.FileIndexer, "index_repository", indexed)
+    async with client_for(app) as client:
+        denied = await client.post("/index", json={"repo_path": "/synthetic/A"}, headers=READER)
+        assert denied.status_code == 403, denied.text
+        allowed = await client.post("/index", json={"repo_path": "/synthetic/A"}, headers=CONTRIBUTOR)
+        assert allowed.status_code == 200, allowed.text
+    indexed.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_team_diff_review_result_needs_read_on_the_job_repository(read_scope_db, monkeypatch):
     factory, _, _, artifact = read_scope_db
     membership_driven(monkeypatch)
@@ -147,7 +195,9 @@ async def test_team_context_packs_follow_the_pack_repository(read_scope_db, monk
     async with client_for(app) as client:
         assert await pack_ids(client, READER, repository_id=1) == [1]
         assert (await client.get("/api/web/context-packs", params={"repository_id": 2}, headers=READER)).status_code == 403
-        assert (await client.get("/api/web/context-packs", headers=READER)).status_code == 403
+        # Unscoped, a member sees the packs of the repositories they can read; admins see every pack.
+        assert await pack_ids(client, READER) == [1]
+        assert await pack_ids(client, OUTSIDER) == []
         assert await pack_ids(client, ADMIN) == [1, 2, 3]
         own = await client.get("/api/web/context-packs/1", params={"repository_id": 1}, headers=READER)
         assert own.status_code == 200 and own.json()["pack"]["task"] == "pack A"
@@ -237,7 +287,9 @@ async def test_team_listing_filter_matches_per_repository_authorization(read_sco
     authorized = {}
     for name, raw_key in keys.items():
         principal, authorized[name] = await authorized_repository_ids(factory, raw_key, repositories)
-        assert await core_retrieval._readable_repository_ids(principal, repositories) == authorized[name], name
+        assert await team_access.readable_repository_ids(principal, repositories) == authorized[name], name
+    admin, _ = await authorized_repository_ids(factory, "fixture-4", [])
+    assert await team_access.readable_repository_ids(admin, []) is None
     assert (authorized["reader"], authorized["run"], authorized["outsider"]) == (reader_sees, run_sees, set())
     async with client_for(app) as client:
         # Human members see the same set through the route, and a corrupt policy hides A instead of failing.

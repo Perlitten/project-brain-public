@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, Table } from "@/components/ui";
-import { getCorpus, getPagedIndexRuns, getRepositories } from "@/lib/data";
+import { getCorpus, getPagedIndexRuns, getRepositoryFeed } from "@/lib/data";
 import { repositoryStatus } from "@/lib/repository-status";
+import { restrictedMember } from "@/lib/team-session";
 
 export const metadata = { title: "Projects" };
 
 export default async function Projects({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
   const { repo: selected } = await searchParams;
-  const repositories = await getRepositories();
+  // Projects are added in Setup, which only team admins open.
+  const [feed, member] = await Promise.all([getRepositoryFeed(), restrictedMember()]);
+  const repositories = feed.repositories;
   const current = selected ? repositories.find((r) => r.slug === selected || String(r.id) === selected || r.name.toLowerCase() === selected.toLowerCase()) : null;
   const detail = current && current.id > 0 ? current : null;
   const scope = detail ? `?repo=${encodeURIComponent(detail.slug)}` : "";
@@ -21,10 +24,10 @@ export default async function Projects({ searchParams }: { searchParams: Promise
         title={detail?.name ?? "Projects"}
         lede={detail ? "What Brain holds for this repository and how current it is." : "Repositories Brain has indexed for your agents, and how current each one is."}
         status={state ? { tone: state.tone, text: state.tone === "ok" ? "Index matches the latest revision" : state.status, action: state.tone === "ok" ? undefined : <Link className="btn btn--neutral" href={`/indexing${scope}`}>Open index runs</Link> } : selected ? undefined : repositories.length ? { tone: stale ? "warn" : "ok", text: stale ? `${stale} of ${repositories.length} projects are behind their code` : `All ${repositories.length} projects are up to date` } : undefined}
-        actions={<>{detail && <Link className="btn btn--neutral" href="/projects">All projects</Link>}<Link className="btn btn--primary" href="/setup#repo">Add project</Link></>}
+        actions={<>{detail && <Link className="btn btn--neutral" href="/projects">All projects</Link>}{!member && <Link className="btn btn--primary" href="/setup#repo">Add project</Link>}</>}
       />
       <SectionTabs section="projects" active="/projects" />
-      {selected && !detail ? <Panel id="unknown-project" title="Project not found"><EmptyState title="That project is unavailable" body="Choose a connected project from the list. Brain did not fall back to another repository." /></Panel> : detail ? (
+      {!feed.available ? <Panel id="projects" title="Connected repositories"><EmptyState title="Projects unavailable" body={`${feed.note ?? "Brain didn’t return its project list"}. Reload in a moment.`} /></Panel> : selected && !detail ? <Panel id="unknown-project" title="Project not found"><EmptyState title="That project is unavailable" body="Choose a connected project from the list. Brain did not fall back to another repository." /></Panel> : detail ? (
         <Panel id="project-detail" title="Index" desc={detail.path || "Repository path unavailable"} actions={<Link className="link" href={`/indexing${scope}`}>Index runs</Link>}>
           <div className="project-detail">
             <dl className="stats">
@@ -37,7 +40,7 @@ export default async function Projects({ searchParams }: { searchParams: Promise
           </div>
         </Panel>
       ) : <Panel id="projects" title="Connected repositories" flush>
-        {repositories.length === 0 ? <EmptyState title="No projects connected" body="Connect a repository to give Brain code it can index and search." action={<Link className="btn btn--primary" href="/setup">Connect a project</Link>} /> : (
+        {repositories.length === 0 ? <EmptyState title="No projects connected" body={member ? "No project is shared with you yet. Ask a team admin to give you a role on one." : "Connect a repository to give Brain code it can index and search."} action={member ? undefined : <Link className="btn btn--primary" href="/setup">Connect a project</Link>} /> : (
           <Table caption="Connected repositories" rows={repositories} rowKey={(r) => r.slug} columns={[
             { head: "Project", cell: (r) => <><Link className="link" href={`/projects?repo=${encodeURIComponent(r.slug)}`}>{r.name}</Link><span className="sub mono">{r.path || "path unavailable"}</span></> },
             { head: "Freshness", cell: (r) => <Chip tone={repositoryStatus(r).tone}>{repositoryStatus(r).status}</Chip> },

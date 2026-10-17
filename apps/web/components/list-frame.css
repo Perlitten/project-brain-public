@@ -61,7 +61,7 @@
 .lf__page[aria-current="page"] { color: var(--text-1); background: var(--teal-soft); border-color: var(--teal-line); }
 .lf__gap { padding: 0 4px; color: var(--text-3); }
 .lf__size { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--fs-12); color: var(--text-3); }
-.lf__size .select { width: auto; height: 30px; padding: 0 var(--s-2); }
+.lf__size .select { width: auto; height: 30px; padding: 0 calc(var(--s-2) + 18px) 0 var(--s-2); background-position: right var(--s-2) center; }
 
 @media (max-width: 560px) {
   .lf__bar { position: static; padding: var(--s-2) var(--s-4); }

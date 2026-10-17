@@ -26,6 +26,21 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("context_packs", "repo_commit"),
     ("memory_episodes", "duplicate_of_learning_id"),
     ("memory_episodes", "gate_reasons"),
+    # Provenance: every memory object names its author and last editor; decisions and
+    # rules also carry the supersede/version chain (brain/memory/provenance.py).
+    ("decisions", "updated_by_principal_id"),
+    ("decisions", "supersedes_id"),
+    ("decisions", "version"),
+    ("rules", "updated_by_principal_id"),
+    ("rules", "supersedes_id"),
+    ("rules", "superseded_by_id"),
+    ("rules", "version"),
+    ("memory_learnings", "author_principal_id"),
+    ("memory_learnings", "updated_by_principal_id"),
+    ("memory_episodes", "author_principal_id"),
+    ("memory_episodes", "updated_by_principal_id"),
+    ("memory_skills", "author_principal_id"),
+    ("memory_skills", "updated_by_principal_id"),
     ("memory_episode_events", "episode_id"),
     ("memory_skill_outcomes", "task_id"),
     ("memory_skill_outcomes", "validation_id"),
@@ -40,6 +55,8 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("team_invitations", "token_hash"),
     # Every credential resolution reads the restore fence (brain.team.restore_fence).
     ("team_access_fences", "cleared_at"),
+    # A team never falls back to solo on its own (brain.team.authorization.team_state).
+    ("teams", "dissolved_at"),
 ]
 
 

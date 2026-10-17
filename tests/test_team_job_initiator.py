@@ -13,7 +13,7 @@ from apps.api.schemas import DiffReviewRequest, GitMergeWebhook, ReindexJobReque
 from brain.config.settings import settings
 from brain.database.models import ApiCredential
 from brain.team.authorization import Permission
-from brain.team.models import ProjectMember, TeamMember
+from brain.team.models import ProjectMember, Team, TeamMember
 from brain.workers.initiator import LEGACY_REFUSAL, JobInitiator, current_initiator
 from brain.workers.queue import JobQueue
 from brain.workers.runtime import current_job
@@ -196,6 +196,8 @@ async def test_legacy_job_runs_again_once_the_team_is_back_to_solo(team_db, monk
     execute = worker_against(factory, monkeypatch)
     async with factory() as session, session.begin():
         await session.execute(update(TeamMember).values(revoked_at=NOW))
+        # Revoking everyone keeps team state; only an explicit dissolve returns to solo.
+        await session.execute(update(Team).values(dissolved_at=NOW))
     queue = JobQueue(_FakeRedis())
     legacy = await queue.enqueue("reindex", {"repo_path": "/synthetic/A"})
     assert (await run_one(queue, legacy))["status"] == "completed"

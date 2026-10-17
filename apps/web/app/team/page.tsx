@@ -94,8 +94,9 @@ brain team member add --principal alice --admin --mint-key`}
       <div className="callout tone-info">
         <b>Keys made elsewhere</b>
         <span>
-          A key minted with the CLI only opens what its permissions allow. Keys issued here carry the dashboard’s read permissions plus the team
-          permissions; Brain still limits each member to the projects and roles set above.
+          Keys from <code>brain team member add --mint-key</code> and from invitations carry the same permissions as keys issued here; Brain
+          still limits each member to the projects and roles set above. A key minted before this release keeps the permissions it was issued
+          with, so issue a new one if it can’t open the dashboard.
         </span>
       </div>
     </>

@@ -1,6 +1,10 @@
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
+# The freshness envelope is defined transport-independently in brain/ and
+# re-exported here as the API's response contract for the ``freshness`` block.
+from brain.memory.freshness_envelope import FreshnessEnvelope  # noqa: F401
+
 
 class IndexRequest(BaseModel):
     repo_path: str
@@ -104,6 +108,8 @@ class DecisionCreate(BaseModel):
     affected_features: Optional[List[str]] = None
     affected_modules: Optional[List[str]] = None
     affected_files: Optional[List[str]] = None
+    # Compare-and-swap: the version last read (0 = must not exist yet); 409 on mismatch.
+    expected_version: Optional[int] = Field(None, ge=0)
 
 
 class RuleCreate(BaseModel):
@@ -115,12 +121,26 @@ class RuleCreate(BaseModel):
     status: Optional[str] = "active"
     applies_to: Optional[Dict[str, Any]] = None
     rule_id: Optional[str] = None
+    # Compare-and-swap: the version last read (0 = must not exist yet); 409 on mismatch.
+    expected_version: Optional[int] = Field(None, ge=0)
 
 
 class FeatureCreate(BaseModel):
     name: str
     properties: Optional[Dict[str, Any]] = None
     repo_path: Optional[str] = None
+
+
+class OriginFreshness(BaseModel):
+    """Where origin stands relative to the indexed revision (None when unknown).
+
+    ``origin_head`` is the local remote-tracking ref, refreshed by the webhook
+    reindex fetch; ``commits_behind_origin`` is ``indexed..origin_head``.
+    """
+
+    origin_ref: Optional[str] = None
+    origin_head: Optional[str] = None
+    commits_behind_origin: Optional[int] = None
 
 
 class ReindexJobRequest(BaseModel):
