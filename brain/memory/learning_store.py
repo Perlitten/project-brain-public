@@ -50,8 +50,13 @@ class LearningStore:
         session: Optional[AsyncSession] = None,
         author_principal_id: Optional[int] = None,
         updated_by_principal_id: Optional[int] = None,
+        status: str = "active",
     ) -> int:
         """Save a new learning and return its id.
+
+        ``status="personal"`` keeps the learning in its author's personal tier:
+        every retrieval path reads ``active`` learnings only, so it reaches shared
+        memory only when a reviewer approves a promotion proposal.
 
         ``author_principal_id`` names who contributed it (the API caller, or the
         sole principal behind consolidated evidence); ``updated_by_principal_id``
@@ -85,7 +90,7 @@ class LearningStore:
             category=category,
             confidence=max(0.0, min(1.0, confidence)),
             evidence=evidence or [],
-            status="active",
+            status=status,
             repo_scope=normalize_repo_scope(repo_scope),
             valid_until=valid_until,
             promoted_from=promoted_from,

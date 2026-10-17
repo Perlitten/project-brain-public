@@ -5,6 +5,7 @@ import json
 import yaml
 from typing import List, Optional, Any, Dict
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from brain.database.session import async_session_factory
 from brain.database.models import Rule
 from brain.memory.provenance import MemoryWriteResult, check_expected_version
@@ -93,6 +94,7 @@ class RuleStore:
         rule_id: Optional[str] = None,
         author_principal_id: Optional[int] = None,
         expected_version: Optional[int] = None,
+        session: Optional[AsyncSession] = None,
     ) -> MemoryWriteResult:
         """Create the canonical rule for this key+scope, or supersede its content.
 
@@ -101,7 +103,8 @@ class RuleStore:
         canonical row's ``version`` is bumped and ``updated_by_principal_id`` names the
         principal behind the change. The first author is kept. ``expected_version`` is
         compare-and-swap (0 = must not exist yet) and raises ``MemoryVersionConflict``
-        on a mismatch."""
+        on a mismatch. With ``session`` the write is only flushed inside the caller's
+        transaction (proposal approval commits it together with the proposal)."""
         r_id = rule_id or slugify(name)
         normalized_repo_path = normalize_repo_scope(repo_path)
         requested = {
@@ -113,25 +116,31 @@ class RuleStore:
             "status": status,
             "applies_to": applies_to,
         }
-        async with async_session_factory() as session:
-            existing, scoped_id = await _find_rule(session, r_id, normalized_repo_path)
+        async def _write(sess: AsyncSession) -> MemoryWriteResult:
+            existing, scoped_id = await _find_rule(sess, r_id, normalized_repo_path)
             check_expected_version("rule", r_id, expected_version,
                                    existing.version if existing is not None else None)
             if existing:
-                history_id = _supersede_rule_content(session, existing, requested, author_principal_id)
-                await session.commit()
+                history_id = _supersede_rule_content(sess, existing, requested, author_principal_id)
+                await sess.flush()
                 return MemoryWriteResult(id=existing.id, version=existing.version or 1, created=False,
                                          changed=history_id is not None, superseded_id=history_id)
-            new_rule = Rule(
+            sess.add(Rule(
                 id=scoped_id,
                 author_principal_id=author_principal_id,
                 updated_by_principal_id=author_principal_id,
                 version=1,
                 **requested,
-            )
-            session.add(new_rule)
-            await session.commit()
+            ))
+            await sess.flush()
             return MemoryWriteResult(id=scoped_id, version=1, created=True, changed=True)
+
+        if session is not None:
+            return await _write(session)
+        async with async_session_factory() as own_session:
+            written = await _write(own_session)
+            await own_session.commit()
+            return written
 
     @classmethod
     async def add_rule(cls, *args: Any, **kwargs: Any) -> str:

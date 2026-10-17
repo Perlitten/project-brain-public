@@ -23,6 +23,7 @@ const nested: NavItem[] = [
   { key: "indexing", href: "/indexing", label: "Index runs", icon: "database", hint: "Each time Brain re-read your code", repoScoped: true, section: "projects" },
   { key: "insights", href: "/insights", label: "Findings", icon: "trend", hint: "Problems Brain noticed in the code structure", repoScoped: true, section: "projects" },
   { key: "packs", href: "/packs", label: "Context packs", icon: "layers", hint: "What Brain handed agents for each task", repoScoped: true, section: "memory" },
+  { key: "review", href: "/review", label: "Review", icon: "layers", hint: "Memory proposals waiting for an independent reviewer (team state)", section: "memory" },
   // /reports is now a tab of Quality and redirects there; the entry stays so
   // report detail pages (/reports/<id>) still resolve to the Quality section
   // and the word "Reports" keeps working in the command palette.

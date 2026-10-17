@@ -1,0 +1,346 @@
+"""Governed memory: proposal -> independent review -> approved knowledge (team state).
+
+In a team, decisions, rules and promoted learnings written by anyone but a
+team administrator land here as ``MemoryProposal`` rows instead of in the
+canonical tables. Proposals are drafts: no retrieval path (context packs,
+search, ``/decisions``, ``/rules``, MCP ``brain://`` resources, learning
+retrieval) reads this table, so a draft never reaches an agent as approved
+knowledge. A reviewer who holds Reviewer on the project (team administrators
+for system-global items) and is not the author approves or rejects it with a
+compare-and-swap on the proposal's ``version``.
+
+Approval writes the canonical row through ``DecisionStore`` / ``RuleStore``
+in the same transaction as the proposal's state change, with
+``expected_version`` set to the target version the proposal was based on: an
+approved item that changed after the proposal was made refuses the stale
+proposal with ``MemoryVersionConflict`` instead of overwriting it. The store
+keeps the supersede history and the author; the proposal row keeps who
+approved or rejected it, when and why. Proposal rows are never deleted.
+
+Solo state (a team of one) never creates proposals: the owner writes approved
+knowledge directly, exactly as before. Authorization of the caller is the
+transport's job (``apps/api/routers/memory_review.py``); this module enforces
+the invariants that must hold whatever the transport: independent approval,
+a live author, compare-and-swap and one decision per proposal.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Literal, Optional, cast
+
+from sqlalchemy import CursorResult, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from brain.database.models import Learning, MemoryProposal, Repository
+from brain.database.session import async_session_factory
+from brain.memory.decision_store import DecisionStore, find_canonical_decision
+from brain.memory.provenance import SelfApprovalError, check_expected_version
+from brain.memory.repo_scope import normalize_repo_scope
+from brain.memory.rule_store import RuleStore, _find_rule, slugify
+from brain.team.models import TeamMember
+
+ProposalKind = Literal["decision", "rule", "learning"]
+PERSONAL_STATUS = "personal"
+REVOKED_AUTHOR_REASON = "Author access revoked"
+
+DECISION_FIELDS = ("description", "status", "date", "reason", "consequences",
+                   "affected_features", "affected_modules", "affected_files")
+RULE_FIELDS = ("description", "type", "severity", "status", "applies_to", "rule_id")
+
+
+class ProposalNotFound(LookupError):
+    """No proposal (or no personal learning of the caller) with that id."""
+
+
+class ProposalStateError(Exception):
+    """The proposal can no longer change: it was already decided, withdrawn, or its author lost access."""
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def proposal_dict(row: MemoryProposal) -> dict[str, Any]:
+    """The transport shape of a proposal."""
+    return {
+        "id": row.id,
+        "kind": row.kind,
+        "state": row.state,
+        "version": row.version,
+        "repo_path": row.requested_repo_path or row.repo_path,
+        "scope": row.repo_path or "system_global",
+        "target_key": row.target_key,
+        "base_version": row.base_version,
+        "title": row.title,
+        "payload": row.payload or {},
+        "author_principal_id": row.author_principal_id,
+        "reviewed_by_principal_id": row.reviewed_by_principal_id,
+        "decision_reason": row.decision_reason,
+        "decided_at": row.decided_at.isoformat() if row.decided_at else None,
+        "result_key": row.result_key,
+        "result_version": row.result_version,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+async def _target(session: AsyncSession, kind: str, title: str, repo_path: Optional[str],
+                  payload: dict[str, Any]) -> tuple[Optional[str], int]:
+    """(canonical key, current version) of the item a decision/rule proposal would change; (None, 0) if new."""
+    if kind == "decision":
+        decision = await find_canonical_decision(session, title, repo_path)
+        return (str(decision.id), decision.version or 1) if decision is not None else (None, 0)
+    rule, _ = await _find_rule(session, payload.get("rule_id") or slugify(title), repo_path)
+    return (rule.id, rule.version or 1) if rule is not None else (None, 0)
+
+
+async def create_proposal(kind: Literal["decision", "rule"], *, title: str, repo_path: Optional[str],
+                          payload: dict[str, Any], author_principal_id: Optional[int],
+                          expected_version: Optional[int] = None) -> MemoryProposal:
+    """Record a pending proposal for a decision or rule.
+
+    The proposal remembers the version of the item it changes (``base_version``,
+    0 for a new item). A caller that sends ``expected_version`` is checked now,
+    so a proposal against an already stale read fails fast with
+    ``MemoryVersionConflict``; approval re-checks the same version."""
+    title = title.strip()
+    if not title:
+        raise ValueError(f"{kind.capitalize()} title must not be empty")
+    scope = normalize_repo_scope(repo_path)
+    fields = DECISION_FIELDS if kind == "decision" else RULE_FIELDS
+    clean = {field: payload.get(field) for field in fields if payload.get(field) is not None}
+    async with async_session_factory() as session:
+        target_key, current = await _target(session, kind, title, scope, clean)
+        check_expected_version(kind, target_key or title, expected_version, current)
+        row = MemoryProposal(kind=kind, state="pending", version=1, repo_path=scope,
+                             requested_repo_path=repo_path.strip() if scope is not None and repo_path else None,
+                             target_key=target_key, base_version=current, title=title, payload=clean,
+                             author_principal_id=author_principal_id)
+        session.add(row)
+        await session.commit()
+        await session.refresh(row)
+        return row
+
+
+async def registered_repo_spelling(scope: Optional[str]) -> Optional[str]:
+    """The registry spelling of a normalized scope (learnings store scopes normalized, which case-folds
+    Windows paths); the scope itself when no indexed repository matches."""
+    if scope is None:
+        return None
+    async with async_session_factory() as session:
+        for path in (await session.execute(select(Repository.path))).scalars():
+            if normalize_repo_scope(path) == normalize_repo_scope(scope):
+                return path
+    return scope
+
+
+async def propose_learning(learning_id: int, author_principal_id: Optional[int],
+                           requested_repo_path: Optional[str] = None) -> MemoryProposal:
+    """Propose promoting the caller's personal learning into shared memory.
+
+    Only the author's own ``personal`` learning can be proposed, and only once
+    while a proposal for it is pending."""
+    async with async_session_factory() as session:
+        learning = await session.get(Learning, learning_id)
+        if (learning is None or learning.status != PERSONAL_STATUS
+                or author_principal_id is None or learning.author_principal_id != author_principal_id):
+            raise ProposalNotFound("Personal learning not found")
+        pending = (await session.execute(select(MemoryProposal.id).where(
+            MemoryProposal.kind == "learning", MemoryProposal.target_key == str(learning_id),
+            MemoryProposal.state == "pending"))).scalar_one_or_none()
+        if pending is not None:
+            raise ProposalStateError(f"Learning {learning_id} already has pending proposal {pending}")
+        row = MemoryProposal(kind="learning", state="pending", version=1,
+                             repo_path=normalize_repo_scope(learning.repo_scope),
+                             requested_repo_path=requested_repo_path or learning.repo_scope,
+                             target_key=str(learning_id), base_version=0,
+                             title=learning.statement[:255],
+                             payload={"statement": learning.statement, "category": learning.category,
+                                      "confidence": learning.confidence},
+                             author_principal_id=author_principal_id)
+        session.add(row)
+        await session.commit()
+        await session.refresh(row)
+        return row
+
+
+async def promote_personal_learning_directly(learning_id: int, author_principal_id: Optional[int]) -> int:
+    """Solo state: the owner's personal learning becomes shared knowledge at once (no reviewer exists)."""
+    async with async_session_factory() as session:
+        learning = await session.get(Learning, learning_id)
+        if learning is None or learning.status != PERSONAL_STATUS or (
+                learning.author_principal_id is not None and learning.author_principal_id != author_principal_id):
+            raise ProposalNotFound("Personal learning not found")
+        learning.status = "active"
+        learning.updated_by_principal_id = author_principal_id
+        await session.commit()
+        return learning.id
+
+
+async def personal_learnings(author_principal_id: Optional[int]) -> list[Learning]:
+    """The personal-tier learnings of one principal, newest first (nobody else's)."""
+    if author_principal_id is None:
+        return []
+    async with async_session_factory() as session:
+        return list((await session.execute(select(Learning).where(
+            Learning.status == PERSONAL_STATUS, Learning.author_principal_id == author_principal_id,
+        ).order_by(Learning.id.desc()))).scalars().all())
+
+
+async def get_proposal(proposal_id: int) -> MemoryProposal:
+    async with async_session_factory() as session:
+        row = await session.get(MemoryProposal, proposal_id)
+        if row is None:
+            raise ProposalNotFound(f"Proposal {proposal_id} not found")
+        return row
+
+
+async def list_proposals(*, state: Optional[str] = "pending", kind: Optional[str] = None,
+                         scopes: Optional[list[Optional[str]]] = None, author_principal_id: Optional[int] = None,
+                         limit: int = 100) -> list[MemoryProposal]:
+    """Proposals, newest first. ``scopes`` restricts to those normalized scopes (None = system-global);
+    leaving it out lists every scope, which only a caller authorized for every scope may ask for."""
+    stmt = select(MemoryProposal)
+    if state:
+        stmt = stmt.where(MemoryProposal.state == state)
+    if kind:
+        stmt = stmt.where(MemoryProposal.kind == kind)
+    if author_principal_id is not None:
+        stmt = stmt.where(MemoryProposal.author_principal_id == author_principal_id)
+    if scopes is not None:
+        paths = [scope for scope in scopes if scope is not None]
+        clauses = []
+        if paths:
+            clauses.append(MemoryProposal.repo_path.in_(paths))
+        if None in scopes:
+            clauses.append(MemoryProposal.repo_path.is_(None))
+        if not clauses:
+            return []
+        stmt = stmt.where(or_(*clauses))
+    stmt = stmt.order_by(MemoryProposal.id.desc()).limit(limit)
+    async with async_session_factory() as session:
+        return list((await session.execute(stmt)).scalars().all())
+
+
+async def _author_is_live(session: AsyncSession, author_principal_id: Optional[int]) -> bool:
+    """A team author must still be a live, verified team member for their proposal to be decided on."""
+    if author_principal_id is None:
+        return False
+    member = (await session.execute(select(TeamMember).where(
+        TeamMember.principal_id == author_principal_id))).scalar_one_or_none()
+    return bool(member and member.verified_at and not member.revoked_at)
+
+
+async def _claim(session: AsyncSession, proposal_id: int, expected_version: int, new_state: str,
+                 reviewer_principal_id: Optional[int], reason: Optional[str]) -> MemoryProposal:
+    """Compare-and-swap the proposal out of ``pending``; a stale version or a decided proposal is a conflict."""
+    row = await session.get(MemoryProposal, proposal_id)
+    if row is None:
+        raise ProposalNotFound(f"Proposal {proposal_id} not found")
+    if row.state != "pending":
+        raise ProposalStateError(f"Proposal {proposal_id} is already {row.state}")
+    changed = await session.execute(
+        update(MemoryProposal)
+        .where(MemoryProposal.id == proposal_id, MemoryProposal.version == expected_version,
+               MemoryProposal.state == "pending")
+        .values(state=new_state, version=expected_version + 1, reviewed_by_principal_id=reviewer_principal_id,
+                decision_reason=reason, decided_at=_now())
+        .execution_options(synchronize_session=False)
+    )
+    if cast(CursorResult[Any], changed).rowcount != 1:
+        raise ProposalStateError(
+            f"Proposal {proposal_id} is at version {row.version}, not {expected_version}; re-read it and retry")
+    await session.refresh(row)
+    return row
+
+
+def _check_independent(row: MemoryProposal, reviewer_principal_id: Optional[int], team_state: str) -> None:
+    if team_state == "team" and (reviewer_principal_id is None or reviewer_principal_id == row.author_principal_id):
+        raise SelfApprovalError("Independent, attributed approval is required: the author cannot review "
+                                "their own proposal")
+
+
+async def approve_proposal(proposal_id: int, *, expected_version: int, reviewer_principal_id: Optional[int],
+                           reason: Optional[str] = None, team_state: str = "team") -> MemoryProposal:
+    """Approve a pending proposal and write the approved knowledge in the same transaction.
+
+    Raises ``ProposalNotFound``, ``ProposalStateError`` (stale ``expected_version``,
+    already decided, or an author who lost team access), ``SelfApprovalError`` and
+    ``MemoryVersionConflict`` (the approved item changed since the proposal)."""
+    async with async_session_factory() as session:
+        row = await session.get(MemoryProposal, proposal_id)
+        if row is None:
+            raise ProposalNotFound(f"Proposal {proposal_id} not found")
+        _check_independent(row, reviewer_principal_id, team_state)
+        if team_state == "team" and not await _author_is_live(session, row.author_principal_id):
+            raise ProposalStateError(f"Proposal {proposal_id} cannot be approved: its author no longer has "
+                                     "team access")
+        row = await _claim(session, proposal_id, expected_version, "approved", reviewer_principal_id, reason)
+        payload = dict(row.payload or {})
+        if row.kind == "decision":
+            result = await DecisionStore.record_decision(
+                title=row.title, repo_path=row.repo_path, caller_role="admin",
+                author_principal_id=row.author_principal_id, expected_version=row.base_version,
+                session=session, **{field: payload.get(field) for field in DECISION_FIELDS
+                                    if field in payload},
+            )
+            row.result_key, row.result_version = str(result.id), result.version
+        elif row.kind == "rule":
+            result = await RuleStore.record_rule(
+                name=row.title, repo_path=row.repo_path, author_principal_id=row.author_principal_id,
+                expected_version=row.base_version, session=session,
+                **{field: payload.get(field) for field in RULE_FIELDS if field in payload},
+            )
+            row.result_key, row.result_version = str(result.id), result.version
+        else:
+            learning = await session.get(Learning, int(row.target_key or 0))
+            if learning is None or learning.status != PERSONAL_STATUS:
+                raise ProposalStateError(f"Learning {row.target_key} is no longer a personal learning")
+            learning.status = "active"
+            learning.updated_by_principal_id = reviewer_principal_id
+            row.result_key, row.result_version = str(learning.id), 1
+        await session.commit()
+        await session.refresh(row)
+        return row
+
+
+async def reject_proposal(proposal_id: int, *, expected_version: int, reviewer_principal_id: Optional[int],
+                          reason: Optional[str] = None, team_state: str = "team") -> MemoryProposal:
+    """Reject a pending proposal; nothing reaches approved memory. Same independence rule as approval."""
+    async with async_session_factory() as session:
+        row = await session.get(MemoryProposal, proposal_id)
+        if row is None:
+            raise ProposalNotFound(f"Proposal {proposal_id} not found")
+        _check_independent(row, reviewer_principal_id, team_state)
+        row = await _claim(session, proposal_id, expected_version, "rejected", reviewer_principal_id, reason)
+        await session.commit()
+        await session.refresh(row)
+        return row
+
+
+async def withdraw_proposal(proposal_id: int, *, expected_version: int,
+                            author_principal_id: Optional[int]) -> MemoryProposal:
+    """The author takes back their own pending proposal."""
+    async with async_session_factory() as session:
+        row = await session.get(MemoryProposal, proposal_id)
+        if row is None or author_principal_id is None or row.author_principal_id != author_principal_id:
+            raise ProposalNotFound(f"Proposal {proposal_id} not found")
+        row = await _claim(session, proposal_id, expected_version, "withdrawn", author_principal_id,
+                           "Withdrawn by the author")
+        await session.commit()
+        await session.refresh(row)
+        return row
+
+
+async def withdraw_author_proposals(session: AsyncSession, principal_id: int,
+                                    reason: str = REVOKED_AUTHOR_REASON) -> int:
+    """Withdraw every pending proposal of ``principal_id`` in the caller's transaction (member revocation).
+
+    Knowledge that was already approved stays: it was reviewed by someone else.
+    Returns how many proposals were withdrawn."""
+    result = await session.execute(
+        update(MemoryProposal)
+        .where(MemoryProposal.author_principal_id == principal_id, MemoryProposal.state == "pending")
+        .values(state="withdrawn", version=MemoryProposal.version + 1, decision_reason=reason, decided_at=_now())
+        .execution_options(synchronize_session=False)
+    )
+    return int(cast(CursorResult[Any], result).rowcount or 0)

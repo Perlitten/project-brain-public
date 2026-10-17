@@ -136,3 +136,20 @@ golden_tasks:
       - "repository access"
     required_surfaces: []
     must_include_tests: true
+
+  - id: task_10
+    description: "Propose, review and approve team memory: decision/rule proposals, review queue, self-approval and stale-version refusal, personal learnings"
+    expected_files:
+      - "brain/memory/proposals.py"
+      - "apps/api/routers/memory_review.py"
+      - "apps/api/routers/core_memory.py"
+      - "tests/test_memory_proposals.py"
+    expected_modules:
+      - "brain/memory"
+      - "apps/api"
+    expected_features:
+      - "team"
+      - "memory review"
+      - "proposals"
+    required_surfaces: []
+    must_include_tests: true

@@ -492,6 +492,7 @@ class State:
     project_other: str = ""
     run_key: str = ""
     task_id: str = ""
+    alice_global_proposal: int = 0
     backup_dir: Optional[Path] = None
 
 
@@ -779,16 +780,28 @@ def scenario_3_team(env: Env, api: Api, st: State) -> None:
         r.check(s, f"member denied on admin route {method} {path}", status in {401, 403},
                 {"status": status, "detail": detail(body)[:120]})
 
+    # Governed memory (docs/MEMORY_REVIEW.md): in team state a contributor's decision or rule is a pending
+    # proposal (202) until a reviewer who is not the author approves it; the admin is Reviewer on core.
     status, body = api.call("POST", "/decisions", st.alice_key, json={
         "title": "Alice decision", "repo_path": REPO_A, "description": "Recorded by a member"})
-    alice_decision = body.get("decision_id") if isinstance(body, dict) else None
+    proposal = body.get("proposal_id") if isinstance(body, dict) else None
+    pending = env.sql(MAIN_DB, "SELECT id FROM decisions WHERE lower(title)='alice decision'")
+    r.check(s, "member's decision in the allowed project becomes a pending proposal, not knowledge",
+            status == 202 and bool(proposal) and not pending, {"status": status, "body": body})
+    status, body = api.call("POST", f"/memory/proposals/{int(proposal or 0)}/approve", st.alice_key,
+                            json={"expected_version": 1})
+    r.check(s, "member cannot approve her own proposal", status == 403, {"status": status, "detail": detail(body)})
+    status, body = api.call("POST", f"/memory/proposals/{int(proposal or 0)}/approve", st.admin_key,
+                            json={"expected_version": 1})
+    alice_decision = body.get("result_key") if isinstance(body, dict) else None
     author = env.sql(MAIN_DB, f"SELECT author_principal_id FROM decisions WHERE id={int(alice_decision or 0)}")
-    r.check(s, "member records a decision in the allowed project, attributed to her",
-            status == 200 and author and author[0]["author_principal_id"] == st.alice_id,
-            {"status": status, "author": author})
+    r.check(s, "reviewer approves it; the decision is attributed to her",
+            status == 200 and body.get("state") == "approved" and author
+            and author[0]["author_principal_id"] == st.alice_id, {"status": status, "author": author})
     status, body = api.call("POST", "/rules", st.alice_key, json={
         "name": "Alice rule", "repo_path": REPO_A, "description": "Member rule", "rule_id": "alice-rule"})
-    r.check(s, "member records a rule in the allowed project", status == 200, {"status": status, "body": body})
+    r.check(s, "member proposes a rule in the allowed project", status == 202 and body.get("state") == "pending",
+            {"status": status, "body": body})
     status, body = api.call("POST", "/learnings", st.alice_key, json={
         "statement": "Member learning", "repo_scope": REPO_A})
     r.check(s, "member records a learning in the allowed project", status == 200, {"status": status})
@@ -796,11 +809,21 @@ def scenario_3_team(env: Env, api: Api, st: State) -> None:
         "title": "Alice on beta", "repo_path": REPO_B, "description": "Not her project"})
     r.check(s, "member denied writing to the other project", status == 403, {"status": status, "detail": detail(body)})
     status, body = api.call("POST", "/decisions", st.alice_key, json={"title": "Alice global", "description": "x"})
-    r.check(s, "member denied writing system_global memory", status == 403, {"status": status, "detail": detail(body)})
+    st.alice_global_proposal = int(body.get("proposal_id") or 0) if isinstance(body, dict) else 0
+    global_rows = env.sql(MAIN_DB, "SELECT id FROM decisions WHERE lower(title)='alice global'")
+    r.check(s, "member cannot write system_global memory, only propose it for a team administrator",
+            status == 202 and st.alice_global_proposal > 0 and not global_rows, {"status": status, "body": body})
     status, body = api.call("POST", "/decisions", st.alice_key, json={
         "title": "Use pgvector", "repo_path": REPO_A, "description": "Member edit", "expected_version": 2})
-    r.check(s, "member edits a legacy decision in her project (CAS on version 2 -> 3)",
-            status == 200 and body.get("version") == 3 and body.get("decision_id") == st.pgvector_decision, body)
+    proposal = body.get("proposal_id") if isinstance(body, dict) else None
+    status, body = api.call("POST", f"/memory/proposals/{int(proposal or 0)}/approve", st.admin_key,
+                            json={"expected_version": 1})
+    edited = env.sql(MAIN_DB, f"SELECT * FROM decisions WHERE id={st.pgvector_decision}")
+    r.check(s, "member's reviewed edit of a legacy decision (CAS on version 2 -> 3): authorship stays NULL",
+            status == 200 and body.get("result_version") == 3 and body.get("result_key") == str(st.pgvector_decision)
+            and bool(edited) and edited[0]["author_principal_id"] is None
+            and edited[0]["updated_by_principal_id"] == st.alice_id,
+            {"status": status, "body": body, "decision": edited})
 
     # A run delegation the member requests: its credential must die with her.
     status, task = api.call("POST", f"/team/projects/{st.project_core}/tasks", st.alice_key, json={
@@ -996,6 +1019,9 @@ def scenario_3_revoke(env: Env, api: Api, st: State) -> None:
     }
     r.check(s, "alice: member key, dashboard, run credential and MCP dead immediately",
             all(v == 401 for v in statuses.values()), statuses)
+    proposal = env.sql(MAIN_DB, f"SELECT state FROM memory_proposals WHERE id={st.alice_global_proposal}")
+    r.check(s, "alice's pending proposals are withdrawn with her membership",
+            bool(proposal) and proposal[0]["state"] == "withdrawn", {"proposal": proposal})
     if st.alice_oauth_access:
         # Gap: the personal-scope token alice approved belongs to a service principal
         # (oauth:<client>:...), not to her, so revoking her does not revoke it. Team state

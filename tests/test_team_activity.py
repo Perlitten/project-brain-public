@@ -315,6 +315,25 @@ async def test_unattributed_memory_update_is_reported_as_system(activity_db, mon
 
 
 @pytest.mark.asyncio
+async def test_personal_learnings_never_reach_the_feed(activity_db, monkeypatch):
+    # The personal tier (docs/MEMORY_REVIEW.md) is private to its author: not even an administrator sees it here.
+    factory, _, _ = activity_db
+    app = activity_app(factory, monkeypatch)
+    async with factory() as session, session.begin():
+        session.add_all([
+            Learning(id=30, statement="private note", repo_scope="/synthetic/A", status="personal",
+                     author_principal_id=2, updated_by_principal_id=2, created_at=T0, updated_at=T0),
+            Learning(id=31, statement="shared note", repo_scope="/synthetic/A", status="active",
+                     author_principal_id=2, updated_by_principal_id=2, created_at=T0, updated_at=T0),
+        ])
+    async with client_for(app) as client:
+        for headers in (CONTRIBUTOR, ADMIN, READER):
+            page = (await client.get("/team/activity", params={"kind": "learning"}, headers=headers)).json()
+            ids = {event["subject"]["id"] for event in page["events"]}
+            assert "31" in ids and "30" not in ids
+
+
+@pytest.mark.asyncio
 async def test_decision_versions_follow_the_supersede_chain(activity_db, monkeypatch):
     factory, _, _ = activity_db
     app = activity_app(factory, monkeypatch)

@@ -1,6 +1,8 @@
+import dataclasses
 import datetime
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Tuple
 from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from brain.database.session import async_session_factory
 from brain.database.models import Decision
 from brain.memory.provenance import MemoryWriteResult, check_expected_version
@@ -38,6 +40,93 @@ def _coerce_date(date: Optional[Any]) -> Optional[datetime.date]:
     return None
 
 
+def decision_scope(repo_path: Optional[str]) -> str:
+    """The stored scope of a decision: a normalized repository path, or ``system_global``."""
+    normalized = normalize_repo_scope(repo_path)
+    if not normalized or normalized == "system_global":
+        return "system_global"
+    return normalized
+
+
+async def find_canonical_decision(session: AsyncSession, title: str, repo_path: Optional[str]) -> Optional[Decision]:
+    """The canonical (not superseded) decision for ``title`` in the scope of ``repo_path``, if any."""
+    result = await session.execute(
+        select(Decision)
+        .where(
+            func.lower(func.trim(Decision.title)) == title.strip().casefold(),
+            scope_equals(Decision.repo_path, decision_scope(repo_path)),
+            Decision.superseded_by_id.is_(None),
+        )
+        .order_by(Decision.id.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _record_decision_in(session: AsyncSession, normalized_title: str, normalized_repo_path: str,
+                              requested: dict, author_principal_id: Optional[int],
+                              expected_version: Optional[int]) -> Tuple[MemoryWriteResult, Decision]:
+    """The body of ``DecisionStore.record_decision`` inside the caller's session (flushes, never commits).
+
+    Returns the result and the canonical row it touched."""
+    existing = await find_canonical_decision(session, normalized_title, normalized_repo_path)
+    check_expected_version("decision", normalized_title, expected_version,
+                           existing.version if existing is not None else None)
+    if existing is not None:
+        changes = {
+            field: value for field, value in requested.items()
+            if value is not None and getattr(existing, field) != value
+        }
+        if existing.title != normalized_title:
+            changes["title"] = normalized_title
+        # Authorship stays as recorded: legacy rows keep NULL (no adoption on edit).
+        if not changes:
+            await session.flush()
+            return MemoryWriteResult(id=existing.id, version=existing.version or 1,
+                                     created=False, changed=False), existing
+        history = Decision(
+            title=existing.title,
+            repo_path=existing.repo_path,
+            status="superseded",
+            superseded_by_id=existing.id,
+            author_principal_id=existing.author_principal_id,
+            updated_by_principal_id=existing.updated_by_principal_id,
+            supersedes_id=existing.supersedes_id,
+            version=existing.version or 1,
+            created_at=existing.created_at,
+            **{field: getattr(existing, field) for field in _DECISION_CONTENT_FIELDS if field != "status"},
+        )
+        session.add(history)
+        await session.flush()
+        for field, value in changes.items():
+            setattr(existing, field, value)
+        existing.version = (existing.version or 1) + 1
+        existing.supersedes_id = history.id
+        existing.updated_by_principal_id = author_principal_id
+        await session.flush()
+        return MemoryWriteResult(id=existing.id, version=existing.version, created=False,
+                                 changed=True, superseded_id=history.id), existing
+
+    new_decision = Decision(
+        title=normalized_title,
+        repo_path=normalized_repo_path,
+        description=requested["description"],
+        status=requested["status"],
+        date=requested["date"] or datetime.date.today(),
+        reason=requested["reason"],
+        consequences=requested["consequences"],
+        affected_features=requested["affected_features"],
+        affected_modules=requested["affected_modules"],
+        affected_files=requested["affected_files"],
+        author_principal_id=author_principal_id,
+        updated_by_principal_id=author_principal_id,
+        version=1,
+    )
+    session.add(new_decision)
+    await session.flush()
+    return MemoryWriteResult(id=new_decision.id, version=1, created=True, changed=True), new_decision
+
+
 class DecisionStore:
     """Store for managing architectural and technical decisions."""
 
@@ -57,6 +146,7 @@ class DecisionStore:
         caller_role: str = "agent",
         author_principal_id: Optional[int] = None,
         expected_version: Optional[int] = None,
+        session: Optional[AsyncSession] = None,
     ) -> MemoryWriteResult:
         """Create the canonical decision for this title+scope, or supersede its content.
 
@@ -74,7 +164,11 @@ class DecisionStore:
         ``expected_version`` is compare-and-swap: pass the version last read (0
         for "must not exist yet") and the write raises ``MemoryVersionConflict``
         when someone else changed the decision first. ``author_principal_id`` is
-        kept from the first record; every later change names its principal."""
+        kept from the first record; every later change names its principal.
+
+        With ``session`` the write is only flushed, so the caller's transaction
+        decides whether it commits (proposal approval writes the decision and
+        the proposal's state change atomically)."""
         normalized_title = title.strip()
         if not normalized_title:
             raise ValueError("Decision title must not be empty")
@@ -96,75 +190,20 @@ class DecisionStore:
             "affected_files": affected_files,
         }
 
-        async with async_session_factory() as session:
-            result = await session.execute(
-                select(Decision)
-                .where(
-                    func.lower(func.trim(Decision.title)) == normalized_title.casefold(),
-                    scope_equals(Decision.repo_path, normalized_repo_path),
-                    Decision.superseded_by_id.is_(None),
-                )
-                .order_by(Decision.id.desc())
-                .limit(1)
-            )
-            existing = result.scalar_one_or_none()
-            check_expected_version("decision", normalized_title, expected_version,
-                                   existing.version if existing is not None else None)
-            if existing is not None:
-                changes = {
-                    field: value for field, value in requested.items()
-                    if value is not None and getattr(existing, field) != value
-                }
-                if existing.title != normalized_title:
-                    changes["title"] = normalized_title
-                # Authorship stays as recorded: legacy rows keep NULL (no adoption on edit).
-                if not changes:
-                    await session.commit()
-                    return MemoryWriteResult(id=existing.id, version=existing.version or 1,
-                                             created=False, changed=False)
-                history = Decision(
-                    title=existing.title,
-                    repo_path=existing.repo_path,
-                    status="superseded",
-                    superseded_by_id=existing.id,
-                    author_principal_id=existing.author_principal_id,
-                    updated_by_principal_id=existing.updated_by_principal_id,
-                    supersedes_id=existing.supersedes_id,
-                    version=existing.version or 1,
-                    created_at=existing.created_at,
-                    **{field: getattr(existing, field) for field in _DECISION_CONTENT_FIELDS if field != "status"},
-                )
-                session.add(history)
-                await session.flush()
-                for field, value in changes.items():
-                    setattr(existing, field, value)
-                existing.version = (existing.version or 1) + 1
-                existing.supersedes_id = history.id
-                existing.updated_by_principal_id = author_principal_id
-                await session.commit()
-                await session.refresh(existing)
-                return MemoryWriteResult(id=existing.id, version=existing.version, created=False,
-                                         changed=True, superseded_id=history.id)
+        async def _write(sess: AsyncSession) -> Tuple[MemoryWriteResult, Decision]:
+            return await _record_decision_in(sess, normalized_title, normalized_repo_path, requested,
+                                             author_principal_id, expected_version)
 
-            new_decision = Decision(
-                title=normalized_title,
-                repo_path=normalized_repo_path,
-                description=description,
-                status=status,
-                date=requested["date"] or datetime.date.today(),
-                reason=reason,
-                consequences=consequences,
-                affected_features=affected_features,
-                affected_modules=affected_modules,
-                affected_files=affected_files,
-                author_principal_id=author_principal_id,
-                updated_by_principal_id=author_principal_id,
-                version=1,
-            )
-            session.add(new_decision)
-            await session.commit()
-            await session.refresh(new_decision)
-            return MemoryWriteResult(id=new_decision.id, version=1, created=True, changed=True)
+        if session is not None:
+            return (await _write(session))[0]
+        async with async_session_factory() as own_session:
+            written, row = await _write(own_session)
+            await own_session.commit()
+            if not written.changed:
+                return written
+            # Committed state is authoritative for the id and version the caller gets back.
+            await own_session.refresh(row)
+            return dataclasses.replace(written, id=row.id, version=row.version or written.version)
 
     @classmethod
     async def add_decision(cls, *args: Any, **kwargs: Any) -> int:
