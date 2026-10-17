@@ -26,6 +26,7 @@ from brain.team.authorization import Permission
 from brain.database.session import async_session_factory
 from brain.memory.decision_store import DecisionStore, caller_role_for
 from brain.memory.learning_store import LearningStore
+from brain.memory.repo_scope import normalize_repo_scope
 from brain.memory.rule_store import RuleStore
 
 EPISODES_MAX_LIMIT = 200
@@ -83,10 +84,18 @@ async def record_skill_outcome_service(skill_id: int, body: SkillOutcomeRequest)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.get("/decisions", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")), TEAM_ADMIN])
-async def get_decisions():
+def _readable_rows(rows: list, scopes: set[str] | None) -> list:
+    """Global rows plus rows of repositories in ``scopes``; ``None`` keeps every row (solo, administrators)."""
+    if scopes is None:
+        return rows
+    return [row for row in rows if (scope := normalize_repo_scope(row.repo_path)) is None or scope in scopes]
+
+
+@router.get("/decisions", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+async def get_decisions(principal: ResolvedPrincipal = Depends(require_principal)):
     try:
-        return await DecisionStore.list_decisions()
+        scopes = await team_access.readable_repository_scopes(principal)
+        return _readable_rows(await DecisionStore.list_decisions(), scopes)
     except Exception as exc:
         logger.error(f"Failed to fetch decisions: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch decisions") from exc
@@ -120,10 +129,11 @@ async def create_decision(body: DecisionCreate, caller: ResolvedPrincipal = Depe
         raise HTTPException(status_code=500, detail="Failed to add decision") from exc
 
 
-@router.get("/rules", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")), TEAM_ADMIN])
-async def get_rules():
+@router.get("/rules", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+async def get_rules(principal: ResolvedPrincipal = Depends(require_principal)):
     try:
-        return await RuleStore.list_rules()
+        scopes = await team_access.readable_repository_scopes(principal)
+        return _readable_rows(await RuleStore.list_rules(), scopes)
     except Exception as exc:
         logger.error(f"Failed to fetch rules: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch rules") from exc

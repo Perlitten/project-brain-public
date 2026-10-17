@@ -237,7 +237,7 @@ async def test_team_listing_filter_matches_per_repository_authorization(read_sco
     authorized = {}
     for name, raw_key in keys.items():
         principal, authorized[name] = await authorized_repository_ids(factory, raw_key, repositories)
-        assert await core_retrieval._readable_repository_ids(principal, repositories) == authorized[name], name
+        assert await team_access.readable_repository_ids(principal, repositories) == authorized[name], name
     assert (authorized["reader"], authorized["run"], authorized["outsider"]) == (reader_sees, run_sees, set())
     async with client_for(app) as client:
         # Human members see the same set through the route, and a corrupt policy hides A instead of failing.
