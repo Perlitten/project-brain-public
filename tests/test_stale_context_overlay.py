@@ -43,7 +43,7 @@ def context_builder(root, indexed, freshness, monkeypatch):
     monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "warn_and_serve")
     monkeypatch.setattr("brain.context.context_cache.get_cached_context", lambda *_: None)
     monkeypatch.setattr("brain.context.context_cache.put_cached_context", lambda *_args, **_kwargs: None)
-    queued = AsyncMock(return_value=True)
+    queued = AsyncMock(return_value="job-1")
     monkeypatch.setattr("brain.context.runtime_context_builder._queue_auto_reindex", queued)
     monkeypatch.setattr("brain.context.runtime_context_builder.select_relevant_normative_memory", AsyncMock(return_value={
         "rules": [{"id": "R-1", "description": "Retain source evidence"}],
@@ -69,7 +69,11 @@ async def test_ahead_commit_serves_current_shifted_symbol_and_live_memory(reposi
     payload = await builder.build("Explain feature", root)
 
     assert payload["status"] == "ok"
-    assert payload["freshness"] == payload["repo"]["freshness"] == "stale_served"
+    assert payload["repo"]["freshness"] == "stale_served"
+    assert payload["freshness"]["state"] == "stale_served"
+    assert payload["freshness"]["reason"] == "source_ahead_of_index"
+    assert payload["freshness"]["reindex_job_id"] == "job-1"
+    assert payload["freshness"]["indexed_commit"] == indexed
     assert payload["repo"]["indexed_revision"] == indexed
     assert payload["repo"]["source_revision"] == head
     assert payload["freshness_warning"]["changed_files"] == ["feature.py"]
@@ -94,7 +98,11 @@ async def test_dirty_tree_overrides_cached_current_freshness(repository, monkeyp
     assert payload["status"] == "ok" and not payload.get("_cache_hit")
     assert payload["freshness_warning"]["working_tree_dirty"]
     assert "dirty-live" in payload["slices"][0]["content"]
-    assert len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()) <= 1600
+    budgeted = {key: value for key, value in payload.items() if key != "freshness"}
+    assert len(json.dumps(budgeted, ensure_ascii=False, separators=(",", ":")).encode()) <= 1600
+    assert payload["freshness"]["state"] == "stale_served"
+    assert payload["freshness"]["reason"] == "working_tree_dirty"
+    assert payload["freshness"]["reindex_job_id"] is None
     assert "auto_reindex_deferred_until_clean" in payload["missing"]
     queued.assert_not_awaited()
 
@@ -107,6 +115,9 @@ async def test_strict_mode_retains_blocking_and_reindex(repository, monkeypatch)
     payload = await builder.build("Explain feature", root)
 
     assert payload["status"] == "stale_blocked"
+    assert payload["freshness"]["state"] == "stale_blocked"
+    assert payload["freshness"]["reason"] == "policy_strict_block"
+    assert payload["freshness"]["reindex_job_id"] == "job-1"
     assert not payload.get("slices") and not payload.get("candidates")
     builder._load_slices.assert_not_awaited()
     queued.assert_awaited_once()
@@ -120,7 +131,7 @@ async def test_deleted_candidate_retains_memory_without_returning_deleted_code(r
     builder, _ = context_builder(root, indexed, "behind", monkeypatch)
     payload = await builder.build("Explain feature", root)
 
-    assert payload["status"] == "partial" and payload["freshness"] == "stale_served"
+    assert payload["status"] == "partial" and payload["freshness"]["state"] == "stale_served"
     assert not payload.get("slices")
     assert payload["memory"]["decisions"]
 
@@ -133,6 +144,8 @@ async def test_missing_source_remains_blocked_in_warn_mode(tmp_path, monkeypatch
 
     assert payload["status"] == "stale_blocked"
     assert "live_source_unavailable" in payload["missing"]
+    assert payload["freshness"]["state"] == "stale_blocked"
+    assert payload["freshness"]["reason"] == "live_source_unavailable"
     assert not payload.get("slices")
     queued.assert_not_awaited()
 

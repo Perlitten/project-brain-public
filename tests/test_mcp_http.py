@@ -181,3 +181,62 @@ def test_native_http_client_records_setup_evidence(base_url, tmp_path, monkeypat
     activity = setup_state.last_client_activity()
     assert activity is not None
     assert activity["client"] == "mcp"
+
+
+# --------------------------------------------------------------------------- freshness envelope
+
+
+def _app_with_search(freshness: dict | None):
+    """A stand-in API whose /search answers with (or without) a freshness block."""
+    app = FastAPI()
+
+    @app.post("/search")
+    async def search(request: Request):
+        payload = {"files": [], "chunks": [], "repo": {"path": "/indexed/app"}}
+        if freshness is not None:
+            payload["freshness"] = freshness
+        return payload
+
+    endpoint = mcp_http.install(app, public_url=None)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app):
+        async with endpoint.serving():
+            yield
+
+    app.router.lifespan_context = lifespan
+    return app
+
+
+async def _search_over_http(url: str) -> tuple[dict, dict | None]:
+    import json
+
+    async with httpx.AsyncClient(headers={"Authorization": "Bearer pbk_alice"}, timeout=30) as http_client:
+        async with Client(streamable_http_client(f"{url}/mcp", http_client=http_client), mode="auto") as client:
+            result = await client.call_tool("search_code", {"query": "config", "repo_path": "/indexed/app"})
+    assert not result.is_error
+    return json.loads(result.content[0].text), result.structured_content
+
+
+@pytest.mark.parametrize(
+    "served, expected_state, expected_reason",
+    [
+        (
+            {"state": "stale_blocked", "reason": "policy_strict_block", "indexed_commit": "a" * 40,
+             "indexed_at": "2026-10-17T00:00:00+00:00", "age_s": 5, "reindex_job_id": "job-4"},
+            "stale_blocked", "policy_strict_block",
+        ),
+        (None, "unknown", "not_reported_by_api"),
+    ],
+)
+def test_streamable_http_search_carries_the_freshness_envelope(keyed, served, expected_state, expected_reason):
+    port = _free_port()
+    with _serve(_app_with_search(served), port) as url:
+        data, structured = asyncio.run(_search_over_http(url))
+    envelope = data["freshness"]
+    assert {"state", "reason", "indexed_commit", "indexed_at", "age_s", "reindex_job_id"} <= set(envelope)
+    assert envelope["state"] == expected_state and envelope["reason"] == expected_reason
+    if served is not None:
+        assert envelope["reindex_job_id"] == "job-4"
+    if structured is not None:
+        assert structured["freshness"] == envelope

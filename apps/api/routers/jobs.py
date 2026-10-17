@@ -18,6 +18,7 @@ from apps.api.team_access import repository_authority
 from brain.auth.principals import ResolvedPrincipal
 from brain.database.session import redis_client
 from brain.config.settings import settings
+from brain.memory.freshness_envelope import attach_envelope, envelope_for_path
 from brain.team.authorization import Permission
 from brain.workers.initiator import JobInitiator
 from brain.workers.queue import JobQueue, WORKER_POOLS, queue_for_job, worker_pool_prefix
@@ -250,7 +251,9 @@ async def enqueue_deep_context(body: DeepContextJobRequest, request: Request = c
         timeout_seconds=settings.WORKER_MAX_JOB_TIMEOUT_SECONDS,
         initiator=_initiator(principal),
     )
-    return _enqueue_response(job_id)
+    return attach_envelope(
+        _enqueue_response(job_id), await envelope_for_path(body.repo_path or settings.TARGET_REPO_PATH)
+    )
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_scope("jobs:read"))])

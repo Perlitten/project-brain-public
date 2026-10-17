@@ -276,7 +276,8 @@ curl -s -o /dev/null -w '%{http_code}\n' "https://${BRAIN_PUBLIC_HOST}/api/web/o
 
 Expected:
 
-- `/health` returns JSON with `status`
+- `/health` returns JSON with `status` and a `freshness` section: per-repository
+  index `age_s` against `BRAIN_FRESHNESS_MAX_AGE_S` (default 604800 s, `0` disables)
 - `/api/web/overview` with the key prints `overview-ok`
 - `/api/web/overview` without the key returns `401`
 
@@ -327,6 +328,12 @@ Scheduled jobs overdue (`/health` → `degraded`):
 
 - Run `docker compose --project-directory . -f deploy/docker-compose.prod.yml logs --tail 100 worker | grep Scheduler`.
 - Check `SCHEDULER_ENABLED` and `GET /scheduler/jobs` for `last_error`.
+
+Index older than the SLO (`/health` → `degraded`, `freshness.exceeded` lists the paths):
+
+- Queue a reindex for each listed repository (`POST /index` or `brain index`).
+- Tool answers for those repositories carry `freshness.state` other than `fresh` meanwhile.
+- Raise `BRAIN_FRESHNESS_MAX_AGE_S` only when the repository really changes that rarely.
 
 Raw nginx 401 appears on the API host:
 

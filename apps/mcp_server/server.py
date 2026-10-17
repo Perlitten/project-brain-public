@@ -13,7 +13,7 @@ from loguru import logger
 import mcp.types as _mcp_types
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
-from mcp.types import InputRequiredResult
+from mcp.types import CallToolResult, InputRequiredResult, TextContent
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from apps.mcp_server.client_activity import record_client_activity, tool_call_observer
@@ -41,6 +41,14 @@ from brain.config.settings import settings
 from brain.analyzers.impact_analyzer import ImpactAnalyzer
 from brain.analyzers.diff_analyzer import DiffAnalyzer
 from brain.memory.decision_store import DecisionStore
+from brain.memory.freshness_envelope import (
+    attach_envelope,
+    envelope_for_path,
+    envelope_for_repository,
+    envelope_for_retrieval,
+    envelope_for_search_scope,
+    unknown_envelope,
+)
 from brain.memory.repo_scope import normalize_repo_scope
 from brain.memory.rule_store import RuleStore
 from brain.llm.router import TaskKind, get_model_router
@@ -239,8 +247,15 @@ mcp.middleware.append(_record_client_initialize)
 mcp.middleware.append(tool_call_observer("stdio"))
 
 
+def _answer_result(answer: str, structured: dict) -> CallToolResult:
+    """A prose answer for legacy clients plus the structured block (with ``freshness``)."""
+    return CallToolResult(content=[TextContent(type="text", text=answer)], structured_content=structured)
+
+
 @mcp.tool(**tool_meta("ask_project"))
-async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> str | InputRequiredResult:
+async def ask_project(
+    query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None
+) -> CallToolResult | InputRequiredResult:
     """Asks the project LLM assistant a question about the project code,
 
     leveraging database code searches and active rules.
@@ -250,7 +265,9 @@ async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional
         from apps.api.schemas import AskRequest
 
         result = await _ask_v2(AskRequest(query=query, repo_path=repo_path))
-        return str(result.get("answer") or result)
+        attach_envelope(result, result.get("freshness") or unknown_envelope())
+        return _answer_result(str(result.get("answer") or result), result)
+    code_results: dict = {}
     try:
         code_results = await hybrid_search_code(query, limit=ASK_RETRIEVAL_LIMIT, repo_path=repo_path)
 
@@ -297,18 +314,26 @@ async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional
         )
 
         system = "You are an expert software developer working on Project Brain."
+        freshness = envelope_for_search_scope(code_results)
         try:
             llm = get_model_router().llm(TaskKind.SYNTHESIS)
-            return await llm.generate(prompt=prompt, system_instruction=system)
+            answer = await llm.generate(prompt=prompt, system_instruction=system)
+            return _answer_result(str(answer), {"answer": str(answer), "freshness": freshness})
         except Exception as exc:
             # Retrieval already succeeded; only the server-side model failed. A
             # client that can sample answers from the same grounded context.
             sampled = await sample_answer(ctx, prompt, system=system)
+            if isinstance(sampled, str):
+                return _answer_result(sampled, {"answer": sampled, "freshness": freshness})
             if sampled is not None:
-                return sampled
+                return sampled  # an elicitation round-trip, forwarded as-is
             raise exc
     except Exception as e:
-        return f"Error answering project query: {str(e)}"
+        message = f"Error answering project query: {str(e)}"
+        return _answer_result(message, {
+            "answer": message, "status": "failed", "error": str(e),
+            "freshness": envelope_for_search_scope(code_results) if code_results else unknown_envelope("tool_failed"),
+        })
 
 
 @mcp.tool(**tool_meta("prepare_task_context"))
@@ -321,9 +346,10 @@ async def prepare_task_context(task_description: str, repo_path: Optional[str] =
         target_path = Path(repo_path).resolve() if repo_path else PROJECT_ROOT
         builder = ContextPackBuilder()
         result = await builder.build_context_pack(task_description, target_path, consumer=_mcp_principal())
-        return result
+        return attach_envelope(result, await envelope_for_path(target_path))
     except Exception as e:
-        return {"error": f"Failed to prepare task context: {str(e)}", "status": "failed"}
+        return {"error": f"Failed to prepare task context: {str(e)}", "status": "failed",
+                "freshness": unknown_envelope("tool_failed")}
 
 
 @mcp.tool(**tool_meta("prepare_deep_context"))
@@ -356,6 +382,7 @@ async def prepare_deep_context(
         "job_id": job_id,
         "status": "queued",
         "status_url": f"/jobs/{job_id}",
+        "freshness": await envelope_for_path(repo_path or settings.TARGET_REPO_PATH),
     }
 
 
@@ -387,13 +414,16 @@ async def get_background_job(job_id: str) -> dict:
 async def impact_analysis(change_request: str, repo_path: Optional[str] = None) -> dict:
     """Affected components and risks for a change; long tails move to a brain:// resource."""
     try:
-        analyzer = ImpactAnalyzer(resolve_repo_path(repo_path))
+        target = resolve_repo_path(repo_path)
+        analyzer = ImpactAnalyzer(target)
         if settings.BRAIN_AGENT_CONTEXT_V2_MODE == "on":
-            return compact_payload(await analyzer.analyze_bounded(change_request), _PAYLOADS)
-        result = await analyzer.analyze_impact(change_request)
-        return compact_payload(result, _PAYLOADS)
+            result = await analyzer.analyze_bounded(change_request)
+        else:
+            result = await analyzer.analyze_impact(change_request)
+        return attach_envelope(compact_payload(result, _PAYLOADS), await envelope_for_path(target))
     except Exception as e:
-        return {"error": f"Failed to perform impact analysis: {str(e)}", "status": "failed"}
+        return {"error": f"Failed to perform impact analysis: {str(e)}", "status": "failed",
+                "freshness": unknown_envelope("tool_failed")}
 
 
 @mcp.tool(**tool_meta("record_decision"))
@@ -513,7 +543,7 @@ async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
                 deadline_s=settings.AGENT_RETRIEVAL_DEADLINE_S,
             )
             freshness = (result.repository.get("freshness") or {}).get("status") or "unknown"
-            return (
+            built = (
                 BudgetedPayloadBuilder(
                     settings.AGENT_LOCATOR_MAX_BYTES,
                     metadata={"repo": {"path": result.repository.get("repository_path") or result.repository.get("requested_path"), "freshness": freshness}, "degraded": result.degraded},
@@ -521,9 +551,12 @@ async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
                 .add("results", [candidate.to_locator_dict() for candidate in result.candidates])
                 .build()
             )
-        return await hybrid_search_code(query, limit=5, repo_path=repo_path)
+            return attach_envelope(built, envelope_for_retrieval(result.repository))
+        found = await hybrid_search_code(query, limit=5, repo_path=repo_path)
+        return attach_envelope(found, envelope_for_search_scope(found))
     except Exception as e:
-        return {"error": f"Failed to search code: {str(e)}", "status": "failed"}
+        return {"error": f"Failed to search code: {str(e)}", "status": "failed",
+                "freshness": unknown_envelope("tool_failed")}
 
 
 @mcp.tool(**tool_meta("find_related_files"))
@@ -560,12 +593,16 @@ async def find_related_files(file_path: str, repo_path: Optional[str] = None) ->
         # had no ceiling of its own: the whole list travelled into the context
         # window on every call. Deferral keeps it reachable without charging for
         # it up front.
-        return compact_payload(
-            {"file": file_path, "directly_related_files": directly, "indirectly_related_files": indirectly},
-            _PAYLOADS,
+        return attach_envelope(
+            compact_payload(
+                {"file": file_path, "directly_related_files": directly, "indirectly_related_files": indirectly},
+                _PAYLOADS,
+            ),
+            await envelope_for_repository(repository),
         )
     except Exception as e:
-        return {"error": f"Failed to find related files: {str(e)}", "status": "failed"}
+        return {"error": f"Failed to find related files: {str(e)}", "status": "failed",
+                "freshness": unknown_envelope("tool_failed")}
 
 
 @mcp.tool(**tool_meta("review_diff"))
@@ -580,11 +617,13 @@ async def review_diff(
     the inline budget.
     """
     try:
-        analyzer = DiffAnalyzer(resolve_repo_path(repo_path) if repo_path else PROJECT_ROOT)
+        target = resolve_repo_path(repo_path) if repo_path else PROJECT_ROOT
+        analyzer = DiffAnalyzer(target)
         result = await analyzer.review_diff(base=base, head=head)
-        return compact_payload(result, _PAYLOADS)
+        return attach_envelope(compact_payload(result, _PAYLOADS), await envelope_for_path(target))
     except Exception as e:
-        return {"error": f"Failed to review diff: {str(e)}", "status": "failed"}
+        return {"error": f"Failed to review diff: {str(e)}", "status": "failed",
+                "freshness": unknown_envelope("tool_failed")}
 
 
 def main() -> None:

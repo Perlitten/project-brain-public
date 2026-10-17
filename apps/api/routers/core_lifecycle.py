@@ -11,7 +11,7 @@ from apps.api.team_access import current_team_state, repository_access
 from brain import __version__
 from brain.config.paths import resolve_repo_path
 from brain.config.settings import settings
-from brain.database.repository_utils import require_repository_by_path
+from brain.database.repository_utils import list_all_repositories, require_repository_by_path
 from brain.database.session import check_health, redis_client
 from brain.late_interaction.client import (
     get_late_interaction_client,
@@ -22,6 +22,7 @@ from brain.late_interaction.operator_status import (
 )
 from brain.late_interaction.provider import LfmColbertProvider
 from brain.llm.presets import llm_provider_ready
+from brain.memory.freshness_envelope import repository_age_report
 from brain.team.authorization import Permission
 from brain.team.restore_fence import current_team_access
 from brain.version import build_info
@@ -41,6 +42,17 @@ async def health_check():
     except Exception as exc:  # noqa: BLE001 — Redis down is already reported in details
         scheduler = {"error": f"{type(exc).__name__}: {exc}", "stale": [], "jobs": []}
     status = "error" if not is_healthy else "degraded" if scheduler.get("stale") else "ok"
+    try:
+        # Index age per repository against the SLO; an old index degrades the
+        # service without making it unhealthy (answers still carry freshness).
+        freshness = repository_age_report(await list_all_repositories(), settings.BRAIN_FRESHNESS_MAX_AGE_S)
+    except Exception as exc:  # noqa: BLE001 — the database outage is already reported in details
+        freshness = {
+            "max_age_s": settings.BRAIN_FRESHNESS_MAX_AGE_S, "exceeded": [], "repositories": [],
+            "error": type(exc).__name__,
+        }
+    if status == "ok" and freshness.get("exceeded"):
+        status = "degraded"
     try:
         worker: dict[str, Any] = await worker_liveness(
             redis_client, settings.WORKER_REDIS_PREFIX, pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED
@@ -64,6 +76,7 @@ async def health_check():
         "team_access": team_access,
         "details": details,
         "worker": worker,
+        "freshness": freshness,
         "scheduler": {
             "enabled": scheduler.get("enabled"),
             "stale": scheduler.get("stale", []),
