@@ -10,6 +10,7 @@ from apps.api.schemas import (
     EmbeddingVerifyRequest,
     MemoryConsolidationJobRequest,
     NightlyMaintenanceJobRequest,
+    OriginPollJobRequest,
     ProactiveInsightsJobRequest,
     ReindexJobRequest,
     SelfDiagnosisJobRequest,
@@ -168,6 +169,21 @@ async def enqueue_memory_consolidation(body: MemoryConsolidationJobRequest | Non
             params["dry_run"] = True
     job_id = await _queue("memory_consolidation").enqueue(
         "memory_consolidation", params or None,
+        initiator=_initiator(principal),
+    )
+    return _enqueue_response(job_id)
+
+
+@router.post("/origin-poll", dependencies=[Depends(require_scope("jobs:write"))])
+async def enqueue_origin_poll(body: OriginPollJobRequest | None = None,
+                              principal: ResolvedPrincipal = Depends(require_principal)):
+    """Run the origin poll now: record each repository's remote head and reindex the ones origin moved past."""
+    await _authorize_job(principal, getattr(body, "repo_path", None))
+    params: dict[str, Any] = {}
+    if body and body.repo_path:
+        params["repo_path"] = body.repo_path
+    job_id = await _queue("origin_poll").enqueue(
+        "origin_poll", params or None,
         initiator=_initiator(principal),
     )
     return _enqueue_response(job_id)

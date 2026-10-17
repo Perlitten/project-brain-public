@@ -120,11 +120,29 @@ BRAIN_STALE_CONTEXT_POLICY=strict_block
 BRAIN_TEAM_MODE=false
 # Widen the image rollback window for this release.
 BRAIN_IMAGE_RETENTION=10
-# New default (PR #128): the post-merge webhook job runs `git fetch origin` and checks
-# out the delivered commit. A tar-deployed /app normally has no git origin to fetch,
-# and /repo is mounted read-only, so keep the c13d056 behaviour.
-BRAIN_WEBHOOK_FETCH_SOURCE=false
+# The post-merge webhook job and the origin poll move the index to the commit on
+# origin. A tar-deployed /app has no git origin of its own, so name it here; the
+# worker then fetches into a Brain-owned mirror on the `source_mirrors` volume
+# (BRAIN_SOURCE_MIRROR_DIR, default /var/lib/brain/mirrors in the prod compose
+# file) and indexes the mirror commit. Read-only mounts such as /repo use the same
+# mirror automatically when they have an origin remote.
+BRAIN_ORIGIN_REMOTES='{"/app": "https://github.com/Perlitten/project-brain-public.git"}'
+# Seconds between origin polls (git ls-remote of the tracked branch); 0 disables
+# the poll. The webhook keeps working either way.
+BRAIN_ORIGIN_POLL_INTERVAL_S=300
 ```
+
+`BRAIN_WEBHOOK_FETCH_SOURCE=false`, the pin earlier versions of this checklist
+asked for, is no longer needed. It still works: with it set, the webhook job
+keeps failing with "BRAIN_WEBHOOK_FETCH_SOURCE is off" and the origin poll
+records origin's head (the freshness envelope reports it as `origin_head` and
+`commits_behind_origin`) but does not request a reindex. Remove it once
+`BRAIN_ORIGIN_REMOTES` is in place. To check the poll after the deploy:
+`POST /jobs/origin-poll` (scope `jobs:write`) and read the job result; each
+repository lists `remote_head`, `commits_behind` and whether a reindex was
+`enqueued`. A private origin needs credentials the worker can use without a
+prompt (for example a read-only deploy token in the URL); the URL is stored
+and reported with its credentials redacted.
 
 Changes that cannot be pinned, and that you should know about:
 
@@ -159,6 +177,9 @@ Changes that cannot be pinned, and that you should know about:
   Behaviour change in solo too: editing a decision or rule keeps its id, bumps
   `version` and copies the old content into a superseded history row instead
   of overwriting it.
+- The origin poll adds one table, `repository_origin_state` (created on first
+  boot, nothing else changes), and one scheduled job, `origin_poll`, every
+  `BRAIN_ORIGIN_POLL_INTERVAL_S` seconds on the fast pool.
 - `MCP_TOOL_CALLS_RETENTION_DAYS` is new, default 30. The daily `health_check`
   deletes older rows from `mcp_tool_calls`, a table that is new on prod.
 
