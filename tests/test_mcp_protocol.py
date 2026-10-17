@@ -10,6 +10,7 @@ from mcp.types import CreateMessageResult, ElicitResult, TextContent
 
 from apps.mcp_server import remote_server, server
 from apps.mcp_server.protocol import CONFIRM_WRITES_ENV, TOOL_ANNOTATIONS
+from brain.memory.provenance import MemoryWriteResult
 
 SERVERS = [pytest.param(server.mcp, id="local"), pytest.param(remote_server.mcp, id="remote")]
 
@@ -87,8 +88,8 @@ def _elicit(action: str, content: dict | None = None):
 async def test_write_confirmation_is_opt_in(mode, monkeypatch):
     monkeypatch.delenv(CONFIRM_WRITES_ENV, raising=False)
     callback, calls = _elicit("decline")
-    add = AsyncMock(return_value=5)
-    with patch("apps.mcp_server.server.DecisionStore.add_decision", add):
+    add = AsyncMock(return_value=MemoryWriteResult(id=5, version=1, created=True, changed=True))
+    with patch("apps.mcp_server.server.DecisionStore.record_decision", add):
         async with Client(server.mcp, mode=mode, elicitation_callback=callback) as client:
             await client.call_tool("record_decision", {"title": "Use FastMCP", "repo_path": "/r"})
     assert calls == []
@@ -100,8 +101,8 @@ async def test_write_confirmation_is_opt_in(mode, monkeypatch):
 async def test_approved_write_is_stored(mode, monkeypatch):
     monkeypatch.setenv(CONFIRM_WRITES_ENV, "true")
     callback, calls = _elicit("accept", {"approve": True, "note": ""})
-    add = AsyncMock(return_value=5)
-    with patch("apps.mcp_server.server.DecisionStore.add_decision", add):
+    add = AsyncMock(return_value=MemoryWriteResult(id=5, version=1, created=True, changed=True))
+    with patch("apps.mcp_server.server.DecisionStore.record_decision", add):
         async with Client(server.mcp, mode=mode, elicitation_callback=callback) as client:
             await client.call_tool("record_decision", {"title": "Use FastMCP", "repo_path": "/r"})
     assert len(calls) == 1
