@@ -12,14 +12,14 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import mint_credential
-from brain.database.models import Principal, Repository
+from brain.database.models import ApiCredential, OAuthRefreshToken, Principal, Repository
 from brain.team.authorization import ROLE_PERMISSIONS, Permission, TeamConflict, TeamDenied, fresh, permissions
-from brain.team.models import ProjectMember, ProjectRepository, Team, TeamMember, TeamProject
+from brain.team.models import AgentRun, ProjectMember, ProjectRepository, Team, TeamMember, TeamProject
 
 TEAM_ID = 1
 # Issuer recorded for members an operator verified against a Brain credential
@@ -182,8 +182,35 @@ async def add_member(session: AsyncSession, *, principal: Principal, issuer: str
     return member
 
 
+async def revoke_principal_access(session: AsyncSession, principal: Principal) -> None:
+    """Revoke every credential, OAuth refresh token and agent run that acts for ``principal``.
+
+    Membership rows alone do not stop a key: a revoked member's credential
+    would otherwise stay live for solo surfaces and for any later fallback.
+    This revokes the principal's own credentials (named keys and OAuth access
+    tokens), the refresh tokens that could mint new ones, and the runs it
+    initiated together with their run credentials, in the caller's transaction."""
+    now = _now()
+    credential_ids = select(ApiCredential.id).where(ApiCredential.principal_id == principal.id)
+    runs = (await session.execute(select(AgentRun).where(AgentRun.initiator_id == principal.id,
+                                                         AgentRun.revoked_at.is_(None))
+                                  .with_for_update())).scalars().all()
+    run_credentials = [run.credential_id for run in runs]
+    for run in runs:
+        run.revoked_at = now
+    await session.execute(update(OAuthRefreshToken).where(
+        OAuthRefreshToken.revoked_at.is_(None),
+        or_(OAuthRefreshToken.principal_name == principal.name,
+            OAuthRefreshToken.access_credential_id.in_(credential_ids))).values(revoked_at=now))
+    await session.execute(update(ApiCredential).where(
+        ApiCredential.revoked_at.is_(None),
+        or_(ApiCredential.principal_id == principal.id, ApiCredential.id.in_(run_credentials)))
+        .values(revoked_at=now))
+    await session.flush()
+
+
 async def revoke_member(session: AsyncSession, *, principal: Principal) -> TeamMember:
-    """Revoke team membership and every live project membership of the principal."""
+    """Revoke team membership, every live project role and all access acting for the principal."""
     member = await fresh(session, TeamMember, TeamMember.principal_id == principal.id, exclusive=True)
     if member is None:
         raise TeamNotFound("Principal is not a team member")
@@ -194,8 +221,28 @@ async def revoke_member(session: AsyncSession, *, principal: Principal) -> TeamM
     for membership in rows:
         membership.revoked_at = member.revoked_at
         membership.version += 1
-    await session.flush()
+    await revoke_principal_access(session, principal)
     return member
+
+
+async def dissolve_team(session: AsyncSession, team_id: int = TEAM_ID) -> Team:
+    """Return a team whose members are all revoked to solo (operator-only).
+
+    Solo makes every authenticated key the implicit administrator, so the
+    switch is never automatic: ``team_state`` stays ``"team"`` after the last
+    revocation until this records ``dissolved_at``. Refused while any verified
+    member is live. Adding a member afterwards turns the team back on."""
+    team = await fresh(session, Team, Team.id == team_id, exclusive=True)
+    if team is None:
+        raise TeamNotFound("Team is not initialized; run `brain team init` first")
+    live = (await session.execute(select(TeamMember.principal_id).where(
+        TeamMember.team_id == team_id, TeamMember.revoked_at.is_(None), TeamMember.verified_at.is_not(None))
+        .limit(1))).scalar_one_or_none()
+    if live is not None:
+        raise TeamConflict("Revoke every team member before dissolving the team")
+    team.dissolved_at = _now()
+    await session.flush()
+    return team
 
 
 async def list_members(session: AsyncSession, team_id: int = TEAM_ID) -> list[dict]:
