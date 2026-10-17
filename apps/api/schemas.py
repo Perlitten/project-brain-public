@@ -123,6 +123,18 @@ class FeatureCreate(BaseModel):
     repo_path: Optional[str] = None
 
 
+class OriginFreshness(BaseModel):
+    """Where origin stands relative to the indexed revision (None when unknown).
+
+    ``origin_head`` is the local remote-tracking ref, refreshed by the webhook
+    reindex fetch; ``commits_behind_origin`` is ``indexed..origin_head``.
+    """
+
+    origin_ref: Optional[str] = None
+    origin_head: Optional[str] = None
+    commits_behind_origin: Optional[int] = None
+
+
 class ReindexJobRequest(BaseModel):
     repo_path: Optional[str] = None
     clean: bool = False

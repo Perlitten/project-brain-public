@@ -98,6 +98,10 @@ PostgreSQL-only restore and concurrency cases that CI runs.
   human membership are still two separate models.
 - **Not exercised end to end**: production upgrade/restore, external identities
   and secrets, real multi-person use.
+- **Index freshness follows origin only through the webhook.** The post-merge
+  reindex now fetches `origin` and checks out the delivered commit
+  (`BRAIN_WEBHOOK_FETCH_SOURCE`), and `/repositories` reports
+  `commits_behind_origin`; a read-only mount still has to be updated on the host.
 
 ## Next steps, in order
 
