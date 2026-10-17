@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 from apps.mcp_server.server import mcp
+from brain.memory.provenance import MemoryWriteResult
 
 
 @pytest.mark.asyncio
@@ -30,8 +31,9 @@ async def test_mcp_record_decision_tool():
     # Mock DecisionStore
     import json
 
-    mock_add_decision = AsyncMock(return_value=77)
-    with patch("apps.mcp_server.server.DecisionStore.add_decision", mock_add_decision):
+    # The tool writes through ``record_decision`` (it reports the version for CAS clients).
+    mock_add_decision = AsyncMock(return_value=MemoryWriteResult(id=77, version=1, created=True, changed=True))
+    with patch("apps.mcp_server.server.DecisionStore.record_decision", mock_add_decision):
         result = await mcp.call_tool(
             "record_decision",
             {
@@ -45,6 +47,7 @@ async def test_mcp_record_decision_tool():
         data = json.loads(result.content[0].text)
         assert data["status"] == "success"
         assert data["decision_id"] == 77
+        assert data["version"] == 1
         mock_add_decision.assert_called_once()
         assert mock_add_decision.await_args.kwargs["repo_path"] == "/indexed/example"
 
@@ -53,8 +56,9 @@ async def test_mcp_record_decision_tool():
 async def test_mcp_record_rule_tool():
     import json
 
-    mock_add_rule = AsyncMock(return_value="brand-logo-source")
-    with patch("apps.mcp_server.server.RuleStore.add_rule", mock_add_rule):
+    mock_add_rule = AsyncMock(return_value=MemoryWriteResult(id="brand-logo-source", version=1,
+                                                            created=True, changed=True))
+    with patch("apps.mcp_server.server.RuleStore.record_rule", mock_add_rule):
         result = await mcp.call_tool(
             "record_rule",
             {

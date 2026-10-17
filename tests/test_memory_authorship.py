@@ -16,6 +16,7 @@ from brain.database.migrations import _ensure_memory_authorship_columns
 from brain.database.models import Decision, Rule
 from brain.memory import decision_store, rule_store
 from brain.memory.decision_store import MEMORY_ADMIN_SCOPE, caller_role_for
+from brain.memory.provenance import MemoryWriteResult
 
 with (
     patch("sqlalchemy.ext.asyncio.create_async_engine"),
@@ -97,7 +98,8 @@ def _as(principal):
 
 
 def test_api_decision_role_and_author_follow_the_principal():
-    with _as(AGENT), patch("apps.api.routers.core_memory.DecisionStore.add_decision",
+    # The routers write through ``record_decision``/``record_rule`` (version + CAS).
+    with _as(AGENT), patch("apps.api.routers.core_memory.DecisionStore.record_decision",
                            AsyncMock(side_effect=PermissionError("admin role required"))) as add:
         # A spoofed role in the body is ignored; the agent's own role decides.
         response = client.post("/decisions", json={"title": "Global", "repo_path": None, "caller_role": "admin"},
@@ -105,11 +107,13 @@ def test_api_decision_role_and_author_follow_the_principal():
     assert response.status_code == 403 and response.json()["detail"] == "admin role required"
     assert add.await_args.kwargs["caller_role"] == "agent" and add.await_args.kwargs["author_principal_id"] == 6
 
-    with _as(ADMIN), patch("apps.api.routers.core_memory.DecisionStore.add_decision", AsyncMock(return_value=1)) as add:
+    with _as(ADMIN), patch("apps.api.routers.core_memory.DecisionStore.record_decision",
+                           AsyncMock(return_value=MemoryWriteResult(id=1, version=1, created=True, changed=True))) as add:
         response = client.post("/decisions", json={"title": "Global", "repo_path": None}, headers=AUTH)
     assert response.status_code == 200 and response.json()["decision_id"] == 1
     assert add.await_args.kwargs["caller_role"] == "admin" and add.await_args.kwargs["author_principal_id"] == 5
 
-    with _as(AGENT), patch("apps.api.routers.core_memory.RuleStore.add_rule", AsyncMock(return_value="r")) as add:
+    with _as(AGENT), patch("apps.api.routers.core_memory.RuleStore.record_rule",
+                           AsyncMock(return_value=MemoryWriteResult(id="r", version=1, created=True, changed=True))) as add:
         response = client.post("/rules", json={"name": "Rule", "repo_path": "/repo"}, headers=AUTH)
     assert response.status_code == 200 and add.await_args.kwargs["author_principal_id"] == 6

@@ -18,6 +18,7 @@ from apps.api.routers import core_memory, core_retrieval, jobs, team
 from brain.auth.principals import hash_credential
 from brain.config.settings import Settings, settings
 from brain.database.models import ApiCredential, Principal, Repository
+from brain.memory.provenance import MemoryWriteResult
 from brain.team import provisioning
 from brain.team.authorization import team_state
 from brain.team.models import TeamMember
@@ -68,7 +69,8 @@ def personal_app(factory, monkeypatch):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr(core_memory.LearningStore, "list_active_learnings", AsyncMock(return_value=[]))
-    monkeypatch.setattr(core_memory.DecisionStore, "add_decision", AsyncMock(return_value=7))
+    monkeypatch.setattr(core_memory.DecisionStore, "record_decision",
+                        AsyncMock(return_value=MemoryWriteResult(id=7, version=1, created=True, changed=True)))
     monkeypatch.setattr(core_retrieval, "hybrid_search_code", AsyncMock(return_value=[]))
     monkeypatch.setattr("apps.api.request_observation.observe_http_request", AsyncMock())
     queue = AsyncMock()

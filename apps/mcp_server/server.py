@@ -407,14 +407,26 @@ async def record_decision(
     affected_features: Optional[List[str]] = None,
     affected_modules: Optional[List[str]] = None,
     affected_files: Optional[List[str]] = None,
+    expected_version: Optional[int] = None,
     ctx: Optional[Context] = None,
 ) -> dict | InputRequiredResult:
-    """Records an architectural or design decision to the database."""
+    """Records an architectural or design decision to the database.
+
+    A decision with the same title and scope is superseded, never overwritten:
+    the previous content is kept as history and ``version`` increments. Pass
+    ``expected_version`` (the version last read, 0 for "must not exist") to fail
+    with ``status: conflict`` instead of superseding someone else's change.
+    """
+    from brain.memory.provenance import MemoryVersionConflict
+
     declined = await confirm_memory_write(ctx, f"Record decision: {title}. {description or ''}".strip())
     if declined is not None:
         return declined
     try:
-        decision_id = await DecisionStore.add_decision(
+        # The stdio server runs under the operator's own process without a
+        # resolved principal, so authorship stays unattributed here; the HTTP
+        # and remote MCP paths stamp the caller.
+        result = await DecisionStore.record_decision(
             title=title,
             repo_path=repo_path,
             description=description,
@@ -424,12 +436,16 @@ async def record_decision(
             affected_features=affected_features,
             affected_modules=affected_modules,
             affected_files=affected_files,
+            expected_version=expected_version,
         )
         return {
             "status": "success",
-            "decision_id": decision_id,
-            "message": f"Successfully recorded decision '{title}' with ID {decision_id}",
+            "decision_id": result.id,
+            **result.as_dict(),
+            "message": f"Successfully recorded decision '{title}' with ID {result.id} (version {result.version})",
         }
+    except MemoryVersionConflict as e:
+        return {"status": "conflict", "error": str(e), "current_version": e.actual_version}
     except Exception as e:
         return {"error": f"Failed to record decision: {str(e)}", "status": "failed"}
 
@@ -444,14 +460,23 @@ async def record_rule(
     status: Optional[str] = "active",
     applies_to: Optional[dict] = None,
     rule_id: Optional[str] = None,
+    expected_version: Optional[int] = None,
     ctx: Optional[Context] = None,
 ) -> dict | InputRequiredResult:
-    """Record a repository-scoped normative rule in the database."""
+    """Record a repository-scoped normative rule in the database.
+
+    A rule with the same id and scope is superseded, never overwritten: the
+    previous content is kept as history and ``version`` increments. Pass
+    ``expected_version`` (the version last read, 0 for "must not exist") to fail
+    with ``status: conflict`` instead of superseding someone else's change.
+    """
+    from brain.memory.provenance import MemoryVersionConflict
+
     declined = await confirm_memory_write(ctx, f"Record {severity} rule: {name}. {description or ''}".strip())
     if declined is not None:
         return declined
     try:
-        recorded_id = await RuleStore.add_rule(
+        result = await RuleStore.record_rule(
             name=name,
             repo_path=repo_path,
             description=description,
@@ -460,12 +485,16 @@ async def record_rule(
             status=status,
             applies_to=applies_to,
             rule_id=rule_id,
+            expected_version=expected_version,
         )
         return {
             "status": "success",
-            "rule_id": recorded_id,
-            "message": f"Successfully recorded rule '{name}' with ID {recorded_id}",
+            "rule_id": result.id,
+            **result.as_dict(),
+            "message": f"Successfully recorded rule '{name}' with ID {result.id} (version {result.version})",
         }
+    except MemoryVersionConflict as e:
+        return {"status": "conflict", "error": str(e), "current_version": e.actual_version}
     except Exception as e:
         return {"error": f"Failed to record rule: {str(e)}", "status": "failed"}
 

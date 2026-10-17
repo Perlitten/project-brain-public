@@ -48,8 +48,14 @@ class LearningStore:
         valid_until: Optional[datetime] = None,
         promoted_from: Optional[str] = None,
         session: Optional[AsyncSession] = None,
+        author_principal_id: Optional[int] = None,
+        updated_by_principal_id: Optional[int] = None,
     ) -> int:
         """Save a new learning and return its id.
+
+        ``author_principal_id`` names who contributed it (the API caller, or the
+        sole principal behind consolidated evidence); ``updated_by_principal_id``
+        defaults to the author.
 
         With ``session`` the row is only flushed, so the caller's transaction
         decides whether it commits (used by consolidation for atomic L2→L3 writes).
@@ -85,6 +91,10 @@ class LearningStore:
             promoted_from=promoted_from,
             embedding=embedding,
             embedding_model=embedding_model,
+            author_principal_id=author_principal_id,
+            updated_by_principal_id=(
+                updated_by_principal_id if updated_by_principal_id is not None else author_principal_id
+            ),
         )
         if session is not None:
             session.add(learning)
@@ -123,6 +133,7 @@ class LearningStore:
         learning_id: int,
         superseded_by: int,
         session: Optional[AsyncSession] = None,
+        updated_by_principal_id: Optional[int] = None,
     ) -> None:
         """Mark a learning superseded by a newer one. Append-only history.
 
@@ -140,6 +151,8 @@ class LearningStore:
                 raise LookupError(f"Learning {learning_id} not found")
             learning.status = "superseded"
             learning.superseded_by = superseded_by
+            if updated_by_principal_id is not None:
+                learning.updated_by_principal_id = updated_by_principal_id
 
         if session is not None:
             await _apply(session)
@@ -191,7 +204,7 @@ class LearningStore:
             return new_conf
 
     @classmethod
-    async def reject(cls, learning_id: int) -> None:
+    async def reject(cls, learning_id: int, updated_by_principal_id: Optional[int] = None) -> None:
         """Mark a learning rejected (failed promotion or human veto)."""
         async with async_session_factory() as session:
             result = await session.execute(select(Learning).where(Learning.id == learning_id))
@@ -199,6 +212,8 @@ class LearningStore:
             if learning is None:
                 raise LookupError(f"Learning {learning_id} not found")
             learning.status = "rejected"
+            if updated_by_principal_id is not None:
+                learning.updated_by_principal_id = updated_by_principal_id
             await session.commit()
 
 
@@ -210,6 +225,7 @@ async def add_learning(
     repo_scope: Optional[str] = None,
     valid_until: Optional[datetime] = None,
     promoted_from: Optional[str] = None,
+    author_principal_id: Optional[int] = None,
 ) -> int:
     return await LearningStore.add_learning(
         statement=statement,
@@ -219,6 +235,7 @@ async def add_learning(
         repo_scope=repo_scope,
         valid_until=valid_until,
         promoted_from=promoted_from,
+        author_principal_id=author_principal_id,
     )
 
 

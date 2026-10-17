@@ -22,7 +22,10 @@ HEADERS = {"X-API-Key": "test-secret-key"}
 
 @pytest.fixture(autouse=True)
 def api_key_env():
-    with patch("apps.api.auth.settings") as mock_settings:
+    # The legacy shared key is a team of one: episode decisions resolve the team
+    # state before they are forwarded, so pin it instead of hitting the database.
+    with patch("apps.api.auth.settings") as mock_settings, \
+            patch("apps.api.team_access.current_team_state", AsyncMock(return_value="solo")):
         mock_settings.PROJECT_BRAIN_API_KEY = "test-secret-key"
         yield mock_settings
 
@@ -77,7 +80,8 @@ def test_approve_pending_episode_promotes():
         response = client.post("/episodes/3/approve", json={"reason": "verified"}, headers=HEADERS)
     assert response.status_code == 200
     assert response.json() == {"episode_id": 3, "status": "promoted", "learning_id": 9}
-    approve.assert_awaited_once_with(3, "verified")
+    # The legacy shared key has no principal id; the team state still travels along.
+    approve.assert_awaited_once_with(3, "verified", principal_id=None, team_state="solo")
 
 
 def test_reject_pending_episode_without_body():
@@ -85,7 +89,7 @@ def test_reject_pending_episode_without_body():
     with patch("brain.memory.consolidation.reject_episode", reject):
         response = client.post("/episodes/4/reject", headers=HEADERS)
     assert response.status_code == 200
-    reject.assert_awaited_once_with(4, None)
+    reject.assert_awaited_once_with(4, None, principal_id=None, team_state="solo")
 
 
 @pytest.mark.parametrize(
@@ -95,6 +99,16 @@ def test_reject_pending_episode_without_body():
 def test_episode_decision_maps_errors(error, status):
     with patch("brain.memory.consolidation.approve_episode", AsyncMock(side_effect=error)):
         assert client.post("/episodes/5/approve", headers=HEADERS).status_code == status
+
+
+def test_self_approval_maps_to_403():
+    from brain.memory.provenance import SelfApprovalError
+
+    with patch("brain.memory.consolidation.approve_episode",
+               AsyncMock(side_effect=SelfApprovalError("Episode 5 evidence was authored by principal 7"))):
+        response = client.post("/episodes/5/approve", headers=HEADERS)
+    assert response.status_code == 403
+    assert "authored by principal 7" in response.json()["detail"]
 
 
 def test_episode_decision_requires_write_scope_key():
