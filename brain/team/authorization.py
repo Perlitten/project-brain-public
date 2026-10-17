@@ -7,14 +7,15 @@ from typing import Literal
 import uuid
 
 from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
 from brain.database.models import ApiCredential, Principal
 from brain.database.harness_models import AgentTask
-from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamMember, TeamProject, TeamTaskBinding
+from brain.team.models import (AgentRun, ProjectMember, ProjectRepository, Team, TeamMember, TeamProject,
+                               TeamTaskBinding)
 from brain.team.restore_fence import FENCED, access_fenced
 
 
@@ -73,19 +74,24 @@ def strict_team_mode() -> bool:
 
 
 async def team_state(session: AsyncSession, team_id: int = 1) -> TeamState:
-    """``"solo"`` until the team has a live verified member, ``"team"`` from then on.
+    """``"solo"`` until the team has a verified member, ``"team"`` from then on.
 
     Solo is a team of one: every authenticated caller is the implicit
     administrator of every repository. Team routes repository access through
-    project membership (see ``authorize_repository``). A Brain restored from a
-    team snapshot is ``"team"`` until reconciled, even if no member is live
-    (``brain.team.restore_fence``)."""
+    project membership (see ``authorize_repository``). Revoking every member
+    does not fall back to solo: a team that ever had a verified member stays
+    ``"team"`` until an operator dissolves it (``brain team dissolve`` sets
+    ``teams.dissolved_at``), and only members revoked after that moment count
+    again. A Brain restored from a team snapshot is ``"team"`` until
+    reconciled, even if no member is live (``brain.team.restore_fence``)."""
     if settings.BRAIN_STORAGE_MODE != "full":
         return "solo"
     if strict_team_mode() or await access_fenced(session):
         return "team"
+    dissolved = select(Team.dissolved_at).where(Team.id == team_id).scalar_subquery()
     member = (await session.execute(select(TeamMember.principal_id).where(
-        TeamMember.team_id == team_id, TeamMember.revoked_at.is_(None), TeamMember.verified_at.is_not(None))
+        TeamMember.team_id == team_id, TeamMember.verified_at.is_not(None),
+        or_(TeamMember.revoked_at.is_(None), dissolved.is_(None), TeamMember.revoked_at > dissolved))
         .limit(1))).scalar_one_or_none()
     return "team" if member is not None else "solo"
 

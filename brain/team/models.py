@@ -16,6 +16,10 @@ class Team(Base):
     __table_args__ = (CheckConstraint("id = 1", name="ck_single_team"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Set only by ``brain team dissolve``: a team whose members are all revoked
+    # stays a team (the shared key and member keys get no implicit authority)
+    # until an operator dissolves it explicitly.
+    dissolved_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
 
 
 class TeamAccessFence(Base):

@@ -30,7 +30,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import ResolvedPrincipal, hash_credential, mint_credential
@@ -50,6 +50,7 @@ from brain.team.provisioning import (
     require_team,
     resolve_project,
     revoke_member,
+    revoke_principal_access,
 )
 from brain.team.restore_fence import FENCED, access_fenced
 
@@ -323,9 +324,8 @@ async def revoke_invitation(session: AsyncSession, invitation_id: uuid.UUID, *, 
         principal, member, _ = await _issued(session, invitation)
         if member is not None and principal is not None:
             await revoke_member(session, principal=principal)
-        await session.execute(update(ApiCredential).where(
-            ApiCredential.principal_id == invitation.accepted_principal_id, ApiCredential.revoked_at.is_(None))
-            .values(revoked_at=now))
+        elif principal is not None:
+            await revoke_principal_access(session, principal)
     invitation.revoked_at = now
     invitation.revoked_by = revoked_by
     await session.flush()
