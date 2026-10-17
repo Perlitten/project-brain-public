@@ -110,6 +110,8 @@ class Settings(BaseSettings):
     INDEX_REPAIR_CHUNK_LIMIT: int = 500
     HARNESS_STALE_REAPER_ENABLED: bool = True
     HARNESS_STALE_REAPER_BATCH_SIZE: int = 500
+    # The daily health_check deletes mcp_tool_calls rows older than this; 0 keeps them all.
+    MCP_TOOL_CALLS_RETENTION_DAYS: int = 30
 
     # Docker is the sole containment backend. Missing/invalid backends fail
     # closed; unsafe host execution requires both mode=off and explicit opt-in.

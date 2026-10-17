@@ -49,7 +49,7 @@ from apps.api.routers.web_login import _configured as web_login_configured
 from apps.api.routers.web_login import _fail, _matches, _throttled
 from brain.auth import oauth_store
 from brain.database.session import async_session_factory
-from brain.team.authorization import TeamDenied
+from brain.team.authorization import TeamDenied, team_state
 from brain.team.oauth_link import DEV_OPEN_SUBJECT, TEAM_SCOPES, WEB_SUBJECT_PREFIX, bind_team_scopes, team_scopes
 
 # team:* scopes are issued only to verified team members, bound to their
@@ -113,11 +113,21 @@ class BrainOAuthProvider:
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         self._sweep()
         registered = client.scope.split() if client.scope else list(SUPPORTED_SCOPES)
+        requested = params.scopes or []
+        if team_scopes(requested) and await self._solo():
+            # A solo Brain has no member to bind team:* to. Connectors that ask for
+            # every advertised scope get the personal ones instead of a denial.
+            requested = [scope for scope in requested if scope not in team_scopes(requested)]
         # No scope asked for: what the tools need, within what the client registered.
-        scopes = params.scopes or [scope for scope in DEFAULT_SCOPES if scope in registered] or registered
+        scopes = requested or [scope for scope in DEFAULT_SCOPES if scope in registered] or registered
         request_id = secrets.token_urlsafe(24)
         self._pending[request_id] = _Pending(client=client, params=params, scopes=scopes, created=time.time())
         return f"{self.issuer}{CONSENT_PATH}?request={request_id}"
+
+    @staticmethod
+    async def _solo() -> bool:
+        async with async_session_factory() as session:
+            return await team_state(session) == "solo"
 
     def pending(self, request_id: str) -> Optional[_Pending]:
         self._sweep()
