@@ -220,7 +220,10 @@ async def _ask_v2(body: AskRequest) -> dict:
         runtime = {"status": "partial", "missing": [f"context_error:{type(exc).__name__}"]}
     # The runtime context builder already decided the freshness state (it is
     # the one place that sees the working tree); the answer carries its verdict.
-    freshness = runtime.get("freshness") if isinstance(runtime.get("freshness"), dict) else unknown_envelope()
+    runtime_freshness = runtime.get("freshness")
+    freshness: dict[str, Any] = (
+        runtime_freshness if isinstance(runtime_freshness, dict) else unknown_envelope()
+    )
     if runtime.get("status") != "ok":
         message = ("Current indexed context is not fresh enough to answer safely."
                    if runtime.get("status") == "stale_blocked"

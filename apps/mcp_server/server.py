@@ -253,7 +253,9 @@ def _answer_result(answer: str, structured: dict) -> CallToolResult:
 
 
 @mcp.tool(**tool_meta("ask_project"))
-async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> CallToolResult:
+async def ask_project(
+    query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None
+) -> CallToolResult | InputRequiredResult:
     """Asks the project LLM assistant a question about the project code,
 
     leveraging database code searches and active rules.

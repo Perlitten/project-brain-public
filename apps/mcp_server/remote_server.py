@@ -288,7 +288,9 @@ register_prompts(mcp)
 
 @mcp.tool(**tool_meta("ask_project"))
 @checked_tool
-async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> CallToolResult:
+async def ask_project(
+    query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None
+) -> CallToolResult | InputRequiredResult:
     """Grounded answer; use search_code first when only location is unknown."""
     repo = repo_path or DEFAULT_REPO
     res = await _post("/ask", {"query": query, "repo_path": repo}, timeout=30.0)
