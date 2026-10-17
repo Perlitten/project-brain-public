@@ -119,7 +119,7 @@ async def add_team_member(body: TeamMemberRequest, caller: ResolvedPrincipal = D
         raise TeamConflict("Administrators cannot demote their own membership")
     member = await provisioning.add_member(session, principal=principal, issuer=body.issuer,
                                            subject=body.subject or principal.name, is_admin=body.is_admin,
-                                           team_id=admin.team_id)
+                                           team_id=admin.team_id, actor_id=caller.author_id)
     return provisioning.member_dict(member, principal)
 
 
@@ -130,7 +130,7 @@ async def revoke_team_member(principal_id: int, caller: ResolvedPrincipal = Depe
     if principal_id == admin.principal_id:
         raise TeamConflict("Administrators cannot revoke their own membership")
     principal = await provisioning.resolve_principal(session, principal_id)
-    member = await provisioning.revoke_member(session, principal=principal)
+    member = await provisioning.revoke_member(session, principal=principal, actor_id=caller.author_id)
     return provisioning.member_dict(member, principal)
 
 
@@ -148,7 +148,7 @@ async def assign_project_member(project_id: uuid.UUID, principal_id: int, body: 
                                 caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     await administrator(session, caller, project_id)
     membership = await provisioning.assign_project_member(session, project_id=project_id, principal_id=principal_id,
-                                                          role=body.role)
+                                                          role=body.role, actor_id=caller.author_id)
     return provisioning.project_member_dict(membership)
 
 
@@ -156,7 +156,8 @@ async def assign_project_member(project_id: uuid.UUID, principal_id: int, body: 
 async def revoke_project_member(project_id: uuid.UUID, principal_id: int,
                                 caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     await administrator(session, caller, project_id)
-    membership = await provisioning.revoke_project_member(session, project_id=project_id, principal_id=principal_id)
+    membership = await provisioning.revoke_project_member(session, project_id=project_id, principal_id=principal_id,
+                                                          actor_id=caller.author_id)
     return provisioning.project_member_dict(membership)
 
 

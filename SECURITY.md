@@ -73,8 +73,7 @@ vulnerability; so is a non-administrator reaching team administration, and a
 revoked membership that still opens project data. Report these privately as
 above. The team members themselves are trusted colleagues the operator chose:
 denial of service between members, and anything a team administrator can do by
-design, are out of scope. Gaps already listed on the status page (for example
-the per-process invitation throttle) are known.
+design, are out of scope. Gaps already listed on the status page are known.
 
 **An invitation token is a bearer secret.** Whoever first presents an unexpired
 `pbi_` token becomes the member it was issued for; no email or identity

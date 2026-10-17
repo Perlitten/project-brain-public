@@ -77,6 +77,20 @@ Once the Brain has a verified team member it refuses the shared key the dashboar
   their agents as well. **Sign out** in the top bar deletes the cookie.
 - **Team** (sidebar) shows who you are. A team admin can add members, issue a member key (shown
   once), set project roles and revoke members through the `/team` API. Brain still checks every call.
+- A team admin can also **invite** someone from the Team page: the dashboard creates the invitation
+  with `POST /team/invitations` and shows a link `https://<dashboard>/invite#token=pbi_…` once. The
+  Invitations panel lists each invitation's state and revokes it (`POST /team/invitations/{id}/revoke`).
+- **`/invite`** is public. It is a standalone page served by `proxy.ts`, like the sign-in page, so
+  no dashboard data or layout reaches someone who isn't signed in. The token travels in the URL
+  fragment, which browsers never send; the page moves it into the form and clears the address bar.
+  The POST must come from the dashboard's own origin. The dashboard calls
+  `POST /team/invitations/accept` **without** its server key, shows the new member key once, then
+  signs the invitee in through the same `GET /api/web-session` check and sealed `pb_member` cookie as
+  the sign-in form. Responses are `no-store`, `no-referrer` and cannot be framed. Unknown, expired and
+  revoked tokens get one message, matching Brain. The throttle and an outage get their own
+  messages, and an outage says the token wasn't used. The page is off with
+  `BRAIN_WEB_ACTIONS=0`, in demo mode and when the dashboard is misconfigured. Extra sign-in
+  buttons (for example SSO) can be passed to `invitePage({ alternatives })` in `lib/invite-page.ts`.
 
 Bootstrap the first admin on the Brain server, then sign in with their key:
 
@@ -85,8 +99,9 @@ brain team init --name "My team"
 brain team member add --principal alice --admin --mint-key   # prints the key once
 ```
 
-Redeeming an `--admin` invitation (`brain team invite create --admin`, then `brain team invite
-accept`) works too. Keys from the Team page, from `--mint-key` and from invitations carry the same
+Redeeming an `--admin` invitation works too: run `brain team invite create --admin`, then either
+`brain team invite accept` or paste the token at `/invite` on the dashboard, which also works while
+the dashboard is still in solo sign-in. Keys from the Team page, from `--mint-key` and from invitations carry the same
 scopes: the team scopes, the dashboard read scopes and `core:write` for search, context and ask;
 admins also get `principals:read`/`principals:write`, `setup:write` and `operations:write`. A
 member key minted before PR #124 carries team scopes only and cannot open the dashboard; issue a
