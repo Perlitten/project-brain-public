@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     BRAIN_STALE_DIFF_MAX_FILES: int = 64
     BRAIN_STALE_DIFF_TIMEOUT_S: float = 1.0
     BRAIN_STALE_SOURCE_MAX_BYTES: int = 256_000
+    # Index-age SLO reported by /health (per repository); older indexes mark the
+    # service `degraded`. 0 disables the check.
+    BRAIN_FRESHNESS_MAX_AGE_S: int = 604_800
     WORKER_POOL_NAME: str = "maintenance"
     WORKER_JOB_LEASE_SECONDS: int = 60
     WORKER_JOB_TIMEOUT_SECONDS: int = 60 * 60

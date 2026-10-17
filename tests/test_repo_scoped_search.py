@@ -137,7 +137,10 @@ async def test_remote_mcp_search_uses_repo_path_payload():
     with patch.object(remote_server, "_post", post_mock):
         result = await remote_server.search_code("risk gate", repo_path="/indexed/mobile-app")
 
-    assert result == {"files": []}
+    assert result["files"] == []
+    # An API that predates the envelope still yields a well-formed block.
+    assert result["freshness"]["state"] == "unknown"
+    assert result["freshness"]["reason"] == "not_reported_by_api"
     post_mock.assert_awaited_once_with(
         "/search",
         {"query": "risk gate", "limit": 5, "repo_path": "/indexed/mobile-app"},
@@ -172,7 +175,8 @@ async def test_remote_diff_review_defaults_to_configured_repo():
     ):
         result = await remote_server.review_diff(head="current")
 
-    assert result == {"status": "completed"}
+    assert result["status"] == "completed"
+    assert result["freshness"]["state"] == "unknown"
     post_mock.assert_awaited_once_with(
         "/diff-review",
         {

@@ -97,7 +97,9 @@ def test_diff_review_poll_uses_the_id_minted_by_enqueue(api_key_env, fake_queue)
     fake_queue.jobs[job_id].update(status="completed", result={"report": "clean"})
     done = client.get(f"/diff-review/{job_id}", headers=HEADERS)
     assert done.status_code == 200
-    assert done.json() == {"status": "completed", "result": {"report": "clean"}}
+    completed = done.json()
+    assert completed["status"] == "completed" and completed["result"] == {"report": "clean"}
+    assert completed["freshness"]["state"] in {"fresh", "stale_served", "stale_blocked", "unknown"}
 
 
 def test_diff_review_poll_rejects_unknown_and_foreign_jobs(api_key_env, fake_queue):
@@ -116,7 +118,8 @@ async def test_remote_mcp_get_diff_review_polls_the_job():
     get_mock = AsyncMock(return_value={"status": "completed", "result": {}})
     with patch.object(remote_server, "_get", get_mock):
         result = await remote_server.get_diff_review("job-1")
-    assert result == {"status": "completed", "result": {}}
+    assert result["status"] == "completed" and result["result"] == {}
+    assert result["freshness"]["state"] == "unknown"  # the API predates the envelope
     get_mock.assert_awaited_once_with("/diff-review/job-1")
 
 

@@ -1,6 +1,10 @@
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
+# The freshness envelope is defined transport-independently in brain/ and
+# re-exported here as the API's response contract for the ``freshness`` block.
+from brain.memory.freshness_envelope import FreshnessEnvelope  # noqa: F401
+
 
 class IndexRequest(BaseModel):
     repo_path: str

@@ -33,7 +33,7 @@ from urllib.parse import quote
 import httpx
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import InputRequiredResult
+from mcp.types import CallToolResult, InputRequiredResult, TextContent
 from mcp.server.auth.middleware.auth_context import get_access_token
 
 from apps.mcp_server.client_activity import observe_client_activity, tool_call_observer
@@ -91,6 +91,31 @@ mcp = MCPServer(
 # keep their head inline and park the tail here; see deferred_payload.py.
 _PAYLOADS = DeferredPayloadStore()
 register_payload_resource(mcp, _PAYLOADS)
+
+
+# The bridge must stay importable without ``brain``; this literal mirrors the
+# core fields of ``brain.memory.freshness_envelope.FreshnessEnvelope`` for an
+# API that predates the envelope.
+_UNKNOWN_FRESHNESS: dict[str, Any] = {
+    "state": "unknown",
+    "reason": "not_reported_by_api",
+    "indexed_commit": None,
+    "indexed_at": None,
+    "age_s": None,
+    "reindex_job_id": None,
+}
+
+
+def _with_envelope(result: Any) -> Any:
+    """Guarantee a ``freshness`` block on a successful dict result."""
+    if isinstance(result, dict) and result.get("_bridge_error") is not True:
+        result.setdefault("freshness", dict(_UNKNOWN_FRESHNESS))
+    return result
+
+
+def _answer_result(answer: str, structured: dict) -> CallToolResult:
+    """A prose answer for legacy clients plus the structured block (with ``freshness``)."""
+    return CallToolResult(content=[TextContent(type="text", text=answer)], structured_content=structured)
 
 
 def checked_tool(function):
@@ -263,12 +288,14 @@ register_prompts(mcp)
 
 @mcp.tool(**tool_meta("ask_project"))
 @checked_tool
-async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None) -> str | InputRequiredResult:
+async def ask_project(
+    query: str, repo_path: Optional[str] = None, ctx: Optional[Context] = None
+) -> CallToolResult | InputRequiredResult:
     """Grounded answer; use search_code first when only location is unknown."""
     repo = repo_path or DEFAULT_REPO
     res = await _post("/ask", {"query": query, "repo_path": repo}, timeout=30.0)
     if isinstance(res, dict) and "answer" in res:
-        return res["answer"]
+        return _answer_result(str(res["answer"]), _with_envelope(res))
     # The server-side model failed or timed out. The bounded context pack does
     # not need it, so let the client's own model answer from that instead.
     context = await _post(
@@ -282,22 +309,29 @@ async def ask_project(query: str, repo_path: Optional[str] = None, ctx: Optional
             f"Question: {query}\n\nProject context (JSON):\n{json.dumps(context, default=str)[:24_000]}",
             system=_SAMPLING_SYSTEM,
         )
+        if isinstance(answer, str):
+            return _answer_result(answer, {
+                "answer": answer,
+                "status": "partial",
+                "degraded": ["server_synthesis_unavailable", "client_sampled"],
+                "freshness": _with_envelope(context)["freshness"],
+            })
         if answer is not None:
-            return answer
+            return answer  # an elicitation round-trip, forwarded as-is
     if isinstance(res, dict) and res.get("status") == "failed":
         raise ToolError(str(res.get("error", "Brain request failed")))
-    return str(res)
+    return _answer_result(str(res), {"answer": str(res), "freshness": dict(_UNKNOWN_FRESHNESS)})
 
 
 @mcp.tool(**tool_meta("prepare_task_context"))
 @checked_tool
 async def prepare_task_context(task_description: str, repo_path: Optional[str] = None) -> dict:
     """Bounded ephemeral code slices after a locator; no durable write by default."""
-    return await _post(
+    return _with_envelope(await _post(
         "/context",
         {"task_description": task_description, "repo_path": repo_path or DEFAULT_REPO, "persist": False, "max_tokens": 3500},
         timeout=9.0,
-    )
+    ))
 
 
 @mcp.tool(**tool_meta("prepare_deep_context"))
@@ -308,14 +342,14 @@ async def prepare_deep_context(
     notify: bool = True,
 ) -> dict:
     """Queue a durable, quality-first context pack (late-interaction reranking when configured)."""
-    return await _post(
+    return _with_envelope(await _post(
         "/jobs/deep-context",
         {
             "task_description": task_description,
             "repo_path": repo_path or DEFAULT_REPO,
             "notify": notify,
         },
-    )
+    ))
 
 
 @mcp.tool(**tool_meta("get_background_job"))
@@ -329,14 +363,14 @@ async def get_background_job(job_id: str) -> dict:
 @checked_tool
 async def impact_analysis(change_request: str, repo_path: Optional[str] = None) -> dict:
     """Bounded deterministic impact projection; long tails move to a brain:// resource."""
-    return compact_payload(
+    return _with_envelope(compact_payload(
         await _post(
             "/impact",
             {"change_request": change_request, "repo_path": repo_path or DEFAULT_REPO},
             timeout=11.0,
         ),
         _PAYLOADS,
-    )
+    ))
 
 
 @mcp.tool(**tool_meta("record_decision"))
@@ -412,20 +446,22 @@ async def search_code(query: str, repo_path: Optional[str] = None) -> dict:
     # The API owns the rollout flag and its locator defaults. Keep this MCP
     # request compatible with pre-v2 deployments that do not know the new
     # optional fields yet.
-    return await _post("/search", {"query": query, "limit": 5, "repo_path": repo_path or DEFAULT_REPO})
+    return _with_envelope(
+        await _post("/search", {"query": query, "limit": 5, "repo_path": repo_path or DEFAULT_REPO})
+    )
 
 
 @mcp.tool(**tool_meta("find_related_files"))
 @checked_tool
 async def find_related_files(file_path: str, repo_path: Optional[str] = None) -> dict:
     """Graph neighbours of a path; long tails move to a brain:// resource."""
-    return compact_payload(
+    return _with_envelope(compact_payload(
         await _post(
             "/related",
             {"file_path": file_path, "repo_path": repo_path or DEFAULT_REPO},
         ),
         _PAYLOADS,
-    )
+    ))
 
 
 @mcp.tool(**tool_meta("review_diff"))
@@ -440,14 +476,14 @@ async def review_diff(
     Returns ``{"status": "processing", "job_id": ...}``. Poll ``get_diff_review(job_id)``
     for the report.
     """
-    return await _post(
+    return _with_envelope(await _post(
         "/diff-review",
         {
             "base": base,
             "head": head,
             "repo_path": repo_path or DEFAULT_REPO,
         },
-    )
+    ))
 
 
 @mcp.tool(**tool_meta("get_diff_review"))
@@ -458,10 +494,10 @@ async def get_diff_review(job_id: str) -> dict:
     A completed report is the one result that is routinely larger than the
     decision it informs, so its tail moves to a ``brain://payload`` resource.
     """
-    return compact_payload(
+    return _with_envelope(compact_payload(
         await _get(f"/diff-review/{quote(job_id, safe='')}"),
         _PAYLOADS,
-    )
+    ))
 
 
 if __name__ == "__main__":
