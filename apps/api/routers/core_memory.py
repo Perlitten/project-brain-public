@@ -273,11 +273,12 @@ async def _decide_episode(
     from brain.memory.consolidation import EpisodeStateError, approve_episode, reject_episode
 
     reason = body.reason if body else None
-    decided_by = {"principal_id": principal.author_id, "team_state": await team_access.current_team_state()}
+    principal_id = principal.author_id
+    team_state = await team_access.current_team_state()
     try:
         if approve:
-            return await approve_episode(episode_id, reason, **decided_by)
-        return await reject_episode(episode_id, reason, **decided_by)
+            return await approve_episode(episode_id, reason, principal_id=principal_id, team_state=team_state)
+        return await reject_episode(episode_id, reason, principal_id=principal_id, team_state=team_state)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SelfApprovalError as exc:
