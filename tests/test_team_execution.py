@@ -25,15 +25,17 @@ from brain.team import execution, provisioning
 from brain.team.authorization import Permission, TeamConflict, TeamDenied, authorize
 from brain.team.execution import ExecutionDenied, ExecutionRunner, Lease
 from brain.team.models import (AgentRun, AgentRunExecution, ProjectMember, ProjectRepository, Team, TeamAccessFence,
-                               TeamActivityEvent, TeamExecutionGrant, TeamInvitation, TeamMember, TeamProject,
-                               TeamTaskBinding)
+                               TeamActivityEvent, TeamExecutionGrant, TeamIdentity, TeamInvitation, TeamMember,
+                               TeamOidcFlow, TeamProject, TeamTaskBinding)
 from brain.team.store import create_task, request_run
 
 TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, AgentTask, AgentTaskEvent,
           OAuthClient, OAuthRefreshToken, Team, TeamAccessFence, TeamMember, TeamProject, ProjectMember,
           ProjectRepository, TeamTaskBinding, AgentRun, TeamInvitation, TeamExecutionGrant, AgentRunExecution,
           # Member revocation logs activity and withdraws memory proposals.
-          TeamActivityEvent, Decision, Rule, MemoryProposal)]
+          TeamActivityEvent, Decision, Rule, MemoryProposal,
+          # SSO tables reference invitations; the shared PostgreSQL database must drop them first.
+          TeamIdentity, TeamOidcFlow)]
 NOW = datetime.now(timezone.utc)
 SECRET_VALUE = "fixture-secret-value-7f3a9c"
 PY = sys.executable
