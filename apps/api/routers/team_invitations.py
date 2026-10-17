@@ -103,7 +103,7 @@ def _throttled(ip: str) -> bool:
 @router.post("")
 async def create_invitation(body: InvitationCreateRequest, response: Response,
                             caller: ResolvedPrincipal = Depends(require_principal),
-                            session=Depends(invitation_session)):
+                            session=Depends(invitation_session, scope="function")):
     label, principal_id = await _inviter(session, caller)
     token, invitation = await invitations.create_invitation(
         session, invited_by=label, invited_by_principal_id=principal_id, projects=body.projects, role=body.role,
@@ -114,7 +114,7 @@ async def create_invitation(body: InvitationCreateRequest, response: Response,
 
 @router.get("")
 async def list_invitations(caller: ResolvedPrincipal = Depends(require_principal),
-                           session=Depends(invitation_session)):
+                           session=Depends(invitation_session, scope="function")):
     await _inviter(session, caller)
     return await invitations.list_invitations(session)
 
@@ -122,7 +122,7 @@ async def list_invitations(caller: ResolvedPrincipal = Depends(require_principal
 @router.post("/{invitation_id}/revoke")
 async def revoke_invitation(invitation_id: uuid.UUID, body: InvitationRevokeRequest | None = None,
                             caller: ResolvedPrincipal = Depends(require_principal),
-                            session=Depends(invitation_session)):
+                            session=Depends(invitation_session, scope="function")):
     label, principal_id = await _inviter(session, caller)
     return await invitations.revoke_invitation(
         session, invitation_id, revoked_by=label, revoke_issued_member=bool(body and body.revoke_member),

@@ -120,7 +120,8 @@ database directly and is not subject to the fence. Reopen access like this:
    administrator, or their new key lacks the administrator scopes:
 
    ```bash
-   .venv/bin/brain team member add --principal NAME --issuer <same issuer> \n     --subject <same subject> --mint-key        # plus --admin for administrators
+   .venv/bin/brain team member add --principal NAME --issuer <same issuer> \
+     --subject <same subject> --mint-key        # plus --admin for administrators
    ```
 
    A different issuer or subject is refused (`Member is verified under a
@@ -134,3 +135,7 @@ snapshot is known to be current, for example a backup taken with the API
 stopped immediately before this restore; otherwise a post-snapshot revocation is
 silently undone. A restore done by hand (plain `psql` instead of
 `scripts/restore.sh`) writes no fence: do not do that for a team Brain.
+
+The opt-in team e2e check runs this whole path: backup, fenced restore,
+review, attest, re-mint, and the unfenced plain `psql` restore. See
+[team-e2e-check.md](team-e2e-check.md).

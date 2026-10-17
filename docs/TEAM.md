@@ -178,20 +178,24 @@ There are two different things to revoke, and they are not the same:
 
 | Action | How | Effect |
 |---|---|---|
-| Revoke **membership** | `brain team member revoke --principal alice`, `DELETE /team/projects/members/{principal_id}`, or **Revoke** on the Team page | Ends her team membership and every project role. She is signed out of the dashboard on her next request, and her key is refused for every project. **Her key stays a valid credential.** |
+| Revoke **membership** | `brain team member revoke --principal alice`, `DELETE /team/projects/members/{principal_id}`, or **Revoke** on the Team page | Ends her team membership and every project role, and revokes everything acting for her principal: her keys, OAuth access and refresh tokens bound to her, and the runs she started with their run credentials. Her next request gets 401, including the dashboard and MCP. |
 | Revoke **one project role** | `brain team member revoke --principal alice --project core` | Removes only that project; membership and other roles stay. |
 | Revoke **keys** | Dashboard **Settings → Access** (`/admin`): revoke the credential or disable the principal (`POST /admin/credentials/{id}/revoke`, `POST /admin/principals/{id}/disable`) | The key stops authenticating anything. Needs a team administrator. |
 | Revoke an **invitation member** completely | `brain team invite revoke <invitation-id> --revoke-member` (or `POST /team/invitations/{id}/revoke` with `{"revoke_member": true}`) | Membership, every project role and every credential of that principal. |
 
-When someone leaves, revoke the membership **and** their keys. A key left
-alive after a membership revocation becomes fully usable again if the person is
-re-added with `member add`, or if the Brain returns to solo state.
+Revoking one project role leaves her keys valid: they still work for her other
+projects. Credentials that belong to another principal are not touched by a
+membership revocation. That includes an OAuth client she approved with
+personal scopes only, which runs as its own `oauth:<client>` service principal.
+In team state such a client has no project access. Revoke it separately under
+**Settings → Access** before you dissolve a team.
 
-The Brain returns to solo state when its last live member is revoked. In solo
-state every authenticated key, including old member keys, acts as
-administrator. Administrators cannot revoke their own membership over the API;
-an operator on the server can, so revoke credentials first if you ever wind a
-team down.
+Revoking the last live member does **not** return the Brain to solo. It stays
+in team state: the shared key and any surviving credential have no implicit
+authority. An operator returns it to solo with `brain team dissolve --yes`. In
+solo state every authenticated key that is still valid acts as administrator.
+Administrators cannot revoke their own membership over the API; an operator on
+the server can.
 
 ## Known limitations
 
