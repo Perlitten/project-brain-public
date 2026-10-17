@@ -335,7 +335,7 @@ router = APIRouter()
 
 @router.post("/index", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def index_repository(body: IndexRequest, principal: ResolvedPrincipal = Depends(require_principal)):
-    await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
+    await repository_authority(principal, Permission.REQUEST_RUN, repo_path=body.repo_path)
     try:
         repo_path = resolve_repo_path(body.repo_path)
     except ValueError as exc:

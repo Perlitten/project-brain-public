@@ -18,6 +18,8 @@ to keep the rows of repositories the caller may read.
 """
 from __future__ import annotations
 
+from typing import Protocol, TypeVar
+
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
 
@@ -43,6 +45,13 @@ from brain.team.authorization import (
     team_state,
 )
 from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamProject, TeamTaskBinding
+
+
+class MemoryScopedRow(Protocol):
+    repo_path: str | None
+
+
+MemoryRow = TypeVar("MemoryRow", bound=MemoryScopedRow)
 
 
 async def current_team_state() -> TeamState:
@@ -106,8 +115,6 @@ async def readable_repository_ids(principal: ResolvedPrincipal, repository_ids: 
     other team member sees the repositories their project roles grant."""
     if await current_team_state() == "solo":
         return None
-    if not repository_ids:
-        return set()
 
     async with async_session_factory() as session:
         try:
@@ -140,6 +147,8 @@ async def readable_repository_ids(principal: ResolvedPrincipal, repository_ids: 
             return set()
         if member.is_admin and live.has_scope("team:admin"):
             return None
+        if not repository_ids:
+            return set()
 
         # Fetch every candidate's project policy and this principal's role in
         # one joined query, then apply the same role/policy intersection as
@@ -187,7 +196,51 @@ async def readable_repository_scopes(principal: ResolvedPrincipal) -> set[str] |
     readable = await readable_repository_ids(principal, [repository_id for repository_id, _ in repositories])
     if readable is None:
         return None
-    return {normalize_repo_scope(path) for repository_id, path in repositories if repository_id in readable} - {None}
+    return {
+        scope
+        for repository_id, path in repositories
+        if repository_id in readable and (scope := normalize_repo_scope(path)) is not None
+    }
+
+
+async def readable_memory_rows(principal: ResolvedPrincipal, rows: list[MemoryRow]) -> list[MemoryRow]:
+    """Global memory plus repository rows readable by a live human team member.
+
+    Memory keeps the path spelling submitted by the writer, while repository
+    authorization accepts relative, slash-normalized and real-path aliases.
+    Resolve each distinct stored spelling through that same lookup before
+    applying the batched repository permissions.
+    """
+    if await current_team_state() == "solo":
+        return rows
+
+    async with async_session_factory() as session:
+        try:
+            live = await live_credential(session, principal.id, principal.credential_id)
+            if live.kind != "human" or not live.has_scope("team:read"):
+                raise TeamDenied("Verified team membership is required")
+            member = await human_member(session, live, 1)
+        except TeamDenied as exc:
+            raise HTTPException(status_code=403, detail=f"Team member required: {exc}") from exc
+
+        if member.is_admin and live.has_scope("team:admin"):
+            return rows
+
+        repository_by_scope: dict[str, int | None] = {}
+        for row in rows:
+            scope = normalize_repo_scope(row.repo_path)
+            if scope is not None and scope not in repository_by_scope:
+                repository_by_scope[scope] = await find_repository_id(session, row.repo_path or scope)
+
+    candidate_ids = sorted({repository_id for repository_id in repository_by_scope.values()
+                            if repository_id is not None})
+    readable = await readable_repository_ids(principal, candidate_ids)
+    if readable is None:
+        return rows
+    return [
+        row for row in rows
+        if (scope := normalize_repo_scope(row.repo_path)) is None or repository_by_scope.get(scope) in readable
+    ]
 
 
 async def is_team_administrator(principal: ResolvedPrincipal) -> bool:

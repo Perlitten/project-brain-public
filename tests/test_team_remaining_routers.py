@@ -71,7 +71,7 @@ def _fake_harness():
 def remaining_app(factory, monkeypatch, tmp_path):
     """Every touched router over the fixture database, with storage and engines stubbed out."""
     monkeypatch.chdir(tmp_path)
-    for module in (auth, team_access, telegram_bridge, core_memory):
+    for module in (auth, team_access, telegram_bridge, core_memory, web):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr("apps.api.request_observation.observe_http_request", AsyncMock())
@@ -343,6 +343,7 @@ async def test_team_memory_listings_keep_global_rows_and_readable_repositories(t
             # The administrator sees every row, including repositories no project owns.
             response = await client.get(path, headers=ADMIN)
             assert [row["id"] for row in response.json()] == [1, 2, 3, 4, 5], (path, response.text)
+            assert (await client.get(path, headers={"X-API-Key": "fixture-5"})).status_code in {401, 403}
     await revoke_everyone(factory)
     async with client_for(app) as client:
         for path in ("/decisions", "/rules"):
