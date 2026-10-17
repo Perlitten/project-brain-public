@@ -27,6 +27,7 @@ TRIGGER_PATHS = {
     "self_diagnosis": "/jobs/self-diagnosis",
     "benchmark": "/jobs/benchmark",
     "memory_consolidation": "/jobs/memory-consolidation",
+    "origin_poll": "/jobs/origin-poll",
 }
 
 

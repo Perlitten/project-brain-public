@@ -57,6 +57,41 @@ class Repository(Base):
     )
 
 
+
+class RepositoryOriginState(Base):
+    """Where origin stands for an attached repository, written by the origin poll and reindex.
+
+    One row per repository. ``remote_url`` is always stored redacted (no
+    userinfo); the usable URL comes from configuration at run time.
+    """
+
+    __tablename__ = "repository_origin_state"
+
+    repository_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("repositories.id", ondelete="CASCADE"), primary_key=True
+    )
+    remote_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    tracked_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # "checkout": the mounted checkout is the source; "mirror": a Brain-owned bare mirror is.
+    source_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    remote_head: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    remote_head_seen_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    polled_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    # "ok", "error" or "unconfigured" (no origin to poll).
+    poll_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    poll_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mirror_head: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Commits in commits_behind_head that commits_behind_base lacks.
+    commits_behind: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    commits_behind_base: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    commits_behind_head: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_reindex_job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_reindex_head: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_reindex_requested_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
 class File(Base):
     __tablename__ = "files"
     __table_args__ = (

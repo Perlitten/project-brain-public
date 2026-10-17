@@ -55,8 +55,6 @@ def _supersede_rule_content(session, existing: Rule, requested: Dict[str, Any],
     (no new version). Mirrors ``DecisionStore.record_decision``: the canonical id is
     stable, the previous content lives on in a ``superseded`` row."""
     if all(getattr(existing, field) == value for field, value in requested.items()):
-        if existing.author_principal_id is None:
-            existing.author_principal_id = principal_id
         return None
     current_version = existing.version or 1
     history = Rule(
@@ -73,8 +71,7 @@ def _supersede_rule_content(session, existing: Rule, requested: Dict[str, Any],
     session.add(history)
     for field, value in requested.items():
         setattr(existing, field, value)
-    if existing.author_principal_id is None:
-        existing.author_principal_id = principal_id
+    # Authorship stays as recorded: legacy rows keep NULL (no adoption on edit).
     existing.version = current_version + 1
     existing.supersedes_id = history.id
     existing.updated_by_principal_id = principal_id

@@ -64,11 +64,12 @@ client label, not an authenticated agent identity; see the
 ## Tool reference
 
 Local stdio exposes 13 tools. The HTTP-backed stdio bridge and native `/mcp`
-add `get_diff_review`, for the asynchronous review flow, and the eight
-`team_*` tools of the [experimental team mode](TEAM.md): 22 tools in all. The
-`team_*` tools answer only for verified team members within their project
-roles; `team_request_run` records a run but nothing executes it yet. The five
-memory review tools follow [governed memory](MEMORY_REVIEW.md).
+add `get_diff_review`, for the asynchronous review flow, and the ten
+`team_*` tools of the [experimental team mode](TEAM.md): 24 tools in all. The
+task and memory review tools answer only for verified team members within their
+project roles; `team_me` works in solo state too; `team_request_run` records a
+run but nothing executes it yet. The five memory review tools follow
+[governed memory](MEMORY_REVIEW.md).
 
 | Tool | Purpose |
 |---|---|
@@ -86,6 +87,8 @@ memory review tools follow [governed memory](MEMORY_REVIEW.md).
 | `record_task_observation` | Record unvalidated observations |
 | `record_task_lesson` | Record a lesson and reported validation evidence |
 | `record_procedure_outcome` | Record a procedure outcome once per task |
+| `team_me` | Remote only, experimental: who am I, team state, project roles and key scopes |
+| `team_activity` | Remote only, experimental: newest-first team activity the caller may read |
 | `team_list_tasks` | Remote only, experimental: list a team project's tasks |
 | `team_create_task` | Remote only, experimental: create a task in a team project |
 | `team_request_run` | Remote only, experimental: record a run request (not executed) |

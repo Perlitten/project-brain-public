@@ -19,6 +19,7 @@ mark themselves ``filters_unreadable`` so members may call them unscoped).
 """
 from __future__ import annotations
 
+import uuid
 from typing import Protocol, TypeVar
 
 from fastapi import Depends, HTTPException, Request
@@ -189,6 +190,37 @@ async def readable_repository_ids(principal: ResolvedPrincipal, repository_ids: 
             if Permission.READ in ROLE_PERMISSIONS.get(role, frozenset())
             and Permission.READ in _policy_permissions(policy)
         }
+
+
+async def readable_project_ids(principal: ResolvedPrincipal) -> set[uuid.UUID] | None:
+    """Projects the caller may ``read``; ``None`` means every project.
+
+    Solo state and team administrators see all; a human member sees the enabled
+    projects whose role and policy both grant ``read``; anything else sees none."""
+    if await current_team_state() == "solo":
+        return None
+    async with async_session_factory() as session:
+        try:
+            live = await live_credential(session, principal.id, principal.credential_id)
+            if live.kind != "human" or not live.has_scope("team:read"):
+                return set()
+            member = await human_member(session, live, 1)
+        except TeamDenied:
+            return set()
+        if member.is_admin and live.has_scope("team:admin"):
+            return None
+        rows = (await session.execute(
+            select(ProjectMember.project_id, ProjectMember.role, TeamProject.permissions)
+            .join(TeamProject, TeamProject.id == ProjectMember.project_id)
+            .where(ProjectMember.principal_id == live.id, ProjectMember.revoked_at.is_(None),
+                   TeamProject.disabled_at.is_(None))
+        )).all()
+    return {
+        project_id
+        for project_id, role, policy in rows
+        if Permission.READ in ROLE_PERMISSIONS.get(role, frozenset())
+        and Permission.READ in _policy_permissions(policy)
+    }
 
 
 def _policy_permissions(policy: list[str] | None) -> frozenset[Permission]:

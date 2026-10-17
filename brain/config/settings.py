@@ -482,6 +482,24 @@ class Settings(BaseSettings):
     # either way; it is never modified.
     BRAIN_WEBHOOK_FETCH_SOURCE: bool = True
     BRAIN_WEBHOOK_FETCH_TIMEOUT_S: int = 120
+    # Origin poll (brain/workers/origin_poll.py): every interval the scheduler
+    # runs `git ls-remote` against each attached repository's origin, records
+    # the remote head and enqueues the same reindex the webhook would when it
+    # moved. 0 disables the poll. Intervals under an hour should divide 60.
+    BRAIN_ORIGIN_POLL_INTERVAL_S: int = 300
+    BRAIN_ORIGIN_POLL_TIMEOUT_S: int = 30
+    # Brain-owned writable directory for bare mirrors of attached repositories
+    # (brain/indexers/source_mirror.py). A checkout that is read-only, has no
+    # origin or is not git at all (a tar-deployed /app) is fetched into
+    # <dir>/<name>-<hash>.git and indexed from the mirror commit. Blank
+    # disables mirrors: such a checkout then fails as before.
+    BRAIN_SOURCE_MIRROR_DIR: str = ""
+    # JSON map of repository path -> origin, for sources with no usable
+    # `origin` remote: {"/app": "https://github.com/org/repo.git"} or
+    # {"/app": {"url": "...", "branch": "main"}}. Credentials embedded in a URL
+    # stay server-side: they are passed on the git command line only and are
+    # redacted from every stored or reported value.
+    BRAIN_ORIGIN_REMOTES: str = ""
 
     @field_validator("POSTGRES_POOL_SIZE")
     @classmethod

@@ -197,12 +197,13 @@ no project, is refused for anyone but an administrator. To see the paths she
 can use, she can call `GET /repositories` with her key; it lists only
 repositories she can read.
 
-Both transports serve 22 tools: the personal ones plus `team_list_tasks`,
-`team_create_task` and `team_request_run`, which take a project id (an
-administrator gets it from `brain team project list`), and the five memory
-review tools (`team_propose_decision`, `team_propose_rule`,
+Both transports serve 24 tools: the personal ones plus `team_me`,
+`team_activity`, `team_list_tasks`, `team_create_task` and `team_request_run`,
+and the five memory review tools (`team_propose_decision`, `team_propose_rule`,
 `team_list_proposals`, `team_approve_proposal`, `team_reject_proposal`).
-See [MCP](MCP.md).
+`team_me` answers "who am I and what can I touch" (the project ids and
+repository paths her roles grant); the task tools take a project id. See
+[MCP](MCP.md).
 `team_request_run` records a run; nothing executes it yet. Member keys do not
 carry `harness:write`, so `record_task_observation` and `record_task_lesson`
 are refused for them.
@@ -220,30 +221,56 @@ need a team administrator. Readers cannot propose. Each member also has a
 private personal tier of learnings that only they see, shared only through an
 approved promotion. Details: [governed memory](MEMORY_REVIEW.md).
 
+## Who am I, and what happened
+
+- **`GET /team/me`** (MCP `team_me`, dashboard **Settings → Me**) returns the
+  caller's principal, the team state (`solo` or `team`), whether they are a
+  team administrator, their project roles with each project's effective
+  permissions and repositories, and the scopes of the presented key. In solo
+  state it reports the owner as the administrator of every repository.
+- **`GET /team/activity`** (MCP `team_activity`, dashboard **Settings → Team
+  activity**) is the shared log, newest first: decision and rule versions,
+  learning, episode and skill changes, membership and project-role changes,
+  invitations, team tasks and runs, and queued jobs with who queued them. It
+  needs the `team:read` scope and takes `limit`, `offset`, `project_id`,
+  `repository_id`, `actor_id`, `kind` (a family such as `decision` or a kind
+  such as `decision.updated`, repeatable) and `since`.
+  Members see events for the projects and repositories they can read plus
+  global decisions and rules; membership, role and invitation events, and
+  episode and skill changes, are for team administrators only; personal-tier
+  learnings never appear. A project or
+  repository filter the caller cannot read is refused with 403. Membership
+  and job history starts with this release; earlier changes left no dated
+  record.
+
 ## 7. Revoke
 
 There are two different things to revoke, and they are not the same:
 
 | Action | How | Effect |
 |---|---|---|
-| Revoke **membership** | `brain team member revoke --principal alice`, `DELETE /team/projects/members/{principal_id}`, or **Revoke** on the Team page | Ends her team membership and every project role. She is signed out of the dashboard on her next request, and her key is refused for every project. **Her key stays a valid credential.** |
+| Revoke **membership** | `brain team member revoke --principal alice`, `DELETE /team/projects/members/{principal_id}`, or **Revoke** on the Team page | Ends her team membership and every project role, and revokes everything acting for her principal: her keys, OAuth access and refresh tokens bound to her, and the runs she started with their run credentials. Her next request gets 401, including the dashboard and MCP. |
 | Revoke **one project role** | `brain team member revoke --principal alice --project core` | Removes only that project; membership and other roles stay. |
 | Revoke **keys** | Dashboard **Settings → Access** (`/admin`): revoke the credential or disable the principal (`POST /admin/credentials/{id}/revoke`, `POST /admin/principals/{id}/disable`) | The key stops authenticating anything. Needs a team administrator. |
 | Revoke an **invitation member** completely | **Revoke member** in the Team page's Invitations panel, `brain team invite revoke <invitation-id> --revoke-member`, or `POST /team/invitations/{id}/revoke` with `{"revoke_member": true}` | Membership, every project role and every credential of that principal. |
 
 Revoking a membership also withdraws the member's pending memory proposals;
-knowledge already approved stays, with them on record as its author
+knowledge already approved stays, with them on record as its author or editor
 ([details](MEMORY_REVIEW.md#revoked-authors)).
 
-When someone leaves, revoke the membership **and** their keys. A key left
-alive after a membership revocation becomes fully usable again if the person is
-re-added with `member add`, or if the Brain returns to solo state.
+Revoking one project role leaves her keys valid: they still work for her other
+projects. Credentials that belong to another principal are not touched by a
+membership revocation. That includes an OAuth client she approved with
+personal scopes only, which runs as its own `oauth:<client>` service principal.
+In team state such a client has no project access. Revoke it separately under
+**Settings → Access** before you dissolve a team.
 
-The Brain returns to solo state when its last live member is revoked. In solo
-state every authenticated key, including old member keys, acts as
-administrator. Administrators cannot revoke their own membership over the API;
-an operator on the server can, so revoke credentials first if you ever wind a
-team down.
+Revoking the last live member does **not** return the Brain to solo. It stays
+in team state: the shared key and any surviving credential have no implicit
+authority. An operator returns it to solo with `brain team dissolve --yes`. In
+solo state every authenticated key that is still valid acts as administrator.
+Administrators cannot revoke their own membership over the API; an operator on
+the server can.
 
 ## Known limitations
 

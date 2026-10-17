@@ -60,6 +60,8 @@ EXPECTED_MIGRATED_COLUMNS = [
     # Governed memory: proposals wait here until an independent reviewer decides (brain/memory/proposals.py).
     ("memory_proposals", "base_version"),
     ("memory_proposals", "reviewed_by_principal_id"),
+    # Membership, role and queued-job history for the team activity feed (brain.team.activity).
+    ("team_activity_events", "audience"),
 ]
 
 

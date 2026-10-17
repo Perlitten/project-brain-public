@@ -83,9 +83,11 @@ proposal that someone else already decided, or that changed since the reviewer
 read it, answers **409**. Self-approval answers **403**, whatever the reviewer's
 role.
 
-**Provenance.** The approved decision, rule or learning keeps the proposal's
-author as its author. The store's supersede history keeps the previous version
-of an edited item. The proposal row is never deleted and records who approved or
+**Provenance.** A new decision, rule or learning names the proposal's author
+as its author. An approved edit keeps the item's recorded author (an
+unattributed legacy row stays unattributed) and records the proposal's author
+as the editor (`updated_by_principal_id`). The store's supersede history keeps
+the previous version of an edited item. The proposal row is never deleted and records who approved or
 rejected it, when, why, and which item and version it produced (`result_key`,
 `result_version`).
 
@@ -106,7 +108,7 @@ refuses it anyway.
   live team member cannot be approved (409), even if it was left pending some
   other way.
 - Knowledge that was approved before the revocation stays approved, with the
-  author still on record.
+  author or editor still on record.
 - Removing only one **project role** leaves the member's proposals pending; a
   Reviewer may still approve or reject them, or the author withdraws them.
 

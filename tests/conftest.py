@@ -104,3 +104,9 @@ def _solo_team_state(request, monkeypatch):
 
     monkeypatch.setattr("apps.api.team_access.current_team_state", solo)
     monkeypatch.setattr("brain.workers.initiator.current_team_state", solo)
+
+    async def no_activity_record(*args, **kwargs) -> None:
+        return None
+
+    # Queued jobs append a team activity row; there is no team table to append to here.
+    monkeypatch.setattr("apps.api.activity_log.record_job_queued", no_activity_record)
