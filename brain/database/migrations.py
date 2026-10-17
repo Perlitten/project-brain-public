@@ -55,6 +55,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_skill_outcomes_table(conn)
     await _ensure_telemetry_state_table(conn)
     await _ensure_memory_learnings_table(conn)
+    await _ensure_memory_provenance_columns(conn)
     await _backfill_memory_repo_scope(conn)
     pgvector_ready = await _ensure_pgvector_extension(conn)
     if pgvector_ready:
@@ -208,6 +209,42 @@ async def _ensure_memory_authorship_columns(conn: AsyncConnection) -> None:
                 await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN author_principal_id INTEGER"))
         else:
             await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS author_principal_id INTEGER"))
+
+
+# Provenance and supersede columns per memory table (brain/memory/provenance.py).
+_MEMORY_PROVENANCE_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
+    "decisions": (
+        ("updated_by_principal_id", "INTEGER"),
+        ("supersedes_id", "INTEGER"),
+        ("version", "INTEGER NOT NULL DEFAULT 1"),
+    ),
+    "rules": (
+        ("updated_by_principal_id", "INTEGER"),
+        ("supersedes_id", "VARCHAR(255)"),
+        ("superseded_by_id", "VARCHAR(255)"),
+        ("version", "INTEGER NOT NULL DEFAULT 1"),
+    ),
+    "memory_learnings": (("author_principal_id", "INTEGER"), ("updated_by_principal_id", "INTEGER")),
+    "memory_episodes": (("author_principal_id", "INTEGER"), ("updated_by_principal_id", "INTEGER")),
+    "memory_skills": (("author_principal_id", "INTEGER"), ("updated_by_principal_id", "INTEGER")),
+}
+
+
+async def _ensure_memory_provenance_columns(conn: AsyncConnection) -> None:
+    """Every memory object carries author/updated_by; decisions and rules also a version chain.
+
+    Rows that predate this keep NULL authorship and start at version 1."""
+    for table, columns in _MEMORY_PROVENANCE_COLUMNS.items():
+        if conn.dialect.name == "sqlite":
+            existing = {row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).fetchall()}
+            if not existing:
+                continue  # table absent under Lite storage
+            for column, ddl in columns:
+                if column not in existing:
+                    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+        else:
+            for column, ddl in columns:
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {ddl}"))
 
 
 async def _ensure_decision_title_uniqueness(conn: AsyncConnection) -> None:

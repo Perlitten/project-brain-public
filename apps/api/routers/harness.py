@@ -93,7 +93,8 @@ async def add_task_observation(task_id: str, body: ObservationCreateRequest,
                "reported_validation": False, "evidence_tier": "unvalidated"}
     try:
         event = await HarnessStore.add_event(tid, "observed_lesson", "client", payload,
-            classification=body.outcome, idempotency_key=body.idempotency_key)
+            classification=body.outcome, idempotency_key=body.idempotency_key,
+            author_principal_id=caller.author_id)
     except TaskNotFound:
         raise HTTPException(status_code=404, detail="task not found")
     except (VersionConflict, IdempotencyConflict, AcceptanceLocked) as exc:
@@ -126,7 +127,8 @@ async def add_validated_lesson(task_id: str, body: LessonCreateRequest,
                "repo_scope": task.repo_path, "reported_validation": True}
     try:
         event = await HarnessStore.add_event(tid, "validated_lesson", "client", payload,
-            classification=classification, idempotency_key=body.idempotency_key)
+            classification=classification, idempotency_key=body.idempotency_key,
+            author_principal_id=caller.author_id)
     except TaskNotFound:
         raise HTTPException(status_code=404, detail="task not found")
     except (VersionConflict, IdempotencyConflict, AcceptanceLocked) as exc:
