@@ -19,6 +19,13 @@ automatically — one `handoff_summary` L1 event per session and summary,
 idempotent, blank summaries skipped — so a session's closing notes reach memory
 without a separate call.
 
+In team state, decisions and rules written by members who are not team
+administrators, and personal learnings a member promotes, go through
+independent review before they become approved knowledge; a member's personal
+learnings (`visibility: personal`) are private and never retrieved for anyone
+else. Harness lessons, observations and consolidation keep the gates below.
+See [governed memory](MEMORY_REVIEW.md).
+
 ## Evidence tiers
 
 Consolidation treats the two tiers differently. A cluster is *validated* only
@@ -78,7 +85,8 @@ canonical and the report shows `routed_to`).
 ## Retrieval
 
 Compact context reads active, unexpired, scoped L3 guidance live, alongside
-applicable rules and decisions. Retrieval is hybrid: one bounded
+applicable rules and decisions. Pending proposals and personal learnings are
+never read here. Retrieval is hybrid: one bounded
 query-embedding call (MEMORY_RETRIEVAL_EMBED_TIMEOUT_S, default 0.8 s) scores
 learnings that carry a stored embedding of the current model via pgvector, and
 a lexical Unicode pass scores statements; ranking is 0.6 cosine + 0.3 lexical +

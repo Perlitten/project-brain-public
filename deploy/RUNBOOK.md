@@ -71,10 +71,22 @@ Named volumes:
   The reindex job fetches `origin` and detaches the checkout at the delivered
   commit before indexing (`BRAIN_WEBHOOK_FETCH_SOURCE`, default `true`;
   `BRAIN_WEBHOOK_FETCH_TIMEOUT_S`, default `120`). The checkout is never
-  modified when it is mounted read-only or has uncommitted changes: the job
-  then fails with a message naming the commit to check out on the host.
+  modified when it is mounted read-only, has uncommitted changes, has no
+  `origin` or is not git at all: the job then fetches into a Brain-owned bare
+  mirror under `BRAIN_SOURCE_MIRROR_DIR` (the prod compose file mounts the
+  `source_mirrors` volume at `/var/lib/brain/mirrors`) and indexes the mirror
+  commit. A source without an `origin` remote is named in `BRAIN_ORIGIN_REMOTES`
+  (JSON, e.g. `{"/app": "https://github.com/<owner>/<repo>.git"}`). With
+  mirrors disabled (`BRAIN_SOURCE_MIRROR_DIR` blank) the job fails with a
+  message naming the commit to check out on the host.
   Set `BRAIN_WEBHOOK_FETCH_SOURCE=false` to restore the old behaviour, where a
   delivered commit other than the checkout HEAD fails the job outright.
+- The `origin_poll` scheduled job (`BRAIN_ORIGIN_POLL_INTERVAL_S`, default
+  `300`; `0` disables it) runs `git ls-remote` for every attached repository,
+  records origin's head for the freshness envelope and enqueues the same
+  reindex as the webhook when origin moved, so a lost webhook delivery delays
+  the index by one interval at most. Trigger it by hand with
+  `POST /jobs/origin-poll`.
 - `deploy/server_up.sh` generates blank secrets in `.env`.
 - `NVIDIA_API_KEY` is required in production and must be supplied by the deployer.
 - Change-lab validation commands run inside an OS sandbox (`LAB_SANDBOX_MODE`,

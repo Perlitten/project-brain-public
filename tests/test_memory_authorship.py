@@ -78,6 +78,38 @@ async def test_store_records_first_author_and_gates_global_by_role(memory_db):
 
 
 @pytest.mark.asyncio
+async def test_edits_never_adopt_unattributed_legacy_rows(memory_db):
+    """Rows from before authorship (NULL author) stay NULL: an edit records the editor
+    in ``updated_by_principal_id`` only, and an identical re-post changes nothing."""
+    async with memory_db() as session:
+        session.add(Decision(title="Legacy", repo_path="/repo", description="old", status="active"))
+        session.add(Rule(id="legacy-rule", name="Legacy rule", repo_path="/repo", description="old",
+                         type="convention", severity="medium", status="active"))
+        await session.commit()
+    rule_fields = {"repo_path": "/repo", "type": "convention", "severity": "medium"}
+
+    assert not (await decision_store.DecisionStore.record_decision(
+        "Legacy", "/repo", "old", "active", author_principal_id=5)).changed
+    assert not (await rule_store.RuleStore.record_rule(
+        "Legacy rule", description="old", author_principal_id=5, **rule_fields)).changed
+    edited = await decision_store.DecisionStore.record_decision("Legacy", "/repo", "new", "active",
+                                                                author_principal_id=5)
+    rule_edit = await rule_store.RuleStore.record_rule("Legacy rule", description="new",
+                                                       author_principal_id=5, **rule_fields)
+    assert edited.changed and rule_edit.changed
+
+    async with memory_db() as session:
+        decisions = (await session.scalars(select(Decision).order_by(Decision.id))).all()
+        rules = (await session.scalars(select(Rule).order_by(Rule.id))).all()
+    assert [(row.description, row.author_principal_id) for row in decisions] == [("new", None), ("old", None)]
+    assert decisions[0].updated_by_principal_id == 5 and decisions[0].version == 2
+    canonical_rule = next(row for row in rules if row.id == rule_edit.id)
+    history_rule = next(row for row in rules if row.id == rule_edit.superseded_id)
+    assert canonical_rule.author_principal_id is None and history_rule.author_principal_id is None
+    assert canonical_rule.updated_by_principal_id == 5 and canonical_rule.description == "new"
+
+
+@pytest.mark.asyncio
 async def test_migration_adds_author_columns_to_sqlite_once(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'legacy.sqlite3'}")
     try:

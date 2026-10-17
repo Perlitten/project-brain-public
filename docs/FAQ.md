@@ -41,7 +41,12 @@ checkout: `origin_head` and `commits_behind_origin` (from the local
 remote-tracking ref; set `BRAIN_FRESHNESS_LS_REMOTE=true` to ask the remote).
 A reindex that names a commit, as the post-merge webhook does, fetches `origin`
 and moves the checkout to it first (`BRAIN_WEBHOOK_FETCH_SOURCE`, default
-`true`); a read-only or dirty checkout is reported, never changed.
+`true`); a read-only, dirty or origin-less checkout is never changed. With
+`BRAIN_SOURCE_MIRROR_DIR` set, such a source is indexed from a Brain-owned
+mirror of origin instead (`BRAIN_ORIGIN_REMOTES` names an origin the source
+lacks). The `origin_poll` job (`BRAIN_ORIGIN_POLL_INTERVAL_S`, default 300 s)
+asks origin for the branch head with `git ls-remote`, so `origin_head` is
+current even on a read-only mount, and requests the reindex when origin moved.
 
 On unreleased `main`, `BRAIN_STALE_CONTEXT_POLICY=warn_and_serve` is the default:
 runtime context reports a freshness warning, schedules a throttled reindex and

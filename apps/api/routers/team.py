@@ -120,14 +120,14 @@ async def team_session():
 # the literal ``members`` segment is never parsed as a project identifier.
 
 @router.get("/")
-async def list_projects(caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session)):
+async def list_projects(caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     member = await team_administrator(session, caller)
     return await provisioning.list_projects(session, member.team_id)
 
 
 @router.post("/")
 async def create_project(body: ProjectCreateRequest, caller: ResolvedPrincipal = Depends(require_principal),
-                         session=Depends(team_session)):
+                         session=Depends(team_session, scope="function")):
     member = await team_administrator(session, caller)
     project = await provisioning.create_project(session, name=body.name, allowed=body.permissions,
                                                 team_id=member.team_id)
@@ -135,14 +135,14 @@ async def create_project(body: ProjectCreateRequest, caller: ResolvedPrincipal =
 
 
 @router.get("/members")
-async def list_team_members(caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session)):
+async def list_team_members(caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     member = await team_administrator(session, caller)
     return await provisioning.list_members(session, member.team_id)
 
 
 @router.post("/members")
 async def add_team_member(body: TeamMemberRequest, caller: ResolvedPrincipal = Depends(require_principal),
-                          session=Depends(team_session)):
+                          session=Depends(team_session, scope="function")):
     admin = await team_administrator(session, caller)
     if body.principal_id is not None:
         principal = await provisioning.resolve_principal(session, body.principal_id)
@@ -153,18 +153,18 @@ async def add_team_member(body: TeamMemberRequest, caller: ResolvedPrincipal = D
         raise TeamConflict("Administrators cannot demote their own membership")
     member = await provisioning.add_member(session, principal=principal, issuer=body.issuer,
                                            subject=body.subject or principal.name, is_admin=body.is_admin,
-                                           team_id=admin.team_id)
+                                           team_id=admin.team_id, actor_id=caller.author_id)
     return provisioning.member_dict(member, principal)
 
 
 @router.delete("/members/{principal_id}")
 async def revoke_team_member(principal_id: int, caller: ResolvedPrincipal = Depends(require_principal),
-                             session=Depends(team_session)):
+                             session=Depends(team_session, scope="function")):
     admin = await team_administrator(session, caller)
     if principal_id == admin.principal_id:
         raise TeamConflict("Administrators cannot revoke their own membership")
     principal = await provisioning.resolve_principal(session, principal_id)
-    member = await provisioning.revoke_member(session, principal=principal)
+    member = await provisioning.revoke_member(session, principal=principal, actor_id=caller.author_id)
     return provisioning.member_dict(member, principal)
 
 
@@ -172,31 +172,32 @@ async def revoke_team_member(principal_id: int, caller: ResolvedPrincipal = Depe
 
 @router.get("/{project_id}/members")
 async def list_project_members(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
-                               session=Depends(team_session)):
+                               session=Depends(team_session, scope="function")):
     await administrator(session, caller, project_id)
     return await provisioning.list_project_members(session, project_id)
 
 
 @router.put("/{project_id}/members/{principal_id}")
 async def assign_project_member(project_id: uuid.UUID, principal_id: int, body: ProjectRoleRequest,
-                                caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session)):
+                                caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     await administrator(session, caller, project_id)
     membership = await provisioning.assign_project_member(session, project_id=project_id, principal_id=principal_id,
-                                                          role=body.role)
+                                                          role=body.role, actor_id=caller.author_id)
     return provisioning.project_member_dict(membership)
 
 
 @router.delete("/{project_id}/members/{principal_id}")
 async def revoke_project_member(project_id: uuid.UUID, principal_id: int,
-                                caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session)):
+                                caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     await administrator(session, caller, project_id)
-    membership = await provisioning.revoke_project_member(session, project_id=project_id, principal_id=principal_id)
+    membership = await provisioning.revoke_project_member(session, project_id=project_id, principal_id=principal_id,
+                                                          actor_id=caller.author_id)
     return provisioning.project_member_dict(membership)
 
 
 @router.get("/{project_id}/repositories")
 async def list_project_repositories(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
-                                    session=Depends(team_session)):
+                                    session=Depends(team_session, scope="function")):
     await administrator(session, caller, project_id)
     return await provisioning.list_project_repositories(session, project_id)
 
@@ -204,7 +205,7 @@ async def list_project_repositories(project_id: uuid.UUID, caller: ResolvedPrinc
 @router.post("/{project_id}/repositories")
 async def attach_project_repository(project_id: uuid.UUID, body: RepositoryAttachRequest,
                                     caller: ResolvedPrincipal = Depends(require_principal),
-                                    session=Depends(team_session)):
+                                    session=Depends(team_session, scope="function")):
     await administrator(session, caller, project_id)
     repository = await provisioning.resolve_repository(session, body.repository_id)
     link = await provisioning.attach_repository(session, project_id=project_id, repository=repository)
@@ -215,19 +216,19 @@ async def attach_project_repository(project_id: uuid.UUID, body: RepositoryAttac
 
 @router.get("/{project_id}/tasks")
 async def list_tasks(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
-                     session=Depends(team_session)):
+                     session=Depends(team_session, scope="function")):
     return await store.list_tasks(session, caller, project_id)
 
 
 @router.post("/{project_id}/tasks")
 async def create_task(project_id: uuid.UUID, body: TaskRequest, caller: ResolvedPrincipal = Depends(require_principal),
-                      session=Depends(team_session)):
+                      session=Depends(team_session, scope="function")):
     return await store.create_task(session, caller, project_id, body.model_dump())
 
 
 @router.post("/{project_id}/tasks/{task_id}/runs")
 async def request_run(project_id: uuid.UUID, task_id: uuid.UUID, body: RunRequest,
-                      caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session)):
+                      caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     return await store.request_run(session, caller, project_id, task_id, body.model_dump())
 
 
@@ -235,20 +236,20 @@ async def request_run(project_id: uuid.UUID, task_id: uuid.UUID, body: RunReques
 
 @router.get("/{project_id}/execution-grants")
 async def list_execution_grants(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
-                                session=Depends(team_session)):
+                                session=Depends(team_session, scope="function")):
     return await execution.list_execution_grants(session, caller, project_id)
 
 
 @router.put("/{project_id}/members/{principal_id}/execution")
 async def grant_execution(project_id: uuid.UUID, principal_id: int,
-                          caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session)):
+                          caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     return await execution.grant_execution(session, caller, project_id, principal_id)
 
 
 @router.delete("/{project_id}/members/{principal_id}/execution")
 async def revoke_execution_grant(project_id: uuid.UUID, principal_id: int,
                                  caller: ResolvedPrincipal = Depends(require_principal),
-                                 session=Depends(team_session)):
+                                 session=Depends(team_session, scope="function")):
     return await execution.revoke_execution(session, caller, project_id, principal_id)
 
 
@@ -288,7 +289,7 @@ async def request_execution(project_id: uuid.UUID, task_id: uuid.UUID, run_id: u
 
 @router.get("/{project_id}/tasks/{task_id}/runs/{run_id}/execution")
 async def get_execution(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uuid.UUID,
-                        caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session)):
+                        caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     try:
         return await execution.get_execution(session, caller, project_id, task_id, run_id)
     except execution.ExecutionNotFound as exc:
@@ -297,7 +298,7 @@ async def get_execution(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uuid.
 
 @router.post("/{project_id}/tasks/{task_id}/runs/{run_id}/execution/cancel")
 async def cancel_execution(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uuid.UUID,
-                           caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session)):
+                           caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     try:
         return await execution.cancel_execution(session, caller, project_id, task_id, run_id)
     except execution.ExecutionNotFound as exc:

@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 WORKER_POOLS = ("fast", "maintenance", "deep")
-_FAST_JOB_TYPES = {"health_check", "self_diagnosis", "proactive_insights"}
+_FAST_JOB_TYPES = {"health_check", "self_diagnosis", "proactive_insights", "origin_poll"}
 
 _RedisMapping = Mapping[
     bytes | bytearray | memoryview | str | int | float,

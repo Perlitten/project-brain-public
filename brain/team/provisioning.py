@@ -17,7 +17,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import mint_credential
+from brain.team.activity import record_event
 from brain.database.models import ApiCredential, OAuthRefreshToken, Principal, Repository
+from brain.memory.proposals import withdraw_author_proposals
 from brain.team.authorization import ROLE_PERMISSIONS, Permission, TeamConflict, TeamDenied, fresh, permissions
 from brain.team.models import (AgentRun, ProjectMember, ProjectRepository, Team, TeamExecutionGrant, TeamMember,
                                TeamProject)
@@ -66,6 +68,17 @@ def _now() -> datetime:
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
+
+
+async def _record_membership(session: AsyncSession, kind: str, summary: str, *, actor_id: int | None,
+                             principal_id: int, project_id: uuid.UUID | None = None, **details) -> None:
+    """Team-administration activity (read back by team administrators in the activity feed).
+
+    ``actor_id`` is the administrator who made the change; ``None`` marks an
+    operator action on the server (the CLI), which has no principal."""
+    await record_event(session, kind=kind, summary=summary, audience="admin", actor_principal_id=actor_id,
+                       actor_label=None if actor_id else "operator", subject_principal_id=principal_id,
+                       project_id=project_id, details={"principal_id": principal_id, **details})
 
 
 def team_dict(team: Team) -> dict:
@@ -160,7 +173,8 @@ async def create_human_principal(session: AsyncSession, name: str, *, is_admin: 
 
 
 async def add_member(session: AsyncSession, *, principal: Principal, issuer: str, subject: str,
-                     is_admin: bool | None = None, team_id: int = TEAM_ID) -> TeamMember:
+                     is_admin: bool | None = None, team_id: int = TEAM_ID,
+                     actor_id: int | None = None) -> TeamMember:
     """Record verified membership for a human principal (idempotent; reactivates a revoked row)."""
     issuer, subject = issuer.strip(), subject.strip()
     if not issuer or not subject:
@@ -175,6 +189,8 @@ async def add_member(session: AsyncSession, *, principal: Principal, issuer: str
     if claimed is not None and claimed.principal_id != principal.id:
         raise TeamConflict("Verification identity already belongs to another member")
     member = await fresh(session, TeamMember, TeamMember.principal_id == principal.id, exclusive=True)
+    was_live = member is not None and member.revoked_at is None and bool(member.verified_at)
+    was_admin = bool(member.is_admin) if member is not None else False
     if member is None:
         try:
             async with session.begin_nested():
@@ -196,6 +212,15 @@ async def add_member(session: AsyncSession, *, principal: Principal, issuer: str
         member.revoked_at = None
         member.verified_at = _now()
     await session.flush()
+    if not was_live:
+        await _record_membership(session, "membership.added", f"{principal.name} joined the team",
+                                 actor_id=actor_id, principal_id=principal.id, is_admin=bool(member.is_admin))
+    elif bool(member.is_admin) != was_admin:
+        granted = bool(member.is_admin)
+        change = "became" if granted else "is no longer"
+        await _record_membership(session, "membership.admin_granted" if granted else "membership.admin_revoked",
+                                 f"{principal.name} {change} a team administrator",
+                                 actor_id=actor_id, principal_id=principal.id, is_admin=granted)
     return member
 
 
@@ -231,19 +256,28 @@ async def revoke_principal_access(session: AsyncSession, principal: Principal) -
     await session.flush()
 
 
-async def revoke_member(session: AsyncSession, *, principal: Principal) -> TeamMember:
-    """Revoke team membership, every live project role and all access acting for the principal."""
+async def revoke_member(session: AsyncSession, *, principal: Principal, actor_id: int | None = None) -> TeamMember:
+    """Revoke team membership, every live project role and all access acting for the principal.
+
+    The principal's pending memory proposals are withdrawn with the reason
+    ``Author access revoked`` (brain/memory/proposals.py): nobody is left to
+    answer review questions about them, and a reviewer approving one later
+    would publish knowledge on behalf of someone who no longer has access.
+    Knowledge already approved stays."""
     member = await fresh(session, TeamMember, TeamMember.principal_id == principal.id, exclusive=True)
     if member is None:
         raise TeamNotFound("Principal is not a team member")
     if member.revoked_at is None:
         member.revoked_at = _now()
+        await _record_membership(session, "membership.revoked", f"{principal.name} was removed from the team",
+                                 actor_id=actor_id, principal_id=principal.id)
     rows = (await session.execute(select(ProjectMember).where(ProjectMember.principal_id == principal.id,
                                                               ProjectMember.revoked_at.is_(None)))).scalars().all()
     for membership in rows:
         membership.revoked_at = member.revoked_at
         membership.version += 1
     await revoke_principal_access(session, principal)
+    await withdraw_author_proposals(session, principal.id)
     return member
 
 
@@ -323,7 +357,7 @@ async def list_projects(session: AsyncSession, team_id: int = TEAM_ID) -> list[d
 
 
 async def assign_project_member(session: AsyncSession, *, project_id: uuid.UUID, principal_id: int,
-                                role: str) -> ProjectMember:
+                                role: str, actor_id: int | None = None) -> ProjectMember:
     """Grant or change a project role; a no-op when the live role already matches."""
     if role not in ROLE_PERMISSIONS:
         raise TeamConflict("Unknown project role")
@@ -342,21 +376,30 @@ async def assign_project_member(session: AsyncSession, *, project_id: uuid.UUID,
                 membership = ProjectMember(project_id=project_id, principal_id=principal_id, role=role)
                 session.add(membership)
                 await session.flush()
-                return membership
+            await _record_membership(session, "project_role.granted",
+                                     f"{role.capitalize()} role in {project.name}",
+                                     actor_id=actor_id, principal_id=principal_id, project_id=project_id, role=role)
+            return membership
         except IntegrityError:
             membership = await fresh(session, ProjectMember, ProjectMember.project_id == project_id,
                                      ProjectMember.principal_id == principal_id)
             if membership is None:
                 raise
     if membership.role != role or membership.revoked_at is not None:
+        previous = None if membership.revoked_at is not None else membership.role
         membership.role = role
         membership.revoked_at = None
         membership.version += 1
         await session.flush()
+        await _record_membership(session, "project_role.changed" if previous else "project_role.granted",
+                                 f"{role.capitalize()} role in {project.name}",
+                                 actor_id=actor_id, principal_id=principal_id, project_id=project_id, role=role,
+                                 previous_role=previous)
     return membership
 
 
-async def revoke_project_member(session: AsyncSession, *, project_id: uuid.UUID, principal_id: int) -> ProjectMember:
+async def revoke_project_member(session: AsyncSession, *, project_id: uuid.UUID, principal_id: int,
+                                actor_id: int | None = None) -> ProjectMember:
     membership = await fresh(session, ProjectMember, ProjectMember.project_id == project_id,
                              ProjectMember.principal_id == principal_id, exclusive=True)
     if membership is None:
@@ -370,6 +413,10 @@ async def revoke_project_member(session: AsyncSession, *, project_id: uuid.UUID,
             .values(revoked_at=membership.revoked_at, revoked_by="system:project-member-revoked",
                     version=TeamExecutionGrant.version + 1))
         await session.flush()
+        await _record_membership(session, "project_role.revoked",
+                                 f"{membership.role.capitalize()} role revoked",
+                                 actor_id=actor_id, principal_id=principal_id, project_id=project_id,
+                                 role=membership.role)
     return membership
 
 

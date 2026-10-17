@@ -115,12 +115,20 @@ services:
       # The image's brain user has no home directory; keep setup verification
       # state on the persisted reports volume instead of ~/.project_brain.
       BRAIN_SETUP_STATE_DIR: /app/reports/.setup
+      # Brain-owned bare mirrors: a read-only or origin-less source follows its
+      # origin through them (set BRAIN_SOURCE_MIRROR_DIR= in .env to turn this
+      # off). BRAIN_ORIGIN_REMOTES names the origin of a source that has none,
+      # e.g. {"/app": "https://github.com/<owner>/<repo>.git"}.
+      BRAIN_SOURCE_MIRROR_DIR: ${BRAIN_SOURCE_MIRROR_DIR-/var/lib/brain/mirrors}
+      BRAIN_ORIGIN_REMOTES: ${BRAIN_ORIGIN_REMOTES:-}
+      BRAIN_ORIGIN_POLL_INTERVAL_S: ${BRAIN_ORIGIN_POLL_INTERVAL_S:-300}
       ENVIRONMENT: production
     volumes:
       - ./reports:/app/reports
       - ./context_packs:/app/context_packs
       - ${BRAIN_INDEXED_PROJECTS_DIR:-./indexed-projects}:/indexed:ro
       - ${BRAIN_TARGET_REPO_DIR:-./target-repo}:/repo:ro
+      - source_mirrors:/var/lib/brain/mirrors
     depends_on:
       postgres:
         condition: service_healthy
@@ -177,6 +185,13 @@ services:
       # The image's brain user has no home directory; keep setup verification
       # state on the persisted reports volume instead of ~/.project_brain.
       BRAIN_SETUP_STATE_DIR: /app/reports/.setup
+      # Brain-owned bare mirrors: a read-only or origin-less source follows its
+      # origin through them (set BRAIN_SOURCE_MIRROR_DIR= in .env to turn this
+      # off). BRAIN_ORIGIN_REMOTES names the origin of a source that has none,
+      # e.g. {"/app": "https://github.com/<owner>/<repo>.git"}.
+      BRAIN_SOURCE_MIRROR_DIR: ${BRAIN_SOURCE_MIRROR_DIR-/var/lib/brain/mirrors}
+      BRAIN_ORIGIN_REMOTES: ${BRAIN_ORIGIN_REMOTES:-}
+      BRAIN_ORIGIN_POLL_INTERVAL_S: ${BRAIN_ORIGIN_POLL_INTERVAL_S:-300}
       ENVIRONMENT: production
       WORKER_POOL_NAME: ${WORKER_POOL_NAME:-maintenance}
     volumes:
@@ -184,6 +199,7 @@ services:
       - ./context_packs:/app/context_packs
       - ${BRAIN_INDEXED_PROJECTS_DIR:-./indexed-projects}:/indexed:ro
       - ${BRAIN_TARGET_REPO_DIR:-./target-repo}:/repo:ro
+      - source_mirrors:/var/lib/brain/mirrors
     depends_on:
       postgres:
         condition: service_healthy
@@ -229,6 +245,7 @@ services:
 
 volumes:
   postgres_data:
+  source_mirrors:
   redis_data:
   neo4j_data:
   neo4j_logs:

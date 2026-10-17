@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import asyncio
 import json
+import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -29,6 +31,14 @@ from brain.embeddings.integrity import collect_embedding_inventory, verify_embed
 from brain.indexers.file_indexer import FileIndexer, _scan_repo_files, source_content_digest
 from brain.indexers.repo_indexer import get_git_commit_hash
 from brain.indexers.reliability import repository_index_lock, git_source_is_clean
+from brain.indexers.source_mirror import (
+    export_commit,
+    fetch_into_mirror,
+    mirror_path,
+    mirror_root,
+    resolve_commit,
+    resolve_origin_spec,
+)
 from brain.indexers.source_sync import SourceSyncError, sync_checkout_to_revision
 from brain.insights.proactive import generate_proactive_insights
 from brain.late_interaction.client import (
@@ -37,8 +47,10 @@ from brain.late_interaction.client import (
 from brain.late_interaction.remote_sync import sync_remote_late_interaction
 from brain.database.session import redis_client
 from brain.memory.harness_store import HarnessStore
+from brain.memory.origin_state_store import get_origin_state, upsert_origin_state
 from brain.memory.repo_freshness import assess_repository_freshness
 from brain.memory.source_manifest import revision_matches
+from brain.workers.origin_poll import run_origin_poll
 from brain.workers.runtime import current_job, check_job_lease
 from brain.workers.db_fencing import (
     DbFence,
@@ -237,16 +249,99 @@ async def _run_deep_quality_probes(
     return probes
 
 
-async def _prepare_source_revision(repo_path: Path, expected_revision: str) -> Dict[str, Any]:
-    """Bring the checkout to the revision a job asks for, or explain why it cannot.
+# A checkout that cannot be moved for one of these reasons can still follow
+# origin through a Brain-owned mirror (BRAIN_SOURCE_MIRROR_DIR).
+_MIRROR_FALLBACK_REASONS = frozenset({"read_only", "not_git", "no_origin", "dirty"})
 
-    The git-merge webhook names the commit that just landed on origin, so the
-    checkout HEAD differs from it exactly when there is something new to index.
+
+@dataclass
+class _SourcePlan:
+    """Where a reindex reads its content: the checkout itself, or ``commit`` exported from ``mirror``."""
+
+    sync: Optional[Dict[str, Any]] = None
+    mirror: Optional[Path] = None
+    commit: Optional[str] = None
+
+
+async def _mirror_plan(repo_path: Path, expected_revision: str, current: str, exc: SourceSyncError) -> _SourcePlan:
+    """Fetch ``expected_revision`` into the repository's mirror after the checkout could not be moved."""
+    failure: Dict[str, Any] = {
+        "path": repo_path.as_posix(),
+        "commit_hash": current,
+        "source_revision_verified": False,
+    }
+    if mirror_root() is None:
+        raise PermanentJobError(
+            f"Cannot move the source checkout to {expected_revision[:16]}: {exc} "
+            "Alternatively set BRAIN_SOURCE_MIRROR_DIR to a writable directory so Brain indexes origin "
+            "through its own mirror.",
+            result={**failure, "source_sync": {"status": "failed", "reason": exc.reason,
+                                               "requested": expected_revision, "head": current}},
+        ) from exc
+    spec = await asyncio.to_thread(resolve_origin_spec, repo_path)
+    if spec is None:
+        raise PermanentJobError(
+            f"Cannot move the source checkout to {expected_revision[:16]}: {exc} "
+            f"No origin URL is known for {repo_path.as_posix()}; name it in BRAIN_ORIGIN_REMOTES "
+            "so the source mirror can fetch it.",
+            result={**failure, "source_sync": {"status": "failed", "reason": exc.reason, "mode": "mirror",
+                                               "mirror": "no_origin", "requested": expected_revision,
+                                               "head": current}},
+        ) from exc
+    try:
+        fetched = await asyncio.to_thread(
+            fetch_into_mirror,
+            repo_path,
+            spec,
+            expected_revision,
+            timeout=float(settings.BRAIN_WEBHOOK_FETCH_TIMEOUT_S),
+        )
+    except SourceSyncError as mirror_exc:
+        raise PermanentJobError(
+            f"Cannot fetch {expected_revision[:16]} into the source mirror: {mirror_exc}",
+            result={**failure, "source_sync": {"status": "failed", "reason": mirror_exc.reason, "mode": "mirror",
+                                               "fallback_reason": exc.reason, "remote": spec.display_url,
+                                               "requested": expected_revision, "head": current}},
+        ) from mirror_exc
+    # SourceSyncTransientError (network, timeout) propagates: the queue retries it.
+    logger.info(
+        "run_reindex: {} cannot be moved ({}); indexing {} from mirror {}",
+        repo_path,
+        exc.reason,
+        fetched.commit[:12],
+        fetched.mirror.name,
+    )
+    return _SourcePlan(
+        sync={
+            "status": "mirror",
+            "mode": "mirror",
+            "fallback_reason": exc.reason,
+            "requested": expected_revision,
+            "previous_head": current or None,
+            "head": fetched.commit,
+            "changed": True,
+            "remote": spec.display_url,
+            "branch": spec.branch,
+            **fetched.to_dict(),
+        },
+        mirror=fetched.mirror,
+        commit=fetched.commit,
+    )
+
+
+async def _prepare_source_revision(repo_path: Path, expected_revision: str) -> _SourcePlan:
+    """Bring the source to the revision a job asks for, or explain why it cannot.
+
+    The git-merge webhook (and the origin poll) name a commit that is on
+    origin, so the checkout HEAD differs from it exactly when there is
+    something new to index. A checkout that cannot be moved (read-only, no
+    origin, not git at all) is served from a Brain-owned mirror instead when
+    ``BRAIN_SOURCE_MIRROR_DIR`` is set.
     """
     current = str(await asyncio.to_thread(get_git_commit_hash, repo_path) or "").strip()
     if revision_matches(expected_revision, current):
-        return {"status": "already_at_revision", "requested": expected_revision,
-                "previous_head": current, "head": current, "fetched": False, "changed": False}
+        return _SourcePlan(sync={"status": "already_at_revision", "requested": expected_revision,
+                                 "previous_head": current, "head": current, "fetched": False, "changed": False})
     if not settings.BRAIN_WEBHOOK_FETCH_SOURCE:
         raise PermanentJobError(
             "Indexed source revision mismatch: "
@@ -267,7 +362,9 @@ async def _prepare_source_revision(repo_path: Path, expected_revision: str) -> D
             timeout=float(settings.BRAIN_WEBHOOK_FETCH_TIMEOUT_S),
         )
     except SourceSyncError as exc:
-        # Read-only mount, dirty tree, unreachable commit: retrying cannot help.
+        if exc.reason in _MIRROR_FALLBACK_REASONS:
+            return await _mirror_plan(repo_path, expected_revision, current, exc)
+        # Unreachable commit, failed checkout: retrying cannot help.
         raise PermanentJobError(
             f"Cannot move the source checkout to {expected_revision[:16]}: {exc}",
             result={
@@ -286,7 +383,93 @@ async def _prepare_source_revision(repo_path: Path, expected_revision: str) -> D
         outcome.head[:12],
         outcome.fetched,
     )
-    return outcome.to_dict()
+    return _SourcePlan(sync=outcome.to_dict())
+
+
+async def _recorded_mirror_plan(repo_path: Path, repository_id: Optional[int] = None) -> Optional[_SourcePlan]:
+    """For a run without a revision: keep indexing the mirror a repository is already served from.
+
+    Without this a nightly or self-heal run would index the stale mounted
+    checkout and move the index backwards. Uses only local mirror objects;
+    returns None (checkout mode) whenever mirrors are disabled.
+    """
+    if mirror_root() is None:
+        return None
+    if repository_id is None:
+        record = await get_repository_by_path(repo_path)
+        repository_id = record.id if record is not None else None
+    if not isinstance(repository_id, int):
+        return None
+    state = await get_origin_state(repository_id)
+    if not state or state.get("source_mode") != "mirror":
+        return None
+    spec = await asyncio.to_thread(resolve_origin_spec, repo_path)
+    mirror = mirror_path(repo_path)
+    if spec is None or mirror is None:
+        return None
+    commit = await asyncio.to_thread(resolve_commit, mirror, spec.tracking_ref)
+    if not commit:
+        return None
+    return _SourcePlan(
+        sync={"status": "mirror", "mode": "mirror", "requested": None, "head": commit, "fetched": False,
+              "changed": False, "mirror": mirror.name, "mirror_head": commit, "commit": commit,
+              "remote": spec.display_url, "branch": spec.branch},
+        mirror=mirror,
+        commit=commit,
+    )
+
+
+async def _index_with_plan(
+    indexer: Any,
+    repo_path: Path,
+    plan: Optional[_SourcePlan],
+    *,
+    clean: bool,
+    expected_revision: str = "",
+) -> Any:
+    """Index the checkout, or a snapshot of the planned mirror commit exported to a temporary directory."""
+    if plan is None or plan.mirror is None or not plan.commit:
+        if expected_revision:
+            return await indexer.index_repository(repo_path, clean=clean, expected_revision=expected_revision)
+        return await indexer.index_repository(repo_path, clean=clean)
+    with tempfile.TemporaryDirectory(prefix="brain-mirror-") as tmp:
+        snapshot = Path(tmp)
+        await asyncio.to_thread(export_commit, plan.mirror, plan.commit, snapshot)
+        return await indexer.index_repository(
+            repo_path,
+            clean=clean,
+            expected_revision=expected_revision,
+            source_root=snapshot,
+            source_commit=plan.commit,
+        )
+
+
+async def _record_source_mode(repository_id: Any, plan: Optional[_SourcePlan]) -> None:
+    """Remember whether the repository is served from its checkout or its mirror (mirrors enabled only)."""
+    if mirror_root() is None or not isinstance(repository_id, int):
+        return
+    if plan is not None and plan.mirror is not None:
+        await upsert_origin_state(
+            repository_id, source_mode="mirror", mirror_head=(plan.sync or {}).get("mirror_head") or plan.commit
+        )
+    else:
+        await upsert_origin_state(repository_id, source_mode="checkout")
+
+
+async def _repair_source_fingerprint(
+    repo_path: Path, mirror: Optional[Path], commit: Optional[str]
+) -> tuple[bool, str]:
+    """(source is clean, content digest) of what the reindex read: the checkout or the mirror commit."""
+    if mirror is None or not commit:
+        files = await asyncio.to_thread(_scan_repo_files, repo_path)
+        clean = await asyncio.to_thread(git_source_is_clean, repo_path, files)
+        return clean, await asyncio.to_thread(source_content_digest, repo_path, files)
+    with tempfile.TemporaryDirectory(prefix="brain-mirror-") as tmp:
+        snapshot = Path(tmp)
+        await asyncio.to_thread(export_commit, mirror, commit, snapshot)
+        files = await asyncio.to_thread(_scan_repo_files, snapshot)
+        clean = await asyncio.to_thread(git_source_is_clean, snapshot, files)
+        return clean, await asyncio.to_thread(source_content_digest, snapshot, files)
 
 
 async def run_reindex(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -295,10 +478,17 @@ async def run_reindex(params: Dict[str, Any]) -> Dict[str, Any]:
     await init_db()
     indexer = FileIndexer()
     expected_revision = str(params.get("source_revision") or "").strip()
-    source_sync: Optional[Dict[str, Any]] = None
+    plan: Optional[_SourcePlan] = None
     if expected_revision:
-        source_sync = await _prepare_source_revision(repo_path, expected_revision)
-    repo = await indexer.index_repository(repo_path, clean=clean, expected_revision=expected_revision)
+        plan = await _prepare_source_revision(repo_path, expected_revision)
+    else:
+        plan = await _recorded_mirror_plan(repo_path)
+    source_sync: Optional[Dict[str, Any]] = plan.sync if plan is not None else None
+    if plan is None or plan.mirror is None:
+        # Checkout mode keeps the exact call it always made.
+        repo = await indexer.index_repository(repo_path, clean=clean, expected_revision=expected_revision)
+    else:
+        repo = await _index_with_plan(indexer, repo_path, plan, clean=clean, expected_revision=expected_revision)
     actual_revision = str(repo.last_indexed_commit or "").strip()
     if expected_revision and not revision_matches(expected_revision, actual_revision):
         raise PermanentJobError(
@@ -324,12 +514,15 @@ async def run_reindex(params: Dict[str, Any]) -> Dict[str, Any]:
         result["source_sync"] = source_sync
     if result.get("status") == "failed":
         raise PermanentJobError("Repository projection or source verification failed", result=result)
+    await _record_source_mode(repo.id, plan)
     counts = result.get("counts") or {}
     if (result.get("status") == "degraded" and not (counts.get("files") or {}).get("failed")
             and not (counts.get("graph") or {}).get("failed")):
         repair = {"repo_path": repo.path, "repository_id": repo.id,
                   "source_revision": actual_revision, "indexing_run_id": indexer.indexing_run_id,
                   "limit": settings.INDEX_REPAIR_CHUNK_LIMIT, "batch_size": settings.INDEX_EMBEDDING_BATCH_SIZE}
+        if plan is not None and plan.mirror is not None:
+            repair["source_mode"] = "mirror"
         result["repair_request"] = repair
         runtime = current_job.get()
         if runtime is not None:
@@ -440,7 +633,16 @@ async def run_embedding_backfill(params: Dict[str, Any]) -> Dict[str, Any]:
 
 async def _run_embedding_backfill(params, record, repo_path) -> Dict[str, Any]:
     repository_id = record.id if record else None
-    if params.get("indexing_run_id") and get_git_commit_hash(repo_path) != params.get("source_revision"):
+    # A run indexed from the source mirror is repaired against the same mirror commit.
+    mirror: Optional[Path] = None
+    mirror_commit: Optional[str] = None
+    if params.get("indexing_run_id") and params.get("source_mode") == "mirror":
+        mirror = mirror_path(repo_path)
+        revision = str(params.get("source_revision") or "")
+        mirror_commit = await asyncio.to_thread(resolve_commit, mirror, revision) if mirror and revision else None
+        if mirror_commit is None or mirror_commit != revision:
+            raise PermanentJobError("Repair source revision mismatch: the source mirror does not hold it")
+    elif params.get("indexing_run_id") and get_git_commit_hash(repo_path) != params.get("source_revision"):
         raise PermanentJobError("Repair source revision mismatch")
     await check_job_lease()
     result = await backfill_embeddings(
@@ -461,9 +663,7 @@ async def _run_embedding_backfill(params, record, repo_path) -> Dict[str, Any]:
     }
     if params.get("indexing_run_id"):
         verification = await verify_embeddings(repository_id, record.path)
-        source_files = await asyncio.to_thread(_scan_repo_files, repo_path)
-        source_clean = await asyncio.to_thread(git_source_is_clean, repo_path, source_files)
-        content_digest = await asyncio.to_thread(source_content_digest, repo_path, source_files)
+        source_clean, content_digest = await _repair_source_fingerprint(repo_path, mirror, mirror_commit)
         response.update(embedding_verification=verification, causal_parent_job_id=params.get("causal_parent_job_id"),
                         indexing_run_id=params["indexing_run_id"], status="degraded")
         await check_job_lease()
@@ -477,7 +677,8 @@ async def _run_embedding_backfill(params, record, repo_path) -> Dict[str, Any]:
                 latest = (await session.execute(select(func.max(IndexingRun.id))
                                                 .where(IndexingRun.repository_id == repository_id))).scalar()
                 exact = (repo.last_indexed_commit == params["source_revision"] == run.commit_hash
-                         and get_git_commit_hash(repo_path) == params["source_revision"] and source_clean
+                         and (mirror_commit or get_git_commit_hash(repo_path)) == params["source_revision"]
+                         and source_clean
                          and (run.verification or {}).get("source_content_digest", content_digest) == content_digest)
                 counts = (run.verification or {}).get("counts") or {}
                 projection_ok = not (counts.get("files", {}).get("failed") or counts.get("graph", {}).get("failed"))
@@ -628,7 +829,8 @@ async def auto_heal_stale_repositories(exclude_repository_id: int | None = None)
 
             if status in ("behind", "stale", "unindexed") or missing > 0 or stale > 0 or incompatible > 0:
                 logger.info(f"Autonomous Self-Healing: reindexing {repo.path} (status={status}, missing={missing}, stale={stale}, incompatible={incompatible})")
-                indexed_repo = await indexer.index_repository(repo_p, clean=False)
+                heal_plan = await _recorded_mirror_plan(repo_p, getattr(repo, "id", None))
+                indexed_repo = await _index_with_plan(indexer, repo_p, heal_plan, clean=False)
                 backfill_res = await backfill_embeddings(indexed_repo.id)
                 healed.append({
                     "path": repo.path,
@@ -958,6 +1160,7 @@ async def execute_job(
         "proactive_insights": run_proactive_insights,
         "memory_consolidation": run_memory_consolidation,
         "self_diagnosis": run_self_diagnosis,
+        "origin_poll": run_origin_poll,
         "nightly_maintenance": run_nightly_maintenance,
         "deep_context": run_deep_context,
         "team_run_execution": run_team_run_execution,

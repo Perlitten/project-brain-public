@@ -89,9 +89,11 @@ LABEL org.opencontainers.image.revision=${BRAIN_BUILD_SHA} \
       io.project-brain.source-digest=${BRAIN_SOURCE_DIGEST} \
       io.project-brain.deploy-digest=${BRAIN_DEPLOY_DIGEST}
 
-# Writable directories for runtime artifacts
-RUN mkdir -p /app/reports /app/context_packs /app/logs && \
-    chown -R brain:brain /app
+# Writable directories for runtime artifacts. /var/lib/brain/mirrors holds the
+# Brain-owned source mirrors; a fresh named volume mounted there inherits this
+# ownership, so the brain user can write to it.
+RUN mkdir -p /app/reports /app/context_packs /app/logs /var/lib/brain/mirrors && \
+    chown -R brain:brain /app /var/lib/brain
 
 USER brain
 

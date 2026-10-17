@@ -92,10 +92,19 @@ TOOL_ANNOTATIONS: dict[str, ToolAnnotations] = {
     "record_task_lesson": _annotations("Record a task lesson", read_only=False, idempotent=True),
     "record_task_observation": _annotations("Record a task observation", read_only=False, idempotent=True),
     "record_procedure_outcome": _annotations("Record a skill outcome", read_only=False, idempotent=True),
+    "team_me": _annotations("Show my team access", read_only=True),
+    "team_activity": _annotations("Read team activity", read_only=True),
     # Team tools: idempotency keys make repeated task and run requests land on the same row.
     "team_list_tasks": _annotations("List team tasks", read_only=True),
     "team_create_task": _annotations("Create a team task", read_only=False, idempotent=True),
     "team_request_run": _annotations("Request a team run", read_only=False, idempotent=True),
+    # Governed memory: proposals are drafts; approve/reject compare-and-swap on the proposal version,
+    # so a repeated call with the same version is refused rather than applied twice.
+    "team_propose_decision": _annotations("Propose a decision", read_only=False),
+    "team_propose_rule": _annotations("Propose a rule", read_only=False),
+    "team_list_proposals": _annotations("List memory proposals", read_only=True),
+    "team_approve_proposal": _annotations("Approve a memory proposal", read_only=False, idempotent=True),
+    "team_reject_proposal": _annotations("Reject a memory proposal", read_only=False, idempotent=True),
 }
 
 

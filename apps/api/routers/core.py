@@ -19,6 +19,7 @@ from apps.api.routers import (
     core_memory,
     core_retrieval,
     core_status,
+    memory_review,
 )
 from apps.api.routers.core_retrieval import (  # noqa: F401  (re-export)
     ASK_RETRIEVAL_LIMIT,
@@ -37,5 +38,6 @@ router = APIRouter()
 router.include_router(core_lifecycle.router)
 router.include_router(core_retrieval.router)
 router.include_router(core_memory.router)
+router.include_router(memory_review.router)
 router.include_router(core_features.router)
 router.include_router(core_status.router)

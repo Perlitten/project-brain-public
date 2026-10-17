@@ -1,0 +1,28 @@
+name: Team e2e (opt-in)
+
+# Manual only: the team-mode end-to-end check, including the upgrade from the
+# release production ran before team mode (c13d056). It is not part of normal CI.
+# See docs/runbooks/team-e2e-check.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  team-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the wrapper extracts the legacy release with `git archive c13d056`
+      - name: Run the team e2e check in throwaway containers
+        run: bash scripts/team_e2e_docker.sh
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: team-e2e-report
+          path: artifacts/team-e2e/latest/report.json
+          if-no-files-found: warn

@@ -264,10 +264,16 @@ Post-merge reindex: set the GitHub repo variable `PROJECT_BRAIN_WEBHOOK_URL` to
 `https://<BRAIN_PUBLIC_HOST>/webhooks/git-merge` and the secret
 `PROJECT_BRAIN_WEBHOOK_TOKEN` to the value in `.env`.
 The job fetches `origin` and checks out the delivered commit before indexing
-(`BRAIN_WEBHOOK_FETCH_SOURCE=true` by default), so the indexed repository must
-be a writable git checkout with an `origin` remote. A read-only mount such as
-`/repo:ro` is left untouched and the job fails with a clear error; update that
-checkout on the host instead, or mount it writable.
+(`BRAIN_WEBHOOK_FETCH_SOURCE=true` by default). A read-only mount such as
+`/repo:ro`, or a source without an `origin` remote such as the tar-deployed
+`/app`, is left untouched: the worker fetches into a Brain-owned bare mirror
+under `BRAIN_SOURCE_MIRROR_DIR` (the `source_mirrors` volume in
+`deploy/docker-compose.prod.yml`) and indexes that commit. Name the origin of a
+source that has none in `BRAIN_ORIGIN_REMOTES`, e.g.
+`BRAIN_ORIGIN_REMOTES='{"/app": "https://github.com/<owner>/<repo>.git"}'`.
+Webhook delivery is not required for freshness: the `origin_poll` job checks
+origin every `BRAIN_ORIGIN_POLL_INTERVAL_S` seconds (default 300, `0` disables
+it) and requests the same reindex.
 
 ## 6. Index the Target Repo
 

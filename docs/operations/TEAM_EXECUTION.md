@@ -71,6 +71,8 @@ Every layer below is required. Anything missing denies.
    removing them from the project, revokes the grant; re-adding the role does not
    revive it. If the role is later downgraded to Reader the grant stays on record
    but is ineffective until the role is restored.
+   Each effective grant and explicit revocation is recorded in the team activity
+   feed as `execution.granted` / `execution.revoked` (administrators only).
 
 ## Requesting, inspecting and cancelling
 

@@ -275,7 +275,7 @@ def solo_authority(caller: ResolvedPrincipal) -> Authority:
 
 
 async def authorize_repository(session: AsyncSession, caller: ResolvedPrincipal, repository_id: int | None,
-                               permission: Permission) -> Authority:
+                               permission: Permission, *, author_id: int | None = None) -> Authority:
     """Authority over one indexed repository; ``None`` is the unscoped, every-repository surface.
 
     Solo state short-circuits to ``solo_authority`` for any authenticated
@@ -283,7 +283,11 @@ async def authorize_repository(session: AsyncSession, caller: ResolvedPrincipal,
     the caller needs a live named credential; a repository attached to a
     project is checked through ``authorize`` with the member's project role,
     while an unattached repository or an unscoped call requires a team
-    administrator and grants full authority."""
+    administrator and grants full authority.
+
+    ``author_id`` names the author of the object being approved: approval
+    (``Permission.APPROVE``) is refused when it is missing or is the caller,
+    on project repositories and on the administrator-only surfaces alike."""
     if await team_state(session) == "solo":
         return solo_authority(caller)
     live = await live_credential(session, caller.id, caller.credential_id)
@@ -292,5 +296,7 @@ async def authorize_repository(session: AsyncSession, caller: ResolvedPrincipal,
         link = await fresh(session, ProjectRepository, ProjectRepository.repository_id == repository_id)
     if link is None:
         member = await team_administrator(session, live)
+        if permission == Permission.APPROVE and (author_id is None or author_id == member.principal_id):
+            raise TeamDenied("Independent, attributed approval is required")
         return Authority(live.id, member.principal_id, live.credential_id, FULL_AUTHORITY)
-    return await authorize(session, live, link.project_id, permission)
+    return await authorize(session, live, link.project_id, permission, author_id=author_id)

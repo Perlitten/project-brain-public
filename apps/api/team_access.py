@@ -19,6 +19,7 @@ mark themselves ``filters_unreadable`` so members may call them unscoped).
 """
 from __future__ import annotations
 
+import uuid
 from typing import Protocol, TypeVar
 
 from fastapi import Depends, HTTPException, Request
@@ -37,6 +38,7 @@ from brain.team.authorization import (
     Permission,
     TeamDenied,
     TeamState,
+    authorize,
     authorize_repository,
     human_member,
     live_credential,
@@ -62,7 +64,8 @@ async def current_team_state() -> TeamState:
 
 
 async def repository_authority(principal: ResolvedPrincipal, permission: Permission, *,
-                               repository_id: int | None = None, repo_path: str | None = None) -> Authority:
+                               repository_id: int | None = None, repo_path: str | None = None,
+                               author_id: int | None = None) -> Authority:
     """Authority of ``principal`` over one repository, given by id or by indexed path.
 
     Neither argument means the unscoped, every-repository surface. A path that
@@ -74,7 +77,7 @@ async def repository_authority(principal: ResolvedPrincipal, permission: Permiss
         async with async_session_factory() as session:
             if repository_id is None and repo_path:
                 repository_id = await find_repository_id(session, repo_path)
-            return await authorize_repository(session, principal, repository_id, permission)
+            return await authorize_repository(session, principal, repository_id, permission, author_id=author_id)
     except TeamDenied as exc:
         raise HTTPException(status_code=403, detail=f"Repository access denied: {exc}") from exc
 
@@ -189,6 +192,37 @@ async def readable_repository_ids(principal: ResolvedPrincipal, repository_ids: 
         }
 
 
+async def readable_project_ids(principal: ResolvedPrincipal) -> set[uuid.UUID] | None:
+    """Projects the caller may ``read``; ``None`` means every project.
+
+    Solo state and team administrators see all; a human member sees the enabled
+    projects whose role and policy both grant ``read``; anything else sees none."""
+    if await current_team_state() == "solo":
+        return None
+    async with async_session_factory() as session:
+        try:
+            live = await live_credential(session, principal.id, principal.credential_id)
+            if live.kind != "human" or not live.has_scope("team:read"):
+                return set()
+            member = await human_member(session, live, 1)
+        except TeamDenied:
+            return set()
+        if member.is_admin and live.has_scope("team:admin"):
+            return None
+        rows = (await session.execute(
+            select(ProjectMember.project_id, ProjectMember.role, TeamProject.permissions)
+            .join(TeamProject, TeamProject.id == ProjectMember.project_id)
+            .where(ProjectMember.principal_id == live.id, ProjectMember.revoked_at.is_(None),
+                   TeamProject.disabled_at.is_(None))
+        )).all()
+    return {
+        project_id
+        for project_id, role, policy in rows
+        if Permission.READ in ROLE_PERMISSIONS.get(role, frozenset())
+        and Permission.READ in _policy_permissions(policy)
+    }
+
+
 def _policy_permissions(policy: list[str] | None) -> frozenset[Permission]:
     """A project's granted permissions; an invalid policy grants nothing, as ``authorize`` denies it."""
     try:
@@ -254,6 +288,49 @@ async def readable_memory_rows(principal: ResolvedPrincipal, rows: list[MemoryRo
         row for row in rows
         if (scope := normalize_repo_scope(row.repo_path)) is None or repository_by_scope.get(scope) in readable
     ]
+
+
+async def member_authority(principal: ResolvedPrincipal) -> Authority:
+    """Any live, verified human team member (read-only authority); solo state is the implicit administrator."""
+    if await current_team_state() == "solo":
+        return solo_authority(principal)
+    try:
+        async with async_session_factory() as session:
+            live = await live_credential(session, principal.id, principal.credential_id)
+            await human_member(session, live, 1)
+    except TeamDenied as exc:
+        raise HTTPException(status_code=403, detail=f"Team member required: {exc}") from exc
+    assert live.credential_id is not None
+    return Authority(live.id, live.id, live.credential_id, frozenset({Permission.READ}))
+
+
+async def proposer_authority(principal: ResolvedPrincipal) -> Authority:
+    """Authority to propose system-global memory: ``knowledge.propose`` on at least one live project.
+
+    Solo state is the implicit administrator. In team state a run never qualifies
+    (runs cannot propose), and neither does a member whose roles are all Reader.
+    Only team administrators approve what is proposed this way."""
+    if await current_team_state() == "solo":
+        return solo_authority(principal)
+    denied: TeamDenied = TeamDenied("Permission denied")
+    try:
+        async with async_session_factory() as session:
+            live = await live_credential(session, principal.id, principal.credential_id)
+            project_ids = (await session.execute(
+                select(ProjectMember.project_id)
+                .join(TeamProject, TeamProject.id == ProjectMember.project_id)
+                .where(ProjectMember.principal_id == live.id, ProjectMember.revoked_at.is_(None),
+                       TeamProject.disabled_at.is_(None))
+                .order_by(ProjectMember.project_id)
+            )).scalars().all()
+            for project_id in project_ids:
+                try:
+                    return await authorize(session, live, project_id, Permission.PROPOSE)
+                except TeamDenied as exc:
+                    denied = exc
+    except TeamDenied as exc:
+        denied = exc
+    raise HTTPException(status_code=403, detail=f"Knowledge proposal denied: {denied}")
 
 
 async def is_team_administrator(principal: ResolvedPrincipal) -> bool:

@@ -2,6 +2,7 @@ from typing import Any, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from apps.api import activity_log
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.schemas import (
     BenchmarkJobRequest,
@@ -10,6 +11,7 @@ from apps.api.schemas import (
     EmbeddingVerifyRequest,
     MemoryConsolidationJobRequest,
     NightlyMaintenanceJobRequest,
+    OriginPollJobRequest,
     ProactiveInsightsJobRequest,
     ReindexJobRequest,
     SelfDiagnosisJobRequest,
@@ -55,6 +57,12 @@ def _enqueue_response(job_id: str) -> dict:
     }
 
 
+async def _queued(job_id: str, principal: ResolvedPrincipal, job_type: str, repo_path: str | None) -> dict:
+    """The enqueue response, after recording who queued the job in the team activity feed."""
+    await activity_log.record_job_queued(principal, job_type, job_id, repo_path=repo_path)
+    return _enqueue_response(job_id)
+
+
 @router.post("/reindex", dependencies=[Depends(require_scope("jobs:write"))])
 async def enqueue_reindex(body: ReindexJobRequest | None = None, principal: ResolvedPrincipal = Depends(require_principal)):
     await _authorize_job(principal, getattr(body, "repo_path", None))
@@ -74,7 +82,7 @@ async def enqueue_reindex(body: ReindexJobRequest | None = None, principal: Reso
         max_attempts=3,
         initiator=_initiator(principal),
     )
-    return _enqueue_response(job_id)
+    return await _queued(job_id, principal, "reindex", getattr(body, "repo_path", None))
 
 
 @router.post("/health-check", dependencies=[Depends(require_scope("jobs:write"))])
@@ -85,7 +93,7 @@ async def enqueue_health_check(repo_path: Optional[str] = None, principal: Resol
         "health_check", params if params else None,
         initiator=_initiator(principal),
     )
-    return _enqueue_response(job_id)
+    return await _queued(job_id, principal, "health_check", repo_path)
 
 
 @router.post("/embedding-verify", dependencies=[Depends(require_scope("jobs:write"))])
@@ -98,7 +106,7 @@ async def enqueue_embedding_verify(body: EmbeddingVerifyRequest | None = None, p
         "embedding_verify", params or None,
         initiator=_initiator(principal),
     )
-    return _enqueue_response(job_id)
+    return await _queued(job_id, principal, "embedding_verify", getattr(body, "repo_path", None))
 
 
 @router.post("/embedding-backfill", dependencies=[Depends(require_scope("jobs:write"))])
@@ -119,7 +127,7 @@ async def enqueue_embedding_backfill(body: EmbeddingBackfillRequest | None = Non
         "embedding_backfill", params or None,
         initiator=_initiator(principal),
     )
-    return _enqueue_response(job_id)
+    return await _queued(job_id, principal, "embedding_backfill", getattr(body, "repo_path", None))
 
 
 @router.post("/benchmark", dependencies=[Depends(require_scope("jobs:write"))])
@@ -134,7 +142,7 @@ async def enqueue_benchmark(body: BenchmarkJobRequest | None = None, principal: 
         if body.smoke:
             params["smoke"] = True
     job_id = await _queue("benchmark").enqueue("benchmark", params or None, initiator=_initiator(principal))
-    return _enqueue_response(job_id)
+    return await _queued(job_id, principal, "benchmark", getattr(body, "repo_path", None))
 
 
 @router.post("/proactive-insights", dependencies=[Depends(require_scope("jobs:write"))])
@@ -152,7 +160,7 @@ async def enqueue_proactive_insights(body: ProactiveInsightsJobRequest | None = 
         "proactive_insights", params or None,
         initiator=_initiator(principal),
     )
-    return _enqueue_response(job_id)
+    return await _queued(job_id, principal, "proactive_insights", getattr(body, "repo_path", None))
 
 
 @router.post("/memory-consolidation", dependencies=[Depends(require_scope("jobs:write"))])
@@ -168,6 +176,21 @@ async def enqueue_memory_consolidation(body: MemoryConsolidationJobRequest | Non
             params["dry_run"] = True
     job_id = await _queue("memory_consolidation").enqueue(
         "memory_consolidation", params or None,
+        initiator=_initiator(principal),
+    )
+    return await _queued(job_id, principal, "memory_consolidation", getattr(body, "repo_path", None))
+
+
+@router.post("/origin-poll", dependencies=[Depends(require_scope("jobs:write"))])
+async def enqueue_origin_poll(body: OriginPollJobRequest | None = None,
+                              principal: ResolvedPrincipal = Depends(require_principal)):
+    """Run the origin poll now: record each repository's remote head and reindex the ones origin moved past."""
+    await _authorize_job(principal, getattr(body, "repo_path", None))
+    params: dict[str, Any] = {}
+    if body and body.repo_path:
+        params["repo_path"] = body.repo_path
+    job_id = await _queue("origin_poll").enqueue(
+        "origin_poll", params or None,
         initiator=_initiator(principal),
     )
     return _enqueue_response(job_id)
@@ -199,7 +222,7 @@ async def enqueue_self_diagnosis(body: SelfDiagnosisJobRequest | None = None, pr
         max_attempts=settings.SELF_DIAGNOSIS_JOB_MAX_ATTEMPTS,
         initiator=_initiator(principal),
     )
-    return _enqueue_response(job_id)
+    return await _queued(job_id, principal, "self_diagnosis", getattr(body, "repo_path", None))
 
 
 @router.post("/nightly-maintenance", dependencies=[Depends(require_scope("jobs:write"))])
@@ -223,7 +246,7 @@ async def enqueue_nightly_maintenance(
         timeout_seconds=settings.WORKER_MAX_JOB_TIMEOUT_SECONDS,
         initiator=_initiator(principal),
     )
-    return _enqueue_response(job_id)
+    return await _queued(job_id, principal, "nightly_maintenance", getattr(body, "repo_path", None))
 
 
 @router.post("/deep-context", dependencies=[Depends(require_scope("jobs:write"))])
@@ -252,7 +275,7 @@ async def enqueue_deep_context(body: DeepContextJobRequest, request: Request = c
         initiator=_initiator(principal),
     )
     return attach_envelope(
-        _enqueue_response(job_id), await envelope_for_path(body.repo_path or settings.TARGET_REPO_PATH)
+        await _queued(job_id, principal, "deep_context", body.repo_path), await envelope_for_path(body.repo_path or settings.TARGET_REPO_PATH)
     )
 
 

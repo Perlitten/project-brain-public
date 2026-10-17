@@ -1,0 +1,52 @@
+# Disposable stack for the team-mode end-to-end check (scripts/team_e2e_docker.sh).
+# Project name brain-e2e; nothing here is shared with the dev or prod stacks.
+# No bind mounts: the report leaves the runner through `docker cp`.
+name: brain-e2e
+
+services:
+  pg:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_USER: e2e
+      POSTGRES_PASSWORD: ${TEAM_E2E_PG_PASSWORD:?set by scripts/team_e2e_docker.sh}
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:${TEAM_E2E_PG_PORT:-5448}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U e2e -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${TEAM_E2E_REDIS_PORT:-6398}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  runner:
+    image: brain-e2e-runner:local
+    build:
+      context: ${TEAM_E2E_STAGING:?set by scripts/team_e2e_docker.sh}
+      dockerfile: main/deploy/team-e2e/Dockerfile
+      # Some local daemons (WSL without working bridge NAT) only reach the package mirrors from the host network.
+      network: ${TEAM_E2E_BUILD_NETWORK:-default}
+      args:
+        PG_CLIENT_MAJOR: ${TEAM_E2E_PG_CLIENT_MAJOR:-15}
+    profiles: ["runner"]
+    depends_on:
+      pg:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - --database-url
+      - postgresql://e2e:${TEAM_E2E_PG_PASSWORD}@pg:5432/postgres
+      - --redis-url
+      - redis://redis:6379/0
+      - --report
+      - /work/out/report.json

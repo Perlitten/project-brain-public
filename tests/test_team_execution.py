@@ -18,18 +18,22 @@ from sqlalchemy.pool import NullPool
 from brain.auth.principals import ResolvedPrincipal, hash_credential
 from brain.config.settings import settings
 from brain.database.harness_models import AgentTask, AgentTaskEvent
-from brain.database.models import ApiCredential, Base, OAuthClient, OAuthRefreshToken, Principal, Repository
+from brain.database.models import (ApiCredential, Base, Decision, MemoryProposal, OAuthClient, OAuthRefreshToken,
+                                   Principal, Repository, Rule)
 from brain.execution.bounded import SubprocessBackend
 from brain.team import execution, provisioning
 from brain.team.authorization import Permission, TeamConflict, TeamDenied, authorize
 from brain.team.execution import ExecutionDenied, ExecutionRunner, Lease
 from brain.team.models import (AgentRun, AgentRunExecution, ProjectMember, ProjectRepository, Team, TeamAccessFence,
-                               TeamExecutionGrant, TeamInvitation, TeamMember, TeamProject, TeamTaskBinding)
+                               TeamActivityEvent, TeamExecutionGrant, TeamInvitation, TeamMember, TeamProject,
+                               TeamTaskBinding)
 from brain.team.store import create_task, request_run
 
 TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, AgentTask, AgentTaskEvent,
           OAuthClient, OAuthRefreshToken, Team, TeamAccessFence, TeamMember, TeamProject, ProjectMember,
-          ProjectRepository, TeamTaskBinding, AgentRun, TeamInvitation, TeamExecutionGrant, AgentRunExecution)]
+          ProjectRepository, TeamTaskBinding, AgentRun, TeamInvitation, TeamExecutionGrant, AgentRunExecution,
+          # Member revocation logs activity and withdraws memory proposals.
+          TeamActivityEvent, Decision, Rule, MemoryProposal)]
 NOW = datetime.now(timezone.utc)
 SECRET_VALUE = "fixture-secret-value-7f3a9c"
 PY = sys.executable
@@ -542,6 +546,20 @@ async def test_member_revocation_revokes_execution_grants(team_db, source_repo):
         assert all(row["active"] is False for row in await execution.list_grants(session, a))
         renewed = await execution.set_grant(session, a, 3, "operator:test")
         assert renewed.revoked_at is None and renewed.version == 3
+        assert (await execution.set_grant(session, a, 3, "operator:test")).version == 3  # no-op renewal
+        await execution.revoke_grant(session, a, 3, "principal:4")
+    async with factory() as session:
+        events = (await session.execute(select(TeamActivityEvent).where(TeamActivityEvent.kind.like("execution.%"))
+                                        .order_by(TeamActivityEvent.id))).scalars().all()
+    # Effective grant changes reach the admin activity feed; the cascade is covered by the membership events.
+    assert [(e.kind, e.project_id, e.subject_principal_id, e.actor_principal_id, e.actor_label, e.audience)
+            for e in events] == [
+        ("execution.granted", a, 2, None, "operator", "admin"), ("execution.granted", b, 2, None, "operator", "admin"),
+        ("execution.granted", a, 3, None, "operator", "admin"), ("execution.granted", a, 3, None, "operator", "admin"),
+        ("execution.revoked", a, 3, 4, None, "admin")]
+    async with factory() as session:
+        assert {e.kind for e in (await session.execute(select(TeamActivityEvent))).scalars()} >= {
+            "membership.revoked", "project_role.revoked"}
 
 
 # --------------------------------------------------------------------------- HTTP surface

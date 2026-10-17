@@ -57,6 +57,7 @@ from brain.database.harness_models import AgentTaskEvent
 from brain.database.models import Repository
 from brain.execution.bounded import (ExecutorBackend, ExecutorError, StepRequest, SubprocessBackend, ToolSpec,
                                      validate_args)
+from brain.team.activity import record_event
 from brain.team.authorization import (Authority, Permission, TeamConflict, TeamDenied, administrator, authorize,
                                       fresh, permissions, require_team_storage)
 from brain.team.models import (AgentRun, AgentRunExecution, ProjectMember, TeamExecutionGrant, TeamMember,
@@ -479,7 +480,10 @@ async def set_grant(session: AsyncSession, project_id: uuid.UUID, principal_id: 
         grant.revoked_at, grant.revoked_by = None, None
         grant.granted_by, grant.granted_at = granted_by[:128], _now()
         grant.version += 1
+    else:
+        return grant
     await session.flush()
+    await _record_grant_event(session, "execution.granted", "Execution granted", grant, granted_by)
     return grant
 
 
@@ -496,7 +500,25 @@ async def revoke_grant(session: AsyncSession, project_id: uuid.UUID, principal_i
         grant.revoked_at, grant.revoked_by = _now(), revoked_by[:128]
         grant.version += 1
         await session.flush()
+        await _record_grant_event(session, "execution.revoked", "Execution grant revoked", grant, revoked_by)
     return grant
+
+
+_PRINCIPAL_ACTOR = re.compile(r"^principal:(\d+)$")
+
+
+async def _record_grant_event(session: AsyncSession, kind: str, summary: str, grant: TeamExecutionGrant,
+                              by: str) -> None:
+    """Team-administration activity for an effective grant change (``by`` is ``principal:<id>`` or an operator).
+
+    Grants a membership or project-role revocation withdraws are not logged
+    here; that revocation's own ``membership``/``project_role`` event covers it."""
+    match = _PRINCIPAL_ACTOR.match(by)
+    actor_id = int(match.group(1)) if match else None
+    await record_event(session, kind=kind, summary=summary, audience="admin", actor_principal_id=actor_id,
+                       actor_label=None if actor_id else "operator", subject_principal_id=grant.principal_id,
+                       project_id=grant.project_id,
+                       details={"principal_id": grant.principal_id, "version": grant.version})
 
 
 async def list_grants(session: AsyncSession, project_id: uuid.UUID) -> list[dict]:
