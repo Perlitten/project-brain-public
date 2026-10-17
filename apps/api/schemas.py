@@ -64,6 +64,8 @@ class LearningCreate(BaseModel):
     confidence: float = 0.5
     repo_scope: Optional[str] = None
     valid_until: Optional[str] = None
+    # personal: visible only to its author and never part of shared retrieval until a promotion is approved.
+    visibility: Literal["shared", "personal"] = "shared"
 
 
 class EpisodeSearchRequest(BaseModel):
@@ -180,6 +182,12 @@ class MemoryConsolidationJobRequest(BaseModel):
     scheduled: bool = False
     require_approval: Optional[bool] = None
     dry_run: bool = False
+
+
+class OriginPollJobRequest(BaseModel):
+    """Poll origin now. Without ``repo_path`` every attached repository is polled."""
+
+    repo_path: Optional[str] = Field(default=None, max_length=1000)
 
 
 class SelfDiagnosisJobRequest(BaseModel):

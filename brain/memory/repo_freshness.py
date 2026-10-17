@@ -238,6 +238,112 @@ def _to_utc_datetime(value: Any) -> datetime | None:
     return value
 
 
+async def _load_origin_state(repository_id: int) -> dict[str, Any] | None:
+    """The origin poll's last observation for the repository (None when never polled or unreadable)."""
+    from brain.memory.origin_state_store import get_origin_state
+
+    return await get_origin_state(repository_id)
+
+
+def _iso_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        stamp = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return stamp.astimezone(timezone.utc).isoformat()
+    return str(value)
+
+
+def _overlay_behind(state: dict[str, Any], indexed: str | None, remote: str,
+                    local_head: Any, local_behind: Any) -> int | None:
+    if indexed and revision_matches(remote, indexed):
+        return 0
+    stored = state.get("commits_behind")
+    if (
+        isinstance(stored, int)
+        and state.get("commits_behind_head") == remote
+        and indexed
+        and revision_matches(str(state.get("commits_behind_base") or ""), indexed)
+    ):
+        return stored
+    if local_head and revision_matches(remote, str(local_head)) and isinstance(local_behind, int):
+        return local_behind
+    return None
+
+
+def apply_origin_state(freshness: dict[str, Any], state: dict[str, Any] | None) -> dict[str, Any]:
+    """Fold the origin poll's observation (``repository_origin_state``) into a freshness dict.
+
+    The poll asks origin itself (``git ls-remote``), so its head replaces the
+    checkout's remote-tracking ref, which a read-only mount never refreshes.
+    A repository served from a Brain-owned mirror is judged against the
+    mirror's head rather than the stale mounted checkout.
+    """
+    if not state:
+        return freshness
+    out = dict(freshness)
+    indexed = str(out.get("indexed_commit") or "").strip() or None
+    out["origin_poll_status"] = state.get("poll_status")
+    out["origin_polled_at"] = _iso_or_none(state.get("polled_at"))
+    out["origin_poll_error"] = state.get("poll_error")
+    out["origin_remote"] = state.get("remote_url")
+    mode = state.get("source_mode")
+    if mode:
+        out["index_source"] = mode
+
+    remote = str(state.get("remote_head") or "").strip()
+    if remote:
+        if state.get("tracked_branch"):
+            out["origin_ref"] = f"origin/{state['tracked_branch']}"
+        out["commits_behind_origin"] = _overlay_behind(
+            state, indexed, remote, out.get("origin_head"), out.get("commits_behind_origin")
+        )
+        out["origin_head"] = remote
+
+    status = out.get("status")
+    mirror_head = str(state.get("mirror_head") or "").strip()
+    if mode == "mirror":
+        out["checkout_head_commit"] = out.get("source_head_commit")
+        out["source_revision_kind"] = "mirror"
+        if mirror_head:
+            out["source_head_commit"] = mirror_head
+            if indexed and status not in {"source_missing", "unknown", "unindexed"}:
+                out["commits_behind"] = None
+                if revision_matches(mirror_head, indexed):
+                    stale_after_seconds = _days_to_seconds(os.environ.get("BRAIN_INDEX_STALE_AFTER_DAYS"))
+                    age_seconds = out.get("age_seconds")
+                    if age_seconds is not None and age_seconds > stale_after_seconds:
+                        out["status"] = "stale"
+                        out["note"] = (
+                            "Indexed commit matches the source mirror head, but index age is older than "
+                            f"{stale_after_seconds} seconds."
+                        )
+                    else:
+                        out["status"] = "current"
+                        out["note"] = None
+                else:
+                    out["status"] = "behind"
+                    out["note"] = "Source mirror head differs from indexed commit."
+
+    job_id = state.get("last_reindex_job_id")
+    requested = str(state.get("last_reindex_head") or "").strip()
+    if job_id and requested and not (indexed and revision_matches(requested, indexed)):
+        out["reindex_job_id"] = job_id
+
+    if out.get("status") == "current":
+        out["note"] = _origin_ahead_note(out)
+        if out["note"] is not None and mode == "mirror":
+            out["note"] = out["note"].replace(
+                "the checkout has not been moved to it yet.", "the source mirror has not been indexed at it yet."
+            )
+        elif out["note"] is None and remote and indexed and not revision_matches(remote, indexed):
+            out["note"] = (
+                f"{out.get('origin_ref') or 'origin'} is at {remote[:12]}, which differs from the indexed commit; "
+                "the commit count is unknown until it is fetched."
+            )
+    return out
+
+
 _FRESHNESS_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 CACHE_TTL_SECONDS = float(os.environ.get("BRAIN_FRESHNESS_CACHE_TTL", "60"))
 
@@ -264,6 +370,9 @@ async def assess_repository_freshness(repo: Any) -> dict[str, Any]:
         return dict(cached[1])
 
     freshness = await _assess_repository_freshness_uncached(repo)
+    repository_id = getattr(repo, "id", None)
+    if isinstance(repository_id, int) and not isinstance(repository_id, bool):
+        freshness = apply_origin_state(freshness, await _load_origin_state(repository_id))
     if CACHE_TTL_SECONDS > 0:
         _FRESHNESS_CACHE[key] = (now_monotonic + CACHE_TTL_SECONDS, dict(freshness))
         if len(_FRESHNESS_CACHE) > 256:  # bounded: a handful of repos in practice

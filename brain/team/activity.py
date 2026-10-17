@@ -8,7 +8,9 @@ other dated trace:
   row happened when the history row it supersedes was written, version 1 at
   ``created_at``), attributed to ``updated_by_principal_id`` / the author;
 * learnings, episodes and skills: creation by ``author_principal_id`` and the
-  latest change by ``updated_by_principal_id`` (those tables keep no history);
+  latest change by ``updated_by_principal_id`` (those tables keep no history).
+  Personal-tier learnings (status ``personal``) are private to their author and
+  never appear in the feed; a promoted learning appears once it is shared;
 * invitations (created, accepted, revoked) from ``team_invitations``;
 * team tasks and runs from ``team_task_bindings`` / ``agent_runs``;
 * membership and project-role changes and queued jobs from
@@ -37,6 +39,9 @@ from brain.database.models import Decision, Learning, MemoryEpisode, MemorySkill
 from brain.database.repository_utils import find_repository_id, repository_path_candidates
 from brain.memory.repo_scope import normalize_repo_scope
 from brain.team.models import AgentRun, ProjectRepository, TeamActivityEvent, TeamInvitation, TeamTaskBinding
+
+# The personal tier (brain.memory.proposals.PERSONAL_STATUS): only the author ever reads those learnings.
+PERSONAL_LEARNING_STATUS = "personal"
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
@@ -458,8 +463,9 @@ async def list_activity(session: AsyncSession, scope: ActivityScope, query: Acti
                                       _memory_location(Rule.repo_path, scope, spellings,
                                                        global_visible=scope.include_global))
     streams += _authored_streams(Learning, Learning.statement, "learning", query,
-                                 _memory_location(Learning.repo_scope, scope, spellings,
-                                                  global_visible=scope.unscoped))
+                                 and_(_memory_location(Learning.repo_scope, scope, spellings,
+                                                       global_visible=scope.unscoped),
+                                      Learning.status != PERSONAL_LEARNING_STATUS))
     if _family_allowed("episode", scope):
         streams += _authored_streams(MemoryEpisode, MemoryEpisode.distilled_summary, "episode", query,
                                      _memory_location(MemoryEpisode.repo_scope, scope, spellings,

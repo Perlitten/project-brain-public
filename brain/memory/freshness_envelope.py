@@ -93,6 +93,19 @@ def _int_or_none(value: Any) -> Optional[int]:
         return None
 
 
+def _same_revision(left: str, right: str) -> bool:
+    return bool(left and right) and (left.startswith(right) or right.startswith(left))
+
+
+def _origin_ahead(freshness: dict[str, Any]) -> bool:
+    behind = freshness.get("commits_behind_origin")
+    if isinstance(behind, int) and not isinstance(behind, bool):
+        return behind > 0
+    origin_head = str(freshness.get("origin_head") or "").strip().lower()
+    indexed = str(freshness.get("indexed_commit") or "").strip().lower()
+    return bool(origin_head and indexed) and not _same_revision(origin_head, indexed)
+
+
 def derive_state(freshness: dict[str, Any] | None) -> tuple[EnvelopeState, str]:
     """Map the freshness module's ``status`` (and note) to an envelope state."""
     if not freshness:
@@ -100,6 +113,10 @@ def derive_state(freshness: dict[str, Any] | None) -> tuple[EnvelopeState, str]:
     status = str(freshness.get("status") or "unknown")
     if status == "stale" and str(freshness.get("note") or "").startswith(_UNVERIFIED_NOTE_PREFIX):
         return "stale_served", "source_head_unverified"
+    if status == "current" and _origin_ahead(freshness):
+        # The index matches the source it read, but origin has moved on: the
+        # answer is served while the re-index catches up.
+        return "stale_served", "origin_ahead_of_index"
     return _STATUS_TO_STATE.get(status, ("unknown", "freshness_unavailable"))
 
 
@@ -124,7 +141,8 @@ def freshness_envelope(
         "indexed_commit": raw.get("indexed_commit") or None,
         "indexed_at": _iso(raw.get("last_indexed_at")),
         "age_s": _int_or_none(raw.get("age_seconds")),
-        "reindex_job_id": reindex_job_id,
+        # The origin poll names the re-index it requested for a newer origin head.
+        "reindex_job_id": reindex_job_id or raw.get("reindex_job_id") or None,
         "index_status": raw.get("status") or None,
     }
     for key, value in raw.items():

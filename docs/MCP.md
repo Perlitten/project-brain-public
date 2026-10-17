@@ -64,11 +64,12 @@ client label, not an authenticated agent identity; see the
 ## Tool reference
 
 Local stdio exposes 13 tools. The HTTP-backed stdio bridge and native `/mcp`
-add `get_diff_review`, for the asynchronous review flow, and the five
-`team_*` tools of the [experimental team mode](TEAM.md): 19 tools in all. The
-task tools answer only for verified team members within their project roles;
-`team_me` works in solo state too; `team_request_run` records a run but nothing
-executes it yet.
+add `get_diff_review`, for the asynchronous review flow, and the ten
+`team_*` tools of the [experimental team mode](TEAM.md): 24 tools in all. The
+task and memory review tools answer only for verified team members within their
+project roles; `team_me` works in solo state too; `team_request_run` records a
+run but nothing executes it yet. The five memory review tools follow
+[governed memory](MEMORY_REVIEW.md).
 
 | Tool | Purpose |
 |---|---|
@@ -91,6 +92,11 @@ executes it yet.
 | `team_list_tasks` | Remote only, experimental: list a team project's tasks |
 | `team_create_task` | Remote only, experimental: create a task in a team project |
 | `team_request_run` | Remote only, experimental: record a run request (not executed) |
+| `team_propose_decision` | Remote only, experimental: propose a decision for independent review |
+| `team_propose_rule` | Remote only, experimental: propose a rule for independent review |
+| `team_list_proposals` | Remote only, experimental: list a review queue or your own proposals |
+| `team_approve_proposal` | Remote only, experimental: approve someone else's proposal (Reviewer) |
+| `team_reject_proposal` | Remote only, experimental: reject someone else's proposal (Reviewer) |
 
 Memory writes follow the [lesson and approval policy](MEMORY_LESSON_PROTOCOL.md).
 A tool's reported evidence is not proof that Brain independently executed tests.

@@ -189,6 +189,7 @@ test('owner navigation has seven destinations and nested deep links activate the
   assert.equal(nav.primaryNavItems.length, 7);
   assert.equal(nav.activeSection('/indexing'), 'projects');
   assert.equal(nav.activeSection('/packs/1504'), 'memory');
+  assert.equal(nav.activeSection('/review'), 'memory');
   // Reranker is a configuration panel, so it now lives under Settings; the
   // saved reports it used to sit beside stayed with Quality as a tab.
   assert.equal(nav.activeSection('/reranker'), 'settings');

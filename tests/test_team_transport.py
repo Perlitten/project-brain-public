@@ -18,6 +18,7 @@ from apps.api.routers import core_memory, core_retrieval, jobs, team
 from brain.auth.principals import hash_credential
 from brain.config.settings import Settings, settings
 from brain.database.models import ApiCredential, Principal, Repository
+from brain.memory import proposals
 from brain.memory.provenance import MemoryWriteResult
 from brain.team import provisioning
 from brain.team.authorization import team_state
@@ -66,7 +67,7 @@ async def live_team_state() -> str:
 
 def personal_app(factory, monkeypatch):
     """Team routes plus the personal surfaces this PR routes through authorize()."""
-    for module in (auth, team, team_access):
+    for module in (auth, team, team_access, proposals):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr(core_memory.LearningStore, "list_active_learnings", AsyncMock(return_value=[]))
@@ -161,9 +162,11 @@ async def test_team_admin_member_key_writes_global_decisions(team_db, monkeypatc
         for repo_path in (None, "system_global", "SYSTEM_GLOBAL"):
             assert (await client.post("/decisions", json=decision(repo_path), headers=ADMIN)).status_code == 200
             assert add.call_args.kwargs["caller_role"] == "admin"
-        assert (await client.post("/decisions", json=decision(None), headers=CONTRIBUTOR)).status_code == 403
-        assert (await client.post("/decisions", json=decision("/synthetic/A"), headers=CONTRIBUTOR)).status_code == 200
-        assert add.call_args.kwargs["caller_role"] == "agent"
+        # A member who is not a team administrator proposes instead (HTTP 202, tests/test_memory_proposals.py).
+        add.reset_mock()
+        assert (await client.post("/decisions", json=decision(None), headers=CONTRIBUTOR)).status_code == 202
+        assert (await client.post("/decisions", json=decision("/synthetic/A"), headers=CONTRIBUTOR)).status_code == 202
+        add.assert_not_called()
     # Solo state keeps the scope rule: without core:admin a global decision is the agent role (the store refuses it).
     await revoke_everyone(factory)
     async with client_for(app) as client:
@@ -213,8 +216,8 @@ async def test_team_state_outsider_denied_reader_reads_contributor_writes(team_d
         assert (await client.post("/search", json={"query": "q", "repo_path": "/synthetic/A"}, headers=READER)).status_code == 200
         assert (await client.post("/decisions", json=decision("/synthetic/A"), headers=READER)).status_code == 403
         assert (await client.post("/jobs/reindex", json={"repo_path": "/synthetic/A"}, headers=READER)).status_code == 403
-        # Contributor: proposes and requests runs on the attached repository only.
-        assert (await client.post("/decisions", json=decision("/synthetic/A"), headers=CONTRIBUTOR)).status_code == 200
+        # Contributor: proposes (a pending proposal, HTTP 202) and requests runs on the attached repository only.
+        assert (await client.post("/decisions", json=decision("/synthetic/A"), headers=CONTRIBUTOR)).status_code == 202
         assert (await client.post("/jobs/reindex", json={"repo_path": "/synthetic/A"}, headers=CONTRIBUTOR)).status_code == 200
         assert (await client.post("/decisions", json=decision("/synthetic/B"), headers=CONTRIBUTOR)).status_code == 403
         # Unattached, unindexed and unscoped surfaces need a team administrator.
@@ -222,8 +225,10 @@ async def test_team_state_outsider_denied_reader_reads_contributor_writes(team_d
             assert (await client.get("/learnings", params={"repo_path": "/synthetic/C"}, headers=headers)).status_code == expected
             assert (await client.get("/learnings", headers=headers)).status_code == expected
             assert (await client.post("/search", json={"query": "q", "repo_path": "/not/indexed"}, headers=headers)).status_code == expected
-            assert (await client.post("/decisions", json=decision(None), headers=headers)).status_code == expected
             assert (await client.post("/jobs/reindex", headers=headers)).status_code == expected
+        # A system-global decision: a Reader may not propose, a Contributor proposes, a team administrator writes.
+        for headers, expected in ((READER, 403), (CONTRIBUTOR, 202), (ADMIN, 200)):
+            assert (await client.post("/decisions", json=decision(None), headers=headers)).status_code == expected
         assert (await client.get(f"/team/projects/{a}/tasks", headers=OUTSIDER)).status_code == 403
     monkeypatch.setattr(settings, "PROJECT_BRAIN_API_KEY", "")
     monkeypatch.setattr(settings, "ENVIRONMENT", "test")

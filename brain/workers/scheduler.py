@@ -69,10 +69,36 @@ MEMORY_SCHEDULE = ScheduledJob("memory_consolidation", "15 * * * *", "Hourly mem
 SCHEDULES_BY_TYPE[MEMORY_SCHEDULE.job_type] = MEMORY_SCHEDULE
 
 
+def origin_poll_cron(interval_seconds: int) -> Optional[str]:
+    """Cron for ``BRAIN_ORIGIN_POLL_INTERVAL_S``; None when the poll is disabled (0 or less).
+
+    The scheduler has minute resolution: intervals round up to whole minutes,
+    and to whole hours from 60 minutes on.
+    """
+    seconds = int(interval_seconds or 0)
+    if seconds <= 0:
+        return None
+    minutes = max(1, -(-seconds // 60))
+    if minutes < 60:
+        return "* * * * *" if minutes == 1 else f"*/{minutes} * * * *"
+    hours = min(24, -(-minutes // 60))
+    return "0 * * * *" if hours == 1 else ("0 0 * * *" if hours >= 24 else f"0 */{hours} * * *")
+
+
+def origin_poll_schedule() -> Optional[ScheduledJob]:
+    cron = origin_poll_cron(settings.BRAIN_ORIGIN_POLL_INTERVAL_S)
+    if cron is None:
+        return None
+    return ScheduledJob("origin_poll", cron, "Poll origin of attached repositories",
+                        lambda _slot: {"scheduled": True})
+
+
 def active_schedules() -> tuple[ScheduledJob, ...]:
     # Independent of optional deep maintenance; disabled consolidation adds no
     # hourly queue noise or misleading stale-job warning.
-    return SCHEDULES + ((MEMORY_SCHEDULE,) if settings.MEMORY_CONSOLIDATION_ENABLED else ())
+    schedules = SCHEDULES + ((MEMORY_SCHEDULE,) if settings.MEMORY_CONSOLIDATION_ENABLED else ())
+    poll = origin_poll_schedule()
+    return schedules + ((poll,) if poll is not None else ())
 
 
 # --------------------------------------------------------------------------- cron

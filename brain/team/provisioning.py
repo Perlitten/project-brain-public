@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from brain.auth.principals import mint_credential
 from brain.team.activity import record_event
 from brain.database.models import ApiCredential, OAuthRefreshToken, Principal, Repository
+from brain.memory.proposals import withdraw_author_proposals
 from brain.team.authorization import ROLE_PERMISSIONS, Permission, TeamConflict, TeamDenied, fresh, permissions
 from brain.team.models import AgentRun, ProjectMember, ProjectRepository, Team, TeamMember, TeamProject
 
@@ -250,7 +251,13 @@ async def revoke_principal_access(session: AsyncSession, principal: Principal) -
 
 
 async def revoke_member(session: AsyncSession, *, principal: Principal, actor_id: int | None = None) -> TeamMember:
-    """Revoke team membership, every live project role and all access acting for the principal."""
+    """Revoke team membership, every live project role and all access acting for the principal.
+
+    The principal's pending memory proposals are withdrawn with the reason
+    ``Author access revoked`` (brain/memory/proposals.py): nobody is left to
+    answer review questions about them, and a reviewer approving one later
+    would publish knowledge on behalf of someone who no longer has access.
+    Knowledge already approved stays."""
     member = await fresh(session, TeamMember, TeamMember.principal_id == principal.id, exclusive=True)
     if member is None:
         raise TeamNotFound("Principal is not a team member")
@@ -264,6 +271,7 @@ async def revoke_member(session: AsyncSession, *, principal: Principal, actor_id
         membership.revoked_at = member.revoked_at
         membership.version += 1
     await revoke_principal_access(session, principal)
+    await withdraw_author_proposals(session, principal.id)
     return member
 
 
