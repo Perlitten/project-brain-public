@@ -3,7 +3,7 @@
 Status: target architecture; M0 contract, not a team-readiness claim.
 Amended 2026-10-15: unified model, see [Decision: solo is a team of one](#decision-2026-10-15-solo-is-a-team-of-one).
 
-Requirements source: the owner's 2026-10-14 summary of [Team Brain](https://app.notion.com/p/34533f3b6a82815bbec8d9b43088e066). Notion is design input, not implemented-feature evidence.
+Requirements source: the owner's 2026-10-14 requirements summary (private design notes). It is design input, not implemented-feature evidence.
 
 ## Boundary and inventory
 
@@ -80,7 +80,9 @@ repository is bound to one project; widening requires explicit review.
 Human credentials authenticate a server-owned Principal linked to a verified
 team identity. Verification must have issuer/subject/provenance; `kind=human`
 alone is insufficient. Initial provisioning is an offline trusted operator
-action, NOT self-registration or a claim of deployed OIDC. Invitation/SSO is M5.
+action, NOT self-registration or a claim of deployed OIDC. Single-use
+invitations through the API and CLI landed in M1 (2026-10-16); SSO/OIDC and
+the invitation UX are M5.
 Run credentials identify a particular run and store only hashes. Git/provider
 secrets stay server-held and are not copied into run records or client payloads.
 

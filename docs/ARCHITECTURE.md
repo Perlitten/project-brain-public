@@ -1,12 +1,16 @@
 # Architecture and trust boundaries
 
-Project Brain is an early single-user service for a trusted operator. It
-combines a code index, dependency graph and project knowledge, then serves
-context to coding agents. It does not replace source inspection, Git or CI.
+Project Brain is an early, self-hosted service run by a trusted operator for one
+developer or, with the [experimental team mode](TEAM.md) on `main`, a small
+team that shares one instance. It combines a code index, dependency graph and
+project knowledge, then serves context to coding agents. It does not replace
+source inspection, Git or CI.
 
 The [single-team collaboration contract](adr/team-collaboration.md) describes the
-target architecture and staged MVP. It does not claim that current personal
-APIs, retrieval or executors are safe for multiple team members.
+target architecture and staged MVP. On `main`, repository-scoped API, MCP and
+dashboard requests are authorized per project once a team has members, but team
+mode is an unpiloted preview with no executor; its stage and known gaps are in
+[team-mode status](design/team-status.md).
 
 ## Runtime components
 

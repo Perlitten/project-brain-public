@@ -1,6 +1,8 @@
 # Inviting team members
 
-**Experimental, full storage only** (`BRAIN_STORAGE_MODE=full`). Invitations
+**Experimental preview, `main` only, not in v0.9.2; full storage only**
+(`BRAIN_STORAGE_MODE=full`). The end-to-end path is in the
+[team mode walkthrough](../TEAM.md); this page is the invitation reference. Invitations
 turn the holder of a single-use token into a verified team member with a named
 credential. Design and acceptance matrix: [team foundations](../design/team-foundations.md);
 decision record: [ADR](../adr/team-collaboration.md).
