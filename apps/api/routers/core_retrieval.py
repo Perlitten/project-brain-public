@@ -23,6 +23,7 @@ from apps.api.schemas import (
     SearchRequest,
 )
 from apps.api import team_access
+from apps.api.repo_paths import repo_path_errors_as_400
 from apps.api.team_access import repository_authority
 from brain.analyzers.impact_analyzer import ImpactAnalyzer
 from brain.auth.principals import ResolvedPrincipal
@@ -334,9 +335,11 @@ async def _ask_v2(body: AskRequest) -> dict:
 
 
 async def _impact_v2(body: ImpactRequest) -> dict:
+    with repo_path_errors_as_400():
+        target = resolve_repo_path(body.repo_path)
     try:
         impact = await asyncio.wait_for(
-            ImpactAnalyzer(resolve_repo_path(body.repo_path)).analyze_bounded(body.change_request),
+            ImpactAnalyzer(target).analyze_bounded(body.change_request),
             timeout=settings.AGENT_IMPACT_DEADLINE_S,
         )
     except asyncio.TimeoutError:
@@ -351,7 +354,7 @@ async def _impact_v2(body: ImpactRequest) -> dict:
     builder.add("risk", impact.get("risk", {}), priority=3)
     builder.add("keywords", impact.get("keywords", []), priority=2)
     builder.add("affected", impact.get("affected", []), priority=1)
-    return attach_envelope(builder.build(), await envelope_for_path(resolve_repo_path(body.repo_path)))
+    return attach_envelope(builder.build(), await envelope_for_path(target))
 
 
 router = APIRouter()
@@ -360,10 +363,8 @@ router = APIRouter()
 @router.post("/index", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def index_repository(body: IndexRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     await repository_authority(principal, Permission.REQUEST_RUN, repo_path=body.repo_path)
-    try:
+    with repo_path_errors_as_400():
         repo_path = resolve_repo_path(body.repo_path)
-    except ValueError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
         indexer = FileIndexer()
         repo = await indexer.index_repository(repo_path)
@@ -659,7 +660,8 @@ async def build_task_context(body: ContextRequest, request: Request = cast(Reque
                     ).build(),
                     unknown_envelope(f"context_error:{type(exc).__name__}"),
                 )
-        repo_path = str(resolve_repo_path(body.repo_path))
+        with repo_path_errors_as_400():
+            repo_path = str(resolve_repo_path(body.repo_path))
         # The transport is the only layer that knows who called, so it tells the
         # builder: adoption is reported per agent, and a pack with no name
         # attached cannot be counted towards anybody.
@@ -670,6 +672,8 @@ async def build_task_context(body: ContextRequest, request: Request = cast(Reque
         return attach_envelope(result, await envelope_for_path(repo_path))
     except asyncio.CancelledError:
         outcome = "cancelled"
+        raise
+    except HTTPException:
         raise
     except Exception as exc:
         logger.error("Context pack failed: {}", type(exc).__name__)
@@ -690,8 +694,9 @@ async def analyze_change_impact(body: ImpactRequest, principal: ResolvedPrincipa
             _record_shadow_metric("impact", await _impact_v2(body))
         except Exception as exc:
             logger.warning("/impact v2 shadow failed open: {}", type(exc).__name__)
-    try:
+    with repo_path_errors_as_400():
         target = resolve_repo_path(body.repo_path)
+    try:
         analyzer = ImpactAnalyzer(target)
         result = await analyzer.analyze_impact(body.change_request, max_results=body.max_results, fast=body.fast)
         return attach_envelope(result, await envelope_for_path(target))
@@ -892,10 +897,10 @@ async def list_repositories(principal: ResolvedPrincipal = Depends(require_princ
 async def related_files_endpoint(body: RelatedRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     """Graph neighborhood lookup — the HTTP form of the MCP `find_related_files` tool."""
     await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
+    with repo_path_errors_as_400():
+        target = resolve_repo_path(body.repo_path) if body.repo_path else get_repo_root()
     try:
-        repository = await require_repository_by_path(
-            resolve_repo_path(body.repo_path) if body.repo_path else get_repo_root()
-        )
+        repository = await require_repository_by_path(target)
         client = GraphClient(repository_id=repository.id)
         directly, indirectly, visited = [], [], set()
         for nb in await client.get_neighbors(body.file_path):

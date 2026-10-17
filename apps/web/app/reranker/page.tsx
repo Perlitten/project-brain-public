@@ -46,7 +46,10 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
       ) : r.available === false ? (
         <EmptyState
           title="Reranker status unavailable"
-          body="Brain didn’t answer the reranker status request for this project just now. Reload in a moment; if no project is indexed yet, index one first."
+          body={
+            r.unavailableReason ??
+            "Brain didn’t answer the reranker status request for this project just now. Reload in a moment; if no project is indexed yet, index one first."
+          }
         />
       ) : (
         <>

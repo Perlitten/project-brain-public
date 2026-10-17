@@ -248,6 +248,8 @@ export interface RerankerStatus {
   queriesWindow?: string;
   /** False when the live API returned no reranker status at all. */
   available?: boolean;
+  /** Why the status is unavailable, when the server refused the request for this project (not an outage). */
+  unavailableReason?: string;
   /** True when the optional reranker was never set up on this install (nothing switched on, nothing encoded). */
   notSetUp?: boolean;
   /** Whether the model service itself answers (separate from being switched on). */

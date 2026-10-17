@@ -1140,10 +1140,19 @@ export const getReranker = async (slug?: string | null): Promise<RerankerStatus>
     queries24h: 0,
     available: false,
   };
-  return live(empty, async () => {
+  return live<RerankerStatus>(empty, async () => {
     const repo = pickRepo(await fetchRepos(), slug);
     if (!repo?.path) return null;
-    const data = await brainFetch<Json>(`/late-interaction/status?repo_path=${encodeURIComponent(repo.path)}`);
+    const read = await brainRead<Json>(`/late-interaction/status?repo_path=${encodeURIComponent(repo.path)}`);
+    // 400: the server may not open this project's folder. That is about this project,
+    // not an outage, so say so instead of "reload in a moment".
+    if (!read.ok && read.status === 400)
+      return {
+        ...empty,
+        unavailableReason:
+          "The server refused this project's folder: it is outside the repository folders the server may read, or it no longer exists there. Index the project from an allowed folder, or add its folder to the server's allowed repository roots.",
+      };
+    const data = read.ok ? read.data : null;
     if (!data) return null;
     const inv = obj(data.inventory);
     const provider = obj(data.provider);
