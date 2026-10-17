@@ -165,12 +165,35 @@ no project, is refused for anyone but an administrator. To see the paths she
 can use, she can call `GET /repositories` with her key; it lists only
 repositories she can read.
 
-Both transports serve 17 tools: the personal ones plus `team_list_tasks`,
-`team_create_task` and `team_request_run`, which take a project id (an
-administrator gets it from `brain team project list`). See [MCP](MCP.md).
+Both transports serve 19 tools: the personal ones plus `team_me`,
+`team_activity`, `team_list_tasks`, `team_create_task` and `team_request_run`.
+`team_me` answers "who am I and what can I touch" (the project ids and
+repository paths her roles grant); the task tools take a project id. See
+[MCP](MCP.md).
 `team_request_run` records a run; nothing executes it yet. Member keys do not
 carry `harness:write`, so `record_task_observation` and `record_task_lesson`
 are refused for them.
+
+## Who am I, and what happened
+
+- **`GET /team/me`** (MCP `team_me`, dashboard **Settings → Me**) returns the
+  caller's principal, the team state (`solo` or `team`), whether they are a
+  team administrator, their project roles with each project's effective
+  permissions and repositories, and the scopes of the presented key. In solo
+  state it reports the owner as the administrator of every repository.
+- **`GET /team/activity`** (MCP `team_activity`, dashboard **Settings → Team
+  activity**) is the shared log, newest first: decision and rule versions,
+  learning, episode and skill changes, membership and project-role changes,
+  invitations, team tasks and runs, and queued jobs with who queued them. It
+  needs the `team:read` scope and takes `limit`, `offset`, `project_id`,
+  `repository_id`, `actor_id`, `kind` (a family such as `decision` or a kind
+  such as `decision.updated`, repeatable) and `since`.
+  Members see events for the projects and repositories they can read plus
+  global decisions and rules; membership, role and invitation events, and
+  episode and skill changes, are for team administrators only. A project or
+  repository filter the caller cannot read is refused with 403. Membership
+  and job history starts with this release; earlier changes left no dated
+  record.
 
 ## 7. Revoke
 

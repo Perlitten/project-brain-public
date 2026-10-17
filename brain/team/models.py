@@ -139,3 +139,31 @@ class AgentRun(Base):
     requested_by: Mapped[int] = mapped_column(ForeignKey("principals.id"), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now())
+
+
+class TeamActivityEvent(Base):
+    """Append-only record of team activity that leaves no other timestamped trace.
+
+    Membership and project-role changes only flip ``revoked_at``/``role`` in
+    place, and queued jobs live in Redis, so neither can be read back as a
+    dated history. Provisioning and the job endpoints write one row here per
+    effective change. Memory versions, invitations, team tasks and runs are
+    derived from their own tables by ``brain.team.activity`` instead.
+
+    ``audience`` decides who may read the row: ``admin`` for team
+    administration (memberships), ``repository`` for rows bound to
+    ``repository_id`` (readable by members with ``read`` on it)."""
+    __tablename__ = "team_activity_events"
+    __table_args__ = (CheckConstraint("audience IN ('admin','repository')", name="ck_team_activity_audience"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    occurred_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False,
+                                                  index=True)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    audience: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    actor_label: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    subject_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    repository_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

@@ -733,6 +733,10 @@ async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal 
             {"repository_id": repository_id, "repo_path": body.repo_path, "base": body.base, "head": body.head},
             initiator=JobInitiator.for_principal(principal, Permission.READ),
         )
+        from apps.api.activity_log import record_job_queued
+
+        await record_job_queued(principal, "diff_review", job_id, repo_path=body.repo_path,
+                                repository_id=repository_id)
         return {
             "status": "processing",
             "job_id": job_id,
