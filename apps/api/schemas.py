@@ -64,6 +64,8 @@ class LearningCreate(BaseModel):
     confidence: float = 0.5
     repo_scope: Optional[str] = None
     valid_until: Optional[str] = None
+    # personal: visible only to its author and never part of shared retrieval until a promotion is approved.
+    visibility: Literal["shared", "personal"] = "shared"
 
 
 class EpisodeSearchRequest(BaseModel):

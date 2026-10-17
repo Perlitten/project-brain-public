@@ -474,6 +474,53 @@ class Learning(Base):
     )
 
 
+class MemoryProposal(Base):
+    """A proposed change to normative memory, waiting for an independent reviewer (team state).
+
+    Proposals are drafts: no retrieval path reads this table, so nothing in it
+    reaches context packs, search or the decision/rule listings until a
+    reviewer approves it. Approval writes the canonical row through the
+    decision/rule store (supersede history, compare-and-swap against
+    ``base_version``) and records the result here; the proposal row itself is
+    never deleted, so it stays the provenance record of who proposed what and
+    who approved or rejected it, and why (brain/memory/proposals.py)."""
+
+    __tablename__ = "memory_proposals"
+    __table_args__ = (
+        CheckConstraint("kind IN ('decision','rule','learning')", name="ck_memory_proposals_kind"),
+        CheckConstraint("state IN ('pending','approved','rejected','withdrawn')", name="ck_memory_proposals_state"),
+        Index("ix_memory_proposals_state_scope", "state", "repo_path"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")
+    # Compare-and-swap token for review decisions; bumped on every state change.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # Normalized scope; NULL is system-global knowledge (team administrators review it).
+    repo_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # The path as the author spelled it: authorization resolves the repository from this spelling,
+    # because normalization case-folds Windows paths that the repository registry stores verbatim.
+    requested_repo_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Canonical decision id, rule id or learning id this proposal changes; NULL proposes a new item.
+    target_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Version of the target when the proposal was made (0 = new); approval writes with it as expected_version.
+    base_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    reviewed_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    # Canonical row the approval produced and its new version.
+    result_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    result_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class WorkerJobLease(Base):
     """Durable Postgres lease for background jobs.
 

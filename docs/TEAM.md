@@ -197,12 +197,28 @@ no project, is refused for anyone but an administrator. To see the paths she
 can use, she can call `GET /repositories` with her key; it lists only
 repositories she can read.
 
-Both transports serve 17 tools: the personal ones plus `team_list_tasks`,
+Both transports serve 22 tools: the personal ones plus `team_list_tasks`,
 `team_create_task` and `team_request_run`, which take a project id (an
-administrator gets it from `brain team project list`). See [MCP](MCP.md).
+administrator gets it from `brain team project list`), and the five memory
+review tools (`team_propose_decision`, `team_propose_rule`,
+`team_list_proposals`, `team_approve_proposal`, `team_reject_proposal`).
+See [MCP](MCP.md).
 `team_request_run` records a run; nothing executes it yet. Member keys do not
 carry `harness:write`, so `record_task_observation` and `record_task_lesson`
 are refused for them.
+
+## 6a. Shared memory goes through review
+
+Once the Brain is a team, a decision or rule recorded by a member who is not a
+team administrator (`POST /decisions`, `POST /rules`, MCP `record_decision`,
+`record_rule`) becomes a pending **proposal** (HTTP 202) instead of approved
+knowledge. Agents never receive a proposal in context packs, search or rule
+checks. A Reviewer on the project who is not the author approves or rejects it
+on the dashboard **Memory → Review** page, over MCP or over the API, with a
+version check so two reviewers cannot both decide it. System-global proposals
+need a team administrator. Readers cannot propose. Each member also has a
+private personal tier of learnings that only they see, shared only through an
+approved promotion. Details: [governed memory](MEMORY_REVIEW.md).
 
 ## 7. Revoke
 
@@ -214,6 +230,10 @@ There are two different things to revoke, and they are not the same:
 | Revoke **one project role** | `brain team member revoke --principal alice --project core` | Removes only that project; membership and other roles stay. |
 | Revoke **keys** | Dashboard **Settings → Access** (`/admin`): revoke the credential or disable the principal (`POST /admin/credentials/{id}/revoke`, `POST /admin/principals/{id}/disable`) | The key stops authenticating anything. Needs a team administrator. |
 | Revoke an **invitation member** completely | **Revoke member** in the Team page's Invitations panel, `brain team invite revoke <invitation-id> --revoke-member`, or `POST /team/invitations/{id}/revoke` with `{"revoke_member": true}` | Membership, every project role and every credential of that principal. |
+
+Revoking a membership also withdraws the member's pending memory proposals;
+knowledge already approved stays, with them on record as its author
+([details](MEMORY_REVIEW.md#revoked-authors)).
 
 When someone leaves, revoke the membership **and** their keys. A key left
 alive after a membership revocation becomes fully usable again if the person is

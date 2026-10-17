@@ -20,11 +20,13 @@ from apps.api.schemas import (
     RuleCreate,
 )
 from apps.api import team_access
+from apps.api.routers import memory_review
 from apps.api.team_access import repository_authority, team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.team.authorization import Permission
 from brain.database.session import async_session_factory
 from brain.memory.decision_store import DecisionStore, caller_role_for
+from brain.memory import proposals
 from brain.memory.learning_store import LearningStore
 from brain.memory.provenance import MemoryVersionConflict, SelfApprovalError
 from brain.memory.repo_scope import normalize_repo_scope
@@ -40,6 +42,16 @@ async def _require_system_global_administrator(caller: ResolvedPrincipal, repo_p
         return
     if await team_access.current_team_state() == "team" and not await team_access.is_team_administrator(caller):
         raise HTTPException(status_code=403, detail="system_global memory requires a team administrator")
+
+async def _personal_tier_authority(caller: ResolvedPrincipal, repo_path: Optional[str]) -> None:
+    """The personal tier needs a named author; in team state also a live member who may read the scope."""
+    if caller.author_id is None:
+        raise HTTPException(status_code=422, detail="Personal learnings need a named credential")
+    if normalize_repo_scope(repo_path) is not None:
+        await repository_authority(caller, Permission.READ, repo_path=repo_path)
+    else:
+        await team_access.member_authority(caller)
+
 
 router = APIRouter()
 # Brain-wide memory (unfiltered lists, episodes, approvals of trusted memory) belongs to no single
@@ -108,6 +120,12 @@ async def get_decisions(principal: ResolvedPrincipal = Depends(require_principal
 @router.post("/decisions", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def create_decision(body: DecisionCreate, caller: ResolvedPrincipal = Depends(require_principal)):
     # The role and the author come from the authenticated principal, never from the body.
+    # Team state: anyone but a team administrator proposes instead of writing (HTTP 202, memory_review).
+    if await memory_review.governed_write(caller):
+        await memory_review.proposal_authority(caller, body.repo_path)
+        return await memory_review.submit_proposal(
+            "decision", title=body.title, repo_path=body.repo_path, payload=memory_review.decision_payload(body),
+            caller=caller, expected_version=body.expected_version)
     # No repo_path is the system-global scope: a team administrator once the team has members.
     authority = await repository_authority(caller, Permission.PROPOSE, repo_path=body.repo_path)
     await _require_system_global_administrator(caller, body.repo_path)
@@ -155,6 +173,11 @@ async def get_rules(principal: ResolvedPrincipal = Depends(require_principal)):
 
 @router.post("/rules", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def create_rule(body: RuleCreate, caller: ResolvedPrincipal = Depends(require_principal)):
+    if await memory_review.governed_write(caller):
+        await memory_review.proposal_authority(caller, body.repo_path)
+        return await memory_review.submit_proposal(
+            "rule", title=body.name, repo_path=body.repo_path, payload=memory_review.rule_payload(body),
+            caller=caller, expected_version=body.expected_version)
     await repository_authority(caller, Permission.PROPOSE, repo_path=body.repo_path)
     await _require_system_global_administrator(caller, body.repo_path)
     try:
@@ -179,7 +202,20 @@ async def create_rule(body: RuleCreate, caller: ResolvedPrincipal = Depends(requ
 
 
 @router.get("/learnings", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
-async def get_learnings(repo_path: Optional[str] = None, principal: ResolvedPrincipal = Depends(require_principal)):
+async def get_learnings(repo_path: Optional[str] = None,
+                        visibility: Literal["shared", "personal"] = "shared",
+                        principal: ResolvedPrincipal = Depends(require_principal)):
+    # visibility=personal is the caller's own personal tier: never anyone else's rows, never shared retrieval.
+    if visibility == "personal":
+        await _personal_tier_authority(principal, repo_path)
+        rows = await proposals.personal_learnings(principal.author_id)
+        scope = normalize_repo_scope(repo_path)
+        return [
+            {"id": lrng.id, "statement": lrng.statement, "category": lrng.category, "confidence": lrng.confidence,
+             "repo_scope": lrng.repo_scope, "status": lrng.status}
+            for lrng in rows
+            if scope is None or lrng.repo_scope is None or normalize_repo_scope(lrng.repo_scope) == scope
+        ]
     await repository_authority(principal, Permission.READ, repo_path=repo_path)
     try:
         learnings = await LearningStore.list_active_learnings(repo_path)
@@ -443,7 +479,12 @@ async def match_skills(body: SkillMatchRequest, principal: ResolvedPrincipal = D
 
 @router.post("/learnings", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def create_learning(body: LearningCreate, principal: ResolvedPrincipal = Depends(require_principal)):
-    await repository_authority(principal, Permission.PROPOSE, repo_path=body.repo_scope)
+    personal = body.visibility == "personal"
+    if personal:
+        # The personal tier is private notes: reading the scope is enough, but it needs a named author.
+        await _personal_tier_authority(principal, body.repo_scope)
+    else:
+        await repository_authority(principal, Permission.PROPOSE, repo_path=body.repo_scope)
     try:
         valid_until = None
         if body.valid_until:
@@ -457,8 +498,9 @@ async def create_learning(body: LearningCreate, principal: ResolvedPrincipal = D
             repo_scope=body.repo_scope,
             valid_until=valid_until,
             author_principal_id=principal.author_id,
+            status=proposals.PERSONAL_STATUS if personal else "active",
         )
-        return {"status": "success", "learning_id": learning_id}
+        return {"status": "success", "learning_id": learning_id, "visibility": body.visibility}
     except Exception as exc:
         logger.error(f"Failed to add learning: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to add learning") from exc

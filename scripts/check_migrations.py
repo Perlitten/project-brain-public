@@ -57,6 +57,9 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("team_access_fences", "cleared_at"),
     # A team never falls back to solo on its own (brain.team.authorization.team_state).
     ("teams", "dissolved_at"),
+    # Governed memory: proposals wait here until an independent reviewer decides (brain/memory/proposals.py).
+    ("memory_proposals", "base_version"),
+    ("memory_proposals", "reviewed_by_principal_id"),
 ]
 
 
