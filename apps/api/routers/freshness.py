@@ -12,12 +12,14 @@ from pydantic import BaseModel
 
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.registry_access import registry_authority
+from apps.api.schemas import OriginFreshness
 from brain.auth.principals import ResolvedPrincipal
 from brain.freshness.generation_deriver import GenerationDeriver
 from brain.freshness.incremental_planner import IncrementalPlanner
 from brain.freshness.models import ArtifactType, FreshnessState, RebuildDecision
 from brain.freshness.tracker import FreshnessTracker
 from brain.graph.generation_manager import GraphGenerationManager
+from brain.memory.repo_freshness import describe_origin
 from brain.team.authorization import Permission
 from brain.workspace.models import Capability
 from brain.workspace.registry_store import RegistryStore
@@ -76,12 +78,19 @@ async def repository_freshness(repository_id: str, principal: ResolvedPrincipal 
             else FreshnessState.STALE.value
         )
 
+    # The observed revision is the checkout HEAD. A checkout nobody pulls can
+    # match the graph and still be far behind origin, so report that too.
+    origin = OriginFreshness(
+        **await describe_origin(repo_path, active_meta.git_revision if active_meta else observed)
+    )
+
     return {
         "status": "success",
         "repository_id": record.repository_id,
         "observed_revision": observed or None,
         "active_generation_id": active_gen,
         "graph_freshness": graph_state,
+        "origin": origin.model_dump(),
         "artifacts": [r.to_dict() for r in _tracker().list_by_repository(record.repository_id)],
     }
 
