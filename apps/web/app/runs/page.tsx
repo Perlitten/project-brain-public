@@ -1,3 +1,4 @@
+import { adminOnlyPage } from "@/components/AdminOnly";
 import Link from "next/link";
 import { Term } from "@/components/Term";
 import { SectionTabs } from "@/components/SectionNav";
@@ -8,6 +9,8 @@ import { getListQuery } from "@/lib/list-query";
 export const metadata = { title: "Agent tasks" };
 
 export default async function Runs({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const gate = await adminOnlyPage("Agent tasks");
+  if (gate) return gate;
   const params = await searchParams;
   const result = await getPagedAgentRuns(typeof params.repo === "string" ? params.repo : undefined, getListQuery(params));
   const runs = result.items;
@@ -30,13 +33,13 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
         }
       />
       <SectionTabs section="logs" active="/runs" />
-      <div className="stats">
+      {result.available !== false && <div className="stats">
         <Stat label="Tasks" value={fmt(result.paging.total)} note={hasQuery ? "matching the filters" : "all recorded"} />
         <div className="tone-ok">
           <Stat
             label="Started with a context pack"
             value={briefingTracked ? `${briefed}/${runs.length}` : "—"}
-            note={briefingTracked ? "on this page" : "this Brain version doesn’t record it"}
+            note={briefingTracked ? "on this page" : runs.length ? "this Brain version doesn’t record it" : "no tasks on this page"}
           />
         </div>
         <div className={failed ? "tone-bad" : "tone-ok"}>
@@ -47,9 +50,11 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
             <Stat label="No end reported, on this page" value={String(timedOut)} note="closed automatically after the deadline" />
           </div>
         )}
-      </div>
+      </div>}
       <Panel id="runs" title="Recent tasks" flush>
-        {runs.length === 0 && !hasQuery ? (
+        {result.available === false ? (
+          <EmptyState title="Agent tasks unavailable" body="Brain didn’t return its task history just now. Reload in a moment." />
+        ) : runs.length === 0 && !hasQuery ? (
           <EmptyState title="No agent tasks yet" body="No agent has run a task through Brain recently. Connect an agent in Setup and give it a task — it will show up here." action={<Link className="btn btn--neutral" href="/setup">Connect an agent</Link>} />
         ) : (
         <Table

@@ -19,12 +19,14 @@ from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from apps.api import team_access
 from apps.api.auth import DEV_PRINCIPAL, LEGACY_PRINCIPAL, named_credential_required
 from apps.api.schemas import AskRequest
 from brain.auth.principals import ResolvedPrincipal, resolve_credential
 from brain.config.settings import settings
 from brain.database.models import Repository
 from brain.database.session import async_session_factory
+from brain.team.authorization import Permission, TeamDenied, authorize_repository
 
 router = APIRouter(prefix="/v1", tags=["telegram-bridge"])
 
@@ -85,17 +87,32 @@ async def _accept_unnamed(request: Request, principal: ResolvedPrincipal) -> Non
     request.state.principal = principal
 
 
-async def _resolve_repo(question: str, project_slug: Optional[str]) -> tuple[Optional[str], str]:
+async def _readable(session, principal: ResolvedPrincipal, repository_id: int) -> bool:
+    try:
+        await authorize_repository(session, principal, repository_id, Permission.READ)
+    except TeamDenied:
+        return False
+    return True
+
+
+async def _resolve_repo(question: str, project_slug: Optional[str],
+                        principal: Optional[ResolvedPrincipal] = None) -> tuple[Optional[str], str]:
     """Pick which indexed repository a question is about.
 
     Returns (repo_path, question_without_prefix). A message may name its target
     with an `app: ...` style prefix, because one bot serving many indexed
-    repositories is useless if every question hits the same one.
+    repositories is useless if every question hits the same one. In team state
+    only repositories the poller's own credential may read are candidates, so
+    a name match never reaches (or reveals) another project's repository.
     """
     from pathlib import Path as _Path
 
+    restricted = principal is not None and await team_access.current_team_state() == "team"
     async with async_session_factory() as session:
         rows = (await session.execute(select(Repository))).scalars().all()
+        if restricted:
+            assert principal is not None
+            rows = [r for r in rows if await _readable(session, principal, r.id)]
         repos = [(r.path, (r.name or r.path.rstrip("/").split("/")[-1]).lower()) for r in rows]
 
     # Repositories whose source no longer exists still answer, and their names
@@ -170,7 +187,7 @@ async def assistant_reply(
 
     from apps.api.routers.core import ask_project
 
-    repo_path, question = await _resolve_repo(body.question, body.project_slug)
+    repo_path, question = await _resolve_repo(body.question, body.project_slug, request.state.principal)
 
     # Retrieval is English-and-code only: extract_keywords matches [a-zA-Z]{3,}
     # so Cyrillic yields no lexical terms at all, and the embedding model is

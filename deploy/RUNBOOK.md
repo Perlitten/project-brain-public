@@ -68,6 +68,13 @@ Named volumes:
   Only payloads for `PROJECT_BRAIN_WEBHOOK_REF` (default `refs/heads/main`,
   matching the `docs/examples/reindex-on-push.yml` trigger branch) enqueue a reindex;
   other refs return `ignored`.
+  The reindex job fetches `origin` and detaches the checkout at the delivered
+  commit before indexing (`BRAIN_WEBHOOK_FETCH_SOURCE`, default `true`;
+  `BRAIN_WEBHOOK_FETCH_TIMEOUT_S`, default `120`). The checkout is never
+  modified when it is mounted read-only or has uncommitted changes: the job
+  then fails with a message naming the commit to check out on the host.
+  Set `BRAIN_WEBHOOK_FETCH_SOURCE=false` to restore the old behaviour, where a
+  delivered commit other than the checkout HEAD fails the job outright.
 - `deploy/server_up.sh` generates blank secrets in `.env`.
 - `NVIDIA_API_KEY` is required in production and must be supplied by the deployer.
 - Change-lab validation commands run inside an OS sandbox (`LAB_SANDBOX_MODE`,

@@ -779,11 +779,15 @@ async def test_api_ask_and_search_share_integrated_code_search(monkeypatch, api_
     monkeypatch.setattr(skill_store, "select_skills_for_context", AsyncMock(return_value=[]))
     request = types.SimpleNamespace(headers={"x-request-id": "request-42"})
 
-    assert await core.ask_project(
+    asked = await core.ask_project(
         AskRequest(query="parser", repo_path="/app"),
         request,
         principal=api_principal,
-    ) == {"answer": "answer", "learnings_used": [], "skills_used": []}
+    )
+    assert asked["freshness"]["state"] in {"fresh", "stale_served", "stale_blocked", "unknown"}
+    assert {k: v for k, v in asked.items() if k != "freshness"} == {
+        "answer": "answer", "learnings_used": [], "skills_used": [],
+    }
     assert await core.search_code_endpoint(
         SearchRequest(query="parser", repo_path="/app", limit=3),
         request,
@@ -831,7 +835,10 @@ async def test_local_mcp_ask_and_search_share_integrated_code_search(monkeypatch
         ),
     )
 
-    assert await server.ask_project("parser", repo_path="/app") == "answer"
+    answered = await server.ask_project("parser", repo_path="/app")
+    assert answered.content[0].text == "answer"
+    assert answered.structured_content["answer"] == "answer"
+    assert "state" in answered.structured_content["freshness"]
     assert await server.search_code("parser", repo_path="/app") == payload
     assert hybrid.await_args_list[0].args == ("parser",)
     assert hybrid.await_args_list[0].kwargs == {

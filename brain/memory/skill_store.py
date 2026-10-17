@@ -74,8 +74,12 @@ async def create_skill(
     repo_scope: Optional[str],
     is_global: bool = False,
     status: str = "active",
+    author_principal_id: Optional[int] = None,
 ) -> MemorySkill:
     """Persist a new skill; raises SkillConflictError on a name conflict.
+
+    ``author_principal_id`` is the API caller for curated skills, or the sole
+    principal behind the source learnings for distilled ones (None when mixed).
 
     ``status`` is ``active`` for curated skills (POST /skills) and ``pending``
     for machine-distilled ones awaiting POST /skills/{id}/approve; pending
@@ -116,6 +120,8 @@ async def create_skill(
             repo_scope=normalize_repo_scope(repo_scope),
             is_global=is_global,
             status=status,
+            author_principal_id=author_principal_id,
+            updated_by_principal_id=author_principal_id,
         )
         session.add(skill)
         await session.commit()
@@ -127,8 +133,22 @@ class SkillStateError(ValueError):
     """The skill is not in a state that allows the requested transition."""
 
 
-async def decide_skill(skill_id: int, *, approve: bool, reason: Optional[str] = None) -> Dict[str, Any]:
-    """Approve (→ active) or reject (→ rejected) a pending distilled skill."""
+async def decide_skill(
+    skill_id: int,
+    *,
+    approve: bool,
+    reason: Optional[str] = None,
+    principal_id: Optional[int] = None,
+    team_state: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Approve (→ active) or reject (→ rejected) a pending distilled skill.
+
+    The decision is attributed to ``principal_id``. In team state the skill's
+    author may not approve their own skill (``SelfApprovalError``); solo state,
+    a team of one, keeps self-approval.
+    """
+    from brain.memory.provenance import SelfApprovalError
+
     async with async_session_factory() as session:
         skill = (
             await session.execute(select(MemorySkill).where(MemorySkill.id == skill_id).with_for_update())
@@ -137,7 +157,13 @@ async def decide_skill(skill_id: int, *, approve: bool, reason: Optional[str] = 
             raise LookupError(f"Skill {skill_id} not found")
         if skill.status != "pending":
             raise SkillStateError(f"Skill {skill_id} is {skill.status}, not pending")
+        if (approve and team_state == "team" and principal_id is not None
+                and skill.author_principal_id == principal_id):
+            raise SelfApprovalError(f"Skill {skill_id} was authored by principal {principal_id}; "
+                                    "another team member must approve it")
         skill.status = "active" if approve else "rejected"
+        if principal_id is not None:
+            skill.updated_by_principal_id = principal_id
         await session.commit()
         return {"skill_id": skill.id, "status": skill.status, "reason": reason}
 

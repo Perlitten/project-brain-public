@@ -18,8 +18,11 @@ from apps.api.routers import core_memory, core_retrieval, jobs, team
 from brain.auth.principals import hash_credential
 from brain.config.settings import Settings, settings
 from brain.database.models import ApiCredential, Principal, Repository
+from brain.memory.provenance import MemoryWriteResult
+from brain.team import provisioning
 from brain.team.authorization import team_state
 from brain.team.models import TeamMember
+from brain.team.provisioning import member_scopes
 from brain.workers.scheduler import run_scheduler
 from tests.test_mcp_http import _free_port, _serve
 from tests.test_team_foundations import caller, create_task, task_payload, team_db as team_fixture
@@ -36,9 +39,14 @@ def membership_driven(monkeypatch):
     monkeypatch.setattr(settings, "BRAIN_TEAM_MODE", False)
 
 
-async def revoke_everyone(factory):
+async def revoke_everyone(factory, *, dissolve: bool = True):
+    """Revoke every membership row; by default also dissolve the team, the operator's explicit return to solo.
+
+    Revoking the last member alone keeps team state (``brain team dissolve``)."""
     async with factory() as session, session.begin():
         await session.execute(update(TeamMember).values(revoked_at=datetime.now(timezone.utc)))
+        if dissolve:
+            await provisioning.dissolve_team(session)
 
 
 async def add_outsider_and_unattached_repo(factory):
@@ -62,7 +70,8 @@ def personal_app(factory, monkeypatch):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr(core_memory.LearningStore, "list_active_learnings", AsyncMock(return_value=[]))
-    monkeypatch.setattr(core_memory.DecisionStore, "add_decision", AsyncMock(return_value=7))
+    monkeypatch.setattr(core_memory.DecisionStore, "record_decision",
+                        AsyncMock(return_value=MemoryWriteResult(id=7, version=1, created=True, changed=True)))
     monkeypatch.setattr(core_retrieval, "hybrid_search_code", AsyncMock(return_value=[]))
     monkeypatch.setattr("apps.api.request_observation.observe_http_request", AsyncMock())
     queue = AsyncMock()
@@ -101,7 +110,10 @@ async def test_team_state_follows_live_membership_and_strict_flag(team_db, monke
     async with factory() as session:
         assert await team_state(session) == "team"
     assert await team_access.current_team_state() == "team"
-    await revoke_everyone(factory)
+    await revoke_everyone(factory, dissolve=False)
+    assert await team_access.current_team_state() == "team"  # never back to solo on its own
+    async with factory() as session, session.begin():
+        await provisioning.dissolve_team(session)
     assert await team_access.current_team_state() == "solo"
     monkeypatch.setattr(settings, "BRAIN_TEAM_MODE", True)  # deprecated strictness alias
     assert await team_access.current_team_state() == "team"
@@ -132,6 +144,53 @@ async def test_solo_personal_routes_work_with_shared_key_and_dev_open(team_db, m
     monkeypatch.setattr(settings, "ENVIRONMENT", "test")
     async with client_for(app) as client:
         assert (await client.get("/learnings", params={"repo_path": "/synthetic/A"})).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_team_admin_member_key_writes_global_decisions(team_db, monkeypatch):
+    """Real member keys carry no core:admin; in team state the team-administrator check is the memory admin role."""
+    factory, _, _ = team_db
+    membership_driven(monkeypatch)
+    async with factory() as session, session.begin():
+        for key, is_admin in (("fixture-4", True), ("fixture-2", False)):
+            await session.execute(update(ApiCredential).where(ApiCredential.key_hash == hash_credential(key))
+                                  .values(scopes=member_scopes(is_admin)))
+    app = personal_app(factory, monkeypatch)
+    add = core_memory.DecisionStore.record_decision
+    async with client_for(app) as client:
+        for repo_path in (None, "system_global", "SYSTEM_GLOBAL"):
+            assert (await client.post("/decisions", json=decision(repo_path), headers=ADMIN)).status_code == 200
+            assert add.call_args.kwargs["caller_role"] == "admin"
+        assert (await client.post("/decisions", json=decision(None), headers=CONTRIBUTOR)).status_code == 403
+        assert (await client.post("/decisions", json=decision("/synthetic/A"), headers=CONTRIBUTOR)).status_code == 200
+        assert add.call_args.kwargs["caller_role"] == "agent"
+    # Solo state keeps the scope rule: without core:admin a global decision is the agent role (the store refuses it).
+    await revoke_everyone(factory)
+    async with client_for(app) as client:
+        assert (await client.post("/decisions", json=decision(None), headers=CONTRIBUTOR)).status_code == 200
+        assert add.call_args.kwargs["caller_role"] == "agent"
+
+
+@pytest.mark.asyncio
+async def test_real_member_keys_queue_jobs_by_role_and_admin_keys_reach_admin_jobs(team_db, monkeypatch):
+    """Keys minted with member_scopes (dashboard, CLI, invitation) can use the dashboard's job buttons:
+    the role decides each repository, and a job without one still needs a team administrator."""
+    factory, _, _ = team_db
+    membership_driven(monkeypatch)
+    async with factory() as session, session.begin():
+        for key, is_admin in (("fixture-1", False), ("fixture-2", False), ("fixture-4", True)):
+            await session.execute(update(ApiCredential).where(ApiCredential.key_hash == hash_credential(key))
+                                  .values(scopes=member_scopes(is_admin)))
+    app = personal_app(factory, monkeypatch)
+    async with client_for(app) as client:
+        reindex_a = {"repo_path": "/synthetic/A"}
+        assert (await client.post("/jobs/reindex", json=reindex_a, headers=READER)).status_code == 403
+        assert (await client.post("/jobs/reindex", json=reindex_a, headers=CONTRIBUTOR)).status_code == 200
+        for headers, expected in ((CONTRIBUTOR, 403), (ADMIN, 200)):
+            assert (await client.post("/jobs/reindex", headers=headers)).status_code == expected
+    assert {"jobs:write"} <= set(member_scopes(False))
+    assert not {"setup:write", "operations:write"} & set(member_scopes(False))
+    assert {"setup:write", "operations:write"} <= set(member_scopes(True))
 
 
 @pytest.mark.asyncio

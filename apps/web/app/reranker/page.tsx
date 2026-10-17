@@ -1,3 +1,4 @@
+import { adminOnlyPage } from "@/components/AdminOnly";
 import { Term } from "@/components/Term";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, Stat, fmt } from "@/components/ui";
@@ -6,6 +7,8 @@ import { getReranker } from "@/lib/data";
 export const metadata = { title: "Reranker" };
 
 export default async function Reranker({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
+  const gate = await adminOnlyPage("Reranker");
+  if (gate) return gate;
   const { repo } = await searchParams;
   const r = await getReranker(repo);
   const measured = r.queries24h > 0;
@@ -19,7 +22,7 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
         lede={
           <>
             After a quick first search, a second model — the <Term k="reranker">reranker</Term> — re-checks the top results and
-            moves the most relevant code to the top. This screen shows whether it is running and how much it helps.
+            moves the most relevant code to the top. This screen shows whether it is running, how fast it is and how much code it covers.
           </>
         }
         actions={
@@ -42,8 +45,8 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
         </Panel>
       ) : r.available === false ? (
         <EmptyState
-          title="No reranker status"
-          body="Brain didn’t report the state of its reranker. It may be turned off, or no repository is indexed yet."
+          title="Reranker status unavailable"
+          body="Brain didn’t answer the reranker status request for this project just now. Reload in a moment; if no project is indexed yet, index one first."
         />
       ) : (
         <>
@@ -61,9 +64,6 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
             </Panel>
           )}
           <div className="stats">
-            <div className={r.ndcgLift === "—" ? undefined : "tone-ok"}>
-              <Stat label="Ranking gain" value={r.ndcgLift} note={later ?? "better ordering on our test questions"} />
-            </div>
             <Stat label="Typical search" value={measured ? `${r.p50ms}ms` : "—"} note={later ?? "half of searches are faster"} />
             <Stat label="Slowest searches" value={measured ? `${r.p95ms}ms` : "—"} note={later ?? "1 in 20 takes longer than this"} />
             <Stat label="Searches" value={fmt(r.queries24h)} note={r.queriesWindow ?? "in the last 24 hours"} />

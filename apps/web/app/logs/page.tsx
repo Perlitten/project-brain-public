@@ -1,3 +1,4 @@
+import { adminOnlyPage } from "@/components/AdminOnly";
 import { EmptyState, Ledger, PageHead, Panel } from "@/components/ui";
 import { SectionTabs } from "@/components/SectionNav";
 import { BackgroundJobs } from "@/components/BackgroundJobs";
@@ -11,6 +12,8 @@ import { getRepositories } from "@/lib/data";
 export const metadata = { title: "Requests & jobs" };
 
 export default async function Activity({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const gate = await adminOnlyPage("Requests & jobs");
+  if (gate) return gate;
   const params = await searchParams;
   const repo = typeof params.repo === "string" ? params.repo : undefined;
   const period = dashboardPeriod(typeof params.period === "string" ? params.period : undefined);
@@ -18,7 +21,7 @@ export default async function Activity({ searchParams }: { searchParams: Promise
   const selected = repo ? repositories.find((r) => r.slug === repo) : undefined;
   const projects = repo ? selected ? [selected] : [] : repositories;
   const [result, jobLists, telemetry] = await Promise.all([getPagedEvents(repo, getListQuery(params)), Promise.all(projects.map((p) => getJobs(p.slug))), getRequestTelemetry(period, repo ? selected?.id ?? 0 : undefined)]);
-  const jobs = [...new Map(jobLists.flatMap((list) => list.slice(0, 5)).map((j) => [j.id, j])).values()];
+  const jobs = [...new Map(jobLists.flatMap((list) => (list ?? []).slice(0, 5)).map((j) => [j.id, j])).values()];
   const events = result.items;
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
   return <>
@@ -28,10 +31,10 @@ export default async function Activity({ searchParams }: { searchParams: Promise
       <RequestHistory telemetry={telemetry} />
     </Panel>
     <Panel id="jobs" title="Background jobs" desc="Indexing and checks Brain ran recently. A failed job shows its recorded error." flush>
-      <BackgroundJobs jobs={jobs} />
+      <BackgroundJobs jobs={jobs} unavailable={jobLists.some((list) => list === null)} />
     </Panel>
     <Panel id="events" title="Event log" desc="Other events Brain recorded, newest first." flush>
-      {events.length || hasQuery ? <Ledger events={events} paging={result.paging} /> : <EmptyState title="No recorded events" body="The event log is empty. Background job history is shown above." />}
+      {result.available === false ? <EmptyState title="Event log unavailable" body="Brain didn’t return its event log just now. Reload in a moment." /> : events.length || hasQuery ? <Ledger events={events} paging={result.paging} /> : <EmptyState title="No recorded events" body="The event log is empty. Background job history is shown above." />}
     </Panel>
   </>;
 }

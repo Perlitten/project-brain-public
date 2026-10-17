@@ -311,7 +311,6 @@ export const reranker: RerankerStatus = {
   },
   p50ms: 41,
   p95ms: 118,
-  ndcgLift: "+0.071",
   queries24h: 3920,
 };
 

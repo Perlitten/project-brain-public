@@ -243,7 +243,6 @@ export interface RerankerStatus {
   coverage: Meter;
   p50ms: number;
   p95ms: number;
-  ndcgLift: string;
   queries24h: number;
   /** What `queries24h` counts over, when it is not the last 24 hours. */
   queriesWindow?: string;

@@ -11,7 +11,9 @@ from brain.config.settings import settings
 
 
 def _size(payload: dict) -> int:
-    return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    # The freshness envelope is a fixed-shape trailer outside the answer budget.
+    budgeted = {key: value for key, value in payload.items() if key != "freshness"}
+    return len(json.dumps(budgeted, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
 @pytest.mark.asyncio

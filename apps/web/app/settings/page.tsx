@@ -1,3 +1,4 @@
+import { adminOnlyPage } from "@/components/AdminOnly";
 import { Settings } from "@/components/settings/Settings";
 import { PageHead } from "@/components/ui";
 import { SectionTabs } from "@/components/SectionNav";
@@ -6,6 +7,8 @@ import { getSettingsView } from "@/lib/settings-view";
 export const metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
+  const gate = await adminOnlyPage("Settings");
+  if (gate) return gate;
   const view = await getSettingsView();
   return (
     <>

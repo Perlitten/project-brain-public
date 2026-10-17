@@ -29,6 +29,7 @@ from brain.embeddings.integrity import collect_embedding_inventory, verify_embed
 from brain.indexers.file_indexer import FileIndexer, _scan_repo_files, source_content_digest
 from brain.indexers.repo_indexer import get_git_commit_hash
 from brain.indexers.reliability import repository_index_lock, git_source_is_clean
+from brain.indexers.source_sync import SourceSyncError, sync_checkout_to_revision
 from brain.insights.proactive import generate_proactive_insights
 from brain.late_interaction.client import (
     build_maintenance_late_interaction_client,
@@ -236,12 +237,67 @@ async def _run_deep_quality_probes(
     return probes
 
 
+async def _prepare_source_revision(repo_path: Path, expected_revision: str) -> Dict[str, Any]:
+    """Bring the checkout to the revision a job asks for, or explain why it cannot.
+
+    The git-merge webhook names the commit that just landed on origin, so the
+    checkout HEAD differs from it exactly when there is something new to index.
+    """
+    current = str(await asyncio.to_thread(get_git_commit_hash, repo_path) or "").strip()
+    if revision_matches(expected_revision, current):
+        return {"status": "already_at_revision", "requested": expected_revision,
+                "previous_head": current, "head": current, "fetched": False, "changed": False}
+    if not settings.BRAIN_WEBHOOK_FETCH_SOURCE:
+        raise PermanentJobError(
+            "Indexed source revision mismatch: "
+            f"requested {expected_revision[:16]} but the checkout HEAD is {current[:16] or 'missing'}; "
+            "BRAIN_WEBHOOK_FETCH_SOURCE is off, so the checkout was not updated",
+            result={
+                "path": repo_path.as_posix(),
+                "commit_hash": current,
+                "source_revision_verified": False,
+                "source_sync": {"status": "disabled", "requested": expected_revision, "head": current},
+            },
+        )
+    try:
+        outcome = await asyncio.to_thread(
+            sync_checkout_to_revision,
+            repo_path,
+            expected_revision,
+            timeout=float(settings.BRAIN_WEBHOOK_FETCH_TIMEOUT_S),
+        )
+    except SourceSyncError as exc:
+        # Read-only mount, dirty tree, unreachable commit: retrying cannot help.
+        raise PermanentJobError(
+            f"Cannot move the source checkout to {expected_revision[:16]}: {exc}",
+            result={
+                "path": repo_path.as_posix(),
+                "commit_hash": current,
+                "source_revision_verified": False,
+                "source_sync": {"status": "failed", "reason": exc.reason,
+                                "requested": expected_revision, "head": current},
+            },
+        ) from exc
+    # SourceSyncTransientError (fetch failure, timeout) propagates: the queue retries it.
+    logger.info(
+        "run_reindex: moved {} from {} to {} (fetched={})",
+        repo_path,
+        str(outcome.previous_head)[:12],
+        outcome.head[:12],
+        outcome.fetched,
+    )
+    return outcome.to_dict()
+
+
 async def run_reindex(params: Dict[str, Any]) -> Dict[str, Any]:
     repo_path = resolve_repo_path(params.get("repo_path"))
     clean = bool(params.get("clean", False))
     await init_db()
     indexer = FileIndexer()
     expected_revision = str(params.get("source_revision") or "").strip()
+    source_sync: Optional[Dict[str, Any]] = None
+    if expected_revision:
+        source_sync = await _prepare_source_revision(repo_path, expected_revision)
     repo = await indexer.index_repository(repo_path, clean=clean, expected_revision=expected_revision)
     actual_revision = str(repo.last_indexed_commit or "").strip()
     if expected_revision and not revision_matches(expected_revision, actual_revision):
@@ -253,6 +309,7 @@ async def run_reindex(params: Dict[str, Any]) -> Dict[str, Any]:
                 "path": repo.path,
                 "commit_hash": actual_revision,
                 "source_revision_verified": False,
+                "source_sync": source_sync,
             },
         )
 
@@ -263,6 +320,8 @@ async def run_reindex(params: Dict[str, Any]) -> Dict[str, Any]:
         "source_revision_verified": bool(expected_revision and revision_matches(expected_revision, actual_revision)),
         **indexer.verification,
     }
+    if source_sync is not None:
+        result["source_sync"] = source_sync
     if result.get("status") == "failed":
         raise PermanentJobError("Repository projection or source verification failed", result=result)
     counts = result.get("counts") or {}

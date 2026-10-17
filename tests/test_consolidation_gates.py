@@ -20,13 +20,17 @@ from brain.memory.consolidation import (
 )
 
 
-def _event(event_id=1, task_id="t1", classification="learning", summary="dim is 2048", validated=True):
+def _event(event_id=1, task_id="t1", classification="learning", summary="dim is 2048", validated=True,
+           author=None):
+    payload = {"summary": summary, "reported_validation": validated}
+    if author is not None:
+        payload["author_principal_id"] = author
     return SimpleNamespace(
         id=event_id,
         task_id=task_id,
         event_type="note",
         classification=classification,
-        payload_json={"summary": summary, "reported_validation": validated},
+        payload_json=payload,
         created_at=None,
     )
 
@@ -379,6 +383,61 @@ async def test_gate_g2_unvalidated_evidence_needs_three_events():
     assert promoted.outcome == GateOutcome.PROMOTE
 
 
+def _principal_candidate(*authors, validated=True):
+    evidence = [{"event_id": i + 1, **({"author_principal_id": a} if a is not None else {})}
+                for i, a in enumerate(authors)]
+    return ConsolidationCandidate(
+        statement="Workers need a restart after a settings change", severity="low", evidence=evidence,
+        evidence_tier=EVIDENCE_TIER_VALIDATED if validated else EVIDENCE_TIER_UNVALIDATED,
+    )
+
+
+@pytest.mark.asyncio
+async def test_gate_g2_team_state_needs_two_distinct_principals():
+    """One person's repeated claim is not independent evidence in a team."""
+    p1, p2, p3 = _gate_patches([])
+    with p1, p2, p3:
+        one_voice = await evaluate_gates(_principal_candidate(11, 11), team_state="team")
+        anonymous = await evaluate_gates(_principal_candidate(None, None), team_state="team")
+        two_voices = await evaluate_gates(_principal_candidate(11, 12), team_state="team")
+        three_unvalidated = await evaluate_gates(_principal_candidate(11, 11, 12, validated=False),
+                                                 team_state="team")
+    assert one_voice.outcome == GateOutcome.REJECT_EVIDENCE
+    assert any("only 1 distinct principal(s)" in r and "need 2 in team state" in r for r in one_voice.reasons)
+    assert anonymous.outcome == GateOutcome.REJECT_EVIDENCE
+    assert any("only 0 distinct principal(s)" in r for r in anonymous.reasons)
+    assert two_voices.outcome == GateOutcome.PROMOTE
+    assert any("from 2 distinct principal(s)" in r for r in two_voices.reasons)
+    assert three_unvalidated.outcome == GateOutcome.PROMOTE
+
+
+@pytest.mark.asyncio
+async def test_gate_g2_solo_state_keeps_the_event_count_rule():
+    """A team of one cannot produce two principals; solo state (and no state) only counts events."""
+    p1, p2, p3 = _gate_patches([])
+    with p1, p2, p3:
+        solo = await evaluate_gates(_principal_candidate(11, 11), team_state="solo")
+        unknown = await evaluate_gates(_principal_candidate(None, None))
+    assert solo.outcome == GateOutcome.PROMOTE
+    assert unknown.outcome == GateOutcome.PROMOTE
+    assert not any("distinct principal" in r for r in solo.reasons + unknown.reasons)
+
+
+@pytest.mark.asyncio
+async def test_gate_g2_principal_check_is_configurable_and_bypassed_by_approval():
+    p1, p2, p3 = _gate_patches([])
+    with p1, p2, p3:
+        with patch("brain.memory.consolidation.settings.MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_SOLO", 2):
+            strict_solo = await evaluate_gates(_principal_candidate(11, 11), team_state="solo")
+        with patch("brain.memory.consolidation.settings.MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM", 0):
+            relaxed_team = await evaluate_gates(_principal_candidate(11, 11), team_state="team")
+        # A human decides on pending episodes, so the independence check steps aside.
+        pending = await evaluate_gates(_principal_candidate(11, 11), require_approval=True, team_state="team")
+    assert strict_solo.outcome == GateOutcome.REJECT_EVIDENCE
+    assert relaxed_team.outcome == GateOutcome.PROMOTE
+    assert pending.outcome == GateOutcome.NEEDS_APPROVAL
+
+
 @pytest.mark.asyncio
 async def test_gate_g4_medium_severity_on_unvalidated_evidence_needs_approval():
     candidate = ConsolidationCandidate(
@@ -448,6 +507,8 @@ async def test_distill_candidate_reads_target_and_evidence_tier():
         candidate = await distill_candidate(cluster)
     assert candidate.suggested_target == "rule"
     assert candidate.evidence_tier == EVIDENCE_TIER_UNVALIDATED
+    # Evidence refs carry no author unless the L1 payload named one.
+    assert all("author_principal_id" not in ref for ref in candidate.evidence)
 
     async def bogus_target(text, **kwargs):
         return json.dumps({"statement": "x", "category": "infra", "target": "database"})
@@ -458,6 +519,22 @@ async def test_distill_candidate_reads_target_and_evidence_tier():
     ):
         candidate = await distill_candidate(cluster)
     assert candidate.suggested_target == "learning"
+
+
+@pytest.mark.asyncio
+async def test_distill_candidate_copies_authors_into_evidence():
+    cluster = [_event(event_id=1, author=11), _event(event_id=2, author=12), _event(event_id=3)]
+
+    async def fake_summarize(text, **kwargs):
+        return json.dumps({"statement": "dim is 2048", "category": "infra", "confidence": 0.9})
+
+    with patch(
+        "brain.memory.consolidation.get_summarizer_provider",
+        return_value=SimpleNamespace(summarize=fake_summarize),
+    ):
+        candidate = await distill_candidate(cluster)
+    by_event = {ref["event_id"]: ref.get("author_principal_id") for ref in candidate.evidence}
+    assert by_event == {1: 11, 2: 12, 3: None}
 
 
 @pytest.mark.asyncio

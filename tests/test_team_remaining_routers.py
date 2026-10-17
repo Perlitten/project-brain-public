@@ -71,7 +71,7 @@ def _fake_harness():
 def remaining_app(factory, monkeypatch, tmp_path):
     """Every touched router over the fixture database, with storage and engines stubbed out."""
     monkeypatch.chdir(tmp_path)
-    for module in (auth, team_access, telegram_bridge, core_memory):
+    for module in (auth, team_access, telegram_bridge, core_memory, web):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr("apps.api.request_observation.observe_http_request", AsyncMock())
@@ -119,7 +119,7 @@ def remaining_app(factory, monkeypatch, tmp_path):
     monkeypatch.setattr(web_login, "_write", lambda values: None)
     # telegram bridge: project slug names the repository; ask_project answers from a stub once authorized
     monkeypatch.setattr(telegram_bridge, "_resolve_repo", AsyncMock(
-        side_effect=lambda question, slug: ({"A": "/synthetic/A", "B": "/synthetic/B"}[slug], question)))
+        side_effect=lambda question, slug, _principal=None: ({"A": "/synthetic/A", "B": "/synthetic/B"}[slug], question)))
     monkeypatch.setattr(core_retrieval, "_agent_v2_mode", lambda: "on")
     monkeypatch.setattr(core_retrieval, "_ask_v2", AsyncMock(return_value={"answer": "fine"}))
     app = FastAPI()
@@ -206,10 +206,14 @@ def accept_writes(repo):
     )
 
 
-# Brain-wide surfaces: a team administrator once the team has members.
-ADMIN_ONLY = (
+# Normative memory listings: every member, trimmed to global rows and readable repositories.
+MEMBER_FILTERED = (
     ("GET", "/decisions", None),
     ("GET", "/rules", None),
+)
+
+# Brain-wide surfaces: a team administrator once the team has members.
+ADMIN_ONLY = (
     ("GET", "/episodes", None),
     ("POST", "/episodes/search", {"query": "q"}),
     ("POST", "/episodes/1/approve", None),
@@ -313,8 +317,38 @@ async def test_team_brain_wide_routes_need_a_team_administrator(team_db, monkeyp
                 assert refused.status_code == 403 and ADMIN_REQUIRED in refused.text, (path, refused.text)
             allowed = await client.request(method, path, json=body, headers=ADMIN)
             assert _authorized(allowed), (path, allowed.text)
-        # The sign-in flow itself stays reachable to members.
-        assert (await client.get("/api/web-login", headers=READER)).status_code == 200
+        # Reading the login and checking passwords is administration too (tests/test_team_revocation.py).
+        assert (await client.get("/api/web-login", headers=READER)).status_code == 403
+        assert (await client.get("/api/web-login", headers=ADMIN)).status_code == 200
+
+
+def _memory_rows():
+    """Global rows (no path, ``system_global``) plus one row per repository, spelled as clients send them."""
+    return [SimpleNamespace(id=i, repo_path=path) for i, path in
+            enumerate((None, "system_global", "/synthetic/A/", "/synthetic/B", "/synthetic/unattached"), 1)]
+
+
+@pytest.mark.asyncio
+async def test_team_memory_listings_keep_global_rows_and_readable_repositories(team_db, monkeypatch, tmp_path):
+    factory, _, _ = team_db
+    membership_driven(monkeypatch)
+    app = remaining_app(factory, monkeypatch, tmp_path)
+    monkeypatch.setattr(core_memory.DecisionStore, "list_decisions", AsyncMock(side_effect=lambda: _memory_rows()))
+    monkeypatch.setattr(core_memory.RuleStore, "list_rules", AsyncMock(side_effect=lambda: _memory_rows()))
+    async with client_for(app) as client:
+        for path in ("/decisions", "/rules"):
+            for headers in (READER, CONTRIBUTOR, REVIEWER):
+                response = await client.get(path, headers=headers)
+                assert response.status_code == 200, (path, response.text)
+                assert [row["id"] for row in response.json()] == [1, 2, 3], (path, response.text)
+            # The administrator sees every row, including repositories no project owns.
+            response = await client.get(path, headers=ADMIN)
+            assert [row["id"] for row in response.json()] == [1, 2, 3, 4, 5], (path, response.text)
+            assert (await client.get(path, headers={"X-API-Key": "fixture-5"})).status_code in {401, 403}
+    await revoke_everyone(factory)
+    async with client_for(app) as client:
+        for path in ("/decisions", "/rules"):
+            assert len((await client.get(path, headers=READER)).json()) == 5, path
 
 
 @pytest.mark.asyncio
@@ -367,7 +401,7 @@ async def test_team_state_refuses_the_shared_key_and_dev_open(team_db, monkeypat
     monkeypatch.setattr(settings, "PROJECT_BRAIN_API_KEY", "fixture-legacy")
     app = remaining_app(factory, monkeypatch, tmp_path)
     probes = [*scoped_reads("A"), *run_writes("A"), *accept_writes("A")]
-    probes += [(method, path, {}, body) for method, path, body in ADMIN_ONLY]
+    probes += [(method, path, {}, body) for method, path, body in (*MEMBER_FILTERED, *ADMIN_ONLY)]
     async with client_for(app) as client:
         for method, path, params, body in probes:
             response = await _call(client, method, path, params, body, LEGACY)
@@ -394,7 +428,7 @@ async def test_solo_state_is_unchanged(team_db, monkeypatch, tmp_path):
                 assert response.status_code == 200, (path, response.text)
             for method, path, params, body in (*run_writes("B"), *accept_writes("B")):
                 assert _authorized(await _call(client, method, path, params, body, headers)), path
-            for method, path, body in ADMIN_ONLY:
+            for method, path, body in (*MEMBER_FILTERED, *ADMIN_ONLY):
                 assert _authorized(await client.request(method, path, json=body, headers=headers)), path
             # Unscoped calls keep working in solo state, as before.
             assert (await client.get("/harness/tasks", headers=headers)).status_code == 200

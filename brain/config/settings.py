@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     BRAIN_STALE_DIFF_MAX_FILES: int = 64
     BRAIN_STALE_DIFF_TIMEOUT_S: float = 1.0
     BRAIN_STALE_SOURCE_MAX_BYTES: int = 256_000
+    # Index-age SLO reported by /health (per repository); older indexes mark the
+    # service `degraded`. 0 disables the check.
+    BRAIN_FRESHNESS_MAX_AGE_S: int = 604_800
     WORKER_POOL_NAME: str = "maintenance"
     WORKER_JOB_LEASE_SECONDS: int = 60
     WORKER_JOB_TIMEOUT_SECONDS: int = 60 * 60
@@ -393,6 +396,12 @@ class Settings(BaseSettings):
     # forces every candidate through the human queue regardless.
     MEMORY_CONSOLIDATION_ENABLED: bool = True
     MEMORY_CONSOLIDATION_REQUIRE_APPROVAL: bool = False
+    # G2 independence: how many distinct principals must stand behind a cluster's
+    # evidence before it auto-promotes. Team state defaults to two (one person's
+    # repeated claim is not independent evidence); solo state, a team of one,
+    # keeps the event-count rule alone (0 disables the principal check).
+    MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM: int = 2
+    MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_SOLO: int = 0
     # Project promoted learnings the distiller classified as a rule/decision
     # into RuleStore/DecisionStore (best-effort, after the L3 write committed).
     MEMORY_ROUTE_TARGETS: bool = True
@@ -466,6 +475,13 @@ class Settings(BaseSettings):
     PROJECT_BRAIN_WEBHOOK_REF: str = "refs/heads/main"
     # Blank = the indexed repository (TARGET_REPO_PATH); see _default_repo_paths.
     PROJECT_BRAIN_GIT_REPO_PATH: str = ""
+    # A reindex job that names a source revision (the git-merge webhook always
+    # does) fetches origin and detaches the checkout at that revision before
+    # indexing. Off: the job fails when the checkout HEAD is not that revision,
+    # as it did before. A read-only or dirty checkout fails with a clear error
+    # either way; it is never modified.
+    BRAIN_WEBHOOK_FETCH_SOURCE: bool = True
+    BRAIN_WEBHOOK_FETCH_TIMEOUT_S: int = 120
 
     @field_validator("POSTGRES_POOL_SIZE")
     @classmethod

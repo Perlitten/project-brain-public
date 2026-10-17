@@ -142,6 +142,12 @@ class Decision(Base):
     affected_files: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # List of strings
     # Principal that first recorded it; NULL for rows that predate authorship or came from the CLI.
     author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Principal behind the latest content change (the author until someone else edits it).
+    updated_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # History row that held the previous content of this canonical decision (None for v1).
+    supersedes_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Monotonic content version; the compare-and-swap token for ``expected_version``.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -162,6 +168,12 @@ class Rule(Base):
         JSON, nullable=True
     )  # e.g., dict mapping features/modules
     author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Supersede chain, like decisions: a content change copies the previous content into a
+    # history row (status "superseded", superseded_by_id -> canonical) and bumps ``version``.
+    supersedes_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    superseded_by_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -452,6 +464,10 @@ class Learning(Base):
         pgvector_column_type(EMBEDDING_DIMENSION), nullable=True
     )
     embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Provenance: who contributed the evidence (sole distinct author, else NULL) and who last
+    # changed the row (approval, supersede, reject). NULL for machine-only or legacy rows.
+    author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -677,6 +693,10 @@ class MemoryEpisode(Base):
         pgvector_column_type(EMBEDDING_DIMENSION), nullable=True
     )
     repo_scope: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Provenance: the sole principal behind the source L1 events (NULL when mixed or unknown)
+    # and the principal that approved/rejected the episode.
+    author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -733,6 +753,10 @@ class MemorySkill(Base):
     # Explicit opt-in for prompt injection: a NULL scope is *not* global —
     # only is_global skills may be injected into contexts for any repo.
     is_global: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Provenance: who created the skill (API caller or the distiller's evidence author) and
+    # who last approved/rejected/changed it.
+    author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False

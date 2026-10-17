@@ -1,3 +1,4 @@
+import { adminOnlyPage } from "@/components/AdminOnly";
 import { IdentityList, NewIdentityForm } from "@/components/access/Access";
 import { SignIn } from "@/components/access/SignIn";
 import { Term } from "@/components/Term";
@@ -11,6 +12,8 @@ import { currentMember } from "@/lib/team-session";
 export const metadata = { title: "Access" };
 
 export default async function Admin() {
+  const gate = await adminOnlyPage("Access");
+  if (gate) return gate;
   const [view, agent, signIn] = await Promise.all([getAccessView(), getAgentTarget(), getSignInView()]);
   const { summary: s, identities } = view;
   const target = { apiUrl: agent.publicApiUrl, repoPath: agent.repoPath };

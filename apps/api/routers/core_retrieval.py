@@ -22,7 +22,8 @@ from apps.api.schemas import (
     RelatedRequest,
     SearchRequest,
 )
-from apps.api.team_access import current_team_state, repository_authority
+from apps.api import team_access
+from apps.api.team_access import repository_authority
 from brain.analyzers.impact_analyzer import ImpactAnalyzer
 from brain.auth.principals import ResolvedPrincipal
 from brain.config.paths import get_repo_root, resolve_repo_path
@@ -30,16 +31,7 @@ from brain.config.settings import settings
 from brain.context.context_pack_builder import ContextPackBuilder
 from brain.context.budget import BudgetedPayloadBuilder, truncate_utf8
 from brain.context.runtime_context_builder import RuntimeContextBuilder
-from brain.team.authorization import (
-    ROLE_PERMISSIONS,
-    Permission,
-    TeamDenied,
-    authorize_repository,
-    human_member,
-    live_credential,
-    permissions,
-)
-from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamProject, TeamTaskBinding
+from brain.team.authorization import Permission
 from brain.database.models import Repository
 from brain.database.repository_utils import require_repository_by_path
 from brain.database.repository_utils import find_repository_id
@@ -48,6 +40,14 @@ from brain.graph.graph_client import GraphClient
 from brain.indexers.file_indexer import FileIndexer
 from brain.llm.router import TaskKind, get_model_router
 from brain.memory.decision_store import DecisionStore
+from brain.memory.freshness_envelope import (
+    attach_envelope,
+    envelope_for_path,
+    envelope_for_repository,
+    envelope_for_retrieval,
+    envelope_for_search_scope,
+    unknown_envelope,
+)
 from brain.memory.repo_freshness import assess_repository_freshness
 from brain.memory.repo_scope import normalize_repo_scope
 from brain.memory.rule_store import RuleStore
@@ -179,16 +179,21 @@ async def _compact_locator(body: SearchRequest) -> dict:
         builder.add("results", [candidate.to_locator_dict() for candidate in result.candidates], priority=1)
         if body.include_debug:
             builder.add("debug", {"timings_ms": result.timings_ms}, priority=-1)
-        return builder.build()
+        # The envelope rides outside the byte budget so it is present on every
+        # answer, including the ones the budget squeezed to metadata only.
+        return attach_envelope(builder.build(), envelope_for_retrieval(result.repository))
     except Exception as exc:
         logger.warning("v2 locator degraded: {}", type(exc).__name__)
-        return BudgetedPayloadBuilder(
-            cap,
-            metadata={
-                "repo": {"path": body.repo_path, "freshness": "unknown"},
-                "degraded": [f"locator_error:{type(exc).__name__}"],
-            },
-        ).build()
+        return attach_envelope(
+            BudgetedPayloadBuilder(
+                cap,
+                metadata={
+                    "repo": {"path": body.repo_path, "freshness": "unknown"},
+                    "degraded": [f"locator_error:{type(exc).__name__}"],
+                },
+            ).build(),
+            unknown_envelope(f"locator_error:{type(exc).__name__}"),
+        )
 
 
 async def _ask_v2(body: AskRequest) -> dict:
@@ -205,17 +210,24 @@ async def _ask_v2(body: AskRequest) -> dict:
     except Exception as exc:
         logger.warning("/ask v2 retrieval degraded: {}", type(exc).__name__)
         runtime = {"status": "partial", "missing": [f"context_error:{type(exc).__name__}"]}
+    # The runtime context builder already decided the freshness state (it is
+    # the one place that sees the working tree); the answer carries its verdict.
+    runtime_freshness = runtime.get("freshness")
+    freshness: dict[str, Any] = (
+        runtime_freshness if isinstance(runtime_freshness, dict) else unknown_envelope()
+    )
     if runtime.get("status") != "ok":
         message = ("Current indexed context is not fresh enough to answer safely."
                    if runtime.get("status") == "stale_blocked"
                    else "No sufficient relevant indexed evidence is available to answer safely.")
-        return (
+        return attach_envelope(
             BudgetedPayloadBuilder(
                 settings.AGENT_ASK_OUTPUT_MAX_BYTES,
                 metadata={"status": "partial", "degraded": runtime.get("missing", ["insufficient_context"])},
             )
             .add("answer", message, priority=1)
-            .build()
+            .build(),
+            freshness,
         )
 
     context_json = json.dumps(runtime, ensure_ascii=False, separators=(",", ":"))
@@ -229,7 +241,7 @@ async def _ask_v2(body: AskRequest) -> dict:
     )
     remaining = settings.AGENT_ASK_DEADLINE_S - (time.perf_counter() - started)
     if remaining <= 0:
-        return (
+        return attach_envelope(
             BudgetedPayloadBuilder(
                 settings.AGENT_ASK_OUTPUT_MAX_BYTES,
                 metadata={"status": "partial", "degraded": ["ask_deadline_exceeded"]},
@@ -239,7 +251,8 @@ async def _ask_v2(body: AskRequest) -> dict:
                 "Retrieval exceeded the answer deadline; no speculative synthesis was attempted.",
                 priority=1,
             )
-            .build()
+            .build(),
+            freshness,
         )
     generation_meta: dict[str, Any] = {}
     try:
@@ -309,12 +322,15 @@ async def _ask_v2(body: AskRequest) -> dict:
     if built.get("answer") != response and status == "ok":
         built["status"] = "partial"
         built["degraded"] = [*degraded, "answer_output_cap"]
-        return (BudgetedPayloadBuilder(settings.AGENT_ASK_OUTPUT_MAX_BYTES,
-                    metadata={"status": "partial", "degraded": built["degraded"], **generation_meta})
-                .add("answer", built.get("answer", ""), priority=2)
-                .add("learnings_used", learnings_used, priority=2)
-                .add("evidence", built.get("evidence", []), priority=1).build())
-    return built
+        return attach_envelope(
+            BudgetedPayloadBuilder(settings.AGENT_ASK_OUTPUT_MAX_BYTES,
+                                   metadata={"status": "partial", "degraded": built["degraded"], **generation_meta})
+            .add("answer", built.get("answer", ""), priority=2)
+            .add("learnings_used", learnings_used, priority=2)
+            .add("evidence", built.get("evidence", []), priority=1).build(),
+            freshness,
+        )
+    return attach_envelope(built, freshness)
 
 
 async def _impact_v2(body: ImpactRequest) -> dict:
@@ -335,7 +351,7 @@ async def _impact_v2(body: ImpactRequest) -> dict:
     builder.add("risk", impact.get("risk", {}), priority=3)
     builder.add("keywords", impact.get("keywords", []), priority=2)
     builder.add("affected", impact.get("affected", []), priority=1)
-    return builder.build()
+    return attach_envelope(builder.build(), await envelope_for_path(resolve_repo_path(body.repo_path)))
 
 
 router = APIRouter()
@@ -343,7 +359,7 @@ router = APIRouter()
 
 @router.post("/index", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def index_repository(body: IndexRequest, principal: ResolvedPrincipal = Depends(require_principal)):
-    await repository_authority(principal, Permission.READ, repo_path=body.repo_path)
+    await repository_authority(principal, Permission.REQUEST_RUN, repo_path=body.repo_path)
     try:
         repo_path = resolve_repo_path(body.repo_path)
     except ValueError as exc:
@@ -396,6 +412,7 @@ async def ask_project(body: AskRequest, request: Request, principal: ResolvedPri
                 "status": "partial",
                 "degraded": ["no_retrieval_candidates"],
                 "evidence_available": False,
+                "freshness": envelope_for_search_scope(code_results),
             }
 
         repository_scope = code_results.get("repository_scope") or {}
@@ -579,6 +596,7 @@ async def ask_project(body: AskRequest, request: Request, principal: ResolvedPri
                 "status": "partial",
                 "degraded": degraded,
                 "usage": usage,
+                "freshness": envelope_for_search_scope(code_results),
             }
         result = {
             "answer": answer,
@@ -594,13 +612,14 @@ async def ask_project(body: AskRequest, request: Request, principal: ResolvedPri
             result["skills_used"] = [
                 {"id": skill["id"], "name": skill["name"]} for skill in skills_used
             ]
-        return result
+        return attach_envelope(result, envelope_for_search_scope(code_results))
     except asyncio.TimeoutError:
         return {
             "answer": "The answer exceeded the compact response deadline; the retrieved evidence was not synthesized.",
             "status": "partial",
             "degraded": ["ask_generation_deadline_exceeded"],
             "evidence_available": bool(code_results.get("files") or code_results.get("symbols") or code_results.get("chunks")),
+            "freshness": envelope_for_search_scope(code_results),
         }
     except Exception as exc:
         # The exception type carries the diagnosis here: httpx timeouts and
@@ -633,10 +652,13 @@ async def build_task_context(body: ContextRequest, request: Request = cast(Reque
                 return result
             except Exception as exc:
                 logger.warning("/context v2 degraded: {}", type(exc).__name__)
-                return BudgetedPayloadBuilder(
-                    min(settings.AGENT_RUNTIME_CONTEXT_MAX_BYTES, body.max_tokens * 4),
-                    metadata={"status": "partial", "missing": [f"context_error:{type(exc).__name__}"]},
-                ).build()
+                return attach_envelope(
+                    BudgetedPayloadBuilder(
+                        min(settings.AGENT_RUNTIME_CONTEXT_MAX_BYTES, body.max_tokens * 4),
+                        metadata={"status": "partial", "missing": [f"context_error:{type(exc).__name__}"]},
+                    ).build(),
+                    unknown_envelope(f"context_error:{type(exc).__name__}"),
+                )
         repo_path = str(resolve_repo_path(body.repo_path))
         # The transport is the only layer that knows who called, so it tells the
         # builder: adoption is reported per agent, and a pack with no name
@@ -645,7 +667,7 @@ async def build_task_context(body: ContextRequest, request: Request = cast(Reque
             body.task_description, Path(repo_path), consumer=requesting_principal(request)
         )
         outcome = classify_result(result, "context")
-        return result
+        return attach_envelope(result, await envelope_for_path(repo_path))
     except asyncio.CancelledError:
         outcome = "cancelled"
         raise
@@ -669,8 +691,10 @@ async def analyze_change_impact(body: ImpactRequest, principal: ResolvedPrincipa
         except Exception as exc:
             logger.warning("/impact v2 shadow failed open: {}", type(exc).__name__)
     try:
-        analyzer = ImpactAnalyzer(resolve_repo_path(body.repo_path))
-        return await analyzer.analyze_impact(body.change_request, max_results=body.max_results, fast=body.fast)
+        target = resolve_repo_path(body.repo_path)
+        analyzer = ImpactAnalyzer(target)
+        result = await analyzer.analyze_impact(body.change_request, max_results=body.max_results, fast=body.fast)
+        return attach_envelope(result, await envelope_for_path(target))
     except Exception as exc:
         logger.error(f"Impact analysis failed for {body.repo_path}: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Impact analysis failed due to an internal error") from exc
@@ -713,6 +737,7 @@ async def review_git_diff(body: DiffReviewRequest, principal: ResolvedPrincipal 
             "status": "processing",
             "job_id": job_id,
             "message": "Diff review queued. Poll GET /diff-review/{job_id} for results.",
+            "freshness": await envelope_for_path(body.repo_path),
         }
     except Exception as exc:
         logger.error(f"Failed to queue diff review for {body.repo_path}: {type(exc).__name__}: {exc}")
@@ -754,20 +779,24 @@ async def get_diff_review_result(job_id: str, principal: ResolvedPrincipal = Dep
         except HTTPException as exc:
             raise HTTPException(status_code=404, detail="Review job not found") from exc
         status = job.get("status", "unknown")
+        freshness = await envelope_for_path(params.get("repo_path"))
         if status == "completed":
             return {
                 "status": "completed",
                 "result": job.get("result", {}),
+                "freshness": freshness,
             }
         elif status == "failed":
             return {
                 "status": "failed",
                 "error": job.get("error", "Unknown error"),
+                "freshness": freshness,
             }
         else:
             return {
                 "status": status,  # queued, running, etc.
                 "message": "Review still in progress.",
+                "freshness": freshness,
             }
     except HTTPException:
         raise
@@ -806,7 +835,7 @@ async def search_code_endpoint(body: SearchRequest, request: Request, principal:
             search_kwargs["request_id"] = request_id
         result = await hybrid_search_code(body.query, **search_kwargs)
         outcome = classify_result(result, "search")
-        return result
+        return attach_envelope(result, envelope_for_search_scope(result))
     except asyncio.CancelledError:
         outcome = "cancelled"
         raise
@@ -820,82 +849,6 @@ async def search_code_endpoint(body: SearchRequest, request: Request, principal:
                                    outcome=outcome, started=started)
 
 
-async def _readable_repository_ids(principal: ResolvedPrincipal, repository_ids: list[int]) -> set[int] | None:
-    """Ids among ``repository_ids`` the caller may ``read``; ``None`` means every repository.
-
-    Solo state and team administrators pass the unscoped check and see all; any
-    other team member sees the repositories their project roles grant."""
-    if await current_team_state() == "solo":
-        return None
-    if not repository_ids:
-        return set()
-
-    async with async_session_factory() as session:
-        try:
-            live = await live_credential(session, principal.id, principal.credential_id)
-        except TeamDenied:
-            return set()
-
-        # A run is bound to exactly one task repository. One normal authority
-        # check preserves the delegation-chain and task-binding rules without
-        # multiplying it by the installation's repository count.
-        if live.kind == "run":
-            repository_id = (await session.execute(
-                select(TeamTaskBinding.repository_id)
-                .join(AgentRun, AgentRun.task_id == TeamTaskBinding.task_id)
-                .where(AgentRun.principal_id == live.id, AgentRun.credential_id == live.credential_id)
-            )).scalar_one_or_none()
-            if repository_id is None or repository_id not in repository_ids:
-                return set()
-            try:
-                await authorize_repository(session, principal, repository_id, Permission.READ)
-            except TeamDenied:
-                return set()
-            return {repository_id}
-
-        if live.kind != "human" or not live.has_scope("team:read"):
-            return set()
-        try:
-            member = await human_member(session, live, 1)
-        except TeamDenied:
-            return set()
-        if member.is_admin and live.has_scope("team:admin"):
-            return None
-
-        # Fetch every candidate's project policy and this principal's role in
-        # one joined query, then apply the same role/policy intersection as
-        # ``authorize``. This avoids a complete authorization query sequence
-        # for every repository row.
-        rows = (await session.execute(
-            select(ProjectRepository.repository_id, ProjectMember.role, TeamProject.permissions)
-            .join(TeamProject, TeamProject.id == ProjectRepository.project_id)
-            .join(
-                ProjectMember,
-                (ProjectMember.project_id == ProjectRepository.project_id)
-                & (ProjectMember.principal_id == live.id),
-            )
-            .where(
-                ProjectRepository.repository_id.in_(repository_ids),
-                ProjectMember.revoked_at.is_(None),
-                TeamProject.disabled_at.is_(None),
-            )
-        )).all()
-        return {
-            repository_id
-            for repository_id, role, policy in rows
-            if Permission.READ in ROLE_PERMISSIONS.get(role, frozenset())
-            and Permission.READ in _policy_permissions(policy)
-        }
-
-
-def _policy_permissions(policy: list[str] | None) -> frozenset[Permission]:
-    """A project's granted permissions; an invalid policy grants nothing, as ``authorize`` denies it."""
-    try:
-        return permissions(policy or [])
-    except TeamDenied:
-        return frozenset()
-
-
 @router.get("/repositories", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
 async def list_repositories(principal: ResolvedPrincipal = Depends(require_principal)):
     try:
@@ -903,7 +856,7 @@ async def list_repositories(principal: ResolvedPrincipal = Depends(require_princ
             stmt = select(Repository).order_by(Repository.id.asc())
             rows = await session.execute(stmt)
             repos = rows.scalars().all()
-        readable = await _readable_repository_ids(principal, [repo.id for repo in repos])
+        readable = await team_access.readable_repository_ids(principal, [repo.id for repo in repos])
         if readable is not None:
             repos = [repo for repo in repos if repo.id in readable]
 
@@ -960,7 +913,12 @@ async def related_files_endpoint(body: RelatedRequest, principal: ResolvedPrinci
                 ):
                     visited.add(tgt)
                     indirectly.append(tgt)
-        return {"file": body.file_path, "directly_related_files": directly, "indirectly_related_files": indirectly}
+        return {
+            "file": body.file_path,
+            "directly_related_files": directly,
+            "indirectly_related_files": indirectly,
+            "freshness": await envelope_for_repository(repository),
+        }
     except Exception as exc:
         logger.error(f"Related lookup failed: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Related lookup failed due to an internal error") from exc

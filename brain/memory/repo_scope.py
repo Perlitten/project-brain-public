@@ -16,7 +16,7 @@ def normalize_repo_scope(repo_path: Optional[str]) -> Optional[str]:
     normalized = repo_path.strip().replace("\\", "/")
     if not normalized:
         return None
-    if normalized == "system_global":
+    if normalized.lower() == "system_global":
         return None
     normalized = normalized.rstrip("/") or "/"
     # POSIX paths are case-sensitive. Windows drive/UNC identities retain

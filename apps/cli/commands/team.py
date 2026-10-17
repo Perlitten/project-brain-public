@@ -341,3 +341,25 @@ def reconcile_cmd(
             return await restore_fence.reconcile(session, attest=attest, keep_credentials=keep_credentials)
 
     _emit(_run(run()))
+
+
+@team_cli.command(name="dissolve")
+def dissolve_cmd(
+    yes: bool = typer.Option(False, "--yes", help="Confirm: every authenticated key becomes the implicit administrator."),
+):
+    """Return a team whose members are all revoked to solo.
+
+    Revoking the last member does not switch team boundaries off: the shared
+    key and any surviving credential stay without implicit authority until
+    this runs. Refused while any member is live; adding a member later turns
+    the team back on."""
+    if not yes:
+        _fail("Dissolving returns the Brain to solo, where every authenticated key has full authority; "
+              "re-run with --yes to confirm.")
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            team = await provisioning.dissolve_team(session)
+            return {**provisioning.team_dict(team), "dissolved_at": provisioning._iso(team.dissolved_at)}
+
+    _emit(_run(run()))

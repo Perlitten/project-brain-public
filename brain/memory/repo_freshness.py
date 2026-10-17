@@ -101,6 +101,101 @@ def _read_commits_behind(repository_path: Path, indexed_commit: str, head_commit
         return None
 
 
+def _truthy(raw: str | None) -> bool:
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _ref_exists(repository_path: Path, ref: str) -> bool:
+    result = _run_git_command(repository_path, ["rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"])
+    return result.returncode == 0 and bool((result.stdout or "").strip())
+
+
+def _read_origin_ref(repository_path: Path, branch: str | None) -> str | None:
+    """The remote-tracking ref freshness is measured against, e.g. ``origin/main``.
+
+    Prefers the remote's default branch (``refs/remotes/origin/HEAD``), then the
+    checked-out branch's counterpart, then the usual default names. None when
+    the checkout has no ``origin`` or none of those refs exist locally.
+    """
+    try:
+        result = _run_git_command(repository_path, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"])
+        if result.returncode == 0:
+            target = (result.stdout or "").strip()
+            if target.startswith("refs/remotes/"):
+                candidate = target[len("refs/remotes/"):]
+                if _ref_exists(repository_path, candidate):
+                    return candidate
+        candidates = []
+        if branch and branch != "HEAD":
+            candidates.append(f"origin/{branch}")
+        candidates.extend(["origin/main", "origin/master"])
+        for candidate in candidates:
+            if _ref_exists(repository_path, candidate):
+                return candidate
+        return None
+    except Exception:
+        return None
+
+
+def _read_origin_head(repository_path: Path, origin_ref: str) -> str | None:
+    """The commit ``origin_ref`` points at.
+
+    Reads the local remote-tracking ref, which the webhook reindex refreshes with
+    its fetch. With ``BRAIN_FRESHNESS_LS_REMOTE=true`` it asks the remote itself
+    first (bounded by the same git timeout) and falls back to the local ref.
+    """
+    try:
+        if _truthy(os.environ.get("BRAIN_FRESHNESS_LS_REMOTE")):
+            remote, _, branch = origin_ref.partition("/")
+            if remote and branch:
+                result = _run_git_command(
+                    repository_path, ["ls-remote", "--quiet", "--heads", remote, f"refs/heads/{branch}"]
+                )
+                if result.returncode == 0:
+                    for line in (result.stdout or "").splitlines():
+                        sha, _, ref = line.strip().partition("\t")
+                        if ref == f"refs/heads/{branch}" and sha:
+                            return sha
+        result = _run_git_command(repository_path, ["rev-parse", "--verify", "--quiet", f"{origin_ref}^{{commit}}"])
+        if result.returncode != 0:
+            return None
+        return (result.stdout or "").strip() or None
+    except Exception:
+        return None
+
+
+def _origin_ahead_note(freshness: dict[str, Any]) -> str | None:
+    behind = freshness.get("commits_behind_origin")
+    if not isinstance(behind, int) or behind <= 0:
+        return None
+    return (
+        f"{freshness.get('origin_ref')} is {behind} commit(s) ahead of the indexed commit; "
+        "the checkout has not been moved to it yet."
+    )
+
+
+async def describe_origin(repository_path: Path, indexed_commit: str | None) -> dict[str, Any]:
+    """Where origin stands relative to ``indexed_commit``: ref, head and the commit count behind.
+
+    All values are None for a non-git source or a checkout without an origin.
+    """
+    origin: dict[str, Any] = {"origin_ref": None, "origin_head": None, "commits_behind_origin": None}
+    if not await asyncio.to_thread(_is_git_worktree, repository_path):
+        return origin
+    branch = await asyncio.to_thread(_read_current_branch, repository_path)
+    origin_ref = await asyncio.to_thread(_read_origin_ref, repository_path, branch)
+    if not origin_ref:
+        return origin
+    origin["origin_ref"] = origin_ref
+    origin_head = await asyncio.to_thread(_read_origin_head, repository_path, origin_ref)
+    origin["origin_head"] = origin_head
+    if origin_head and indexed_commit:
+        origin["commits_behind_origin"] = await asyncio.to_thread(
+            _read_commits_behind, repository_path, str(indexed_commit), origin_head
+        )
+    return origin
+
+
 async def _count_indexed_files(repository: Any) -> int | None:
     # Touching a lazy relationship on an instance whose session has closed raises
     # (DetachedInstanceError / MissingGreenlet under async SQLAlchemy). That is
@@ -191,6 +286,13 @@ async def _assess_repository_freshness_uncached(repo: Any) -> dict[str, Any]:
         "last_indexed_at": None,
         "age_seconds": None,
         "commits_behind": None,
+        # Measured against origin, not the checkout HEAD: a server that never
+        # pulls looked "current" while the project moved on. ``origin_head`` is
+        # the local remote-tracking ref (refreshed by the webhook fetch), unless
+        # BRAIN_FRESHNESS_LS_REMOTE asks the remote directly.
+        "origin_ref": None,
+        "origin_head": None,
+        "commits_behind_origin": None,
         "status": "source_missing",
         "note": None,
     }
@@ -228,6 +330,8 @@ async def _assess_repository_freshness_uncached(repo: Any) -> dict[str, Any]:
         elif is_git:
             freshness["source_revision_kind"] = "git"
         indexed_commit = freshness["indexed_commit"]
+        if is_git:
+            freshness.update(await describe_origin(repo_path, indexed_commit))
 
         file_count = await _count_indexed_files(repo)
         if not indexed_commit:
@@ -290,7 +394,7 @@ async def _assess_repository_freshness_uncached(repo: Any) -> dict[str, Any]:
                     f"{stale_after_seconds} seconds."
                 )
                 return freshness
-            freshness["note"] = None
+            freshness["note"] = _origin_ahead_note(freshness)
             return freshness
 
         # If source head cannot be resolved or commit metadata is inconsistent,

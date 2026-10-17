@@ -100,8 +100,9 @@ storage only). How to operate it: [inviting team members](../operations/TEAM_INV
   and acknowledgements and remediation plans need `run.request`; drift review
   and remediation approvals need `task.accept`. Learnings, repository skills and
   skill outcomes need `knowledge.propose` on their repository or task (a global
-  skill or unscoped learning needs an administrator). Brain-wide memory (the
-  unfiltered decision, rule, episode and skill lists, episode and skill
+  skill or unscoped learning needs an administrator). The decision and rule
+  lists return global entries plus those of repositories the caller can
+  `read`. Brain-wide memory (the episode and skill lists, episode and skill
   approvals, learning deletion), web reports and health, and web-login changes
   need a team administrator. The Telegram bridge refuses the shared key in team
   state and answers only for repositories its poller principal can read. A
@@ -110,9 +111,10 @@ storage only). How to operate it: [inviting team members](../operations/TEAM_INV
   build's own quality benchmark, static action and lab-profile vocabularies,
   service and MCP status, the web-login read and verify steps of sign-in, and
   the signed merge webhook.
-- Not yet scoped: the web app's own logs, downloads and notifications, which
-  the Next.js server reaches with its server key. No team executor, artifact
-  download, approval, merge or provider call exists.
+- In team state the dashboard forwards every data request, server-rendered
+  or through its `/api/brain` proxy, with the signed-in member's key; the
+  server key only probes the team state and checks sign-ins. No team executor,
+  artifact download, approval, merge or provider call exists.
 
 The SQL upgrade was rehearsed from the current main schema in a disposable
 PostgreSQL database: a preexisting repository, principal and harness task kept
