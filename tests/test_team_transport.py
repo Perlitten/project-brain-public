@@ -156,7 +156,7 @@ async def test_team_admin_member_key_writes_global_decisions(team_db, monkeypatc
             await session.execute(update(ApiCredential).where(ApiCredential.key_hash == hash_credential(key))
                                   .values(scopes=member_scopes(is_admin)))
     app = personal_app(factory, monkeypatch)
-    add = core_memory.DecisionStore.add_decision
+    add = core_memory.DecisionStore.record_decision
     async with client_for(app) as client:
         for repo_path in (None, "system_global", "SYSTEM_GLOBAL"):
             assert (await client.post("/decisions", json=decision(repo_path), headers=ADMIN)).status_code == 200
