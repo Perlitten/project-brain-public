@@ -87,6 +87,9 @@ source changes so the queued index can complete its clean-tree verification.
 
 Use `BRAIN_STALE_CONTEXT_POLICY=strict_block` when a workflow requires an exact
 indexed revision. The published v0.9.2 runtime retains its original behavior.
+Every answer carries a `freshness` block (`state`, `reason`, `indexed_commit`,
+`age_s`, `reindex_job_id`) with the same shape on every MCP tool and REST
+endpoint; see the [envelope contract](MCP.md#freshness-envelope).
 
 ## Configure meaningful models
 

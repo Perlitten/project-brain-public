@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import or_, select
 
 from brain.config.settings import settings
+from brain.memory.freshness_envelope import EnvelopeState, freshness_envelope
 from brain.memory.source_overlay import SourceDelta, collect_source_delta, current_ranges, read_live_source
 from brain.context.budget import BudgetedPayloadBuilder, truncate_utf8
 from brain.context.evidence_support import should_abstain_for_unsupported_query
@@ -118,8 +119,12 @@ def _unsupported_domain_query(
     return should_abstain_for_unsupported_query(query, result.candidates, slices or [])
 
 
-async def _queue_auto_reindex(repo_path: str) -> bool:
-    """Queue a reindex in its worker pool, throttled per repo by a Redis SET NX EX lock."""
+async def _queue_auto_reindex(repo_path: str) -> str | None:
+    """Queue a reindex in its worker pool, throttled per repo by a Redis SET NX EX lock.
+
+    Returns the queued job id so the caller can surface it in the freshness
+    envelope, or ``None`` when throttled or when the enqueue failed.
+    """
     from loguru import logger
 
     from brain.database.session import redis_client
@@ -133,22 +138,24 @@ async def _queue_auto_reindex(repo_path: str) -> bool:
             throttle_key, "1", nx=True, ex=max(1, int(settings.AUTO_REINDEX_MIN_INTERVAL_S))
         )
         if not acquired:
-            return False
+            return None
         queue = queue_for_job(
             redis_client,
             settings.WORKER_REDIS_PREFIX,
             "reindex",
             pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED,
         )
-        await queue.enqueue("reindex", {"repo_path": repo_path}, initiator=JobInitiator.inherited("auto_reindex"))
-        return True
+        job_id = await queue.enqueue(
+            "reindex", {"repo_path": repo_path}, initiator=JobInitiator.inherited("auto_reindex")
+        )
+        return str(job_id) if job_id else None
     except Exception as exc:
         logger.warning(f"Auto-reindex enqueue failed for {repo_path}: {type(exc).__name__}: {exc}")
         try:
             await redis_client.delete(throttle_key)
         except Exception:
             pass
-        return False
+        return None
 
 
 class RuntimeContextBuilder:
@@ -181,7 +188,25 @@ class RuntimeContextBuilder:
         )
         repo = self._repo_projection(result)
         freshness = repo["freshness"]
+        raw_freshness = dict(result.repository.get("freshness") or {}) if isinstance(result.repository, dict) else {}
+        # The retrieval projection knows the indexed revision even when the
+        # freshness assessment omitted it (cache fixtures, partial lookups).
+        raw_freshness.setdefault("indexed_commit", repo.get("indexed_revision"))
         metadata: dict[str, Any] = {"status": "ok", "repo": repo, "missing": list(result.degraded)}
+        # The envelope is appended after the budgeted build so it is present on
+        # every outcome, including the tiny budgets where metadata alone fills
+        # the cap. Its state is settled by the staleness decisions below.
+        envelope_state: EnvelopeState | None = None
+        envelope_reason: str | None = None
+        reindex_job_id: str | None = None
+
+        def finish(payload: dict[str, Any]) -> dict[str, Any]:
+            payload["freshness"] = freshness_envelope(
+                raw_freshness,
+                state=envelope_state, reason=envelope_reason, reindex_job_id=reindex_job_id,
+            )
+            return payload
+
         delta = await asyncio.to_thread(
             collect_source_delta, Path(repo_str), repo.get("indexed_revision"),
             limit=settings.BRAIN_STALE_DIFF_MAX_FILES, timeout=settings.BRAIN_STALE_DIFF_TIMEOUT_S,
@@ -196,18 +221,27 @@ class RuntimeContextBuilder:
                 metadata["missing"].extend([
                     "live_source_unavailable", "current_source_required_for_code_change",
                 ])
-                return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
+                envelope_state, envelope_reason = "stale_blocked", "live_source_unavailable"
+                return finish(BudgetedPayloadBuilder(max_bytes, metadata=metadata).build())
             reindex_queued = False
             if delta.dirty:
                 metadata["missing"].append("auto_reindex_deferred_until_clean")
-            elif await _queue_auto_reindex(str(repo_path)):
-                reindex_queued = True
-                metadata["missing"].append("auto_reindex_queued")
+            else:
+                reindex_job_id = await _queue_auto_reindex(str(repo_path))
+                if reindex_job_id:
+                    reindex_queued = True
+                    metadata["missing"].append("auto_reindex_queued")
             if settings.BRAIN_STALE_CONTEXT_POLICY == "strict_block":
                 metadata["status"] = "stale_blocked"
                 metadata["missing"].append("current_source_required_for_code_change")
-                return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
-            metadata["freshness"] = "stale_served"
+                envelope_state, envelope_reason = "stale_blocked", "policy_strict_block"
+                return finish(BudgetedPayloadBuilder(max_bytes, metadata=metadata).build())
+            envelope_state = "stale_served"
+            if freshness == "current":
+                # The index matches its commit; the working tree moved past it.
+                envelope_reason = ("working_tree_dirty" if delta.dirty
+                                   else "source_ahead_of_index" if delta.changed_files
+                                   else "diff_unverified")
             repo["freshness"] = "stale_served"
             if delta.head:
                 repo["source_revision"] = delta.head
@@ -221,7 +255,7 @@ class RuntimeContextBuilder:
         if not result.candidates:
             metadata["status"] = "partial"
             metadata["missing"].append("no_retrieval_candidates")
-            return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
+            return finish(BudgetedPayloadBuilder(max_bytes, metadata=metadata).build())
 
         # Bind cache reads to the same revision used for writes, after the
         # current-source/evidence guards. Cache must fit this request's budget.
@@ -242,8 +276,10 @@ class RuntimeContextBuilder:
             metadata["missing"].append("no_code_slices")
             if stale:
                 memory = await self._load_memory(task_description, result, repo, max_bytes, metadata)
-                return BudgetedPayloadBuilder(max_bytes, metadata=metadata).add("memory", memory, priority=5).build()
-            return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
+                return finish(
+                    BudgetedPayloadBuilder(max_bytes, metadata=metadata).add("memory", memory, priority=5).build()
+                )
+            return finish(BudgetedPayloadBuilder(max_bytes, metadata=metadata).build())
 
         # Keep public locators aligned with the selected code on cache hits as
         # well: cached slices can put the actual implementation ahead of tests.
@@ -255,7 +291,7 @@ class RuntimeContextBuilder:
         if should_abstain_for_unsupported_query(task_description, result.candidates, slices):
             metadata["status"] = "partial"
             metadata["missing"].append("no_relevant_candidates")
-            return BudgetedPayloadBuilder(max_bytes, metadata=metadata).build()
+            return finish(BudgetedPayloadBuilder(max_bytes, metadata=metadata).build())
 
         memory = await self._load_memory(task_description, result, repo, max_bytes, metadata)
         if cache_hit:
@@ -303,7 +339,7 @@ class RuntimeContextBuilder:
             # Report a budget gap rather than caching a false successful pack.
             metadata["status"] = "partial"
             metadata["missing"].append("code_slices_excluded_by_budget")
-            return (
+            return finish(
                 BudgetedPayloadBuilder(max_bytes, metadata=metadata)
                 .add("candidates", built.get("candidates", []), priority=1)
                 .build()
@@ -312,7 +348,7 @@ class RuntimeContextBuilder:
             put_cached_context(repo_str, task_description, {"evidence_cache_version": 1, "slices": slices},
                                source_revision=repo.get("source_revision"),
                                max_bytes=max_bytes)
-        return built
+        return finish(built)
 
     @staticmethod
     async def _load_memory(
