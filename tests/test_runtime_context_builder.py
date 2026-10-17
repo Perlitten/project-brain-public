@@ -175,13 +175,15 @@ async def test_runtime_cache_uses_verified_revision_and_respects_smaller_budget(
         assert builder._load_slices.await_count == 1
         small = await builder.build(result.query, "/indexed/cache-fixture", max_tokens=100)
         assert not small.get("_cache_hit")
-        assert len(json.dumps(small, ensure_ascii=False, separators=(",", ":")).encode()) <= 400
+        budgeted = {key: value for key, value in small.items() if key != "freshness"}
+        assert len(json.dumps(budgeted, ensure_ascii=False, separators=(",", ":")).encode()) <= 400
+        assert small["freshness"]["state"] == "fresh"
         result.repository["freshness"]["source_head_commit"] = "r2"
         changed = await builder.build(result.query, "/indexed/cache-fixture")
         assert not changed.get("_cache_hit")
         assert builder._load_slices.await_count == 3
         result.repository["freshness"]["status"] = "stale"
-        monkeypatch.setattr("brain.context.runtime_context_builder._queue_auto_reindex", AsyncMock(return_value=False))
+        monkeypatch.setattr("brain.context.runtime_context_builder._queue_auto_reindex", AsyncMock(return_value=None))
         stale = await builder.build(result.query, "/indexed/cache-fixture")
         assert stale["status"] == "stale_blocked" and not stale.get("_cache_hit")
     finally:
@@ -209,6 +211,8 @@ async def test_runtime_context_fails_closed_before_loading_slices_when_index_is_
 
     assert payload["status"] == "stale_blocked"
     assert "current_source_required_for_code_change" in payload["missing"]
+    assert payload["freshness"]["state"] == "stale_blocked"
+    assert payload["freshness"]["reason"] == "live_source_unavailable"
     builder._load_slices.assert_not_awaited()
     assert len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) <= 4000
 

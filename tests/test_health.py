@@ -220,3 +220,58 @@ def test_health_reports_worker_liveness_and_start_hint(mock_check_health, mock_l
     data = client.get("/health").json()
     assert data["worker"]["running"] is None
     assert data["worker"]["error"] == "ConnectionError"
+
+
+# --------------------------------------------------------------------------- freshness SLO
+
+
+def _repo(path: str, age_s: int | None, commit: str | None = "f" * 40):
+    from datetime import datetime, timedelta, timezone
+
+    indexed_at = None if age_s is None else datetime.now(timezone.utc) - timedelta(seconds=age_s)
+    return SimpleNamespace(path=path, last_indexed_commit=commit, updated_at=indexed_at)
+
+
+@patch("apps.api.routers.core_lifecycle.list_all_repositories", new_callable=AsyncMock)
+@patch("apps.api.routers.core_lifecycle.check_health", new_callable=AsyncMock)
+def test_health_reports_index_age_against_the_slo(mock_check_health, mock_repos, monkeypatch):
+    from brain.config.settings import settings
+
+    monkeypatch.setattr(settings, "BRAIN_FRESHNESS_MAX_AGE_S", 3600)
+    mock_check_health.return_value = {"postgres": {"status": "healthy"}}
+    mock_repos.return_value = [_repo("/indexed/fresh", 60), _repo("/indexed/old", 7200), _repo("/indexed/never", None)]
+
+    data = client.get("/health").json()
+    assert data["status"] == "degraded"  # an old index degrades the service, it does not fail it
+    freshness = data["freshness"]
+    assert freshness["max_age_s"] == 3600
+    assert freshness["exceeded"] == ["/indexed/old"]
+    by_path = {row["path"]: row for row in freshness["repositories"]}
+    assert by_path["/indexed/fresh"]["within_slo"] is True and by_path["/indexed/fresh"]["age_s"] < 600
+    assert by_path["/indexed/old"]["within_slo"] is False and by_path["/indexed/old"]["age_s"] >= 7200
+    assert by_path["/indexed/never"] == {
+        "path": "/indexed/never", "indexed_commit": "f" * 40, "indexed_at": None, "age_s": None, "within_slo": None,
+    }
+
+    mock_repos.return_value = [_repo("/indexed/fresh", 60)]
+    assert client.get("/health").json()["status"] == "ok"
+
+    monkeypatch.setattr(settings, "BRAIN_FRESHNESS_MAX_AGE_S", 0)
+    mock_repos.return_value = [_repo("/indexed/old", 7200)]
+    data = client.get("/health").json()
+    assert data["status"] == "ok" and data["freshness"]["exceeded"] == []
+
+
+@patch("apps.api.routers.core_lifecycle.list_all_repositories", new_callable=AsyncMock)
+@patch("apps.api.routers.core_lifecycle.check_health", new_callable=AsyncMock)
+def test_health_freshness_never_masks_an_outage(mock_check_health, mock_repos, monkeypatch):
+    from brain.config.settings import settings
+
+    monkeypatch.setattr(settings, "BRAIN_FRESHNESS_MAX_AGE_S", 3600)
+    mock_check_health.return_value = {"postgres": {"status": "unhealthy", "error": "down"}}
+    mock_repos.side_effect = ConnectionError("db down")
+
+    data = client.get("/health").json()
+    assert data["status"] == "error"
+    assert data["freshness"]["error"] == "ConnectionError"
+    assert data["freshness"]["repositories"] == [] and data["freshness"]["exceeded"] == []

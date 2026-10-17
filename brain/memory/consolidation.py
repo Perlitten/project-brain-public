@@ -29,6 +29,7 @@ from brain.database.models import MemoryEpisode, MemoryEpisodeEvent
 from brain.database.session import async_session_factory
 from brain.llm import get_embedding_provider, get_summarizer_provider
 from brain.memory.learning_store import LearningStore
+from brain.memory.provenance import SelfApprovalError, distinct_principals, sole_principal
 from brain.memory.repo_scope import normalize_repo_scope
 
 logger = logging.getLogger(__name__)
@@ -259,6 +260,59 @@ deliberate architectural choice with a reason, otherwise "learning"."""
 _VALID_TARGETS = ("learning", "decision", "rule")
 
 
+def _evidence_ref(event: AgentTaskEvent) -> Dict[str, Any]:
+    """The evidence entry an L1 event leaves on its episode/learning.
+
+    ``author_principal_id`` is carried only when the event recorded one (the
+    harness router stamps it from the caller); it feeds G2's independence check
+    and the sole-author attribution of what gets distilled."""
+    ref: Dict[str, Any] = {
+        "event_id": event.id,
+        "task_id": str(event.task_id),
+        "classification": event.classification,
+        "validated": _event_is_validated(event),
+    }
+    payload = event.payload_json if isinstance(event.payload_json, dict) else {}
+    if payload.get("author_principal_id") is not None:
+        ref["author_principal_id"] = payload["author_principal_id"]
+    return ref
+
+
+def _min_distinct_principals(team_state: Optional[str]) -> int:
+    """How many distinct principals G2 wants behind the evidence in this team state."""
+    if team_state == "team":
+        return max(0, int(settings.MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM))
+    return max(0, int(settings.MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_SOLO))
+
+
+async def _memory_team_state() -> str:
+    """Solo or team, resolved once per consolidation run; any failure means solo."""
+    try:
+        from brain.team.authorization import team_state
+
+        async with async_session_factory() as session:
+            return str(await team_state(session))
+    except Exception as exc:  # pragma: no cover - defensive: team tables absent, DB hiccup
+        logger.warning("Team state lookup failed, consolidating as solo: %s", exc)
+        return "solo"
+
+
+async def _principal_may_write_system_global(principal_id: Optional[int], team_state: str) -> bool:
+    """Only a team administrator may put consolidated memory into system_global in team state."""
+    if team_state != "team":
+        return True
+    if principal_id is None:
+        return False
+    try:
+        from brain.team.authorization import principal_is_team_administrator
+
+        async with async_session_factory() as session:
+            return await principal_is_team_administrator(session, principal_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Team administrator lookup for principal %s failed: %s", principal_id, exc)
+        return False
+
+
 async def distill_candidate(cluster: List[AgentTaskEvent]) -> ConsolidationCandidate:
     """LLM-distill one cluster of L1 events into a candidate learning."""
     events_text = "\n".join(f"- {_l1_event_text(e)}" for e in cluster)
@@ -268,15 +322,7 @@ async def distill_candidate(cluster: List[AgentTaskEvent]) -> ConsolidationCandi
         data = json.loads(raw[raw.index("{"): raw.rindex("}") + 1])
     except (ValueError, json.JSONDecodeError):
         data = {}
-    evidence = [
-        {
-            "event_id": e.id,
-            "task_id": str(e.task_id),
-            "classification": e.classification,
-            "validated": _event_is_validated(e),
-        }
-        for e in cluster
-    ]
+    evidence = [_evidence_ref(e) for e in cluster]
     return ConsolidationCandidate(
         statement=str(data.get("statement", events_text[:500])).strip(),
         category=data.get("category"),
@@ -351,6 +397,7 @@ async def evaluate_gates(
     *,
     require_approval: bool = False,
     repo_scope: Optional[str] = None,
+    team_state: Optional[str] = None,
 ) -> GateResult:
     """Run lexicographic promotion gates G1–G4. First failure decides.
 
@@ -359,7 +406,10 @@ async def evaluate_gates(
     changed number or flag embeds almost identically to the stale statement,
     and linking it would reinforce the wrong memory. A near-duplicate is
     therefore checked for contradiction before it is linked.
-    G2 too little evidence → REJECT_EVIDENCE (unvalidated evidence needs more).
+    G2 too little evidence → REJECT_EVIDENCE (unvalidated evidence needs more;
+    in team state the evidence must also come from
+    ``MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM`` distinct principals —
+    one person repeating a claim is not independent evidence).
     G3 contradiction → the corrected learning is superseded, not the new one
     rejected: SUPERSEDE when the evidence is validated and the stakes are not
     high, otherwise NEEDS_APPROVAL with the superseded ids recorded.
@@ -424,7 +474,20 @@ async def evaluate_gates(
                 f"G2: only {event_count} {candidate.evidence_tier} L1 event(s), need {needed}"
             ],
         )
-    reasons.append(f"G2 pass: {event_count} {candidate.evidence_tier} L1 event(s)")
+    min_principals = _min_distinct_principals(team_state)
+    principal_count = len(distinct_principals(candidate.evidence))
+    if min_principals and principal_count < min_principals and not require_approval:
+        return GateResult(
+            outcome=GateOutcome.REJECT_EVIDENCE,
+            reasons=reasons + [
+                f"G2: only {principal_count} distinct principal(s) behind {event_count} L1 event(s), "
+                f"need {min_principals} in team state"
+            ],
+        )
+    reasons.append(
+        f"G2 pass: {event_count} {candidate.evidence_tier} L1 event(s)"
+        + (f" from {principal_count} distinct principal(s)" if min_principals else "")
+    )
 
     # G3 — Contradiction with active memory corrects the old learning
     # (supersede, append-only chain) instead of discarding the new evidence.
@@ -645,13 +708,28 @@ async def _route_to_normative_store(
     candidate: ConsolidationCandidate,
     learning_id: int,
     repo_scope: Optional[str],
+    *,
+    principal_id: Optional[int] = None,
+    team_state: str = "solo",
 ) -> Optional[Dict[str, Any]]:
     """Project a promoted learning into the Rule or Decision store when the
     distiller classified it as one. The learning stays canonical; the
-    projection is best-effort and runs after the L2/L3 transaction committed."""
+    projection is best-effort and runs after the L2/L3 transaction committed.
+
+    ``principal_id`` (the sole author of the evidence, if any) becomes the
+    rule's/decision's author. An unscoped learning would land in
+    ``system_global``: in team state that needs a team administrator behind the
+    evidence, otherwise the projection is skipped and the learning stays
+    repo-less memory only."""
     target = candidate.suggested_target
     if target not in ("rule", "decision") or not settings.MEMORY_ROUTE_TARGETS:
         return None
+    if repo_scope is None and not await _principal_may_write_system_global(principal_id, team_state):
+        logger.info(
+            "Learning %s not projected to system_global %s: principal %s is not a team administrator",
+            learning_id, target, principal_id,
+        )
+        return {"target": target, "skipped": "system_global requires a team administrator"}
     title = " ".join(candidate.statement.split())[:120]
     if target == "rule":
         from brain.memory.rule_store import RuleStore
@@ -664,6 +742,7 @@ async def _route_to_normative_store(
             severity=candidate.severity,
             status="active",
             applies_to={"source": "memory_consolidation", "learning_id": learning_id},
+            author_principal_id=principal_id,
         )
         return {"target": "rule", "id": rule_id}
     if repo_scope is None:
@@ -677,6 +756,7 @@ async def _route_to_normative_store(
         repo_path=repo_scope,
         description=candidate.statement,
         reason=f"Consolidated from {len(candidate.evidence)} L1 event(s); learning {learning_id}",
+        author_principal_id=principal_id,
     )
     return {"target": "decision", "id": decision_id}
 
@@ -687,13 +767,17 @@ async def _persist_cluster(
     gate: GateResult,
     run_id: str,
     repo_scope: Optional[str] = None,
+    team_state: str = "solo",
 ) -> Dict[str, Any]:
     """Write one L2 episode, its L1 ledger rows and (if promoted) its L3 learning in one transaction.
 
     PROMOTE/SUPERSEDE also mark the superseded learnings; LINK_DUPLICATE
     reinforces the known learning (confidence + evidence) in the same transaction.
+    The episode and learning are attributed to the sole principal behind the
+    evidence (None when the evidence is mixed or unattributed).
     """
     embedding = await _episode_embedding(candidate.statement)
+    author_id = sole_principal(candidate.evidence)
     async with async_session_factory() as session:
         async with session.begin():
             episode = MemoryEpisode(
@@ -707,6 +791,8 @@ async def _persist_cluster(
                 supersedes_learning_ids=list(gate.supersedes) or None,
                 embedding=embedding,
                 repo_scope=normalize_repo_scope(repo_scope),
+                author_principal_id=author_id,
+                updated_by_principal_id=author_id,
             )
             session.add(episode)
             await session.flush()
@@ -721,10 +807,12 @@ async def _persist_cluster(
                     repo_scope=episode.repo_scope,
                     promoted_from=run_id,
                     session=session,
+                    author_principal_id=author_id,
                 )
                 episode.promoted_to_learning_id = learning_id
                 for old_id in gate.supersedes:
-                    await LearningStore.supersede(old_id, learning_id, session=session)
+                    await LearningStore.supersede(old_id, learning_id, session=session,
+                                                  updated_by_principal_id=author_id)
             elif gate.outcome == GateOutcome.LINK_DUPLICATE and gate.duplicate_of is not None:
                 await LearningStore.reinforce(
                     gate.duplicate_of,
@@ -739,7 +827,9 @@ async def _persist_cluster(
             scope = episode.repo_scope
     if learning_id is not None:
         try:
-            routed = await _route_to_normative_store(candidate, learning_id, scope)
+            routed = await _route_to_normative_store(
+                candidate, learning_id, scope, principal_id=author_id, team_state=team_state,
+            )
         except Exception as exc:
             logger.warning("Normative routing of learning %s failed (learning kept): %s", learning_id, exc)
             routed = None
@@ -773,6 +863,8 @@ async def _run_consolidation_unlocked(
     if not events:
         await _attach_run_tail(report, dry_run=dry_run)
         return report
+    team_state = await _memory_team_state()
+    report["team_state"] = team_state
     for cluster in await cluster_l1_events(events):
         candidate = await distill_candidate(cluster)
         report["candidates"] += 1
@@ -780,6 +872,7 @@ async def _run_consolidation_unlocked(
             candidate,
             require_approval=require_approval,
             repo_scope=_cluster_repo_scope(cluster, repo_by_event),
+            team_state=team_state,
         )
         entry: Dict[str, Any] = {"statement": candidate.statement, "reasons": gate.reasons}
         if gate.duplicate_of is not None:
@@ -792,6 +885,7 @@ async def _run_consolidation_unlocked(
                     await _persist_cluster(
                         cluster, candidate, gate, run_id,
                         repo_scope=_cluster_repo_scope(cluster, repo_by_event),
+                        team_state=team_state,
                     )
                 )
             except Exception as exc:
@@ -856,7 +950,26 @@ async def _attach_run_tail(report: Dict[str, Any], *, dry_run: bool) -> None:
         report["skills"] = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
 
 
-async def _decide_pending_episode(episode_id: int, *, approve: bool, reason: Optional[str]) -> Dict[str, Any]:
+async def _episode_evidence(session, episode: MemoryEpisode) -> List[Dict[str, Any]]:
+    """Re-read the episode's L1 events so the evidence refs carry their authors."""
+    event_ids = [int(event_id) for event_id in episode.source_event_ids or []]
+    if not event_ids:
+        return []
+    events = (await session.execute(
+        select(AgentTaskEvent).where(AgentTaskEvent.id.in_(event_ids))
+    )).scalars().all()
+    by_id = {event.id: _evidence_ref(event) for event in events}
+    return [by_id.get(event_id, {"event_id": event_id}) for event_id in event_ids]
+
+
+async def _decide_pending_episode(
+    episode_id: int,
+    *,
+    approve: bool,
+    reason: Optional[str],
+    principal_id: Optional[int] = None,
+    team_state: Optional[str] = None,
+) -> Dict[str, Any]:
     async with async_session_factory() as session:
         async with session.begin():
             episode = (
@@ -868,26 +981,46 @@ async def _decide_pending_episode(episode_id: int, *, approve: bool, reason: Opt
                 raise LookupError(f"Episode {episode_id} not found")
             if episode.status != "pending":
                 raise EpisodeStateError(f"Episode {episode_id} is {episode.status}, not pending")
+            evidence = await _episode_evidence(session, episode)
+            authors = distinct_principals(evidence)
+            if episode.author_principal_id is not None:
+                authors.add(int(episode.author_principal_id))
+            # The human confirmation step exists so that someone other than the
+            # claimant checks the claim: in team state the evidence's author may
+            # not approve it. Solo state is a team of one and keeps self-approval.
+            if approve and team_state == "team" and principal_id is not None and principal_id in authors:
+                raise SelfApprovalError(
+                    f"Episode {episode_id} rests on evidence from principal {principal_id}; "
+                    "another team member must approve it"
+                )
             note = f"{'approved' if approve else 'rejected'} by human" + (f": {reason}" if reason else "")
             episode.gate_reasons = [*(episode.gate_reasons or []), note]
+            if principal_id is not None:
+                episode.updated_by_principal_id = principal_id
             learning_id = None
             superseded: List[int] = []
             if approve:
+                author_id = episode.author_principal_id
+                if author_id is None:
+                    author_id = sole_principal(evidence)
                 learning_id = await LearningStore.add_learning(
                     statement=episode.distilled_summary,
                     category=episode.topic,
                     confidence=episode.confidence,
-                    evidence=[{"event_id": event_id} for event_id in episode.source_event_ids or []],
+                    evidence=evidence,
                     repo_scope=episode.repo_scope,
                     promoted_from=f"approval:episode-{episode.id}",
                     session=session,
+                    author_principal_id=author_id,
+                    updated_by_principal_id=principal_id if principal_id is not None else author_id,
                 )
                 episode.status = "promoted"
                 episode.promoted_to_learning_id = learning_id
                 # A human approving a G3 correction also retires what it corrects.
                 for old_id in episode.supersedes_learning_ids or []:
                     try:
-                        await LearningStore.supersede(int(old_id), learning_id, session=session)
+                        await LearningStore.supersede(int(old_id), learning_id, session=session,
+                                                      updated_by_principal_id=principal_id)
                         superseded.append(int(old_id))
                     except LookupError:
                         continue
@@ -899,11 +1032,30 @@ async def _decide_pending_episode(episode_id: int, *, approve: bool, reason: Opt
             return result
 
 
-async def approve_episode(episode_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
-    """Promote a pending (G4 needs_approval) L2 episode to an L3 learning."""
-    return await _decide_pending_episode(episode_id, approve=True, reason=reason)
+async def approve_episode(
+    episode_id: int,
+    reason: Optional[str] = None,
+    *,
+    principal_id: Optional[int] = None,
+    team_state: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Promote a pending (G4 needs_approval) L2 episode to an L3 learning.
+
+    ``principal_id`` is recorded as the approver; in team state it must not be
+    an author of the evidence (``SelfApprovalError``)."""
+    return await _decide_pending_episode(
+        episode_id, approve=True, reason=reason, principal_id=principal_id, team_state=team_state,
+    )
 
 
-async def reject_episode(episode_id: int, reason: Optional[str] = None) -> Dict[str, Any]:
+async def reject_episode(
+    episode_id: int,
+    reason: Optional[str] = None,
+    *,
+    principal_id: Optional[int] = None,
+    team_state: Optional[str] = None,
+) -> Dict[str, Any]:
     """Reject a pending L2 episode; its L1 events stay consumed."""
-    return await _decide_pending_episode(episode_id, approve=False, reason=reason)
+    return await _decide_pending_episode(
+        episode_id, approve=False, reason=reason, principal_id=principal_id, team_state=team_state,
+    )

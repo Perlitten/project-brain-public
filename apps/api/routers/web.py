@@ -991,6 +991,9 @@ async def _repository_freshness(record: Repository) -> dict[str, Any]:
         "indexed_commit": None,
         "head_commit": None,
         "commits_behind": None,
+        "origin_ref": None,
+        "origin_head": None,
+        "commits_behind_origin": None,
         "status": None,
         "note": None,
         "last_indexed_at": None,
@@ -1004,6 +1007,9 @@ async def _repository_freshness(record: Repository) -> dict[str, Any]:
     facts["indexed_commit"] = freshness.get("indexed_commit")
     facts["head_commit"] = freshness.get("source_head_commit")
     facts["commits_behind"] = _as_int(freshness.get("commits_behind"))
+    facts["origin_ref"] = freshness.get("origin_ref")
+    facts["origin_head"] = freshness.get("origin_head")
+    facts["commits_behind_origin"] = _as_int(freshness.get("commits_behind_origin"))
     facts["status"] = freshness.get("status")
     facts["note"] = freshness.get("note")
     last = freshness.get("last_indexed_at")

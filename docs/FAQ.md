@@ -36,6 +36,13 @@ later runs re-read only what changed. Brain indexes committed source only: if a 
 commit your source edits first. Ignored build output such as `node_modules` and
 `.next` does not count, so do not delete it to make re-indexing work.
 
+`/repositories` reports freshness against `origin` as well as against the
+checkout: `origin_head` and `commits_behind_origin` (from the local
+remote-tracking ref; set `BRAIN_FRESHNESS_LS_REMOTE=true` to ask the remote).
+A reindex that names a commit, as the post-merge webhook does, fetches `origin`
+and moves the checkout to it first (`BRAIN_WEBHOOK_FETCH_SOURCE`, default
+`true`); a read-only or dirty checkout is reported, never changed.
+
 On unreleased `main`, `BRAIN_STALE_CONTEXT_POLICY=warn_and_serve` is the default:
 runtime context reports a freshness warning, schedules a throttled reindex and
 uses bounded current source slices for changed candidates. `strict_block` restores

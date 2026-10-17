@@ -345,6 +345,10 @@ async def test_decision_store_methods():
 
 @pytest.mark.asyncio
 async def test_decision_store_updates_existing_normalized_title():
+    """A re-post of an existing title+scope supersedes the canonical row instead of
+    overwriting it: the old content moves into a history row (``status="superseded"``,
+    ``superseded_by_id`` -> canonical id), the canonical row keeps its id and date,
+    takes the new content and bumps ``version``."""
     existing = MagicMock(
         id=7,
         title="Canonical decision",
@@ -357,6 +361,11 @@ async def test_decision_store_updates_existing_normalized_title():
         affected_modules=None,
         affected_files=None,
         repo_path="/indexed/docs-site",
+        version=1,
+        supersedes_id=None,
+        author_principal_id=4,
+        updated_by_principal_id=4,
+        created_at=datetime.datetime(2026, 6, 1, 12, 0),
     )
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = existing
@@ -375,15 +384,29 @@ async def test_decision_store_updates_existing_normalized_title():
             repo_path="/indexed/docs-site/",
             description="Current description",
             status="superseded",
+            author_principal_id=9,
         )
 
+    # The canonical row is stable and carries the new content.
     assert decision_id == 7
     assert existing.title == "Canonical decision"
     assert existing.description == "Current description"
     assert existing.status == "superseded"
     assert existing.repo_path == "/indexed/docs-site"
     assert existing.date == datetime.date(2026, 6, 1)
-    mock_session.add.assert_not_called()
+    assert existing.version == 2
+    assert existing.author_principal_id == 4
+    assert existing.updated_by_principal_id == 9
+    # The previous content survives as exactly one history row pointing back at it.
+    mock_session.add.assert_called_once()
+    history = mock_session.add.call_args.args[0]
+    assert history.status == "superseded"
+    assert history.superseded_by_id == 7
+    assert history.title == "Canonical decision"
+    assert history.description == "Old description"
+    assert history.version == 1
+    assert history.author_principal_id == 4
+    assert existing.supersedes_id is history.id
     mock_session.commit.assert_awaited_once()
     mock_session.refresh.assert_awaited_once_with(existing)
 

@@ -23,7 +23,7 @@ and the ADR says plainly that green CI is not team readiness.
 | M1 | Verified identity, membership, centralized authorization, provisioning, invitations, restore fence | Core implemented; known authorization gaps remain; not deployed |
 | M2 | Bounded real executors, tool/secret/egress/budget capabilities, revocation checkpoints | Not started; execution is denied |
 | M3 | Subtasks, coordinator, overlap detection, integration queue | Not started |
-| M4 | Governed versioned memory, independent review | Not started |
+| M4 | Governed versioned memory, independent review | In progress: author/updated_by on every memory object, supersede + `expected_version` CAS for decisions and rules, team-admin gate for `system_global`, G2 needs two distinct principals in team state, no self-approval (branch `memory/provenance-supersede`) |
 | M5 | Invitation/board/conflict UX, cloud packaging, upgrade/restore diagnostics | Not started (only the admin Team page exists) |
 | M6 | Pilot with 3–5 people on two projects | Not started |
 
@@ -45,8 +45,36 @@ and the ADR says plainly that green CI is not team readiness.
 | Member keys get `jobs:write` (queueing still needs Contributor or Reviewer on the repository); team-admin keys also get `setup:write` and `operations:write`, so "Run now", setup and retries work from the dashboard. Keys minted before this change lack these scopes and must be re-issued | this branch |
 | Dashboard for non-admin members: navigation and pages limited to projects they have a role on; Settings, Setup, Quality, Logs, Runs, Reranker, Admin and reports show "Team admins only"; no setup links | this branch |
 | Dashboard shows "unavailable" instead of a false "none" when Brain does not answer (jobs, findings, memory, packs, runs, MCP tools, graph, team roles) | this branch |
+| Revocation hardening (below) | this PR (`team/revocation-hardening`) |
 
-Tests: 12 `tests/test_team_*.py` files, about 90 test functions, plus the
+### Revocation hardening
+
+- **Revoking a member revokes everything acting for it**, in the same
+  transaction, on every path (`DELETE /team/projects/members/{id}`,
+  `brain team member revoke`, invitation revoke with `revoke_member`): all of
+  the principal's credentials (named keys and OAuth access tokens), its OAuth
+  refresh tokens, and the runs it initiated together with their run
+  credentials (`brain/team/provisioning.py::revoke_principal_access`).
+- **No automatic return to solo.** Revoking the last member keeps
+  `team_state() == "team"`, so a surviving key never becomes the implicit
+  administrator. Only `brain team dissolve --yes` records `teams.dissolved_at`
+  and returns to solo; it is refused while any member is live, and a member
+  added later turns the team back on.
+- **Admin credential minting** (`/admin/principals…`) refuses `*` (HTTP 422),
+  refuses scopes the caller does not hold (403), and in team state refuses
+  minting for another team member (403); member keys come from invitations or
+  the operator CLI.
+- **Admin disable/revoke** in team state refuses disabling one's own principal
+  or revoking the credential in use (409), and refuses any change that would
+  leave no live administrator credential (409, team row locked).
+- **Dashboard password login** (`GET /api/web-login`, `POST /api/web-login/verify`)
+  needs the team administrator in team state, like the write routes. The
+  dashboard's password sign-in therefore works in team state only when its
+  server key is an administrator credential; members sign in with their own key.
+- **Telegram bridge**: in team state an `app: …` prefix or project slug only
+  resolves to repositories the poller's own credential may read.
+
+Tests: 13 `tests/test_team_*.py` files, about 100 test functions, plus the
 PostgreSQL-only restore and concurrency cases that CI runs.
 
 ## Known gaps (checked against `main` on 2026-10-17)
@@ -66,6 +94,10 @@ PostgreSQL-only restore and concurrency cases that CI runs.
 - **`/late-interaction/status` returns 500** (not 4xx) when a repository path is
   outside the allowed roots; the dashboard's Reranker page then shows
   "unavailable".
+- **Index freshness follows origin only through the webhook.** The post-merge
+  reindex now fetches `origin` and checks out the delivered commit
+  (`BRAIN_WEBHOOK_FETCH_SOURCE`), and `/repositories` reports
+  `commits_behind_origin`; a read-only mount still has to be updated on the host.
 
 ## Next steps, in order
 

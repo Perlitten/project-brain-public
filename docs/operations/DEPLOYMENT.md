@@ -263,6 +263,11 @@ curl -fsS -H "X-API-Key: $PROJECT_BRAIN_API_KEY" "http://127.0.0.1:${BRAIN_API_P
 Post-merge reindex: set the GitHub repo variable `PROJECT_BRAIN_WEBHOOK_URL` to
 `https://<BRAIN_PUBLIC_HOST>/webhooks/git-merge` and the secret
 `PROJECT_BRAIN_WEBHOOK_TOKEN` to the value in `.env`.
+The job fetches `origin` and checks out the delivered commit before indexing
+(`BRAIN_WEBHOOK_FETCH_SOURCE=true` by default), so the indexed repository must
+be a writable git checkout with an `origin` remote. A read-only mount such as
+`/repo:ro` is left untouched and the job fails with a clear error; update that
+checkout on the host instead, or mount it writable.
 
 ## 6. Index the Target Repo
 
