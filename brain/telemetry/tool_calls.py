@@ -5,10 +5,10 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select
 
 from brain.database.models import McpToolCall
 from brain.database.session import async_session_factory
@@ -36,7 +36,7 @@ async def prune_tool_calls(retention_days: int) -> int:
     async with async_session_factory() as session:
         result = await session.execute(delete(McpToolCall).where(McpToolCall.created_at < cutoff))
         await session.commit()
-    return int(result.rowcount or 0)
+    return int(cast(CursorResult[Any], result).rowcount or 0)
 
 
 def _ranked(values: list[float], percentile: float) -> float | None:
