@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
 from apps.api.auth import require_api_key, require_principal, require_scope
+from apps.api.repo_paths import repo_path_errors_as_400
 from apps.api.schemas import FeatureCreate
 from apps.api.team_access import repository_authority, team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
@@ -40,7 +41,8 @@ async def list_features():
 @router.post("/features", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def create_feature(body: FeatureCreate, principal: ResolvedPrincipal = Depends(require_principal)):
     try:
-        repo_path = resolve_repo_path(body.repo_path) if body.repo_path else get_repo_root()
+        with repo_path_errors_as_400():
+            repo_path = resolve_repo_path(body.repo_path) if body.repo_path else get_repo_root()
         # Writing knowledge into one repository's graph: a contributor on its project.
         await repository_authority(principal, Permission.PROPOSE, repo_path=str(repo_path))
         repository = await require_repository_by_path(repo_path)

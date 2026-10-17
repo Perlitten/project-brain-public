@@ -11,6 +11,7 @@ from sqlalchemy import func, select, update
 from typer.testing import CliRunner
 
 from apps.api.audit_middleware import AuditLogMiddleware
+from apps.api.invitation_throttle import InProcessWindow
 from apps.api.routers import team_invitations
 from apps.cli.commands import team as team_commands
 from apps.cli.main import cli
@@ -32,10 +33,8 @@ LEGACY = {"X-API-Key": "fixture-legacy"}
 
 
 @pytest.fixture(autouse=True)
-def _fresh_rate_limit():
-    team_invitations._attempts.clear()
-    yield
-    team_invitations._attempts.clear()
+def _fresh_rate_limit(monkeypatch):
+    monkeypatch.setattr(team_invitations, "_throttle", InProcessWindow())
 
 
 def invite_app(factory, monkeypatch):
@@ -281,6 +280,7 @@ async def test_accept_is_rate_limited_per_client(team_db, monkeypatch):
             assert (await accept(client, "pbi_" + "y" * 43)).status_code == 403
         throttled = await accept(client, token)
         assert throttled.status_code == 429
+        assert 1 <= int(throttled.headers["Retry-After"]) <= team_invitations.ACCEPT_WINDOW_S
     async with factory() as session:
         assert (await session.execute(select(TeamInvitation.accepted_at))).scalar_one() is None
 
