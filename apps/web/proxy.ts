@@ -3,6 +3,7 @@ import { acceptInvitation } from "./lib/invite-accept";
 import { invitePage, type InvitePageInput } from "./lib/invite-page";
 import { INVITE_PATH } from "./lib/invitations";
 import { loginPage } from "./lib/login-page";
+import { OIDC_CALLBACK, OIDC_START, oidcCallback, oidcStart, ssoHref, ssoOffered } from "./lib/oidc";
 import {
   MEMBER_COOKIE, MEMBER_MAX_AGE, SESSION_COOKIE, authorizeWebRequest, forgetLoginState, lockReason, loginState, memberFor, memberFrom,
   sessionFrom, signIn, signInMember, webAuthResponse,
@@ -16,6 +17,8 @@ import {
 // (curl -u user:password).
 // In team state each member signs in with their own member key instead; the
 // sealed key rides in the pb_member cookie and every request re-checks it.
+// Members can also sign in through the team's identity provider (lib/oidc.ts,
+// /auth/oidc/start and /auth/oidc/callback) when the Brain offers SSO.
 
 const LOGIN = "/__login";
 const LOGOUT = "/__logout";
@@ -24,16 +27,21 @@ const MAX_AGE = 60 * 60 * 24 * 30;
 // Only same-site paths survive the round trip through the sign-in form.
 function safeNext(value: unknown) {
   if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return "/";
-  if (value.startsWith(LOGIN) || value.startsWith(LOGOUT)) return "/";
+  if (value.startsWith(LOGIN) || value.startsWith(LOGOUT) || value.startsWith("/auth/oidc")) return "/";
   return value;
 }
 
-function page(next: string, failed: boolean | "throttled", user = "", team = false) {
-  return new NextResponse(loginPage({ action: LOGIN, next, failed, user, team }), {
-    status: 401,
+async function page(next: string, failed: boolean | "throttled", user = "", team = false, message?: string, status = 401) {
+  // The SSO button is offered only to a team whose Brain has single sign-on on.
+  const sso = team && (await ssoOffered()) ? ssoHref(next) : undefined;
+  return new NextResponse(loginPage({ action: LOGIN, next, failed, user, team, sso, message }), {
+    status,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
 }
+
+// A failed single sign-on lands on the member sign-in page with the reason.
+const ssoFailure = (next: string, message: string, status: number) => page(next, true, "", true, message, status);
 
 // The member session, set by the sign-in form and by an accepted invitation alike.
 function setMemberCookie(res: NextResponse, req: NextRequest, cookie: string) {
@@ -85,6 +93,10 @@ async function gate(req: NextRequest): Promise<Response> {
     return res;
   }
 
+  // Single sign-on runs before authorization: it is how a signed-out member gets in.
+  if (pathname === OIDC_START) return oidcStart(req, safeNext, ssoFailure);
+  if (pathname === OIDC_CALLBACK) return oidcCallback(req, safeNext, ssoFailure);
+
   if (pathname === INVITE_PATH) return invite(req);
 
   if (pathname === LOGIN && req.method === "POST") {
@@ -128,7 +140,7 @@ async function gate(req: NextRequest): Promise<Response> {
   if (!wantsPage) return webAuthResponse(401);
   const team = (await loginState()).kind === "team";
   // A cookie that no longer opens (revoked, expired, re-keyed) is cleared so the browser stops sending it.
-  const res = page(pathname === LOGIN ? "/" : safeNext(pathname + search), false, "", team);
+  const res = await page(pathname === LOGIN ? "/" : safeNext(pathname + search), false, "", team);
   if (memberFrom(cookie)) res.cookies.delete(MEMBER_COOKIE);
   return res;
 }

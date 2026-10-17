@@ -76,8 +76,8 @@ denial of service between members, and anything a team administrator can do by
 design, are out of scope. Gaps already listed on the status page are known.
 
 **An invitation token is a bearer secret.** Whoever first presents an unexpired
-`pbi_` token becomes the member it was issued for; no email or identity
-provider is checked. Brain stores only its SHA-256 hash and shows it once.
+`pbi_` token becomes the member it was issued for; unless single sign-on is
+required, no email or identity provider is checked. Brain stores only its SHA-256 hash and shows it once.
 Deliver it privately, keep the expiry short, and revoke it
 (`brain team invite revoke <id>`) if it may have leaked. The same applies to
 every `pbk_` member key.
@@ -94,3 +94,15 @@ their credentials or disable their principal (dashboard **Settings → Access**,
 For a member who joined by invitation, `brain team invite revoke <id>
 --revoke-member` revokes the membership, every project role and every
 credential in one step.
+
+**Single sign-on (OIDC) is in scope when enabled.** It is off by default
+([TEAM_SSO.md](docs/operations/TEAM_SSO.md)). With it on, these are
+vulnerabilities: a session or invitation acceptance obtained with an ID token
+that fails signature, issuer, audience, expiry or nonce validation, or whose
+email is not verified or does not match the invitation; an authorization code
+redeemed from a browser other than the one that started the flow; a dashboard
+session for an IdP account that is not bound to an active member, or for a
+revoked member. Weaknesses of the identity provider itself, an operator binding
+the wrong subject (`brain team member sso-bind`), and the limitations listed on
+that page (single IdP, a throttle shared by all dashboard users, no revocation of open sessions on
+unbind, cookie planting from a sibling host) are out of scope.

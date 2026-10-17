@@ -81,8 +81,10 @@ Human credentials authenticate a server-owned Principal linked to a verified
 team identity. Verification must have issuer/subject/provenance; `kind=human`
 alone is insufficient. Initial provisioning is an offline trusted operator
 action, NOT self-registration or a claim of deployed OIDC. Single-use
-invitations through the API and CLI landed in M1 (2026-10-16); SSO/OIDC and
-the invitation UX are M5.
+invitations through the API and CLI landed in M1 (2026-10-16); optional generic
+OIDC single sign-on (invitation acceptance bound to the invited email, member
+dashboard sign-in, no auto-provisioning) landed 2026-10-18
+([TEAM_SSO.md](../operations/TEAM_SSO.md)); the invitation UX is M5.
 Run credentials identify a particular run and store only hashes. Git/provider
 secrets stay server-held and are not copied into run records or client payloads.
 

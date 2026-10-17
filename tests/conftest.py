@@ -23,6 +23,9 @@ _NEUTRAL_ENV = {
     "BRAIN_PUBLIC_HOST": "",
     "BRAIN_MCP_CONFIRM_WRITES": "",
     "BRAIN_TEAM_MODE": "false",
+    # Single sign-on changes invitation acceptance; tests that need it patch settings.
+    "BRAIN_OIDC_ENABLED": "false",
+    "BRAIN_OIDC_REQUIRE_FOR_INVITATIONS": "false",
     "OPENAI_API_KEY": "",
     "ANTHROPIC_API_KEY": "",
     "GOOGLE_API_KEY": "",

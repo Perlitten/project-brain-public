@@ -20,7 +20,7 @@ import typer
 
 from brain.config.settings import settings
 from brain.database.session import async_session_factory, init_db
-from brain.team import invitations, provisioning, restore_fence
+from brain.team import invitations, oidc, provisioning, restore_fence
 from brain.team.authorization import TeamConflict
 from brain.team.provisioning import TeamNotFound
 
@@ -171,6 +171,51 @@ def list_members_cmd(
     _emit(_run(run()))
 
 
+@member_cli.command(name="sso-bind")
+def sso_bind_cmd(
+    principal: str = typer.Option(..., "--principal", help="Principal id or name of an active member."),
+    subject: str = typer.Option(..., "--subject", help="The member's subject (sub claim) at the identity provider."),
+    issuer: Optional[str] = typer.Option(None, "--issuer", help="Identity provider issuer; default: BRAIN_OIDC_ISSUER."),
+    email: Optional[str] = typer.Option(None, "--email", help="Recorded for reference; not checked."),
+):
+    """Let an existing member sign in to the dashboard with single sign-on (docs/operations/TEAM_SSO.md)."""
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            identity = await provisioning.resolve_principal(session, principal)
+            return await oidc.bind_identity(session, principal_name=identity.name, subject=subject, issuer=issuer,
+                                            email=email, bound_by=CLI_OPERATOR)
+
+    _emit(_run(run()))
+
+
+@member_cli.command(name="sso-unbind")
+def sso_unbind_cmd(
+    principal: str = typer.Option(..., "--principal", help="Principal id or name."),
+    issuer: Optional[str] = typer.Option(None, "--issuer", help="Identity provider issuer; default: BRAIN_OIDC_ISSUER."),
+):
+    """Remove a member's single sign-on binding (existing dashboard sessions expire on their own or on revoke)."""
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            identity = await provisioning.resolve_principal(session, principal)
+            return {"principal": identity.name,
+                    "removed": await oidc.unbind_identity(session, principal_name=identity.name, issuer=issuer)}
+
+    _emit(_run(run()))
+
+
+@member_cli.command(name="sso-list")
+def sso_list_cmd():
+    """List single sign-on bindings (issuer, subject, member)."""
+
+    async def run():
+        async with async_session_factory() as session:
+            return await oidc.list_identities(session)
+
+    _emit(_run(run()))
+
+
 @repo_cli.command(name="attach")
 def attach_repo_cmd(
     project: str = typer.Option(..., "--project", help="Project id or name."),
@@ -213,7 +258,10 @@ def create_invite_cmd(
     project: Optional[list[str]] = typer.Option(None, "--project", help="Grant a role in this project (repeatable)."),
     role: str = typer.Option("contributor", "--role", help="Project role: reader, contributor or reviewer."),
     admin: bool = typer.Option(False, "--admin", help="The invitee administers the team."),
-    email: Optional[str] = typer.Option(None, "--email", help="Recorded for the operator; not verified."),
+    email: Optional[str] = typer.Option(None, "--email",
+                                        help="Invitee email. Checked (case-insensitive) when the invitation is "
+                                             "accepted through single sign-on; required when "
+                                             "BRAIN_OIDC_REQUIRE_FOR_INVITATIONS is on."),
     name: Optional[str] = typer.Option(None, "--name", help="Principal name of the invitee; default: generated."),
     expires_hours: int = typer.Option(invitations.DEFAULT_TTL_HOURS, "--expires-hours",
                                       help=f"Hours until the token expires (1-{invitations.MAX_TTL_HOURS})."),

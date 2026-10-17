@@ -116,6 +116,51 @@ class TeamInvitation(Base):
     accepted_credential_id: Mapped[int | None] = mapped_column(ForeignKey("api_credentials.id"), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
     revoked_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    # Set when the invitation was accepted through OIDC single sign-on: the
+    # identity provider vouched for ``email`` and these identify the account.
+    verified_issuer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    verified_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class TeamIdentity(Base):
+    """An external (OIDC) identity bound to a team member: who may sign in with SSO as that member.
+
+    Written when an invitation is accepted through SSO, or by an operator
+    (``brain team member sso-bind``) for a member who joined another way. One
+    identity maps to exactly one member; there is no auto-provisioning, so an
+    identity without a row here cannot sign in."""
+    __tablename__ = "team_identities"
+    __table_args__ = (UniqueConstraint("issuer", "subject", name="uq_team_identities_issuer_subject"),
+                      UniqueConstraint("principal_id", "issuer", name="uq_team_identities_principal_issuer"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), nullable=False)
+    principal_id: Mapped[int] = mapped_column(ForeignKey("principals.id"), nullable=False, index=True)
+    issuer: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    invitation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("team_invitations.id"), nullable=True)
+    bound_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+
+
+class TeamOidcFlow(Base):
+    """One pending OIDC authorization request (single use, short-lived).
+
+    Only hashes of the ``state`` value and of the browser binding secret are
+    stored; the nonce and the PKCE verifier stay server-side and are spent with
+    the row."""
+    __tablename__ = "team_oidc_flows"
+    __table_args__ = (CheckConstraint("purpose IN ('signin','invitation')", name="ck_team_oidc_flow_purpose"),)
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    binding_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    nonce: Mapped[str] = mapped_column(String(128), nullable=False)
+    code_verifier: Mapped[str] = mapped_column(String(128), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False)
+    invitation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("team_invitations.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
 
 
 class AgentRun(Base):

@@ -13,9 +13,20 @@ A member created by an invitation is verified because they presented an
 unexpired, unrevoked, single-use token that an administrator or trusted operator
 issued for an identity the issuer chose (principal name, optional email, project
 roles). The member row records issuer `brain-invitation` and subject
-`invitation:<id>`. This is **not** OIDC, SSO or email ownership proof: the email
-is recorded for the operator and never checked. Whoever holds the token becomes
-the member, so deliver it over a private channel.
+`invitation:<id>`. Token-only acceptance is **not** email ownership proof: the
+email is recorded for the operator and not checked. Whoever holds the token
+becomes the member, so deliver it over a private channel.
+
+When [single sign-on](TEAM_SSO.md) is enabled, an invitation that names an email
+can instead be accepted through the identity provider
+(`https://<dashboard>/auth/oidc/start?invitation=pbi_...`). Brain then requires
+the provider to vouch for that exact email (case-insensitive, `email_verified`
+true), records the invitation as verified via `oidc` (`verified_via`,
+`verified_issuer`, `verified_subject` in the invitation JSON), uses the
+provider's issuer and subject as the member's verification, and binds the
+provider account so the member can later **Sign in with SSO**. With
+`BRAIN_OIDC_REQUIRE_FOR_INVITATIONS=true`, token-only acceptance is refused
+(HTTP 409) and invitations must name an email.
 
 ## Lifecycle
 
@@ -80,7 +91,10 @@ the project's policy; `is_admin` / `--admin` grants team administration.
 
 The invitee redeems by opening that link on the dashboard (`/invite`: it shows the
 member key once and signs them in), with `brain team invite accept --api-url <https URL>`,
-or with `POST /team/invitations/accept` and `{"token": "pbi_..."}`. Through the
+or with `POST /team/invitations/accept` and `{"token": "pbi_..."}`. When single
+sign-on is on and the invitation names an email, they can instead open
+`https://<dashboard>/auth/oidc/start?invitation=pbi_...` (see
+[TEAM_SSO.md](TEAM_SSO.md)). Through the
 dashboard every invitee reaches the API from the dashboard server's IP, so they
 share one throttle budget of 10 attempts per 5 minutes. No credential is
 needed for that call. The CLI accepts plain `http` only to loopback. A retry with
@@ -124,6 +138,7 @@ recorded state.
 
 - No MCP tools: tokens and member credentials are shown once and must not end
   up in agent transcripts. Use the CLI or the API.
-- No email delivery, self-registration, SSO/OIDC or web UI for invitations.
+- No email delivery or self-registration. Single sign-on is optional and off by
+  default ([TEAM_SSO.md](TEAM_SSO.md)); without it the email is not checked.
 - The token is a bearer secret until redeemed or expired; revoke it if it may
   have leaked.
