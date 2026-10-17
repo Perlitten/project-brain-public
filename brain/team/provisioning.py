@@ -29,6 +29,18 @@ CREDENTIAL_ISSUER = "brain-credential"
 # Issuer for members verified against the web UI login (approver subject ``web:<user>``).
 WEB_LOGIN_ISSUER = "brain-web-login"
 ADMIN_SCOPE = "team:admin"
+# What a member's own dashboard and MCP client read, plus recording decisions and rules and queuing
+# jobs. Project roles still decide every repository (a job needs the run.request permission on its
+# repository; one without a repository needs a team administrator); kept equal to DASHBOARD_SCOPES in
+# apps/web/lib/team-scopes.ts.
+MEMBER_CORE_SCOPES = frozenset({
+    "control:read", "core:write", "coupling:read", "drift:read", "freshness:read", "graph:read", "harness:read",
+    "impact:read", "jobs:write", "ledger:read", "operations:read", "portfolio:read", "setup:read", "workspace:read",
+})
+# Extra for team admins: run the Team page (members, roles), issue member keys, and use the
+# administrative dashboard screens (Setup, Settings, Access, job retries). Those routes also require
+# a live team administrator, so the scopes alone grant nothing to a member who is not one.
+ADMIN_EXTRA_SCOPES = frozenset({"operations:write", "principals:read", "principals:write", "setup:write", ADMIN_SCOPE})
 
 
 class TeamNotFound(LookupError):
@@ -36,10 +48,14 @@ class TeamNotFound(LookupError):
 
 
 def member_scopes(is_admin: bool = False) -> list[str]:
-    """Scopes a human member credential needs (``has_scope`` has no prefix wildcard)."""
+    """Scopes a human member credential needs (``has_scope`` has no prefix wildcard).
+
+    The same set the web Team page mints (``memberKeyScopes``), so a key from the CLI or an
+    invitation opens the dashboard and the MCP resources as well as the ``team:*`` routes."""
     scopes = {f"team:{permission}" for role in ROLE_PERMISSIONS.values() for permission in role}
+    scopes |= MEMBER_CORE_SCOPES
     if is_admin:
-        scopes.add(ADMIN_SCOPE)
+        scopes |= ADMIN_EXTRA_SCOPES
     return sorted(scopes)
 
 

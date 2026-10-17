@@ -22,6 +22,7 @@ from brain.memory.provenance import MemoryWriteResult
 from brain.team import provisioning
 from brain.team.authorization import team_state
 from brain.team.models import TeamMember
+from brain.team.provisioning import member_scopes
 from brain.workers.scheduler import run_scheduler
 from tests.test_mcp_http import _free_port, _serve
 from tests.test_team_foundations import caller, create_task, task_payload, team_db as team_fixture
@@ -143,6 +144,53 @@ async def test_solo_personal_routes_work_with_shared_key_and_dev_open(team_db, m
     monkeypatch.setattr(settings, "ENVIRONMENT", "test")
     async with client_for(app) as client:
         assert (await client.get("/learnings", params={"repo_path": "/synthetic/A"})).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_team_admin_member_key_writes_global_decisions(team_db, monkeypatch):
+    """Real member keys carry no core:admin; in team state the team-administrator check is the memory admin role."""
+    factory, _, _ = team_db
+    membership_driven(monkeypatch)
+    async with factory() as session, session.begin():
+        for key, is_admin in (("fixture-4", True), ("fixture-2", False)):
+            await session.execute(update(ApiCredential).where(ApiCredential.key_hash == hash_credential(key))
+                                  .values(scopes=member_scopes(is_admin)))
+    app = personal_app(factory, monkeypatch)
+    add = core_memory.DecisionStore.record_decision
+    async with client_for(app) as client:
+        for repo_path in (None, "system_global", "SYSTEM_GLOBAL"):
+            assert (await client.post("/decisions", json=decision(repo_path), headers=ADMIN)).status_code == 200
+            assert add.call_args.kwargs["caller_role"] == "admin"
+        assert (await client.post("/decisions", json=decision(None), headers=CONTRIBUTOR)).status_code == 403
+        assert (await client.post("/decisions", json=decision("/synthetic/A"), headers=CONTRIBUTOR)).status_code == 200
+        assert add.call_args.kwargs["caller_role"] == "agent"
+    # Solo state keeps the scope rule: without core:admin a global decision is the agent role (the store refuses it).
+    await revoke_everyone(factory)
+    async with client_for(app) as client:
+        assert (await client.post("/decisions", json=decision(None), headers=CONTRIBUTOR)).status_code == 200
+        assert add.call_args.kwargs["caller_role"] == "agent"
+
+
+@pytest.mark.asyncio
+async def test_real_member_keys_queue_jobs_by_role_and_admin_keys_reach_admin_jobs(team_db, monkeypatch):
+    """Keys minted with member_scopes (dashboard, CLI, invitation) can use the dashboard's job buttons:
+    the role decides each repository, and a job without one still needs a team administrator."""
+    factory, _, _ = team_db
+    membership_driven(monkeypatch)
+    async with factory() as session, session.begin():
+        for key, is_admin in (("fixture-1", False), ("fixture-2", False), ("fixture-4", True)):
+            await session.execute(update(ApiCredential).where(ApiCredential.key_hash == hash_credential(key))
+                                  .values(scopes=member_scopes(is_admin)))
+    app = personal_app(factory, monkeypatch)
+    async with client_for(app) as client:
+        reindex_a = {"repo_path": "/synthetic/A"}
+        assert (await client.post("/jobs/reindex", json=reindex_a, headers=READER)).status_code == 403
+        assert (await client.post("/jobs/reindex", json=reindex_a, headers=CONTRIBUTOR)).status_code == 200
+        for headers, expected in ((CONTRIBUTOR, 403), (ADMIN, 200)):
+            assert (await client.post("/jobs/reindex", headers=headers)).status_code == expected
+    assert {"jobs:write"} <= set(member_scopes(False))
+    assert not {"setup:write", "operations:write"} & set(member_scopes(False))
+    assert {"setup:write", "operations:write"} <= set(member_scopes(True))
 
 
 @pytest.mark.asyncio

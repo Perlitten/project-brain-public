@@ -52,13 +52,15 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           current={tab}
           params={{ repo }}
         tabs={[
-          { id: "decisions", label: "Decisions", badge: decisionsResult.paging.total },
-          { id: "rules", label: "Rules", badge: rulesResult.paging.total },
+          { id: "decisions", label: "Decisions", badge: decisionsResult.available === false ? "—" : decisionsResult.paging.total },
+          { id: "rules", label: "Rules", badge: rulesResult.available === false ? "—" : rulesResult.paging.total },
         ]}
       />
       {tab === "decisions" ? (
         <section aria-label="Decisions">
-          {decisions.length === 0 && !hasQuery ? (
+          {decisionsResult.available === false ? (
+            <EmptyState title="Decisions unavailable" body="Brain didn’t return the recorded decisions just now. Reload in a moment." />
+          ) : decisions.length === 0 && !hasQuery ? (
             <EmptyState title="No decisions recorded" body="Nobody has recorded a decision yet. Agents and people can record one through Brain." />
           ) : (
           <ListFrame
@@ -87,10 +89,12 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           )}
         </section>
       ) : (
-        <Panel id="rules" title="Rules agents must follow" desc={`${blocking} blocking rule${blocking === 1 ? "" : "s"} on this page. ${usageTracked ? `Last 30 days: “Reached” counts the context packs a rule went into, “Caught” the reviews that cited it${unusedCount ? `; ${unusedCount} reached no agent at all` : ""}.` : "Nothing is recorded yet, so this page can’t say which rules reach agents."}`}
+        <Panel id="rules" title="Rules agents must follow" desc={rulesResult.available === false ? undefined : `${blocking} blocking rule${blocking === 1 ? "" : "s"} on this page. ${usageTracked ? `Last 30 days: “Reached” counts the context packs a rule went into, “Caught” the reviews that cited it${unusedCount ? `; ${unusedCount} reached no agent at all` : ""}.` : "Nothing is recorded yet, so this page can’t say which rules reach agents."}`}
           flush
         >
-          {rules.length === 0 && !hasQuery ? (
+          {rulesResult.available === false ? (
+            <EmptyState title="Rules unavailable" body="Brain didn’t return the recorded rules just now. Reload in a moment." />
+          ) : rules.length === 0 && !hasQuery ? (
             <EmptyState title="No rules yet" body="No active rules are recorded. Add one so agents’ changes are checked against it." />
           ) : (
           <Table

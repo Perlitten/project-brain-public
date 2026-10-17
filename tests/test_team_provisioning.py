@@ -1,6 +1,8 @@
 """Team provisioning: idempotent primitives, admin HTTP routes and the operator CLI."""
 import asyncio
 import json
+import re
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
@@ -272,3 +274,21 @@ def test_cli_refuses_lite_storage(monkeypatch):
     monkeypatch.setattr(settings, "BRAIN_STORAGE_MODE", "lite")
     result = runner.invoke(cli, ["team", "project", "list"])
     assert result.exit_code == 1 and "BRAIN_STORAGE_MODE=full" in result.output
+
+
+def _web_scope_list(source: str, name: str) -> set[str]:
+    match = re.search(rf"export const {name} = \[(.*?)\];", source, re.S)
+    assert match, name
+    return set(re.findall(r'"([^"]+)"', match.group(1)))
+
+
+@pytest.mark.parametrize("is_admin", [False, True])
+def test_member_scopes_match_the_web_team_page(is_admin):
+    """A key from the CLI or an invitation carries what the Team page mints (memberKeyScopes)."""
+    source = (Path(__file__).resolve().parents[1] / "apps/web/lib/team-scopes.ts").read_text(encoding="utf-8")
+    expected = _web_scope_list(source, "TEAM_ROLE_SCOPES") | _web_scope_list(source, "DASHBOARD_SCOPES")
+    if is_admin:
+        expected |= _web_scope_list(source, "TEAM_ADMIN_SCOPES")
+    scopes = provisioning.member_scopes(is_admin)
+    assert scopes == sorted(expected)
+    assert ("team:admin" in scopes, "principals:write" in scopes) == (is_admin, is_admin)

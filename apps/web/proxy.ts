@@ -6,7 +6,7 @@ import {
 } from "./lib/web-auth";
 
 // Who may enter is decided in lib/web-auth.ts (WEB_BASIC_AUTH, or the login
-// set on Settings → Sign-in; with neither, open on a loopback-only dashboard or
+// set on Settings → Access → Dashboard sign-in; with neither, open on a loopback-only dashboard or
 // with WEB_OPEN_MODE=true, locked everywhere else).
 // Browsers get a sign-in
 // page and a session cookie; scripts can still send HTTP Basic credentials

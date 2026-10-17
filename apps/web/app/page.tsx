@@ -6,6 +6,8 @@ import { RequestChart } from "@/components/RequestCharts";
 import { Chip, EmptyState, Meter, PageHead, Panel, type PageStatus } from "@/components/ui";
 import { dashboardPeriod, getAgentValue, getQualityEvidence, getRequestTelemetry, measuredNumber, measuredShare } from "@/lib/dashboard";
 import { dataSource, getCodeModules, getCorpus, getJobs, getRepositoryFeed } from "@/lib/data";
+import { scopeMemberToProject } from "@/lib/member-scope";
+import { restrictedMember } from "@/lib/team-session";
 import { repositoryStatus } from "@/lib/repository-status";
 import type { Tone } from "@/lib/types";
 import "./dashboard.css";
@@ -19,7 +21,9 @@ const severity: Record<Tone, number> = { bad: 3, warn: 2, info: 1, idle: 1, ok: 
 // what each project holds (memory rows), whether agents are using it (requests),
 // and what ran recently. Measurement caveats live in one disclosure at the end.
 export default async function Dashboard({ searchParams }: Props) {
-  const { repo: slug, period: inputPeriod } = await searchParams;
+  const query = await searchParams;
+  await scopeMemberToProject("/", query);
+  const { repo: slug, period: inputPeriod } = query;
   const period = dashboardPeriod(inputPeriod);
   const feed = await getRepositoryFeed();
   const repositories = feed.repositories;
@@ -27,7 +31,7 @@ export default async function Dashboard({ searchParams }: Props) {
   const projects = slug ? selected ? [selected] : [] : repositories;
   // The map describes one repository; cross-project totals remain in the rows.
   const mapRepository = selected ?? (dataSource === "demo" ? repositories.reduce((a, b) => ((b.behind ?? 0) > (a.behind ?? 0) ? b : a), repositories[0]) : undefined);
-  const [telemetry, worthData, snapshots, modules, evidence] = await Promise.all([
+  const [telemetry, worthData, snapshots, modules, evidence, member] = await Promise.all([
     getRequestTelemetry(period, slug ? selected?.id ?? 0 : undefined),
     getAgentValue(period, slug ? selected?.id ?? 0 : undefined),
     Promise.all(projects.map(async (repo) => {
@@ -36,8 +40,12 @@ export default async function Dashboard({ searchParams }: Props) {
     })),
     mapRepository ? getCodeModules(mapRepository.slug) : Promise.resolve([]),
     getQualityEvidence(),
+    restrictedMember(),
   ]);
-  const jobs = [...new Map(snapshots.flatMap((s) => s.jobs.slice(0, 3)).map((j) => [j.id, j])).values()].slice(0, 6);
+  // Activity and Quality cover the whole server: only team admins get links to them.
+  const admin = member === null;
+  const jobsUnread = snapshots.some((s) => s.jobs === null);
+  const jobs = [...new Map(snapshots.flatMap((s) => (s.jobs ?? []).slice(0, 3)).map((j) => [j.id, j])).values()].slice(0, 6);
   const validCoverage = snapshots.filter((s) => s.corpus.available !== false && s.corpus.meters.some((m) => m.label === "Searchable"));
   const chunks = validCoverage.reduce((sum, s) => sum + (s.corpus.meters.find((m) => m.label === "Searchable")?.parts.reduce((n, p) => n + p.count, 0) ?? 0), 0);
   const searchable = validCoverage.reduce((sum, s) => sum + (s.corpus.meters.find((m) => m.label === "Searchable")?.parts.filter((p) => p.tone === "filled").reduce((n, p) => n + p.count, 0) ?? 0), 0);
@@ -53,11 +61,11 @@ export default async function Dashboard({ searchParams }: Props) {
 
   const first = attention[0];
   const status: PageStatus = !feed.available
-    ? { tone: "idle", text: <>Repository data is unavailable<small>{feed.note}. Check the Brain connection and retry.</small></>, action: <Link className="btn btn--neutral" href="/setup">Check connection</Link> }
+    ? { tone: "idle", text: <>Repository data is unavailable<small>{feed.note}. Check the Brain connection and retry.</small></>, action: admin ? <Link className="btn btn--neutral" href="/setup">Check connection</Link> : undefined }
     : slug && !selected
     ? { tone: "warn", text: <>This project is not connected to Brain<small>Nothing below is shown for another project in its place.</small></>, action: <Link className="btn btn--neutral" href="/projects">Choose a project</Link> }
     : !projects.length
-      ? { tone: "idle", text: <>No projects connected yet<small>Brain has nothing to give agents until a repository is indexed.</small></>, action: <Link className="btn btn--primary" href="/setup">Connect a project</Link> }
+      ? { tone: "idle", text: <>No projects connected yet<small>Brain has nothing to give agents until a repository is indexed.</small></>, action: admin ? <Link className="btn btn--primary" href="/setup">Connect a project</Link> : undefined }
       : first
         ? {
           tone: first.tone,
@@ -111,7 +119,7 @@ export default async function Dashboard({ searchParams }: Props) {
 
   return <div className="dashboard">
     <PageHead title="Dashboard" lede="Whether your agents get current project memory, and what to fix next." status={status} />
-    {mapRepository && modules.some((m) => m.chunks > 0) && <div className="dashboard__map"><MemoryMap modules={modules} repoName={mapRepository.name} scanning={snapshots.find((s) => s.repo.id === mapRepository.id)?.jobs.some((j) => j.status === "running" && j.kind.startsWith("index")) ?? false} /></div>}
+    {mapRepository && modules.some((m) => m.chunks > 0) && <div className="dashboard__map"><MemoryMap modules={modules} repoName={mapRepository.name} scanning={snapshots.find((s) => s.repo.id === mapRepository.id)?.jobs?.some((j) => j.status === "running" && j.kind.startsWith("index")) ?? false} /></div>}
 
     {projects.length > 0 && <Panel id="projects" title="Project memory" desc="How much of each project's code Brain can hand to agents right now." actions={<Link className="link" href={withRepo("/projects")}>Projects</Link>} flush>
       <div className="memory-rows" role="table" aria-label="Project memory">
@@ -180,15 +188,15 @@ export default async function Dashboard({ searchParams }: Props) {
         {usage ? <>
           <dl className="usage">{usage.map((u) => <div key={u.label}><dt>{u.label}</dt><dd className="num">{u.value}</dd><dd className="usage__note">{u.note}</dd></div>)}</dl>
           <RequestChart buckets={telemetry.buckets} kind="requests" />
-          <p className="dashboard__legend"><span className="dot tone-ok" />Requests <span className="dot tone-bad" />Failures <Link className="link" href={withRepo("/logs", { period })}>Every request</Link></p>
+          <p className="dashboard__legend"><span className="dot tone-ok" />Requests <span className="dot tone-bad" />Failures {admin && <Link className="link" href={withRepo("/logs", { period })}>Every request</Link>}</p>
         </> : <div className="usage-off">
           <p className="usage-off__title">Not measured on this server</p>
           <p>Brain records each search and context call once request telemetry is reachable. Until then this stays empty instead of showing zero.</p>
         </div>}
       </Panel>
       <div className="stack">
-        <Panel id="jobs" title="Background jobs" desc="Code reads and checks Brain ran recently." actions={<Link className="link" href={withRepo("/logs")}>Activity</Link>} flush><BackgroundJobs jobs={jobs} /></Panel>
-        <Panel id="quality" title="Search quality" desc="How often search finds the right file, from the last saved test run." actions={<Link className="link" href="/quality">Quality</Link>}><QualityEvidence evidence={evidence} compact /></Panel>
+        <Panel id="jobs" title="Background jobs" desc="Code reads and checks Brain ran recently." actions={admin ? <Link className="link" href={withRepo("/logs")}>Activity</Link> : undefined} flush><BackgroundJobs jobs={jobs} unavailable={jobsUnread} /></Panel>
+        <Panel id="quality" title="Search quality" desc="How often search finds the right file, from the last saved test run." actions={admin ? <Link className="link" href="/quality">Quality</Link> : undefined}><QualityEvidence evidence={evidence} compact /></Panel>
       </div>
     </div>
 

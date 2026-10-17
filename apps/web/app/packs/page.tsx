@@ -4,6 +4,7 @@ import { Term } from "@/components/Term";
 import { Chip, EmptyState, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
 import { getPagedContextPacks } from "@/lib/data";
 import { getListQuery, listQueryParams } from "@/lib/list-query";
+import { restrictedMember } from "@/lib/team-session";
 
 export const metadata = { title: "Context packs" };
 
@@ -11,7 +12,7 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
   const params = await searchParams;
   const query = getListQuery(params);
   const repo = typeof params.repo === "string" ? params.repo : undefined;
-  const result = await getPagedContextPacks(query, repo);
+  const [result, member] = await Promise.all([getPagedContextPacks(query, repo), restrictedMember()]);
   const listParams = new URLSearchParams(listQueryParams(query));
   if (repo) listParams.set("repo", repo);
   const back = `/packs${listParams.size ? `?${listParams}` : ""}`;
@@ -34,7 +35,7 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
         }
       />
       <SectionTabs section="memory" active="/packs" />
-      <div className="stats">
+      {result.available !== false && <div className="stats">
         <Stat label="Context packs" value={fmt(result.paging.total)} note={hasQuery ? "matching the filters" : repo ? "for this project" : "across all projects"} />
         <Stat label="Average size on this page" value={packs.length ? fmt(avg) : "—"} note="tokens, about ¾ of a word each" />
         {unknown > 0 && stale === 0 && !result.paging.facets.fresh ? (
@@ -44,10 +45,17 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
             <Stat label="Built for older code" value={fmt(stale)} note={unknown ? `${fmt(unknown)} more predate revision tracking` : "the code has changed since they were built"} />
           </div>
         )}
-      </div>
+      </div>}
       <Panel id="packs" title="Recent context packs" desc="Older code: built before the latest index run, so file contents may have changed since. Revision unknown: built before Brain recorded revisions. Both are history, not errors." flush>
-        {packs.length === 0 && !hasQuery ? (
-          <EmptyState title="No context packs yet" body="Brain hasn’t prepared a context pack for any agent recently. Try one from Setup, step 6." action={<Link className="btn btn--neutral" href="/setup#first_task">Build one</Link>} />
+        {result.available === false ? (
+          <EmptyState title="Context packs unavailable" body="Brain didn’t return its context packs just now. Reload in a moment." />
+        ) : packs.length === 0 && !hasQuery ? (
+          member ? (
+            // Setup is for team admins; a member's packs appear once their agent asks Brain for context.
+            <EmptyState title="No context packs yet" body="Brain hasn’t prepared a context pack in your projects recently. One appears here each time an agent asks Brain for context on a task." />
+          ) : (
+            <EmptyState title="No context packs yet" body="Brain hasn’t prepared a context pack for any agent recently. Try one from Setup, step 6." action={<Link className="btn btn--neutral" href="/setup#first_task">Build one</Link>} />
+          )
         ) : (
         <Table
           caption="Context packs"

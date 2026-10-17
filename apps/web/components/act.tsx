@@ -36,7 +36,7 @@ export const useActionsMode = () => useContext(ModeContext);
 
 export const LOCK_REASON: Record<ActionsMode, string> = {
   demo: "Connect the Brain API to run actions — this is demo data.",
-  locked: "Actions are locked until the dashboard has a password — set one in Settings → Sign-in.",
+  locked: "Actions are locked until the dashboard has a password — set one in Settings → Access → Dashboard sign-in.",
   on: "",
 };
 

@@ -1,5 +1,5 @@
 // Sign-in screen served by proxy.ts while the site is locked (WEB_BASIC_AUTH or
-// the login set on Settings → Sign-in).
+// the login set on Settings → Access → Dashboard sign-in).
 // It is a self-contained HTML string on purpose: the root layout fetches live
 // repository data, so the gate must answer before any page or layout renders.
 // Values mirror app/globals.css (Ledger tokens, mark, ambient, verdict, pulse,

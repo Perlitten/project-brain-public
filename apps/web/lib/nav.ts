@@ -21,7 +21,7 @@ export const navGroups: { label: string; hint: string; items: NavItem[] }[] = [{
 const nested: NavItem[] = [
   { key: "graph", href: "/graph", label: "Code map", icon: "graph", hint: "Which parts of the code depend on which", repoScoped: true, section: "projects" },
   { key: "indexing", href: "/indexing", label: "Index runs", icon: "database", hint: "Each time Brain re-read your code", repoScoped: true, section: "projects" },
-  { key: "insights", href: "/insights", label: "Findings", icon: "trend", hint: "Problems Brain noticed in the code structure", section: "projects" },
+  { key: "insights", href: "/insights", label: "Findings", icon: "trend", hint: "Problems Brain noticed in the code structure", repoScoped: true, section: "projects" },
   { key: "packs", href: "/packs", label: "Context packs", icon: "layers", hint: "What Brain handed agents for each task", repoScoped: true, section: "memory" },
   // /reports is now a tab of Quality and redirects there; the entry stays so
   // report detail pages (/reports/<id>) still resolve to the Quality section
@@ -58,4 +58,11 @@ export function withProject(href: string, slug?: string): string {
   const params = new URLSearchParams(query);
   if (slug) params.set("repo", slug); else params.delete("repo");
   return `${pathname}${params.size ? `?${params}` : ""}${fragment}`;
+}
+
+/** Pages that cover the whole server: in team state Brain serves them to team admins only. */
+const ADMIN_ONLY_KEYS: ReadonlySet<string> = new Set(["quality", "reports", "logs", "runs", "settings", "reranker", "admin", "setup"]);
+export function adminOnly(href: string): boolean {
+  const key = locate(href.split(/[?#]/)[0])?.item.key;
+  return key !== undefined && ADMIN_ONLY_KEYS.has(key);
 }

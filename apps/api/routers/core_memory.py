@@ -94,10 +94,12 @@ async def record_skill_outcome_service(skill_id: int, body: SkillOutcomeRequest)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.get("/decisions", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")), TEAM_ADMIN])
-async def get_decisions():
+@router.get("/decisions", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+async def get_decisions(principal: ResolvedPrincipal = Depends(require_principal)):
     try:
-        return await DecisionStore.list_decisions()
+        return await team_access.readable_memory_rows(principal, await DecisionStore.list_decisions())
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"Failed to fetch decisions: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch decisions") from exc
@@ -107,8 +109,13 @@ async def get_decisions():
 async def create_decision(body: DecisionCreate, caller: ResolvedPrincipal = Depends(require_principal)):
     # The role and the author come from the authenticated principal, never from the body.
     # No repo_path is the system-global scope: a team administrator once the team has members.
-    await repository_authority(caller, Permission.PROPOSE, repo_path=body.repo_path)
+    authority = await repository_authority(caller, Permission.PROPOSE, repo_path=body.repo_path)
     await _require_system_global_administrator(caller, body.repo_path)
+    caller_role = caller_role_for(caller)
+    if authority.team_state == "team" and normalize_repo_scope(body.repo_path) is None:
+        # Team state: only a team administrator gets past the check above, and member keys
+        # carry no core:admin, so that check is the memory admin role for system-global decisions.
+        caller_role = "admin"
     try:
         result = await DecisionStore.record_decision(
             title=body.title,
@@ -121,7 +128,7 @@ async def create_decision(body: DecisionCreate, caller: ResolvedPrincipal = Depe
             affected_features=body.affected_features,
             affected_modules=body.affected_modules,
             affected_files=body.affected_files,
-            caller_role=caller_role_for(caller),
+            caller_role=caller_role,
             author_principal_id=caller.author_id,
             expected_version=body.expected_version,
         )
@@ -135,10 +142,12 @@ async def create_decision(body: DecisionCreate, caller: ResolvedPrincipal = Depe
         raise HTTPException(status_code=500, detail="Failed to add decision") from exc
 
 
-@router.get("/rules", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")), TEAM_ADMIN])
-async def get_rules():
+@router.get("/rules", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
+async def get_rules(principal: ResolvedPrincipal = Depends(require_principal)):
     try:
-        return await RuleStore.list_rules()
+        return await team_access.readable_memory_rows(principal, await RuleStore.list_rules())
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"Failed to fetch rules: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to fetch rules") from exc

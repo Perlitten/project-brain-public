@@ -9,7 +9,7 @@ import type { ActionResult, ActionsMode } from "./types";
 
 /**
  * Actions run only where the dashboard itself is protected: behind a sign-in
- * password (Settings → Sign-in, or WEB_BASIC_AUTH), in local development, on a
+ * password (Settings → Access → Dashboard sign-in, or WEB_BASIC_AUTH), in local development, on a
  * dashboard that listens on loopback only (scripts/serve.mjs), or
  * when the operator opts in explicitly with BRAIN_WEB_ACTIONS=1 (e.g. behind
  * their own SSO). BRAIN_WEB_ACTIONS=0 switches them off everywhere.
@@ -27,7 +27,7 @@ export async function actionsMode(): Promise<ActionsMode> {
   return "locked";
 }
 
-export const LOCKED_MESSAGE = "Actions are locked until the dashboard has a password — set one in Settings → Sign-in.";
+export const LOCKED_MESSAGE = "Actions are locked until the dashboard has a password — set one in Settings → Access → Dashboard sign-in.";
 
 export async function guard(): Promise<ActionResult | null> {
   const mode = await actionsMode();
