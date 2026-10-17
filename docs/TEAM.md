@@ -203,9 +203,9 @@ which is the source of truth.
   chose, or an operator added them on the server.
 - **No invitation UI.** Invitations exist only in the CLI and the API. The
   dashboard Team page adds members directly.
-- **One API process.** The invitation-accept throttle (10 attempts per client
-  IP per 5 minutes) lives in process memory; run a single API process. Native
-  MCP sessions need a single worker as well.
+- **One API worker for native MCP.** Native MCP sessions need a single
+  worker. The invitation-accept throttle (10 attempts per client IP per 5
+  minutes) is shared through Redis, so it holds across API processes.
 - **Execution is denied.** Tasks and run requests are recorded with their
   provenance; no executor exists (M2 has not started).
 - **Not deployed, not piloted.** Green CI is the only evidence. Production

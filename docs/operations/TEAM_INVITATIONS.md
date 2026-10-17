@@ -104,8 +104,12 @@ recorded state.
 
 ## Abuse limits
 
-- Redemption is limited to 10 attempts per client IP per 5 minutes (HTTP 429),
-  in-process per API instance like the web login limiter.
+- Redemption is limited to 10 attempts per client IP per 5 minutes (HTTP 429
+  with `Retry-After`). The attempt log lives in Redis, so every API process
+  and replica shares one limit. If Redis errors or does not answer within two
+  seconds, that attempt is counted by a per-process fallback instead. Lite has
+  no team; it keeps the window in memory, which is exact for its single
+  process.
 - Every rejected token (unknown, expired, revoked, malformed) gets the same
   403 answer; hashes are compared in constant time.
 - Concurrent redemptions of one token are serialized by a row lock; exactly one
