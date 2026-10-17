@@ -1,8 +1,10 @@
 import { CodeBlock } from "@/components/act";
+import { InvitationTable, InviteForm } from "@/components/team/Invitations";
 import { AddMemberForm, MemberTable } from "@/components/team/Team";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Fold, PageHead, Panel, Stat, fmt } from "@/components/ui";
 import { signInMode } from "@/lib/sign-in-view";
+import { getInvitationsView } from "@/lib/invitation-view";
 import { currentMember } from "@/lib/team-session";
 import { getTeamView } from "@/lib/team-view";
 
@@ -35,7 +37,11 @@ export default async function Team() {
 brain team member add --principal alice --admin --mint-key`}
             />
             <p className="field__hint">
-              Keep the printed key: it is the first admin’s dashboard sign-in. Admins then add everyone else here, on the Team page.
+              Keep the printed key: it is the first admin’s dashboard sign-in. Admins then add or invite everyone else here, on the Team page.
+            </p>
+            <p className="field__hint">
+              Or bootstrap with an invitation: run <code>brain team invite create --admin --name you</code> on the server, then open{" "}
+              <code>/invite</code> on this dashboard and paste the printed token. You become the first admin and are signed in with your own key.
             </p>
           </div>
         </Panel>
@@ -58,7 +64,7 @@ brain team member add --principal alice --admin --mint-key`}
     );
   }
 
-  const view = await getTeamView();
+  const [view, invites] = await Promise.all([getTeamView(), getInvitationsView()]);
   const members = view.kind === "ok" ? view.members : [];
   const active = members.filter((m) => !m.revoked);
   return (
@@ -76,6 +82,10 @@ brain team member add --principal alice --admin --mint-key`}
         <AddMemberForm />
       </Fold>
 
+      <Fold id="invite-member" title="Invite a member" desc="Creates a one-time link. They open it, become a member and pick up their own key; nobody else sees it." cta="+ Invite">
+        <InviteForm projects={view.kind === "ok" ? view.projects : []} projectsAvailable={view.kind === "ok"} />
+      </Fold>
+
       <Panel id="members" title={`${active.length} member${active.length === 1 ? "" : "s"}`} desc="Pick a role per project; revoking signs the member out on their next request." flush>
         {view.kind === "denied" ? (
           <EmptyState
@@ -88,6 +98,21 @@ brain team member add --principal alice --admin --mint-key`}
           <EmptyState title="No members yet" body="Add the first one above." />
         ) : (
           <MemberTable members={members} projects={view.projects} selfId={member.id} />
+        )}
+      </Panel>
+
+      <Panel id="invitations" title="Invitations" desc="Pending, accepted and revoked invitations. Revoking an accepted one revokes the member it created too." flush>
+        {invites.kind === "denied" ? (
+          <EmptyState
+            title="Brain didn’t list the invitations"
+            body="Listing invitations needs a team admin whose key carries the team:admin permission. Ask another admin to issue you a new key."
+          />
+        ) : invites.kind === "unavailable" ? (
+          <EmptyState title="Brain isn’t answering" body="The invitations couldn’t be read right now, so this isn’t an empty list. Reload in a moment." />
+        ) : invites.invitations.length === 0 ? (
+          <EmptyState title="No invitations yet" body="Invite someone above; their invitation shows up here until it’s accepted, expires or is revoked." />
+        ) : (
+          <InvitationTable invitations={invites.invitations} projects={view.kind === "ok" ? view.projects : []} selfId={member.id} />
         )}
       </Panel>
 

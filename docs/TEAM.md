@@ -71,13 +71,33 @@ brain team invite accept --api-url https://brain.example.com
 before anything else: from this moment the Brain is in team state and the
 shared key no longer works for project data.
 
+Instead of `brain team invite accept` you can paste the token on the
+dashboard's `/invite` page (see step 4). It works while the dashboard is still
+in solo sign-in, shows the `pbk_` key once and signs you in with it.
+
 Guard rails: the API refuses to create invitations while the Brain is solo
 (HTTP 409), so the first one is always created on the server; and the first
 invitation must be `--admin`. Details: [Inviting team members](operations/TEAM_INVITATIONS.md).
 
 ## 4. Invite a member
 
-As an administrator, either on the server:
+**From the dashboard** (signed in with your own administrator key): open
+**Team → Invite a member**, fill in a name (optional; Brain picks
+`invitee-…` when it is empty), an optional email, the projects and the role,
+whether they are a team admin, and how long the invitation is valid (1, 3, 7
+or 30 days). **Create invitation** shows an invitation link of the form
+`https://<dashboard>/invite#token=pbi_…` and the bare token, **once**. Copy the
+link and send it privately. The token sits after the `#`, so browsers don't
+send it to any server and it never lands in an access log.
+
+The **Invitations** panel on the same page lists every invitation with its
+state (`invited`, `verified`, `active`, `expired`, `revoked`), its access and
+its dates. **Revoke** stops an unused link. For an accepted invitation the
+button reads **Revoke member**: it revokes the member it created as well (see
+step 7). You cannot revoke your own membership there. If Brain does not
+answer, the panel says so rather than showing an empty list.
+
+Or on the server:
 
 ```bash
 brain team invite create --name alice --project core --role contributor
@@ -101,7 +121,19 @@ The `pbi_` token is a **bearer secret**: whoever presents it first becomes
 Alice. Send it over a private channel. The `email` field, if you set one, is
 recorded for you and never checked.
 
-Alice redeems it from a machine with the `brain` CLI installed:
+**Alice opens the link** on the dashboard. The `/invite` page needs no
+sign-in. It moves the token into the form and clears it from the address bar;
+**Accept invitation** makes her a member, shows her `pbk_` key **once** with a
+copy button, and signs her in with that key exactly as if she had pasted it on
+the sign-in page (step 5). If the link is wrong, expired or revoked, the page
+says so in one message, because Brain gives one answer for all three on
+purpose. A link that was already accepted never shows the key again.
+"Too many attempts" means the throttle refused the call (see Known
+limitations). "Brain isn't answering" means the token was not used and she can
+try again. The page is off when the dashboard runs with `BRAIN_WEB_ACTIONS=0`
+or on demo data.
+
+Or she redeems the token from a machine with the `brain` CLI installed:
 
 ```bash
 brain team invite accept --api-url https://brain.example.com
@@ -112,7 +144,7 @@ accepted only to loopback. Without the CLI she can `POST /team/invitations/accep
 with `{"token": "pbi_..."}`; that call needs no credential.
 
 Alternatives to invitations, both administrator-only: the dashboard **Team**
-page adds a member and shows their key once, and
+page adds a member directly and shows their key once, and
 `brain team member add --principal alice --mint-key --project core --role contributor`
 does the same on the server. Keys from all three paths carry the same scopes.
 A member key minted before PR #124 kept only `team:*` scopes and cannot open
@@ -204,7 +236,7 @@ There are two different things to revoke, and they are not the same:
 | Revoke **membership** | `brain team member revoke --principal alice`, `DELETE /team/projects/members/{principal_id}`, or **Revoke** on the Team page | Ends her team membership and every project role. She is signed out of the dashboard on her next request, and her key is refused for every project. **Her key stays a valid credential.** |
 | Revoke **one project role** | `brain team member revoke --principal alice --project core` | Removes only that project; membership and other roles stay. |
 | Revoke **keys** | Dashboard **Settings → Access** (`/admin`): revoke the credential or disable the principal (`POST /admin/credentials/{id}/revoke`, `POST /admin/principals/{id}/disable`) | The key stops authenticating anything. Needs a team administrator. |
-| Revoke an **invitation member** completely | `brain team invite revoke <invitation-id> --revoke-member` (or `POST /team/invitations/{id}/revoke` with `{"revoke_member": true}`) | Membership, every project role and every credential of that principal. |
+| Revoke an **invitation member** completely | **Revoke member** in the Team page's Invitations panel, `brain team invite revoke <invitation-id> --revoke-member`, or `POST /team/invitations/{id}/revoke` with `{"revoke_member": true}` | Membership, every project role and every credential of that principal. |
 
 When someone leaves, revoke the membership **and** their keys. A key left
 alive after a membership revocation becomes fully usable again if the person is
@@ -224,11 +256,15 @@ which is the source of truth.
 - **No SSO or OIDC, and the email is never checked.** "Verified" means the
   person presented an invitation token for an identity the administrator
   chose, or an operator added them on the server.
-- **No invitation UI.** Invitations exist only in the CLI and the API. The
-  dashboard Team page adds members directly.
 - **One API worker for native MCP.** Native MCP sessions need a single
   worker. The invitation-accept throttle (10 attempts per client IP per 5
   minutes) is shared through Redis, so it holds across API processes.
+- **Dashboard invitees share one throttle.** The `/invite` page calls the API
+  from the dashboard server, so the API sees every invitee as the dashboard's
+  IP: together they get 10 accept attempts per 5 minutes. Redeeming a token
+  with the CLI counts against the invitee's own IP instead.
+- **Invitations are not emailed.** The administrator copies the link and sends
+  it; the email field is a note.
 - **Execution is denied.** Tasks and run requests are recorded with their
   provenance; no executor exists (M2 has not started).
 - **Not deployed, not piloted.** Green CI is the only evidence. Production

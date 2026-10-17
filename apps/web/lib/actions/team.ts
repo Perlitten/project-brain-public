@@ -87,3 +87,74 @@ export async function revokeMember(principalId: number): Promise<ActionResult> {
   });
   return { ok: res.ok, message: res.message };
 }
+
+// ── Invitations (POST /team/invitations, /{id}/revoke) ──
+// The invitee redeems the token on /invite (proxy.ts); Brain creates the member
+// and their key then, so nothing secret but the token passes through here.
+
+/** brain/team/invitations.py NAME_PATTERN and EMAIL_PATTERN. */
+const INVITEE_NAME_RE = /^[A-Za-z][A-Za-z0-9._@+-]{0,63}$/;
+const EMAIL_RE = /^[^@\s]{1,64}@[^@\s]{1,189}$/;
+const MAX_INVITE_PROJECTS = 16;
+const MAX_INVITE_HOURS = 720;
+
+export interface NewInvitation {
+  token: string;
+  id: string;
+  name: string;
+  expiresAt: string | null;
+}
+
+export async function createInvitation(input: {
+  name?: string;
+  email?: string;
+  projects: string[];
+  role: ProjectRole;
+  admin: boolean;
+  expiresHours: number;
+}): Promise<ActionResult<NewInvitation>> {
+  const name = (input.name ?? "").trim();
+  if (name && !INVITEE_NAME_RE.test(name)) {
+    return { ok: false, message: "Start the name with a letter and use only letters, digits and . _ @ + - (no spaces), e.g. “alice”." };
+  }
+  const email = (input.email ?? "").trim();
+  if (email && !EMAIL_RE.test(email)) return { ok: false, message: "That email address doesn’t look right." };
+  const projects = [...new Set(Array.isArray(input.projects) ? input.projects : [])];
+  if (projects.length > MAX_INVITE_PROJECTS) return { ok: false, message: `An invitation can name at most ${MAX_INVITE_PROJECTS} projects.` };
+  if (!projects.every((p) => typeof p === "string" && PROJECT_RE.test(p))) return { ok: false, message: "That project doesn’t look right." };
+  if (!PROJECT_ROLES.includes(input.role)) return { ok: false, message: "Pick reader, contributor or reviewer." };
+  const hours = Math.round(Number(input.expiresHours));
+  if (!Number.isFinite(hours) || hours < 1 || hours > MAX_INVITE_HOURS) return { ok: false, message: "Pick how long the invitation stays valid." };
+  const res = await mutate<{ token?: unknown; invitation?: { id?: unknown; principal_name?: unknown; expires_at?: unknown } }>("/team/invitations", {
+    body: { projects, role: input.role, is_admin: Boolean(input.admin), email: email || null, name: name || null, expires_hours: hours },
+    success: "Invitation created. Copy the link now — Brain won’t show it again.",
+    revalidate: TEAM,
+  });
+  if (!res.ok) return { ok: false, message: res.message };
+  const { token, invitation } = res.data ?? {};
+  if (typeof token !== "string" || !token || typeof invitation?.id !== "string") return { ok: false, message: "Brain didn’t return the invitation token." };
+  return {
+    ok: true,
+    message: res.message,
+    data: {
+      token,
+      id: invitation.id,
+      name: typeof invitation.principal_name === "string" ? invitation.principal_name : name,
+      expiresAt: typeof invitation.expires_at === "string" ? invitation.expires_at : null,
+    },
+  };
+}
+
+/**
+ * Revokes an invitation. One that was already accepted can only be revoked
+ * together with the member it created (`revokeMember`); Brain refuses otherwise.
+ */
+export async function revokeInvitation(invitationId: string, revokeMember = false): Promise<ActionResult> {
+  if (!PROJECT_RE.test(invitationId)) return { ok: false, message: "That invitation doesn’t look right." };
+  const res = await mutate(`/team/invitations/${invitationId}/revoke`, {
+    body: { revoke_member: Boolean(revokeMember) },
+    success: revokeMember ? "Revoked, with the member it created: their key stops working at once." : "Invitation revoked. Its link no longer works.",
+    revalidate: TEAM,
+  });
+  return { ok: res.ok, message: res.message };
+}
