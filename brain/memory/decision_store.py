@@ -117,8 +117,7 @@ class DecisionStore:
                 }
                 if existing.title != normalized_title:
                     changes["title"] = normalized_title
-                if existing.author_principal_id is None:
-                    existing.author_principal_id = author_principal_id
+                # Authorship stays as recorded: legacy rows keep NULL (no adoption on edit).
                 if not changes:
                     await session.commit()
                     return MemoryWriteResult(id=existing.id, version=existing.version or 1,
