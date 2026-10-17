@@ -40,6 +40,8 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("team_invitations", "token_hash"),
     # Every credential resolution reads the restore fence (brain.team.restore_fence).
     ("team_access_fences", "cleared_at"),
+    # A team never falls back to solo on its own (brain.team.authorization.team_state).
+    ("teams", "dissolved_at"),
 ]
 
 

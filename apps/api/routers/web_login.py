@@ -32,7 +32,7 @@ from brain.onboarding.envfile import setup_env_path, update_env_file
 
 router = APIRouter(prefix="/api/web-login", tags=["web-login"], dependencies=[Depends(require_api_key)])
 # Setting or removing the dashboard password changes the whole Brain's sign-in: a team administrator
-# once the team has members. Reading the mode and checking a password stay part of the sign-in flow.
+# once the team has members.
 TEAM_ADMIN = Depends(team_administrator_access())
 
 KEYS = frozenset({"WEB_LOGIN_USER", "WEB_LOGIN_PASSWORD_HASH", "WEB_LOGIN_VERSION"})
@@ -168,12 +168,15 @@ async def _require_current(current: Optional[str], request: Request) -> None:
         raise HTTPException(status_code=403, detail="The current password is wrong.")
 
 
-@router.get("", dependencies=[Depends(require_scope("setup:read"))])
+# Reading the login state and checking a password are team-administrator
+# operations too: in team state any member holds setup:read, and /verify would
+# let one probe the dashboard password or lock its owner out via the throttle.
+@router.get("", dependencies=[Depends(require_scope("setup:read")), TEAM_ADMIN])
 async def get_web_login() -> Dict[str, Any]:
     return _state()
 
 
-@router.post("/verify", dependencies=[Depends(require_scope("setup:read"))])
+@router.post("/verify", dependencies=[Depends(require_scope("setup:read")), TEAM_ADMIN])
 async def verify_web_login(body: VerifyBody, request: Request) -> Dict[str, Any]:
     if not _configured():
         return {"ok": False, "mode": "open"}
