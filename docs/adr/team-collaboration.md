@@ -171,8 +171,10 @@ no automatic adoption or backfill grants. Explicit operator provisioning/binding
 is required. Team tables are not supported in Lite; a Lite Brain is always a
 team of one and rejects the strict flag. Back up before updates; restore additive ledger
 and identity rows with PostgreSQL, retain source revision and rebuild graph.
-A restored team snapshot stays fenced (no credential honoured) until an operator
-reconciles post-snapshot changes and attests the result (`brain team reconcile`).
+When restored with `scripts/restore_database.py`, a team snapshot stays fenced
+(no credential honoured) until an operator reconciles post-snapshot changes and
+attests the result (`brain team reconcile`). A plain `psql` restore does not add
+the fence; follow the [backup-restore runbook](../runbooks/backup-restore.md#restoring-a-team-brain).
 Demonstrate legacy-row preservation, repeat initialization and disposable restore;
 green ADR/CI is not team readiness.
 
@@ -192,7 +194,8 @@ green ADR/CI is not team readiness.
   operator-chosen identity, not OIDC) landed 2026-10-16 via API and CLI.
   Queued jobs record their initiator and are re-authorized before execution;
   dashboard members sign in as themselves and admins manage them on a Team
-  page; a restored team snapshot stays fenced until `brain team reconcile`.
+  page; a team snapshot restored with the supported script stays fenced until
+  `brain team reconcile`.
   Still open: merging `brain/workspace` with `brain/team`, SSO, invitation UX,
   deployment. Current status: [team status](../design/team-status.md).
 - **M2 after M1:** bounded real executors, run tools/secrets/egress/budget capabilities,

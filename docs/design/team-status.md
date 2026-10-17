@@ -7,19 +7,21 @@ the per-requirement evidence is the [foundations matrix](team-foundations.md).
 
 ## In one paragraph
 
-Stage **M1** (identity, membership and fail-closed authorization) is complete
-on `main`: a solo Brain is a team of one, and adding the first verified member
-switches every API, MCP and dashboard surface to per-project authorization.
-Execution (M2) and everything after it has not started. Team mode is **not
-deployed** and has **not been tried with real people**; green CI is the only
-evidence so far, and the ADR says plainly that green CI is not team readiness.
+The core of **M1** (identity, membership and fail-closed authorization) is on
+`main`: a solo Brain is a team of one, and adding the first verified member
+switches repository-scoped API, MCP and dashboard requests to per-project
+authorization. M1 is not complete while the gaps below remain, including web
+logs, downloads and notifications that still use the server key. Execution
+(M2) and everything after it has not started. Team mode is **not deployed** and
+has **not been tried with real people**; green CI is the only evidence so far,
+and the ADR says plainly that green CI is not team readiness.
 
 ## Stages
 
 | Stage | Scope | Status |
 |---|---|---|
 | M0 | Contract, permission/revocation semantics, coverage matrix | Done |
-| M1 | Verified identity, membership, centralized authorization, provisioning, invitations, restore fence | Done on `main`; not deployed |
+| M1 | Verified identity, membership, centralized authorization, provisioning, invitations, restore fence | Core implemented; known authorization gaps remain; not deployed |
 | M2 | Bounded real executors, tool/secret/egress/budget capabilities, revocation checkpoints | Not started; execution is denied |
 | M3 | Subtasks, coordinator, overlap detection, integration queue | Not started |
 | M4 | Governed versioned memory, independent review | Not started |
@@ -39,7 +41,7 @@ evidence so far, and the ADR says plainly that green CI is not team readiness.
 | Single-use invitations (invited → verified → active → revoked), API and CLI | [#119](https://github.com/Perlitten/project-brain-public/pull/119) |
 | Remaining personal routes scoped in team state | [#120](https://github.com/Perlitten/project-brain-public/pull/120) |
 | Dashboard members sign in with their own key; admin Team page (add, role, revoke) | [#121](https://github.com/Perlitten/project-brain-public/pull/121) |
-| Restored team snapshot stays fenced until `brain team reconcile --attest` | [#122](https://github.com/Perlitten/project-brain-public/pull/122) |
+| A team snapshot restored with `scripts/restore_database.py` stays fenced until `brain team reconcile --attest`; plain `psql` does not add the fence ([runbook](../runbooks/backup-restore.md#restoring-a-team-brain)) | [#122](https://github.com/Perlitten/project-brain-public/pull/122) |
 
 Tests: 12 `tests/test_team_*.py` files, about 90 test functions, plus the
 PostgreSQL-only restore and concurrency cases that CI runs.
@@ -74,4 +76,5 @@ PostgreSQL-only restore and concurrency cases that CI runs.
 1. Close the small M1 gaps above (CLI key scopes, MCP resources, invitation UI).
 2. Deploy to production in solo state and confirm nothing changed for the owner.
 3. Add one real member on one project and walk the invite → sign-in → revoke path.
-4. Then M2 (executors) or the M6 pilot, depending on what step 3 shows.
+4. Then complete M2 through M5; run the M6 pilot only after those prerequisite
+   stages can exercise coordinated runs, overlaps, revocations and crashes.
