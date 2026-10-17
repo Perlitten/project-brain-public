@@ -358,3 +358,121 @@ async def test_unexpected_failure_reports_unknown(tmp_path: Path, monkeypatch):
     )
     assert freshness["status"] == "unknown"
     assert "git exploded" in freshness["note"]
+
+
+# --- freshness relative to origin, not just the checkout HEAD ------------------
+# A server that never pulls looked "current" forever: its HEAD matched the index
+# while the project moved on. origin_head / commits_behind_origin make that visible.
+
+
+def _git_cmd(cwd: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", "-c", "user.name=Tester", "-c", "user.email=tester@example.com", *args],
+        cwd=str(cwd),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _origin_with_checkout(tmp_path: Path) -> tuple[Path, Path, str]:
+    """Return (dev clone that pushes, server checkout, first commit)."""
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    _git_cmd(origin, "init", "-q", "--bare", "-b", "main")
+    dev = tmp_path / "dev"
+    _git_cmd(tmp_path, "clone", "-q", origin.as_posix(), dev.as_posix())
+    _git_cmd(dev, "checkout", "-q", "-b", "main")
+    _write_repo_file(dev, "a.txt", "first")
+    _git_cmd(dev, "add", ".")
+    _git_cmd(dev, "commit", "-q", "-m", "first")
+    _git_cmd(dev, "push", "-q", "origin", "HEAD:main")
+    server = tmp_path / "server"
+    _git_cmd(tmp_path, "clone", "-q", origin.as_posix(), server.as_posix())
+    return dev, server, _git_cmd(server, "rev-parse", "HEAD")
+
+
+def _push_commit(dev: Path, name: str) -> str:
+    _write_repo_file(dev, name, name)
+    _git_cmd(dev, "add", ".")
+    _git_cmd(dev, "commit", "-q", "-m", name)
+    _git_cmd(dev, "push", "-q", "origin", "HEAD:main")
+    return _git_cmd(dev, "rev-parse", "HEAD")
+
+
+@pytest.mark.asyncio
+async def test_current_checkout_reports_commits_behind_origin_after_a_push(tmp_path: Path):
+    dev, server, first = _origin_with_checkout(tmp_path)
+    second = _push_commit(dev, "b.txt")
+    # The webhook reindex fetches; here we fetch without moving HEAD, which is
+    # exactly the "server checkout nobody pulls" shape.
+    _git_cmd(server, "fetch", "-q", "origin")
+
+    result = await assess_repository_freshness(
+        SimpleNamespace(path=str(server), last_indexed_commit=first, last_indexed_at=datetime.now(timezone.utc))
+    )
+    assert result["status"] == "current"  # HEAD still matches the index
+    assert result["commits_behind"] is None
+    assert result["origin_ref"] == "origin/main"
+    assert result["origin_head"] == second
+    assert result["commits_behind_origin"] == 1
+    assert "origin/main is 1 commit(s) ahead" in (result["note"] or "")
+
+
+@pytest.mark.asyncio
+async def test_origin_fields_are_zero_when_index_matches_origin(tmp_path: Path):
+    _dev, server, first = _origin_with_checkout(tmp_path)
+    result = await assess_repository_freshness(
+        SimpleNamespace(path=str(server), last_indexed_commit=first, last_indexed_at=datetime.now(timezone.utc))
+    )
+    assert result["status"] == "current"
+    assert result["origin_head"] == first
+    assert result["commits_behind_origin"] == 0
+    assert result["note"] is None
+
+
+@pytest.mark.asyncio
+async def test_origin_head_from_ls_remote_when_enabled(tmp_path: Path, monkeypatch):
+    dev, server, first = _origin_with_checkout(tmp_path)
+    second = _push_commit(dev, "c.txt")
+    # No fetch on the server: the local tracking ref still says `first`.
+    monkeypatch.setenv("BRAIN_FRESHNESS_LS_REMOTE", "true")
+    result = await assess_repository_freshness(
+        SimpleNamespace(path=str(server), last_indexed_commit=first, last_indexed_at=datetime.now(timezone.utc))
+    )
+    assert result["origin_head"] == second
+    # The remote head is known but its commits are not local, so the count
+    # stays unknown rather than guessed; the webhook fetch fills it in.
+    assert result["commits_behind_origin"] is None
+
+    monkeypatch.delenv("BRAIN_FRESHNESS_LS_REMOTE")
+    stale_view = await assess_repository_freshness(
+        SimpleNamespace(path=str(server), last_indexed_commit=first, updated_at=datetime.now(timezone.utc))
+    )
+    assert stale_view["origin_head"] == first
+    assert stale_view["commits_behind_origin"] == 0
+
+
+@pytest.mark.asyncio
+async def test_origin_fields_are_none_without_a_remote(tmp_path: Path):
+    repo_path = tmp_path / "local-only"
+    head = _make_one_commit_repo(repo_path)
+    result = await assess_repository_freshness(
+        SimpleNamespace(path=str(repo_path), last_indexed_commit=head, last_indexed_at=datetime.now(timezone.utc))
+    )
+    assert result["status"] == "current"
+    assert result["origin_ref"] is None
+    assert result["origin_head"] is None
+    assert result["commits_behind_origin"] is None
+
+
+@pytest.mark.asyncio
+async def test_describe_origin_for_a_non_git_directory(tmp_path: Path):
+    from brain.memory.repo_freshness import describe_origin
+
+    assert await describe_origin(tmp_path, "deadbeef") == {
+        "origin_ref": None,
+        "origin_head": None,
+        "commits_behind_origin": None,
+    }
