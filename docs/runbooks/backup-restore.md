@@ -113,12 +113,18 @@ database directly and is not subject to the fence. Reopen access like this:
    after the snapshot is therefore dead even if nobody remembered to replay it.
    Issue new invitations where needed.
 
-4. Give each remaining member a new key, with the issuer they were verified
-   with (`brain team member list` shows it):
+4. Give each remaining member a new key, with the issuer and subject they were
+   verified with (`brain team member list` shows `verification_issuer` and
+   `verification_subject`; a member who joined by invitation has issuer
+   `brain-invitation` and subject `invitation:<id>`). Add `--admin` for a team
+   administrator, or their new key lacks the administrator scopes:
 
    ```bash
-   .venv/bin/brain team member add --principal NAME --issuer <same issuer> --mint-key
+   .venv/bin/brain team member add --principal NAME --issuer <same issuer> \n     --subject <same subject> --mint-key        # plus --admin for administrators
    ```
+
+   A different issuer or subject is refused (`Member is verified under a
+   different issuer/subject`).
 
    OAuth clients sign in again. Recreate other service keys the same way you
    created them originally.

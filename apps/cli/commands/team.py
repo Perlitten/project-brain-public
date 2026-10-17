@@ -24,7 +24,8 @@ from brain.team import invitations, provisioning, restore_fence
 from brain.team.authorization import TeamConflict
 from brain.team.provisioning import TeamNotFound
 
-team_cli = typer.Typer(help="Provision the experimental team layer (operator-only, idempotent).")
+team_cli = typer.Typer(help="Experimental preview (main only, not in v0.9.2): provision the team layer "
+                             "(operator-only, idempotent). Walkthrough: docs/TEAM.md.")
 project_cli = typer.Typer(help="Team projects.")
 member_cli = typer.Typer(help="Team members and project roles.")
 repo_cli = typer.Typer(help="Repositories attached to projects.")

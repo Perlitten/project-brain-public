@@ -28,6 +28,15 @@ and the ADR says plainly that green CI is not team readiness.
 | M5 | Invitation/board/conflict UX, cloud packaging, upgrade/restore diagnostics | Not started (only the admin Team page exists) |
 | M6 | Pilot with 3–5 people on two projects | Not started |
 
+## Public label
+
+Team mode may be announced only as an **experimental preview: `main` only, not
+in v0.9.2**, never as generally available. The operator path (init, attach a
+repository, invite, dashboard sign-in, MCP, revoke) and the user-facing known
+limitations are in the [team mode walkthrough](../TEAM.md); keep its
+limitations in step with the known gaps below. The security reporting scope
+is in [SECURITY.md](../../SECURITY.md#team-mode-experimental-preview).
+
 ## Shipped in M1
 
 | What | PR |

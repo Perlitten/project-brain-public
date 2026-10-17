@@ -6,6 +6,38 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Team mode is an **experimental preview** on `main` (not in v0.9.2, not
+  deployed, not piloted). Add the [team mode walkthrough](docs/TEAM.md) from
+  `brain team init` to revocation, with its known limitations, and a team-mode
+  section in [SECURITY.md](SECURITY.md): project isolation is in scope for
+  reports, invitation tokens are bearer secrets, and revoking membership does
+  not revoke keys. Docs no longer describe Brain as single-user only.
+
+- Give member keys from `brain team member add --mint-key` and from
+  invitations the same scopes as dashboard keys, so they open the dashboard
+  and can search, build context and ask; team-admin keys also get
+  `setup:write` and `operations:write`. Members read global decisions and
+  rules plus those of repositories they can read (`/decisions`, `/rules`,
+  `brain://decisions`, `brain://rules`), and non-admin members see a dashboard
+  limited to their projects. Keys minted earlier keep their old scopes and must
+  be re-issued (#124).
+
+- Restoring a team snapshot with the supported script leaves a restore fence:
+  no named credential, shared key, OAuth refresh or invitation works until
+  `brain team reconcile --attest <digest>`, which by default revokes every
+  restored credential, OAuth refresh token, run delegation and pending
+  invitation (#122).
+
+- Let dashboard members sign in with their own `pbk_` member key in team
+  state; every dashboard call is sent with that key. Add the admin Team page to
+  add members, issue a key (shown once), set project roles and revoke
+  membership (#121).
+
+- Add single-use team invitations through the API and `brain team invite`
+  (create, list, revoke, accept): a `pbi_` bearer token, stored hashed, turns
+  its holder into a verified member with a named credential. The email is never
+  checked; acceptance is throttled per API process (#119).
+
 - Unify the personal and team APIs: a Brain is a team of one until its first
   verified member is added, and boundaries switch on from then. The
   `TeamBoundary` 403 wall is gone; `/health` reports `mode` as `solo` or
@@ -16,8 +48,9 @@ All notable changes to this project are documented here. The format follows
   members every authenticated caller keeps full access, with members an
   unattached repository needs a team administrator and the shared key or
   keyless access answers `Named credential required`. The `team_*` MCP tools
-  are served next to the personal tools on one server, and workers, the
-  scheduler and task execution no longer refuse to run for a team.
+  are served next to the personal tools on one server, and workers and the
+  scheduler keep running for a team (queued jobs are re-authorized before they
+  run). Team runs are recorded but never executed: no executor exists yet.
   `BRAIN_TEAM_MODE` is now a deprecated strictness alias (treat an empty team
   as a team) that logs a warning.
 
@@ -45,8 +78,9 @@ All notable changes to this project are documented here. The format follows
 
 - Add default-off single-team project/task/run authority foundations with live
   verified-identity membership, narrowed delegation, stable repository references,
-  provenance and idempotency. In experimental team mode, unadapted personal
-  APIs/MCP resources and all execution are refused; this is not a team-ready MVP.
+  provenance and idempotency. Team runs are recorded, not executed; this is not
+  a team-ready MVP. (The personal-API wall this entry introduced was replaced by
+  the unified model above.)
   Personal/full and personal/Lite retain their existing defaults.
 
 - Clarify self-reported MCP telemetry labels versus authenticated principals,

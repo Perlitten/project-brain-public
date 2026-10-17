@@ -34,6 +34,9 @@ invoke them automatically; add an appropriate task workflow to its instructions.
 The HTTP-backed stdio bridge runs `apps.mcp_server.remote_server` with
 `BRAIN_API_URL`, `BRAIN_API_KEY` and `BRAIN_REPO` configured. It needs no local
 datastores. Prefer a revocable scoped `pbk_` credential to a shared operator key.
+In a team, each member uses their own member key and passes the repository path
+the server indexed as `repo_path`, not their local checkout path; see the
+[team mode walkthrough](TEAM.md).
 Tracked `.mcp.json` and `examples/claude-code-stdio.mcp.json` use environment references, never
 literal credentials.
 
@@ -60,8 +63,11 @@ client label, not an authenticated agent identity; see the
 
 ## Tool reference
 
-Local stdio exposes 13 tools. The HTTP-backed server adds the fourteenth,
-`get_diff_review`, for its asynchronous review flow.
+Local stdio exposes 13 tools. The HTTP-backed stdio bridge and native `/mcp`
+add `get_diff_review`, for the asynchronous review flow, and the three
+`team_*` tools of the [experimental team mode](TEAM.md): 17 tools in all. The
+`team_*` tools answer only for verified team members within their project
+roles; `team_request_run` records a run but nothing executes it yet.
 
 | Tool | Purpose |
 |---|---|
@@ -79,6 +85,9 @@ Local stdio exposes 13 tools. The HTTP-backed server adds the fourteenth,
 | `record_task_observation` | Record unvalidated observations |
 | `record_task_lesson` | Record a lesson and reported validation evidence |
 | `record_procedure_outcome` | Record a procedure outcome once per task |
+| `team_list_tasks` | Remote only, experimental: list a team project's tasks |
+| `team_create_task` | Remote only, experimental: create a task in a team project |
+| `team_request_run` | Remote only, experimental: record a run request (not executed) |
 
 Memory writes follow the [lesson and approval policy](MEMORY_LESSON_PROTOCOL.md).
 A tool's reported evidence is not proof that Brain independently executed tests.
@@ -91,7 +100,8 @@ Besides tools, both servers implement:
 * **Tool annotations.** Every tool carries a title and read-only, destructive,
   idempotent and open-world hints, so clients can auto-approve the read-only ones.
 * **Resources.** `brain://rules` and `brain://decisions` list the active rules and
-  decisions; `brain://payload/{token}` holds the tail of oversized tool results.
+  decisions (for a team member: global entries plus those of repositories they
+  can read); `brain://payload/{token}` holds the tail of oversized tool results.
 * **Prompts.** `plan_change`, `review_changes` and `capture_lesson` encode the
   intended tool sequence for common jobs.
 * **Elicitation.** With `BRAIN_MCP_CONFIRM_WRITES=true`, `record_decision` and

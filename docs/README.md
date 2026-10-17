@@ -19,6 +19,9 @@ Release-specific and experimental records are separated at the end.
 - [Model providers](MODEL_PROVIDERS.md): mock smoke tests, local models and cloud endpoints.
 - [CLI reference](CLI.md): indexing, context, health, backups and evaluation commands.
 - [Deployment](operations/DEPLOYMENT.md): authenticated remote installation, TLS and scoped keys.
+- [Team mode walkthrough](TEAM.md) (experimental preview, `main` only): projects, invitations,
+  member sign-in, MCP and revocation, with known limitations; reference:
+  [inviting team members](operations/TEAM_INVITATIONS.md).
 - [Agent deployment](operations/AGENT_DEPLOYMENT.md): operational gates for an agent running deployment.
 - [Operator runbook](../deploy/RUNBOOK.md) and [backup / restore](runbooks/backup-restore.md).
 - [Example client configs](../examples/) and [reindex-on-push helper](examples/reindex-on-push.yml).
