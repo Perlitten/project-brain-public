@@ -6,9 +6,10 @@ Runs on the sqlite team fixture; the Postgres end-to-end OAuth flow stays in
 """
 import time
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 
 import pytest
-from mcp.server.auth.provider import AuthorizationCode, RefreshToken, TokenError
+from mcp.server.auth.provider import AuthorizationCode, AuthorizationParams, RefreshToken, TokenError
 from mcp.shared.auth import OAuthClientInformationFull
 from sqlalchemy import select, update
 
@@ -17,7 +18,7 @@ from brain.auth import oauth_store
 from brain.auth.principals import resolve_credential
 from brain.config.settings import settings
 from brain.database.models import ApiCredential, OAuthRefreshToken, Principal
-from brain.team import oauth_link
+from brain.team import oauth_link, provisioning
 from brain.team.authorization import TeamDenied
 from brain.team.models import ProjectMember, TeamMember
 from brain.team.provisioning import CREDENTIAL_ISSUER, WEB_LOGIN_ISSUER
@@ -222,3 +223,55 @@ async def test_consent_approver_explains_team_denials(team_db, monkeypatch):
     assert await approve("", "", "", ["core:read"], "10.0.0.6") == (oauth_link.DEV_OPEN_SUBJECT, "")
     assert await approve("", "", "", ["team:read"], "10.0.0.7") == (
         "", "Team scopes require approval by a verified team member.")
+
+
+@pytest.mark.asyncio
+async def test_solo_brain_grants_personal_scopes_when_client_asks_for_every_advertised_scope(team_db, monkeypatch):
+    """A connector that requests everything ``scopes_supported`` lists must still be authorized in solo
+    state: there is no member to bind ``team:*`` to, so those scopes are dropped instead of denied."""
+    factory, _, _ = team_db
+    monkeypatch.setattr(mcp_oauth, "async_session_factory", factory)
+    monkeypatch.setattr(auth, "async_session_factory", factory)
+    monkeypatch.setattr(settings, "BRAIN_TEAM_MODE", False)
+    monkeypatch.setattr(settings, "PROJECT_BRAIN_API_KEY", "owner-key")  # production-like: not dev-open
+    async with factory() as session, session.begin():
+        await session.execute(update(TeamMember).values(revoked_at=datetime.now(timezone.utc)))
+        await provisioning.dissolve_team(session)  # revoking the last member alone keeps team state
+    await register_client(factory)
+    provider = mcp_oauth.BrainOAuthProvider("http://localhost")
+    # Registered without a scope: the registration default is every supported scope.
+    client = OAuthClientInformationFull(client_id=CLIENT_ID, client_name="Reader",
+                                        redirect_uris=["http://127.0.0.1:9999/callback"],
+                                        scope=" ".join(mcp_oauth.SUPPORTED_SCOPES))
+    params = AuthorizationParams(state="s", scopes=list(mcp_oauth.SUPPORTED_SCOPES), code_challenge="challenge",
+                                 redirect_uri="http://127.0.0.1:9999/callback", redirect_uri_provided_explicitly=True)
+    request_id = parse_qs(urlparse(await provider.authorize(client, params)).query)["request"][0]
+    pending = provider.pending(request_id)
+    assert pending.scopes and not oauth_link.team_scopes(pending.scopes)
+
+    # Binding itself stays strict: approving team:* without a member is still refused.
+    assert await mcp_oauth._approver("", "", "fixture-1", mcp_oauth.SUPPORTED_SCOPES, "10.0.0.8") == (
+        "", "Team scopes require approval by a verified team member.")
+    subject, error = await mcp_oauth._approver("", "", "fixture-1", pending.scopes, "10.0.0.9")
+    assert (subject, error) == ("human-1", "")
+    code = parse_qs(urlparse(provider.approve(request_id, subject)).query)["code"][0]
+    token = await provider.exchange_authorization_code(client, provider._codes[code])
+    assert set(token.scope.split()) == set(mcp_oauth.SUPPORTED_SCOPES) - set(oauth_link.TEAM_SCOPES)
+
+    # Nothing personal left after dropping team scopes: fall back to what the tools need.
+    params = params.model_copy(update={"scopes": ["team:read"]})
+    request_id = parse_qs(urlparse(await provider.authorize(client, params)).query)["request"][0]
+    assert provider.pending(request_id).scopes == mcp_oauth.DEFAULT_SCOPES
+
+
+@pytest.mark.asyncio
+async def test_team_brain_keeps_team_scopes_in_the_authorization_request(team_db, monkeypatch):
+    factory, _, _ = team_db
+    monkeypatch.setattr(mcp_oauth, "async_session_factory", factory)
+    provider = mcp_oauth.BrainOAuthProvider("http://localhost")
+    client = OAuthClientInformationFull(client_id=CLIENT_ID, client_name="Reader",
+                                        redirect_uris=["http://127.0.0.1:9999/callback"])
+    params = AuthorizationParams(state="s", scopes=["core:read", "team:read"], code_challenge="challenge",
+                                 redirect_uri="http://127.0.0.1:9999/callback", redirect_uri_provided_explicitly=True)
+    request_id = parse_qs(urlparse(await provider.authorize(client, params)).query)["request"][0]
+    assert provider.pending(request_id).scopes == ["core:read", "team:read"]

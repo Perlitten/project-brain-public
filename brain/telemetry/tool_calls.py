@@ -5,10 +5,10 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import CursorResult, delete, select
 
 from brain.database.models import McpToolCall
 from brain.database.session import async_session_factory
@@ -25,6 +25,18 @@ async def record_tool_call(tool: str, surface: str, outcome: str, latency_ms: fl
             await session.commit()
     except Exception as exc:  # pragma: no cover - depends on a live database
         logger.debug(f"MCP tool telemetry not recorded: {type(exc).__name__}")
+
+
+async def prune_tool_calls(retention_days: int) -> int:
+    """Delete calls older than the retention window; return how many. Only the
+    last WINDOW_HOURS are ever read, so older rows are dead weight."""
+    if retention_days <= 0:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(retention_days, math.ceil(WINDOW_HOURS / 24)))
+    async with async_session_factory() as session:
+        result = await session.execute(delete(McpToolCall).where(McpToolCall.created_at < cutoff))
+        await session.commit()
+    return int(cast(CursorResult[Any], result).rowcount or 0)
 
 
 def _ranked(values: list[float], percentile: float) -> float | None:

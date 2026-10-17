@@ -395,6 +395,63 @@ valid rollback there because the release root intentionally contains no
 `docker compose --project-directory . -f deploy/docker-compose.prod.yml down` stops the stack but keeps named
 volumes. Remove volumes only after taking backups.
 
+### Rollback across a schema migration = restore the pre-deploy dump
+
+Startup migrations (`brain/database/migrations.py`) only move forward. Restoring
+an older source tree or image does **not** undo them, so any release whose
+migrations rewrite data needs the pre-deploy Postgres dump to roll back. The
+decision-title migration (`_ensure_decision_title_uniqueness`) is one: it marks
+duplicate decisions `superseded` and drops their original status. A rehearsal
+of rolling main back to c13d056 on a migrated copy showed both failure modes:
+
+- with nothing written after the deploy, the old release starts, but superseded
+  decisions stay superseded; their original status is only in the dump;
+- once main has stored two decisions whose repository paths differ only in case
+  (main keeps POSIX paths case-sensitive), the old release refuses to start:
+  `could not create unique index "uq_decisions_normalized_title"`.
+
+Before such a deploy, preview what the migration will change (read-only):
+
+```bash
+cd /opt/project-brain
+set -a && . ./.env && set +a
+docker compose --project-directory . -f deploy/docker-compose.prod.yml exec -T postgres \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 \
+  -c 'SET default_transaction_read_only = on' -f - < deploy/sql/preview_decision_supersede.sql
+```
+
+and take a dump you have verified yourself; the `server_up.sh` dump under
+`./backups/<UTC>/` only prints a warning when it fails and is pruned to the
+last five:
+
+```bash
+docker exec brain-postgres pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB" > ~/brain-predeploy-<old-sha>.dump
+docker exec -i brain-postgres pg_restore --list < ~/brain-predeploy-<old-sha>.dump | head
+```
+
+Roll back as one unit — database and code together, never only one of them:
+
+1. Stop writers: `docker stop brain-api brain-worker` (by name, only these two;
+   never a pattern or project-wide command that could reach another stack's
+   containers on the same host).
+2. Restore the dump into the same database, as the database owner:
+
+   ```bash
+   docker exec brain-postgres psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
+     -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$POSTGRES_DB' AND pid<>pg_backend_pid()" \
+     -c "DROP DATABASE \"$POSTGRES_DB\"" -c "CREATE DATABASE \"$POSTGRES_DB\""
+   docker exec -i brain-postgres pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --exit-on-error < ~/brain-predeploy-<old-sha>.dump
+   ```
+
+   A dump taken by `scripts/backup_runner.py` is restored with
+   `scripts/restore.sh` instead (see `docs/runbooks/backup-restore.md`). That
+   path also writes the team access fence when the snapshot has team members. A
+   pre-team snapshot has none, so this manual restore is fine for it.
+3. Restore the previous source tree (above) and run `bash deploy/server_up.sh`.
+   Its image `brain-api:<old-sha>` is normally still retained (see below).
+4. Verify `/api/version` reports the old SHA and `/health` is `ok`. Anything
+   written between the deploy and the restore is lost. Note it before step 2.
+
 ### Release image retention
 
 The rollback window above is made of the `brain-api:<sha>` images left on the

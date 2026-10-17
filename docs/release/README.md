@@ -125,6 +125,8 @@ must stay outside the advertised newcomer journey.
 
 ## Version-specific and historical records
 
+- [Solo deploy checklist, c13d056 → main](solo-deploy-c13d056-to-main.md): pre-checks,
+  env pins, API → web order, post-checks and dump-based rollback for the team-mode release.
 - [v0.9.0 release records](0.9.0/): preserved installation, support and rollback
   evidence for that version, not current onboarding.
 - [Historical research catalog](../historical/README.md): retained experiments
