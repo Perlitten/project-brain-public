@@ -49,6 +49,13 @@ async def lifespan(app: FastAPI):
         # Keep serving health and diagnostics; readiness remains red until
         # schema initialization succeeds on a later worker task or restart.
         logger.error(f"Startup schema initialization deferred: {type(exc).__name__}: {exc}")
+    try:
+        from apps.api.registry_access import import_registry_file_at_startup
+
+        await import_registry_file_at_startup()
+    except Exception as exc:
+        # Team-state registry reads retry the import on first use.
+        logger.warning("Workspace registry import deferred to first use: {}: {}", type(exc).__name__, exc)
     if settings.LATE_INTERACTION_ENABLED and (
         settings.LATE_INTERACTION_SHADOW_ENABLED
         or settings.LATE_INTERACTION_RERANK_ENABLED

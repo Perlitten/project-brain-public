@@ -27,7 +27,8 @@ from brain.team.execution import ExecutionDenied, ExecutionRunner, Lease
 from brain.team.models import (AgentRun, AgentRunExecution, ProjectMember, ProjectRepository, Team, TeamAccessFence,
                                TeamActivityEvent, TeamExecutionGrant, TeamIdentity, TeamInvitation, TeamMember,
                                TeamIntegrationEntry, TeamOidcFlow, TeamProject, TeamResourceLease,
-                               TeamRunResolution, TeamTaskBinding, TeamTaskPlan)
+                               TeamRunResolution, TeamTaskBinding, TeamTaskPlan, WorkspaceRegistryEntry,
+                               WorkspaceRegistryEvent)
 from brain.team.store import create_task, request_run
 
 TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, AgentTask, AgentTaskEvent,
@@ -38,7 +39,9 @@ TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, Ag
           # SSO tables reference invitations; the shared PostgreSQL database must drop them first.
           TeamIdentity, TeamOidcFlow,
           # Coordination (M3) tables reference task bindings, runs and repositories.
-          TeamTaskPlan, TeamResourceLease, TeamRunResolution, TeamIntegrationEntry)]
+          TeamTaskPlan, TeamResourceLease, TeamRunResolution, TeamIntegrationEntry,
+          # Shared workspace registry: repository trust every process reads in team state.
+          WorkspaceRegistryEntry, WorkspaceRegistryEvent)]
 NOW = datetime.now(timezone.utc)
 SECRET_VALUE = "fixture-secret-value-7f3a9c"
 PY = sys.executable

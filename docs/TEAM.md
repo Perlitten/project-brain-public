@@ -389,6 +389,13 @@ which is the source of truth.
   team administrator and links it to a team project: pass `project_id`, or attach
   it with `brain team project attach` first
   ([details](design/team-foundations.md#workspace-registry-and-team-membership-one-authority)).
+  In team state the registry lives in PostgreSQL (`workspace_registry_entries`), so
+  the API, the worker and `brain workspace` agree on trust; the registration, its
+  project link and its activity row commit together. A team administrator can open
+  a disabled entry by id and re-enable it (`POST /workspace/repositories/{id}/enable`
+  or `brain workspace repositories enable`); both appear in the activity feed. The
+  offline `brain workspace repositories register` needs `--project` in team state
+  ([upgrade note](operations/TEAM_DEPLOY.md#workspace-registry-file-to-table)).
 - **Coordination does not merge.** The integration queue records decisions
   against a base you name; it does not run `git merge` or test the combined
   patch. Overlap detection compares declared paths only, not code dependencies.

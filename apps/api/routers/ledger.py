@@ -10,13 +10,12 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import registry_authority
+from apps.api.registry_access import registry_authority, workspace_registry
 from apps.api.team_access import repository_authority, team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.ledger.ledger import EvidenceLedger
 from brain.ledger.store import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from brain.team.authorization import Permission
-from brain.workspace.registry_store import RegistryStore
 
 router = APIRouter(
     prefix="/ledger",
@@ -29,13 +28,10 @@ def _ledger() -> EvidenceLedger:
     return EvidenceLedger(Path(".brain"))
 
 
-def _registry() -> RegistryStore:
-    return RegistryStore(Path(".brain/workspace"))
-
-
 async def _authorize_repository(principal: ResolvedPrincipal, repository_id: str) -> None:
     """Read on the registry repository behind a ledger ``repository_id``; empty or unknown is chain-wide."""
-    await registry_authority(principal, Permission.READ, _registry().get(repository_id) if repository_id else None)
+    record = (await workspace_registry()).get(repository_id) if repository_id else None
+    await registry_authority(principal, Permission.READ, record)
 
 
 @router.get("/events", dependencies=[Depends(require_scope("ledger:read"))])

@@ -41,6 +41,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_team_invitation_oidc_columns(conn)
     await _ensure_execution_environment_column(conn)
     await _ensure_team_identity_session_column(conn)
+    await _ensure_workspace_registry_tables(conn)
     await _backfill_non_current_knowledge_authority(conn)
     await _ensure_insights_table(conn)
     await _ensure_harness_reliability_columns(conn)
@@ -253,6 +254,39 @@ async def _ensure_memory_provenance_columns(conn: AsyncConnection) -> None:
         else:
             for column, ddl in columns:
                 await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {ddl}"))
+
+
+async def _ensure_workspace_registry_tables(conn: AsyncConnection) -> None:
+    """The team-state workspace registry (``brain.team.registry``): one table every process reads.
+
+    ``create_all`` creates both tables from ``brain.team.models``; this keeps an
+    upgraded database that skipped ``create_all`` for them in step, idempotently."""
+    if conn.dialect.name == "sqlite":
+        return
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS workspace_registry_entries (
+            repository_id VARCHAR(64) PRIMARY KEY,
+            normalized_root_identity VARCHAR(1024) NOT NULL,
+            trust_level VARCHAR(32) NOT NULL,
+            disabled BOOLEAN NOT NULL DEFAULT FALSE,
+            version INTEGER NOT NULL DEFAULT 1,
+            record JSON NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """))
+    await conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS workspace_registry_events (
+            id SERIAL PRIMARY KEY,
+            event_id VARCHAR(64) NOT NULL UNIQUE,
+            repository_id VARCHAR(64) NOT NULL,
+            event_type VARCHAR(32) NOT NULL,
+            event JSON NOT NULL,
+            recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """))
+    await conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_workspace_registry_events_repository_id "
+        "ON workspace_registry_events (repository_id)"))
 
 
 async def _ensure_team_dissolved_column(conn: AsyncConnection) -> None:

@@ -13,14 +13,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import registry_authority
+from apps.api.registry_access import registry_authority, workspace_registry
 from apps.api.team_access import team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.lab.laboratory import ChangeLaboratory
 from brain.lab.models import PatchRecord, PatchSource
 from brain.team.authorization import Permission
 from brain.workspace.models import Capability
-from brain.workspace.registry_store import RegistryStore
 
 router = APIRouter(
     prefix="/lab",
@@ -35,17 +34,14 @@ def _laboratory() -> ChangeLaboratory:
     return ChangeLaboratory(Path(".brain"))
 
 
-def _registry() -> RegistryStore:
-    return RegistryStore(Path(".brain/workspace"))
-
-
 async def _authorize(principal: ResolvedPrincipal, permission: Permission, repository_id: str | None) -> None:
     """``permission`` on the registry repository a lab object belongs to; unknown means a team administrator."""
-    await registry_authority(principal, permission, _registry().get(repository_id) if repository_id else None)
+    record = (await workspace_registry()).get(repository_id) if repository_id else None
+    await registry_authority(principal, permission, record)
 
 
-def _require_repository(repository_id: str, *capabilities: Capability):
-    record = _registry().get(repository_id)
+async def _require_repository(repository_id: str, *capabilities: Capability):
+    record = (await workspace_registry()).get(repository_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
     if record.disabled:
@@ -102,7 +98,7 @@ async def get_workspace(workspace_id: str, principal: ResolvedPrincipal = Depend
 async def validate_patch(req: ValidateRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     """Validate a candidate patch inside a fresh disposable workspace."""
     await _authorize(principal, Permission.REQUEST_RUN, req.repository_id)
-    record = _require_repository(
+    record = await _require_repository(
         req.repository_id,
         Capability.CREATE_WORKTREES,
         Capability.APPLY_CANDIDATE_PATCHES,

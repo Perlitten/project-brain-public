@@ -51,7 +51,7 @@ RECORDS = {"repo-a": _record("repo-a", "/synthetic/A"), "repo-b": _record("repo-
 
 
 class FakeRegistry:
-    """Stands in for RegistryStore: registry ids repo-a/repo-b point at the indexed roots of projects A/B."""
+    """Stands in for the registry reader: registry ids repo-a/repo-b point at the indexed roots of projects A/B."""
 
     def __init__(self, *_args, **_kwargs):
         pass
@@ -74,7 +74,7 @@ def repo_app(factory, monkeypatch, tmp_path):
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr("apps.api.request_observation.observe_http_request", AsyncMock())
     for module in (freshness, ledger, workspace, operations, lab, experiments):
-        monkeypatch.setattr(module, "RegistryStore", FakeRegistry)
+        monkeypatch.setattr(module, "workspace_registry", AsyncMock(return_value=FakeRegistry()))
     generations = MagicMock()
     generations.get_active_generation_id.return_value = None
     generations.list_generations.return_value = []
