@@ -6,6 +6,72 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- In team state, keep the workspace registry in PostgreSQL
+  (`workspace_registry_entries`, `workspace_registry_events`) so the API, the
+  worker and the workspace CLI share one trust. The API imports its registry
+  file once; registration and the project link commit together; add
+  `POST /workspace/repositories/{id}/enable` and `repositories enable`. Solo
+  state keeps the file. Copy the file out of `brain-api` before upgrading
+  ([TEAM_DEPLOY.md](docs/operations/TEAM_DEPLOY.md#workspace-registry-file-to-table))
+  (#149).
+- Add `BRAIN_LOCAL_PRINCIPAL_KEY` so stdio MCP and the CLI act as a named
+  principal (fails closed); in team state G4 episodes go through review and
+  their evidence authors cannot approve them; optional Telegram notices for
+  pending reviews (`MEMORY_REVIEW_TELEGRAM_NOTIFY`, default off) (#148).
+- Harden team coordination and execution: dependencies are rechecked before a
+  run executes, integrating an entry completes its task, overlap also compares
+  the files a run changed, a service-level lease force-release is recorded in
+  the activity feed, and `brain team doctor` reports the execution
+  configuration (#147).
+- Add the team board (`/team/board`) with leases, overlaps and the integration
+  queue, a conflict view with actions, and MCP tools to claim, renew and release
+  leases, declare scope and enqueue integration (#146).
+- Govern member learnings, skills and consolidation: a member's learning is
+  personal by default and sharing it is a proposal, member skills start
+  pending, consolidation counts distinct principals and proposes instead of
+  promoting, and approvals record `approved_by_principal_id` (#145).
+- Let invited members approve team OAuth clients (revoked with the member);
+  keep one live SSO session credential per binding with
+  `POST /team/oidc/logout`; add **Sign in with SSO** to `/invite`; add
+  `BRAIN_TRUSTED_PROXY_IPS` for the client IP behind a proxy (#144).
+- Add a container backend, named execution environments and an egress proxy
+  to bounded execution (`BRAIN_EXECUTION_BACKEND`,
+  `BRAIN_EXECUTION_ENVIRONMENTS`, `BRAIN_EXECUTION_CONTAINER_*`); still off by
+  default (#143).
+- Add the first slice of team coordination: subtasks with dependencies,
+  declared-scope overlap warnings, instruction versions per run, fenced
+  resource leases and an integration queue (`brain team coord`, read-only MCP
+  tools) (#142).
+- Cap repository authority by the workspace registry trust ceiling: an
+  `untrusted_external` repository is read-only, a disabled or archived one is
+  denied to everyone, and a corrupt registry fails closed; registering a
+  repository in team state needs a team administrator and a project (#141).
+- Add `brain team doctor` and `GET /team/doctor`, and a `deploy/team/` compose
+  overlay with Caddy, the web dashboard and an executor worker profile
+  ([TEAM_DEPLOY.md](docs/operations/TEAM_DEPLOY.md)) (#140).
+- Add an opt-in team end-to-end check (`scripts/team_e2e_check.py`,
+  [runbook](docs/runbooks/team-e2e-check.md)) and fix the commit ordering and
+  legacy authorship backfill it found (#138).
+- Add memory proposals and a review queue: in team state a member's decision or
+  rule becomes a proposal (HTTP 202) that a reviewer approves or rejects
+  (`GET /memory/proposals`, MCP `team_propose_*`, dashboard Memory → Review),
+  and learnings get a personal tier ([MEMORY_REVIEW.md](docs/MEMORY_REVIEW.md))
+  (#137).
+- Poll each repository's origin into a Brain-owned bare mirror
+  (`BRAIN_ORIGIN_POLL_INTERVAL_S`, `BRAIN_SOURCE_MIRROR_DIR`,
+  `BRAIN_ORIGIN_REMOTES`, `POST /jobs/origin-poll`); the freshness envelope
+  reports `origin_ahead_of_index`, and the webhook no longer needs a writable
+  checkout (#135).
+- Add `GET /team/me` and the team activity feed (`GET /team/activity`, MCP
+  `team_me` and `team_activity`, dashboard pages) over an append-only
+  `team_activity_events` table (#134).
+- Share the invitation acceptance throttle across API processes through Redis
+  (10 attempts per IP per 5 minutes, `Retry-After`); repository paths outside
+  the allowed roots now answer 400 instead of 500 (and 403 on `POST /index`)
+  (#133).
+- Add the dashboard invitation UI: the Team page issues, tracks and revokes
+  invitations, and the public `/invite` page redeems one, shows the key once
+  and signs the invitee in (#132).
 - Add the first slice of bounded team execution (M2), **off by default**. With
   `BRAIN_EXECUTION_ENABLED`, an execution root and an operator tool allowlist set,
   a team administrator can grant a Contributor or Reviewer execution on one project
@@ -15,7 +81,7 @@ All notable changes to this project are documented here. The format follows
   the run; a lease with a fencing token keeps a crashed or expired worker from
   committing. Secrets are passed by reference and never stored. The subprocess
   backend is not containment and refuses egress. See
-  [bounded team execution](docs/operations/TEAM_EXECUTION.md).
+  [bounded team execution](docs/operations/TEAM_EXECUTION.md) (#136).
 - Add optional, off-by-default OpenID Connect single sign-on for team members
   ([TEAM_SSO.md](docs/operations/TEAM_SSO.md)): authorization-code flow with
   PKCE, state, nonce and a browser binding; ID tokens validated against the
@@ -25,7 +91,7 @@ All notable changes to this project are documented here. The format follows
   **Sign in with SSO** on the dashboard with the same session and scopes as a
   member key. `BRAIN_OIDC_REQUIRE_FOR_INVITATIONS` refuses token-only
   acceptance. Operators bind existing members with
-  `brain team member sso-bind`. No auto-provisioning.
+  `brain team member sso-bind`. No auto-provisioning (#139).
 
 - Team mode is an **experimental preview** on `main` (not in v0.9.2, not
   deployed, not piloted). Add the [team mode walkthrough](docs/TEAM.md) from

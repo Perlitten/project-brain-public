@@ -177,6 +177,30 @@ Changes that cannot be pinned, and that you should know about:
   Behaviour change in solo too: editing a decision or rule keeps its id, bumps
   `version` and copies the old content into a superseded history row instead
   of overwriting it.
+- **Merged later still** (PRs #132–#149: invitation UI, team activity, bounded
+  execution, memory review, SSO, doctor, coordination, board, shared workspace
+  registry). Every new feature is off by default or acts only in team state, so
+  no new pin is needed; the full list of settings is in
+  [team status](../design/team-status.md#deploy-implications). On first boot
+  Brain creates only new tables (`team_activity_events`, `memory_proposals`,
+  `team_execution_grants`, `agent_run_executions`, `team_identities`,
+  `team_oidc_flows`, `team_task_plans`, `team_resource_leases`,
+  `team_run_resolutions`, `team_integration_entries`,
+  `workspace_registry_entries`, `workspace_registry_events`) and nullable
+  columns (`team_invitations.verified_issuer` and `verified_subject`,
+  `agent_run_executions.environment`, `team_identities.session_credential_id`,
+  `approved_by_principal_id` on decisions, rules, `memory_learnings` and
+  `memory_skills`). Behaviour change in solo too: a repository path outside the
+  allowed roots answers 400 on `/late-interaction/status` and the insights,
+  impact, context, related and features routes (some answered 500), and on
+  `POST /index` (was 403).
+- **Workspace registry file.** The solo registry is still
+  `/app/.brain/workspace/repository_registry.json` inside `brain-api`'s writable
+  layer, so `server_up.sh` recreating the container drops it. If
+  `docker exec brain-api ls /app/.brain/workspace` shows a registry file, copy
+  it out before the deploy and back afterwards as in
+  [TEAM_DEPLOY.md](../operations/TEAM_DEPLOY.md#workspace-registry-file-to-table);
+  the first team-state start imports that file into PostgreSQL once.
 - The origin poll adds one table, `repository_origin_state` (created on first
   boot, nothing else changes), and one scheduled job, `origin_poll`, every
   `BRAIN_ORIGIN_POLL_INTERVAL_S` seconds on the fast pool.
@@ -196,9 +220,10 @@ few days, and record each change.
   `brain-api` shows `unhealthy` for several minutes while the dump runs.
   That is normal. Poll; do not react.
 - [ ] **Web**, only after the API post-checks pass. Deploy the Vercel project
-  from `apps/web` (`npx vercel deploy --prod`). This release adds no new
-  required web env var. In solo state the dashboard keeps using its server
-  key. Team sign-in only appears once a member exists, so the web key
+  from `apps/web` (`npx vercel deploy --prod`) from the same `<new-sha>`: the
+  SSO logout and the team board call routes that only the new API serves.
+  This release adds no new required web env var. In solo state the dashboard
+  keeps using its server key. Team sign-in only appears once a member exists, so the web key
   question belongs to the member step, not this one.
 
 ## 4. Post-checks
