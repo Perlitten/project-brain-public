@@ -5,10 +5,11 @@ import json
 import yaml
 from typing import List, Optional, Any, Dict
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from brain.database.session import async_session_factory
 from brain.database.models import Rule
-from brain.memory.provenance import MemoryWriteResult, check_expected_version
+from brain.memory.provenance import MemoryVersionConflict, MemoryWriteResult, check_expected_version
 from brain.memory.repo_scope import normalize_repo_scope, repository_scope_clause, scope_equals
 
 # Content fields that take part in change detection and are copied into history rows.
@@ -35,15 +36,20 @@ def rule_history_id(rule_id: str, version: int) -> str:
     return f"{rule_id[:200]}--h{digest}"
 
 
-async def _find_rule(session, rule_key: str, scope: Optional[str]):
+async def _find_rule(session, rule_key: str, scope: Optional[str], lock: bool = False):
+    """(canonical rule or None, the scoped id a new rule gets). ``lock`` holds the row lock until the
+    transaction ends (``SELECT ... FOR UPDATE`` on PostgreSQL), so compare-and-swap writers queue on it."""
     scoped_id = scoped_rule_id(rule_key, scope)
     # Preserve existing bare IDs in their original scope. A matching ID in
     # another repository is never re-parented or overwritten. History rows
     # (superseded content copies) are never the canonical match.
-    result = await session.execute(select(Rule).where(
+    query = select(Rule).where(
         Rule.id.in_([rule_key, scoped_id]), scope_equals(Rule.repo_path, scope),
         Rule.superseded_by_id.is_(None),
-    ).order_by(Rule.id))
+    ).order_by(Rule.id)
+    if lock:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    result = await session.execute(query)
     return result.scalar_one_or_none(), scoped_id
 
 
@@ -120,23 +126,34 @@ class RuleStore:
             "applies_to": applies_to,
         }
         async def _write(sess: AsyncSession) -> MemoryWriteResult:
-            existing, scoped_id = await _find_rule(sess, r_id, normalized_repo_path)
-            check_expected_version("rule", r_id, expected_version,
-                                   existing.version if existing is not None else None)
-            if existing:
-                history_id = _supersede_rule_content(sess, existing, requested, author_principal_id)
-                await sess.flush()
-                return MemoryWriteResult(id=existing.id, version=existing.version or 1, created=False,
-                                         changed=history_id is not None, superseded_id=history_id)
-            sess.add(Rule(
-                id=scoped_id,
-                author_principal_id=author_principal_id,
-                updated_by_principal_id=author_principal_id,
-                version=1,
-                **requested,
-            ))
-            await sess.flush()
-            return MemoryWriteResult(id=scoped_id, version=1, created=True, changed=True)
+            existing, scoped_id = await _find_rule(sess, r_id, normalized_repo_path, lock=True)
+            read_version = (existing.version or 1) if existing is not None else 0
+            check_expected_version("rule", r_id, expected_version, read_version)
+            try:
+                # A savepoint keeps the caller's transaction usable when a concurrent writer won the race.
+                async with sess.begin_nested():
+                    if existing:
+                        history_id = _supersede_rule_content(sess, existing, requested, author_principal_id)
+                        await sess.flush()
+                        return MemoryWriteResult(id=existing.id, version=existing.version or 1, created=False,
+                                                 changed=history_id is not None, superseded_id=history_id)
+                    sess.add(Rule(
+                        id=scoped_id,
+                        author_principal_id=author_principal_id,
+                        updated_by_principal_id=author_principal_id,
+                        version=1,
+                        **requested,
+                    ))
+                    await sess.flush()
+                    return MemoryWriteResult(id=scoped_id, version=1, created=True, changed=True)
+            except IntegrityError:
+                # The rule (same scoped id) was created, or the same version superseded (the history row's
+                # id is derived from the version), by a concurrent writer: a conflict, not a server error.
+                current, _ = await _find_rule(sess, r_id, normalized_repo_path)
+                if current is None or (current.version or 1) == read_version:
+                    raise
+                raise MemoryVersionConflict("rule", r_id, read_version if expected_version is None
+                                            else int(expected_version), current.version or 1) from None
 
         if session is not None:
             return await _write(session)

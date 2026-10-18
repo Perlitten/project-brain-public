@@ -86,6 +86,16 @@ version as a compare-and-swap, so an item that changed after the proposal was
 made refuses the stale proposal with 409 and the proposal stays pending; the
 author withdraws it and proposes again from the current version.
 
+The compare-and-swap holds under concurrency. A decision or rule write locks
+the item's row (PostgreSQL `SELECT ... FOR UPDATE`) until its transaction
+ends, so concurrent writers, direct writes and approvals alike, take turns: of
+several writers sending the same `expected_version`, exactly one succeeds and
+the others get 409 naming the current version. Approving several proposals
+based on the same version publishes one of them; the rest answer 409 and stay
+pending. Two writers creating the same new decision or rule at once also give
+one creation and a 409, not a server error. Writes without `expected_version`
+are applied one after another, each a new version in the history.
+
 ## Drafts never reach agents
 
 Proposals live in their own table (`memory_proposals`). No retrieval path reads
@@ -165,6 +175,12 @@ failing channel never fails or delays the submission.
   other way.
 - Knowledge that was approved before the revocation stays approved, with the
   author or editor still on record.
+- The member's **personal learnings are retired** in the same transaction:
+  their status becomes `personal_retired`. The rows stay in the database for
+  the audit trail, but nobody reads, proposes or promotes them again, not even
+  the same principal if they are added back to the team, and they never appear
+  in the activity feed. Recall never used them: context packs, search and
+  consolidation read only approved (`active`) learnings.
 - Removing only one **project role** leaves the member's proposals pending; a
   Reviewer may still approve or reject them, or the author withdraws them.
 
@@ -257,4 +273,6 @@ memory on one person's word:
   `POST /episodes/{id}/approve`, as before.
 - Review notifications go only to the owner's Telegram chat; there is no
   per-reviewer channel yet.
-- A revoked member's personal learnings stay stored and invisible to everyone.
+- A personal learning written after a member's revocation committed (a
+  request that was already in flight) is not retired: it stays `personal`,
+  readable only by that principal, who has no access while revoked.
