@@ -19,7 +19,7 @@ from brain.team.models import (AgentRun, ProjectMember, ProjectRepository, Team,
 from brain.team.restore_fence import FENCED, access_fenced
 from brain.workspace.models import RepositoryRecord, TrustLevel
 from brain.workspace.registry_store import RegistryCorruptionError
-from brain.workspace.trust import load_registry_records, records_for_path, trust_withdrawn
+from brain.workspace.trust import records_for_path, trust_withdrawn
 
 
 class Permission(StrEnum):
@@ -312,10 +312,17 @@ def registry_trust_ceiling(records: list[RepositoryRecord], *paths: str | None) 
     return ceiling, ""
 
 
-def registry_records() -> list[RepositoryRecord]:
-    """Registry records for an authorization decision; an unreadable registry fails closed."""
+async def registry_records(session: AsyncSession) -> list[RepositoryRecord]:
+    """Team-state registry records for an authorization decision; an unreadable registry fails closed.
+
+    Read from the shared ``workspace_registry_entries`` table through the
+    caller's session, so the API, the worker and the CLI decide on the same
+    trust (``brain.team.registry``); the legacy file is the fallback only while
+    the table is empty."""
+    from brain.team.registry import trust_records
+
     try:
-        return load_registry_records()
+        return await trust_records(session)
     except (RegistryCorruptionError, OSError) as exc:
         logger.warning("Workspace registry unreadable during repository authorization: {}", exc)
         raise TeamDenied("Workspace registry is unreadable; repository trust cannot be established") from exc
@@ -360,7 +367,7 @@ async def authorize_repository(session: AsyncSession, caller: ResolvedPrincipal,
     else:
         authority = await authorize(session, live, link.project_id, permission, author_id=author_id)
     # Trust is checked after membership so a caller without access learns nothing about the registry.
-    ceiling, reason = registry_trust_ceiling(registry_records(), indexed_path, repo_path)
+    ceiling, reason = registry_trust_ceiling(await registry_records(session), indexed_path, repo_path)
     if permission not in ceiling:
         raise TeamDenied(reason)
     return replace(authority, allowed=authority.allowed & ceiling)

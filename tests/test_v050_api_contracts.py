@@ -37,6 +37,7 @@ COVERED_ENDPOINTS = {
     ("GET", "/workspace/repositories/{repository_id}/capabilities"),
     ("GET", "/workspace/repositories/{repository_id}/events"),
     ("POST", "/workspace/repositories/{repository_id}/disable"),
+    ("POST", "/workspace/repositories/{repository_id}/enable"),
     ("GET", "/workspace/verify"),
     ("GET", "/portfolio"),
     ("POST", "/portfolio"),
@@ -198,6 +199,19 @@ def test_registry_endpoints(client, portfolio):
     disabled = client.post(f"/workspace/repositories/{repo_id}/disable?reason=smoke")
     assert disabled.status_code == 200
     assert disabled.json()["repository"]["disabled"] is True
+
+
+def test_registry_enable_restores_the_trust_before_disable(client, portfolio):
+    record = _register(client, portfolio.path("shared-contracts"), "shared-contracts")
+    repo_id = record["repository_id"]
+    assert client.post(f"/workspace/repositories/{repo_id}/enable").status_code == 409  # not disabled
+    client.post(f"/workspace/repositories/{repo_id}/disable?reason=smoke")
+    assert client.post(f"/workspace/repositories/{repo_id}/enable?trust_level=root").status_code == 400
+    enabled = client.post(f"/workspace/repositories/{repo_id}/enable?reason=smoke")
+    assert enabled.status_code == 200
+    assert enabled.json()["repository"]["disabled"] is False
+    assert enabled.json()["repository"]["trust_level"] == record["trust_level"]
+    assert client.post("/workspace/repositories/repo-missing/enable").status_code == 404
 
 
 def test_registry_rejects_unknown_repository_and_trust_level(client, portfolio):

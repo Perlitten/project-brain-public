@@ -71,12 +71,16 @@ KINDS: dict[str, tuple[str, ...]] = {
                      "coordination.integration_rejected", "coordination.lease_force_released"),
     # Governed memory review: a proposal was submitted, approved or rejected (no draft content in the event).
     "memory": ("memory.proposed", "memory.approved", "memory.rejected"),
+    # Workspace-registry trust administration in team state (brain.team.registry): administrators only.
+    "registry": ("registry.registered", "registry.disabled", "registry.enabled", "registry.inspected"),
 }
 ALL_KINDS = frozenset(kind for kinds in KINDS.values() for kind in kinds)
 # Families only team administrators read: team administration itself, and the
 # episode/skill memory whose API is administrator-only as well.
-ADMIN_FAMILIES = frozenset({"membership", "project_role", "execution", "invitation", "sso", "episode", "skill"})
-TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "sso", "job", "coordination", "memory"})
+ADMIN_FAMILIES = frozenset({"membership", "project_role", "execution", "invitation", "sso", "episode", "skill",
+                            "registry"})
+TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "sso", "job", "coordination", "memory",
+                            "registry"})
 
 _PRINCIPAL_LABEL = re.compile(r"^principal:(\d+)$")
 

@@ -13,7 +13,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import register_for_team, registry_authority
+from apps.api.registry_access import (
+    disable_registered,
+    enable_registered,
+    read_registered,
+    register_for_team,
+    registry_authority,
+    workspace_events,
+    workspace_registry,
+)
 from apps.api.team_access import team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.lab.laboratory import BUILTIN_PROFILES
@@ -36,6 +44,7 @@ router = APIRouter(
 
 
 def _get_store() -> RegistryStore:
+    """The solo-state file store; reads go through ``workspace_registry`` (the shared table in team state)."""
     return RegistryStore(Path(".brain/workspace"))
 
 
@@ -61,8 +70,7 @@ class UpdateCapabilitiesRequest(BaseModel):
 @router.get("/repositories", dependencies=[Depends(require_scope("workspace:read")), Depends(team_administrator_access())])
 async def list_repositories():
     """List all registered repositories."""
-    store = _get_store()
-    repos = store.list_all()
+    repos = (await workspace_registry()).list_all()
     return {
         "status": "success",
         "total": len(repos),
@@ -78,8 +86,6 @@ async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal
     In team state the repository is also linked to a team project the caller administers
     (``register_for_team``); a registration no member could use is refused.
     """
-    store = _get_store()
-
     # Validate trust level
     try:
         trust = TrustLevel(req.trust_level)
@@ -87,7 +93,7 @@ async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal
         raise HTTPException(status_code=400, detail=f"Invalid trust level: {req.trust_level}")
 
     # Validate path
-    existing = store.list_all()
+    existing = (await workspace_registry()).list_all()
     registered_canonicals = {
         PathSandbox.get_canonical_string(Path(r.canonical_root))
         for r in existing
@@ -139,8 +145,8 @@ async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal
 
     try:
         saved, project_id = await register_for_team(
-            principal, canonical, req.project_id,
-            lambda: store.register(record, actor="api", source="api"))
+            principal, canonical, req.project_id, record,
+            lambda: _get_store().register(record, actor="api", source="api"))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     response = {"status": "success", "repository": saved.to_dict()}
@@ -151,10 +157,12 @@ async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal
 
 @router.get("/repositories/{repository_id}", dependencies=[Depends(require_scope("workspace:read"))])
 async def get_repository(repository_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
-    """Get repository details."""
-    store = _get_store()
-    record = store.get(repository_id)
-    await registry_authority(principal, Permission.READ, record)
+    """Get repository details.
+
+    A disabled repository is readable by a team administrator in team state (audited as
+    ``registry.inspected``), so it can be inspected before it is re-enabled."""
+    record = (await workspace_registry()).get(repository_id)
+    await read_registered(principal, record)
     if not record:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
     return {"status": "success", "repository": record.to_dict()}
@@ -163,21 +171,39 @@ async def get_repository(repository_id: str, principal: ResolvedPrincipal = Depe
 # Trust and lifecycle of a registered repository are registry administration, not a project role.
 @router.post("/repositories/{repository_id}/disable",
              dependencies=[Depends(require_scope("workspace:write")), Depends(team_administrator_access())])
-async def disable_repository(repository_id: str, reason: str = Query("manual disable")):
+async def disable_repository(repository_id: str, reason: str = Query("manual disable"),
+                             principal: ResolvedPrincipal = Depends(require_principal)):
     """Disable a repository."""
-    store = _get_store()
     try:
-        record = store.disable(repository_id, actor="api", source="api", reason=reason)
+        record = await disable_registered(principal, repository_id, reason)
         return {"status": "success", "repository": record.to_dict()}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.post("/repositories/{repository_id}/enable",
+             dependencies=[Depends(require_scope("workspace:write")), Depends(team_administrator_access())])
+async def enable_repository(repository_id: str,
+                            trust_level: str | None = Query(None, description="Defaults to the level before disable"),
+                            reason: str = Query("manual enable"),
+                            principal: ResolvedPrincipal = Depends(require_principal)):
+    """Re-enable a disabled repository, at ``trust_level`` or at the trust level it had before it was disabled."""
+    if trust_level is not None:
+        try:
+            TrustLevel(trust_level)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid trust level: {trust_level}")
+    try:
+        record = await enable_registered(principal, repository_id, trust_level, reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"status": "success", "repository": record.to_dict()}
+
+
 @router.get("/repositories/{repository_id}/capabilities", dependencies=[Depends(require_scope("workspace:read"))])
 async def get_capabilities(repository_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     """Get repository capabilities with validation."""
-    store = _get_store()
-    record = store.get(repository_id)
+    record = (await workspace_registry()).get(repository_id)
     await registry_authority(principal, Permission.READ, record)
     if not record:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
@@ -198,9 +224,8 @@ async def get_capabilities(repository_id: str, principal: ResolvedPrincipal = De
 async def get_repository_events(repository_id: str, limit: int = Query(50, le=500),
                                 principal: ResolvedPrincipal = Depends(require_principal)):
     """Get audit events for a repository."""
-    store = _get_store()
-    await registry_authority(principal, Permission.READ, store.get(repository_id))
-    events = store.list_events(repository_id=repository_id, limit=limit)
+    await registry_authority(principal, Permission.READ, (await workspace_registry()).get(repository_id))
+    events = await workspace_events(repository_id, limit)
     return {
         "status": "success",
         "total": len(events),
@@ -211,8 +236,7 @@ async def get_repository_events(repository_id: str, limit: int = Query(50, le=50
 @router.get("/verify", dependencies=[Depends(require_scope("workspace:read")), Depends(team_administrator_access())])
 async def verify_registry():
     """Verify registry integrity."""
-    store = _get_store()
-    ok, msg = store.verify_integrity()
+    ok, msg = (await workspace_registry()).verify_integrity()
     return {
         "status": "success" if ok else "error",
         "integrity": ok,

@@ -239,6 +239,46 @@ restoring that backup together with the old code
 ([runbook](../../deploy/RUNBOOK.md)); for a team Brain use the fenced restore
 above.
 
+### Workspace registry: file to table
+
+Repository trust (the workspace registry) used to live in a file,
+`.brain/workspace/repository_registry.json`, in each process's working directory
+(`/app` in the containers, with no volume), so the worker re-authorized jobs
+against its own, usually empty, copy. In team state the registry now lives in
+PostgreSQL (`workspace_registry_entries` and `workspace_registry_events`, created
+on API start; no new environment variables). Solo state still uses the file and
+does not change.
+
+- **Import.** The first time the API runs in team state (at startup, or on the
+  first registry read after the team gains its first member), it copies its own
+  file, entries and events, into the empty table and logs
+  `Imported N workspace registry entries ... into workspace_registry_entries`.
+  The import runs once: as soon as the table has an entry, the files are no longer
+  read in team state (edits to them are ignored). Files in the worker container
+  are never imported.
+- **Until then.** While the table is empty, trust checks read the local file and
+  log `Workspace registry table is empty; reading the legacy registry file ...`.
+  An unreadable file still fails closed.
+- **Keep the API's file across the upgrade.** The file is in the container's
+  writable layer, so recreating `brain-api` loses it. If your old API container
+  has one, copy it out before upgrading and back in afterwards, then restart the
+  API and look for the import line:
+
+  ```bash
+  docker cp brain-api:/app/.brain/workspace ./workspace-registry-backup   # before server_up.sh
+  bash deploy/server_up.sh
+  docker exec brain-api mkdir -p /app/.brain
+  docker cp ./workspace-registry-backup brain-api:/app/.brain/workspace
+  docker exec -u 0 brain-api chown -R "$(docker exec brain-api id -u)" /app/.brain   # docker cp writes as root
+  docker restart brain-api && docker logs brain-api 2>&1 | grep "workspace registry"
+  ```
+
+  No file, or an empty one, needs nothing: register repositories again through
+  the API or with `brain workspace repositories register --project <project>`.
+- **After the import** the file stays on disk but is not read in team state. If the
+  team is dissolved back to solo, Brain reads the file again, which may be older
+  than the table.
+
 ## Limits
 
 - One team per host and one host per team; no high availability.
