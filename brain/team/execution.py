@@ -19,6 +19,13 @@ intersection of:
 - the operator's tools, secrets, egress and budget ceilings, and
 - every parent run's executor capabilities (a parent without any denies).
 
+The operator picks the executor backend (``BRAIN_EXECUTION_BACKEND``). With
+the container backend every execution names an operator-defined environment
+(``BRAIN_EXECUTION_ENVIRONMENTS``: an image and the tools allowed in it); an
+unknown environment, or a tool outside it, is denied. Egress stays denied
+unless the backend can enforce the allowlist (the container backend with an
+egress proxy image configured).
+
 ``authorize()`` itself is unchanged: ``Permission.EXECUTE`` stays outside every
 role and outside ``RUN_CAPABILITIES``, so no other surface gains execution.
 
@@ -44,7 +51,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Mapping
 
 from loguru import logger
 from sqlalchemy import select, update
@@ -57,6 +64,8 @@ from brain.database.harness_models import AgentTaskEvent
 from brain.database.models import Repository
 from brain.execution.bounded import (ExecutorBackend, ExecutorError, StepRequest, SubprocessBackend, ToolSpec,
                                      validate_args)
+from brain.execution.container import (ContainerBackend, ContainerSettings, Environment, default_user, valid_cpus,
+                                       valid_image, valid_memory, valid_network, valid_user)
 from brain.team.activity import record_event
 from brain.team.authorization import (Authority, Permission, TeamConflict, TeamDenied, administrator, authorize,
                                       fresh, permissions, require_team_storage)
@@ -68,6 +77,8 @@ EVENT_PREFIX = "run.execution."
 TERMINAL = ("completed", "failed", "revoked", "cancelled", "fenced", "budget_exhausted")
 EXECUTION_ROLES = frozenset({"contributor", "reviewer"})
 BUDGET_KEYS = ("wall_seconds", "steps", "step_timeout_seconds", "output_bytes")
+BACKENDS = ("subprocess", "container")
+_ENVIRONMENT_KEYS = frozenset({"image", "tools", "cpus", "memory", "pids"})
 MAX_STEPS_PER_REQUEST = 100
 MAX_DELEGATION_DEPTH = 32
 _NAME = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
@@ -109,6 +120,9 @@ class ExecutionPolicy:
     max_output_bytes: int
     lease_seconds: int
     error: str | None = None
+    backend: str = "subprocess"
+    environments: dict[str, Environment] = field(default_factory=dict)
+    container: ContainerSettings = field(default_factory=ContainerSettings)
 
     def disabled_reason(self) -> str | None:
         if self.error:
@@ -150,17 +164,135 @@ def operator_policy() -> ExecutionPolicy:
     egress = frozenset(host.strip().lower() for host in (settings.BRAIN_EXECUTION_EGRESS or "").split(",")
                        if host.strip())
     root = Path(settings.BRAIN_EXECUTION_ROOT).resolve() if settings.BRAIN_EXECUTION_ROOT else None
+    backend = str(settings.BRAIN_EXECUTION_BACKEND or "subprocess").strip().lower()
+    environments: dict[str, Environment] = {}
+    container = ContainerSettings()
+    if error is None:
+        try:
+            if backend not in BACKENDS:
+                raise ValueError(f"BRAIN_EXECUTION_BACKEND must be one of {', '.join(BACKENDS)}")
+            environments = _parse_environments(settings.BRAIN_EXECUTION_ENVIRONMENTS, tools)
+            container = _container_settings()
+        except ValueError as exc:
+            error, environments = f"Execution is misconfigured: {exc}", {}
     return ExecutionPolicy(
         enabled=bool(settings.BRAIN_EXECUTION_ENABLED), root=root, tools=tools, secrets=secrets, egress=egress,
         max_wall_seconds=max(1, int(settings.BRAIN_EXECUTION_MAX_WALL_SECONDS)),
         max_steps=max(1, int(settings.BRAIN_EXECUTION_MAX_STEPS)),
         step_timeout_seconds=max(1, int(settings.BRAIN_EXECUTION_STEP_TIMEOUT_SECONDS)),
         max_output_bytes=max(1024, int(settings.BRAIN_EXECUTION_MAX_OUTPUT_BYTES)),
-        lease_seconds=max(1, int(settings.BRAIN_EXECUTION_LEASE_SECONDS)), error=error)
+        lease_seconds=max(1, int(settings.BRAIN_EXECUTION_LEASE_SECONDS)), error=error,
+        backend=backend if backend in BACKENDS else "subprocess", environments=environments, container=container)
 
 
-def default_backend() -> ExecutorBackend:
+def _parse_environments(raw: str | None, tools: Mapping[str, ToolSpec]) -> dict[str, Environment]:
+    """``BRAIN_EXECUTION_ENVIRONMENTS``: JSON name -> {"image", "tools", optional "cpus", "memory", "pids"}."""
+    try:
+        data = json.loads(raw or "{}")
+    except ValueError:
+        raise ValueError("BRAIN_EXECUTION_ENVIRONMENTS must be a JSON object") from None
+    if not isinstance(data, dict):
+        raise ValueError("BRAIN_EXECUTION_ENVIRONMENTS must be a JSON object")
+    environments: dict[str, Environment] = {}
+    for name, spec in data.items():
+        if not _NAME.match(str(name)) or not isinstance(spec, dict) or set(spec) - _ENVIRONMENT_KEYS:
+            raise ValueError(f"invalid execution environment: {name}")
+        image, env_tools = spec.get("image"), spec.get("tools")
+        if not isinstance(image, str) or not valid_image(image):
+            raise ValueError(f"execution environment {name} needs a valid image")
+        if not isinstance(env_tools, list) or not all(isinstance(tool, str) for tool in env_tools):
+            raise ValueError(f"execution environment {name} needs a list of tools")
+        unknown = sorted(set(env_tools) - set(tools))
+        if unknown:
+            raise ValueError(f"execution environment {name} names a tool missing from BRAIN_EXECUTION_TOOLS: "
+                             f"{unknown[0]}")
+        cpus = None if spec.get("cpus") is None else str(spec["cpus"])
+        memory = None if spec.get("memory") is None else str(spec["memory"]).lower()
+        pids = spec.get("pids")
+        if (cpus is not None and not valid_cpus(cpus)) or (memory is not None and not valid_memory(memory)) or (
+                pids is not None and (not isinstance(pids, int) or isinstance(pids, bool) or pids < 1)):
+            raise ValueError(f"execution environment {name} has an invalid cpus, memory or pids limit")
+        environments[name] = Environment(name=name, image=image, tools=frozenset(env_tools), cpus=cpus,
+                                         memory=memory, pids=pids)
+    return environments
+
+
+def _container_settings() -> ContainerSettings:
+    docker = str(settings.BRAIN_EXECUTION_DOCKER or "docker").strip()
+    user = str(settings.BRAIN_EXECUTION_CONTAINER_USER or "").strip() or default_user()
+    cpus = str(settings.BRAIN_EXECUTION_CONTAINER_CPUS).strip()
+    memory = str(settings.BRAIN_EXECUTION_CONTAINER_MEMORY).strip().lower()
+    tmpfs = str(settings.BRAIN_EXECUTION_CONTAINER_TMPFS).strip().lower()
+    pids = int(settings.BRAIN_EXECUTION_CONTAINER_PIDS)
+    proxy_image = str(settings.BRAIN_EXECUTION_EGRESS_PROXY_IMAGE or "").strip()
+    upstream = str(settings.BRAIN_EXECUTION_EGRESS_UPSTREAM_NETWORK or "bridge").strip()
+    if not docker:
+        raise ValueError("BRAIN_EXECUTION_DOCKER is empty")
+    if not valid_user(user):
+        raise ValueError("BRAIN_EXECUTION_CONTAINER_USER must be a numeric, non-root uid[:gid]")
+    if not valid_cpus(cpus) or not valid_memory(memory) or not valid_memory(tmpfs) or pids < 1:
+        raise ValueError("invalid BRAIN_EXECUTION_CONTAINER_CPUS, _MEMORY, _TMPFS or _PIDS")
+    if proxy_image and not valid_image(proxy_image):
+        raise ValueError("invalid BRAIN_EXECUTION_EGRESS_PROXY_IMAGE")
+    if not valid_network(upstream):
+        raise ValueError("invalid BRAIN_EXECUTION_EGRESS_UPSTREAM_NETWORK")
+    return ContainerSettings(docker=(docker,), user=user, cpus=cpus, memory=memory, pids=pids, tmpfs_size=tmpfs,
+                             proxy_image=proxy_image, upstream_network=upstream)
+
+
+def default_backend(policy: ExecutionPolicy | None = None) -> ExecutorBackend:
+    policy = policy or operator_policy()
+    if policy.backend == "container":
+        return ContainerBackend(policy.container)
     return SubprocessBackend()
+
+
+def execution_config_health(policy: ExecutionPolicy | None = None,
+                            environ: Mapping[str, str] | None = None) -> dict:
+    """A pure description of the execution configuration's health, for diagnostics such as ``brain doctor``.
+
+    No docker, filesystem or database calls; secret values are never read
+    beyond checking that the named variable is set."""
+    policy = policy or operator_policy()
+    environ = os.environ if environ is None else environ
+    checks: list[dict] = []
+
+    def add(name: str, status: str, detail: str) -> None:
+        checks.append({"name": name, "status": status, "detail": detail})
+
+    if policy.error:
+        add("config", "error", policy.error)
+    if not policy.enabled:
+        return {"status": "error" if policy.error else "disabled", "enabled": False, "backend": policy.backend,
+                "checks": checks}
+    add("root", "ok" if policy.root else "error",
+        str(policy.root) if policy.root else "BRAIN_EXECUTION_ROOT is not set")
+    add("tools", "ok" if policy.tools else "warn",
+        f"{len(policy.tools)} tool(s) allowlisted" if policy.tools else "No tools are allowlisted")
+    if policy.backend == "container":
+        add("backend", "ok", "Container backend: steps run in hardened containers")
+        add("environments", "ok" if policy.environments else "error",
+            ", ".join(sorted(policy.environments)) if policy.environments
+            else "The container backend needs at least one execution environment")
+    else:
+        add("backend", "warn", "Subprocess backend: no filesystem or network boundary between steps and the server")
+        if policy.environments:
+            add("environments", "warn", "BRAIN_EXECUTION_ENVIRONMENTS is ignored by the subprocess backend")
+    enforced = policy.backend == "container" and bool(policy.container.proxy_image)
+    if policy.egress:
+        add("egress", "ok" if enforced else "warn",
+            "Egress allowlist enforced by the egress proxy" if enforced
+            else "BRAIN_EXECUTION_EGRESS is set but this backend cannot enforce it; requests with egress are denied")
+    else:
+        add("egress", "ok", "Egress denied for every run")
+    missing = sorted(ref for ref, variable in policy.secrets.items() if not environ.get(variable))
+    add("secrets", "warn" if missing else "ok",
+        f"Secret references without a server value: {', '.join(missing)}" if missing
+        else f"{len(policy.secrets)} secret reference(s) configured")
+    order = {"ok": 0, "warn": 1, "error": 2}
+    status = max((check["status"] for check in checks), key=order.__getitem__, default="ok")
+    return {"status": status, "enabled": True, "backend": policy.backend,
+            "environments": sorted(policy.environments), "egress_enforced": enforced, "checks": checks}
 
 
 # --------------------------------------------------------------------------- capabilities
@@ -172,14 +304,17 @@ class Capabilities:
     secret_refs: frozenset[str]
     egress: frozenset[str]
     budget: dict[str, int] = field(default_factory=dict)
+    environment: str | None = None
 
     @classmethod
     def from_row(cls, row: AgentRunExecution) -> Capabilities:
-        return cls(frozenset(row.tools), frozenset(row.secret_refs), frozenset(row.egress), dict(row.budget))
+        return cls(frozenset(row.tools), frozenset(row.secret_refs), frozenset(row.egress), dict(row.budget),
+                   row.environment)
 
     def as_dict(self) -> dict:
         return {"tools": sorted(self.tools), "secret_refs": sorted(self.secret_refs), "egress": sorted(self.egress),
-                "budget": {key: self.budget[key] for key in BUDGET_KEYS if key in self.budget}}
+                "budget": {key: self.budget[key] for key in BUDGET_KEYS if key in self.budget},
+                "environment": self.environment}
 
 
 def _normalize_request(payload: dict) -> tuple[list[dict], Capabilities, dict]:
@@ -208,6 +343,9 @@ def _normalize_request(payload: dict) -> tuple[list[dict], Capabilities, dict]:
         raise ExecutionDenied("Invalid tool or secret reference name")
     if not all(_HOST.match(host) for host in egress):
         raise ExecutionDenied("Egress entries are host names")
+    environment = payload.get("environment")
+    if environment is not None and (not isinstance(environment, str) or not _NAME.match(environment)):
+        raise ExecutionDenied("The execution environment is a lowercase name")
     budget_in = payload.get("budget") or {}
     if not isinstance(budget_in, dict) or set(budget_in) - set(BUDGET_KEYS):
         raise ExecutionDenied(f"Budget keys are {', '.join(BUDGET_KEYS)}")
@@ -220,12 +358,15 @@ def _normalize_request(payload: dict) -> tuple[list[dict], Capabilities, dict]:
         budget[key] = value
     canonical = {"steps": steps, "tools": sorted(tools), "secret_refs": sorted(refs), "egress": sorted(egress),
                  "budget": dict(sorted(budget.items()))}
-    return steps, Capabilities(tools, refs, egress, budget), canonical
+    if environment is not None:
+        canonical["environment"] = environment  # absent when unset, so earlier request digests stay stable
+    return steps, Capabilities(tools, refs, egress, budget, environment), canonical
 
 
 async def _ceiling(session: AsyncSession, run: AgentRun, policy: ExecutionPolicy) -> Capabilities:
     """The operator ceiling narrowed by every parent run's executor capabilities."""
     tools, refs, egress, budget = set(policy.tools), set(policy.secrets), set(policy.egress), policy.budget()
+    environment: str | None = None
     parent_id, depth = run.parent_id, 0
     while parent_id is not None:
         depth += 1
@@ -239,14 +380,33 @@ async def _ceiling(session: AsyncSession, run: AgentRun, policy: ExecutionPolicy
         refs &= set(granted.secret_refs)
         egress &= set(granted.egress)
         budget = {key: min(budget[key], int(granted.budget.get(key, 0))) for key in BUDGET_KEYS}
+        if granted.environment is not None:
+            # A child runs in its parent's environment.
+            if environment is not None and environment != granted.environment:
+                raise ExecutionDenied("Invalid delegation chain")
+            environment = granted.environment
         parent_id = parent.parent_id
-    return Capabilities(frozenset(tools), frozenset(refs), frozenset(egress), budget)
+    return Capabilities(frozenset(tools), frozenset(refs), frozenset(egress), budget, environment)
 
 
-def _within(requested: Capabilities, ceiling: Capabilities, backend: ExecutorBackend) -> Capabilities:
+def _within(requested: Capabilities, ceiling: Capabilities, backend: ExecutorBackend,
+            policy: ExecutionPolicy) -> Capabilities:
     extra = sorted(requested.tools - ceiling.tools)
     if extra:
         raise ExecutionDenied(f"Tool not allowed for this run: {extra[0]}")
+    if backend.uses_environments:
+        if requested.environment is None:
+            raise ExecutionDenied(f"An execution environment is required with the {backend.name} backend")
+        environment = policy.environments.get(requested.environment)
+        if environment is None:
+            raise ExecutionDenied(f"Unknown execution environment: {requested.environment}")
+        if ceiling.environment is not None and requested.environment != ceiling.environment:
+            raise ExecutionDenied("Execution environment not allowed for this run")
+        outside = sorted(requested.tools - environment.tools)
+        if outside:
+            raise ExecutionDenied(f"Tool not available in environment {environment.name}: {outside[0]}")
+    elif requested.environment is not None:
+        raise ExecutionDenied("Execution environments need the container backend")
     if requested.secret_refs - ceiling.secret_refs:
         raise ExecutionDenied("Secret reference not allowed for this run")
     if requested.egress and not backend.enforces_egress:
@@ -260,7 +420,7 @@ def _within(requested: Capabilities, ceiling: Capabilities, backend: ExecutorBac
         if limit < 1 or value > limit:
             raise ExecutionDenied(f"Budget {key} exceeds the allowed ceiling")
         budget[key] = value
-    return Capabilities(requested.tools, requested.secret_refs, requested.egress, budget)
+    return Capabilities(requested.tools, requested.secret_refs, requested.egress, budget, requested.environment)
 
 
 async def authorize_execution(session: AsyncSession, requester: ResolvedPrincipal, project_id: uuid.UUID,
@@ -291,7 +451,7 @@ async def authorize_execution(session: AsyncSession, requester: ResolvedPrincipa
                         TeamExecutionGrant.principal_id == run.initiator_id)
     if grant is None or grant.revoked_at is not None:
         raise ExecutionDenied("The run's initiator holds no execution grant on this project")
-    effective = _within(capabilities, await _ceiling(session, run, policy), backend)
+    effective = _within(capabilities, await _ceiling(session, run, policy), backend, policy)
     return run, authority, effective
 
 
@@ -356,7 +516,7 @@ async def request_execution(session: AsyncSession, caller: ResolvedPrincipal, pr
                             policy: ExecutionPolicy | None = None, backend: ExecutorBackend | None = None) -> dict:
     """Record a bounded execution for a run after every gate; idempotent on key + content + run identity."""
     policy = policy or operator_policy()
-    backend = backend or default_backend()
+    backend = backend or default_backend(policy)
     require_team_storage()
     reason = policy.disabled_reason()
     if reason:
@@ -387,7 +547,8 @@ async def request_execution(session: AsyncSession, caller: ResolvedPrincipal, pr
                                     requested_by=authority.actor_id, requested_credential_id=caller.credential_id,
                                     steps=steps, tools=sorted(effective.tools),
                                     secret_refs=sorted(effective.secret_refs), egress=sorted(effective.egress),
-                                    budget=effective.budget, backend=backend.name, fencing_token=0, steps_done=0)
+                                    budget=effective.budget, backend=backend.name,
+                                    environment=effective.environment, fencing_token=0, steps_done=0)
             session.add(row)
             _event(session, run, "requested", "requested", f"principal:{authority.actor_id}",
                    {**effective.as_dict(), "backend": backend.name,
@@ -585,12 +746,16 @@ async def _fence(session: AsyncSession, lease: Lease, lease_seconds: int) -> Age
     return await fresh(session, AgentRunExecution, AgentRunExecution.run_id == lease.run_id)
 
 
-async def recover_orphaned_runs(factory: SessionFactory) -> list[str]:
+async def recover_orphaned_runs(factory: SessionFactory, *,
+                                reaper: Callable[[str], None] | None = None) -> list[str]:
     """Fence every started execution whose lease expired unreleased (owner crashed, hung or lost the database).
 
     The token is bumped and the lease released, so the old owner can commit
-    nothing more; the run is not resumed (request a new run instead)."""
+    nothing more; the run is not resumed (request a new run instead). Containers
+    and networks of fenced container-backend runs are removed (``reaper``,
+    default: the configured container backend's ``reap``)."""
     fenced: list[str] = []
+    containers: list[str] = []
     async with factory() as session, session.begin():
         now = _now()
         rows = (await session.execute(select(AgentRunExecution).where(
@@ -619,8 +784,17 @@ async def recover_orphaned_runs(factory: SessionFactory) -> list[str]:
                    {"reason": "The lease expired without renewal", "previous_owner": previous_owner,
                     "fencing_token": changed, "steps_recorded": steps_done, "in_flight": in_flight})
             fenced.append(str(row.run_id))
+            if row.backend == ContainerBackend.backend_name:
+                containers.append(str(row.run_id))
     if fenced:
         logger.warning("Fenced {} orphaned team execution(s): {}", len(fenced), ", ".join(fenced))
+    if containers:
+        if reaper is None:
+            policy = operator_policy()
+            reaper = ContainerBackend(policy.container).reap if not policy.error else None
+        for run_id in containers:
+            if reaper is not None:
+                await asyncio.to_thread(reaper, run_id)
     return fenced
 
 
@@ -640,6 +814,8 @@ class ExecutionRunner:
         return f"run:{self.lease.run_id}"
 
     async def _deny_reason(self, session: AsyncSession, row: AgentRunExecution) -> str | None:
+        if row.backend != self.backend.name:
+            return "The executor backend changed since the request"
         requester = ResolvedPrincipal(row.requested_by, "", "", credential_id=row.requested_credential_id)
         try:
             await authorize_execution(session, requester, self.project_id, self.task_id, self.lease.run_id,
@@ -724,9 +900,9 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
         from brain.database.session import async_session_factory
         factory = async_session_factory
     policy = policy or operator_policy()
-    backend = backend or default_backend()
+    backend = backend or default_backend(policy)
     owner = owner or worker_owner()
-    await recover_orphaned_runs(factory)
+    await recover_orphaned_runs(factory, reaper=getattr(backend, "reap", None))
     async with factory() as session:
         row = await fresh(session, AgentRunExecution, AgentRunExecution.run_id == run_id)
         run = await fresh(session, AgentRun, AgentRun.id == run_id)
@@ -735,6 +911,7 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
         if row is None or run is None or binding is None or repository is None:
             return {"run_id": str(run_id), "state": "missing"}
         steps = list(row.steps)
+        environment_name, egress = row.environment, tuple(row.egress)
         source, base_sha, branch = Path(repository.path), run.base_sha, run.branch
         project_id, task_id = binding.project_id, run.task_id
     lease = await acquire_lease(factory, run_id, owner, lease_seconds=policy.lease_seconds)
@@ -747,10 +924,24 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
             await runner.conclude(outcome, {"reason": reason, "steps_recorded": recorded, "in_flight": in_flight})
         return await execution_state(factory, run_id)
 
+    # Every gate (including a known environment for this backend) before the first docker call.
+    outcome, reason = await runner.checkpoint()
+    if outcome != "ok":
+        return await stop(outcome, reason, None, 0)
+    try:
+        resolved = await asyncio.to_thread(backend.resolve_environment,
+                                           policy.environments.get(environment_name) if environment_name else None)
+    except ExecutorError as exc:
+        await runner.conclude("failed", {"reason": str(exc), "phase": "environment", "steps_recorded": 0,
+                                         "in_flight": None})
+        return await execution_state(factory, run_id)
+    environment_evidence = resolved.evidence() if hasattr(resolved, "evidence") else None
+
     async def started(session: AsyncSession, _row: AgentRunExecution, current: AgentRun) -> None:
         _event(session, current, "started", f"{lease.token}:started", runner.actor,
                {"owner": lease.owner, "fencing_token": lease.token, "backend": backend.name, "base_sha": base_sha,
-                "branch": branch})
+                "branch": branch, "environment": environment_evidence,
+                "egress": {"profile": "allowlist" if egress else "none", "hosts": list(egress)}})
 
     outcome, reason = await runner.checkpoint(started)
     if outcome != "ok":
@@ -786,7 +977,8 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
             request = StepRequest(index=index, tool=tool, args=tuple(step["args"]), secrets=secrets,
                                   timeout_seconds=min(float(budget["step_timeout_seconds"]), remaining),
                                   output_cap=int(budget["output_bytes"]),
-                                  check_interval=max(0.2, min(5.0, policy.lease_seconds / 3)))
+                                  check_interval=max(0.2, min(5.0, policy.lease_seconds / 3)),
+                                  environment=resolved, egress=egress)
             result = await backend.run_step(copy, request, runner.probe)
             evidence = result.evidence()
             if result.stopped:
@@ -828,4 +1020,6 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
         await runner.conclude("failed", {"reason": f"Internal executor error: {type(exc).__name__}",
                                          "in_flight": None})
         raise
+    finally:
+        await asyncio.to_thread(backend.release, copy)
     return await execution_state(factory, run_id)

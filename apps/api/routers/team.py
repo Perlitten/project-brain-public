@@ -100,6 +100,8 @@ class ExecutionRequest(BaseModel):
     secret_refs: list[str] | None = Field(default=None, max_length=32)
     egress: list[str] = Field(default_factory=list, max_length=32)
     budget: ExecutionBudget = Field(default_factory=ExecutionBudget)
+    # Operator-defined execution environment (image + tools); required by the container backend.
+    environment: str | None = Field(default=None, max_length=64)
     idempotency_key: str = Field(min_length=8, max_length=128)
 
 

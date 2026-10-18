@@ -17,7 +17,12 @@ them. Contract and design: [ADR: team collaboration](adr/team-collaboration.md).
 - Shell access to the server (or the API container) with the server's `.env`
   loaded. The first administrator can only be created there.
 - HTTPS in front of the API if anyone will redeem an invitation or use a key
-  from another machine ([Deployment](operations/DEPLOYMENT.md)).
+  from another machine ([Deployment](operations/DEPLOYMENT.md)). For one team
+  on one host, [one-team cloud deployment](operations/TEAM_DEPLOY.md) packages
+  the API and dashboard behind Caddy with automatic TLS.
+- `brain team doctor` checks the team setup read-only (state, administrators,
+  SSO settings, revocations, restore fence, stuck executions, source freshness,
+  backups) and prints a fix for each problem.
 - The repository you want to share, indexed on the server. Note the path it
   was indexed under: that exact string is the repository's identity.
 
@@ -373,8 +378,14 @@ which is the source of truth.
 - **Not deployed, not piloted.** Green CI is the only evidence. Production
   upgrade and restore, external identities and real multi-person use have not
   been exercised.
-- Repository trust (`brain/workspace`) and human membership (`brain/team`) are
-  still two separate models.
+- Repository trust (`brain/workspace`) caps what anyone may do on a repository and
+  membership (`brain/team`) decides who may use it; both are checked in one place
+  (`authorize_repository`). A repository the workspace registry has disabled is
+  denied to every member, administrators included, even when a project lists it.
+  In team state, registering a repository (`POST /workspace/repositories`) needs a
+  team administrator and links it to a team project: pass `project_id`, or attach
+  it with `brain team project attach` first
+  ([details](design/team-foundations.md#workspace-registry-and-team-membership-one-authority)).
 - **Coordination does not merge.** The integration queue records decisions
   against a base you name; it does not run `git merge` or test the combined
   patch. Overlap detection compares declared paths only, not code dependencies.

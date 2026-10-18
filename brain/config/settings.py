@@ -258,8 +258,8 @@ class Settings(BaseSettings):
     # also needs a per-member execution grant on the project. Each run gets its own clone under
     # BRAIN_EXECUTION_ROOT. Tools: JSON object name -> {"argv": [...], "allow_args": bool}.
     # Secrets: JSON object reference -> name of a server environment variable (the value never
-    # leaves the server). Egress: comma-separated hosts; the subprocess backend enforces no
-    # network boundary, so any requested egress is refused there.
+    # leaves the server). Egress: comma-separated host[:port] entries; the subprocess backend
+    # enforces no network boundary, so any requested egress is refused there.
     BRAIN_EXECUTION_ENABLED: bool = False
     BRAIN_EXECUTION_ROOT: Optional[str] = None
     BRAIN_EXECUTION_TOOLS: str = "{}"
@@ -270,6 +270,22 @@ class Settings(BaseSettings):
     BRAIN_EXECUTION_STEP_TIMEOUT_SECONDS: int = 300
     BRAIN_EXECUTION_MAX_OUTPUT_BYTES: int = 65536
     BRAIN_EXECUTION_LEASE_SECONDS: int = 60
+    # Executor backend: "subprocess" (default) or "container" (each step in a hardened container
+    # via the docker CLI). Environments: JSON object name -> {"image": ..., "tools": [...],
+    # optional "cpus", "memory", "pids"}; the container backend requires every execution to name
+    # one. Container user: numeric non-root uid[:gid] (default: the server's own uid:gid).
+    # Egress proxy image: an image with Project Brain installed (normally the Brain image itself);
+    # empty means the container backend refuses egress too.
+    BRAIN_EXECUTION_BACKEND: str = "subprocess"
+    BRAIN_EXECUTION_ENVIRONMENTS: str = "{}"
+    BRAIN_EXECUTION_DOCKER: str = "docker"
+    BRAIN_EXECUTION_CONTAINER_USER: str = ""
+    BRAIN_EXECUTION_CONTAINER_CPUS: str = "1"
+    BRAIN_EXECUTION_CONTAINER_MEMORY: str = "1g"
+    BRAIN_EXECUTION_CONTAINER_PIDS: int = 256
+    BRAIN_EXECUTION_CONTAINER_TMPFS: str = "256m"
+    BRAIN_EXECUTION_EGRESS_PROXY_IMAGE: str = ""
+    BRAIN_EXECUTION_EGRESS_UPSTREAM_NETWORK: str = "bridge"
     # Deterministic retrieval: skip LLM for task classification/keyword extraction
     RETRIEVAL_USE_LLM_CLASSIFICATION: bool = False
     # Optional LLM rerank for top-30 -> top-10 (deterministic fallback always available)
@@ -532,6 +548,12 @@ class Settings(BaseSettings):
     # stay server-side: they are passed on the git command line only and are
     # redacted from every stored or reported value.
     BRAIN_ORIGIN_REMOTES: str = ""
+    # Where database backups land, as this process sees it (``brain team doctor``
+    # reads the newest backup_manifest.json from scripts/backup_runner.py or
+    # brain_db.sql.gz from deploy/server_up.sh; nothing is written). Blank:
+    # backup status is reported as unknown.
+    BRAIN_BACKUP_DIR: str = ""
+    BRAIN_BACKUP_MAX_AGE_HOURS: int = 48
 
     @field_validator("POSTGRES_POOL_SIZE")
     @classmethod

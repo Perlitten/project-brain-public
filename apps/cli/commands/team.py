@@ -479,6 +479,37 @@ def recover_execution_cmd():
     _emit(_run(run()))
 
 
+_DOCTOR_LABELS = {"pass": ("PASS", typer.colors.GREEN), "warn": ("WARN", typer.colors.YELLOW),
+                  "fail": ("FAIL", typer.colors.RED), "unknown": ("UNKNOWN", typer.colors.BRIGHT_BLACK)}
+
+
+@team_cli.command(name="doctor")
+def doctor_cmd(as_json: bool = typer.Option(False, "--json", help="Print the report as JSON.")):
+    """Read-only team diagnostics: state, auth, revocations, fence, leases, execution, sources, backups.
+
+    Exits 1 when any check fails. Works while the restore fence keeps the API closed."""
+    from brain.team import doctor
+
+    async def run():
+        async with async_session_factory() as session:
+            return doctor.summary(await doctor.run_checks(session))
+
+    report = _run(run())
+    if as_json:
+        _emit(report)
+    else:
+        for check in report["checks"]:
+            label, color = _DOCTOR_LABELS[check["status"]]
+            typer.secho(f"[{label}] {check['name']}: {check['message']}", fg=color)
+            if check["hint"] and check["status"] != "pass":
+                typer.echo(f"    fix: {check['hint']}")
+        counts = report["counts"]
+        typer.echo(f"{report['status'].upper()}: {counts['pass']} pass, {counts['warn']} warn, "
+                   f"{counts['fail']} fail, {counts['unknown']} unknown")
+    if report["status"] == "fail":
+        raise typer.Exit(code=1)
+
+
 coord_cli = typer.Typer(help="Team coordination (M3): subtask plans, scope overlaps, leases and the integration "
                              "queue. Read-only; members change them through the API. See docs/TEAM.md.")
 team_cli.add_typer(coord_cli, name="coord")
