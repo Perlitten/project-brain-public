@@ -10,6 +10,7 @@ import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -342,7 +343,9 @@ def test_execution_config_container_backend(factory, monkeypatch, tmp_path):
     # An LLM API host in the egress allowlist must belong to a configured LLM provider.
     monkeypatch.setattr(settings, "BRAIN_EXECUTION_EGRESS", "pypi.org,api.openai.com")
     unowned = doctor.check_execution_config()
-    assert unowned.status == "warn" and "api.openai.com" in unowned.message
+    assert unowned.status == "warn"
+    listed = unowned.message.rpartition(": ")[2].split(", ")
+    assert [urlsplit(f"//{entry}").hostname for entry in listed] == ["api.openai.com"]
     assert "BRAIN_EXECUTION_LLM_PROVIDERS" in unowned.hint
     monkeypatch.setattr(settings, "BRAIN_EXECUTION_LLM_PROVIDERS",
                         json.dumps({"openai": {"hosts": ["api.openai.com"]}}))

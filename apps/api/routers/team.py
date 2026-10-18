@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from apps.api.auth import require_principal
+from apps.api.auth import require_principal, require_scope
 from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
 from brain.database.models import Repository
@@ -262,6 +262,10 @@ async def request_run(project_id: uuid.UUID, task_id: uuid.UUID, body: RunReques
 
 
 # Bounded execution (M2): off unless the operator enables it and an administrator grants it.
+# Scope gates resolve before body/parameter validation; the handlers still check live membership and,
+# for mutations, a live project administrator holding team:admin.
+EXECUTION_READ = [Depends(require_scope("team:read"))]
+EXECUTION_ADMIN_WRITE = [Depends(require_scope("setup:write"))]
 
 @router.get("/{project_id}/execution-grants")
 async def list_execution_grants(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
@@ -282,13 +286,13 @@ async def revoke_execution_grant(project_id: uuid.UUID, principal_id: int,
     return await execution.revoke_execution(session, caller, project_id, principal_id)
 
 
-@router.get("/{project_id}/execution/llm-consents")
+@router.get("/{project_id}/execution/llm-consents", dependencies=EXECUTION_READ)
 async def list_llm_consents(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
                             session=Depends(team_session, scope="function")):
     return await execution.list_llm_consents(session, caller, project_id)
 
 
-@router.put("/{project_id}/execution/llm-consents")
+@router.put("/{project_id}/execution/llm-consents", dependencies=EXECUTION_ADMIN_WRITE)
 async def consent_llm(project_id: uuid.UUID, body: LlmConsentRequest,
                       caller: ResolvedPrincipal = Depends(require_principal),
                       session=Depends(team_session, scope="function")):
@@ -296,27 +300,27 @@ async def consent_llm(project_id: uuid.UUID, body: LlmConsentRequest,
     return await execution.consent_llm(session, caller, project_id, body.provider, body.model)
 
 
-@router.delete("/{project_id}/execution/llm-consents/{provider}")
+@router.delete("/{project_id}/execution/llm-consents/{provider}", dependencies=EXECUTION_ADMIN_WRITE)
 async def revoke_llm_consent(project_id: uuid.UUID, provider: str, model: str = "*",
                              caller: ResolvedPrincipal = Depends(require_principal),
                              session=Depends(team_session, scope="function")):
     return await execution.revoke_llm_consent(session, caller, project_id, provider, model)
 
 
-@router.get("/{project_id}/execution/llm-budget")
+@router.get("/{project_id}/execution/llm-budget", dependencies=EXECUTION_READ)
 async def get_llm_budget(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
                          session=Depends(team_session, scope="function")):
     return await execution.llm_budget(session, caller, project_id)
 
 
-@router.put("/{project_id}/execution/llm-budget")
+@router.put("/{project_id}/execution/llm-budget", dependencies=EXECUTION_ADMIN_WRITE)
 async def set_llm_budget(project_id: uuid.UUID, body: LlmBudgetRequest,
                          caller: ResolvedPrincipal = Depends(require_principal),
                          session=Depends(team_session, scope="function")):
     return await execution.set_llm_budget(session, caller, project_id, body.model_dump())
 
 
-@router.delete("/{project_id}/execution/llm-budget")
+@router.delete("/{project_id}/execution/llm-budget", dependencies=EXECUTION_ADMIN_WRITE)
 async def clear_llm_budget(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
                            session=Depends(team_session, scope="function")):
     return await execution.clear_llm_budget(session, caller, project_id)
@@ -374,7 +378,7 @@ async def cancel_execution(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uu
         raise HTTPException(404, str(exc)) from exc
 
 
-@router.get("/{project_id}/tasks/{task_id}/runs/{run_id}/execution/artifacts")
+@router.get("/{project_id}/tasks/{task_id}/runs/{run_id}/execution/artifacts", dependencies=EXECUTION_READ)
 async def list_execution_artifacts(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uuid.UUID,
                                    caller: ResolvedPrincipal = Depends(require_principal),
                                    session=Depends(team_session, scope="function")):
@@ -384,7 +388,7 @@ async def list_execution_artifacts(project_id: uuid.UUID, task_id: uuid.UUID, ru
         raise HTTPException(404, str(exc)) from exc
 
 
-@router.get("/{project_id}/tasks/{task_id}/runs/{run_id}/execution/artifacts/{artifact_id}")
+@router.get("/{project_id}/tasks/{task_id}/runs/{run_id}/execution/artifacts/{artifact_id}", dependencies=EXECUTION_READ)
 async def download_execution_artifact(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uuid.UUID,
                                       artifact_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
                                       session=Depends(team_session, scope="function")):
