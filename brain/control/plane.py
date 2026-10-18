@@ -18,7 +18,7 @@ import json
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from brain.control.budgets import (
     BUDGET_FILE_NAME,
@@ -35,6 +35,7 @@ from brain.lab.laboratory import ChangeLaboratory
 from brain.lab.models import WorkspaceState
 from brain.ledger.ledger import EvidenceLedger
 from brain.portfolio.store import PortfolioStore
+from brain.workspace.models import RepositoryRecord
 from brain.workspace.registry_store import RegistryStore
 
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
@@ -142,15 +143,24 @@ class ActionItem:
         return payload
 
 
+class RegistryReader(Protocol):
+    """What the control plane reads from a workspace registry: the file store or the team table snapshot."""
+
+    def list_all(self) -> List[RepositoryRecord]: ...
+
+
 class ControlPlane:
     """Read-only aggregation over the v0.5.0 subsystems."""
 
     #: The summary never walks an unbounded list into a response.
     MAX_LISTED = 50
 
-    def __init__(self, brain_dir: Path, policy: Optional[BudgetPolicy] = None):
+    def __init__(self, brain_dir: Path, policy: Optional[BudgetPolicy] = None,
+                 registry: Optional[RegistryReader] = None):
         self.brain_dir = Path(brain_dir).resolve()
-        self.registry = RegistryStore(self.brain_dir / "workspace")
+        # Callers in team state pass the shared registry table (``brain.team.registry``); the default is the file.
+        self.registry: RegistryReader = (registry if registry is not None
+                                         else RegistryStore(self.brain_dir / "workspace"))
         self.portfolios = PortfolioStore(self.brain_dir / "portfolio")
         self.freshness = FreshnessTracker(self.brain_dir / "freshness")
         self.laboratory = ChangeLaboratory(self.brain_dir)

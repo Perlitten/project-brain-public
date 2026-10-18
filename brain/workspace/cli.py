@@ -287,26 +287,21 @@ async def run_team(args) -> bool:
 
     Returns ``False`` in solo state (the caller then uses the local file, as
     before). When the team database cannot be reached the CLI falls back to the
-    local file with a warning, unless ``BRAIN_TEAM_MODE`` is on, where it refuses."""
-    from brain.team.authorization import strict_team_mode
-    from brain.workers import initiator
+    local file with a warning, unless ``BRAIN_TEAM_MODE`` is on or the registry
+    directory carries the team-state marker, where it refuses
+    (``brain.team.cli_registry``, shared with the other offline CLIs)."""
+    from brain.team.cli_registry import OfflineRegistryError, cli_team_state
 
+    directory = _registry_dir(args.brain_dir)
     try:
-        state = await initiator.current_team_state()
-    except Exception as exc:  # noqa: BLE001 - any database failure means "cannot tell"
-        if strict_team_mode():
-            _fail(f"Cannot reach the team database to check team state ({type(exc).__name__}); "
-                  "refusing to use the local registry file while BRAIN_TEAM_MODE is on", code=2)
-        print(f"WARNING: cannot reach the team database ({type(exc).__name__}); using the local registry file",
-              file=sys.stderr)
-        return False
-    if state == "solo":
-        return False
+        if not await cli_team_state(directory):
+            return False
+    except OfflineRegistryError as exc:
+        _fail(str(exc), code=2)
 
     from brain.database import session as db
     from brain.team import registry as shared
 
-    directory = _registry_dir(args.brain_dir)
     await shared.ensure_legacy_imported(db.async_session_factory, directory)
     await _TEAM_COMMANDS[args.func](args, db.async_session_factory, directory)
     return True

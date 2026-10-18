@@ -428,7 +428,9 @@ which is the source of truth.
   it with `brain team project attach` first
   ([details](design/team-foundations.md#workspace-registry-and-team-membership-one-authority)).
   In team state the registry lives in PostgreSQL (`workspace_registry_entries`), so
-  the API, the worker and `brain workspace` agree on trust; the registration, its
+  the API, the worker, `brain workspace` and the offline lab, freshness,
+  experiments, portfolio and control CLIs agree on trust (with the database down,
+  those CLIs fall back to the local file only outside team state); the registration, its
   project link and its activity row commit together. A team administrator can open
   a disabled entry by id and re-enable it (`POST /workspace/repositories/{id}/enable`
   or `brain workspace repositories enable`); both appear in the activity feed. The
