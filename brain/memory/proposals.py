@@ -55,7 +55,7 @@ from brain.memory.learning_store import LearningStore
 from brain.memory.provenance import SelfApprovalError, check_expected_version
 from brain.memory.repo_scope import normalize_repo_scope
 from brain.memory.rule_store import RuleStore, _find_rule, slugify
-from brain.team.models import TeamMember
+from brain.team.models import AgentRun, TeamMember
 
 logger = logging.getLogger(__name__)
 
@@ -298,13 +298,14 @@ async def personal_learnings(author_principal_id: Optional[int]) -> list[Learnin
 
 
 async def count_pending_proposals(*, scopes: Optional[list[Optional[str]]] = None,
-                                  exclude_author: Optional[int] = None) -> int:
+                                  exclude_author: Optional[int] = None,
+                                  exclude_evidence_author: Optional[int] = None) -> int:
     """How many pending proposals wait in ``scopes`` (None = every scope), leaving out ``exclude_author``'s own
     (nobody reviews their own proposal). Same scope semantics as ``list_proposals``."""
-    stmt = select(func.count()).select_from(MemoryProposal).where(MemoryProposal.state == "pending")
+    filters = [MemoryProposal.state == "pending"]
     if exclude_author is not None:
-        stmt = stmt.where(or_(MemoryProposal.author_principal_id.is_(None),
-                              MemoryProposal.author_principal_id != exclude_author))
+        filters.append(or_(MemoryProposal.author_principal_id.is_(None),
+                           MemoryProposal.author_principal_id != exclude_author))
     if scopes is not None:
         paths = [scope for scope in scopes if scope is not None]
         clauses = []
@@ -314,9 +315,13 @@ async def count_pending_proposals(*, scopes: Optional[list[Optional[str]]] = Non
             clauses.append(MemoryProposal.repo_path.is_(None))
         if not clauses:
             return 0
-        stmt = stmt.where(or_(*clauses))
+        filters.append(or_(*clauses))
     async with async_session_factory() as session:
-        return int((await session.execute(stmt)).scalar_one())
+        if exclude_evidence_author is None:
+            stmt = select(func.count()).select_from(MemoryProposal).where(*filters)
+            return int((await session.execute(stmt)).scalar_one())
+        rows = (await session.execute(select(MemoryProposal).where(*filters))).scalars().all()
+        return sum(exclude_evidence_author not in _evidence_principals(row) for row in rows)
 
 
 async def get_proposal(proposal_id: int) -> MemoryProposal:
@@ -355,12 +360,20 @@ async def list_proposals(*, state: Optional[str] = "pending", kind: Optional[str
 
 
 async def _author_is_live(session: AsyncSession, author_principal_id: Optional[int]) -> bool:
-    """A team author must still be a live, verified team member for their proposal to be decided on."""
+    """A team author, or a run's human initiator, must still be a live verified member."""
     if author_principal_id is None:
         return False
     member = (await session.execute(select(TeamMember).where(
         TeamMember.principal_id == author_principal_id))).scalar_one_or_none()
-    return bool(member and member.verified_at and not member.revoked_at)
+    if member is not None:
+        return bool(member.verified_at and not member.revoked_at)
+    run = (await session.execute(select(AgentRun).where(
+        AgentRun.principal_id == author_principal_id))).scalar_one_or_none()
+    if run is None or run.revoked_at is not None:
+        return False
+    initiator = (await session.execute(select(TeamMember).where(
+        TeamMember.principal_id == run.initiator_id))).scalar_one_or_none()
+    return bool(initiator and initiator.verified_at and not initiator.revoked_at)
 
 
 async def _claim(session: AsyncSession, proposal_id: int, expected_version: int, new_state: str,

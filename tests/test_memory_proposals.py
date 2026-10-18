@@ -4,6 +4,7 @@ Team state only: a non-administrator's decision or rule is a pending proposal th
 retrieval path returns until a Reviewer who is not the author approves it with a
 compare-and-swap on the proposal version. Solo state writes approved knowledge directly.
 """
+import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -22,6 +23,7 @@ from apps.cli.main import cli
 from apps.mcp_server import remote_server
 from apps.mcp_server import server as stdio_server
 from apps.mcp_server.protocol import only_active
+from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
 from brain.context import context_pack_builder
 from brain.context.runtime_context_builder import RuntimeContextBuilder
@@ -30,7 +32,8 @@ from brain.memory import (decision_store, learning_retrieval, learning_store, pr
                           skill_store)
 from brain.memory.learning_store import LearningStore
 from brain.team import provisioning
-from brain.team.models import TeamActivityEvent, TeamMember
+from brain.team.models import AgentRun, TeamActivityEvent, TeamMember
+from brain.team.store import create_task, request_run
 from tests.test_team_foundations import team_db as team_fixture
 from tests.test_team_transport import client_for, live_team_state, membership_driven, revoke_everyone
 
@@ -624,6 +627,8 @@ async def test_g4_consolidation_proposals_need_a_reviewer_independent_of_the_evi
     assert own.payload["gate"] == "G4" and own.payload["approval_reason"].startswith("G4:")
     other = await consolidated_g4_proposal(factory, evidence_authors=[2, None])
     async with client_for(app) as client:
+        assert await pending_for(client, REVIEWER) == 1, "a reviewer cannot act on their own evidence"
+        assert await pending_for(client, ADMIN) == 2
         queue = (await client.get("/memory/proposals", params={"repo_path": REPO}, headers=REVIEWER)).json()
         assert sorted(p["id"] for p in queue["proposals"]) == [own.id, other.id]
         for verb in ("approve", "reject"):
@@ -637,6 +642,7 @@ async def test_g4_consolidation_proposals_need_a_reviewer_independent_of_the_evi
         approved = await client.post(f"/memory/proposals/{other.id}/approve",
                                      json={"expected_version": 1, "reason": "reproduced"}, headers=REVIEWER)
         assert approved.status_code == 200, approved.text
+        assert await pending_for(client, REVIEWER) == 0
     async with factory() as session:
         learning = (await session.execute(select(Learning))).scalar_one()
         promoted = await session.get(MemoryEpisode, int(other.payload["episode_id"]))
@@ -653,6 +659,36 @@ async def test_g4_consolidation_proposals_need_a_reviewer_independent_of_the_evi
     monkeypatch.setattr("brain.memory.consolidation.async_session_factory", factory)
     with pytest.raises(EpisodeStateError, match="review queue"):
         await approve_episode(int(second.payload["episode_id"]), "ok", principal_id=3, team_state="team")
+
+
+@pytest.mark.asyncio
+async def test_run_authored_g4_proposal_uses_the_live_human_initiator(team_db, monkeypatch):
+    factory, project_id, _ = team_db
+    await learning_table(factory)
+    app = review_app(factory, monkeypatch)
+    contributor = ResolvedPrincipal(2, "human-2", "human", credential_id=2)
+    async with factory() as session, session.begin():
+        task = await create_task(session, contributor, project_id, {
+            "repository_id": 1, "title": "run evidence", "goal": "test", "branch": "main",
+            "base_sha": "a" * 40, "permissions": ["read", "run.request"],
+            "idempotency_key": "run-authored-g4-task",
+        })
+        created = await request_run(session, contributor, project_id, uuid.UUID(task["id"]), {
+            "branch": "brain/run-authored-g4", "permissions": ["read"],
+            "idempotency_key": "run-authored-g4-run",
+        })
+        run = await session.get(AgentRun, uuid.UUID(created["id"]))
+        assert run is not None and run.initiator_id == 2
+        run_principal_id = run.principal_id
+    row = await consolidated_g4_proposal(factory, evidence_authors=[run_principal_id, 2],
+                                         author=run_principal_id)
+    async with client_for(app) as client:
+        approved = await client.post(f"/memory/proposals/{row.id}/approve", json={"expected_version": 1},
+                                     headers=REVIEWER)
+        assert approved.status_code == 200, approved.text
+    async with factory() as session:
+        learning = (await session.execute(select(Learning))).scalar_one()
+    assert learning.author_principal_id == run_principal_id and learning.approved_by_principal_id == 3
 
 
 @pytest.mark.asyncio
