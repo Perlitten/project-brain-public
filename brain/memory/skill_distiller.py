@@ -7,6 +7,11 @@ procedure, and stores it as a ``pending`` skill (or ``active`` when
 ``MEMORY_SKILL_DISTILLATION_REQUIRE_APPROVAL`` is off). Pending skills are
 never matched or injected until POST /skills/{id}/approve.
 
+In team state a distilled skill is always ``pending`` unless its source
+learnings rest on enough distinct principals (the same team floor G2 uses,
+never below two): one person's repeated learnings cannot become a shared
+procedure without someone else approving it. Solo state is unchanged.
+
 Runs at the end of every consolidation pass (best-effort) and is also
 callable on its own.
 """
@@ -24,6 +29,7 @@ from brain.config.settings import settings
 from brain.database.models import Learning, MemorySkill
 from brain.database.session import async_session_factory
 from brain.llm import get_summarizer_provider
+from brain.memory.provenance import distinct_principals
 from brain.memory.repo_scope import normalize_repo_scope
 
 logger = logging.getLogger(__name__)
@@ -109,8 +115,33 @@ def _parse_skill_json(raw: str) -> Optional[Dict[str, Any]]:
             "workflow": workflow, "confidence": confidence}
 
 
-async def distill_skills(*, min_learnings: Optional[int] = None) -> Dict[str, Any]:
-    """One L3 → L4 pass. Returns {"status", "groups", "created": [...], "skipped": [...]}."""
+def source_principals(learnings: List[Learning]) -> set[int]:
+    """Distinct principals behind a group: each learning's author plus the authors of its evidence."""
+    found: set[int] = set()
+    for learning in learnings:
+        author = getattr(learning, "author_principal_id", None)
+        if author is not None:
+            found.add(int(author))
+        found |= distinct_principals(getattr(learning, "evidence", None))
+    return found
+
+
+def skill_status(learnings: List[Learning], team_state: str) -> str:
+    """``pending`` (review) or ``active`` for a skill distilled from ``learnings``."""
+    if settings.MEMORY_SKILL_DISTILLATION_REQUIRE_APPROVAL:
+        return "pending"
+    if team_state == "team":
+        floor = max(2, settings.MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM)
+        if len(source_principals(learnings)) < floor:
+            return "pending"
+    return "active"
+
+
+async def distill_skills(*, min_learnings: Optional[int] = None,
+                         team_state: Optional[str] = None) -> Dict[str, Any]:
+    """One L3 → L4 pass. Returns {"status", "groups", "created": [...], "skipped": [...]}.
+
+    ``team_state`` is resolved when not given; any failure to resolve it means solo."""
     from brain.memory.skill_store import SkillConflictError, create_skill
 
     needed = min_learnings or max(2, settings.MEMORY_SKILL_DISTILLATION_MIN_LEARNINGS)
@@ -118,9 +149,16 @@ async def distill_skills(*, min_learnings: Optional[int] = None) -> Dict[str, An
     report: Dict[str, Any] = {"status": "ok", "groups": len(groups), "created": [], "skipped": []}
     if not groups:
         return report
+    if team_state is None and not settings.MEMORY_SKILL_DISTILLATION_REQUIRE_APPROVAL:
+        from brain.memory.consolidation import _memory_team_state
+
+        team_state = await _memory_team_state()
     summarizer = get_summarizer_provider()
-    status = "pending" if settings.MEMORY_SKILL_DISTILLATION_REQUIRE_APPROVAL else "active"
     for scope, learnings in sorted(groups.items())[:MAX_SKILLS_PER_RUN]:
+        sources = learnings[:20]
+        status = skill_status(sources, team_state or "solo")
+        principals = source_principals(sources)
+        author = next(iter(principals)) if len(principals) == 1 else None
         text = "\n".join(f"- [{lrng.id}] ({lrng.category}) {lrng.statement}" for lrng in learnings[:20])
         try:
             raw = await summarizer.summarize(_DISTILL_SKILL_PROMPT.format(learnings=text))
@@ -144,6 +182,7 @@ async def distill_skills(*, min_learnings: Optional[int] = None) -> Dict[str, An
                 repo_scope=scope,
                 is_global=False,
                 status=status,
+                author_principal_id=author,
             )
         except SkillConflictError:
             # Same name already exists: the procedure is known. Do not retry

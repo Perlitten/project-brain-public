@@ -64,6 +64,7 @@ def _supersede_rule_content(session, existing: Rule, requested: Dict[str, Any],
         version=current_version,
         author_principal_id=existing.author_principal_id,
         updated_by_principal_id=existing.updated_by_principal_id,
+        approved_by_principal_id=existing.approved_by_principal_id,
         created_at=existing.created_at,
         **{field: getattr(existing, field) for field in _RULE_CONTENT_FIELDS if field != "status"},
         status="superseded",
@@ -75,6 +76,8 @@ def _supersede_rule_content(session, existing: Rule, requested: Dict[str, Any],
     existing.version = current_version + 1
     existing.supersedes_id = history.id
     existing.updated_by_principal_id = principal_id
+    # A new version is unreviewed until an approval stamps it (brain/memory/proposals.py).
+    existing.approved_by_principal_id = None
     return history.id
 
 

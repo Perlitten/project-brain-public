@@ -179,6 +179,8 @@ class Decision(Base):
     author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Principal behind the latest content change (the author until someone else edits it).
     updated_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Independent reviewer whose approval published this content (team state); NULL for direct writes.
+    approved_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # History row that held the previous content of this canonical decision (None for v1).
     supersedes_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Monotonic content version; the compare-and-swap token for ``expected_version``.
@@ -204,6 +206,8 @@ class Rule(Base):
     )  # e.g., dict mapping features/modules
     author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Independent reviewer whose approval published this content (team state); NULL for direct writes.
+    approved_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Supersede chain, like decisions: a content change copies the previous content into a
     # history row (status "superseded", superseded_by_id -> canonical) and bumps ``version``.
     supersedes_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -503,6 +507,8 @@ class Learning(Base):
     # changed the row (approval, supersede, reject). NULL for machine-only or legacy rows.
     author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Independent reviewer whose approval published this content (team state); NULL for direct writes.
+    approved_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -839,6 +845,8 @@ class MemorySkill(Base):
     # who last approved/rejected/changed it.
     author_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Independent reviewer whose approval published this content (team state); NULL for direct writes.
+    approved_by_principal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False

@@ -13,8 +13,10 @@ other dated trace:
   never appear in the feed; a promoted learning appears once it is shared;
 * invitations (created, accepted, revoked) from ``team_invitations``;
 * team tasks and runs from ``team_task_bindings`` / ``agent_runs``;
-* membership and project-role changes and queued jobs from
-  ``team_activity_events`` (written by provisioning and the job endpoints).
+* membership and project-role changes, queued jobs and memory review events
+  (``memory.proposed`` / ``memory.approved`` / ``memory.rejected``) from
+  ``team_activity_events`` (written by provisioning, the job endpoints and
+  ``brain/memory/proposals.py``).
 
 Authorization is never applied to fetched events. The caller passes an
 ``ActivityScope`` that the API computed with the central team-access helpers
@@ -62,12 +64,14 @@ KINDS: dict[str, tuple[str, ...]] = {
     "task": ("task.created",),
     "run": ("run.requested",),
     "job": ("job.queued",),
+    # Governed memory review: a proposal was submitted, approved or rejected (no draft content in the event).
+    "memory": ("memory.proposed", "memory.approved", "memory.rejected"),
 }
 ALL_KINDS = frozenset(kind for kinds in KINDS.values() for kind in kinds)
 # Families only team administrators read: team administration itself, and the
 # episode/skill memory whose API is administrator-only as well.
 ADMIN_FAMILIES = frozenset({"membership", "project_role", "execution", "invitation", "episode", "skill"})
-TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "job"})
+TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "job", "memory"})
 
 _PRINCIPAL_LABEL = re.compile(r"^principal:(\d+)$")
 
@@ -426,7 +430,7 @@ def _recorded_stream(query: ActivityQuery, scope: ActivityScope) -> list[_Stream
         return _event(item.kind, f"event:{item.id}", item.occurred_at, item.actor_principal_id, item.summary,
                       subject={"type": item.kind.split(".", 1)[0], "principal_id": item.subject_principal_id,
                                **{key: value for key, value in (item.details or {}).items()
-                                  if key in {"job_id", "job_type"}}},
+                                  if key in {"job_id", "job_type", "proposal_id", "proposal_kind"}}},
                       repository_id=item.repository_id, project_id=item.project_id,
                       actor_label=item.actor_label if item.actor_principal_id is None else None,
                       details=dict(item.details or {}))

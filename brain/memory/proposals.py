@@ -17,6 +17,19 @@ proposal with ``MemoryVersionConflict`` instead of overwriting it. The store
 keeps the supersede history and the author; the proposal row keeps who
 approved or rejected it, when and why. Proposal rows are never deleted.
 
+Consolidation (``brain/memory/consolidation.py``) files ``learning`` proposals
+too, in team state, for a cluster whose evidence comes from too few principals:
+that proposal carries the distilled statement (``payload.origin ==
+"memory_consolidation"``) instead of pointing at a personal learning, and
+approval writes the learning, retires what it corrects and marks the episode
+promoted.
+
+Every submission, approval and rejection is recorded in the team activity feed
+(``memory.proposed`` / ``memory.approved`` / ``memory.rejected``, never the
+draft content) in the same transaction, so reviewers see what waits for them;
+every item an approval writes stamps ``approved_by_principal_id`` next to its
+author.
+
 Solo state (a team of one) never creates proposals: the owner writes approved
 knowledge directly, exactly as before. Authorization of the caller is the
 transport's job (``apps/api/routers/memory_review.py``); this module enforces
@@ -25,23 +38,31 @@ a live author, compare-and-swap and one decision per proposal.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional, cast
 
-from sqlalchemy import CursorResult, or_, select, update
+from sqlalchemy import CursorResult, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from brain.database.models import Learning, MemoryProposal, Repository
+from brain.config.settings import settings
+from brain.database.models import Decision, Learning, MemoryEpisode, MemoryProposal, Repository, Rule
+from brain.database.repository_utils import find_repository_id
 from brain.database.session import async_session_factory
 from brain.memory.decision_store import DecisionStore, find_canonical_decision
+from brain.memory.learning_store import LearningStore
 from brain.memory.provenance import SelfApprovalError, check_expected_version
 from brain.memory.repo_scope import normalize_repo_scope
 from brain.memory.rule_store import RuleStore, _find_rule, slugify
 from brain.team.models import TeamMember
 
+logger = logging.getLogger(__name__)
+
 ProposalKind = Literal["decision", "rule", "learning"]
 PERSONAL_STATUS = "personal"
 REVOKED_AUTHOR_REASON = "Author access revoked"
+# ``payload.origin`` of a learning proposal filed by consolidation (no personal learning behind it).
+CONSOLIDATION_ORIGIN = "memory_consolidation"
 
 DECISION_FIELDS = ("description", "status", "date", "reason", "consequences",
                    "affected_features", "affected_modules", "affected_files")
@@ -83,6 +104,39 @@ def proposal_dict(row: MemoryProposal) -> dict[str, Any]:
     }
 
 
+_REVIEW_VERBS = {"memory.proposed": "submitted for review", "memory.approved": "approved",
+                 "memory.rejected": "rejected"}
+
+
+async def record_review_event(session: AsyncSession, row: MemoryProposal, kind: str,
+                              actor_principal_id: Optional[int]) -> None:
+    """Append a ``memory.*`` row to the team activity feed in the caller's transaction.
+
+    The event names the proposal, never its draft content. A repository-scoped
+    proposal is visible to that repository's readers (its reviewers among them);
+    a system-global one to team administrators. Best effort: a savepoint keeps
+    a failed record from undoing the review itself."""
+    if settings.BRAIN_STORAGE_MODE != "full":
+        return  # team tables exist only under full storage
+    from brain.team.activity import record_event
+
+    try:
+        async with session.begin_nested():
+            path = row.requested_repo_path or row.repo_path
+            repository_id = await find_repository_id(session, path) if path else None
+            await record_event(
+                session, kind=kind, audience="repository" if repository_id is not None else "admin",
+                summary=f"{row.kind.capitalize()} proposal #{row.id} {_REVIEW_VERBS[kind]}",
+                actor_principal_id=actor_principal_id, actor_label=None if actor_principal_id else "system",
+                subject_principal_id=row.author_principal_id, repository_id=repository_id,
+                details={"proposal_id": row.id, "proposal_kind": row.kind, "state": row.state,
+                         "scope": row.repo_path or "system_global"},
+                dedupe_key=f"{kind}:{row.id}",
+            )
+    except Exception as exc:  # noqa: BLE001 - the review stands; the feed row is best effort
+        logger.warning("Could not record %s for proposal %s: %s: %s", kind, row.id, type(exc).__name__, exc)
+
+
 async def _target(session: AsyncSession, kind: str, title: str, repo_path: Optional[str],
                   payload: dict[str, Any]) -> tuple[Optional[str], int]:
     """(canonical key, current version) of the item a decision/rule proposal would change; (None, 0) if new."""
@@ -116,6 +170,8 @@ async def create_proposal(kind: Literal["decision", "rule"], *, title: str, repo
                              target_key=target_key, base_version=current, title=title, payload=clean,
                              author_principal_id=author_principal_id)
         session.add(row)
+        await session.flush()
+        await record_review_event(session, row, "memory.proposed", author_principal_id)
         await session.commit()
         await session.refresh(row)
         return row
@@ -158,9 +214,36 @@ async def propose_learning(learning_id: int, author_principal_id: Optional[int],
                                       "confidence": learning.confidence},
                              author_principal_id=author_principal_id)
         session.add(row)
+        await session.flush()
+        await record_review_event(session, row, "memory.proposed", author_principal_id)
         await session.commit()
         await session.refresh(row)
         return row
+
+
+async def add_consolidated_learning_proposal(
+        session: AsyncSession, *, statement: str, category: Optional[str], confidence: float,
+        evidence: list[dict[str, Any]], repo_path: Optional[str], requested_repo_path: Optional[str],
+        author_principal_id: int, episode_id: int, supersedes: list[int], severity: str,
+        suggested_target: str, evidence_tier: str) -> MemoryProposal:
+    """File a consolidation learning proposal inside the caller's (episode) transaction.
+
+    Team state only: the cluster's evidence comes from too few principals to
+    reach shared memory unreviewed. The proposal is authored by the lead
+    principal behind the evidence and carries everything approval needs to
+    write the learning; ``target_key`` stays NULL (no personal learning)."""
+    row = MemoryProposal(kind="learning", state="pending", version=1, repo_path=normalize_repo_scope(repo_path),
+                         requested_repo_path=requested_repo_path, target_key=None, base_version=0,
+                         title=statement[:255],
+                         payload={"origin": CONSOLIDATION_ORIGIN, "statement": statement, "category": category,
+                                  "confidence": confidence, "evidence": list(evidence), "episode_id": episode_id,
+                                  "supersedes": [int(item) for item in supersedes], "severity": severity,
+                                  "suggested_target": suggested_target, "evidence_tier": evidence_tier},
+                         author_principal_id=author_principal_id)
+    session.add(row)
+    await session.flush()
+    await record_review_event(session, row, "memory.proposed", author_principal_id)
+    return row
 
 
 async def promote_personal_learning_directly(learning_id: int, author_principal_id: Optional[int]) -> int:
@@ -184,6 +267,28 @@ async def personal_learnings(author_principal_id: Optional[int]) -> list[Learnin
         return list((await session.execute(select(Learning).where(
             Learning.status == PERSONAL_STATUS, Learning.author_principal_id == author_principal_id,
         ).order_by(Learning.id.desc()))).scalars().all())
+
+
+async def count_pending_proposals(*, scopes: Optional[list[Optional[str]]] = None,
+                                  exclude_author: Optional[int] = None) -> int:
+    """How many pending proposals wait in ``scopes`` (None = every scope), leaving out ``exclude_author``'s own
+    (nobody reviews their own proposal). Same scope semantics as ``list_proposals``."""
+    stmt = select(func.count()).select_from(MemoryProposal).where(MemoryProposal.state == "pending")
+    if exclude_author is not None:
+        stmt = stmt.where(or_(MemoryProposal.author_principal_id.is_(None),
+                              MemoryProposal.author_principal_id != exclude_author))
+    if scopes is not None:
+        paths = [scope for scope in scopes if scope is not None]
+        clauses = []
+        if paths:
+            clauses.append(MemoryProposal.repo_path.in_(paths))
+        if None in scopes:
+            clauses.append(MemoryProposal.repo_path.is_(None))
+        if not clauses:
+            return 0
+        stmt = stmt.where(or_(*clauses))
+    async with async_session_factory() as session:
+        return int((await session.execute(stmt)).scalar_one())
 
 
 async def get_proposal(proposal_id: int) -> MemoryProposal:
@@ -284,6 +389,10 @@ async def approve_proposal(proposal_id: int, *, expected_version: int, reviewer_
                                     if field in payload},
             )
             row.result_key, row.result_version = str(result.id), result.version
+            if result.changed:
+                decision = await session.get(Decision, result.id)
+                if decision is not None:
+                    decision.approved_by_principal_id = reviewer_principal_id
         elif row.kind == "rule":
             result = await RuleStore.record_rule(
                 name=row.title, repo_path=row.repo_path, author_principal_id=row.author_principal_id,
@@ -291,16 +400,72 @@ async def approve_proposal(proposal_id: int, *, expected_version: int, reviewer_
                 **{field: payload.get(field) for field in RULE_FIELDS if field in payload},
             )
             row.result_key, row.result_version = str(result.id), result.version
+            if result.changed:
+                rule = await session.get(Rule, result.id)
+                if rule is not None:
+                    rule.approved_by_principal_id = reviewer_principal_id
+        elif payload.get("origin") == CONSOLIDATION_ORIGIN:
+            learning_id = await _approve_consolidated_learning(session, row, payload, reviewer_principal_id)
+            row.result_key, row.result_version = str(learning_id), 1
         else:
             learning = await session.get(Learning, int(row.target_key or 0))
             if learning is None or learning.status != PERSONAL_STATUS:
                 raise ProposalStateError(f"Learning {row.target_key} is no longer a personal learning")
             learning.status = "active"
             learning.updated_by_principal_id = reviewer_principal_id
+            learning.approved_by_principal_id = reviewer_principal_id
             row.result_key, row.result_version = str(learning.id), 1
+        await record_review_event(session, row, "memory.approved", reviewer_principal_id)
         await session.commit()
         await session.refresh(row)
         return row
+
+
+async def _approve_consolidated_learning(session: AsyncSession, row: MemoryProposal, payload: dict[str, Any],
+                                         reviewer_principal_id: Optional[int]) -> int:
+    """Write the learning a consolidation proposal carries, retire what it corrects, promote its episode."""
+    learning_id = await LearningStore.add_learning(
+        statement=str(payload.get("statement") or row.title), category=payload.get("category"),
+        confidence=float(payload.get("confidence") or 0.5), evidence=list(payload.get("evidence") or []),
+        repo_scope=row.repo_path, promoted_from=f"proposal:{row.id}", session=session,
+        author_principal_id=row.author_principal_id, updated_by_principal_id=reviewer_principal_id,
+        approved_by_principal_id=reviewer_principal_id,
+    )
+    for old_id in payload.get("supersedes") or []:
+        old = await session.get(Learning, int(old_id))
+        if old is None or old.status != "active":
+            continue  # already retired or replaced while the proposal waited
+        await LearningStore.supersede(int(old_id), learning_id, session=session,
+                                      updated_by_principal_id=reviewer_principal_id)
+    episode = await _proposal_episode(session, payload)
+    if episode is not None:
+        episode.status = "promoted"
+        episode.promoted_to_learning_id = learning_id
+        episode.updated_by_principal_id = reviewer_principal_id
+        episode.gate_reasons = [*(episode.gate_reasons or []), f"approved via proposal #{row.id}"]
+    return learning_id
+
+
+async def _proposal_episode(session: AsyncSession, payload: dict[str, Any]) -> Optional[MemoryEpisode]:
+    """The ``proposed`` L2 episode a consolidation proposal came from, if it is still waiting."""
+    try:
+        episode_id = int(payload.get("episode_id") or 0)
+    except (TypeError, ValueError):
+        return None
+    episode = await session.get(MemoryEpisode, episode_id) if episode_id else None
+    return episode if episode is not None and episode.status == "proposed" else None
+
+
+async def _close_proposal_episodes(session: AsyncSession, rows: list[MemoryProposal], note: str) -> None:
+    """A rejected or withdrawn consolidation proposal rejects its episode (fresh evidence may re-open it)."""
+    for row in rows:
+        payload = row.payload or {}
+        if row.kind != "learning" or payload.get("origin") != CONSOLIDATION_ORIGIN:
+            continue
+        episode = await _proposal_episode(session, payload)
+        if episode is not None:
+            episode.status = "rejected"
+            episode.gate_reasons = [*(episode.gate_reasons or []), f"{note} (proposal #{row.id})"]
 
 
 async def reject_proposal(proposal_id: int, *, expected_version: int, reviewer_principal_id: Optional[int],
@@ -312,6 +477,8 @@ async def reject_proposal(proposal_id: int, *, expected_version: int, reviewer_p
             raise ProposalNotFound(f"Proposal {proposal_id} not found")
         _check_independent(row, reviewer_principal_id, team_state)
         row = await _claim(session, proposal_id, expected_version, "rejected", reviewer_principal_id, reason)
+        await _close_proposal_episodes(session, [row], "rejected in review")
+        await record_review_event(session, row, "memory.rejected", reviewer_principal_id)
         await session.commit()
         await session.refresh(row)
         return row
@@ -326,6 +493,7 @@ async def withdraw_proposal(proposal_id: int, *, expected_version: int,
             raise ProposalNotFound(f"Proposal {proposal_id} not found")
         row = await _claim(session, proposal_id, expected_version, "withdrawn", author_principal_id,
                            "Withdrawn by the author")
+        await _close_proposal_episodes(session, [row], "withdrawn by the author")
         await session.commit()
         await session.refresh(row)
         return row
@@ -337,6 +505,9 @@ async def withdraw_author_proposals(session: AsyncSession, principal_id: int,
 
     Knowledge that was already approved stays: it was reviewed by someone else.
     Returns how many proposals were withdrawn."""
+    pending = list((await session.execute(select(MemoryProposal).where(
+        MemoryProposal.author_principal_id == principal_id, MemoryProposal.state == "pending"))).scalars().all())
+    await _close_proposal_episodes(session, pending, reason)
     result = await session.execute(
         update(MemoryProposal)
         .where(MemoryProposal.author_principal_id == principal_id, MemoryProposal.state == "pending")

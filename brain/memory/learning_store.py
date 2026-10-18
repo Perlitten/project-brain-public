@@ -51,6 +51,7 @@ class LearningStore:
         author_principal_id: Optional[int] = None,
         updated_by_principal_id: Optional[int] = None,
         status: str = "active",
+        approved_by_principal_id: Optional[int] = None,
     ) -> int:
         """Save a new learning and return its id.
 
@@ -60,7 +61,8 @@ class LearningStore:
 
         ``author_principal_id`` names who contributed it (the API caller, or the
         sole principal behind consolidated evidence); ``updated_by_principal_id``
-        defaults to the author.
+        defaults to the author. ``approved_by_principal_id`` names the independent
+        reviewer whose approval published it (team state), else stays NULL.
 
         With ``session`` the row is only flushed, so the caller's transaction
         decides whether it commits (used by consolidation for atomic L2→L3 writes).
@@ -100,6 +102,7 @@ class LearningStore:
             updated_by_principal_id=(
                 updated_by_principal_id if updated_by_principal_id is not None else author_principal_id
             ),
+            approved_by_principal_id=approved_by_principal_id,
         )
         if session is not None:
             session.add(learning)

@@ -20,14 +20,15 @@ from brain.database.migrations import _ensure_memory_episode_ledger
 from brain.database.models import Base, Learning, MemoryEpisode, MemoryEpisodeEvent
 from brain.embeddings.constants import EMBEDDING_DIMENSION
 from brain.embeddings.pgvector_sql import pgvector_index_dimension
-from brain.memory import consolidation
+from brain.database.models import MemoryProposal
+from brain.memory import consolidation, proposals
 from brain.memory.consolidation import EpisodeStateError, approve_episode, reject_episode
 from brain.memory.provenance import SelfApprovalError
 from brain.memory.learning_retrieval import select_learnings_for_context
 from brain.memory.learning_store import LearningStore
 
 STATEMENT = "NVIDIA embeddings are 2048-dimensional"
-_MEMORY_TABLES = "memory_episode_events, memory_episodes, memory_learnings"
+_MEMORY_TABLES = "memory_proposals, memory_episode_events, memory_episodes, memory_learnings"
 
 
 @pytest_asyncio.fixture
@@ -55,6 +56,7 @@ async def memory_db(monkeypatch):
     monkeypatch.setattr("brain.memory.learning_retrieval.async_session_factory", sessions)
     monkeypatch.setattr("brain.memory.skill_distiller.async_session_factory", sessions)
     monkeypatch.setattr("brain.memory.rule_store.async_session_factory", sessions, raising=False)
+    monkeypatch.setattr("brain.memory.proposals.async_session_factory", sessions)
 
     vector = [1.0] + [0.0] * (pgvector_index_dimension(EMBEDDING_DIMENSION) - 1)
 
@@ -126,6 +128,7 @@ async def memory_db(monkeypatch):
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {_MEMORY_TABLES} RESTART IDENTITY CASCADE"))
         await conn.execute(text("DELETE FROM rules WHERE applies_to ->> 'source' = 'memory_consolidation'"))
+        await conn.execute(text("DELETE FROM team_activity_events WHERE kind LIKE 'memory.%'"))
         await conn.execute(
             text("DELETE FROM harness.agent_tasks WHERE id = ANY(:ids)"), {"ids": owned_task_ids}
         )
@@ -327,19 +330,68 @@ async def test_team_state_g2_needs_two_principals_and_mixed_authorship_stays_una
     with patch.object(consolidation, "_memory_team_state", AsyncMock(return_value="team")):
         await memory_db.add_events(2, authors=[11, 11])
         one_voice = await memory_db.run()
+        # One person's claim is not written to shared memory: it waits as a learning proposal.
         assert one_voice["team_state"] == "team" and one_voice["promoted"] == []
-        assert len(one_voice["rejected"]) == 1
-        assert any("distinct principal" in r for r in one_voice["rejected"][0]["reasons"])
+        assert one_voice["rejected"] == [] and len(one_voice["proposed"]) == 1
+        entry = one_voice["proposed"][0]
+        assert any("distinct principal" in r for r in entry["reasons"])
         assert await memory_db.count(Learning) == 0
 
         await memory_db.add_events(2, authors=[11, 12])
         two_voices = await memory_db.run()
+    async with memory_db.sessions() as session:
+        proposal = await session.get(MemoryProposal, entry["proposal_id"])
+        proposed_episode = await session.get(MemoryEpisode, entry["episode_id"])
+    assert proposal.kind == "learning" and proposal.state == "pending"
+    assert proposal.author_principal_id == 11 and proposal.target_key is None
+    assert proposal.payload["origin"] == proposals.CONSOLIDATION_ORIGIN
+    assert proposal.payload["episode_id"] == entry["episode_id"]
+    assert proposed_episode.status == "proposed"
+
     assert len(two_voices["promoted"]) == 1
     async with memory_db.sessions() as session:
         learning = (await session.execute(select(Learning))).scalar_one()
         episode = await session.get(MemoryEpisode, two_voices["promoted"][0]["episode_id"])
     # Two authors: the learning belongs to the team, not to either principal.
     assert learning.author_principal_id is None and episode.author_principal_id is None
+
+
+@pytest.mark.asyncio
+async def test_team_consolidation_proposal_approval_promotes_with_provenance(memory_db):
+    with patch.object(consolidation, "_memory_team_state", AsyncMock(return_value="team")):
+        await memory_db.add_events(2, authors=[11, 11])
+        report = await memory_db.run()
+    entry = report["proposed"][0]
+    async with memory_db.sessions() as session:
+        row = await session.get(MemoryProposal, entry["proposal_id"])
+        version = row.version
+    with patch("brain.memory.proposals._author_is_live", AsyncMock(return_value=True)):
+        approved = await proposals.approve_proposal(entry["proposal_id"], reviewer_principal_id=12,
+                                                    expected_version=version, team_state="team")
+    assert approved.state == "approved"
+    async with memory_db.sessions() as session:
+        learning = (await session.execute(select(Learning))).scalar_one()
+        episode = await session.get(MemoryEpisode, entry["episode_id"])
+    assert learning.status == "active"
+    assert learning.author_principal_id == 11 and learning.approved_by_principal_id == 12
+    assert learning.updated_by_principal_id == 12
+    assert episode.status == "promoted" and episode.promoted_to_learning_id == learning.id
+
+
+@pytest.mark.asyncio
+async def test_team_consolidation_proposal_rejection_closes_the_episode(memory_db):
+    with patch.object(consolidation, "_memory_team_state", AsyncMock(return_value="team")):
+        await memory_db.add_events(2, authors=[11, 11])
+        report = await memory_db.run()
+    entry = report["proposed"][0]
+    async with memory_db.sessions() as session:
+        version = (await session.get(MemoryProposal, entry["proposal_id"])).version
+    with patch("brain.memory.proposals._author_is_live", AsyncMock(return_value=True)):
+        await proposals.reject_proposal(entry["proposal_id"], reviewer_principal_id=12,
+                                        expected_version=version, team_state="team", reason="not reproducible")
+    assert await memory_db.count(Learning) == 0
+    async with memory_db.sessions() as session:
+        assert (await session.get(MemoryEpisode, entry["episode_id"])).status == "rejected"
 
 
 @pytest.mark.asyncio

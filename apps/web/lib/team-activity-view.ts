@@ -35,6 +35,7 @@ export const ACTIVITY_KINDS: Record<string, string[]> = {
   learning: ["learning.created", "learning.updated"],
   episode: ["episode.created", "episode.updated"],
   skill: ["skill.created", "skill.updated"],
+  memory: ["memory.proposed", "memory.approved", "memory.rejected"],
   membership: ["membership.added", "membership.revoked", "membership.admin_granted", "membership.admin_revoked"],
   project_role: ["project_role.granted", "project_role.changed", "project_role.revoked"],
   execution: ["execution.granted", "execution.revoked"],
