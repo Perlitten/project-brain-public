@@ -290,7 +290,10 @@ def test_execution_config_paths(factory, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "BRAIN_EXECUTION_ROOT", str(root))
     assert "does not exist" in doctor.check_execution_config().message
     root.mkdir()
-    assert doctor.check_execution_config().status == "pass"
+    # The subprocess backend works but is no boundary between steps and the server (execution_config_health).
+    subprocess_backend = doctor.check_execution_config()
+    assert subprocess_backend.status == "warn" and "Subprocess backend" in subprocess_backend.message
+    assert "BRAIN_EXECUTION_BACKEND=container" in subprocess_backend.hint
     monkeypatch.setattr(settings, "BRAIN_EXECUTION_TOOLS",
                         json.dumps({"ghost": {"argv": ["definitely-not-installed-tool-7f3a"]}}))
     missing_tool = doctor.check_execution_config()
@@ -301,13 +304,44 @@ def test_execution_config_paths(factory, monkeypatch, tmp_path):
     missing_secret = doctor.check_execution_config()
     assert missing_secret.status == "fail" and "$FIXTURE_DOCTOR_TOKEN" in missing_secret.message
     monkeypatch.setenv("FIXTURE_DOCTOR_TOKEN", "fixture-value")
-    assert doctor.check_execution_config().status == "pass"
+    assert doctor.check_execution_config().status == "warn"
     assert "fixture-value" not in doctor.check_execution_config().message
     monkeypatch.setattr(settings, "BRAIN_EXECUTION_EGRESS", "api.example.invalid")
-    assert doctor.check_execution_config().status == "warn"
+    egress = doctor.check_execution_config()
+    assert egress.status == "warn" and "cannot enforce" in egress.message
     monkeypatch.setattr(settings, "BRAIN_EXECUTION_EGRESS", "")
     monkeypatch.setattr(settings, "BRAIN_EXECUTION_TOOLS", "{}")
     assert doctor.check_execution_config().status == "warn"
+
+
+def test_execution_config_container_backend(factory, monkeypatch, tmp_path):
+    """The container backend is covered through execution_config_health: environments, egress proxy, docker CLI."""
+    root = tmp_path / "executions"
+    root.mkdir()
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_ENABLED", True)
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_ROOT", str(root))
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_BACKEND", "container")
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_DOCKER", sys.executable)
+    # Tools run inside the image, so a tool absent from this host is fine with the container backend.
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_TOOLS",
+                        json.dumps({"pytest": {"argv": ["definitely-not-installed-tool-7f3a"]}}))
+    no_environments = doctor.check_execution_config()
+    assert no_environments.status == "fail" and "at least one execution environment" in no_environments.message
+    assert "BRAIN_EXECUTION_ENVIRONMENTS" in no_environments.hint
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_ENVIRONMENTS",
+                        json.dumps({"py": {"image": "python:3.12-slim", "tools": ["pytest"]}}))
+    healthy = doctor.check_execution_config()
+    assert healthy.status == "pass", healthy.message
+    assert "container backend, environments py" in healthy.message and "egress denied" in healthy.message
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_EGRESS", "pypi.org")
+    unenforced = doctor.check_execution_config()
+    assert unenforced.status == "warn" and "BRAIN_EXECUTION_EGRESS_PROXY_IMAGE" in unenforced.hint
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_EGRESS_PROXY_IMAGE", "brain-api:latest")
+    enforced = doctor.check_execution_config()
+    assert enforced.status == "pass" and "enforced by the proxy" in enforced.message
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_DOCKER", "definitely-not-installed-docker-7f3a")
+    no_docker = doctor.check_execution_config()
+    assert no_docker.status == "fail" and "docker CLI" in no_docker.message
 
 
 def test_origin_settings_paths(factory, monkeypatch):

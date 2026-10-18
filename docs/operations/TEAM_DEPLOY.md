@@ -164,7 +164,7 @@ one-line fix, and the command exits 1 when any check fails:
 | `restore_fence` | An open restore fence (see Restore below). |
 | `invitations` | Expired invitations still pending. |
 | `execution_leases` | Executions whose lease expired, or requested and never picked up. |
-| `execution_config` | `BRAIN_EXECUTION_*` on this process: root exists, tools resolve, secrets set. |
+| `execution_config` | `BRAIN_EXECUTION_*` on this process: backend, environments, egress proxy image, root exists, docker CLI or host tools resolve, secrets set. The subprocess backend is a warning (no isolation). |
 | `origin_settings`, `source_freshness:<repo>` | `BRAIN_ORIGIN_REMOTES`, and each repository's indexed revision against the polled origin. |
 | `backup` | The newest backup under `BRAIN_BACKUP_DIR` and its age (`BRAIN_BACKUP_MAX_AGE_HOURS`, default 48); `unknown` when no location is configured. |
 

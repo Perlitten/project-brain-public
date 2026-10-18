@@ -14,7 +14,8 @@ from brain.database.models import ApiCredential, Decision, Principal, Rule
 from brain.team import coordination
 from brain.team.activity import ActivityQuery, ActivityScope, list_activity
 from brain.team.authorization import TeamConflict, TeamDenied
-from brain.team.models import AgentRun, TeamActivityEvent, TeamResourceLease, TeamRunResolution
+from brain.team.models import (AgentRun, TeamActivityEvent, TeamIntegrationEntry, TeamResourceLease,
+                               TeamRunResolution)
 from brain.team.provisioning import TeamNotFound, revoke_member
 from brain.team.store import create_task, request_run
 from tests.test_team_foundations import caller, run_payload, task_payload, team_db as team_fixture
@@ -299,6 +300,51 @@ async def test_lease_overlap_warns_and_revocation_releases_member_and_run_leases
 
 
 @pytest.mark.asyncio
+async def test_admin_force_release_bumps_the_token_and_reaches_the_activity_feed(team_db):
+    factory, a, _ = team_db
+    async with factory() as session, session.begin():
+        task_id = await make_parent(session, a, who=3)
+        held = (await coordination.acquire_lease(session, caller(3), a, {
+            "repository_id": 1, "resource": "src/api", "task_id": str(task_id)}))["lease"]
+        for who in (1, 2, 3):  # Reader, Contributor and even the holder (a Reviewer) are not administrators
+            with pytest.raises(TeamDenied, match="Administration permission required"):
+                await coordination.force_release_lease(session, caller(who), a, held["id"], {"reason": "stuck"})
+        for reason in (None, "", "   "):
+            with pytest.raises(TeamConflict, match="reason is required"):
+                await coordination.force_release_lease(session, caller(4), a, held["id"], {"reason": reason})
+        with pytest.raises(TeamConflict, match="fencing token changed"):
+            await coordination.force_release_lease(session, caller(4), a, held["id"], {
+                "reason": "stuck", "fencing_token": 7})
+        with pytest.raises(TeamNotFound):
+            await coordination.force_release_lease(session, caller(4), a, 9999, {"reason": "stuck"})
+
+        released = await coordination.force_release_lease(session, caller(4), a, held["id"], {
+            "reason": "  holder   is on leave ", "fencing_token": 1})
+        assert released["state"] == "released" and released["fencing_token"] == 2
+        assert released["released_reason"] == "force released: holder is on leave"
+        # The previous holder can neither renew nor release with the token it holds.
+        for action in (coordination.renew_lease, coordination.release_lease):
+            with pytest.raises(TeamConflict, match="fencing token"):
+                await action(session, caller(3), a, held["id"], {"fencing_token": 1})
+        with pytest.raises(TeamConflict, match="already released"):
+            await coordination.force_release_lease(session, caller(4), a, held["id"], {"reason": "again"})
+        # The resource is free at once, past the burned token.
+        taken = (await coordination.acquire_lease(session, caller(2), a, {"repository_id": 1, "resource": "src/api"}))
+        assert taken["lease"]["fencing_token"] == 3 and taken["lease"]["holder_id"] == 2
+
+        rows = (await session.execute(select(TeamActivityEvent).where(
+            TeamActivityEvent.kind == "coordination.lease_force_released"))).scalars().all()
+        assert len(rows) == 1
+        event = rows[0]
+        assert event.actor_principal_id == 4 and event.subject_principal_id == 3 and event.repository_id == 1
+        assert event.details["reason"] == "holder is on leave" and event.details["task_id"] == str(task_id)
+        assert (event.details["previous_fencing_token"], event.details["fencing_token"]) == (1, 2)
+        scope = ActivityScope(administrator=False, repository_ids=frozenset({1}), project_ids=frozenset({a}))
+        feed = await list_activity(session, scope, ActivityQuery(kinds=frozenset({"coordination"})))
+        assert "coordination.lease_force_released" in [item["kind"] for item in feed["events"]]
+
+
+@pytest.mark.asyncio
 @pytest.mark.skipif(not os.getenv("TEST_TEAM_POSTGRES_URL"), reason="requires a disposable PostgreSQL team database")
 async def test_concurrent_lease_acquisitions_have_one_holder(team_db):
     import asyncio
@@ -412,6 +458,95 @@ async def test_integration_queue_order_rebase_instructions_and_authority(team_db
         assert kinds == sorted(["coordination.integration_queued"] * 5 + ["coordination.integrated",
                                "coordination.needs_rebase", "coordination.stale_instructions"]
                                + ["coordination.integration_rejected"] * 3)
+
+
+@pytest.mark.asyncio
+async def test_integration_outcomes_settle_the_task(team_db):
+    factory, a, _ = team_db
+    async with factory() as session, session.begin():
+        parent = await make_parent(session, a)
+        s1 = uuid.UUID((await coordination.create_subtask(session, caller(2), a, parent, sub("one")))["id"])
+        s2 = uuid.UUID((await coordination.create_subtask(session, caller(2), a, parent, sub("two", deps=[s1])))["id"])
+        before = (await session.execute(select(AgentTask).where(AgentTask.id == s1))).scalar_one()
+        status, version = before.status, before.version
+        # A rejected entry leaves the task open (another run may still land) and is recorded on its ledger.
+        r0 = await make_run(session, a, s1, "settle-run-00", head=B)
+        e0 = await coordination.enqueue(session, caller(2), a, {"run_id": str(r0)})
+        await coordination.reject(session, caller(3), a, e0["id"], {"reason": "not this one", "expected_version": 1})
+        task = (await session.execute(select(AgentTask).where(AgentTask.id == s1)
+                                      .execution_options(populate_existing=True))).scalar_one()
+        assert task.status == status and task.version == version
+        with pytest.raises(TeamConflict, match="Dependencies are not done"):
+            await request_run(session, caller(2), a, s2, run_payload("settle-dep-01"))
+
+        r1 = await make_run(session, a, s1, "settle-run-01", head=C)
+        e1 = await coordination.enqueue(session, caller(2), a, {"run_id": str(r1)})
+        assert (await coordination.integrate(session, caller(3), a, e1["id"], {
+            "expected_version": 1, "current_base_sha": A}))["status"] == "integrated"
+        task = (await session.execute(select(AgentTask).where(AgentTask.id == s1)
+                                      .execution_options(populate_existing=True))).scalar_one()
+        assert task.status == "completed" and task.version == version + 1
+        events = {row.event_type: row for row in (await session.execute(select(AgentTaskEvent).where(
+            AgentTaskEvent.task_id == s1, AgentTaskEvent.idempotency_key.like("integration:%")))).scalars().all()}
+        assert set(events) == {"integration.rejected", "status_change"}
+        assert events["integration.rejected"].payload_json["reason"] == "not this one"
+        change = events["status_change"]
+        assert change.payload_json["to"] == "completed" and change.payload_json["entry_id"] == e1["id"]
+        assert (change.expected_task_version, change.task_version) == (version, version + 1)
+        assert change.classification == "decision"
+
+        # "Done" now follows the task status, not only the queue row.
+        await session.execute(update(TeamIntegrationEntry).values(status="rejected"))
+        assert str(s1) in await coordination._done(session, [s1])
+        await request_run(session, caller(2), a, s2, run_payload("settle-dep-02"))
+        states = {item["id"]: item["state"] for item in (await coordination.plan_view(session, a, parent))["subtasks"]}
+        assert states[str(s1)] == "done"
+
+
+@pytest.mark.asyncio
+async def test_changed_files_overlap_scopes_and_leases_once_per_pair(team_db):
+    factory, a, _ = team_db
+    async with factory() as session, session.begin():
+        mine = await make_parent(session, a)
+        other = await make_parent(session, a, "parent-0002")
+        await coordination.update_plan(session, caller(2), a, other, {"scope_paths": ["docs/*"], "expected_version": 0})
+        lease = (await coordination.acquire_lease(session, caller(3), a, {
+            "repository_id": 1, "resource": "src/core"}))["lease"]
+        own_lease = await coordination.acquire_lease(session, caller(2), a, {
+            "repository_id": 1, "resource": "src/mine", "task_id": str(mine)})
+        assert own_lease["warnings"] == []
+        changed = ["docs/guide.md", "src/core/db.py", "src/mine/x.py", "README.md", "app/[id]/page.tsx",
+                   " leading.txt", "dir\\name.txt", "../escape", "/abs/path"]
+        warnings = await coordination.record_change_overlaps(session, mine, changed, actor_id=2)
+        assert sorted((w["kind"], w["source"]) for w in warnings) == [("lease", "changed_paths"),
+                                                                      ("task", "changed_paths")]
+        by_kind = {w["kind"]: w for w in warnings}
+        assert by_kind["task"]["other_task_id"] == str(other)
+        assert by_kind["task"]["paths"] == [["docs/guide.md", "docs/*"]]
+        assert by_kind["lease"]["lease_id"] == lease["id"]
+        assert by_kind["lease"]["paths"] == [["src/core/db.py", "src/core"]]
+        # Recorded once per pair: a retry (or a second run with the same changes) adds nothing.
+        assert len(await coordination.record_change_overlaps(session, mine, changed, actor_id=2)) == 2
+        rows = (await session.execute(select(TeamActivityEvent).where(
+            TeamActivityEvent.kind == "coordination.overlap"))).scalars().all()
+        assert len(rows) == 2 and all(row.details["source"] == "changed_paths" for row in rows)
+        assert sorted(row.summary for row in rows) == ["Changed files overlap leased resource src/core",
+                                                       "Changed files overlap the scope of task synthetic"]
+        assert coordination.changed_scope(changed) == [" leading.txt", "README.md", "app/[id]/page.tsx",
+                                                       "dir\\name.txt", "docs/guide.md", "src/core/db.py",
+                                                       "src/mine/x.py"]
+        assert len(coordination.changed_scope([f"files/{index:04d}.txt" for index in range(600)])) == 600
+        # A later run with different files under the same broad scope/lease does not add activity rows.
+        await coordination.record_change_overlaps(session, mine, ["docs/other.md", "src/core/new.py"], actor_id=2)
+        rows = (await session.execute(select(TeamActivityEvent).where(
+            TeamActivityEvent.kind == "coordination.overlap"))).scalars().all()
+        assert len(rows) == 2
+        assert await coordination.record_change_overlaps(session, mine, None, actor_id=2) == []
+        assert await coordination.record_change_overlaps(session, mine, ["unrelated.txt"], actor_id=2) == []
+        # Finished tasks and released leases stop counting.
+        await set_status(session, other, "completed")
+        await coordination.force_release_lease(session, caller(4), a, lease["id"], {"reason": "done"})
+        assert await coordination.record_change_overlaps(session, mine, changed, actor_id=2) == []
 
 
 # --------------------------------------------------------------------------- HTTP and MCP surface
