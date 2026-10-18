@@ -14,6 +14,9 @@ from apps.api import mcp_http
 from apps.api.audit_middleware import AuditLogMiddleware
 from apps.api.request_id_middleware import RequestIdMiddleware
 from apps.api.request_size_middleware import RequestSizeLimitMiddleware
+from brain.team.authorization import TeamDenied
+from brain.team.write_fence import WriteFenceMiddleware
+from apps.api.team_access import team_denied_response
 from apps.api.routers import telegram_bridge, core, harness, jobs, scheduler, setup, drift, graph_v2, coupling, impact, remediation, workspace, portfolio, freshness, lab, experiments, ledger, control, execution, routing, shadow, operations, improvement, audit, admin, web, quality, app_settings, web_login
 from brain.config.paths import allowed_repo_roots
 from brain.config.settings import settings
@@ -157,6 +160,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# Innermost: each request gets its own team write-fence holder (brain/team/write_fence.py).
+app.add_middleware(WriteFenceMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 # --- CORS ---
@@ -177,6 +182,9 @@ if _cors_origins:
 app.add_middleware(AuditLogMiddleware)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(RequestSizeLimitMiddleware)
+
+
+app.add_exception_handler(TeamDenied, team_denied_response)
 
 
 @app.exception_handler(QueueDepthExceeded)

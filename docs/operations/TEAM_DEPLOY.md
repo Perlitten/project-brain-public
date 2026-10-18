@@ -368,3 +368,8 @@ does not change.
 - Caddy does no rate limiting of its own: only the API's invitation and single
   sign-on throttles, per visitor address, limit repeated attempts.
 - Not piloted: no real team has run this package yet.
+- Team routes bound lock waits and idle transactions
+  (`BRAIN_TEAM_LOCK_TIMEOUT_MS`, default 5000; `BRAIN_TEAM_IDLE_TX_TIMEOUT_MS`,
+  default 30000; `0` disables either). A route that hits the bound answers HTTP
+  503 with `Retry-After`; frequent 503s mean a long transaction is holding team
+  rows, not that the bound is too low.

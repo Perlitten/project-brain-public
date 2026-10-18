@@ -44,7 +44,8 @@ from brain.auth.principals import ResolvedPrincipal, hash_credential, mint_crede
 from brain.config.settings import settings
 from brain.database.models import ApiCredential, Principal
 from brain.team.authorization import ROLE_PERMISSIONS, TeamConflict, TeamDenied, fresh
-from brain.team.models import ProjectMember, Team, TeamIdentity, TeamInvitation, TeamMember, TeamProject
+from brain.team.locking import advisory_xact_lock
+from brain.team.models import ProjectMember, TeamIdentity, TeamInvitation, TeamMember, TeamProject
 from brain.team.provisioning import (
     TEAM_ID,
     TeamNotFound,
@@ -158,12 +159,14 @@ async def create_invitation(session: AsyncSession, *, invited_by: str, invited_b
                             email: str | None = None, name: str | None = None,
                             expires_hours: int = DEFAULT_TTL_HOURS, team_id: int = TEAM_ID) -> tuple[str, dict]:
     """Issue an invitation; returns the plaintext token (shown once) and the public view."""
-    # Serialize the check-and-insert sequence on the shared parent row. A partial
-    # uniqueness constraint cannot express "unaccepted, unrevoked and unexpired",
-    # and without this lock concurrent administrators could mint two live tokens
-    # for the same principal name.
-    if await fresh(session, Team, Team.id == team_id, exclusive=True) is None:
-        raise TeamNotFound("Team is not initialized; run `brain team init` first")
+    # The team row is only read-locked (dissolution still waits for this
+    # transaction). The check-and-insert sequence below is serialized per
+    # principal name instead (advisory lock): a partial uniqueness constraint
+    # cannot express "unaccepted, unrevoked and unexpired", and without it
+    # concurrent administrators could mint two live tokens for one name. An
+    # exclusive team lock here used to stall every onboarding, member and
+    # project change behind one slow invitation.
+    await require_team(session, team_id)
     if role not in ROLE_PERMISSIONS:
         raise TeamConflict("Unknown project role")
     if not 1 <= expires_hours <= MAX_TTL_HOURS:
@@ -187,6 +190,7 @@ async def create_invitation(session: AsyncSession, *, invited_by: str, invited_b
     name = (name or "").strip() or f"invitee-{secrets.token_hex(6)}"
     if not NAME_PATTERN.fullmatch(name):
         raise TeamConflict("Principal name must start with a letter and use only letters, digits and ._@+-")
+    await advisory_xact_lock(session, f"team-invitation:{team_id}:{name}")
     if await fresh(session, Principal, Principal.name == name) is not None:
         raise TeamConflict(f"Principal name {name!r} is already taken")
     now = _now()
@@ -368,6 +372,15 @@ async def _redeem(session: AsyncSession, invitation: TeamInvitation, *, issuer: 
                   ttl_days: int | None = None) -> str:
     """Create the member an open (locked, unexpired) invitation describes; returns the new raw credential."""
     await require_team(session, invitation.team_id)
+    # Lock every invited project exclusively up front, in id order: role assignment
+    # below needs the exclusive lock, and upgrading a shared lock there deadlocked
+    # two invitees accepting into the same project at once.
+    projects = []
+    for project_id in sorted({uuid.UUID(item) for item in invitation.project_ids or []}):
+        project = await fresh(session, TeamProject, TeamProject.id == project_id, exclusive=True)
+        if project is None or project.disabled_at is not None or project.team_id != invitation.team_id:
+            raise TeamConflict("An invited project no longer exists or is disabled; ask for a new invitation")
+        projects.append(project)
     if invitation.invited_by_principal_id is not None:
         # An invitation carries its issuer's authority: once that administrator
         # is revoked or demoted, their unredeemed invitations stop working.
@@ -379,12 +392,6 @@ async def _redeem(session: AsyncSession, invitation: TeamInvitation, *, issuer: 
         raise TeamConflict("This Brain has no team members yet; the first accepted invitation must grant administration")
     if await fresh(session, Principal, Principal.name == invitation.principal_name) is not None:
         raise TeamConflict(f"Principal name {invitation.principal_name!r} is already taken; ask for a new invitation")
-    projects = []
-    for project_id in invitation.project_ids or []:
-        project = await fresh(session, TeamProject, TeamProject.id == uuid.UUID(project_id))
-        if project is None or project.disabled_at is not None or project.team_id != invitation.team_id:
-            raise TeamConflict("An invited project no longer exists or is disabled; ask for a new invitation")
-        projects.append(project)
     raw_key, credential = await mint_credential(session, name=invitation.principal_name,
                                                 scopes=member_scopes(invitation.is_admin), kind="human",
                                                 ttl_days=ttl_days)

@@ -1,3 +1,43 @@
+"""Team authorization: who may do what on which project, decided inside the caller's transaction.
+
+Global row-lock order
+---------------------
+Every team transaction takes row locks in this one order, so two transactions
+can wait on each other only in one direction and never deadlock:
+
+1. The caller's own authority, as ``live_credential`` / ``authorize`` read it:
+   the restore fence, then for each identity on the delegation chain (runs
+   first, the human initiator last) its ``principals`` row and right after it
+   its ``api_credentials`` row, all ``FOR SHARE``; then the initiator's
+   ``team_members`` row ``FOR SHARE``. The write fence
+   (``brain/team/write_fence.py``) re-takes the same locks in the same order.
+2. The target, in table order:
+
+   a. ``principals`` being changed: a member's run principals first (newest
+      first, descending id), then the member, ``FOR NO KEY UPDATE``; each
+      principal's ``api_credentials`` rows are updated only after all of its
+      principals are locked (``provisioning.revoke_member``);
+   b. ``teams`` (``FOR SHARE`` on request paths; invitations serialize a
+      name with an advisory lock instead of locking the whole team);
+   c. ``team_projects``, in ascending id when several are locked, at the
+      strongest level the transaction will need (``invitations._redeem``
+      takes ``FOR UPDATE`` up front rather than upgrading a share lock);
+   d. ``agent_runs``;
+   e. ``team_members``;
+   f. ``project_members``;
+   g. everything else (tasks, proposals, activity events).
+
+A transaction never upgrades a row lock it already holds on a row another
+transaction may share; it takes the strongest lock first. Team routes bound
+lock waits and idle time per transaction (``locking.bound_team_transaction``)
+and answer HTTP 503 with ``Retry-After`` on SQLSTATE 55P03 / 40P01 / 40001;
+revocation retries a deadlock victim itself (``locking.retry_transient``).
+
+Accepted corner case: two administrators revoking each other at the same
+moment each hold their own authority (step 1) and need the other's principal
+(step 2a). PostgreSQL aborts one; it is retried and, still blocked by the
+other's committed or pending revocation, fails rather than both succeeding.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, replace

@@ -14,7 +14,7 @@ export const TEAM_ROLE_SCOPES = [
   "team:task.create",
 ];
 
-/** What the dashboard's own screens read, plus recording decisions and rules and queuing jobs (Brain checks the role per repository). */
+/** What the dashboard's own screens read, plus recording decisions, rules, harness lessons and observations, and queuing jobs (Brain checks the role per repository). */
 export const DASHBOARD_SCOPES = [
   "control:read",
   "core:write",
@@ -23,6 +23,7 @@ export const DASHBOARD_SCOPES = [
   "freshness:read",
   "graph:read",
   "harness:read",
+  "harness:write",
   "impact:read",
   "jobs:write",
   "ledger:read",
