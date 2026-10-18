@@ -165,8 +165,12 @@ async def test_scope_overlaps_warn_and_reach_the_activity_feed(team_db):
         rows = (await session.execute(select(TeamActivityEvent).where(
             TeamActivityEvent.kind == "coordination.overlap"))).scalars().all()
         assert len(rows) == 2 and {row.repository_id for row in rows} == {1}
-        listed = await coordination.list_overlaps(session, caller(1), a)
+        report = await coordination.list_overlaps(session, caller(1), a)
+        listed = report["overlaps"]
         assert len(listed) == 2
+        # /synthetic/A is not a checkout: no import graph, so only paths were compared, and the report says so.
+        assert [(g["repository_id"], g["status"]) for g in report["dependency_graphs"]] == [(1, "unavailable")]
+        assert result["dependency_graph"]["status"] == "unavailable"
 
         scope = ActivityScope(administrator=False, repository_ids=frozenset({1}), project_ids=frozenset({a}))
         feed = await list_activity(session, scope, ActivityQuery(kinds=frozenset({"coordination"})))
@@ -176,8 +180,177 @@ async def test_scope_overlaps_warn_and_reach_the_activity_feed(team_db):
 
         # A finished task stops counting.
         await set_status(session, other, "completed")
-        assert await coordination.list_overlaps(session, caller(1), a) == [
+        assert (await coordination.list_overlaps(session, caller(1), a))["overlaps"] == [
             item for item in listed if item["kind"] == "task" and str(other) not in (item["task_id"], item["other_task_id"])]
+
+
+# --------------------------------------------------------------------------- dependency overlap (import graph)
+
+
+def fake_graph(edges, status="ok", reason=None, calls=None):
+    """A dependency provider over a fixed, undirected import graph (``edges``: file -> files it imports)."""
+    links: dict[str, set[str]] = {}
+    for source, targets in edges.items():
+        for target in targets:
+            links.setdefault(source, set()).add(target)
+            links.setdefault(target, set()).add(source)
+
+    async def provider(session, repository_id, paths):
+        if calls is not None:
+            calls.append((repository_id, list(paths)))
+        if status != "ok":
+            return {"status": status, "reason": reason, "edges": {}, "truncated": False}
+        return {"status": "ok", "reason": None, "edges": {p: sorted(links.get(p, ())) for p in paths},
+                "truncated": False}
+    return provider
+
+
+def test_dependency_pairs_are_import_edges_between_scopes_in_either_direction():
+    edges = {"src/api/routes.py": ["src/lib/db.py"], "src/lib/db.py": ["src/api/routes.py"]}
+    assert coordination.dependency_pairs(["src/api/routes.py"], ["src/lib"], edges) == [
+        ["src/api/routes.py", "src/lib/db.py"]]
+    # Their file is imported from inside my directory scope: the edge is reported from my side.
+    assert coordination.dependency_pairs(["src/api"], ["src/lib/db.py"], edges) == [
+        ["src/api/routes.py", "src/lib/db.py"]]
+    assert coordination.dependency_pairs(["docs"], ["src/lib/db.py"], edges) == []
+    many = {"a.py": [f"lib/m{i:03}.py" for i in range(80)]}
+    pairs = coordination.dependency_pairs(["a.py"], ["lib"], many)
+    assert len(pairs) == coordination.MAX_OVERLAP_PAIRS and pairs == sorted(pairs)
+
+
+@pytest.mark.asyncio
+async def test_dependency_overlap_warns_without_blocking_and_reaches_the_feed(team_db, monkeypatch):
+    factory, a, _ = team_db
+    calls: list = []
+    monkeypatch.setattr(coordination, "dependency_provider",
+                        fake_graph({"src/api/routes.py": ["src/lib/db.py"]}, calls=calls))
+    async with factory() as session, session.begin():
+        lib = await make_parent(session, a, "dep-lib-0001")
+        first = await coordination.update_plan(session, caller(2), a, lib,
+                                               {"scope_paths": ["src/lib/db.py"], "expected_version": 0})
+        assert first["warnings"] == [] and first["dependency_graph"]["status"] == "skipped", "no one else yet"
+        assert calls == []
+        api = await make_parent(session, a, "dep-api-0001")
+        result = await coordination.update_plan(session, caller(3), a, api,
+                                                {"scope_paths": ["src/api/routes.py", "src/api"],
+                                                 "expected_version": 0})
+        assert result["plan"]["scope_paths"] == ["src/api", "src/api/routes.py"], "the write went through"
+        assert result["warnings"] == [{
+            "kind": "dependency", "repository_id": 1, "task_id": str(api), "other_task_id": str(lib),
+            "other_title": "synthetic", "relation": "imports", "paths": [["src/api/routes.py", "src/lib/db.py"]]}]
+        assert result["dependency_graph"] == {"repository_id": 1, "status": "ok", "reason": None, "truncated": False}
+        # The caller's files are looked up first, then the other tasks' files; directories are not looked up.
+        assert calls[-1] == (1, ["src/api/routes.py", "src/lib/db.py"])
+
+        again = await coordination.update_plan(session, caller(3), a, api,
+                                               {"scope_paths": ["src/api", "src/api/routes.py"], "expected_version": 1})
+        assert again["warnings"] == result["warnings"], "deterministic"
+        rows = (await session.execute(select(TeamActivityEvent).where(
+            TeamActivityEvent.kind == "coordination.overlap"))).scalars().all()
+        assert len(rows) == 1, "recorded once"
+        assert rows[0].details["kind"] == "dependency" and rows[0].summary == "Dependency overlap with task synthetic"
+
+        report = await coordination.list_overlaps(session, caller(1), a)
+        [item] = report["overlaps"]
+        assert item["kind"] == "dependency" and {item["task_id"], item["other_task_id"]} == {str(lib), str(api)}
+        edge = ["src/api/routes.py", "src/lib/db.py"]
+        assert item["paths"] == [edge if item["task_id"] == str(api) else edge[::-1]], "oriented from task_id"
+        assert report["dependency_graphs"] == [{"repository_id": 1, "status": "ok", "reason": None,
+                                                "truncated": False}]
+
+        # A shared path says more than an import: the pair gets the path warning only.
+        shared = await make_parent(session, a, "dep-shared-01")
+        both = await coordination.update_plan(session, caller(2), a, shared,
+                                              {"scope_paths": ["src/lib/db.py", "src/api/routes.py"],
+                                               "expected_version": 0})
+        assert sorted(w["kind"] for w in both["warnings"]) == ["task", "task"]
+
+
+@pytest.mark.asyncio
+async def test_dependency_overlap_degrades_to_paths_when_the_graph_is_stale_or_missing(team_db, monkeypatch):
+    factory, a, _ = team_db
+    async with factory() as session, session.begin():
+        lib = await make_parent(session, a, "deg-lib-0001")
+        await coordination.update_plan(session, caller(2), a, lib, {"scope_paths": ["src/lib/db.py"],
+                                                                     "expected_version": 0})
+        api = await make_parent(session, a, "deg-api-0001")
+        version = 0
+        for status, reason in (("stale", "The repository index is behind; re-index to compare imports"),
+                               ("unavailable", "The repository index is unindexed")):
+            monkeypatch.setattr(coordination, "dependency_provider",
+                                fake_graph({"src/api/routes.py": ["src/lib/db.py"]}, status=status, reason=reason))
+            result = await coordination.update_plan(session, caller(3), a, api, {
+                "scope_paths": ["src/api/routes.py"], "expected_version": version})
+            version += 1
+            assert result["warnings"] == [], "no dependency warning without a trusted graph"
+            assert result["dependency_graph"] == {"repository_id": 1, "status": status, "reason": reason,
+                                                  "truncated": False}
+            report = await coordination.list_overlaps(session, caller(1), a)
+            assert report["overlaps"] == [] and report["dependency_graphs"][0]["status"] == status
+
+        # Past MAX_DEPENDENCY_PATHS files the lookup is bounded and the response says it was partial.
+        calls: list = []
+        monkeypatch.setattr(coordination, "dependency_provider", fake_graph({}, calls=calls))
+        wide = [f"src/w/f{i:02}.py" for i in range(40)]
+        result = await coordination.update_plan(session, caller(3), a, api, {"scope_paths": wide,
+                                                                             "expected_version": version})
+        assert len(calls[-1][1]) == coordination.MAX_DEPENDENCY_PATHS and calls[-1][1] == sorted(wide)[:32]
+        assert result["dependency_graph"]["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_default_dependency_provider_reads_imports_only_from_a_current_index(team_db, monkeypatch, tmp_path):
+    import asyncio
+
+    import brain.graph.graph_client as graph_client
+    import brain.memory.repo_freshness as repo_freshness
+    from brain.database.models import Repository
+
+    factory, _, _ = team_db
+    freshness = {"status": "current"}
+
+    async def assess(repo):
+        return dict(freshness)
+
+    class FakeGraph:
+        delay = 0.0
+
+        def __init__(self, repository_id):
+            assert repository_id == 1
+
+        async def get_neighbors(self, path):
+            await asyncio.sleep(self.delay)
+            if path == "boom.py":
+                raise RuntimeError("neo4j down")
+            file = lambda name: {"labels": ["File"], "properties": {"name": name}}  # noqa: E731
+            return [{"relationship": {"type": "IMPORTS"}, "target": file("src/lib/db.py")},
+                    {"relationship": {"type": "TESTED_BY"}, "target": file("tests/test_routes.py")},
+                    {"relationship": {"type": "IMPORTS"}, "target": {"labels": ["Module"], "properties": {"name": "x"}}},
+                    {"relationship": {"type": "IMPORTS"}, "target": file(path)}]
+
+    monkeypatch.setattr(repo_freshness, "assess_repository_freshness", assess)
+    monkeypatch.setattr(graph_client, "GraphClient", FakeGraph)
+    async with factory() as session, session.begin():
+        missing = await coordination.graph_dependencies(session, 1, ["src/api/routes.py"])
+        assert missing["status"] == "unavailable" and "not available" in missing["reason"], "/synthetic/A"
+        await session.execute(update(Repository).where(Repository.id == 1).values(path=str(tmp_path)))
+
+        ok = await coordination.graph_dependencies(session, 1, ["src/api/routes.py"])
+        assert ok == {"status": "ok", "reason": None, "edges": {"src/api/routes.py": ["src/lib/db.py"]},
+                      "truncated": False}
+        failed = await coordination.graph_dependencies(session, 1, ["boom.py"])
+        assert failed["status"] == "unavailable" and "RuntimeError" in failed["reason"]
+        monkeypatch.setattr(coordination, "DEPENDENCY_TIMEOUT_SECONDS", 0.05)
+        FakeGraph.delay = 1.0
+        slow = await coordination.graph_dependencies(session, 1, ["src/api/routes.py"])
+        assert slow["status"] == "unavailable" and "timed out" in slow["reason"]
+        FakeGraph.delay = 0.0
+        for status, expected in (("behind", "stale"), ("stale", "stale"), ("unindexed", "unavailable"),
+                                 ("source_missing", "unavailable")):
+            freshness["status"] = status
+            result = await coordination.graph_dependencies(session, 1, ["src/api/routes.py"])
+            assert (result["status"], result["edges"]) == (expected, {}), status
+            assert status in result["reason"]
 
 
 # --------------------------------------------------------------------------- instruction resolution
@@ -614,6 +787,7 @@ async def test_http_coordination_routes(team_db, monkeypatch):
         assert instructions.json()["status"] == "current"
         overlaps = await client.get(f"{base}/overlaps", headers=READER, params={"repository_id": 1})
         assert len(overlaps.json()["overlaps"]) == 1
+        assert overlaps.json()["dependency_graphs"][0]["status"] == "unavailable", "no checkout, paths only"
 
         lease = (await client.post(f"{base}/leases", headers=CONTRIBUTOR,
                                    json={"repository_id": 1, "resource": "resource:deploy"})).json()["lease"]

@@ -14,8 +14,12 @@ Five pieces, all on top of the M1 task/run model and the central ``authorize()``
   from its static prefix). An overlap is a warning in the response and a
   ``coordination.overlap`` row in the activity feed. When a bounded execution
   completes, the files it actually changed are compared the same way
-  (``record_change_overlaps``). It flags risk only: same files can be
-  independent and separate files can still conflict.
+  (``record_change_overlaps``). Declared scopes that share no path but are
+  linked by an import edge in the repository graph give a weaker
+  ``dependency`` warning; when the graph is missing or stale the check
+  degrades to paths only and the response says so (``dependency_graph``).
+  It flags risk only: same files can be independent and separate files can
+  still conflict.
 * **Instruction resolution.** Each new run records the canonical, active
   decision and rule versions that applied to its repository
   (``team_run_resolutions``). Integration flags a run whose instructions were
@@ -37,9 +41,12 @@ Five pieces, all on top of the M1 task/run model and the central ``authorize()``
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -67,6 +74,11 @@ MAX_LEASE_SECONDS = 3600
 MAX_CHANGED_PATHS = 5000
 MAX_OVERLAP_PAIRS = 50
 MAX_REASON = 500
+# Dependency overlap: concrete file paths looked up in the import graph per check, imports kept per file, and the
+# time budget for the whole lookup. Past either bound the check is partial and says so (``truncated``).
+MAX_DEPENDENCY_PATHS = 32
+MAX_DEPENDENCY_NEIGHBORS = 64
+DEPENDENCY_TIMEOUT_SECONDS = 5.0
 INACTIVE_TASK_STATUSES = ("completed", "cancelled")
 PENDING = ("queued", "needs_rebase", "stale_instructions")
 FINAL = ("integrated", "rejected")
@@ -351,8 +363,8 @@ async def create_subtask(session: AsyncSession, caller: ResolvedPrincipal, proje
     if plan.parent_task_id != parent_id:
         raise TeamConflict("Task already belongs to another parent")
     binding = await _binding(session, project_id, task_id)
-    warnings = await detect_overlaps(session, binding, plan, actor_id=caller.id, record=True)
-    return {**created, "plan": plan_dict(plan, task_id), "warnings": warnings}
+    warnings, graph = await detect_overlaps(session, binding, plan, actor_id=caller.id, record=True)
+    return {**created, "plan": plan_dict(plan, task_id), "warnings": warnings, "dependency_graph": graph}
 
 
 async def update_plan(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
@@ -398,8 +410,8 @@ async def update_plan(session: AsyncSession, caller: ResolvedPrincipal, project_
     except IntegrityError as exc:
         raise TeamConflict("Plan version conflict") from exc
     assert plan is not None
-    warnings = await detect_overlaps(session, binding, plan, actor_id=caller.id, record=True)
-    return {"plan": plan_dict(plan, task_id), "warnings": warnings}
+    warnings, graph = await detect_overlaps(session, binding, plan, actor_id=caller.id, record=True)
+    return {"plan": plan_dict(plan, task_id), "warnings": warnings, "dependency_graph": graph}
 
 
 async def dispatch(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
@@ -483,12 +495,135 @@ def _conflicts(binding: TeamTaskBinding, plan: TeamTaskPlan | None,
     return warnings
 
 
+# --- dependency overlap: scopes linked by an import edge in the repository graph -----------------------------
+# Weaker than a shared path (a warning, never a refusal). The graph is only trusted when the repository index is
+# current; otherwise the check degrades to path overlap and the response says why (``dependency_graph``).
+
+DependencyGraph = dict
+DependencyProvider = Callable[[AsyncSession, int, list[str]], Awaitable[DependencyGraph]]
+
+
+def _graph_result(status: str, reason: str | None = None, edges: dict[str, list[str]] | None = None,
+                  truncated: bool = False) -> DependencyGraph:
+    return {"status": status, "reason": reason, "edges": edges or {}, "truncated": truncated}
+
+
+def _is_file_path(path: str) -> bool:
+    """A concrete file the graph can name: no glob, no named resource, and an extension on the last segment."""
+    return not path.startswith("resource:") and not _GLOB.search(path) and "." in path.rsplit("/", 1)[-1]
+
+
+async def graph_dependencies(session: AsyncSession, repository_id: int, paths: list[str]) -> DependencyGraph:
+    """One-hop ``IMPORTS`` neighbours (either direction) of each path, from the indexed repository graph.
+
+    Returns ``status`` ``ok`` with ``edges``, ``stale`` when the index lags the
+    source, or ``unavailable``; never raises. Bounded by
+    ``MAX_DEPENDENCY_NEIGHBORS`` per path and ``DEPENDENCY_TIMEOUT_SECONDS``."""
+    repo = await session.get(Repository, repository_id)
+    if repo is None or not repo.path or not Path(repo.path).is_dir():
+        return _graph_result("unavailable", "The repository source is not available to read its graph")
+
+    async def lookup() -> DependencyGraph:
+        from brain.graph.graph_client import GraphClient
+        from brain.memory.repo_freshness import assess_repository_freshness
+
+        freshness = (await assess_repository_freshness(repo)).get("status") or "unknown"
+        if freshness in ("behind", "stale"):
+            return _graph_result("stale", f"The repository index is {freshness}; re-index to compare imports")
+        if freshness != "current":
+            return _graph_result("unavailable", f"The repository index is {freshness}")
+        client = GraphClient(repository_id)
+        edges: dict[str, list[str]] = {}
+        truncated = False
+        for path in paths:
+            found: set[str] = set()
+            for neighbor in await client.get_neighbors(path):
+                target = neighbor.get("target") or {}
+                props = target.get("properties") or {}
+                name = props.get("name") or props.get("path")
+                if ((neighbor.get("relationship") or {}).get("type") == "IMPORTS"
+                        and "File" in (target.get("labels") or []) and isinstance(name, str) and name != path):
+                    found.add(name)
+            truncated = truncated or len(found) > MAX_DEPENDENCY_NEIGHBORS
+            edges[path] = sorted(found)[:MAX_DEPENDENCY_NEIGHBORS]
+        return _graph_result("ok", edges=edges, truncated=truncated)
+
+    try:
+        return await asyncio.wait_for(lookup(), DEPENDENCY_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        return _graph_result("unavailable", "The graph lookup timed out")
+    except Exception as exc:  # noqa: BLE001 - a graph outage degrades the check, it never fails the write
+        return _graph_result("unavailable", f"The graph lookup failed: {type(exc).__name__}")
+
+
+# Tests replace this with a fake graph.
+dependency_provider: DependencyProvider = graph_dependencies
+
+
+def graph_report(repository_id: int, graph: DependencyGraph) -> dict:
+    """What the response says about the dependency check: whether it ran, and why not."""
+    return {"repository_id": repository_id, "status": graph["status"], "reason": graph.get("reason"),
+            "truncated": bool(graph.get("truncated"))}
+
+
+async def _repository_graph(session: AsyncSession, repository_id: int,
+                            scopes: list[list[str]]) -> DependencyGraph:
+    """Look up the files of ``scopes`` (the first one is the caller's, looked up first) within the bounds."""
+    wanted: list[str] = []
+    for scope in scopes:
+        for path in sorted(scope):
+            if _is_file_path(path) and path not in wanted:
+                wanted.append(path)
+    if not wanted:
+        return _graph_result("skipped", "No declared scope names a file to look up in the import graph")
+    graph = await dependency_provider(session, repository_id, wanted[:MAX_DEPENDENCY_PATHS])
+    if len(wanted) > MAX_DEPENDENCY_PATHS:
+        graph = {**graph, "truncated": True}
+    return graph
+
+
+def dependency_pairs(mine: list[str], theirs: list[str], edges: dict[str, list[str]]) -> list[list[str]]:
+    """Import edges ``[my file, their file]`` between two scopes, sorted and capped at ``MAX_OVERLAP_PAIRS``."""
+    pairs: set[tuple[str, str]] = set()
+    for path in mine:
+        for neighbor in edges.get(path, ()):
+            if any(paths_overlap(neighbor, other) for other in theirs):
+                pairs.add((path, neighbor))
+    for path in theirs:
+        for neighbor in edges.get(path, ()):
+            if any(paths_overlap(neighbor, own) for own in mine):
+                pairs.add((neighbor, path))
+    return [list(pair) for pair in sorted(pairs)[:MAX_OVERLAP_PAIRS]]
+
+
+def _dependency_conflicts(binding: TeamTaskBinding, plan: TeamTaskPlan,
+                          others: list[tuple[TeamTaskBinding, TeamTaskPlan, AgentTask]],
+                          edges: dict[str, list[str]], direct: list[dict]) -> list[dict]:
+    """Dependency warnings for tasks that share no path with ``plan`` (a path overlap already says more)."""
+    flagged = {warning["other_task_id"] for warning in direct if warning["kind"] == "task"}
+    warnings: list[dict] = []
+    for other_binding, other_plan, other_task in others:
+        if (other_binding.task_id == binding.task_id or other_binding.repository_id != binding.repository_id
+                or _related(plan, other_plan) or str(other_binding.task_id) in flagged):
+            continue
+        pairs = dependency_pairs(list(plan.scope_paths or []), list(other_plan.scope_paths or []), edges)
+        if pairs:
+            warnings.append({"kind": "dependency", "repository_id": binding.repository_id,
+                             "task_id": str(binding.task_id), "other_task_id": str(other_binding.task_id),
+                             "other_title": other_task.title, "relation": "imports", "paths": pairs})
+    return warnings
+
+
 async def _record_overlaps(session: AsyncSession, project_id: uuid.UUID, warnings: list[dict],
                            actor_id: int | None) -> None:
     for warning in warnings:
         changed = warning.get("source") == "changed_paths"
         fingerprint = digest({"paths": warning["paths"]})[:16]
-        if warning["kind"] == "task":
+        if warning["kind"] == "dependency":
+            pair = sorted([warning["task_id"], warning["other_task_id"]])
+            key = f"overlap:dependency:{pair[0]}:{pair[1]}:{fingerprint}"
+            summary = f"Dependency overlap with task {warning['other_title']}"
+        elif warning["kind"] == "task":
             pair = sorted([warning["task_id"], warning["other_task_id"]])
             key = (f"overlap:changed:task:{pair[0]}:{pair[1]}" if changed
                    else f"overlap:task:{pair[0]}:{pair[1]}:{fingerprint}")
@@ -514,14 +649,24 @@ async def _record_overlaps(session: AsyncSession, project_id: uuid.UUID, warning
 
 
 async def detect_overlaps(session: AsyncSession, binding: TeamTaskBinding, plan: TeamTaskPlan, *,
-                          actor_id: int | None, record: bool) -> list[dict]:
+                          actor_id: int | None, record: bool) -> tuple[list[dict], dict]:
+    """Path overlaps with other tasks and live leases, then import-dependency overlaps; and the graph status."""
     if not plan.scope_paths:
-        return []
-    warnings = _conflicts(binding, plan, await _active_plans(session, binding.project_id, binding.repository_id),
-                          await _live_leases(session, binding.project_id, binding.repository_id))
+        return [], graph_report(binding.repository_id, _graph_result("skipped", "No declared scope"))
+    active = await _active_plans(session, binding.project_id, binding.repository_id)
+    warnings = _conflicts(binding, plan, active, await _live_leases(session, binding.project_id,
+                                                                     binding.repository_id))
+    others = [row for row in active if row[0].task_id != binding.task_id and not _related(plan, row[1])]
+    if others:
+        graph = await _repository_graph(session, binding.repository_id,
+                                        [list(plan.scope_paths)] + [list(row[1].scope_paths or []) for row in others])
+        if graph["status"] == "ok":
+            warnings += _dependency_conflicts(binding, plan, others, graph["edges"], warnings)
+    else:
+        graph = _graph_result("skipped", "No other active task declares scope in this repository")
     if record and warnings:
         await _record_overlaps(session, binding.project_id, warnings, actor_id)
-    return warnings
+    return warnings, graph_report(binding.repository_id, graph)
 
 
 def changed_scope(paths: list[str] | None) -> list[str]:
@@ -565,10 +710,33 @@ async def overlaps_view(session: AsyncSession, project_id: uuid.UUID, repository
     return result
 
 
+async def overlaps_report(session: AsyncSession, project_id: uuid.UUID, repository_id: int | None = None) -> dict:
+    """``overlaps_view`` plus import-dependency overlaps, with the graph status of each repository compared."""
+    active = await _active_plans(session, project_id, repository_id)
+    overlaps = await overlaps_view(session, project_id, repository_id)
+    by_repository: dict[int, list[tuple[TeamTaskBinding, TeamTaskPlan, AgentTask]]] = {}
+    for row in active:
+        by_repository.setdefault(row[0].repository_id, []).append(row)
+    graphs = []
+    for repo_id in sorted(by_repository):
+        rows = by_repository[repo_id]
+        if len(rows) < 2:
+            continue
+        graph = await _repository_graph(session, repo_id, [list(row[1].scope_paths or []) for row in rows])
+        graphs.append(graph_report(repo_id, graph))
+        if graph["status"] != "ok":
+            continue
+        for index, (binding, plan, _task) in enumerate(rows):
+            # overlaps_view lists each pair once, from the earlier task to the later ones, as compared here.
+            direct = [item for item in overlaps if item["kind"] == "task" and item["task_id"] == str(binding.task_id)]
+            overlaps.extend(_dependency_conflicts(binding, plan, rows[index + 1:], graph["edges"], direct))
+    return {"overlaps": overlaps, "dependency_graphs": graphs}
+
+
 async def list_overlaps(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
-                        repository_id: int | None = None) -> list[dict]:
+                        repository_id: int | None = None) -> dict:
     await authorize(session, caller, project_id, Permission.READ)
-    return await overlaps_view(session, project_id, repository_id)
+    return await overlaps_report(session, project_id, repository_id)
 
 
 # --------------------------------------------------------------------------- instruction resolution
@@ -1051,6 +1219,6 @@ __all__ = ["acquire_lease", "changed_scope", "create_subtask", "dispatch", "enqu
            "force_release_lease", "get_plan", "get_run_instructions",
            "integrate", "leases_view", "list_leases", "list_overlaps", "list_queue", "normalize_path",
            "operator_force_release_lease",
-           "normalize_resource", "overlaps_view", "paths_overlap", "plan_view", "queue_view", "record_change_overlaps",
+           "normalize_resource", "overlaps_report", "overlaps_view", "paths_overlap", "plan_view", "queue_view", "record_change_overlaps",
            "reject", "release_lease", "renew_lease", "require_dependencies_done",
            "resolve_instructions", "snapshot_instructions", "superseded_instructions", "update_plan"]

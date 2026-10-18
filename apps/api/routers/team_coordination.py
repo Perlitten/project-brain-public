@@ -126,7 +126,7 @@ async def run_instructions(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uu
 async def list_overlaps(project_id: uuid.UUID, repository_id: int | None = Query(default=None, gt=0),
                         caller: ResolvedPrincipal = Depends(require_principal),
                         session=Depends(team_session, scope="function")):
-    return {"overlaps": await coordination.list_overlaps(session, caller, project_id, repository_id)}
+    return await coordination.list_overlaps(session, caller, project_id, repository_id)
 
 
 @router.get("/{project_id}/leases")
