@@ -1007,6 +1007,19 @@ async def _standard_deep_context(task_description: str, params: Dict[str, Any]) 
     }
 
 
+async def run_team_run_execution(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Bounded execution of one team run (M2). Every gate is re-checked inside ``execute_run``."""
+    import uuid as _uuid
+
+    from brain.team.execution import execute_run
+
+    try:
+        run_id = _uuid.UUID(str(params.get("run_id") or ""))
+    except ValueError as exc:
+        raise PermanentJobError("team_run_execution needs a run_id") from exc
+    return await execute_run(run_id)
+
+
 async def run_deep_context(params: Dict[str, Any]) -> Dict[str, Any]:
     task_description = str(params.get("task_description") or "").strip()
     if not task_description:
@@ -1150,6 +1163,7 @@ async def execute_job(
         "origin_poll": run_origin_poll,
         "nightly_maintenance": run_nightly_maintenance,
         "deep_context": run_deep_context,
+        "team_run_execution": run_team_run_execution,
     }
     handler = handlers.get(job_type)
     if handler is None:

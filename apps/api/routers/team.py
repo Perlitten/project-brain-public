@@ -8,10 +8,16 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from apps.api.auth import require_principal
 from brain.auth.principals import ResolvedPrincipal
-from brain.database.session import async_session_factory
-from brain.team import provisioning, store
-from brain.team.authorization import TeamConflict, TeamDenied, administrator, require_team_storage, team_administrator
+from brain.config.settings import settings
+from brain.database.models import Repository
+from brain.database.session import async_session_factory, redis_client
+from brain.team import execution, provisioning, store
+from brain.team.authorization import (Permission, TeamConflict, TeamDenied, administrator, fresh, require_team_storage,
+                                      team_administrator)
+from brain.team.models import TeamTaskBinding
 from brain.team.provisioning import TeamNotFound
+from brain.workers.initiator import JobInitiator
+from brain.workers.queue import JobQueue, queue_for_job
 
 router = APIRouter(prefix="/team/projects", tags=["experimental-team"])
 
@@ -67,6 +73,34 @@ class ProjectRoleRequest(BaseModel):
 class RepositoryAttachRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     repository_id: int = Field(gt=0)
+
+
+class ExecutionStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tool: str = Field(min_length=1, max_length=64)
+    args: list[str] = Field(default_factory=list, max_length=64)
+    secrets: list[str] = Field(default_factory=list, max_length=16)
+
+
+class ExecutionBudget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    wall_seconds: int | None = Field(default=None, gt=0)
+    steps: int | None = Field(default=None, gt=0)
+    step_timeout_seconds: int | None = Field(default=None, gt=0)
+    output_bytes: int | None = Field(default=None, gt=0)
+
+
+class ExecutionRequest(BaseModel):
+    """Capabilities requested for one run; each must lie within the operator and parent-run ceilings.
+
+    ``secrets`` and ``secret_refs`` are reference names configured by the operator, never values."""
+    model_config = ConfigDict(extra="forbid")
+    steps: list[ExecutionStep] = Field(min_length=1, max_length=100)
+    tools: list[str] | None = Field(default=None, max_length=64)
+    secret_refs: list[str] | None = Field(default=None, max_length=32)
+    egress: list[str] = Field(default_factory=list, max_length=32)
+    budget: ExecutionBudget = Field(default_factory=ExecutionBudget)
+    idempotency_key: str = Field(min_length=8, max_length=128)
 
 
 async def team_session():
@@ -196,3 +230,76 @@ async def create_task(project_id: uuid.UUID, body: TaskRequest, caller: Resolved
 async def request_run(project_id: uuid.UUID, task_id: uuid.UUID, body: RunRequest,
                       caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
     return await store.request_run(session, caller, project_id, task_id, body.model_dump())
+
+
+# Bounded execution (M2): off unless the operator enables it and an administrator grants it.
+
+@router.get("/{project_id}/execution-grants")
+async def list_execution_grants(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
+                                session=Depends(team_session, scope="function")):
+    return await execution.list_execution_grants(session, caller, project_id)
+
+
+@router.put("/{project_id}/members/{principal_id}/execution")
+async def grant_execution(project_id: uuid.UUID, principal_id: int,
+                          caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
+    return await execution.grant_execution(session, caller, project_id, principal_id)
+
+
+@router.delete("/{project_id}/members/{principal_id}/execution")
+async def revoke_execution_grant(project_id: uuid.UUID, principal_id: int,
+                                 caller: ResolvedPrincipal = Depends(require_principal),
+                                 session=Depends(team_session, scope="function")):
+    return await execution.revoke_execution(session, caller, project_id, principal_id)
+
+
+def _execution_queue() -> JobQueue:
+    return queue_for_job(redis_client, settings.WORKER_REDIS_PREFIX, "team_run_execution",
+                         pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED)
+
+
+@router.post("/{project_id}/tasks/{task_id}/runs/{run_id}/execution")
+async def request_execution(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uuid.UUID, body: ExecutionRequest,
+                            caller: ResolvedPrincipal = Depends(require_principal)):
+    """Record the execution, commit, then queue it; a replay of a queued request queues nothing new."""
+    try:
+        require_team_storage()
+        async with async_session_factory() as session, session.begin():
+            state = await execution.request_execution(session, caller, project_id, task_id, run_id,
+                                                      body.model_dump())
+            binding = await fresh(session, TeamTaskBinding, TeamTaskBinding.task_id == task_id)
+            repository = await fresh(session, Repository, Repository.id == binding.repository_id) if binding else None
+    except execution.ExecutionDenied as exc:
+        # Execution gates name themselves; base authorization denials stay generic.
+        raise HTTPException(403, str(exc)) from exc
+    except TeamDenied as exc:
+        raise HTTPException(403, "Team authority denied") from exc
+    except (TeamNotFound, execution.ExecutionNotFound) as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except TeamConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if state["state"] == "requested" and repository is not None:
+        state["job_id"] = await _execution_queue().enqueue(
+            "team_run_execution", {"run_id": str(run_id), "repo_path": repository.path},
+            idempotency_key=f"team-run-execution:{run_id}",
+            timeout_seconds=int(state["budget"]["wall_seconds"]) + 120,
+            initiator=JobInitiator.for_principal(caller, Permission.REQUEST_RUN))
+    return state
+
+
+@router.get("/{project_id}/tasks/{task_id}/runs/{run_id}/execution")
+async def get_execution(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uuid.UUID,
+                        caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
+    try:
+        return await execution.get_execution(session, caller, project_id, task_id, run_id)
+    except execution.ExecutionNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/{project_id}/tasks/{task_id}/runs/{run_id}/execution/cancel")
+async def cancel_execution(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uuid.UUID,
+                           caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):
+    try:
+        return await execution.cancel_execution(session, caller, project_id, task_id, run_id)
+    except execution.ExecutionNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc

@@ -186,6 +186,56 @@ class AgentRun(Base):
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now())
 
 
+class TeamExecutionGrant(Base):
+    """A separate, explicit permission for one member to run bounded executors in one project (M2).
+
+    Not implied by any project role or by team administration: a team
+    administrator records it per member and project, and it only takes effect
+    while the operator has enabled execution (``BRAIN_EXECUTION_ENABLED``) and
+    the member still holds a Contributor or Reviewer role there."""
+    __tablename__ = "team_execution_grants"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("team_projects.id"), primary_key=True)
+    principal_id: Mapped[int] = mapped_column(ForeignKey("principals.id"), primary_key=True)
+    granted_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    granted_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+    revoked_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class AgentRunExecution(Base):
+    """Capabilities, plan and lease of the one bounded execution a run may have (M2).
+
+    Capabilities are data: the tool allowlist, secret *references* (names the
+    server resolves; never values), the egress allowlist and the budget. The
+    outcome is not a column: it is derived from the ``run.execution.*`` events
+    in ``harness.agent_task_events``, so the ledger stays the one status
+    record. ``fencing_token`` increases on every lease takeover; a writer must
+    present the current token, its own owner id and an unexpired lease."""
+    __tablename__ = "agent_run_executions"
+    __table_args__ = {"schema": HARNESS_SCHEMA}
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(f"{HARNESS_SCHEMA}.agent_runs.id"), primary_key=True)
+    request_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_by: Mapped[int] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    requested_credential_id: Mapped[int] = mapped_column(ForeignKey("api_credentials.id"), nullable=False)
+    steps: Mapped[list] = mapped_column(JSON, nullable=False)
+    tools: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    secret_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    egress: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    budget: Mapped[dict] = mapped_column(JSON, nullable=False)
+    backend: Mapped[str] = mapped_column(String(32), nullable=False)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    fencing_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    released_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    steps_done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+
+
 class TeamActivityEvent(Base):
     """Append-only record of team activity that leaves no other timestamped trace.
 

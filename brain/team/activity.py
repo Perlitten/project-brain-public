@@ -57,6 +57,7 @@ KINDS: dict[str, tuple[str, ...]] = {
     "membership": ("membership.added", "membership.revoked", "membership.admin_granted",
                    "membership.admin_revoked"),
     "project_role": ("project_role.granted", "project_role.changed", "project_role.revoked"),
+    "execution": ("execution.granted", "execution.revoked"),
     "invitation": ("invitation.created", "invitation.accepted", "invitation.revoked"),
     "task": ("task.created",),
     "run": ("run.requested",),
@@ -65,8 +66,8 @@ KINDS: dict[str, tuple[str, ...]] = {
 ALL_KINDS = frozenset(kind for kinds in KINDS.values() for kind in kinds)
 # Families only team administrators read: team administration itself, and the
 # episode/skill memory whose API is administrator-only as well.
-ADMIN_FAMILIES = frozenset({"membership", "project_role", "invitation", "episode", "skill"})
-TABLE_FAMILIES = frozenset({"membership", "project_role", "job"})
+ADMIN_FAMILIES = frozenset({"membership", "project_role", "execution", "invitation", "episode", "skill"})
+TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "job"})
 
 _PRINCIPAL_LABEL = re.compile(r"^principal:(\d+)$")
 

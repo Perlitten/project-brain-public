@@ -204,7 +204,8 @@ and the five memory review tools (`team_propose_decision`, `team_propose_rule`,
 `team_me` answers "who am I and what can I touch" (the project ids and
 repository paths her roles grant); the task tools take a project id. See
 [MCP](MCP.md).
-`team_request_run` records a run; nothing executes it yet. Member keys do not
+`team_request_run` records a run; MCP cannot execute it. Bounded execution exists over
+HTTP only, off by default ([bounded team execution](operations/TEAM_EXECUTION.md)). Member keys do not
 carry `harness:write`, so `record_task_observation` and `record_task_lesson`
 are refused for them.
 
@@ -231,12 +232,12 @@ approved promotion. Details: [governed memory](MEMORY_REVIEW.md).
 - **`GET /team/activity`** (MCP `team_activity`, dashboard **Settings → Team
   activity**) is the shared log, newest first: decision and rule versions,
   learning, episode and skill changes, membership and project-role changes,
-  invitations, team tasks and runs, and queued jobs with who queued them. It
+  execution grants and their revocation, invitations, team tasks and runs, and queued jobs with who queued them. It
   needs the `team:read` scope and takes `limit`, `offset`, `project_id`,
   `repository_id`, `actor_id`, `kind` (a family such as `decision` or a kind
   such as `decision.updated`, repeatable) and `since`.
   Members see events for the projects and repositories they can read plus
-  global decisions and rules; membership, role and invitation events, and
+  global decisions and rules; membership, role, execution-grant and invitation events, and
   episode and skill changes, are for team administrators only; personal-tier
   learnings never appear. A project or
   repository filter the caller cannot read is refused with 403. Membership
@@ -293,8 +294,11 @@ which is the source of truth.
   with the CLI counts against the invitee's own IP instead.
 - **Invitations are not emailed.** The administrator copies the link and sends
   it; without single sign-on the email field is a note.
-- **Execution is denied.** Tasks and run requests are recorded with their
-  provenance; no executor exists (M2 has not started).
+- **Execution is off by default.** Tasks and run requests are recorded with their
+  provenance. The first M2 slice can run operator-allowlisted tools for a run once
+  the operator enables it and an administrator grants a member; its subprocess
+  backend is not containment and refuses egress
+  ([bounded team execution](operations/TEAM_EXECUTION.md)).
 - **Not deployed, not piloted.** Green CI is the only evidence. Production
   upgrade and restore, external identities and real multi-person use have not
   been exercised.

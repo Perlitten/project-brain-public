@@ -37,6 +37,7 @@ export const ACTIVITY_KINDS: Record<string, string[]> = {
   skill: ["skill.created", "skill.updated"],
   membership: ["membership.added", "membership.revoked", "membership.admin_granted", "membership.admin_revoked"],
   project_role: ["project_role.granted", "project_role.changed", "project_role.revoked"],
+  execution: ["execution.granted", "execution.revoked"],
   invitation: ["invitation.created", "invitation.accepted", "invitation.revoked"],
   task: ["task.created"],
   run: ["run.requested"],

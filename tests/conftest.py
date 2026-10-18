@@ -23,6 +23,10 @@ _NEUTRAL_ENV = {
     "BRAIN_PUBLIC_HOST": "",
     "BRAIN_MCP_CONFIRM_WRITES": "",
     "BRAIN_TEAM_MODE": "false",
+    "BRAIN_EXECUTION_ENABLED": "false",
+    "BRAIN_EXECUTION_TOOLS": "{}",
+    "BRAIN_EXECUTION_SECRETS": "{}",
+    "BRAIN_EXECUTION_EGRESS": "",
     # Single sign-on changes invitation acceptance; tests that need it patch settings.
     "BRAIN_OIDC_ENABLED": "false",
     "BRAIN_OIDC_REQUIRE_FOR_INVITATIONS": "false",

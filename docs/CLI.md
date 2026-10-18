@@ -35,7 +35,7 @@ Help/version discovery does not establish a working datastore or provider.
 | `brain cache` | Stable memory cache inspection/maintenance |
 | `brain embeddings` | Embedding status, compatibility verification and backfill |
 | `brain import` | Grafify graph / Obsidian vault imports |
-| `brain team` | **Experimental preview, main only, not in v0.9.2:** operator provisioning of the team layer (`init`, `project`, `member`, `repo`, `invite`) and `reconcile` after a restore; idempotent, requires `BRAIN_STORAGE_MODE=full`. See the [team mode walkthrough](TEAM.md) |
+| `brain team` | **Experimental preview, main only, not in v0.9.2:** operator provisioning of the team layer (`init`, `project`, `member`, `repo`, `invite`, `execution`) and `reconcile` after a restore; idempotent, requires `BRAIN_STORAGE_MODE=full`. See the [team mode walkthrough](TEAM.md) |
 | `brain init` | **main only:** initialize a local Lite profile with `--lite` |
 | `brain serve` | **main only:** loopback API with a Lite maintenance worker |
 | `brain mcp` | **main only:** stdio MCP using the selected profile |

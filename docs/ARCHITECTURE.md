@@ -9,7 +9,7 @@ source inspection, Git or CI.
 The [single-team collaboration contract](adr/team-collaboration.md) describes the
 target architecture and staged MVP. On `main`, repository-scoped API, MCP and
 dashboard requests are authorized per project once a team has members, but team
-mode is an unpiloted preview with no executor; its stage and known gaps are in
+mode is an unpiloted preview whose bounded execution is off by default; its stage and known gaps are in
 [team-mode status](design/team-status.md).
 
 ## Runtime components

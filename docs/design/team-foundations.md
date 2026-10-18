@@ -168,6 +168,36 @@ identities/secrets and production upgrade/restore remain unverified; this does
 not make team deployment safe or ready. Operator steps:
 [backup-restore runbook](../runbooks/backup-restore.md#restoring-a-team-brain).
 
+## M2 bounded execution: first slice
+
+Operator reference: [bounded team execution](../operations/TEAM_EXECUTION.md).
+Execution is off unless `BRAIN_EXECUTION_ENABLED` and `BRAIN_EXECUTION_ROOT` are
+set, and then still needs the project policy's `execute`, a Contributor or Reviewer
+role and a separate per-member grant (`team_execution_grants`) that no role implies.
+`authorize()` is unchanged; `brain/team/execution.py` layers the execution gates on
+top of it and re-evaluates all of them before each tool operation and each ledger
+write.
+
+| Requirement | Code | Evidence (`tests/test_team_execution.py`) |
+|---|---|---|
+| Denied by default | `ExecutionPolicy.disabled_reason`, `authorize_execution` | `test_execution_is_denied_by_default`, `test_enabled_without_root_is_still_denied` |
+| Separate per-member grant | `TeamExecutionGrant`, `set_grant`, provisioning revocation hooks | `test_denied_without_grant_and_grants_follow_roles`, `test_member_revocation_revokes_execution_grants` |
+| Capabilities as data, children narrow | `AgentRunExecution` (tools, secret refs, egress, budget), `_ceiling`, `_within` | `test_capabilities_outside_the_allowlists_are_denied`, `test_child_runs_narrow_to_parent_capabilities` |
+| Egress default none | backend `enforces_egress`, operator allowlist | egress cases in the capability tests |
+| Clone per run, subprocess runner | `brain/execution/bounded.py` (`SubprocessBackend`, `ExecutorBackend`) | `test_execution_records_evidence_and_never_stores_secrets` |
+| Revocation checkpoints | `ExecutionRunner.checkpoint`, step stop probe | `test_revocation_between_steps_stops_the_next_step`, `test_revocation_mid_step_terminates_the_process`, `test_cancel_before_start_and_during_a_run` |
+| Lease, fencing, crash recovery | `acquire_lease`, `_fence`, `recover_orphaned_runs` | `test_expired_lease_owner_cannot_commit`, `test_restart_fences_orphaned_runs_and_never_resumes_them` |
+| Idempotency bound to content and run | request digest over run, task, backend and canonical request | `test_idempotency_is_bound_to_content_and_run` |
+| Secrets never in records | env-only injection, redaction | `test_execution_records_evidence_and_never_stores_secrets` |
+| One status machine | `run.execution.*` events in `harness.agent_task_events` | the same test checks the event sequence |
+| API behind every gate | `apps/api/routers/team.py` execution routes | `test_http_execution_routes_sit_behind_every_gate` |
+
+The subprocess backend is not containment, so egress requests are refused. The
+container backend, egress enforcement, environments, provider consent and LLM
+budgets, agent-driven steps, artifacts, external-effect idempotency, doctor
+reporting, PostgreSQL concurrency tests, UI/MCP surfaces and resuming fenced runs
+remain M2 work.
+
 ## Evidence requirements for each slice
 
 Record base/head SHAs, actual commands and return codes, before/after or denial

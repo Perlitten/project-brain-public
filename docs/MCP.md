@@ -68,8 +68,9 @@ add `get_diff_review`, for the asynchronous review flow, and the ten
 `team_*` tools of the [experimental team mode](TEAM.md): 24 tools in all. The
 task and memory review tools answer only for verified team members within their
 project roles; `team_me` works in solo state too; `team_request_run` records a
-run but nothing executes it yet. The five memory review tools follow
-[governed memory](MEMORY_REVIEW.md).
+run. MCP has no tool to execute it; the first, off-by-default execution slice is
+HTTP only ([bounded team execution](operations/TEAM_EXECUTION.md)). The five
+memory review tools follow [governed memory](MEMORY_REVIEW.md).
 
 | Tool | Purpose |
 |---|---|
