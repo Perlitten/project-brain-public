@@ -71,9 +71,15 @@ DOCKER="wsl -d Ubuntu-24.04 docker" PYTHON=.venv/Scripts/python \
     scripts/team_memory_load_e2e.sh --users 36 --ops 50 --api-workers 2
 ```
 
-A 12×50 run takes about 4 minutes, 36×50 about 8 minutes. At 36 users the onboarding burst and the
-`teams` row lock can stall single requests for the full 120 s client timeout (see the findings
-report); setup retries those, later phases record them as transport errors.
+A 12×50 run takes about 4 minutes, 36×50 about 8 minutes. A request that hangs for the full 120 s
+client timeout is recorded as a transport error (status `0`); setup retries those. On Windows the
+120 s stalls came from `uvicorn --workers`, not from the database (next paragraph).
+
+The revocation check compares `revoked_at`, which the API stamps with this host's clock, with
+`created_at` from PostgreSQL's `now()`. The harness measures the database clock against this host's
+clock right before the check and compares on the database clock. Docker in WSL drifted about 470 ms
+ahead of Windows, enough to date fenced writes "after" the revoke. The report shows the measured
+offset.
 
 `--api-workers N` on Windows starts N single-process APIs on ports `api-port + 100 * i` and spreads the
 client threads across them, instead of `uvicorn --workers N`. Every process gets the first address as

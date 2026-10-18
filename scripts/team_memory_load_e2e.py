@@ -48,7 +48,7 @@ import uuid
 import zlib
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlsplit
@@ -267,6 +267,7 @@ def render_revocation(outcome: dict[str, Any]) -> list[str]:
                   outcome.get("non_401_errors_after_revoke", "-")),
                  ("Writes dated after revoked_at (0 expected)", _cell(outcome.get("late_writes"))),
                  ("Latest late write, ms after revoked_at", outcome.get("late_write_max_ms") or "-"),
+                 ("Database clock minus API clock, ms (corrected for)", outcome.get("db_clock_skew_ms", "-")),
                  ("Pending proposals left (0 expected)", outcome.get("pending_proposals_left", "-")),
                  ("Proposal states of the revoked member", _cell(outcome.get("proposal_states"))),
                  ("Personal-tier rows kept (known gap)", outcome.get("personal_rows_kept", "-")),
@@ -475,6 +476,24 @@ class Stack:
         async def work(conn: Any) -> Any:
             return await conn.fetchval(query, *params)
         return self._pg(self.url(database), work)
+
+    def clock_skew_seconds(self, samples: int = 5) -> float:
+        """PostgreSQL's clock minus this host's clock, in seconds, from the lowest-latency sample.
+
+        The API runs on this host and stamps ``revoked_at`` with its own clock, while ``created_at`` comes from
+        PostgreSQL's ``now()``. When the database runs elsewhere (Docker in WSL drifts by hundreds of ms) the two
+        are only comparable after this correction."""
+        async def work(conn: Any) -> float:
+            best: Optional[tuple[float, float]] = None
+            for _ in range(samples):
+                before = time.time()
+                db_now = float(await conn.fetchval("SELECT extract(epoch FROM clock_timestamp())"))
+                after = time.time()
+                if best is None or after - before < best[0]:
+                    best = (after - before, db_now - (before + after) / 2)
+            assert best is not None
+            return best[1]
+        return self._pg(self.url(MAIN_DB), work)
 
     def recreate(self, database: str) -> None:
         self.url(database)  # namespace guard
@@ -2158,19 +2177,26 @@ class Run:
             self.violations.add("request_honoured_after_revoke", honored_after[:5])
         if unexpected_after:
             self.violations.add("post_revoke_request_error", unexpected_after[:5])
+        # revoked_at is stamped by the API (this host's clock), created_at by PostgreSQL's now(): compare them
+        # on the database clock.
+        clock_skew = self.stack.clock_skew_seconds()
+        revoked_at_db = revoked_at + timedelta(seconds=clock_skew)
         late = {
             "learnings": self.stack.sql("SELECT id, status, created_at FROM memory_learnings WHERE "
-                                        "author_principal_id=$1 AND created_at > $2", revokee.principal_id, revoked_at),
+                                        "author_principal_id=$1 AND created_at > $2", revokee.principal_id,
+                                        revoked_at_db),
             "proposals": self.stack.sql("SELECT id, state, created_at FROM memory_proposals WHERE "
-                                        "author_principal_id=$1 AND created_at > $2", revokee.principal_id, revoked_at),
+                                        "author_principal_id=$1 AND created_at > $2", revokee.principal_id,
+                                        revoked_at_db),
             "decisions": self.stack.sql("SELECT id, created_at FROM decisions WHERE author_principal_id=$1 AND "
-                                        "created_at > $2", revokee.principal_id, revoked_at),
+                                        "created_at > $2", revokee.principal_id, revoked_at_db),
         }
         r.check(s, "in-flight writes are fenced: nothing authored by the revoked member is dated after revoked_at",
                 not any(late.values()), {k: v[:3] for k, v in late.items()})
         if any(late.values()):
             self.violations.add("write_persisted_after_revoke", {
                 **{k: v[:3] for k, v in late.items()}, "revoked_at": str(revoked_at),
+                "db_clock_skew_ms": round(clock_skew * 1000, 1),
                 "see": "routes authorize in their own short transactions, then the store writes in another one "
                        "(apps/api/routers/core_memory.py create_learning): a request authorized just before the "
                        "revoke commits its write after it"})
@@ -2199,7 +2225,8 @@ class Run:
             "honoured_after_revoke": len(honored_after),
             "non_401_errors_after_revoke": len(unexpected_after),
             "late_writes": {table: len(rows) for table, rows in late.items()},
-            "late_write_max_ms": late_write_max_ms(late, revoked_at),
+            "late_write_max_ms": late_write_max_ms(late, revoked_at_db),
+            "db_clock_skew_ms": round(clock_skew * 1000, 1),
             "pending_proposals_left": len(pending), "proposal_states": dict(states),
             "personal_rows_kept": personal, "revoked_key": statuses})
 
