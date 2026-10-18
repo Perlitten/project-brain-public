@@ -138,6 +138,54 @@ def test_port_in_use_detects_a_listener():
     assert not load.port_in_use(port)
 
 
+def test_api_instances_never_share_a_listening_socket_on_windows():
+    assert load.api_instances(18571, 1, "win32") == [(18571, [])]
+    assert load.api_instances(18571, 1, "linux") == [(18571, [])]
+    assert load.api_instances(18571, 3, "linux") == [(18571, ["--workers", "3"])]
+    # uvicorn --workers on Windows: a lost accept() race blocks a worker's event loop (120 s request stalls)
+    plan = load.api_instances(18571, 3, "win32")
+    assert plan == [(18571, []), (18671, []), (18771, [])]
+    assert 18572 not in {port for port, _ in plan}  # the restore API's port stays free
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux"])
+def test_start_api_runs_one_process_per_port_on_windows(tmp_path, monkeypatch, platform):
+    started: list[list[str]] = []
+    public_urls: list[str] = []
+    pids = iter(range(1000, 1010))
+
+    class FakeProcess:
+        def __init__(self, argv, **kwargs):
+            started.append(argv)
+            public_urls.append(kwargs["env"]["BRAIN_PUBLIC_URL"])
+            self.pid = next(pids)
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(load.subprocess, "Popen", FakeProcess)
+    monkeypatch.setattr(load, "port_in_use", lambda port: False)
+    monkeypatch.setattr(load.TreeApi, "call", lambda self, method, path, key=None, **kw: (200, {}))
+    args = load.parse_args(["--database-url", "postgresql://postgres:pw@127.0.0.1:5444/postgres",
+                            "--api-workers", "2", "--api-port", "18571"])
+    stack = load.Stack(args, load.base.Report(), tmp_path)
+    api = stack.start_api(load.MAIN_DB, 18571, "main")
+    try:
+        ports = [argv[argv.index("--port") + 1] for argv in started]
+        assert set(public_urls) == {"http://127.0.0.1:18571"}  # one OAuth issuer / MCP resource for all
+        if platform == "win32":
+            assert ports == ["18571", "18671"] and not any("--workers" in argv for argv in started)
+            assert api.bases == ["http://127.0.0.1:18571", "http://127.0.0.1:18671"]
+            assert [peer.base for peer in api.peers] == ["http://127.0.0.1:18671"]
+        else:
+            assert ports == ["18571"] and started[0][-2:] == ["--workers", "2"]
+            assert api.bases == ["http://127.0.0.1:18571"] and api.peers == []
+    finally:
+        for client in [api, *api.peers]:
+            client.http.close()
+
+
 def test_parse_args_refuses_small_teams_and_foreign_databases():
     url = "postgresql://postgres:pw@127.0.0.1:5444/postgres"
     assert load.parse_args(["--database-url", url]).users == 12

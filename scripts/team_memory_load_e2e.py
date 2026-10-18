@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import itertools
 import json
 import os
 import random
@@ -47,7 +48,7 @@ import uuid
 import zlib
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlsplit
@@ -266,6 +267,7 @@ def render_revocation(outcome: dict[str, Any]) -> list[str]:
                   outcome.get("non_401_errors_after_revoke", "-")),
                  ("Writes dated after revoked_at (0 expected)", _cell(outcome.get("late_writes"))),
                  ("Latest late write, ms after revoked_at", outcome.get("late_write_max_ms") or "-"),
+                 ("Database clock minus API clock, ms (corrected for)", outcome.get("db_clock_skew_ms", "-")),
                  ("Pending proposals left (0 expected)", outcome.get("pending_proposals_left", "-")),
                  ("Proposal states of the revoked member", _cell(outcome.get("proposal_states"))),
                  ("Personal-tier rows kept (known gap)", outcome.get("personal_rows_kept", "-")),
@@ -475,6 +477,24 @@ class Stack:
             return await conn.fetchval(query, *params)
         return self._pg(self.url(database), work)
 
+    def clock_skew_seconds(self, samples: int = 5) -> float:
+        """PostgreSQL's clock minus this host's clock, in seconds, from the lowest-latency sample.
+
+        The API runs on this host and stamps ``revoked_at`` with its own clock, while ``created_at`` comes from
+        PostgreSQL's ``now()``. When the database runs elsewhere (Docker in WSL drifts by hundreds of ms) the two
+        are only comparable after this correction."""
+        async def work(conn: Any) -> float:
+            best: Optional[tuple[float, float]] = None
+            for _ in range(samples):
+                before = time.time()
+                db_now = float(await conn.fetchval("SELECT extract(epoch FROM clock_timestamp())"))
+                after = time.time()
+                if best is None or after - before < best[0]:
+                    best = (after - before, db_now - (before + after) / 2)
+            assert best is not None
+            return best[1]
+        return self._pg(self.url(MAIN_DB), work)
+
     def recreate(self, database: str) -> None:
         self.url(database)  # namespace guard
 
@@ -511,16 +531,27 @@ class Stack:
     # -- processes ---------------------------------------------------------------------
 
     def start_api(self, database: str, port: int, label: str) -> base.Api:
+        """Start the API with ``--api-workers`` processes. The first process's address is the public URL
+        (OAuth issuer and MCP resource) for all of them; ``api.bases`` lists every address clients may use."""
+        public = f"http://127.0.0.1:{port}"
+        apis: list[TreeApi] = []
+        for index, (instance_port, extra) in enumerate(api_instances(port, self.args.api_workers)):
+            name = label if index == 0 else f"{label}-{index}"
+            apis.append(self._start_api_process(database, instance_port, extra, name, public))
+        api = apis[0]
+        api.peers = apis[1:]
+        api.bases = [a.base for a in apis]
+        return api
+
+    def _start_api_process(self, database: str, port: int, extra: list[str], label: str, public: str) -> TreeApi:
         if port_in_use(port):
             # A stale API (e.g. orphaned uvicorn workers of an earlier run) would silently answer for this one.
             raise RuntimeError(f"port {port} already accepts connections; stop the process holding it first")
         log = open(self.work / f"api-{label}.log", "w", encoding="utf-8")
         api_base = f"http://127.0.0.1:{port}"
-        env = self.brain_env(database, BRAIN_PUBLIC_URL=api_base)
+        env = self.brain_env(database, BRAIN_PUBLIC_URL=public)
         argv = [sys.executable, "-m", "uvicorn", "apps.api.main:app", "--host", "127.0.0.1", "--port", str(port),
-                "--log-level", "warning"]
-        if self.args.api_workers > 1:
-            argv += ["--workers", str(self.args.api_workers)]
+                "--log-level", "warning", *extra]
         proc = subprocess.Popen(argv, env=env, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT,
                                 start_new_session=sys.platform != "win32")
         self.processes.append(proc)
@@ -566,6 +597,23 @@ def base_timeout() -> Any:
     return httpx.Timeout(120.0, connect=10.0)
 
 
+def api_instances(port: int, workers: int, platform: Optional[str] = None) -> list[tuple[int, list[str]]]:
+    """``(port, extra uvicorn args)`` for each API process when the API runs with ``workers`` processes.
+
+    ``uvicorn --workers N`` makes N processes share one listening socket. On Windows that stalls requests:
+    uvicorn then runs a selector loop, and when two workers race for one incoming connection, the loser's
+    non-blocking ``accept()`` can block inside Winsock. That freezes the loser's whole event loop, and every
+    request already on its keep-alive connections, until some new connection arrives (in the load run: a
+    client's 120 s timeout). A proactor loop is no way out, because a shared socket binds to one IOCP only
+    and the second worker never accepts. So on Windows each process listens on its own port
+    (``port + 100 * i``, clear of the restore API on ``port + 1``) and the clients spread across them."""
+    if workers <= 1:
+        return [(port, [])]
+    if (platform or sys.platform) != "win32":
+        return [(port, ["--workers", str(workers)])]
+    return [(port + 100 * index, []) for index in range(workers)]
+
+
 def port_in_use(port: int) -> bool:
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=1):
@@ -599,9 +647,14 @@ def stop_process_tree(proc: subprocess.Popen) -> None:
 
 
 class TreeApi(base.Api):  # type: ignore[misc,name-defined]
+    bases: list[str] = []  # every address of this API (set by start_api); the first one is ``base``
+    peers: list["TreeApi"] = []  # the other processes of a per-port multi-process API (see api_instances)
+
     def close(self) -> None:
         self.http.close()
         stop_process_tree(self.proc)
+        for peer in self.peers:
+            peer.close()
 
 
 # --------------------------------------------------------------------------- the run
@@ -661,6 +714,7 @@ class Run:
         self.dump_path: Optional[Path] = None
         self.revoked_at: Optional[datetime] = None
         self.local = threading.local()
+        self.client_seq = itertools.count()
         self.onboarding_retries: Counter = Counter()
 
     # -- HTTP --------------------------------------------------------------------------
@@ -672,7 +726,9 @@ class Run:
         client = getattr(self.local, "client", None)
         if client is None:
             assert self.api is not None
-            client = httpx.Client(base_url=self.api.base, timeout=base_timeout(), follow_redirects=False)
+            bases = getattr(self.api, "bases", None) or [self.api.base]
+            api_base = bases[next(self.client_seq) % len(bases)]  # spread threads over per-port API processes
+            client = httpx.Client(base_url=api_base, timeout=base_timeout(), follow_redirects=False)
             self.local.client = client
         return client
 
@@ -2121,19 +2177,26 @@ class Run:
             self.violations.add("request_honoured_after_revoke", honored_after[:5])
         if unexpected_after:
             self.violations.add("post_revoke_request_error", unexpected_after[:5])
+        # revoked_at is stamped by the API (this host's clock), created_at by PostgreSQL's now(): compare them
+        # on the database clock.
+        clock_skew = self.stack.clock_skew_seconds()
+        revoked_at_db = revoked_at + timedelta(seconds=clock_skew)
         late = {
             "learnings": self.stack.sql("SELECT id, status, created_at FROM memory_learnings WHERE "
-                                        "author_principal_id=$1 AND created_at > $2", revokee.principal_id, revoked_at),
+                                        "author_principal_id=$1 AND created_at > $2", revokee.principal_id,
+                                        revoked_at_db),
             "proposals": self.stack.sql("SELECT id, state, created_at FROM memory_proposals WHERE "
-                                        "author_principal_id=$1 AND created_at > $2", revokee.principal_id, revoked_at),
+                                        "author_principal_id=$1 AND created_at > $2", revokee.principal_id,
+                                        revoked_at_db),
             "decisions": self.stack.sql("SELECT id, created_at FROM decisions WHERE author_principal_id=$1 AND "
-                                        "created_at > $2", revokee.principal_id, revoked_at),
+                                        "created_at > $2", revokee.principal_id, revoked_at_db),
         }
         r.check(s, "in-flight writes are fenced: nothing authored by the revoked member is dated after revoked_at",
                 not any(late.values()), {k: v[:3] for k, v in late.items()})
         if any(late.values()):
             self.violations.add("write_persisted_after_revoke", {
                 **{k: v[:3] for k, v in late.items()}, "revoked_at": str(revoked_at),
+                "db_clock_skew_ms": round(clock_skew * 1000, 1),
                 "see": "routes authorize in their own short transactions, then the store writes in another one "
                        "(apps/api/routers/core_memory.py create_learning): a request authorized just before the "
                        "revoke commits its write after it"})
@@ -2162,7 +2225,8 @@ class Run:
             "honoured_after_revoke": len(honored_after),
             "non_401_errors_after_revoke": len(unexpected_after),
             "late_writes": {table: len(rows) for table, rows in late.items()},
-            "late_write_max_ms": late_write_max_ms(late, revoked_at),
+            "late_write_max_ms": late_write_max_ms(late, revoked_at_db),
+            "db_clock_skew_ms": round(clock_skew * 1000, 1),
             "pending_proposals_left": len(pending), "proposal_states": dict(states),
             "personal_rows_kept": personal, "revoked_key": statuses})
 
