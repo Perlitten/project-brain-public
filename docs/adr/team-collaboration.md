@@ -100,7 +100,7 @@ executor is simulated: M1 records authority/provenance only; execution is denied
 
 | Action | Reader | Contributor | Reviewer | Team administrator |
 |---|---|---|---|---|
-| Project read | Yes | Yes | Yes | Repository-scoped calls: only with a project role. Unscoped calls: every project ([note](#team-administrator-reads)) |
+| Project read | Yes | Yes | Yes | Attached repository: only with a project role. Unattached repository: administrator, subject to repository trust. Unscoped access varies by endpoint ([note](#team-administrator-reads)) |
 | Task creation / run request | No | Eligible | Eligible | Only with project role |
 | Knowledge proposal | No | Eligible | Eligible | Only with project role |
 | Normative approval / task acceptance | No | No | Eligible, independent author | Not implied by administration |
@@ -113,17 +113,25 @@ executor is simulated: M1 records authority/provenance only; execution is denied
 **Team administrator reads (amended 2026-10-18 to match the code).** A call that
 names a repository attached to a project is checked against the caller's project
 role, so an administrator without one gets `Project access denied`. A call that
-names no repository (no `repository_id`/`repo_path`), or names an unattached
-repository, needs a team administrator and grants full authority over every
-repository (`authorize_repository`). Listings do not filter an administrator's
-results either (`readable_repository_ids` returns no filter). An administrator
-without a project role therefore reads every project's memory through the
-unscoped surfaces. The owner chose to keep this: an administrator can grant
-themselves a project role anyway, so a membership-only rule would not add a
-real boundary. Calls scoped to a project repository (reads, writes, run requests,
-approvals) still need a project role; the unscoped writes an administrator can
-make are the system-global ones (global decisions, rules and skills, unscoped
-learnings). Execution and merge still need the separate grants in the table.
+names an unattached repository needs a team administrator, but grants authority
+only over that target and remains capped by its workspace-registry trust
+(`authorize_repository`): an untrusted repository is read-only and a disabled
+repository is denied. A genuinely unscoped operation normally needs a team
+administrator. The exception is a listing marked `filters_unreadable`: an
+ordinary verified member may call it and sees only repositories granted by their
+project roles, while `readable_repository_ids` applies no repository filter for
+an administrator.
+
+The data an unscoped call exposes still depends on the endpoint. Unfiltered
+decision, rule and brain-wide surfaces can expose cross-project data, while an
+unscoped learning query returns global learnings only and a context-pack detail
+request reauthorizes the pack's repository. Conversely, some endpoints authorize
+an omitted scope as an administrator operation and then resolve it to the
+configured default repository; the remediation-plan read and state-changing
+routes are one such family. An administrator without a project role can therefore
+reach some project-local data through those routes. The owner chose to keep the
+administrator boundary because an administrator can grant themselves a project
+role anyway. Execution and merge still need the separate grants in the table.
 
 Eligibility is not an enabled feature. Effective run authority is the intersection
 of live initiator credential/membership, project policy, task permissions,
