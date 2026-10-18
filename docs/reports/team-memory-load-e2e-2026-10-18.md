@@ -175,14 +175,19 @@ earlier 36-user run.
   from a server fault, and the 500s pollute error monitoring.
 - **Fix hint.** Map `IntegrityError` on these constraints to 409 with the current version.
 
-### 7. LOW (test infrastructure only): mock embedder maps unrelated texts to near-duplicates
+### 7. LOW (test infrastructure only): mock embedder maps unrelated texts to near-duplicates — FIXED in this PR
 
 `brain/llm/providers/mock_provider.py::_deterministic_vector` slices `digest[i*4:i*4+4]` for
 `i in range(12)` over a 32-byte sha256. For `i >= 8` the slice is empty, so `idx` is always 0 and
 every token adds weight to dimension 0. Any two texts then score as near-duplicates.
 
 This makes mock-mode consolidation merge unrelated claims. The harness works around it by keeping
-the consolidation evidence in its own repository. Fix: use `range(8)`, or hash with a wider digest.
+the consolidation evidence in its own repository.
+
+**Fixed in this PR:** the digest is now sha512 (64 bytes, all twelve slots filled). Cosine of two
+unrelated texts dropped from 0.871 to 0.009; related texts still score 0.861. Regression test:
+`tests/test_llm_providers.py::test_mock_embedding_separates_unrelated_texts`. The numbers in this
+report were measured before the fix; mock-mode dedup and recall scores of later runs differ.
 
 ## Known gaps (recorded, not failures)
 

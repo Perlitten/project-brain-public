@@ -88,6 +88,37 @@ def test_cas_round_verdict():
     assert not several["ok"] and several["winners"] == 2
     errored = load.cas_round_verdict([200, 500, 409])
     assert not errored["ok"] and errored["other"] == {"500": 1}
+    assert errored["losers"] == {"409": 1, "500": 1}
+    assert load.cas_round_verdict([200, 409, 409])["losers"] == {"409": 2}
+
+
+def test_late_write_max_ms_measures_from_revoked_at():
+    from datetime import datetime, timedelta, timezone
+
+    revoked = datetime(2026, 10, 18, tzinfo=timezone.utc)
+    late = {"learnings": [{"created_at": revoked + timedelta(milliseconds=40)}],
+            "decisions": [{"created_at": revoked + timedelta(milliseconds=250)}], "proposals": []}
+    assert load.late_write_max_ms(late, revoked) == 250.0
+    assert load.late_write_max_ms({"learnings": []}, revoked) is None
+    assert load.late_write_max_ms(late, None) is None
+
+
+def test_markdown_reports_cas_rounds_and_revocation_outcome():
+    cas = {"decision_rounds": [{**load.cas_round_verdict([200, 409, 500]), "expected_version": 3,
+                                "lost_winners": 0}],
+           "rule_rounds": [{**load.cas_round_verdict([200, 200]), "expected_version": 1}],
+           "approve_vs_reject": [200, 409], "approve_vs_reject_state": "approved"}
+    outcome = {"attempt_statuses": [500, 200], "first_attempt_ok": False, "took_effect": True,
+               "revoked_at": "2026-10-18", "requests_after_revoke": 4, "after_revoke_statuses": {"401": 4},
+               "honoured_after_revoke": 0, "late_writes": {"learnings": 1}, "revoked_key": {"rest": 401}}
+    text = "\n".join(load.render_cas(cas) + load.render_revocation(outcome))
+    assert '| decision | 0 | 3 | 1 | `{"409": 1, "500": 1}` | 0 | NO |' in text
+    assert "| rule | 0 | 1 | 2 | - | - | NO |" in text
+    assert "| approve vs reject (one proposal) | - | 1 | 1 |" in text
+    assert "| Revoke attempts (statuses) | `[500, 200]` |" in text
+    assert "| First attempt succeeded | NO |" in text
+    assert '| Writes dated after revoked_at (0 expected) | `{"learnings": 1}` |' in text
+    assert "Not recorded" in "\n".join(load.render_cas({}) + load.render_revocation({}))
 
 
 def test_roster_extends_the_base_team():
