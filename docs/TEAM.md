@@ -1,7 +1,9 @@
 # Team mode walkthrough
 
-> **Experimental preview, `main` only, not in v0.9.2.** Team mode is not
-> deployed anywhere and has not been piloted with real people. Read the
+> **Experimental preview, `main` only, not in v0.9.2.** The maintainer's
+> production instance has run `main` in solo state (no team members) since
+> 2026-10-18; no team has been formed there and team mode has not been piloted
+> with real people. Read the
 > [known limitations](#known-limitations) before you invite anyone. Current
 > stage and gaps: [team-mode status](design/team-status.md).
 
@@ -478,8 +480,10 @@ which is the source of truth.
   the operator enables it and an administrator grants a member; its subprocess
   backend is not containment and refuses egress
   ([bounded team execution](operations/TEAM_EXECUTION.md)).
-- **Not deployed, not piloted.** Green CI is the only evidence. Production
-  upgrade and restore, external identities and real multi-person use have not
+- **Not piloted.** Production runs `main` only in solo state; the
+  invite, sign-in and revoke path has not been run there. Green CI and scripted
+  checks against throwaway stacks are the only evidence. Production upgrade and
+  restore of a team, external identities and real multi-person use have not
   been exercised.
 - Repository trust (`brain/workspace`) caps what anyone may do on a repository and
   membership (`brain/team`) decides who may use it; both are checked in one place
@@ -504,11 +508,11 @@ which is the source of truth.
   learnings, skills) and other unscoped reads need a team administrator and
   return every project's rows. Both hold for projects where the administrator
   has no project role. A scoped request for an attached repository still needs
-  a project role, administrators included. The
-  [ADR permission matrix](adr/team-collaboration.md#permission-matrix) says an
-  administrator reads a project "only with project membership"; the unscoped
-  surface does not follow that row yet. Until it does, give the administrator
-  flag only to people who may read all of the team's memory.
+  a project role, administrators included. This is the intended boundary, since
+  an administrator can grant themselves a project role anyway; the ADR records it
+  under [team administrator reads](adr/team-collaboration.md#team-administrator-reads).
+  Give the administrator flag only to people who may read all of the team's
+  memory.
 - **Coordination does not merge.** The integration queue records decisions
   against a base you name and checks that a run's patch applies on top of the
   entries already integrated on its base; it does not merge, push, build or
