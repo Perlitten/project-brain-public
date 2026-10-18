@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import itertools
 import json
 import os
 import random
@@ -511,16 +512,27 @@ class Stack:
     # -- processes ---------------------------------------------------------------------
 
     def start_api(self, database: str, port: int, label: str) -> base.Api:
+        """Start the API with ``--api-workers`` processes. The first process's address is the public URL
+        (OAuth issuer and MCP resource) for all of them; ``api.bases`` lists every address clients may use."""
+        public = f"http://127.0.0.1:{port}"
+        apis: list[TreeApi] = []
+        for index, (instance_port, extra) in enumerate(api_instances(port, self.args.api_workers)):
+            name = label if index == 0 else f"{label}-{index}"
+            apis.append(self._start_api_process(database, instance_port, extra, name, public))
+        api = apis[0]
+        api.peers = apis[1:]
+        api.bases = [a.base for a in apis]
+        return api
+
+    def _start_api_process(self, database: str, port: int, extra: list[str], label: str, public: str) -> TreeApi:
         if port_in_use(port):
             # A stale API (e.g. orphaned uvicorn workers of an earlier run) would silently answer for this one.
             raise RuntimeError(f"port {port} already accepts connections; stop the process holding it first")
         log = open(self.work / f"api-{label}.log", "w", encoding="utf-8")
         api_base = f"http://127.0.0.1:{port}"
-        env = self.brain_env(database, BRAIN_PUBLIC_URL=api_base)
+        env = self.brain_env(database, BRAIN_PUBLIC_URL=public)
         argv = [sys.executable, "-m", "uvicorn", "apps.api.main:app", "--host", "127.0.0.1", "--port", str(port),
-                "--log-level", "warning"]
-        if self.args.api_workers > 1:
-            argv += ["--workers", str(self.args.api_workers)]
+                "--log-level", "warning", *extra]
         proc = subprocess.Popen(argv, env=env, cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT,
                                 start_new_session=sys.platform != "win32")
         self.processes.append(proc)
@@ -566,6 +578,23 @@ def base_timeout() -> Any:
     return httpx.Timeout(120.0, connect=10.0)
 
 
+def api_instances(port: int, workers: int, platform: Optional[str] = None) -> list[tuple[int, list[str]]]:
+    """``(port, extra uvicorn args)`` for each API process when the API runs with ``workers`` processes.
+
+    ``uvicorn --workers N`` makes N processes share one listening socket. On Windows that stalls requests:
+    uvicorn then runs a selector loop, and when two workers race for one incoming connection, the loser's
+    non-blocking ``accept()`` can block inside Winsock. That freezes the loser's whole event loop, and every
+    request already on its keep-alive connections, until some new connection arrives (in the load run: a
+    client's 120 s timeout). A proactor loop is no way out, because a shared socket binds to one IOCP only
+    and the second worker never accepts. So on Windows each process listens on its own port
+    (``port + 100 * i``, clear of the restore API on ``port + 1``) and the clients spread across them."""
+    if workers <= 1:
+        return [(port, [])]
+    if (platform or sys.platform) != "win32":
+        return [(port, ["--workers", str(workers)])]
+    return [(port + 100 * index, []) for index in range(workers)]
+
+
 def port_in_use(port: int) -> bool:
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=1):
@@ -599,9 +628,14 @@ def stop_process_tree(proc: subprocess.Popen) -> None:
 
 
 class TreeApi(base.Api):  # type: ignore[misc,name-defined]
+    bases: list[str] = []  # every address of this API (set by start_api); the first one is ``base``
+    peers: list["TreeApi"] = []  # the other processes of a per-port multi-process API (see api_instances)
+
     def close(self) -> None:
         self.http.close()
         stop_process_tree(self.proc)
+        for peer in self.peers:
+            peer.close()
 
 
 # --------------------------------------------------------------------------- the run
@@ -661,6 +695,7 @@ class Run:
         self.dump_path: Optional[Path] = None
         self.revoked_at: Optional[datetime] = None
         self.local = threading.local()
+        self.client_seq = itertools.count()
         self.onboarding_retries: Counter = Counter()
 
     # -- HTTP --------------------------------------------------------------------------
@@ -672,7 +707,9 @@ class Run:
         client = getattr(self.local, "client", None)
         if client is None:
             assert self.api is not None
-            client = httpx.Client(base_url=self.api.base, timeout=base_timeout(), follow_redirects=False)
+            bases = getattr(self.api, "bases", None) or [self.api.base]
+            api_base = bases[next(self.client_seq) % len(bases)]  # spread threads over per-port API processes
+            client = httpx.Client(base_url=api_base, timeout=base_timeout(), follow_redirects=False)
             self.local.client = client
         return client
 

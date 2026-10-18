@@ -75,6 +75,15 @@ A 12×50 run takes about 4 minutes, 36×50 about 8 minutes. At 36 users the onbo
 `teams` row lock can stall single requests for the full 120 s client timeout (see the findings
 report); setup retries those, later phases record them as transport errors.
 
+`--api-workers N` on Windows starts N single-process APIs on ports `api-port + 100 * i` and spreads the
+client threads across them, instead of `uvicorn --workers N`. Every process gets the first address as
+`BRAIN_PUBLIC_URL`, and CLI, OAuth and MCP calls go to that first process. uvicorn workers share one
+listening socket, and on Windows they then run a selector event loop. When two workers race for one
+connection, the loser's non-blocking `accept()` can block inside Winsock. That freezes that worker's
+event loop, with every request already on its keep-alive connections, until the next new connection
+arrives, which in this load run was often a client's 120 s timeout. A proactor loop does not help,
+because a shared socket attaches to only one IOCP. Linux keeps `uvicorn --workers N`.
+
 ## Manual run against containers you keep
 
 ```bash
@@ -101,7 +110,7 @@ Without `--docker-cmd`/`--pg-container` the restore-fence scenario is skipped an
 | `--redis-url` | `$TEAM_MEMORY_E2E_REDIS_URL` or `redis://127.0.0.1:6390/0` | throwaway Redis |
 | `--users` | 12 | principals (minimum 12) |
 | `--ops` | 50 | operations per user in the load phase |
-| `--api-workers` | 1 | uvicorn workers for the main API |
+| `--api-workers` | 1 | API processes for the main API (`uvicorn --workers`; on Windows one port per process, see above) |
 | `--cas-rounds`, `--cas-writers` | 5, 6 | CAS contention |
 | `--lease-contenders`, `--lease-churn` | 8, 15 | lease contention |
 | `--revoke-threads`, `--revoke-after`, `--revoke-tail` | 4, 1.5, 2.0 | revocation while writing |
