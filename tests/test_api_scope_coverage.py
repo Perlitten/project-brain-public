@@ -67,6 +67,8 @@ SEPARATE_OPERATIONS = {
         "live team membership/project policy; test_team_coordination",
     ("post", "/team/projects/{project_id}/leases/{lease_id}/release"):
         "live team membership/project policy; test_team_coordination",
+    ("post", "/team/projects/{project_id}/leases/{lease_id}/force-release"):
+        "team administrator check in handler; test_team_coordination",
     ("get", "/team/projects/{project_id}/integration"):
         "live team membership/project policy; test_team_coordination",
     ("post", "/team/projects/{project_id}/integration"):

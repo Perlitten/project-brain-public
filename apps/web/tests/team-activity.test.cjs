@@ -79,6 +79,43 @@ test('activity rows name the actor and the next page', async () => {
   assert.equal(page.nextOffset, 50);
 });
 
+// Every kind Brain records (brain/team/activity.py KINDS) must be filterable and have a readable label.
+test('activity kinds and labels match the kinds Brain records', () => {
+  const view = loadView(async () => ({ ok: false, status: 0, reason: 'network' }));
+  const source = fs.readFileSync(path.resolve(root, '..', '..', 'brain', 'team', 'activity.py'), 'utf8');
+  const block = source.slice(source.indexOf('KINDS: dict'), source.indexOf('ALL_KINDS ='));
+  const brain = {};
+  for (const [, family, body] of block.matchAll(/"(\w+)":\s*\(([^)]*)\)/g)) {
+    brain[family] = [...body.matchAll(/"([\w.]+)"/g)].map((m) => m[1]).sort();
+  }
+  assert.ok(Object.keys(brain).length > 10, 'the KINDS block was parsed');
+  const web = Object.fromEntries(Object.entries(view.ACTIVITY_KINDS).map(([f, kinds]) => [f, [...kinds].sort()]));
+  assert.deepEqual(web, brain);
+  for (const kind of Object.values(brain).flat()) {
+    assert.ok(view.ACTIVITY_LABELS[kind], `${kind} has a label`);
+    assert.notEqual(view.activityLabel(kind), kind);
+  }
+  assert.deepEqual(Object.keys(view.ACTIVITY_LABELS).sort(), Object.values(brain).flat().sort(), 'no stale labels');
+  assert.equal(view.activityLabel('future.kind'), 'future.kind', 'an unknown kind is shown as sent');
+});
+
+test('a force-released lease shows who released it and why', () => {
+  const view = loadView(async () => ({ ok: false, status: 0, reason: 'network' }));
+  const row = view.toActivityRow({
+    id: 'event:9', kind: 'coordination.lease_force_released', occurred_at: '2026-10-18T10:00:00+00:00',
+    summary: 'Lease on src/app.py force-released by an administrator', actor: { principal_id: 4, name: 'admin' },
+    details: { lease_id: 3, holder_principal_id: 2, reason: 'holder is on leave', fencing_token: 5 },
+  });
+  assert.equal(row.actor, 'admin');
+  assert.equal(row.detail, 'Reason: holder is on leave');
+  assert.equal(view.activityLabel(row.kind), 'Lease force-released');
+  const operator = view.toActivityRow({ id: 'event:10', kind: 'coordination.lease_force_released', summary: 's',
+    actor: null, actor_label: 'operator:cli', details: {} });
+  assert.equal(operator.actor, 'operator:cli');
+  assert.equal(operator.detail, null);
+  assert.equal(view.toActivityRow({ id: 'event:11', kind: 'job.queued', summary: 's' }).detail, null);
+});
+
 test('the Me view reads solo and member answers from /team/me', async () => {
   let answer = { principal: { id: 0, name: 'owner', kind: 'service' }, team_state: 'solo', is_team_admin: true,
     projects: [], access: { repositories: 'all', reason: 'Solo state' }, scopes: ['*'], effective_scopes: ['*'], can_read_activity: true };

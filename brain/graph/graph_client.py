@@ -208,6 +208,34 @@ class GraphClient:
                 )
         return neighbors
 
+    async def get_import_neighbors(self, name_or_path: str, limit: int) -> List[Dict[str, Any]]:
+        """Return a bounded set of File nodes joined by an IMPORTS edge."""
+        query = (
+            "MATCH (n:File) "
+            "WHERE (n.name = $target OR n.path = $target) "
+            "AND n.repository_id = $repository_id "
+            "MATCH (n)-[r:IMPORTS]-(m:File) "
+            "WHERE m.repository_id = $repository_id "
+            "RETURN n, r, m "
+            "ORDER BY coalesce(m.path, m.name), elementId(m) "
+            "LIMIT $limit"
+        )
+        neighbors = []
+        async with self.driver.session() as session:
+            result = await session.run(query, target=name_or_path, repository_id=self.repository_id, limit=limit)
+            async for record in result:
+                node_n = record["n"]
+                rel_r = record["r"]
+                node_m = record["m"]
+                neighbors.append(
+                    {
+                        "source": {"labels": list(node_n.labels), "properties": dict(node_n)},
+                        "relationship": {"type": rel_r.type, "properties": dict(rel_r)},
+                        "target": {"labels": list(node_m.labels), "properties": dict(node_m)},
+                    }
+                )
+        return neighbors
+
     async def create_relationships(self, rows: list[dict]) -> None:
         """UNWIND writes grouped by validated labels/type; identities stay scoped."""
         from collections import defaultdict

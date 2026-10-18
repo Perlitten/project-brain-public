@@ -217,13 +217,15 @@ function OverlapDetail({ o, ctx }: { o: Overlap; ctx: Ctx }) {
       <p className="board-conflict__who">
         {o.kind === "task" ? (
           <>Declared scope overlaps the active task <TaskLink id={o.otherTaskId ?? ""} ctx={ctx} fallback={o.otherTitle} />.</>
+        ) : o.kind === "dependency" ? (
+          <>Declared scope shares no path with the active task <TaskLink id={o.otherTaskId ?? ""} ctx={ctx} fallback={o.otherTitle} />, but imports or is imported by it.</>
         ) : (
           <>Path <span className="mono">{o.resource}</span> is leased by {who(o.holderId, ctx.selfId)} until {when(o.expiresAt)} (lease {o.leaseId}).</>
         )}
       </p>
       <ul className="board-list">
         {o.paths.map(([mine, theirs]) => (
-          <li key={`${mine}|${theirs}`}><span className="mono">{mine}</span> <span className="text-faint">overlaps</span> <span className="mono">{theirs}</span></li>
+          <li key={`${mine}|${theirs}`}><span className="mono">{mine}</span> <span className="text-faint">{o.kind === "dependency" ? "imports or is imported by" : "overlaps"}</span> <span className="mono">{theirs}</span></li>
         ))}
       </ul>
     </>

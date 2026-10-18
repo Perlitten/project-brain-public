@@ -91,12 +91,15 @@ test('malformed rows, released leases and duplicate entries are dropped or merge
   const raw = {
     ...demo.raw,
     leases: [...demo.raw.leases, { ...demo.raw.leases[0], id: 13, state: 'released' }, { id: 'x' }],
-    overlaps: [...demo.raw.overlaps, { kind: 'other', task_id: 'x' }],
+    overlaps: [...demo.raw.overlaps, { kind: 'other', task_id: 'x' },
+      { kind: 'dependency', task_id: 'dep-1', other_task_id: 'dep-2', other_title: 'lib', relation: 'imports', paths: [['a.py', 'b.py']] }],
     entries: [...demo.raw.entries, demo.raw.entries[3], { id: 9, status: 'weird', task_id: 'x', run_id: 'y', version: 1 }],
   };
   const board = view.assembleProject(demo.project, raw);
   assert.equal(board.leases.length, 2);
-  assert.equal(board.overlaps.length, 2);
+  assert.equal(board.overlaps.length, 3, 'a dependency overlap is kept, an unknown kind is dropped');
+  eq(board.overlaps.map((o) => o.kind).slice(-1), ['dependency']);
+  eq(board.overlaps[2].paths, [['a.py', 'b.py']]);
   eq(board.queue.map((e) => e.id), [2, 3, 4]);
   // A newer final entry replaces the earlier pending one for the same task.
   const later = { ...demo.raw.entries[1], id: 5, status: 'integrated', version: 3 };

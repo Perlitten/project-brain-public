@@ -53,7 +53,8 @@ export interface Lease {
 }
 
 export interface Overlap {
-  kind: "task" | "lease";
+  /** "dependency": the scopes share no path but one imports the other (weaker than "task"). */
+  kind: "task" | "lease" | "dependency";
   repositoryId: number | null;
   taskId: string;
   otherTaskId: string | null;
@@ -178,7 +179,7 @@ export function toLease(raw: unknown): Lease | null {
 
 export function toOverlap(raw: unknown): Overlap | null {
   const o = obj(raw);
-  if (!o || (o.kind !== "task" && o.kind !== "lease") || !text(o.task_id)) return null;
+  if (!o || (o.kind !== "task" && o.kind !== "lease" && o.kind !== "dependency") || !text(o.task_id)) return null;
   const paths = (Array.isArray(o.paths) ? o.paths : [])
     .filter((p): p is unknown[] => Array.isArray(p) && p.length === 2 && p.every((s) => typeof s === "string"))
     .map((p) => [p[0], p[1]] as [string, string]);

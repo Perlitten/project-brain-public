@@ -68,15 +68,16 @@ client label, not an authenticated agent identity; see the
 ## Tool reference
 
 Local stdio exposes 13 tools. The HTTP-backed stdio bridge and native `/mcp`
-add `get_diff_review`, for the asynchronous review flow, and the nineteen
-`team_*` tools of the [experimental team mode](TEAM.md): 33 tools in all. The
+add `get_diff_review`, for the asynchronous review flow, and the twenty
+`team_*` tools of the [experimental team mode](TEAM.md): 34 tools in all. The
 task and memory review tools answer only for verified team members within their
 project roles; `team_me` works in solo state too; `team_request_run` records a
 run. MCP has no tool to execute it; the first, off-by-default execution slice is
 HTTP only ([bounded team execution](operations/TEAM_EXECUTION.md)). The five
-memory review tools follow [governed memory](MEMORY_REVIEW.md). Of the nine
-coordination tools, four read and five write: claim, renew and release a lease,
-declare a task's scope, and queue a run for integration. They call the same HTTP
+memory review tools follow [governed memory](MEMORY_REVIEW.md). Of the ten
+coordination tools, four read and six write: claim, renew and release a lease,
+declare a task's scope, queue a run for integration, and (team administrators
+only) force-release another member's lease with a reason. They call the same HTTP
 routes, so the same project roles, fencing tokens and plan versions apply.
 Creating subtasks and integrating or rejecting queue entries stay on the HTTP API
 and the web Board ([team coordination](TEAM.md#team-coordination-m3)).
@@ -108,7 +109,7 @@ and the web Board ([team coordination](TEAM.md#team-coordination-m3)).
 | `team_approve_proposal` | Remote only, experimental: approve someone else's proposal (Reviewer) |
 | `team_reject_proposal` | Remote only, experimental: reject someone else's proposal (Reviewer) |
 | `team_task_plan` | Remote only, experimental: a task's subtasks, dependency states and ready set |
-| `team_coordination_overlaps` | Remote only, experimental: declared-scope overlaps among active tasks and leases |
+| `team_coordination_overlaps` | Remote only, experimental: declared-scope overlaps among active tasks and leases, plus import-dependency warnings when the code graph is current |
 | `team_list_leases` | Remote only, experimental: critical leases with holders and fencing tokens |
 | `team_integration_queue` | Remote only, experimental: the integration queue and each entry's last check |
 | `team_claim_lease` | Remote only, experimental: claim a fenced lease on a path or resource (Contributor) |
@@ -116,6 +117,7 @@ and the web Board ([team coordination](TEAM.md#team-coordination-m3)).
 | `team_release_lease` | Remote only, experimental: release a lease you hold, with its fencing token |
 | `team_declare_scope` | Remote only, experimental: declare the paths a task touches (plan version compare-and-swap) |
 | `team_enqueue_integration` | Remote only, experimental: queue a run that reported its head revision for integration |
+| `team_force_release_lease` | Remote only, experimental: release another member's lease with a recorded reason (team administrator) |
 
 Memory writes follow the [lesson and approval policy](MEMORY_LESSON_PROTOCOL.md).
 A tool's reported evidence is not proof that Brain independently executed tests.
