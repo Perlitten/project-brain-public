@@ -607,3 +607,78 @@ class TestAPIRouter:
         from apps.api.routers.workspace import router
         routes = [r.path for r in router.routes]
         assert "/repositories" in routes or any("/repositories" in r for r in routes)
+
+
+# ──────────────────────────────────────────────
+# Registry trust lookup (the trust half of team repository authorization)
+# ──────────────────────────────────────────────
+
+def _trust_record(root: str, trust: str = TrustLevel.TRUSTED_INTERNAL.value, **changes) -> RepositoryRecord:
+    return RepositoryRecord(
+        repository_id=_generate_repository_id(root), display_name="synthetic", canonical_root=root,
+        normalized_root_identity=root.lower(), repository_type="fixture", default_branch="main",
+        current_revision="", trust_level=trust, organization="", owner="", **changes,
+    )
+
+
+class TestRegistryTrust:
+    def test_missing_registry_is_empty_and_not_created(self, tmp_path):
+        from brain.workspace.trust import load_registry_records
+        directory = tmp_path / "absent" / "workspace"
+        assert load_registry_records(directory) == []
+        assert not directory.exists()
+
+    def test_loads_registered_records(self, store, sample_record):
+        from brain.workspace.trust import load_registry_records
+        store.register(sample_record)
+        assert [r.repository_id for r in load_registry_records(store._storage_dir)] == [sample_record.repository_id]
+
+    def test_corrupt_registry_raises(self, store, sample_record):
+        from brain.workspace.registry_store import RegistryCorruptionError
+        from brain.workspace.trust import load_registry_records
+        store.register(sample_record)
+        registry_file = store._storage_dir / "repository_registry.json"
+        data = json.loads(registry_file.read_text(encoding="utf-8"))
+        data["repositories"][sample_record.repository_id]["trust_level"] = "trusted_internal-tampered"
+        registry_file.write_text(json.dumps(data), encoding="utf-8")
+        with pytest.raises(RegistryCorruptionError):
+            load_registry_records(store._storage_dir)
+
+    @pytest.mark.parametrize("spelling", ["/Synthetic/Repo", "/synthetic/repo/", r"\synthetic\repo"])
+    def test_records_match_any_spelling_of_the_root(self, spelling):
+        from brain.workspace.trust import records_for_path
+        record = _trust_record("/synthetic/repo")
+        assert records_for_path([record], spelling) == [record]
+
+    def test_records_ignore_other_roots_and_empty_paths(self):
+        from brain.workspace.trust import records_for_path
+        record = _trust_record("/synthetic/repo")
+        assert records_for_path([record], "/synthetic/repo-other") == []
+        assert records_for_path([record], None) == []
+        assert records_for_path([record], "") == []
+
+    @pytest.mark.parametrize("changes, withdrawn", [
+        ({}, False),
+        ({"disabled": True}, True),
+        ({"archived": True}, True),
+        ({"trust_level": TrustLevel.DISABLED.value}, True),
+        ({"trust_level": TrustLevel.UNTRUSTED_EXTERNAL.value}, False),
+    ])
+    def test_trust_withdrawn(self, changes, withdrawn):
+        from brain.workspace.trust import trust_withdrawn
+        trust = changes.pop("trust_level", TrustLevel.TRUSTED_INTERNAL.value)
+        assert trust_withdrawn(_trust_record("/synthetic/repo", trust, **changes)) is withdrawn
+
+    def test_trust_ceiling_per_level(self):
+        from brain.team.authorization import FULL_AUTHORITY, Permission, registry_trust_ceiling
+        root = "/synthetic/repo"
+        assert registry_trust_ceiling([], root)[0] == FULL_AUTHORITY
+        for level in (TrustLevel.TRUSTED_INTERNAL, TrustLevel.TRUSTED_READ_ONLY, TrustLevel.FIXTURE):
+            assert registry_trust_ceiling([_trust_record(root, level.value)], root)[0] == FULL_AUTHORITY
+        external = registry_trust_ceiling([_trust_record(root, TrustLevel.UNTRUSTED_EXTERNAL.value)], root)
+        assert external[0] == frozenset({Permission.READ}) and "read only" in external[1]
+        disabled = registry_trust_ceiling([_trust_record(root, disabled=True)], root)
+        assert disabled[0] == frozenset() and "workspace registry" in disabled[1]
+        assert registry_trust_ceiling([_trust_record(root, "unknown-level")], root)[0] == frozenset()
+        # Every matching path narrows: an indexed path and a registry root are both honoured.
+        assert registry_trust_ceiling([_trust_record(root, disabled=True)], "/synthetic/other", root)[0] == frozenset()

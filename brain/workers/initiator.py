@@ -125,7 +125,7 @@ async def initiator_refusal(job: Mapping[str, Any]) -> str | None:
         # Same scope the API authorized: an unindexed or absent path is the unscoped surface.
         repository_id = await find_repository_id(session, repo_path) if repo_path else None
         try:
-            await authorize_repository(session, caller, repository_id, permission)
+            await authorize_repository(session, caller, repository_id, permission, repo_path=repo_path)
         except TeamDenied as exc:
             return f"Initiator no longer authorized: {exc}"
     return None

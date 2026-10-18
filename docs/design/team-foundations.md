@@ -198,6 +198,69 @@ budgets, agent-driven steps, artifacts, external-effect idempotency, doctor
 reporting, PostgreSQL concurrency tests, UI/MCP surfaces and resuming fenced runs
 remain M2 work.
 
+## Workspace registry and team membership: one authority
+
+Before this change the two models answered different questions on different routes
+and never consulted each other:
+
+- The workspace-registry routers (freshness, lab, experiments, ledger, operations,
+  workspace record reads) authorized membership through `registry_authority`, then
+  checked the record's `disabled` flag and capabilities themselves. Ledger reads and
+  operations' vector repair checked no registry trust at all.
+- Every personal route (search, context, graph, impact, jobs, memory listings, the
+  Telegram bridge, worker re-authorization) consulted only membership. A repository
+  that the registry had disabled, or registered as untrusted external code, stayed
+  fully usable by its project's members and by team administrators.
+- Registering a repository in the registry (admin-only in team state) linked it to no
+  project, and attaching a repository to a project ignored the registry. A registered,
+  trusted repository could be usable by nobody but administrators, and a disabled one
+  by every member of the project listing it.
+
+Now `brain.team.authorization.authorize_repository` decides both, in team state only:
+
+| Question | Owner | Where |
+|---|---|---|
+| Who may use the repository | Team membership (project role, project policy, credential scopes); unattached repositories: team administrators | `authorize`, `team_administrator` |
+| What anyone may do on it | Workspace registry trust: no record = no restriction; `untrusted_external` = read only; disabled, archived or trust level `disabled` = nothing, for everyone including administrators; unknown trust level or unreadable registry = nothing | `registry_trust_ceiling`, `brain/workspace/trust.py` |
+
+Membership is evaluated first, so a caller without access is told "Project access
+denied" and learns nothing about the registry. The returned authority's permissions
+are intersected with the trust ceiling. `repo_path` lets registry routes pass a
+record's canonical root even when it is not indexed. `readable_repository_ids` drops
+repositories the registry no longer trusts for reading from member listings;
+administrators still list every repository but are refused per-repository access.
+Route-level checks stay where they were (the `disabled` 409 and capability 403 in the
+registry routers): solo state still relies on them, so none became redundant.
+
+In team state `POST /workspace/repositories` needs a team administrator who
+administers the target project and links the repository to it in the same database
+transaction as the registry write: `project_id` names the project, or the repository
+must already be attached to one. The repository must be indexed first (409 otherwise);
+a repository attached to another project is refused (409) rather than moved; no
+`project_id` and no existing link is refused (422). The offline `brain workspace` CLI
+still writes the registry without a project: such a record grants nobody but team
+administrators until the repository is attached with `brain team project attach`.
+
+Solo state is unchanged: `authorize_repository` returns before reading the registry,
+and registration ignores `project_id`. No schema change: the link is the existing
+`project_repositories` row, matched to the registry record through `repositories.path`.
+
+| Requirement | Evidence |
+|---|---|
+| Agreement matrix: trust (none, trusted, fixture, untrusted external, disabled, withdrawn) x caller (member, non-member, administrator member, administrator non-member, unattached) x solo/team | `tests/test_team_workspace_authority.py::test_team_agreement_matrix`, `test_solo_ignores_the_registry` |
+| Disabled repository denied even though a project lists it; administrators included | `test_disabled_repository_is_denied_to_its_project_and_to_administrators`, `test_personal_routes_answer_403_on_a_disabled_repository` |
+| Unindexed registry record and unreadable registry | `test_registry_path_that_is_not_indexed_carries_its_trust`, `test_unreadable_registry_fails_closed_in_team_state_only` |
+| Member listings | `test_member_listings_drop_repositories_the_registry_does_not_trust`, `test_member_listing_hides_a_disabled_repository` |
+| Registration links to a project or refuses | the `test_team_registration_*`, `test_duplicate_registration_rolls_back_the_link` and `test_solo_registration_is_unchanged` tests |
+| Trust lookup by path spelling | `tests/test_workspace_registry.py::TestRegistryTrust` |
+
+Known limits: the registry is a file under each process's working directory
+(`.brain/workspace`, not on a volume), so the worker container re-authorizes against
+its own, usually empty, registry; the registry write and the database commit are not
+one atomic step (a commit that fails after the registry write leaves a record with no
+project link, which grants nobody but administrators); administrators cannot read a disabled record by id
+(`GET /workspace/repositories/{id}`), only in the listing.
+
 ## Evidence requirements for each slice
 
 Record base/head SHAs, actual commands and return codes, before/after or denial

@@ -302,8 +302,14 @@ which is the source of truth.
 - **Not deployed, not piloted.** Green CI is the only evidence. Production
   upgrade and restore, external identities and real multi-person use have not
   been exercised.
-- Repository trust (`brain/workspace`) and human membership (`brain/team`) are
-  still two separate models.
+- Repository trust (`brain/workspace`) caps what anyone may do on a repository and
+  membership (`brain/team`) decides who may use it; both are checked in one place
+  (`authorize_repository`). A repository the workspace registry has disabled is
+  denied to every member, administrators included, even when a project lists it.
+  In team state, registering a repository (`POST /workspace/repositories`) needs a
+  team administrator and links it to a team project: pass `project_id`, or attach
+  it with `brain team project attach` first
+  ([details](design/team-foundations.md#workspace-registry-and-team-membership-one-authority)).
 
 Backups of a team Brain have their own restore procedure, including the
 restore fence and `brain team reconcile`:
