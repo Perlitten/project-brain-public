@@ -296,14 +296,18 @@ async def run_team(args) -> bool:
     try:
         if not await cli_team_state(directory):
             return False
+        from brain.database import session as db
+        from brain.team import registry as shared
+
+        try:
+            await shared.ensure_legacy_imported(db.async_session_factory, directory)
+            await _TEAM_COMMANDS[args.func](args, db.async_session_factory, directory)
+        except Exception as exc:  # noqa: BLE001 - team state must never fall back to the local file
+            raise OfflineRegistryError(
+                f"Cannot read the shared workspace registry in team state ({type(exc).__name__}); "
+                "refusing to use the local registry file") from exc
     except OfflineRegistryError as exc:
         _fail(str(exc), code=2)
-
-    from brain.database import session as db
-    from brain.team import registry as shared
-
-    await shared.ensure_legacy_imported(db.async_session_factory, directory)
-    await _TEAM_COMMANDS[args.func](args, db.async_session_factory, directory)
     return True
 
 

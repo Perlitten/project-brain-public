@@ -18,7 +18,9 @@ from sqlalchemy import func, select, update
 from apps.api.routers import team as team_router
 from brain.config.settings import settings
 from brain.team import notifications
+from brain.team import registry as shared_registry
 from brain.team.models import TeamNotification, TeamTelegramLink
+from brain.workspace.models import RepositoryRecord, TrustLevel
 from tests.test_memory_proposals import ADMIN, CONTRIBUTOR, READER, REPO, REVIEWER, decision, review_app
 from tests.test_team_foundations import team_db as team_fixture
 from tests.test_team_transport import add_outsider_and_unattached_repo, client_for, revoke_everyone
@@ -72,6 +74,24 @@ async def test_project_reviewers_are_notified_and_nobody_else(team_db, monkeypat
         # The reader cannot approve, the contributor wrote it, the administrator is no reviewer of project A.
         for headers in (READER, CONTRIBUTOR, ADMIN):
             assert (await inbox(client, headers))["notifications"] == []
+
+
+@pytest.mark.asyncio
+async def test_registry_trust_can_remove_every_review_recipient(team_db, monkeypatch):
+    factory, _, _ = team_db
+    app = notification_app(factory, monkeypatch)
+    async with client_for(app) as client:
+        proposal_id = await propose(client)
+    record = RepositoryRecord(
+        repository_id="repo-disabled-a", display_name="A", canonical_root=REPO,
+        normalized_root_identity=REPO.lower(), repository_type="fixture", default_branch="main",
+        current_revision="", trust_level=TrustLevel.DISABLED.value, organization="", owner="", disabled=True)
+    async with factory() as session, session.begin():
+        await session.execute(TeamNotification.__table__.delete())
+        await shared_registry.insert_entry(session, record, actor="test", source="test")
+    assert await notifications.notify_review_needed(factory, proposal_id) == []
+    async with client_for(app) as client:
+        assert (await inbox(client, REVIEWER))["notifications"] == []
 
 
 @pytest.mark.asyncio
@@ -171,6 +191,9 @@ async def test_telegram_link_needs_the_code_and_only_touches_the_caller(team_db,
     sent_codes: list[tuple[str, str]] = []
 
     async def deliver_code(*, chat_id, code):
+        async with factory() as session:
+            stored = await session.get(TeamTelegramLink, 3)
+            assert stored is not None and stored.pending_chat_id == chat_id, "pending link commits before Telegram I/O"
         sent_codes.append((chat_id, code))
         return {"status": "sent"}
 

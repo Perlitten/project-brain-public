@@ -38,9 +38,10 @@ from typing import Any, Optional
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from brain.database.models import MemoryProposal, Principal
+from brain.database.models import MemoryProposal, Principal, Repository
 from brain.database.repository_utils import find_repository_id
-from brain.team.authorization import ROLE_PERMISSIONS, Permission, team_state
+from brain.team.authorization import (ROLE_PERMISSIONS, Permission, registry_records, registry_trust_ceiling,
+                                      team_state)
 from brain.team.models import (ProjectMember, ProjectRepository, TeamMember, TeamNotification, TeamProject,
                                TeamTelegramLink)
 
@@ -84,12 +85,18 @@ async def review_recipients(session: AsyncSession, row: MemoryProposal) -> list[
 
     path = row.requested_repo_path or row.repo_path
     link = None
+    indexed_path = None
     if path:
         # The path as spelled, like the review queue's authorization: the registry and index match it.
         repository_id = await find_repository_id(session, path)
         if repository_id is not None:
+            indexed_path = (await session.execute(select(Repository.path).where(
+                Repository.id == repository_id))).scalar_one_or_none()
             link = (await session.execute(select(ProjectRepository).where(
                 ProjectRepository.repository_id == repository_id))).scalar_one_or_none()
+        ceiling, _ = registry_trust_ceiling(await registry_records(session), indexed_path, path)
+        if Permission.APPROVE not in ceiling:
+            return []
     if link is not None:
         project = await session.get(TeamProject, link.project_id)
         if project is None or project.disabled_at is not None:
@@ -305,6 +312,15 @@ async def start_telegram_link(session: AsyncSession, principal_id: int, chat_id:
     return link, code
 
 
+async def cancel_telegram_link(session: AsyncSession, principal_id: int, code_hash: str) -> bool:
+    """Clear only the still-current pending code after its delivery failed."""
+    result = await session.execute(update(TeamTelegramLink).where(
+        TeamTelegramLink.principal_id == principal_id,
+        TeamTelegramLink.code_hash == code_hash,
+    ).values(pending_chat_id=None, code_hash=None, code_sent_at=None, code_expires_at=None, attempts=0))
+    return bool(getattr(result, "rowcount", 0))
+
+
 async def verify_telegram_link(session: AsyncSession, principal_id: int, code: str) -> TeamTelegramLink:
     """Link the pending chat when ``code`` matches; ``TelegramLinkError`` otherwise (bounded attempts)."""
     link = await session.get(TeamTelegramLink, principal_id, with_for_update=True)
@@ -340,7 +356,8 @@ async def unlink_telegram(session: AsyncSession, principal_id: int) -> bool:
     return bool(getattr(result, "rowcount", 0))
 
 
-__all__ = ["INBOX_LIMIT", "MAX_RECIPIENTS", "REVIEW_KIND", "TelegramLinkError", "get_telegram_link",
+__all__ = ["INBOX_LIMIT", "MAX_RECIPIENTS", "REVIEW_KIND", "TelegramLinkError", "cancel_telegram_link",
+           "get_telegram_link",
            "list_notifications", "mark_all_read", "mark_read", "notify_review_needed", "record_review_needed",
            "review_dedupe_key", "review_recipients", "start_telegram_link", "telegram_link_dict",
            "unlink_telegram", "verify_telegram_link"]

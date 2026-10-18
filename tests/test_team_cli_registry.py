@@ -214,6 +214,14 @@ def test_team_state_never_falls_back_when_the_table_is_unreadable(world, monkeyp
     assert code == 2 and "Cannot read the shared workspace registry in team state" in err
 
 
+def test_workspace_cli_reports_post_probe_registry_failures_without_a_traceback(world, monkeypatch, capsys):
+    team_state(monkeypatch)
+    monkeypatch.setattr(shared, "ensure_legacy_imported", AsyncMock(side_effect=OSError("synthetic")))
+    code, _, err = run(capsys, "brain.workspace.cli", ["repositories", "list"])
+    assert code == 2 and "Cannot read the shared workspace registry in team state (OSError)" in err
+    assert "Traceback" not in err
+
+
 def test_team_state_reads_the_legacy_file_while_the_table_is_empty(tmp_path, monkeypatch, capsys):
     """The one-time import #149 does for the API runs for the offline CLIs too."""
     monkeypatch.chdir(tmp_path)

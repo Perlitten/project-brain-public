@@ -354,19 +354,23 @@ async def _team_owner(principal: ResolvedPrincipal) -> int:
 
 
 @router.post("/me/telegram", status_code=202)
-async def start_my_telegram_link(body: TelegramLinkRequest, principal: ResolvedPrincipal = Depends(require_principal),
-                                 session=Depends(team_session, scope="function")):
+async def start_my_telegram_link(body: TelegramLinkRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     """Send a one-time code to ``chat_id``; the link takes effect once the caller types it back."""
     owner = await _team_owner(principal)
     if not telegram.member_telegram_available():
         raise HTTPException(409, "Telegram review notices are not enabled on this Brain")
     try:
-        link, code = await notifications.start_telegram_link(session, owner, body.chat_id)
+        async with team_access.async_session_factory() as session, session.begin():
+            link, code = await notifications.start_telegram_link(session, owner, body.chat_id)
+            pending_chat_id = link.pending_chat_id or ""
+            pending_hash = link.code_hash or ""
     except notifications.TelegramLinkError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    sent = await telegram.deliver_member_link_code(chat_id=link.pending_chat_id or "", code=code)
+        raise HTTPException(400, "Could not start the Telegram link. Use a numeric chat id and wait before retrying") from exc
+    sent = await telegram.deliver_member_link_code(chat_id=pending_chat_id, code=code)
     if sent.get("status") != "sent":
-        # Rolls the pending code back: nothing was delivered, so nothing can be verified.
+        # The short write transaction committed before network I/O. Clear only that code if delivery failed.
+        async with team_access.async_session_factory() as session, session.begin():
+            await notifications.cancel_telegram_link(session, owner, pending_hash)
         raise HTTPException(502, "The bot could not send the code. Start a chat with the bot first, then retry")
     return notifications.telegram_link_dict(link, available=True)
 
@@ -378,9 +382,10 @@ async def verify_my_telegram_link(body: TelegramVerifyRequest,
     owner = await _team_owner(principal)
     try:
         link = await notifications.verify_telegram_link(session, owner, body.code)
-    except notifications.TelegramLinkError as exc:
+    except notifications.TelegramLinkError:
         # A response, not an exception: the failed attempt is committed, so attempts stay bounded.
-        return JSONResponse(status_code=400, content={"detail": str(exc)})
+        return JSONResponse(status_code=400, content={
+            "detail": "That code is invalid, expired, or was tried too often. Ask for a new code if needed"})
     return notifications.telegram_link_dict(link, available=telegram.member_telegram_available())
 
 
