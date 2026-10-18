@@ -116,6 +116,30 @@ def test_parse_args_refuses_small_teams_and_foreign_databases():
         load.parse_args(["--database-url", "mysql://u:p@h/db"])
 
 
+def test_windows_multiworker_fails_before_fixture_creation(monkeypatch, capsys):
+    monkeypatch.setattr(load.sys, "platform", "win32")
+    def unexpected_setup(*args, **kwargs):
+        pytest.fail("unsupported transport must be rejected before creating fixtures")
+    monkeypatch.setattr(load, "Run", unexpected_setup)
+    with pytest.raises(SystemExit) as error:
+        load.main(["--database-url", "postgresql://fixture@localhost/postgres", "--api-workers", "2"])
+    assert error.value.code == 2
+    assert "Linux/WSL" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("platform_name", "workers"), [("win32", 1), ("linux", 2)])
+def test_supported_worker_configuration_is_preserved(monkeypatch, platform_name, workers):
+    monkeypatch.setattr(load.sys, "platform", platform_name)
+    args = load.parse_args(["--database-url", "postgresql://fixture@localhost/postgres",
+                            "--api-workers", str(workers)])
+    assert args.api_workers == workers
+
+
+def test_nonpositive_workers_are_rejected():
+    with pytest.raises(SystemExit):
+        load.parse_args(["--database-url", "postgresql://fixture@localhost/postgres", "--api-workers", "0"])
+
+
 # Isolation and authority invariants that held in every recorded run; the known product defects
 # (lost updates, deadlocks, 500 instead of 409) are reported, not asserted here.
 ISOLATION_VIOLATIONS = {

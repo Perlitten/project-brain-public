@@ -39,8 +39,12 @@ $env:TEST_TEAM_POSTGRES_URL='postgresql+asyncpg://fixture:fixture@127.0.0.1:5459
 $env:BRAIN_DISABLE_DOTENV='true'
 .venv/Scripts/python -m pytest tests/test_team_locking_postgres.py tests/test_memory_cas_concurrency.py -q
 .venv/Scripts/python scripts/team_memory_load_e2e.py --database-url postgresql://postgres:task3-disposable@127.0.0.1:5459/postgres --redis-url redis://127.0.0.1:6399/0 --docker-cmd docker --pg-container brain-fix-task3-pg --users 12 --ops 50 --out ../load-final-12
-.venv/Scripts/python scripts/team_memory_load_e2e.py --database-url postgresql://postgres:task3-disposable@127.0.0.1:5459/postgres --redis-url redis://127.0.0.1:6399/0 --docker-cmd docker --pg-container brain-fix-task3-pg --users 36 --ops 50 --api-workers 2 --out ../load-final-36
 ```
+
+For the 36-user, two-worker scenario run the same harness from **Linux Python**
+(WSL or a Linux container), with `--users 36 --ops 50 --api-workers 2` and the
+disposable services' addresses in that runtime. Native Windows multi-worker
+uvicorn is rejected for the transport reason below.
 
 The example password belongs only to the disposable local test server. The two
 load runs must be sequential because they use the same disposable database names
@@ -63,3 +67,53 @@ direct/HTTP draft gate. The standard member and invited-admin credentials omit
 `harness:write`; the load harness explicitly mints extra credentials with that
 scope to exercise consolidation. This does not prove the standard onboarding
 flow can submit harness tasks or observations. Neither policy gap is changed here.
+
+## Windows multi-worker transport
+
+The initial final-head 36-user run on `81df717` had one OAuth GET `/decisions`
+ReadTimeout after 120010.4 ms. A successful repeat did not close it. A subsequent
+instrumented run reproduced it on the same clean commit with correlated HTTP
+client/ASGI/SQL/pool traces, PostgreSQL activity samples, worker heartbeats, Python
+thread stacks and two independent external py-spy dumps (one with native frames).
+
+Request `adc369002db04955b59b5e40b1ea3f07` was sent at Unix time
+1792310039.6681974 and timed out at 1792310159.6712184. Worker 25104 admitted it
+to ASGI only at 1792310159.6742134, then generated HTTP 200 in 0.141 seconds.
+Throughout the stall its main thread was in `WS2_32.accept -> socket.py:295 ->
+asyncio/selector_events.py:178`; the other worker and PostgreSQL were responsive,
+with no blocking transaction explaining the delay. Uvicorn's supervisor pong
+thread continued running, so its health check did not detect the frozen loop.
+
+A second GET (`e1b4816aa15c44d1b6b5eff4f0aa2705`) stalled for 30.400 seconds.
+One controlled fresh TCP request to a nonexistent endpoint at 1792310191.2631853
+woke the worker: it admitted the pending GET at 1792310191.2728088. This establishes
+the transport stall before application authorization/SQL, rather than inferring
+a cause from a later successful repeat.
+
+A minimal ASGI server with no Brain, database, OAuth or diagnostic monkeypatches
+also timed out on the first fresh-connection/keep-alive transition, with two
+serving Windows Selector workers and the same `accept()` stack. The attempted
+Proactor alternative is rejected as a fix: one worker served while the second
+failed `CreateIoCompletionPort` with `WinError 87`. A test that only counted
+successful responses would have incorrectly certified it; both serving PIDs are
+required. The precise Winsock shared-socket mode transition remains unknown.
+
+The harness now fails fast for native Windows with more than one worker, before
+creating databases/processes, and reports the actual Python platform/version.
+This prevents misleading or stalled validation; it does not patch upstream
+Winsock/uvicorn. Multi-worker acceptance must run under Linux. The existing CLI
+single-worker launch and Linux behavior are unchanged. An earlier diagnostic
+attempt that broke MCP imports by replacing `Popen` with a function was excluded;
+the corrected reproduction retained its class interface and exercised MCP.
+
+The bounded standalone reproduction is included for independent verification:
+
+```text
+python scripts/check_uvicorn_accept.py --workers 2 --out ../accept-default
+python scripts/check_uvicorn_accept.py --workers 2 --loop asyncio:ProactorEventLoop --out ../accept-proactor
+```
+
+The first command reproduced the Windows accept stall. The second is a diagnostic
+counterexample, not a supported workaround; it must fail if only one worker serves.
+On Linux use the default loop. The probe writes a report and bounded stack dumps,
+closes its clients and stops only the server process tree it created.

@@ -32,6 +32,7 @@ import argparse
 import asyncio
 import json
 import os
+import platform
 import random
 import re
 import secrets
@@ -2121,6 +2122,7 @@ class Run:
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "source": {"commit": self.source_commit, "dirty": self.source_dirty},
+            "runtime": {"platform": sys.platform, "python": platform.python_version()},
             "config": {k: v for k, v in vars(self.args).items() if k not in {"database_url"}},
             "ok": report["ok"] and not self.violations.counts,
             "checks": report,
@@ -2261,6 +2263,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         parser.error("--database-url (or TEAM_MEMORY_E2E_DATABASE_URL) is required")
     if args.users < len(BASE_ROSTER):
         parser.error(f"--users must be at least {len(BASE_ROSTER)} (the base roster)")
+    if args.api_workers < 1:
+        parser.error("--api-workers must be positive")
+    if sys.platform == "win32" and args.api_workers > 1:
+        parser.error("native Windows multi-worker uvicorn can block in shared-listener accept(); "
+                     "run the multi-worker harness in Linux/WSL instead. "
+                     "--api-workers 1 is supported but does not validate multiple workers")
     try:
         base.e2e_database_url(args.database_url, MAIN_DB)
     except ValueError as exc:

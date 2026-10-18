@@ -14,6 +14,19 @@ Reports now include `source.commit` and `source.dirty`. Run from a clean commit
 for release evidence. Personal retirement is a required check, not a known gap.
 The original findings document the earlier code, not the current fixes.
 
+Reports also record `runtime.platform` and `runtime.python`. Native Windows supports
+one API worker only. Run `--api-workers 2` (or higher) from a Linux Python runtime,
+including WSL or a Linux container. Running a Windows Python executable from WSL
+still uses Windows and is rejected before any fixture is created. Do not silently
+reduce the worker count when validating concurrency.
+
+A two-worker Windows run reproduced a 120-second OAuth GET timeout before ASGI
+admission: the worker event loop was blocked in synchronous Winsock `accept()`.
+The same failure reproduced without Brain, PostgreSQL or OAuth in a minimal
+uvicorn ASGI server. Forcing Proactor is not a valid workaround for a shared
+listener: a second worker failed with `WinError 87` registering it with IOCP.
+See [the diagnostic evidence](../reports/team-locking-regressions.md#windows-multi-worker-transport).
+
 ## What it runs
 
 - The real API (`uvicorn apps.api.main:app`, `--api-workers N`) and the real worker

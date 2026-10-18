@@ -25,6 +25,8 @@ jobs:
         run: python scripts/run_lite_ci.py --install
       - name: Zero-service SQLite acceptance
         run: python scripts/run_lite_ci.py
+      - name: Load harness platform and fail-fast regressions
+        run: python -m pytest tests/test_team_memory_load_e2e.py -q
 
   public-privacy:
     runs-on: ubuntu-latest
