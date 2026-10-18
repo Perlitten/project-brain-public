@@ -105,6 +105,10 @@ TOOL_ANNOTATIONS: dict[str, ToolAnnotations] = {
     "team_list_proposals": _annotations("List memory proposals", read_only=True),
     "team_approve_proposal": _annotations("Approve a memory proposal", read_only=False, idempotent=True),
     "team_reject_proposal": _annotations("Reject a memory proposal", read_only=False, idempotent=True),
+    "team_task_plan": _annotations("Show a team task plan", read_only=True),
+    "team_coordination_overlaps": _annotations("List team scope overlaps", read_only=True),
+    "team_list_leases": _annotations("List team leases", read_only=True),
+    "team_integration_queue": _annotations("Show the integration queue", read_only=True),
 }
 
 

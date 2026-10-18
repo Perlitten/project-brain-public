@@ -206,6 +206,15 @@ green ADR/CI is not team readiness.
   revocation checkpoints, environments, timeout/cancel/crash fencing.
 - **M3 after M1/M2:** same-task subtasks/dependencies/coordinator, semantic overlap,
   instruction-resolution versions, critical leases and current-base integration queue.
+  First slice (2026-10-18): subtasks with an acyclic dependency graph and a
+  coordinator that requests runs only for ready subtasks; conservative overlap
+  warnings on declared scope paths and live leases (response + activity feed);
+  per-run snapshots of decision/rule versions with superseded detection;
+  exclusive expiring leases with fencing tokens, released on member revocation;
+  an ordered integration queue re-checked against the current base
+  (`needs_rebase`, `stale_instructions`) with independent Reviewer authority.
+  Still open: graph-neighbour overlap, actual touched-file scope, a real merge or
+  combined-patch validation, board UI, administrator lease break.
 - **M4 after M1 (execution evidence also needs M2):** governed versioned memory,
   exact-source provenance, independent review, draft isolation and optimistic updates.
 - **M5 after M1, integrated with M2–M4:** invitation/board/conflict UX, one-team cloud

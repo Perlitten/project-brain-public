@@ -263,3 +263,92 @@ class TeamActivityEvent(Base):
     summary: Mapped[str] = mapped_column(String(255), nullable=False)
     dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class TeamTaskPlan(Base):
+    """Coordination data of one team task (M3): its parent, sibling dependencies and declared scope.
+
+    A subtask is an ordinary team task (``team_task_bindings``) with a plan row
+    naming its parent. ``depends_on`` lists sibling task ids (same parent) that
+    must be done before a run for this task may be requested; the dependency
+    graph is kept acyclic on every write. ``scope_paths`` are the
+    repository-relative paths or globs the task declares it will touch; overlap
+    detection compares them with other active tasks and live leases."""
+    __tablename__ = "team_task_plans"
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("team_task_bindings.task_id"), primary_key=True)
+    parent_task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("team_task_bindings.task_id"), nullable=True,
+                                                             index=True)
+    depends_on: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    scope_paths: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    updated_by: Mapped[int] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+
+
+class TeamResourceLease(Base):
+    """An exclusive, expiring lease on a repository path or named resource (M3 critical leases).
+
+    One row per (repository, resource); acquiring a released or expired lease
+    is a compare-and-swap on that row that increases ``fencing_token``, the same
+    pattern as the M2 execution lease (``agent_run_executions``). Renewing or
+    releasing must present the holder and the current token, so a holder whose
+    lease expired or was taken over can change nothing. Revoking a member
+    releases the leases held by the member and by the runs they initiated."""
+    __tablename__ = "team_resource_leases"
+    __table_args__ = (UniqueConstraint("repository_id", "resource", name="uq_team_resource_leases_resource"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("team_projects.id"), nullable=False, index=True)
+    repository_id: Mapped[int] = mapped_column(ForeignKey("team_project_repositories.repository_id"), nullable=False)
+    resource: Mapped[str] = mapped_column(String(512), nullable=False)
+    holder_id: Mapped[int] = mapped_column(ForeignKey("principals.id"), nullable=False, index=True)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("team_task_bindings.task_id"), nullable=True)
+    fencing_token: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    acquired_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    released_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class TeamRunResolution(Base):
+    """The rule and decision versions a run resolved when it was requested (M3 instruction resolution).
+
+    ``resolved`` is a list of ``{"kind": "decision"|"rule", "id": ..., "version": n}``
+    for the canonical, active rows that applied to the task's repository (and
+    the global ones) at that moment. Integration compares it with the current
+    canonical rows and flags the run when any of them was edited, superseded or
+    retired since."""
+    __tablename__ = "team_run_resolutions"
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(f"{HARNESS_SCHEMA}.agent_runs.id"), primary_key=True)
+    resolved: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    resolved_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+
+
+class TeamIntegrationEntry(Base):
+    """One completed run waiting for integration, in queue order (``id``) per repository (M3).
+
+    No git merge happens here: an entry records the run's base and head, and
+    ``integrate`` re-validates it against the current base revision of the
+    target. A different base gives ``needs_rebase``; instructions superseded
+    since the run started give ``stale_instructions``; otherwise the entry is
+    ``integrated`` by an independent reviewer. ``version`` guards every
+    transition (compare-and-swap)."""
+    __tablename__ = "team_integration_entries"
+    __table_args__ = (CheckConstraint("status IN ('queued','needs_rebase','stale_instructions','integrated','rejected')",
+                                      name="ck_team_integration_status"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("team_projects.id"), nullable=False, index=True)
+    repository_id: Mapped[int] = mapped_column(ForeignKey("team_project_repositories.repository_id"), nullable=False)
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("team_task_bindings.task_id"), nullable=False, index=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(f"{HARNESS_SCHEMA}.agent_runs.id"), nullable=False,
+                                              unique=True)
+    base_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    head_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    checked_base_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    checked_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    enqueued_by: Mapped[int] = mapped_column(ForeignKey("principals.id"), nullable=False)
+    enqueued_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+    decided_by: Mapped[int | None] = mapped_column(ForeignKey("principals.id"), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

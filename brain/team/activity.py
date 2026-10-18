@@ -13,8 +13,9 @@ other dated trace:
   never appear in the feed; a promoted learning appears once it is shared;
 * invitations (created, accepted, revoked) from ``team_invitations``;
 * team tasks and runs from ``team_task_bindings`` / ``agent_runs``;
-* membership and project-role changes and queued jobs from
-  ``team_activity_events`` (written by provisioning and the job endpoints).
+* membership and project-role changes, queued jobs and coordination events
+  (scope overlaps, integration queue outcomes) from ``team_activity_events``
+  (written by provisioning, the job endpoints and ``brain/team/coordination.py``).
 
 Authorization is never applied to fetched events. The caller passes an
 ``ActivityScope`` that the API computed with the central team-access helpers
@@ -62,12 +63,15 @@ KINDS: dict[str, tuple[str, ...]] = {
     "task": ("task.created",),
     "run": ("run.requested",),
     "job": ("job.queued",),
+    "coordination": ("coordination.overlap", "coordination.integration_queued", "coordination.integrated",
+                     "coordination.needs_rebase", "coordination.stale_instructions",
+                     "coordination.integration_rejected"),
 }
 ALL_KINDS = frozenset(kind for kinds in KINDS.values() for kind in kinds)
 # Families only team administrators read: team administration itself, and the
 # episode/skill memory whose API is administrator-only as well.
 ADMIN_FAMILIES = frozenset({"membership", "project_role", "execution", "invitation", "episode", "skill"})
-TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "job"})
+TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "job", "coordination"})
 
 _PRINCIPAL_LABEL = re.compile(r"^principal:(\d+)$")
 

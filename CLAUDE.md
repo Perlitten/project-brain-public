@@ -60,6 +60,7 @@ Start with the files for the task rather than relying on a stale repository size
 | Who may read/write a repository (solo vs. team state, roles, `Named credential required`) | `brain/team/authorization.py` (`team_state`, `authorize_repository`), `apps/api/team_access.py`, `apps/api/auth.py::named_credential_required`; `tests/test_team_transport.py` |
 | Deferred MCP results and inline byte budgets | `apps/mcp_server/deferred_payload.py`, `tests/test_mcp_deferred_payload.py` |
 | Bounded team execution (M2: grants, capabilities, leases, subprocess backend) | `brain/team/execution.py`, `brain/execution/bounded.py`, `docs/operations/TEAM_EXECUTION.md`, `tests/test_team_execution.py` |
+| Team coordination (M3: subtasks/dependencies, overlap warnings, instruction versions, fenced leases, integration queue) | `brain/team/coordination.py`, `apps/api/routers/team_coordination.py`, `docs/TEAM.md#team-coordination-m3`, `tests/test_team_coordination.py` |
 | Background jobs | `brain/workers/tasks.py`, `queue.py`, `worker.py` |
 | DB schema, migrations | `brain/database/models.py`, `harness_models.py`, `migrations.py` |
 | Settings, paths | `brain/config/settings.py`, `paths.py` |
