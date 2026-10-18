@@ -13,10 +13,11 @@ other dated trace:
   never appear in the feed; a promoted learning appears once it is shared;
 * invitations (created, accepted, revoked) from ``team_invitations``;
 * team tasks and runs from ``team_task_bindings`` / ``agent_runs``;
-* membership and project-role changes, queued jobs and memory review events
-  (``memory.proposed`` / ``memory.approved`` / ``memory.rejected``) from
-  ``team_activity_events`` (written by provisioning, the job endpoints and
-  ``brain/memory/proposals.py``).
+* membership and project-role changes, single sign-on bindings, queued jobs,
+  coordination events (scope overlaps, integration queue outcomes) and memory
+  review events (``memory.proposed`` / ``memory.approved`` / ``memory.rejected``)
+  from ``team_activity_events`` (written by provisioning, ``brain.team.oidc``, the
+  job endpoints, ``brain/team/coordination.py`` and ``brain/memory/proposals.py``).
 
 Authorization is never applied to fetched events. The caller passes an
 ``ActivityScope`` that the API computed with the central team-access helpers
@@ -61,17 +62,21 @@ KINDS: dict[str, tuple[str, ...]] = {
     "project_role": ("project_role.granted", "project_role.changed", "project_role.revoked"),
     "execution": ("execution.granted", "execution.revoked"),
     "invitation": ("invitation.created", "invitation.accepted", "invitation.revoked"),
+    "sso": ("sso.bound", "sso.unbound"),
     "task": ("task.created",),
     "run": ("run.requested",),
     "job": ("job.queued",),
+    "coordination": ("coordination.overlap", "coordination.integration_queued", "coordination.integrated",
+                     "coordination.needs_rebase", "coordination.stale_instructions",
+                     "coordination.integration_rejected"),
     # Governed memory review: a proposal was submitted, approved or rejected (no draft content in the event).
     "memory": ("memory.proposed", "memory.approved", "memory.rejected"),
 }
 ALL_KINDS = frozenset(kind for kinds in KINDS.values() for kind in kinds)
 # Families only team administrators read: team administration itself, and the
 # episode/skill memory whose API is administrator-only as well.
-ADMIN_FAMILIES = frozenset({"membership", "project_role", "execution", "invitation", "episode", "skill"})
-TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "job", "memory"})
+ADMIN_FAMILIES = frozenset({"membership", "project_role", "execution", "invitation", "sso", "episode", "skill"})
+TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "sso", "job", "coordination", "memory"})
 
 _PRINCIPAL_LABEL = re.compile(r"^principal:(\d+)$")
 

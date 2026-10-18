@@ -47,6 +47,34 @@ SEPARATE_OPERATIONS = {
     ("get", "/team/projects/{project_id}/tasks"): "live team membership/project policy; test_team_transport/foundations",
     ("post", "/team/projects/{project_id}/tasks"): "live team membership/project policy; test_team_transport/foundations",
     ("post", "/team/projects/{project_id}/tasks/{task_id}/runs"): "task-bound delegation; test_team_transport/foundations",
+    ("post", "/team/projects/{project_id}/tasks/{task_id}/subtasks"):
+        "live team membership/project policy; test_team_coordination",
+    ("get", "/team/projects/{project_id}/tasks/{task_id}/plan"):
+        "live team membership/project policy; test_team_coordination",
+    ("put", "/team/projects/{project_id}/tasks/{task_id}/plan"):
+        "live team membership/project policy; test_team_coordination",
+    ("post", "/team/projects/{project_id}/tasks/{task_id}/dispatch"):
+        "live team membership/project policy; test_team_coordination",
+    ("get", "/team/projects/{project_id}/tasks/{task_id}/runs/{run_id}/instructions"):
+        "live team membership/project policy; test_team_coordination",
+    ("get", "/team/projects/{project_id}/overlaps"):
+        "live team membership/project policy; test_team_coordination",
+    ("get", "/team/projects/{project_id}/leases"):
+        "live team membership/project policy; test_team_coordination",
+    ("post", "/team/projects/{project_id}/leases"):
+        "live team membership/project policy; test_team_coordination",
+    ("post", "/team/projects/{project_id}/leases/{lease_id}/renew"):
+        "live team membership/project policy; test_team_coordination",
+    ("post", "/team/projects/{project_id}/leases/{lease_id}/release"):
+        "live team membership/project policy; test_team_coordination",
+    ("get", "/team/projects/{project_id}/integration"):
+        "live team membership/project policy; test_team_coordination",
+    ("post", "/team/projects/{project_id}/integration"):
+        "live team membership/project policy; test_team_coordination",
+    ("post", "/team/projects/{project_id}/integration/{entry_id}/integrate"):
+        "live team membership/project policy; test_team_coordination",
+    ("post", "/team/projects/{project_id}/integration/{entry_id}/reject"):
+        "live team membership/project policy; test_team_coordination",
     ("get", "/team/projects/"): "team administrator check in handler; test_team_provisioning",
     ("post", "/team/projects/"): "team administrator check in handler; test_team_provisioning",
     ("get", "/team/projects/members"): "team administrator check in handler; test_team_provisioning",
@@ -75,6 +103,7 @@ SEPARATE_OPERATIONS = {
     ("get", "/team/oidc/config"): "public SSO availability flag, no data; test_team_oidc",
     ("post", "/team/oidc/start"): "unauthenticated SSO start, throttled; test_team_oidc",
     ("post", "/team/oidc/callback"): "single-use OIDC flow + browser binding + ID token, throttled; test_team_oidc",
+    ("post", "/team/oidc/logout"): "revokes only the caller's own SSO session credential; test_team_oidc",
     ("post", "/v1/intake/capture"): "handler-level bridge auth; test_telegram_bridge_auth",
     ("post", "/v1/assistant/reply"): "handler-level bridge auth; test_telegram_bridge_auth",
     ("post", "/webhooks/git-merge"): "webhook secret policy; test_worker_scheduler",

@@ -858,12 +858,15 @@ def scenario_3_team(env: Env, api: Api, st: State) -> None:
     r.check(s, "member OAuth token reads the allowed project",
             ok and api.status("GET", "/learnings", st.bob_access, params={"repo_path": REPO_A}) == 200)
     alice_team = oauth_flow(api, st.alice_key, "team:read core:write", "e2e alice team")
-    # Gap: invited members are verified as brain-invitation/invitation:<id>, but the consent
-    # page maps an API-key approver to brain-credential/<name> (brain/team/oauth_link.py
-    # approver_identity), so member_grant finds no membership.
-    r.gap(s, "invited member approves team-scoped OAuth with her key",
-          "access_token" in alice_team,
-            {k: v for k, v in alice_team.items() if "token" not in k})
+    # Invited members are verified as brain-invitation/invitation:<id>; the consent page finds
+    # that membership from the approving key's principal (brain/team/oauth_link.py approver_grant).
+    team_owner = env.sql(MAIN_DB, "SELECT p.name FROM api_credentials c JOIN principals p ON p.id=c.principal_id "
+                                  "WHERE c.key_hash='"
+                                  f"{hashlib.sha256(alice_team['access_token'].encode()).hexdigest()}'"
+                         ) if "access_token" in alice_team else []
+    r.check(s, "invited member approves team-scoped OAuth with her key, bound to her own principal",
+            team_owner == [{"name": "alice"}],
+            {"grant": {k: v for k, v in alice_team.items() if "token" not in k}, "owner": team_owner})
     alice_personal = oauth_flow(api, st.alice_key, "core:write", "e2e alice personal")
     if "access_token" in alice_personal:
         st.alice_oauth_access = r.secret(alice_personal["access_token"])
@@ -1023,18 +1026,18 @@ def scenario_3_revoke(env: Env, api: Api, st: State) -> None:
     r.check(s, "alice's pending proposals are withdrawn with her membership",
             bool(proposal) and proposal[0]["state"] == "withdrawn", {"proposal": proposal})
     if st.alice_oauth_access:
-        # Gap: the personal-scope token alice approved belongs to a service principal
-        # (oauth:<client>:...), not to her, so revoking her does not revoke it. Team state
-        # keeps it powerless (403); see the post-dissolve check below.
+        # The personal-scope token alice approved lives on a service principal (oauth:<client>:...),
+        # not on her; revoking her revokes the grants she approved (revoke_oauth_approvals).
         evidence: dict[str, Any] = {"GET /decisions": api.status("GET", "/decisions", st.alice_oauth_access)}
         evidence["refresh"], grant = refresh_grant(api, st.alice_oauth_client, st.alice_oauth_refresh)
         if grant.get("access_token"):
-            # Refresh rotates: the new pair is what a client would hold from now on.
+            # A refresh that still works rotates the pair: keep the newest one, so the
+            # post-dissolve check below tests what a client would hold from now on.
             st.alice_oauth_access = r.secret(grant["access_token"])
             st.alice_oauth_refresh = r.secret(grant.get("refresh_token") or "")
             evidence["refreshed_access_GET /decisions"] = api.status("GET", "/decisions", st.alice_oauth_access)
-        r.gap(s, "alice's personal-scope OAuth credentials revoked with her (access 401, refresh refused)",
-              evidence["GET /decisions"] == 401 and evidence["refresh"] >= 400, evidence)
+        r.check(s, "alice's personal-scope OAuth credentials revoked with her (access 401, refresh refused)",
+                evidence["GET /decisions"] == 401 and evidence["refresh"] >= 400, evidence)
     _, rows = api.call("GET", "/team/invitations", st.admin_key)
     state = next((row["state"] for row in rows if row["id"] == st.alice_invitation), "missing")
     r.check(s, "invitation state: revoked", state == "revoked", state)
@@ -1061,8 +1064,8 @@ def scenario_3_revoke(env: Env, api: Api, st: State) -> None:
             api.status("GET", "/decisions", st.alice_key) == 401 and api.status("GET", "/decisions", st.admin_key) == 401)
     if st.alice_oauth_access:
         status = api.status("GET", "/decisions", st.alice_oauth_access)
-        r.gap(s, "after dissolve a revoked member's personal OAuth token (latest rotation) stays dead",
-              status == 401, {"GET /decisions": status, "note": "200 here means the token outlived its approver"})
+        r.check(s, "after dissolve a revoked member's personal OAuth token (latest rotation) stays dead",
+                status == 401, {"GET /decisions": status, "note": "200 here means the token outlived its approver"})
 
 
 # --------------------------------------------------------------------------- main

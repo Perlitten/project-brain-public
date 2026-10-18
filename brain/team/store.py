@@ -119,6 +119,9 @@ async def request_run(session: AsyncSession, caller: ResolvedPrincipal, project_
     found = await existing()
     if found is not None:
         return run_dict(found)
+    from brain.team import coordination  # lazy: coordination builds on this module
+
+    await coordination.require_dependencies_done(session, task_id)
     binding = await fresh(session, TeamTaskBinding, TeamTaskBinding.task_id == task_id)
     raw_key = generate_credential()
     try:
@@ -138,6 +141,7 @@ async def request_run(session: AsyncSession, caller: ResolvedPrincipal, project_
                            request_key=payload["idempotency_key"], request_digest=fingerprint)
             session.add(run)
             await session.flush()
+            await coordination.snapshot_instructions(session, run)
             return run_dict(run, raw_key)
     except IntegrityError:
         found = await existing()

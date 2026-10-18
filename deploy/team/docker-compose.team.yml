@@ -1,0 +1,177 @@
+# Project Brain - one team on one host, behind HTTPS.
+#
+# An overlay on deploy/docker-compose.prod.yml; it never replaces it. It adds:
+#   - caddy: the only published ports (80, 443), automatic TLS for two domains
+#     (BRAIN_WEB_DOMAIN -> dashboard, BRAIN_API_DOMAIN -> API and remote MCP);
+#   - web: the Next.js dashboard, reachable only through caddy;
+#   - worker-executor (profile "executor"): a worker with bounded execution on.
+#     It replaces the plain worker, so set BRAIN_PLAIN_WORKER_REPLICAS=0 when
+#     you enable the profile (two workers with different execution settings
+#     would race for the same jobs).
+#
+# Guide: docs/operations/TEAM_DEPLOY.md. Run from the repository root:
+#   docker compose --project-directory . --env-file .env \
+#     -f deploy/docker-compose.prod.yml -f deploy/team/docker-compose.team.yml up -d
+# or copy this file to ./docker-compose.local.yml so deploy/server_up.sh and
+# deploy/doctor.sh include it. One team per host: the project name stays
+# "brain" and the container names stay brain-*.
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: brain-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      BRAIN_WEB_DOMAIN: ${BRAIN_WEB_DOMAIN:?BRAIN_WEB_DOMAIN must name the dashboard host}
+      BRAIN_API_DOMAIN: ${BRAIN_API_DOMAIN:?BRAIN_API_DOMAIN must name the API host}
+      BRAIN_ACME_EMAIL: ${BRAIN_ACME_EMAIL:?BRAIN_ACME_EMAIL must name the certificate contact}
+    volumes:
+      - ./deploy/team/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        BRAIN_BUILD_SHA: ${BRAIN_BUILD_SHA:-unknown}
+        BRAIN_REQUIRE_RELEASE_IDENTITY: ${BRAIN_REQUIRE_RELEASE_IDENTITY:-false}
+    image: brain-web:${BRAIN_IMAGE_TAG:-latest}
+    container_name: brain-web
+    environment:
+      BRAIN_API_URL: http://api:8000
+      # The server key: the dashboard uses it while the Brain is solo and seals
+      # member cookies with it once the Brain has members.
+      BRAIN_API_KEY: ${PROJECT_BRAIN_API_KEY:?PROJECT_BRAIN_API_KEY must be set}
+      BRAIN_PUBLIC_API_URL: https://${BRAIN_API_DOMAIN}
+      WEB_BASIC_AUTH: ${WEB_BASIC_AUTH:-}
+      BRAIN_TIMEZONE: ${BRAIN_TIMEZONE:-UTC}
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    restart: unless-stopped
+
+  api:
+    environment:
+      BRAIN_WEB_URL: https://${BRAIN_WEB_DOMAIN}
+      BRAIN_PUBLIC_URL: https://${BRAIN_API_DOMAIN}
+      # Read-only view of the backups deploy/server_up.sh (or your own job)
+      # writes, so `brain team doctor` can report the newest one.
+      BRAIN_BACKUP_DIR: /backups
+    volumes:
+      - ${BRAIN_BACKUP_HOST_DIR:-./backups}:/backups:ro
+      # Read-only: the API only checks the execution root exists.
+      - ${BRAIN_EXECUTION_HOST_DIR:-./executions}:/var/lib/brain/executions:ro
+
+  worker:
+    deploy:
+      replicas: ${BRAIN_PLAIN_WORKER_REPLICAS:-1}
+    environment:
+      # The plain worker never executes; the executor profile does.
+      BRAIN_EXECUTION_ENABLED: "false"
+      BRAIN_BACKUP_DIR: /backups
+    volumes:
+      - ${BRAIN_BACKUP_HOST_DIR:-./backups}:/backups:ro
+
+  worker-executor:
+    # A full worker (same image, mounts and hardening as the prod worker) with
+    # bounded execution on. Spelled out instead of `extends`, which would
+    # resolve the prod file's relative paths from deploy/. Keep the shared
+    # parts in step with the worker in deploy/docker-compose.prod.yml.
+    image: brain-api:${BRAIN_IMAGE_TAG:-latest}
+    pull_policy: never
+    container_name: brain-worker-executor
+    profiles: ["executor"]
+    command: python -m brain.workers.worker
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-brain_db}
+      REDIS_URL: redis://redis:6379/0
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      REPO_ROOT: /app
+      CONTEXT_PACK_OUTPUT_DIR: /app/context_packs
+      REPORT_OUTPUT_DIR: /app/reports
+      ALLOWED_REPO_ROOTS: ${ALLOWED_REPO_ROOTS:-/indexed,/repos,/repo}
+      BRAIN_SETUP_STATE_DIR: /app/reports/.setup
+      BRAIN_SOURCE_MIRROR_DIR: ${BRAIN_SOURCE_MIRROR_DIR-/var/lib/brain/mirrors}
+      BRAIN_ORIGIN_REMOTES: ${BRAIN_ORIGIN_REMOTES:-}
+      BRAIN_ORIGIN_POLL_INTERVAL_S: ${BRAIN_ORIGIN_POLL_INTERVAL_S:-300}
+      ENVIRONMENT: production
+      WORKER_POOL_NAME: maintenance
+      BRAIN_EXECUTION_ENABLED: "true"
+      BRAIN_EXECUTION_ROOT: /var/lib/brain/executions
+      BRAIN_EXECUTION_TOOLS: ${BRAIN_EXECUTION_TOOLS:-{}}
+      BRAIN_EXECUTION_SECRETS: ${BRAIN_EXECUTION_SECRETS:-{}}
+      BRAIN_EXECUTION_EGRESS: ${BRAIN_EXECUTION_EGRESS:-}
+      BRAIN_BACKUP_DIR: /backups
+    volumes:
+      - ./reports:/app/reports
+      - ./context_packs:/app/context_packs
+      - ${BRAIN_INDEXED_PROJECTS_DIR:-./indexed-projects}:/indexed:ro
+      - ${BRAIN_TARGET_REPO_DIR:-./target-repo}:/repo:ro
+      - source_mirrors:/var/lib/brain/mirrors
+      # Working copies; the host directory must be owned by uid 999 (the
+      # image's brain user), see TEAM_DEPLOY.md.
+      - ${BRAIN_EXECUTION_HOST_DIR:-./executions}:/var/lib/brain/executions
+      - ${BRAIN_BACKUP_HOST_DIR:-./backups}:/backups:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os,redis; p=os.environ.get('WORKER_REDIS_PREFIX','brain:worker'); enabled=os.environ.get('BRAIN_WORKER_POOLS_V2_ENABLED','false').lower() in ('1','true','yes','on'); p=p+':'+os.environ.get('WORKER_POOL_NAME','maintenance') if enabled else p; r=redis.from_url(os.environ['REDIS_URL']); raise SystemExit(0 if r.get(p+':heartbeat') else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: 2g
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

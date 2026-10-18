@@ -5,6 +5,7 @@ inspection, and capability management.
 """
 
 import os
+import uuid
 from pathlib import Path
 from typing import List
 
@@ -12,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import registry_authority
+from apps.api.registry_access import register_for_team, registry_authority
 from apps.api.team_access import team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.lab.laboratory import BUILTIN_PROFILES
@@ -45,6 +46,8 @@ class RegisterRequest(BaseModel):
     organization: str = ""
     owner: str = ""
     allowed_roots: List[str] = []
+    # Team state only: the team project whose members may use the repository. Ignored in solo state.
+    project_id: uuid.UUID | None = None
 
 
 class UpdateCapabilitiesRequest(BaseModel):
@@ -68,10 +71,12 @@ async def list_repositories():
 
 
 @router.post("/repositories", dependencies=[Depends(require_scope("workspace:write")), Depends(team_administrator_access())])
-async def register_repository(req: RegisterRequest):
+async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     """Register a new repository.
 
     Trust level is resolved server-side — do not accept trusted roles from request body.
+    In team state the repository is also linked to a team project the caller administers
+    (``register_for_team``); a registration no member could use is refused.
     """
     store = _get_store()
 
@@ -133,10 +138,15 @@ async def register_repository(req: RegisterRequest):
     )
 
     try:
-        saved = store.register(record, actor="api", source="api")
-        return {"status": "success", "repository": saved.to_dict()}
+        saved, project_id = await register_for_team(
+            principal, canonical, req.project_id,
+            lambda: store.register(record, actor="api", source="api"))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    response = {"status": "success", "repository": saved.to_dict()}
+    if project_id is not None:
+        response["project_id"] = str(project_id)
+    return response
 
 
 @router.get("/repositories/{repository_id}", dependencies=[Depends(require_scope("workspace:read"))])

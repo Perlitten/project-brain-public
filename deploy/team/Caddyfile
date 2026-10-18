@@ -1,0 +1,19 @@
+# Project Brain - one team. Caddy obtains and renews certificates for both
+# hosts on its own; both DNS names must point at this server and ports 80/443
+# must be reachable from the internet. Used by deploy/team/docker-compose.team.yml.
+{
+	email {$BRAIN_ACME_EMAIL}
+}
+
+{$BRAIN_WEB_DOMAIN} {
+	encode gzip
+	reverse_proxy web:3100
+}
+
+{$BRAIN_API_DOMAIN} {
+	encode gzip
+	# Remote MCP streams responses; do not buffer them.
+	reverse_proxy api:8000 {
+		flush_interval -1
+	}
+}

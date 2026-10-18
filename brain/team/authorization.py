@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Literal
@@ -12,11 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
-from brain.database.models import ApiCredential, Principal
+from brain.database.models import ApiCredential, Principal, Repository
 from brain.database.harness_models import AgentTask
 from brain.team.models import (AgentRun, ProjectMember, ProjectRepository, Team, TeamMember, TeamProject,
                                TeamTaskBinding)
 from brain.team.restore_fence import FENCED, access_fenced
+from brain.workspace.models import RepositoryRecord, TrustLevel
+from brain.workspace.registry_store import RegistryCorruptionError
+from brain.workspace.trust import load_registry_records, records_for_path, trust_withdrawn
 
 
 class Permission(StrEnum):
@@ -274,16 +277,68 @@ def solo_authority(caller: ResolvedPrincipal) -> Authority:
     return Authority(caller.id, caller.id, caller.credential_id, FULL_AUTHORITY, team_state="solo")
 
 
+# Registry trust caps what anyone may do on a repository; membership decides who may use it.
+# A level not listed here leaves the project role in charge (route-level capability checks,
+# such as BUILD_GRAPH or EXECUTE_VALIDATION, still apply on top). An unknown level grants nothing.
+REGISTRY_TRUST_CEILING: dict[str, frozenset[Permission]] = {
+    TrustLevel.TRUSTED_INTERNAL.value: FULL_AUTHORITY,
+    TrustLevel.TRUSTED_READ_ONLY.value: FULL_AUTHORITY,
+    TrustLevel.FIXTURE.value: FULL_AUTHORITY,
+    # Registered as untrusted external code: its registry capabilities are read_source only.
+    TrustLevel.UNTRUSTED_EXTERNAL.value: frozenset({Permission.READ}),
+    TrustLevel.DISABLED.value: frozenset(),
+}
+
+
+def _record_ceiling(record: RepositoryRecord) -> frozenset[Permission]:
+    if trust_withdrawn(record):
+        return frozenset()
+    return REGISTRY_TRUST_CEILING.get(record.trust_level, frozenset())
+
+
+def registry_trust_ceiling(records: list[RepositoryRecord], *paths: str | None) -> tuple[frozenset[Permission], str]:
+    """The permissions registry trust leaves open on the repository at ``paths``, and why it narrows them.
+
+    Every registry record matching any of the paths narrows the result; a
+    repository with no record is unrestricted (the registry is optional)."""
+    ceiling = FULL_AUTHORITY
+    for path in paths:
+        for record in records_for_path(records, path):
+            ceiling &= _record_ceiling(record)
+    if not ceiling:
+        return ceiling, "Repository is disabled or untrusted in the workspace registry"
+    if ceiling != FULL_AUTHORITY:
+        return ceiling, "Repository is registered as untrusted external code: read only"
+    return ceiling, ""
+
+
+def registry_records() -> list[RepositoryRecord]:
+    """Registry records for an authorization decision; an unreadable registry fails closed."""
+    try:
+        return load_registry_records()
+    except (RegistryCorruptionError, OSError) as exc:
+        logger.warning("Workspace registry unreadable during repository authorization: {}", exc)
+        raise TeamDenied("Workspace registry is unreadable; repository trust cannot be established") from exc
+
+
 async def authorize_repository(session: AsyncSession, caller: ResolvedPrincipal, repository_id: int | None,
-                               permission: Permission, *, author_id: int | None = None) -> Authority:
+                               permission: Permission, *, author_id: int | None = None,
+                               repo_path: str | None = None) -> Authority:
     """Authority over one indexed repository; ``None`` is the unscoped, every-repository surface.
 
-    Solo state short-circuits to ``solo_authority`` for any authenticated
-    caller, including the shared legacy key and dev-open access. In team state
-    the caller needs a live named credential; a repository attached to a
+    The one place where repository trust (``brain/workspace`` registry) and
+    human membership (``brain/team``) meet. Solo state short-circuits to
+    ``solo_authority`` for any authenticated caller, including the shared
+    legacy key and dev-open access, and does not consult the registry. In team
+    state the caller needs a live named credential; a repository attached to a
     project is checked through ``authorize`` with the member's project role,
     while an unattached repository or an unscoped call requires a team
-    administrator and grants full authority.
+    administrator. The result is then capped by the registry trust of the
+    repository (``registry_trust_ceiling``): a repository whose registry
+    record is disabled is denied to everyone, team administrators included,
+    even when a project lists it. ``repo_path`` names a repository that may
+    not be indexed (a registry record's canonical root); when both are given,
+    the trust of both paths applies.
 
     ``author_id`` names the author of the object being approved: approval
     (``Permission.APPROVE``) is refused when it is missing or is the caller,
@@ -292,11 +347,20 @@ async def authorize_repository(session: AsyncSession, caller: ResolvedPrincipal,
         return solo_authority(caller)
     live = await live_credential(session, caller.id, caller.credential_id)
     link = None
+    indexed_path = None
     if repository_id is not None:
         link = await fresh(session, ProjectRepository, ProjectRepository.repository_id == repository_id)
+        indexed_path = (await session.execute(
+            select(Repository.path).where(Repository.id == repository_id))).scalar_one_or_none()
     if link is None:
         member = await team_administrator(session, live)
         if permission == Permission.APPROVE and (author_id is None or author_id == member.principal_id):
             raise TeamDenied("Independent, attributed approval is required")
-        return Authority(live.id, member.principal_id, live.credential_id, FULL_AUTHORITY)
-    return await authorize(session, live, link.project_id, permission, author_id=author_id)
+        authority = Authority(live.id, member.principal_id, live.credential_id, FULL_AUTHORITY)
+    else:
+        authority = await authorize(session, live, link.project_id, permission, author_id=author_id)
+    # Trust is checked after membership so a caller without access learns nothing about the registry.
+    ceiling, reason = registry_trust_ceiling(registry_records(), indexed_path, repo_path)
+    if permission not in ceiling:
+        raise TeamDenied(reason)
+    return replace(authority, allowed=authority.allowed & ceiling)

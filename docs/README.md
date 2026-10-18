@@ -23,7 +23,8 @@ Release-specific and experimental records are separated at the end.
   member sign-in, MCP and revocation, with known limitations; reference:
   [inviting team members](operations/TEAM_INVITATIONS.md),
   optional [single sign-on (OIDC)](operations/TEAM_SSO.md),
-  [bounded team execution](operations/TEAM_EXECUTION.md) (off by default).
+  [bounded team execution](operations/TEAM_EXECUTION.md) (off by default),
+  [one-team cloud deployment](operations/TEAM_DEPLOY.md) (HTTPS, backups, `brain team doctor`).
 - [Agent deployment](operations/AGENT_DEPLOYMENT.md): operational gates for an agent running deployment.
 - [Operator runbook](../deploy/RUNBOOK.md) and [backup / restore](runbooks/backup-restore.md).
 - [Example client configs](../examples/) and [reindex-on-push helper](examples/reindex-on-push.yml).

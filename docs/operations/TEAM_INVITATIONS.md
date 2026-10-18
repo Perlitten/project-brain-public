@@ -95,9 +95,10 @@ or with `POST /team/invitations/accept` and `{"token": "pbi_..."}`. When single
 sign-on is on and the invitation names an email, they can instead open
 `https://<dashboard>/auth/oidc/start?invitation=pbi_...` (see
 [TEAM_SSO.md](TEAM_SSO.md)). Through the
-dashboard every invitee reaches the API from the dashboard server's IP, so they
-share one throttle budget of 10 attempts per 5 minutes. No credential is
-needed for that call. The CLI accepts plain `http` only to loopback. A retry with
+dashboard every invitee reaches the API from the dashboard server, which passes
+the invitee's address on in `X-Forwarded-For`; the API counts each invitee
+separately only when `BRAIN_TRUSTED_PROXY_IPS` lists the dashboard (see
+[Abuse limits](#abuse-limits)). No credential is needed for that call. The CLI accepts plain `http` only to loopback. A retry with
 the same token after success returns the same member with `"credential": null`;
 the credential cannot be recovered, only revoked and reissued.
 
@@ -124,7 +125,21 @@ recorded state.
 ## Abuse limits
 
 - Redemption is limited to 10 attempts per client IP per 5 minutes (HTTP 429
-  with `Retry-After`). The attempt log lives in Redis, so every API process
+  with `Retry-After`).
+- The client IP is the socket peer, unless the peer is listed in
+  `BRAIN_TRUSTED_PROXY_IPS` (comma-separated addresses or CIDRs, empty by
+  default). Then the API reads `X-Forwarded-For` from the right, skips every
+  listed hop, and uses the first address that is not listed. List the web
+  dashboard's address as the API sees it, plus any reverse proxy between them
+  (for nginx in front of the API, its address too, since it appends the
+  dashboard's address to the header). The dashboard sends the address its own
+  front proxy reported (the rightmost `X-Forwarded-For` entry, else
+  `X-Real-IP`; Vercel sets both), so run it behind such a proxy. Without the
+  setting, every dashboard invitee shares the dashboard's one budget, and a
+  forged header from an unlisted peer is ignored either way. The single sign-on
+  throttle uses the same address. Uvicorn may already have rewritten the peer
+  from the header for its own trusted hosts (`--forwarded-allow-ips`,
+  default `127.0.0.1`); the API then starts from that address. The attempt log lives in Redis, so every API process
   and replica shares one limit. If Redis errors or does not answer within two
   seconds, that attempt is counted by a per-process fallback instead. Lite has
   no team; it keeps the window in memory, which is exact for its single

@@ -27,9 +27,14 @@ _NEUTRAL_ENV = {
     "BRAIN_EXECUTION_TOOLS": "{}",
     "BRAIN_EXECUTION_SECRETS": "{}",
     "BRAIN_EXECUTION_EGRESS": "",
+    "BRAIN_EXECUTION_BACKEND": "subprocess",
+    "BRAIN_EXECUTION_ENVIRONMENTS": "{}",
+    "BRAIN_EXECUTION_EGRESS_PROXY_IMAGE": "",
     # Single sign-on changes invitation acceptance; tests that need it patch settings.
     "BRAIN_OIDC_ENABLED": "false",
     "BRAIN_OIDC_REQUIRE_FOR_INVITATIONS": "false",
+    # Trusting forwarded addresses changes the throttle key; tests that need it patch settings.
+    "BRAIN_TRUSTED_PROXY_IPS": "",
     "OPENAI_API_KEY": "",
     "ANTHROPIC_API_KEY": "",
     "GOOGLE_API_KEY": "",

@@ -286,6 +286,44 @@ async def test_accept_is_rate_limited_per_client(team_db, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_accept_throttle_keys_dashboard_visitors_by_the_address_a_trusted_proxy_forwarded(team_db, monkeypatch):
+    # The /invite page redeems every token from the dashboard server, so without a trusted
+    # proxy all its visitors shared the dashboard's one budget.
+    factory, _, _ = team_db
+    app = invite_app(factory, monkeypatch)
+    monkeypatch.setattr(team_invitations, "ACCEPT_LIMIT", 2)
+    bad = {"token": "pbi_" + "y" * 43}
+
+    async def attempt(client, forwarded):
+        response = await client.post("/team/invitations/accept", json=bad, headers={"X-Forwarded-For": forwarded})
+        return response.status_code
+
+    # Nothing trusted (the default): the header is ignored, the socket peer is the client.
+    monkeypatch.setattr(settings, "BRAIN_TRUSTED_PROXY_IPS", "")
+    async with client_for(app) as client:
+        assert [await attempt(client, f"203.0.113.{n}") for n in (1, 2, 3)] == [403, 403, 429]
+
+    monkeypatch.setattr(team_invitations, "_throttle", InProcessWindow())
+    monkeypatch.setattr(settings, "BRAIN_TRUSTED_PROXY_IPS", "127.0.0.0/8, 10.0.0.5, bogus")
+    async with client_for(app) as client:  # the socket peer, 127.0.0.1, is the dashboard
+        assert [await attempt(client, "203.0.113.1") for _ in range(3)] == [403, 403, 429]
+        assert await attempt(client, "203.0.113.2") == 403, "another visitor keeps a budget of their own"
+        # The rightmost untrusted hop is the one the trusted proxy saw; a forged prefix changes nothing.
+        assert await attempt(client, "198.51.100.9, 203.0.113.1") == 429
+        # Trusted hops (a reverse proxy between the dashboard and the API) are skipped.
+        assert await attempt(client, "203.0.113.2, 10.0.0.5") == 403
+        assert await attempt(client, "203.0.113.2") == 429
+        # A hop no trusted proxy can vouch for counts against the proxy itself.
+        assert [await attempt(client, "not-an-address") for _ in range(2)] == [403, 403]
+        assert await attempt(client, "") == 429
+
+    monkeypatch.setattr(team_invitations, "_throttle", InProcessWindow())
+    outsider = httpx.AsyncClient(transport=httpx.ASGITransport(app, client=("192.0.2.7", 4000)), base_url="http://test")
+    async with outsider as client:  # a peer outside the list cannot pick its own bucket
+        assert [await attempt(client, f"203.0.113.{n}") for n in (7, 8, 9)] == [403, 403, 429]
+
+
+@pytest.mark.asyncio
 async def test_first_accepted_invitation_turns_a_solo_brain_into_a_team(team_db, monkeypatch):
     factory, a, _ = team_db
     membership_driven(monkeypatch)

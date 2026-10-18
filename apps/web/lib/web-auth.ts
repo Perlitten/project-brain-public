@@ -293,6 +293,21 @@ export async function brainKeyFor(cookieValue: string | null): Promise<string | 
   return apiKey() ?? null;
 }
 
+/**
+ * Logout: ask Brain to end the member's single sign-on session. Brain revokes
+ * the credential only when SSO minted it, so a pasted member key (also used by
+ * the CLI and MCP clients) stays live. Best effort: the cookies are cleared anyway.
+ */
+export async function signOutMember(cookieValue: string | null): Promise<void> {
+  const credential = openMember(cookieValue);
+  if (!credential || !apiBase()) return;
+  try {
+    await callBrain("POST", "/team/oidc/logout", undefined, credential);
+  } catch {
+    // Brain unreachable: the session still expires on its own.
+  }
+}
+
 function basicPair(header: string | null): [string, string] | null {
   const match = /^Basic\s+(\S+)$/i.exec(header ?? "");
   if (!match) return null;

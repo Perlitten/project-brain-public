@@ -43,6 +43,8 @@ from brain.team.authorization import (
     human_member,
     live_credential,
     permissions,
+    registry_records,
+    registry_trust_ceiling,
     solo_authority,
     team_administrator,
     team_state,
@@ -69,15 +71,17 @@ async def repository_authority(principal: ResolvedPrincipal, permission: Permiss
     """Authority of ``principal`` over one repository, given by id or by indexed path.
 
     Neither argument means the unscoped, every-repository surface. A path that
-    is not indexed is treated as unattached. Denials become HTTP 403 so every
-    personal route reports them the same way."""
+    is not indexed is treated as unattached. The workspace registry trust of
+    the path applies as well, indexed or not (``authorize_repository``).
+    Denials become HTTP 403 so every personal route reports them the same way."""
     if await current_team_state() == "solo":
         return solo_authority(principal)
     try:
         async with async_session_factory() as session:
             if repository_id is None and repo_path:
                 repository_id = await find_repository_id(session, repo_path)
-            return await authorize_repository(session, principal, repository_id, permission, author_id=author_id)
+            return await authorize_repository(session, principal, repository_id, permission, author_id=author_id,
+                                              repo_path=repo_path)
     except TeamDenied as exc:
         raise HTTPException(status_code=403, detail=f"Repository access denied: {exc}") from exc
 
@@ -128,7 +132,8 @@ async def readable_repository_ids(principal: ResolvedPrincipal, repository_ids: 
     """Ids among ``repository_ids`` the caller may ``read``; ``None`` means every repository.
 
     Solo state and team administrators pass the unscoped check and see all; any
-    other team member sees the repositories their project roles grant."""
+    other team member sees the repositories their project roles grant, minus
+    those the workspace registry no longer trusts for reading."""
     if await current_team_state() == "solo":
         return None
 
@@ -184,11 +189,26 @@ async def readable_repository_ids(principal: ResolvedPrincipal, repository_ids: 
                 TeamProject.disabled_at.is_(None),
             )
         )).all()
-        return {
+        granted = {
             repository_id
             for repository_id, role, policy in rows
             if Permission.READ in ROLE_PERMISSIONS.get(role, frozenset())
             and Permission.READ in _policy_permissions(policy)
+        }
+        if not granted:
+            return granted
+        # Registry trust caps membership here exactly as in ``authorize_repository``.
+        try:
+            records = registry_records()
+        except TeamDenied:
+            return set()
+        if not records:
+            return granted
+        paths = (await session.execute(
+            select(Repository.id, Repository.path).where(Repository.id.in_(granted)))).all()
+        return {
+            repository_id for repository_id, path in paths
+            if Permission.READ in registry_trust_ceiling(records, path)[0]
         }
 
 

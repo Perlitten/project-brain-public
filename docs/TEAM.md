@@ -17,7 +17,12 @@ them. Contract and design: [ADR: team collaboration](adr/team-collaboration.md).
 - Shell access to the server (or the API container) with the server's `.env`
   loaded. The first administrator can only be created there.
 - HTTPS in front of the API if anyone will redeem an invitation or use a key
-  from another machine ([Deployment](operations/DEPLOYMENT.md)).
+  from another machine ([Deployment](operations/DEPLOYMENT.md)). For one team
+  on one host, [one-team cloud deployment](operations/TEAM_DEPLOY.md) packages
+  the API and dashboard behind Caddy with automatic TLS.
+- `brain team doctor` checks the team setup read-only (state, administrators,
+  SSO settings, revocations, restore fence, stuck executions, source freshness,
+  backups) and prints a fix for each problem.
 - The repository you want to share, indexed on the server. Note the path it
   was indexed under: that exact string is the repository's identity.
 
@@ -197,10 +202,12 @@ no project, is refused for anyone but an administrator. To see the paths she
 can use, she can call `GET /repositories` with her key; it lists only
 repositories she can read.
 
-Both transports serve 24 tools: the personal ones plus `team_me`,
+Both transports serve 28 tools: the personal ones plus `team_me`,
 `team_activity`, `team_list_tasks`, `team_create_task` and `team_request_run`,
-and the five memory review tools (`team_propose_decision`, `team_propose_rule`,
-`team_list_proposals`, `team_approve_proposal`, `team_reject_proposal`).
+the five memory review tools (`team_propose_decision`, `team_propose_rule`,
+`team_list_proposals`, `team_approve_proposal`, `team_reject_proposal`), and
+four read-only coordination tools (`team_task_plan`,
+`team_coordination_overlaps`, `team_list_leases`, `team_integration_queue`).
 `team_me` answers "who am I and what can I touch" (the project ids and
 repository paths her roles grant); the task tools take a project id. See
 [MCP](MCP.md).
@@ -250,7 +257,7 @@ There are two different things to revoke, and they are not the same:
 
 | Action | How | Effect |
 |---|---|---|
-| Revoke **membership** | `brain team member revoke --principal alice`, `DELETE /team/projects/members/{principal_id}`, or **Revoke** on the Team page | Ends her team membership and every project role, and revokes everything acting for her principal: her keys, OAuth access and refresh tokens bound to her, and the runs she started with their run credentials. Her next request gets 401, including the dashboard and MCP. |
+| Revoke **membership** | `brain team member revoke --principal alice`, `DELETE /team/projects/members/{principal_id}`, or **Revoke** on the Team page | Ends her team membership and every project role, and revokes everything acting for her principal: her keys, OAuth access and refresh tokens bound to her or approved by her (personal-scope clients included), and the runs she started with their run credentials. Her next request gets 401, including the dashboard and MCP. |
 | Revoke **one project role** | `brain team member revoke --principal alice --project core` | Removes only that project; membership and other roles stay. |
 | Revoke **keys** | Dashboard **Settings → Access** (`/admin`): revoke the credential or disable the principal (`POST /admin/credentials/{id}/revoke`, `POST /admin/principals/{id}/disable`) | The key stops authenticating anything. Needs a team administrator. |
 | Revoke an **invitation member** completely | **Revoke member** in the Team page's Invitations panel, `brain team invite revoke <invitation-id> --revoke-member`, or `POST /team/invitations/{id}/revoke` with `{"revoke_member": true}` | Membership, every project role and every credential of that principal. |
@@ -260,11 +267,11 @@ knowledge already approved stays, with them on record as its author or editor
 ([details](MEMORY_REVIEW.md#revoked-authors)).
 
 Revoking one project role leaves her keys valid: they still work for her other
-projects. Credentials that belong to another principal are not touched by a
-membership revocation. That includes an OAuth client she approved with
-personal scopes only, which runs as its own `oauth:<client>` service principal.
-In team state such a client has no project access. Revoke it separately under
-**Settings → Access** before you dissolve a team.
+projects. A membership revocation also revokes the OAuth grants she approved
+with personal scopes only, although such a client runs as its own
+`oauth:<client>` service principal: its access and refresh tokens die with
+her, so it cannot act as administrator after `brain team dissolve`. Other
+principals' credentials are not touched.
 
 Revoking the last live member does **not** return the Brain to solo. It stays
 in team state: the shared key and any surviving credential have no implicit
@@ -272,6 +279,75 @@ authority. An operator returns it to solo with `brain team dissolve --yes`. In
 solo state every authenticated key that is still valid acts as administrator.
 Administrators cannot revoke their own membership over the API; an operator on
 the server can.
+
+## Team coordination (M3)
+
+The first coordination slice lets several members and their agents split one
+task without stepping on each other. Everything is recorded and checked by the
+API; nothing here merges git branches or runs code by itself. All routes live
+under `/team/projects/{project_id}` and go through the same authority checks
+as tasks and runs.
+
+**Subtasks and dependencies.** `POST .../tasks/{task_id}/subtasks` creates a
+subtask of a task with `scope_paths` (repository-relative paths or globs such
+as `src/api/**`) and `depends_on` (sibling subtask ids). A subtask never gets
+more run permissions than its parent. `PUT .../tasks/{task_id}/plan` changes
+the scope or dependencies with `expected_version`; a dependency cycle, a
+dependency on the task itself or on a task outside the same parent is
+refused with 409. `GET .../tasks/{task_id}/plan` shows each subtask as
+`ready`, `waiting`, `running`, `done`, `cancelled` or `blocked` (a dependency
+was cancelled). A run for a subtask can be requested only when every
+dependency is done: completed, or with a run integrated through the queue
+below. `POST .../tasks/{task_id}/dispatch` is the coordinator: it requests one
+run for every ready subtask that has no active run yet, and a repeat call
+dispatches nothing new.
+
+**Overlap warnings.** When a member declares a scope or takes a lease, the
+Brain compares it with the scopes of other open tasks and with live leases in
+the same repository. Overlaps come back as `warnings` in the response and are
+recorded once per pair as `coordination.overlap` in the activity feed, visible
+to members who can see that repository. They are warnings, not locks. The check
+is conservative: a glob is compared by its fixed directory prefix, so it can warn
+about paths that would not actually collide. A task and its own subtasks are
+never flagged. `GET .../overlaps` lists the current overlaps.
+
+**Instruction versions.** When a run is requested, the Brain records which
+decisions and rules applied to its repository and their versions.
+`GET .../tasks/{task_id}/runs/{run_id}/instructions` reports `current` or
+`superseded`, and names each instruction that was edited, retired or deleted
+since the run started.
+
+**Critical leases.** `POST .../leases` with `repository_id` and `resource` (a
+path without globs, or a named resource such as `resource:db-migrations`) takes
+an exclusive lease for `ttl_seconds` (10 to 3600, default 300). Overlapping
+paths count as the same resource. Each lease carries a `fencing_token`; renew
+and release (`.../leases/{id}/renew`, `.../release`) need the current token,
+and only the holder can use it. An expired lease can be taken over, and the token
+goes up, so a holder that wakes up late is refused. Revoking a member releases
+their leases and the leases of runs they started. Readers cannot take leases.
+
+**Integration queue.** `POST .../integration` with a `run_id` queues a run that
+reported a head revision. A Reviewer or Administrator other than the person who
+started the run calls `.../integration/{id}/integrate` with `expected_version`
+and, for the first entry, `current_base_sha`; later entries default to the
+head of the last integrated entry. Entries are checked in order. The result is
+recorded as one of:
+
+| Status | Meaning |
+|---|---|
+| `integrated` | The run was built on the current base and its instructions are unchanged. Its subtask now counts as done. |
+| `needs_rebase` | The run was built on an older base. Check it again after a rebase. |
+| `stale_instructions` | A decision or rule it started with was changed before integration. |
+| `rejected` | Rejected by a Reviewer or withdrawn by the member who queued it, or the run was revoked. |
+
+The Brain records the decision and the base it checked against. It does not
+run `git merge` or test the combined result. That stays with your normal
+review and CI.
+
+Read-only views: `brain team coord plan|overlaps|leases|queue --project <name>`
+and the MCP tools `team_task_plan`, `team_coordination_overlaps`,
+`team_list_leases` and `team_integration_queue`. Creating subtasks, leases and
+queue entries is API-only for now.
 
 ## Known limitations
 
@@ -288,10 +364,13 @@ which is the source of truth.
   worker. The invitation-accept throttle (10 attempts per client IP per 5
   minutes) and the single sign-on throttle are shared through Redis, so they
   hold across API processes.
-- **Dashboard invitees share one throttle.** The `/invite` page calls the API
-  from the dashboard server, so the API sees every invitee as the dashboard's
-  IP: together they get 10 accept attempts per 5 minutes. Redeeming a token
-  with the CLI counts against the invitee's own IP instead.
+- **Dashboard invitees share one throttle unless the dashboard is trusted.**
+  The `/invite` page calls the API from the dashboard server and passes the
+  invitee's address on. The API believes it only from addresses listed in
+  `BRAIN_TRUSTED_PROXY_IPS`; otherwise every invitee counts as the dashboard's
+  IP and together they get 10 accept attempts per 5 minutes (see
+  [Team invitations](operations/TEAM_INVITATIONS.md#abuse-limits)). Redeeming a
+  token with the CLI counts against the invitee's own IP.
 - **Invitations are not emailed.** The administrator copies the link and sends
   it; without single sign-on the email field is a note.
 - **Execution is off by default.** Tasks and run requests are recorded with their
@@ -302,8 +381,17 @@ which is the source of truth.
 - **Not deployed, not piloted.** Green CI is the only evidence. Production
   upgrade and restore, external identities and real multi-person use have not
   been exercised.
-- Repository trust (`brain/workspace`) and human membership (`brain/team`) are
-  still two separate models.
+- Repository trust (`brain/workspace`) caps what anyone may do on a repository and
+  membership (`brain/team`) decides who may use it; both are checked in one place
+  (`authorize_repository`). A repository the workspace registry has disabled is
+  denied to every member, administrators included, even when a project lists it.
+  In team state, registering a repository (`POST /workspace/repositories`) needs a
+  team administrator and links it to a team project: pass `project_id`, or attach
+  it with `brain team project attach` first
+  ([details](design/team-foundations.md#workspace-registry-and-team-membership-one-authority)).
+- **Coordination does not merge.** The integration queue records decisions
+  against a base you name; it does not run `git merge` or test the combined
+  patch. Overlap detection compares declared paths only, not code dependencies.
 
 Backups of a team Brain have their own restore procedure, including the
 restore fence and `brain team reconcile`:

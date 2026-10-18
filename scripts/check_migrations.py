@@ -57,6 +57,7 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("team_invitations", "verified_issuer"),
     ("team_invitations", "verified_subject"),
     ("team_identities", "subject"),
+    ("team_identities", "session_credential_id"),
     ("team_oidc_flows", "binding_hash"),
     # Every credential resolution reads the restore fence (brain.team.restore_fence).
     ("team_access_fences", "cleared_at"),
@@ -67,6 +68,11 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("memory_proposals", "reviewed_by_principal_id"),
     # Membership, role and queued-job history for the team activity feed (brain.team.activity).
     ("team_activity_events", "audience"),
+    # Team coordination (brain.team.coordination): plans, leases, instruction snapshots, integration queue.
+    ("team_task_plans", "depends_on"),
+    ("team_resource_leases", "fencing_token"),
+    ("team_run_resolutions", "resolved"),
+    ("team_integration_entries", "checked_base_sha"),
 ]
 
 

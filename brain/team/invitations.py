@@ -55,6 +55,7 @@ from brain.team.provisioning import (
     member_dict,
     member_scopes,
     project_member_dict,
+    record_sso_event,
     require_team,
     resolve_project,
     revoke_member,
@@ -124,10 +125,13 @@ def derive_state(invitation: TeamInvitation, principal: Principal | None, member
     if invitation.revoked_at is not None:
         return "revoked"
     if invitation.accepted_at is not None:
+        # The key an SSO acceptance issues is a dashboard session that the next
+        # sign-in rotates and logout revokes, so that state follows the membership.
+        key_gone = credential is None or credential.revoked_at is not None
         if (principal is None or principal.disabled_at is not None or member is None or member.revoked_at is not None
-                or credential is None or credential.revoked_at is not None):
+                or (key_gone and invitation.verified_issuer is None)):
             return "revoked"
-        return "active" if credential.last_used_at is not None else "verified"
+        return "active" if credential is not None and credential.last_used_at is not None else "verified"
     return "expired" if invitation.expires_at <= now else "invited"
 
 
@@ -351,8 +355,12 @@ async def accept_invitation_oidc(session: AsyncSession, invitation_id: uuid.UUID
     invitation.verified_subject = subject
     session.add(TeamIdentity(team_id=invitation.team_id, principal_id=invitation.accepted_principal_id,
                              issuer=issuer, subject=subject, email=email.strip(), invitation_id=invitation.id,
-                             bound_by=f"invitation:{invitation.id}", last_login_at=_now()))
+                             bound_by=f"invitation:{invitation.id}", last_login_at=_now(),
+                             session_credential_id=invitation.accepted_credential_id))
     await session.flush()
+    principal = await fresh(session, Principal, Principal.id == invitation.accepted_principal_id)
+    if principal is not None:
+        await record_sso_event(session, "sso.bound", principal, issuer, actor_id=principal.id)
     return await _accepted_result(session, invitation, raw_key)
 
 
