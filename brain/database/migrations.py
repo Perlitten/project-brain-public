@@ -221,16 +221,20 @@ _MEMORY_PROVENANCE_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("updated_by_principal_id", "INTEGER"),
         ("supersedes_id", "INTEGER"),
         ("version", "INTEGER NOT NULL DEFAULT 1"),
+        ("approved_by_principal_id", "INTEGER"),
     ),
     "rules": (
         ("updated_by_principal_id", "INTEGER"),
         ("supersedes_id", "VARCHAR(255)"),
         ("superseded_by_id", "VARCHAR(255)"),
         ("version", "INTEGER NOT NULL DEFAULT 1"),
+        ("approved_by_principal_id", "INTEGER"),
     ),
-    "memory_learnings": (("author_principal_id", "INTEGER"), ("updated_by_principal_id", "INTEGER")),
+    "memory_learnings": (("author_principal_id", "INTEGER"), ("updated_by_principal_id", "INTEGER"),
+                         ("approved_by_principal_id", "INTEGER")),
     "memory_episodes": (("author_principal_id", "INTEGER"), ("updated_by_principal_id", "INTEGER")),
-    "memory_skills": (("author_principal_id", "INTEGER"), ("updated_by_principal_id", "INTEGER")),
+    "memory_skills": (("author_principal_id", "INTEGER"), ("updated_by_principal_id", "INTEGER"),
+                      ("approved_by_principal_id", "INTEGER")),
 }
 
 

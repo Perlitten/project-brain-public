@@ -65,13 +65,15 @@ class LearningCreate(BaseModel):
     repo_scope: Optional[str] = None
     valid_until: Optional[str] = None
     # personal: visible only to its author and never part of shared retrieval until a promotion is approved.
-    visibility: Literal["shared", "personal"] = "shared"
+    # Unset means shared in solo state and for team administrators; personal for other team members, whose
+    # "shared" becomes a personal learning plus a promotion proposal (HTTP 202).
+    visibility: Optional[Literal["shared", "personal"]] = None
 
 
 class EpisodeSearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     limit: int = Field(10, ge=1, le=50)
-    status: Optional[Literal["pending", "promoted", "rejected", "duplicate", "merged"]] = None
+    status: Optional[Literal["pending", "proposed", "promoted", "rejected", "duplicate", "merged"]] = None
 
 
 class EpisodeDecisionRequest(BaseModel):

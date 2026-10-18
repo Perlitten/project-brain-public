@@ -23,8 +23,11 @@ In team state, decisions and rules written by members who are not team
 administrators, and personal learnings a member promotes, go through
 independent review before they become approved knowledge; a member's personal
 learnings (`visibility: personal`) are private and never retrieved for anyone
-else. Harness lessons, observations and consolidation keep the gates below.
-See [governed memory](MEMORY_REVIEW.md).
+else. Harness lessons, observations and consolidation keep the gates below;
+in team state consolidation files a reviewed proposal instead of writing
+shared memory when the evidence comes from fewer than two principals, and
+proposes the rules, decisions and skills it derives. See
+[governed memory](MEMORY_REVIEW.md).
 
 ## Evidence tiers
 
@@ -59,7 +62,10 @@ Gates run in order and the first failure decides:
   when the operator forces approval, because a human decides then. In team
   state the events must also come from at least 2 distinct principals
   (`MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM`; the solo setting defaults
-  to 0 = off): one person's repeated claim is not independent evidence.
+  to 0 = off; the team floor never goes below 2): one person's repeated claim
+  is not independent evidence. A cluster that passes everything but this check
+  is not rejected: its episode waits as `proposed` on a learning proposal that
+  an independent reviewer approves or rejects.
 - **G3 contradiction**: the summarizer names the active learnings the new
   statement contradicts; unnamed contradictions fall back to the nearest
   learning when it is at least 0.5 similar. A resolved contradiction

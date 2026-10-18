@@ -90,6 +90,8 @@ def remaining_app(factory, monkeypatch, tmp_path):
     monkeypatch.setattr(core_memory.DecisionStore, "list_decisions", AsyncMock(return_value=[]))
     monkeypatch.setattr(core_memory.RuleStore, "list_rules", AsyncMock(return_value=[]))
     monkeypatch.setattr(core_memory.LearningStore, "add_learning", AsyncMock(return_value=7))
+    monkeypatch.setattr("brain.memory.proposals.async_session_factory", factory)
+    monkeypatch.setattr("brain.memory.proposals.propose_learning", AsyncMock(side_effect=_reached))
     monkeypatch.setattr(core_memory.LearningStore, "reject", AsyncMock())
     monkeypatch.setattr("brain.memory.skill_store.list_skills", AsyncMock(return_value=[]))
     monkeypatch.setattr("brain.memory.skill_store.create_skill", AsyncMock(side_effect=_reached))
@@ -187,7 +189,8 @@ def run_writes(repo):
         ("POST", "/insights/remediation/plans/p1/acknowledge", {"repo_path": path}, None),
         ("POST", "/insights/remediation/plans/p1/mark-implemented", {"repo_path": path}, None),
         ("POST", "/insights/remediation/plans/p1/verify", {"repo_path": path}, None),
-        ("POST", "/learnings", {}, {"statement": "s", "repo_scope": path}),
+        # "shared": a member's learning is personal by default (tests/test_memory_proposals.py).
+        ("POST", "/learnings", {}, {"statement": "s", "repo_scope": path, "visibility": "shared"}),
         ("POST", "/skills", {}, {"name": "n", "description": "d", "repo_scope": path}),
         ("POST", "/skills/1/outcomes", {}, outcome_body(task)),
     )
@@ -291,16 +294,19 @@ async def test_team_writes_need_run_request_and_decisions_need_accept(team_db, m
             assert (await _call(client, method, path_z, params_z, body_z, REVIEWER)).status_code == 403
             admin = await _call(client, method, path_z, params_z, body_z, ADMIN)
             assert _authorized(admin), (path_z, admin.text)
-        # A global skill, or a learning without a repository, applies everywhere; an outcome for a task
-        # that names no project's repository (or no task at all) has no repository: administrator only.
+        # A global skill applies everywhere; an outcome for a task that names no project's repository
+        # (or no task at all) has no repository: administrator only. A member's shared learning without a
+        # repository is a proposal only a team administrator may approve (tests/test_memory_proposals.py).
         for path, body in (("/skills", {"name": "n", "description": "d", "is_global": True,
                                         "repo_scope": "/synthetic/A"}),
-                           ("/learnings", {"statement": "s"}),
                            ("/skills/1/outcomes", outcome_body(TASK_Z)),
                            ("/skills/1/outcomes", outcome_body(str(uuid.uuid4()))),
                            ("/skills/1/outcomes", outcome_body("not-a-uuid"))):
             assert (await client.post(path, json=body, headers=CONTRIBUTOR)).status_code == 403, path
             assert _authorized(await client.post(path, json=body, headers=ADMIN)), path
+        shared_global = {"statement": "s", "visibility": "shared"}
+        assert (await client.post("/learnings", json=shared_global, headers=CONTRIBUTOR)).status_code == REACHED
+        assert (await client.post("/learnings", json=shared_global, headers=READER)).status_code == 403
 
 
 @pytest.mark.asyncio

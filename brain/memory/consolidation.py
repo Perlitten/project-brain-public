@@ -68,6 +68,9 @@ class GateOutcome(str, Enum):
     LINK_DUPLICATE = "link_duplicate"      # G1: already known (existing learning reinforced)
     REJECT_EVIDENCE = "reject_evidence"    # G2: not enough evidence
     NEEDS_APPROVAL = "needs_approval"      # G4: high-stakes or unresolved, human must confirm
+    # G2 (team state): enough events but too few distinct principals behind them; the
+    # learning becomes a MemoryProposal that another member must review.
+    PROPOSE = "propose"
 
 
 @dataclass
@@ -279,10 +282,28 @@ def _evidence_ref(event: AgentTaskEvent) -> Dict[str, Any]:
 
 
 def _min_distinct_principals(team_state: Optional[str]) -> int:
-    """How many distinct principals G2 wants behind the evidence in this team state."""
+    """How many distinct principals G2 wants behind the evidence in this team state.
+
+    Team state never goes below two: shared memory written without a review
+    must rest on more than one person's word, whatever the setting says."""
     if team_state == "team":
-        return max(0, int(settings.MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM))
+        return max(2, int(settings.MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM))
     return max(0, int(settings.MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_SOLO))
+
+
+def lead_principal(evidence: Optional[List[Dict[str, Any]]]) -> Optional[int]:
+    """The principal behind most of the evidence (lowest id on a tie); None when nobody is attributed."""
+    counts: Counter[int] = Counter()
+    for item in evidence or []:
+        if not isinstance(item, dict) or item.get("author_principal_id") is None:
+            continue
+        try:
+            counts[int(item["author_principal_id"])] += 1
+        except (TypeError, ValueError):
+            continue
+    if not counts:
+        return None
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
 
 
 async def _memory_team_state() -> str:
@@ -408,8 +429,11 @@ async def evaluate_gates(
     therefore checked for contradiction before it is linked.
     G2 too little evidence → REJECT_EVIDENCE (unvalidated evidence needs more;
     in team state the evidence must also come from
-    ``MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM`` distinct principals —
-    one person repeating a claim is not independent evidence).
+    ``MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM`` distinct principals,
+    at least two — one person repeating a claim is not independent evidence).
+    In team state, enough events from too few (but at least one attributed)
+    principals do not reject the claim: it goes on through G3/G4 and ends as
+    PROPOSE (a reviewed proposal) unless G4 already wants a human approval.
     G3 contradiction → the corrected learning is superseded, not the new one
     rejected: SUPERSEDE when the evidence is validated and the stakes are not
     high, otherwise NEEDS_APPROVAL with the superseded ids recorded.
@@ -476,18 +500,20 @@ async def evaluate_gates(
         )
     min_principals = _min_distinct_principals(team_state)
     principal_count = len(distinct_principals(candidate.evidence))
+    needs_review = False
     if min_principals and principal_count < min_principals and not require_approval:
-        return GateResult(
-            outcome=GateOutcome.REJECT_EVIDENCE,
-            reasons=reasons + [
-                f"G2: only {principal_count} distinct principal(s) behind {event_count} L1 event(s), "
-                f"need {min_principals} in team state"
-            ],
+        shortfall = (f"G2: only {principal_count} distinct principal(s) behind {event_count} L1 event(s), "
+                     f"need {min_principals} in {team_state or 'solo'} state")
+        if team_state != "team" or principal_count == 0:
+            return GateResult(outcome=GateOutcome.REJECT_EVIDENCE, reasons=reasons + [shortfall])
+        # An attributed claim from too few people is not dropped: another member reviews it.
+        needs_review = True
+        reasons.append(shortfall + " — proposed for independent review")
+    else:
+        reasons.append(
+            f"G2 pass: {event_count} {candidate.evidence_tier} L1 event(s)"
+            + (f" from {principal_count} distinct principal(s)" if min_principals else "")
         )
-    reasons.append(
-        f"G2 pass: {event_count} {candidate.evidence_tier} L1 event(s)"
-        + (f" from {principal_count} distinct principal(s)" if min_principals else "")
-    )
 
     # G3 — Contradiction with active memory corrects the old learning
     # (supersede, append-only chain) instead of discarding the new evidence.
@@ -530,6 +556,8 @@ async def evaluate_gates(
             reasons=reasons + [approval_reason],
             supersedes=supersedes,
         )
+    if needs_review:
+        return GateResult(outcome=GateOutcome.PROPOSE, reasons=reasons, supersedes=supersedes)
     reasons.append("G4 pass: auto-promotable")
     if supersedes:
         return GateResult(outcome=GateOutcome.SUPERSEDE, reasons=reasons, supersedes=supersedes)
@@ -645,6 +673,7 @@ async def run_consolidation(
                 "promoted": [],
                 "rejected": [],
                 "needs_approval": [],
+                "proposed": [],
                 "reinforced": [],
             }
         try:
@@ -667,6 +696,8 @@ _EPISODE_STATUS = {
     GateOutcome.NEEDS_APPROVAL: "pending",
     GateOutcome.LINK_DUPLICATE: "duplicate",
     GateOutcome.REJECT_EVIDENCE: "rejected",
+    # Waits on a MemoryProposal; approval promotes it, rejection rejects it (brain/memory/proposals.py).
+    GateOutcome.PROPOSE: "proposed",
 }
 
 
@@ -720,10 +751,17 @@ async def _route_to_normative_store(
     rule's/decision's author. An unscoped learning would land in
     ``system_global``: in team state that needs a team administrator behind the
     evidence, otherwise the projection is skipped and the learning stays
-    repo-less memory only."""
+    repo-less memory only.
+
+    In team state nothing is written to the Rule/Decision store directly: the
+    projection becomes a pending ``MemoryProposal`` authored by the lead
+    principal behind the evidence, reviewed like any member's proposal. Without
+    an attributed principal there is nobody to author it and it is skipped."""
     target = candidate.suggested_target
     if target not in ("rule", "decision") or not settings.MEMORY_ROUTE_TARGETS:
         return None
+    if team_state == "team":
+        return await _propose_normative_projection(candidate, learning_id, repo_scope)
     if repo_scope is None and not await _principal_may_write_system_global(principal_id, team_state):
         logger.info(
             "Learning %s not projected to system_global %s: principal %s is not a team administrator",
@@ -761,6 +799,39 @@ async def _route_to_normative_store(
     return {"target": "decision", "id": decision_id}
 
 
+async def _propose_normative_projection(
+    candidate: ConsolidationCandidate,
+    learning_id: int,
+    repo_scope: Optional[str],
+) -> Dict[str, Any]:
+    """Team state: file the rule/decision a promoted learning implies as a proposal, not a canonical write."""
+    from brain.memory import proposals
+
+    target = candidate.suggested_target
+    author = lead_principal(candidate.evidence)
+    if author is None:
+        return {"target": target, "skipped": "no attributed principal to author the proposal"}
+    if target == "decision" and repo_scope is None:
+        return {"target": target, "skipped": "system_global decisions are not consolidated"}
+    title = " ".join(candidate.statement.split())[:120]
+    if target == "rule":
+        payload: Dict[str, Any] = {
+            "description": candidate.statement, "type": "learned", "severity": candidate.severity,
+            "status": "active", "applies_to": {"source": "memory_consolidation", "learning_id": learning_id},
+        }
+    else:
+        payload = {
+            "description": candidate.statement,
+            "reason": f"Consolidated from {len(candidate.evidence)} L1 event(s); learning {learning_id}",
+        }
+    row = await proposals.create_proposal(
+        "rule" if target == "rule" else "decision", title=title,
+        repo_path=await proposals.registered_repo_spelling(repo_scope), payload=payload,
+        author_principal_id=author,
+    )
+    return {"target": target, "proposal_id": row.id}
+
+
 async def _persist_cluster(
     cluster: List[AgentTaskEvent],
     candidate: ConsolidationCandidate,
@@ -775,9 +846,16 @@ async def _persist_cluster(
     reinforces the known learning (confidence + evidence) in the same transaction.
     The episode and learning are attributed to the sole principal behind the
     evidence (None when the evidence is mixed or unattributed).
+    PROPOSE (team state) writes no learning: the episode waits as ``proposed``
+    on a learning ``MemoryProposal`` filed in the same transaction.
     """
     embedding = await _episode_embedding(candidate.statement)
     author_id = sole_principal(candidate.evidence)
+    proposal_spelling: Optional[str] = None
+    if gate.outcome == GateOutcome.PROPOSE and repo_scope is not None:
+        from brain.memory.proposals import registered_repo_spelling
+
+        proposal_spelling = await registered_repo_spelling(normalize_repo_scope(repo_scope))
     async with async_session_factory() as session:
         async with session.begin():
             episode = MemoryEpisode(
@@ -820,9 +898,27 @@ async def _persist_cluster(
                     confidence_step=REINFORCE_CONFIDENCE_STEP,
                     session=session,
                 )
+            proposal_id = None
+            if gate.outcome == GateOutcome.PROPOSE:
+                from brain.memory.proposals import add_consolidated_learning_proposal
+
+                proposer = lead_principal(candidate.evidence)
+                if proposer is None:  # pragma: no cover - G2 only proposes attributed evidence
+                    raise ValueError("A consolidation proposal needs an attributed principal")
+                proposal = await add_consolidated_learning_proposal(
+                    session, statement=candidate.statement, category=candidate.category,
+                    confidence=candidate.confidence, evidence=candidate.evidence,
+                    repo_path=episode.repo_scope, requested_repo_path=proposal_spelling,
+                    author_principal_id=proposer, episode_id=episode.id, supersedes=list(gate.supersedes),
+                    severity=candidate.severity, suggested_target=candidate.suggested_target,
+                    evidence_tier=candidate.evidence_tier,
+                )
+                proposal_id = proposal.id
             await session.flush()
             result: Dict[str, Any] = {"episode_id": episode.id, "learning_id": learning_id}
-            if gate.supersedes:
+            if proposal_id is not None:
+                result["proposal_id"] = proposal_id
+            if gate.supersedes and gate.outcome != GateOutcome.PROPOSE:
                 result["superseded"] = list(gate.supersedes)
             scope = episode.repo_scope
     if learning_id is not None:
@@ -856,6 +952,7 @@ async def _run_consolidation_unlocked(
         "promoted": [],
         "rejected": [],
         "needs_approval": [],
+        "proposed": [],
         "reinforced": [],
         "errors": [],
         "dry_run": dry_run,
@@ -901,11 +998,13 @@ async def _run_consolidation_unlocked(
             report["promoted"].append(entry)
         elif gate.outcome == GateOutcome.NEEDS_APPROVAL:
             report["needs_approval"].append(entry)
+        elif gate.outcome == GateOutcome.PROPOSE:
+            report["proposed"].append(entry)
         elif gate.outcome == GateOutcome.LINK_DUPLICATE:
             report["reinforced"].append(entry)
         else:
             report["rejected"].append(entry)
-    await _attach_run_tail(report, dry_run=dry_run)
+    await _attach_run_tail(report, dry_run=dry_run, team_state=team_state)
     logger.info(
         "Consolidation %s: %d L1 events → %d candidates, %d episodes, %d promoted, %d reinforced, "
         "%d pending total, %d errors",
@@ -930,7 +1029,7 @@ async def count_pending_episodes() -> int:
         )
 
 
-async def _attach_run_tail(report: Dict[str, Any], *, dry_run: bool) -> None:
+async def _attach_run_tail(report: Dict[str, Any], *, dry_run: bool, team_state: Optional[str] = None) -> None:
     """Append the pending-queue size and the L3→L4 distillation step to a run report.
 
     Both are best-effort: a failure here never undoes the episodes already written.
@@ -944,7 +1043,7 @@ async def _attach_run_tail(report: Dict[str, Any], *, dry_run: bool) -> None:
     try:
         from brain.memory.skill_distiller import distill_skills
 
-        report["skills"] = await distill_skills()
+        report["skills"] = await distill_skills(team_state=team_state)
     except Exception as exc:
         logger.warning("L3→L4 skill distillation failed (best-effort): %s", exc)
         report["skills"] = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
@@ -1013,6 +1112,7 @@ async def _decide_pending_episode(
                     session=session,
                     author_principal_id=author_id,
                     updated_by_principal_id=principal_id if principal_id is not None else author_id,
+                    approved_by_principal_id=principal_id,
                 )
                 episode.status = "promoted"
                 episode.promoted_to_learning_id = learning_id

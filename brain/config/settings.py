@@ -450,8 +450,10 @@ class Settings(BaseSettings):
     MEMORY_CONSOLIDATION_REQUIRE_APPROVAL: bool = False
     # G2 independence: how many distinct principals must stand behind a cluster's
     # evidence before it auto-promotes. Team state defaults to two (one person's
-    # repeated claim is not independent evidence); solo state, a team of one,
-    # keeps the event-count rule alone (0 disables the principal check).
+    # repeated claim is not independent evidence) and never goes below two: a
+    # cluster short of it becomes a reviewed proposal (docs/MEMORY_REVIEW.md).
+    # Solo state, a team of one, keeps the event-count rule alone (0 disables
+    # the principal check).
     MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM: int = 2
     MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_SOLO: int = 0
     # Project promoted learnings the distiller classified as a rule/decision

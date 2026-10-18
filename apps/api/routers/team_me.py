@@ -8,6 +8,7 @@ source query; nothing is fetched and filtered afterwards.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -19,6 +20,8 @@ from apps.api.auth import require_principal, require_scope
 from brain.auth.principals import ALL_SCOPES, ResolvedPrincipal
 from brain.config.settings import settings
 from brain.database.models import Repository
+from brain.memory import proposals
+from brain.memory.repo_scope import normalize_repo_scope
 from brain.team.activity import (DEFAULT_LIMIT, MAX_LIMIT, MAX_OFFSET, ActivityQuery, ActivityScope, UnknownKind,
                                  list_activity, parse_kinds)
 from brain.team.authorization import (FULL_AUTHORITY, ROLE_PERMISSIONS, Permission, TeamDenied, human_member,
@@ -26,6 +29,7 @@ from brain.team.authorization import (FULL_AUTHORITY, ROLE_PERMISSIONS, Permissi
 from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamMember, TeamProject
 
 router = APIRouter(prefix="/team", tags=["experimental-team"])
+logger = logging.getLogger(__name__)
 
 
 def _effective_scopes(principal: ResolvedPrincipal) -> list[str]:
@@ -95,6 +99,30 @@ async def _memberships(principal: ResolvedPrincipal) -> tuple[dict | None, list[
     return membership, projects
 
 
+async def _pending_review_count(principal: ResolvedPrincipal, state: str, is_admin: bool,
+                                projects: list[dict]) -> int:
+    """Pending memory proposals the caller could decide on, never counting their own.
+
+    Solo: every pending proposal. Team administrator: every scope. Member: the
+    repositories of projects where their effective permissions include
+    ``knowledge.approve`` (Reviewer). Best effort: a failure reports 0."""
+    try:
+        if state == "solo":
+            return await proposals.count_pending_proposals()
+        if is_admin:
+            return await proposals.count_pending_proposals(exclude_author=principal.author_id)
+        paths = {normalize_repo_scope(repository.get("path"))
+                 for project in projects if Permission.APPROVE.value in project["effective_permissions"]
+                 for repository in project["repositories"]}
+        scopes: list[str | None] = [path for path in sorted(p for p in paths if p)]
+        if not scopes:
+            return 0
+        return await proposals.count_pending_proposals(scopes=scopes, exclude_author=principal.author_id)
+    except Exception as exc:  # the identity endpoint must answer even if the review queue cannot be read
+        logger.warning("Pending review count failed: %s: %s", type(exc).__name__, exc)
+        return 0
+
+
 @router.get("/me")
 async def team_me(principal: ResolvedPrincipal = Depends(require_principal)):
     """Identity, team state, team-admin status, project roles and scopes of the presented credential."""
@@ -126,6 +154,8 @@ async def team_me(principal: ResolvedPrincipal = Depends(require_principal)):
         "scopes": sorted(principal.scopes),
         "effective_scopes": _effective_scopes(principal),
         "can_read_activity": principal.has_scope("team:read"),
+        # Memory proposals awaiting a decision this caller may make (the review queue badge).
+        "pending_review_count": await _pending_review_count(principal, state, is_admin, projects),
     }
 
 

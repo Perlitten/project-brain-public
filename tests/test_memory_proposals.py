@@ -5,6 +5,7 @@ retrieval path returns until a Reviewer who is not the author approves it with a
 compare-and-swap on the proposal version. Solo state writes approved knowledge directly.
 """
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -12,13 +13,16 @@ from fastapi import FastAPI
 from sqlalchemy import func, select, update
 
 from apps.api import auth, team_access
-from apps.api.routers import core_memory, memory_review
+from apps.api.routers import core_memory, memory_review, team_me
+from apps.mcp_server.protocol import only_active
 from brain.context import context_pack_builder
-from brain.database.models import Decision, Learning, MemoryProposal, Principal, Rule
-from brain.memory import decision_store, learning_store, proposals, rule_store
+from brain.context.runtime_context_builder import RuntimeContextBuilder
+from brain.database.models import Decision, Learning, MemoryEpisode, MemoryProposal, MemorySkill, Principal, Rule
+from brain.memory import (decision_store, learning_retrieval, learning_store, proposals, relevance, rule_store,
+                          skill_store)
 from brain.memory.learning_store import LearningStore
 from brain.team import provisioning
-from brain.team.models import TeamMember
+from brain.team.models import TeamActivityEvent, TeamMember
 from tests.test_team_foundations import team_db as team_fixture
 from tests.test_team_transport import client_for, live_team_state, membership_driven, revoke_everyone
 
@@ -36,7 +40,8 @@ def _no_embeddings():
 def review_app(factory, monkeypatch):
     """The memory routes against the fixture database, with the live team-state probe."""
     membership_driven(monkeypatch)
-    for module in (auth, team_access, proposals, decision_store, rule_store, learning_store, context_pack_builder):
+    for module in (auth, team_access, proposals, decision_store, rule_store, learning_store, context_pack_builder,
+                   learning_retrieval, relevance, skill_store):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr("apps.api.request_observation.observe_http_request", AsyncMock())
@@ -44,6 +49,7 @@ def review_app(factory, monkeypatch):
     app = FastAPI()
     app.include_router(core_memory.router)
     app.include_router(memory_review.router)
+    app.include_router(team_me.router)
     return app
 
 
@@ -73,7 +79,8 @@ async def learning_table(factory):
     if engine.dialect.name != "sqlite":
         pytest.skip("memory_learnings needs pgvector; the personal tier is covered on SQLite")
     async with engine.begin() as conn:
-        await conn.run_sync(lambda sync: Learning.__table__.create(sync, checkfirst=True))
+        for model in (Learning, MemoryEpisode, MemorySkill):  # the activity feed reads every memory table
+            await conn.run_sync(lambda sync, table=model.__table__: table.create(sync, checkfirst=True))
 
 
 @pytest.mark.asyncio
@@ -293,3 +300,171 @@ async def test_personal_learnings_stay_private_until_a_promotion_is_approved(tea
         assert reader_note.status_code == 200
         assert (await client.post(f"/learnings/{reader_note.json()['learning_id']}/promote",
                                   headers=READER)).status_code == 403
+
+
+async def memory_events(factory) -> list[tuple[str, int | None, int | None]]:
+    """(kind, actor, repository) of every ``memory.*`` feed row, oldest first."""
+    async with factory() as session:
+        rows = (await session.execute(select(TeamActivityEvent).where(TeamActivityEvent.kind.like("memory.%"))
+                                      .order_by(TeamActivityEvent.id))).scalars().all()
+    return [(row.kind, row.actor_principal_id, row.repository_id) for row in rows]
+
+
+async def pending_for(client, headers) -> int:
+    me = await client.get("/team/me", headers=headers)
+    assert me.status_code == 200, me.text
+    return me.json()["pending_review_count"]
+
+
+@pytest.mark.asyncio
+async def test_review_lifecycle_reaches_the_feed_and_the_pending_count(team_db, monkeypatch):
+    factory, _, _ = team_db
+    await learning_table(factory)
+    app = review_app(factory, monkeypatch)
+    async with client_for(app) as client:
+        assert [await pending_for(client, h) for h in (READER, CONTRIBUTOR, REVIEWER, ADMIN)] == [0, 0, 0, 0]
+        made = (await client.post("/decisions", json=decision(), headers=CONTRIBUTOR)).json()
+        doomed = (await client.post("/rules", json=rule(), headers=CONTRIBUTOR)).json()
+        # Reviewer of the project and team administrator may decide; the author and a Reader may not.
+        assert [await pending_for(client, h) for h in (READER, CONTRIBUTOR, REVIEWER, ADMIN)] == [0, 0, 2, 2]
+
+        assert (await client.post(f"/memory/proposals/{made['proposal_id']}/approve",
+                                  json={"expected_version": 1}, headers=REVIEWER)).status_code == 200
+        assert (await client.post(f"/memory/proposals/{doomed['proposal_id']}/reject",
+                                  json={"expected_version": 1, "reason": "duplicate"},
+                                  headers=REVIEWER)).status_code == 200
+        assert await pending_for(client, REVIEWER) == 0
+
+        assert await memory_events(factory) == [
+            ("memory.proposed", 2, 1), ("memory.proposed", 2, 1),
+            ("memory.approved", 3, 1), ("memory.rejected", 3, 1),
+        ]
+        # The repository's readers see the review trail; the events name the proposal, not its draft.
+        feed = (await client.get("/team/activity", params={"kind": "memory"}, headers=READER)).json()
+        assert sorted(event["kind"] for event in feed["events"]) == [
+            "memory.approved", "memory.proposed", "memory.proposed", "memory.rejected"]
+        assert all("No blocking IO" not in event["summary"] for event in feed["events"])
+        assert {event["details"]["proposal_id"] for event in feed["events"]} == {made["proposal_id"],
+                                                                               doomed["proposal_id"]}
+
+        # A system-global proposal is administrator business: in the admin feed, not in a member's.
+        global_item = (await client.post("/decisions", json=decision("Global", repo_path=None),
+                                         headers=CONTRIBUTOR)).json()
+        assert await pending_for(client, REVIEWER) == 0 and await pending_for(client, ADMIN) == 1
+        member_feed = (await client.get("/team/activity", params={"kind": "memory.proposed"},
+                                        headers=READER)).json()
+        admin_feed = (await client.get("/team/activity", params={"kind": "memory.proposed"},
+                                       headers=ADMIN)).json()
+        assert global_item["proposal_id"] not in {e["details"]["proposal_id"] for e in member_feed["events"]}
+        assert global_item["proposal_id"] in {e["details"]["proposal_id"] for e in admin_feed["events"]}
+
+
+@pytest.mark.asyncio
+async def test_approved_items_record_author_and_approver(team_db, monkeypatch):
+    factory, _, _ = team_db
+    await learning_table(factory)
+    app = review_app(factory, monkeypatch)
+    async with client_for(app) as client:
+        made = (await client.post("/decisions", json=decision(), headers=CONTRIBUTOR)).json()
+        ruled = (await client.post("/rules", json=rule(), headers=CONTRIBUTOR)).json()
+        shared = await client.post("/learnings", json={"statement": "Seed with the factory", "repo_scope": REPO,
+                                                       "visibility": "shared"}, headers=CONTRIBUTOR)
+        assert shared.status_code == 202 and shared.json()["status"] == "proposed"
+        for body in (made, ruled, shared.json()):
+            approved = await client.post(f"/memory/proposals/{body['proposal_id']}/approve",
+                                         json={"expected_version": body["version"]}, headers=REVIEWER)
+            assert approved.status_code == 200, approved.text
+        # A team administrator writes directly: nobody approved it, so no approver is recorded.
+        assert (await client.post("/decisions", json=decision("Admin direct", repo_path="/synthetic/B"), headers=ADMIN)).status_code == 200
+    async with factory() as session:
+        decisions = {d.title: d for d in (await session.execute(select(Decision))).scalars()}
+        stored_rule = (await session.execute(select(Rule))).scalar_one()
+        learning = await session.get(Learning, shared.json()["learning_id"])
+    reviewed, direct = decisions["Use one queue"], decisions["Admin direct"]
+    assert (reviewed.author_principal_id, reviewed.approved_by_principal_id) == (2, 3)
+    assert (direct.author_principal_id, direct.approved_by_principal_id) == (4, None)
+    assert (stored_rule.author_principal_id, stored_rule.approved_by_principal_id) == (2, 3)
+    assert learning.status == "active"
+    assert (learning.author_principal_id, learning.approved_by_principal_id) == (2, 3)
+
+
+@pytest.mark.asyncio
+async def test_member_learnings_default_to_personal_and_skills_wait_for_review(team_db, monkeypatch):
+    factory, _, _ = team_db
+    await learning_table(factory)
+    app = review_app(factory, monkeypatch)
+    note = {"statement": "Prefer the fixture factory", "repo_scope": REPO}
+    skill = {"name": "Seed the fixture", "description": "How tests seed data", "repo_scope": REPO,
+             "workflow": [{"step": 1, "action": "use the factory"}]}
+    async with client_for(app) as client:
+        member = await client.post("/learnings", json=note, headers=CONTRIBUTOR)
+        assert member.status_code == 200 and member.json()["visibility"] == "personal"
+        # A Reader may keep a personal note but cannot ask for shared memory.
+        assert (await client.post("/learnings", json={**note, "visibility": "shared"},
+                                  headers=READER)).status_code == 403
+        admin = await client.post("/learnings", json={**note, "repo_scope": "/synthetic/B"}, headers=ADMIN)
+        assert admin.status_code == 200 and admin.json()["visibility"] == "shared"
+        assert await LearningStore.list_active_learnings(REPO) == []
+        assert [lrng.id for lrng in await LearningStore.list_active_learnings("/synthetic/B")] == [
+            admin.json()["learning_id"]]
+
+        pending = await client.post("/skills", json=skill, headers=CONTRIBUTOR)
+        assert pending.status_code == 202 and pending.json()["status"] == "pending_review"
+        assert await skill_store.select_skills_for_context("seed the fixture", REPO, max_count=3) == []
+        approved = await client.post(f"/skills/{pending.json()['id']}/approve", headers=ADMIN)
+        assert approved.status_code == 200 and approved.json()["status"] == "active"
+        assert (await client.post("/skills", json={**skill, "name": "Admin skill", "repo_scope": "/synthetic/B"},
+                                  headers=ADMIN)).json()["status"] == "created"
+    async with factory() as session:
+        stored = await session.get(MemorySkill, pending.json()["id"])
+    assert (stored.author_principal_id, stored.approved_by_principal_id) == (2, 4)
+
+
+@pytest.mark.asyncio
+async def test_personal_and_draft_memory_never_reach_other_members(team_db, monkeypatch):
+    """Regression: ask/context retrieval, the MCP resources and the feed only ever see shared memory."""
+    factory, _, _ = team_db
+    await learning_table(factory)
+    app = review_app(factory, monkeypatch)
+    task = "prefer the fixture factory when seeding queue data"
+
+    async def runtime_memory() -> dict:
+        # The memory half of every ask and context response (RuntimeContextBuilder.build).
+        return await RuntimeContextBuilder._load_memory(task, SimpleNamespace(candidates=[]), {"path": REPO},
+                                                        8000, {"missing": []})
+
+    async with client_for(app) as client:
+        private = await client.post("/learnings", json={"statement": "Prefer the fixture factory for queue data",
+                                                        "repo_scope": REPO}, headers=CONTRIBUTOR)
+        assert private.json()["visibility"] == "personal"
+        draft = await client.post("/learnings", json={"statement": "Seed queue data with the fixture factory",
+                                                      "repo_scope": REPO, "visibility": "shared"},
+                                  headers=CONTRIBUTOR)
+        assert draft.status_code == 202
+        assert (await client.post("/decisions", json=decision("Prefer the fixture factory queue"),
+                                  headers=CONTRIBUTOR)).status_code == 202
+
+        assert "fixture factory" not in str(await runtime_memory()).lower()
+        assert await learning_retrieval.select_learnings_for_context(task, REPO) == []
+        assert await context_pack_builder._load_active_normative_memory(REPO) == ([], [])
+        for headers in (READER, REVIEWER, ADMIN):
+            # The MCP resources active_rules / active_decisions are these lists through only_active.
+            assert only_active((await client.get("/decisions", headers=headers)).json()) == []
+            assert only_active((await client.get("/rules", headers=headers)).json()) == []
+            # The administrator is not a member of project A: the unscoped (global) list is theirs to read.
+            params = {} if headers is ADMIN else {"repo_path": REPO}
+            assert (await client.get("/learnings", params=params, headers=headers)).json() == []
+            assert (await client.get("/learnings", params={**params, "visibility": "personal"},
+                                     headers=headers)).json() == []
+            feed = (await client.get("/team/activity", headers=headers)).json()
+            assert not any(event["kind"].startswith("learning.") for event in feed["events"])
+            assert "fixture factory" not in str(feed["events"]).lower()
+
+        # Positive control: once approved, the same learning reaches every member's retrieval.
+        assert (await client.post(f"/memory/proposals/{draft.json()['proposal_id']}/approve",
+                                  json={"expected_version": 1}, headers=REVIEWER)).status_code == 200
+        found = await learning_retrieval.select_learnings_for_context(task, REPO)
+        assert [item["id"] for item in found] == [draft.json()["learning_id"]]
+        assert "seed queue data" in str(await runtime_memory()).lower()
+        # The personal note is still the author's alone.
+        assert private.json()["learning_id"] not in {item["id"] for item in found}

@@ -164,6 +164,8 @@ async def decide_skill(
         skill.status = "active" if approve else "rejected"
         if principal_id is not None:
             skill.updated_by_principal_id = principal_id
+            if approve:
+                skill.approved_by_principal_id = principal_id
         await session.commit()
         return {"skill_id": skill.id, "status": skill.status, "reason": reason}
 

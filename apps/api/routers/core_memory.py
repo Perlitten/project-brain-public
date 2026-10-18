@@ -5,6 +5,7 @@ import uuid
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from loguru import logger
@@ -237,7 +238,7 @@ async def get_learnings(repo_path: Optional[str] = None,
 
 @router.get("/episodes", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")), TEAM_ADMIN])
 async def get_episodes(
-    status: Optional[Literal["pending", "promoted", "rejected", "duplicate", "merged"]] = None,
+    status: Optional[Literal["pending", "proposed", "promoted", "rejected", "duplicate", "merged"]] = None,
     topic: Optional[str] = None,
     limit: int = Query(50, ge=1, le=EPISODES_MAX_LIMIT),
 ):
@@ -395,6 +396,9 @@ async def create_skill(body: SkillCreate, principal: ResolvedPrincipal = Depends
     # A global skill, or one without a repository, applies everywhere: a team administrator.
     await repository_authority(principal, Permission.PROPOSE,
                                repo_path=None if body.is_global else body.repo_scope)
+    # Team state: a member's curated skill waits for a team administrator (POST /skills/{id}/approve)
+    # instead of being matched and injected at once; solo state and team administrators are unchanged.
+    governed = await memory_review.governed_write(principal)
     try:
         from brain.memory.skill_store import SkillConflictError, create_skill as create_skill_row
 
@@ -409,7 +413,14 @@ async def create_skill(body: SkillCreate, principal: ResolvedPrincipal = Depends
             repo_scope=body.repo_scope,
             is_global=body.is_global,
             author_principal_id=principal.author_id,
+            status="pending" if governed else "active",
         )
+        if governed:
+            return JSONResponse(status_code=202, content={
+                "id": skill.id, "name": skill.name, "status": "pending_review",
+                "detail": "Pending review: the skill is not matched or injected until a team administrator "
+                          "approves it.",
+            })
         return {"id": skill.id, "name": skill.name, "status": "created"}
     except SkillConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -479,11 +490,22 @@ async def match_skills(body: SkillMatchRequest, principal: ResolvedPrincipal = D
 
 @router.post("/learnings", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
 async def create_learning(body: LearningCreate, principal: ResolvedPrincipal = Depends(require_principal)):
-    personal = body.visibility == "personal"
-    if personal:
+    # Team state: a member who is not a team administrator never writes shared memory directly. Their
+    # learning is personal by default; asking for "shared" keeps it personal and proposes its promotion.
+    governed = await memory_review.governed_write(principal)
+    visibility = body.visibility or ("personal" if governed else "shared")
+    propose = governed and visibility == "shared"
+    spelling: Optional[str] = None
+    if propose:
+        if principal.author_id is None:
+            raise HTTPException(status_code=422, detail="Proposing a learning needs a named credential")
+        spelling = await proposals.registered_repo_spelling(body.repo_scope.strip() if body.repo_scope else None)
+        await memory_review.proposal_authority(principal, spelling)
+    personal = visibility == "personal" or propose
+    if personal and not propose:
         # The personal tier is private notes: reading the scope is enough, but it needs a named author.
         await _personal_tier_authority(principal, body.repo_scope)
-    else:
+    elif not personal:
         await repository_authority(principal, Permission.PROPOSE, repo_path=body.repo_scope)
     try:
         valid_until = None
@@ -500,10 +522,21 @@ async def create_learning(body: LearningCreate, principal: ResolvedPrincipal = D
             author_principal_id=principal.author_id,
             status=proposals.PERSONAL_STATUS if personal else "active",
         )
-        return {"status": "success", "learning_id": learning_id, "visibility": body.visibility}
     except Exception as exc:
         logger.error(f"Failed to add learning: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to add learning") from exc
+    if not propose:
+        return {"status": "success", "learning_id": learning_id, "visibility": visibility}
+    try:
+        row = await proposals.propose_learning(learning_id, principal.author_id, requested_repo_path=spelling)
+    except (proposals.ProposalNotFound, proposals.ProposalStateError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return JSONResponse(status_code=202, content={
+        "status": "proposed", "learning_id": learning_id, "visibility": "personal", "proposal_id": row.id,
+        "version": row.version, "state": row.state, "kind": row.kind,
+        "detail": "Kept in your personal tier and proposed for shared memory: it is not shared until an "
+                  "independent reviewer approves it.",
+    })
 
 
 @router.delete(

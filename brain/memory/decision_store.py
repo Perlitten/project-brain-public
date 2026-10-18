@@ -91,6 +91,7 @@ async def _record_decision_in(session: AsyncSession, normalized_title: str, norm
             superseded_by_id=existing.id,
             author_principal_id=existing.author_principal_id,
             updated_by_principal_id=existing.updated_by_principal_id,
+            approved_by_principal_id=existing.approved_by_principal_id,
             supersedes_id=existing.supersedes_id,
             version=existing.version or 1,
             created_at=existing.created_at,
@@ -103,6 +104,8 @@ async def _record_decision_in(session: AsyncSession, normalized_title: str, norm
         existing.version = (existing.version or 1) + 1
         existing.supersedes_id = history.id
         existing.updated_by_principal_id = author_principal_id
+        # A new version is unreviewed until an approval stamps it (brain/memory/proposals.py).
+        existing.approved_by_principal_id = None
         await session.flush()
         return MemoryWriteResult(id=existing.id, version=existing.version, created=False,
                                  changed=True, superseded_id=history.id), existing

@@ -122,3 +122,62 @@ async def test_distill_no_groups_makes_no_llm_call(monkeypatch):
     monkeypatch.setattr(skill_distiller, "_eligible_groups", eligible)
     await distill_skills()
     eligible.assert_awaited_with(2)
+
+
+def _authored(lid, author, evidence_authors=()):
+    learning = _learning(lid, f"step {lid}")
+    learning.author_principal_id = author
+    learning.evidence = [{"event_id": lid * 10 + i, "author_principal_id": a} for i, a in enumerate(evidence_authors)]
+    return learning
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("team_state, sources, expected_status, expected_author", [
+    # Solo state is unchanged: approval off means active, whoever wrote the learnings.
+    ("solo", [_authored(1, 11), _authored(2, 11)], "active", 11),
+    # Team state: one person's learnings wait for a reviewer, authored by that person.
+    ("team", [_authored(1, 11), _authored(2, 11, (11, 11))], "pending", 11),
+    # Unattributed learnings in a team never auto-activate either.
+    ("team", [_authored(1, None), _authored(2, None)], "pending", None),
+    # Two distinct principals (author or evidence) meet the team floor.
+    ("team", [_authored(1, 11), _authored(2, 11, (12,))], "active", None),
+])
+async def test_distill_team_state_gates_on_distinct_principals(monkeypatch, team_state, sources,
+                                                               expected_status, expected_author):
+    created = []
+
+    async def create_skill(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(id=10, name=kwargs["name"], status=kwargs["status"],
+                               source_learning_ids=kwargs["source_learning_ids"])
+
+    monkeypatch.setattr(skill_distiller, "_eligible_groups", AsyncMock(return_value={"/repo": sources}))
+    monkeypatch.setattr(skill_distiller, "get_summarizer_provider",
+                        lambda: SimpleNamespace(summarize=AsyncMock(return_value=_GOOD)))
+    monkeypatch.setattr(skill_distiller.settings, "MEMORY_SKILL_DISTILLATION_REQUIRE_APPROVAL", False)
+    monkeypatch.setattr(skill_distiller.settings, "MEMORY_CONSOLIDATION_MIN_DISTINCT_PRINCIPALS_TEAM", 0)
+    with patch("brain.memory.skill_store.create_skill", new=create_skill):
+        report = await distill_skills(min_learnings=2, team_state=team_state)
+    assert created[0]["status"] == expected_status
+    assert report["created"][0]["status"] == expected_status
+    assert created[0]["author_principal_id"] == expected_author
+
+
+@pytest.mark.asyncio
+async def test_distill_resolves_team_state_when_not_given(monkeypatch):
+    created = []
+
+    async def create_skill(**kwargs):
+        created.append(kwargs)
+        return SimpleNamespace(id=10, name=kwargs["name"], status=kwargs["status"],
+                               source_learning_ids=kwargs["source_learning_ids"])
+
+    monkeypatch.setattr(skill_distiller, "_eligible_groups",
+                        AsyncMock(return_value={"/repo": [_authored(1, 11), _authored(2, 11)]}))
+    monkeypatch.setattr(skill_distiller, "get_summarizer_provider",
+                        lambda: SimpleNamespace(summarize=AsyncMock(return_value=_GOOD)))
+    monkeypatch.setattr(skill_distiller.settings, "MEMORY_SKILL_DISTILLATION_REQUIRE_APPROVAL", False)
+    monkeypatch.setattr("brain.memory.consolidation._memory_team_state", AsyncMock(return_value="team"))
+    with patch("brain.memory.skill_store.create_skill", new=create_skill):
+        await distill_skills(min_learnings=2)
+    assert created[0]["status"] == "pending"

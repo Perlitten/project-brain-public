@@ -394,7 +394,7 @@ def _principal_candidate(*authors, validated=True):
 
 @pytest.mark.asyncio
 async def test_gate_g2_team_state_needs_two_distinct_principals():
-    """One person's repeated claim is not independent evidence in a team."""
+    """One person's repeated claim is not independent evidence in a team: it becomes a reviewed proposal."""
     p1, p2, p3 = _gate_patches([])
     with p1, p2, p3:
         one_voice = await evaluate_gates(_principal_candidate(11, 11), team_state="team")
@@ -402,8 +402,11 @@ async def test_gate_g2_team_state_needs_two_distinct_principals():
         two_voices = await evaluate_gates(_principal_candidate(11, 12), team_state="team")
         three_unvalidated = await evaluate_gates(_principal_candidate(11, 11, 12, validated=False),
                                                  team_state="team")
-    assert one_voice.outcome == GateOutcome.REJECT_EVIDENCE
-    assert any("only 1 distinct principal(s)" in r and "need 2 in team state" in r for r in one_voice.reasons)
+    assert one_voice.outcome == GateOutcome.PROPOSE
+    assert any("only 1 distinct principal(s)" in r and "need 2 in team state" in r
+               and "proposed for independent review" in r for r in one_voice.reasons)
+    assert not any("G4 pass" in r for r in one_voice.reasons)
+    # Nobody to author the proposal: the claim is still dropped.
     assert anonymous.outcome == GateOutcome.REJECT_EVIDENCE
     assert any("only 0 distinct principal(s)" in r for r in anonymous.reasons)
     assert two_voices.outcome == GateOutcome.PROMOTE
@@ -434,8 +437,29 @@ async def test_gate_g2_principal_check_is_configurable_and_bypassed_by_approval(
         # A human decides on pending episodes, so the independence check steps aside.
         pending = await evaluate_gates(_principal_candidate(11, 11), require_approval=True, team_state="team")
     assert strict_solo.outcome == GateOutcome.REJECT_EVIDENCE
-    assert relaxed_team.outcome == GateOutcome.PROMOTE
+    # Team state never goes below two principals, whatever the setting says.
+    assert relaxed_team.outcome == GateOutcome.PROPOSE
+    assert any("need 2 in team state" in r for r in relaxed_team.reasons)
     assert pending.outcome == GateOutcome.NEEDS_APPROVAL
+
+
+@pytest.mark.asyncio
+async def test_gate_g2_team_proposal_yields_to_g4_approval_and_event_floor():
+    """PROPOSE only replaces auto-promotion: G4 approvals and the event-count rule still come first."""
+    high = ConsolidationCandidate(
+        statement="Never deploy on Fridays", severity="high",
+        evidence=[{"event_id": 1, "author_principal_id": 11}, {"event_id": 2, "author_principal_id": 11}],
+        evidence_tier=EVIDENCE_TIER_VALIDATED,
+    )
+    p1, p2, p3 = _gate_patches([])
+    with p1, p2, p3:
+        approval = await evaluate_gates(high, team_state="team")
+        too_few_events = await evaluate_gates(_principal_candidate(11), team_state="team")
+        solo = await evaluate_gates(_principal_candidate(11, 11), team_state="solo")
+    assert approval.outcome == GateOutcome.NEEDS_APPROVAL
+    assert any("proposed for independent review" in r for r in approval.reasons)
+    assert too_few_events.outcome == GateOutcome.REJECT_EVIDENCE
+    assert solo.outcome == GateOutcome.PROMOTE
 
 
 @pytest.mark.asyncio
