@@ -1,7 +1,7 @@
 # Team locking regression validation
 
 Initial reproduction base: main `cd5fafd` (PR156, head `0dd1102`, already merged).
-The final branch is based on main `5aac11e`, including PR151/152/153; the CAS fixes
+The final branch is based on main `288fb61`, including PR151/152/153/154; the CAS fixes
 are retained. The six original tests in `tests/test_team_locking_postgres.py` failed
 against the initial base with real PostgreSQL: revoke/authorization deadlock, concurrent
 accept deadlock, operator project lock upgrade, credential telemetry blocking,
