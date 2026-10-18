@@ -142,6 +142,10 @@ class TeamIdentity(Base):
     bound_by: Mapped[str] = mapped_column(String(160), nullable=False)
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), server_default=func.now(), nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    # The dashboard credential the latest SSO sign-in (or SSO acceptance) minted. The next sign-in revokes
+    # it, so a member holds at most one live SSO credential per identity; logout and unbinding revoke it.
+    # No foreign key: it is a pointer to revoke, and a dangling id revokes nothing.
+    session_credential_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class TeamOidcFlow(Base):

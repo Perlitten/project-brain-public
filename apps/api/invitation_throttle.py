@@ -10,15 +10,26 @@ Lite storage has no Redis and no team (``require_team_storage`` refuses it),
 so it keeps the in-process window: Lite is a single process, where that is
 exact. If Redis errors or stalls, the shared throttle falls back to the
 in-process window for that attempt: still a limit, only per process.
+
+Attempts are keyed by ``client_ip``: the socket peer, unless that peer is a
+proxy listed in ``BRAIN_TRUSTED_PROXY_IPS`` (the web dashboard, which calls
+the API for every invitee, and any reverse proxy in front of the API). Then
+X-Forwarded-For is read from the right, skipping trusted hops, and the first
+address not in the list is the client, so dashboard visitors get their own
+budgets while a forged header from anyone else is ignored.
 """
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import math
 import time
 import uuid
 from collections import defaultdict, deque
+from functools import lru_cache
 from typing import Any, Callable, Deque, Dict, Protocol
+
+from fastapi import Request
 
 from loguru import logger
 
@@ -103,6 +114,49 @@ def default_throttle() -> AcceptThrottle:
     from brain.database.session import redis_client
 
     return RedisWindow(redis_client)
+
+
+Network = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+
+@lru_cache(maxsize=4)
+def _trusted_proxies(raw: str) -> tuple[Network, ...]:
+    networks = []
+    for entry in (part.strip() for part in raw.split(",")):
+        if not entry:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            logger.warning("Ignoring BRAIN_TRUSTED_PROXY_IPS entry {!r}: not an IP address or CIDR", entry)
+    return tuple(networks)
+
+
+def _address(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    try:
+        return ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+
+
+def _trusted(address: ipaddress.IPv4Address | ipaddress.IPv6Address | None, proxies: tuple[Network, ...]) -> bool:
+    return address is not None and any(address.version == net.version and address in net for net in proxies)
+
+
+def client_ip(request: Request) -> str:
+    """The throttle key: the socket peer, or the client a trusted proxy forwarded for (see the module doc)."""
+    peer = request.client.host if request.client and request.client.host else "unknown"
+    proxies = _trusted_proxies(settings.BRAIN_TRUSTED_PROXY_IPS)
+    if not proxies or not _trusted(_address(peer), proxies):
+        return peer
+    hops = [hop for header in request.headers.getlist("x-forwarded-for") for hop in header.split(",")]
+    for hop in reversed(hops):
+        address = _address(hop)
+        if address is None:
+            break  # a hop a trusted proxy could not vouch for: count the request against the proxy
+        if not _trusted(address, proxies):
+            return str(address)
+    return peer
 
 
 def retry_after_header(seconds: float) -> str:

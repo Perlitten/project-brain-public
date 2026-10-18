@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
+import { clientAddress, forwardedFor } from "./client-address";
 import { MEMBER_COOKIE, MEMBER_MAX_AGE, SESSION_COOKIE, forgetLoginState, signInMember } from "./web-auth";
 
 // Team single sign-on (OpenID Connect) for the dashboard; docs/operations/TEAM_SSO.md.
@@ -16,7 +17,8 @@ import { MEMBER_COOKIE, MEMBER_MAX_AGE, SESSION_COOKIE, forgetLoginState, signIn
 // credential, which is sealed into the usual pb_member cookie exactly like a
 // pasted member key (signInMember), so the session model and scopes are the same.
 // These calls carry no X-API-Key: the routes are public by design and the
-// dashboard's server key has no business vouching for a person.
+// dashboard's server key has no business vouching for a person. Start and
+// callback forward the visitor's address for Brain's throttle (lib/client-address.ts).
 
 export const OIDC_START = "/auth/oidc/start";
 export const OIDC_CALLBACK = "/auth/oidc/callback";
@@ -35,13 +37,17 @@ const apiBase = () => process.env.BRAIN_API_URL?.trim();
 const digest = (value: string) => createHash("sha256").update(value).digest();
 const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
 
-async function callOidc(method: "GET" | "POST", path: string, body?: unknown): Promise<Brain> {
+async function callOidc(method: "GET" | "POST", path: string, body?: unknown, client?: string | null): Promise<Brain> {
   const base = apiBase();
   if (!base) return { status: 404, data: null };
   const url = new URL(path.replace(/^\/+/, ""), base.endsWith("/") ? base : `${base}/`);
   const res = await fetch(url, {
     method,
-    headers: { Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+    headers: {
+      Accept: "application/json",
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...forwardedFor(client),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
     // The callback waits on the provider's token endpoint and key set.
@@ -122,7 +128,8 @@ export async function oidcStart(req: NextRequest, safeNext: (value: unknown) => 
   const binding = randomBytes(32).toString("base64url");
   let answer: Brain;
   try {
-    answer = await callOidc("POST", "/team/oidc/start", { binding, ...(token ? { invitation: token } : {}) });
+    answer = await callOidc("POST", "/team/oidc/start", { binding, ...(token ? { invitation: token } : {}) },
+      clientAddress(req.headers));
   } catch {
     return failure(next, "Brain isn’t answering, so single sign-on can’t start. Try again in a minute.", 503);
   }
@@ -175,7 +182,7 @@ export async function oidcCallback(req: NextRequest, safeNext: (value: unknown) 
   }
   let answer: Brain;
   try {
-    answer = await callOidc("POST", "/team/oidc/callback", { state, code, binding: flow.b });
+    answer = await callOidc("POST", "/team/oidc/callback", { state, code, binding: flow.b }, clientAddress(req.headers));
   } catch {
     return fail("Brain isn’t answering, so single sign-on can’t finish. Start again in a minute.", 503);
   }

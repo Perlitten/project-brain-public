@@ -194,7 +194,7 @@ def sso_unbind_cmd(
     principal: str = typer.Option(..., "--principal", help="Principal id or name."),
     issuer: Optional[str] = typer.Option(None, "--issuer", help="Identity provider issuer; default: BRAIN_OIDC_ISSUER."),
 ):
-    """Remove a member's single sign-on binding (existing dashboard sessions expire on their own or on revoke)."""
+    """Remove a member's single sign-on binding and revoke the dashboard session it issued."""
 
     async def run():
         async with async_session_factory() as session, session.begin():

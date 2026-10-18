@@ -40,6 +40,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_team_dissolved_column(conn)
     await _ensure_team_invitation_oidc_columns(conn)
     await _ensure_execution_environment_column(conn)
+    await _ensure_team_identity_session_column(conn)
     await _backfill_non_current_knowledge_authority(conn)
     await _ensure_insights_table(conn)
     await _ensure_harness_reliability_columns(conn)
@@ -286,6 +287,17 @@ async def _ensure_execution_environment_column(conn: AsyncConnection) -> None:
     else:
         await conn.execute(text(
             "ALTER TABLE IF EXISTS harness.agent_run_executions ADD COLUMN IF NOT EXISTS environment VARCHAR(64)"))
+
+
+async def _ensure_team_identity_session_column(conn: AsyncConnection) -> None:
+    """An SSO binding remembers the credential its latest sign-in minted, so the next one revokes it."""
+    if conn.dialect.name == "sqlite":
+        columns = (await conn.execute(text("PRAGMA table_info(team_identities)"))).fetchall()
+        if columns and "session_credential_id" not in {row[1] for row in columns}:
+            await conn.execute(text("ALTER TABLE team_identities ADD COLUMN session_credential_id INTEGER"))
+    else:
+        await conn.execute(text(
+            "ALTER TABLE IF EXISTS team_identities ADD COLUMN IF NOT EXISTS session_credential_id INTEGER"))
 
 
 async def _ensure_decision_title_uniqueness(conn: AsyncConnection) -> None:

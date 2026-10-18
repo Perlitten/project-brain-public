@@ -257,7 +257,7 @@ There are two different things to revoke, and they are not the same:
 
 | Action | How | Effect |
 |---|---|---|
-| Revoke **membership** | `brain team member revoke --principal alice`, `DELETE /team/projects/members/{principal_id}`, or **Revoke** on the Team page | Ends her team membership and every project role, and revokes everything acting for her principal: her keys, OAuth access and refresh tokens bound to her, and the runs she started with their run credentials. Her next request gets 401, including the dashboard and MCP. |
+| Revoke **membership** | `brain team member revoke --principal alice`, `DELETE /team/projects/members/{principal_id}`, or **Revoke** on the Team page | Ends her team membership and every project role, and revokes everything acting for her principal: her keys, OAuth access and refresh tokens bound to her or approved by her (personal-scope clients included), and the runs she started with their run credentials. Her next request gets 401, including the dashboard and MCP. |
 | Revoke **one project role** | `brain team member revoke --principal alice --project core` | Removes only that project; membership and other roles stay. |
 | Revoke **keys** | Dashboard **Settings → Access** (`/admin`): revoke the credential or disable the principal (`POST /admin/credentials/{id}/revoke`, `POST /admin/principals/{id}/disable`) | The key stops authenticating anything. Needs a team administrator. |
 | Revoke an **invitation member** completely | **Revoke member** in the Team page's Invitations panel, `brain team invite revoke <invitation-id> --revoke-member`, or `POST /team/invitations/{id}/revoke` with `{"revoke_member": true}` | Membership, every project role and every credential of that principal. |
@@ -267,11 +267,11 @@ knowledge already approved stays, with them on record as its author or editor
 ([details](MEMORY_REVIEW.md#revoked-authors)).
 
 Revoking one project role leaves her keys valid: they still work for her other
-projects. Credentials that belong to another principal are not touched by a
-membership revocation. That includes an OAuth client she approved with
-personal scopes only, which runs as its own `oauth:<client>` service principal.
-In team state such a client has no project access. Revoke it separately under
-**Settings → Access** before you dissolve a team.
+projects. A membership revocation also revokes the OAuth grants she approved
+with personal scopes only, although such a client runs as its own
+`oauth:<client>` service principal: its access and refresh tokens die with
+her, so it cannot act as administrator after `brain team dissolve`. Other
+principals' credentials are not touched.
 
 Revoking the last live member does **not** return the Brain to solo. It stays
 in team state: the shared key and any surviving credential have no implicit
@@ -364,10 +364,13 @@ which is the source of truth.
   worker. The invitation-accept throttle (10 attempts per client IP per 5
   minutes) and the single sign-on throttle are shared through Redis, so they
   hold across API processes.
-- **Dashboard invitees share one throttle.** The `/invite` page calls the API
-  from the dashboard server, so the API sees every invitee as the dashboard's
-  IP: together they get 10 accept attempts per 5 minutes. Redeeming a token
-  with the CLI counts against the invitee's own IP instead.
+- **Dashboard invitees share one throttle unless the dashboard is trusted.**
+  The `/invite` page calls the API from the dashboard server and passes the
+  invitee's address on. The API believes it only from addresses listed in
+  `BRAIN_TRUSTED_PROXY_IPS`; otherwise every invitee counts as the dashboard's
+  IP and together they get 10 accept attempts per 5 minutes (see
+  [Team invitations](operations/TEAM_INVITATIONS.md#abuse-limits)). Redeeming a
+  token with the CLI counts against the invitee's own IP.
 - **Invitations are not emailed.** The administrator copies the link and sends
   it; without single sign-on the email field is a note.
 - **Execution is off by default.** Tasks and run requests are recorded with their

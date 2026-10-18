@@ -1277,14 +1277,20 @@ test('team sign-in through the proxy: httpOnly sealed cookie, raw key never in a
 function fakeSsoBrain() {
   const brain = fakeTeamBrain();
   const teamFetch = brain.fetch;
-  Object.assign(brain, { sso: true, starts: [], callbacks: [], refuse: null, credential: 'pbk_alice' });
+  Object.assign(brain, { sso: true, starts: [], callbacks: [], logouts: [], forwarded: [], refuse: null, credential: 'pbk_alice' });
   brain.fetch = async (url, options = {}) => {
     const u = new URL(String(url));
     if (!u.pathname.startsWith('/team/oidc/')) return teamFetch(url, options);
+    if (u.pathname === '/team/oidc/logout') {
+      // The one authenticated SSO route: the member's own key, never the dashboard's.
+      brain.logouts.push({ method: options.method, key: options.headers['X-API-Key'] });
+      return Response.json({ revoked: true });
+    }
     assert.equal(options.headers['X-API-Key'], undefined, 'single sign-on never sends the dashboard key');
     if (u.pathname === '/team/oidc/config') return Response.json({ enabled: brain.sso, required_for_invitations: false });
     if (!brain.sso) return Response.json({ detail: 'Single sign-on is not enabled' }, { status: 404 });
     const body = JSON.parse(options.body);
+    brain.forwarded.push(options.headers['X-Forwarded-For']);
     if (u.pathname === '/team/oidc/start') {
       brain.starts.push(body);
       return Response.json({ authorization_url: `https://idp.example/authorize?state=${'s'.repeat(32)}`, state: 's'.repeat(32), purpose: body.invitation ? 'invitation' : 'signin' });
@@ -1306,7 +1312,7 @@ async function withSso(run) {
     const auth = load('lib/web-auth.ts');
     const oidc = load('lib/oidc.ts', { './web-auth': auth });
     const { proxy } = load('proxy.ts', { './lib/web-auth': auth, './lib/oidc': oidc, '@/components/Icon': { MARK_TOKENS: [] } });
-    const get = (path, cookie) => new NextRequest(`https://web.example${path}`, { headers: { accept: 'text/html', ...(cookie ? { cookie } : {}) } });
+    const get = (path, cookie, extra = {}) => new NextRequest(`https://web.example${path}`, { headers: { accept: 'text/html', ...(cookie ? { cookie } : {}), ...extra } });
     const cookieOf = (res, name) => res.headers.getSetCookie().find(c => c.startsWith(`${name}=`));
     await withEnv(LIVE, () => run({ brain, auth, oidc, proxy, get, cookieOf }));
   } finally { global.fetch = oldFetch; }
@@ -1346,6 +1352,15 @@ test('team SSO: start sends the browser to the provider with a binding cookie, i
   const off = await proxy(get('/auth/oidc/start'));
   assert.equal(off.status, 404);
   assert.match(await off.text(), /Single sign-on is not enabled on this Brain/);
+}));
+
+test('team SSO: start and callback pass the visitor address on, so Brain throttles each visitor separately', () => withSso(async ({ brain, proxy, get, cookieOf }) => {
+  // The rightmost X-Forwarded-For hop is the one the dashboard's own front proxy wrote; a forged prefix is dropped.
+  const start = await proxy(get('/auth/oidc/start?next=/team', null, { 'x-forwarded-for': '198.51.100.9, 203.0.113.5' }));
+  const flow = /pb_oidc=([^;]+)/.exec(cookieOf(start, 'pb_oidc'))[1];
+  await proxy(get(`/auth/oidc/callback?state=${'s'.repeat(32)}&code=c1`, `pb_oidc=${flow}`, { 'x-real-ip': '2001:db8::7' }));
+  await proxy(get('/auth/oidc/start', null, { 'x-forwarded-for': 'not-an-address' }));
+  assert.deepEqual(brain.forwarded, ['203.0.113.5', '2001:db8::7', undefined]);
 }));
 
 test('team SSO: the callback opens a member session only for the browser that started it', () => withSso(async ({ brain, auth, proxy, get, cookieOf }) => {
@@ -1393,6 +1408,33 @@ test('team SSO: the callback opens a member session only for the browser that st
   const revoked = await proxy(get(`/auth/oidc/callback?state=${state}&code=c3`, `pb_oidc=${flow}`));
   assert.equal(revoked.status, 401);
   assert.equal(cookieOf(revoked, 'pb_member'), undefined);
+}));
+
+test('team SSO: logout ends the session in Brain with the member key, then clears the cookies', () => withSso(async ({ brain, auth, proxy, get }) => {
+  const sealed = encodeURIComponent(auth.sealMember('pbk_alice'));
+  const out = await proxy(get('/__logout', `pb_member=${sealed}`));
+  assert.equal(out.status, 303);
+  assert.deepEqual(brain.logouts, [{ method: 'POST', key: 'pbk_alice' }]);
+  assert.match(out.headers.get('set-cookie'), /pb_member=;/);
+  // Signed out already, or Brain down: the cookies are cleared all the same.
+  assert.equal((await proxy(get('/__logout'))).status, 303);
+  assert.equal(brain.logouts.length, 1);
+  const down = brain.fetch;
+  brain.fetch = global.fetch = async () => { throw new TypeError('fetch failed'); };
+  const offline = await proxy(get('/__logout', `pb_member=${sealed}`));
+  global.fetch = down;
+  assert.equal(offline.status, 303);
+  assert.match(offline.headers.get('set-cookie'), /pb_member=;/);
+}));
+
+test('team SSO: the invite page links to "Sign in with SSO", which POSTs the token, only when SSO is on', () => withSso(async ({ brain, oidc, proxy, get }) => {
+  const html = await (await proxy(get('/invite'))).text();
+  assert.match(html, /<a class="btn btn--ghost" href="\/auth\/oidc\/start" data-invitation>Sign in with SSO<\/a>/);
+  assert.match(html, /input\.name = "invitation"/, 'the token goes in a POST body, not the URL');
+  assert.match(html, /name="token"/, 'the token form stays');
+  brain.sso = false;
+  oidc.forgetSso();
+  assert.doesNotMatch(await (await proxy(get('/invite'))).text(), /Sign in with SSO/);
 }));
 
 test('reranker page explains a refused project folder instead of reporting an outage', async () => {

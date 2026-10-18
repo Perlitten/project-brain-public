@@ -96,7 +96,11 @@ brain team member sso-unbind --principal alice [--issuer https://idp.example.com
 ```
 
 `--issuer` defaults to `BRAIN_OIDC_ISSUER`. A member has at most one binding per
-issuer, and an IdP account is bound to at most one member.
+issuer, and an IdP account is bound to at most one member. `sso-unbind` also
+revokes the dashboard credential that binding's latest sign-in issued, so an
+open SSO session ends at once. Binding (by the operator or by accepting an
+invitation through SSO) and unbinding are recorded in the team activity feed as
+`sso.bound` and `sso.unbound`, visible to team administrators.
 
 ## Signing in
 
@@ -108,6 +112,18 @@ the usual read/write scopes; administrators also `team:admin`). The dashboard
 seals it into the same httpOnly `pb_member` cookie as a pasted member key, so
 the session model is identical: every request is re-checked with Brain, and
 revoking the member ends the session at once.
+
+A member holds one live SSO credential per binding: Brain remembers the
+credential each sign-in issued and revokes it on the next sign-in (the key an
+invitation accepted through SSO issues counts as the first session), so signing
+in on a second browser signs the first one out. Signing out
+of the dashboard (`/__logout`) calls `POST /team/oidc/logout` with the member's
+key, which revokes it when it is that member's current SSO session; a member key
+pasted at sign-in, or one used by the CLI or MCP clients, is not touched.
+
+The `/invite` page offers **Sign in with SSO** next to the token form when SSO
+is on. It POSTs the token from the field to `/auth/oidc/start` as `invitation`,
+so the token stays out of URLs.
 
 Refused: an unknown IdP account (not bound), a revoked or disabled member, an
 unverified member, and a database that is fenced after a
@@ -134,7 +150,9 @@ restore.
   the string `"true"` that some IdPs send), and the allowed domains. Discovery must return the configured issuer and https
   endpoints on any host.
 - `POST /team/oidc/start` and `/team/oidc/callback` share a throttle of 30
-  attempts per 5 minutes per client address, kept in Redis so every API process
+  attempts per 5 minutes per client address (see `BRAIN_TRUSTED_PROXY_IPS` in
+  [TEAM_INVITATIONS.md](TEAM_INVITATIONS.md) for how the address is found
+  behind the dashboard), kept in Redis so every API process
   counts against the same limit (`429` with `Retry-After`; if Redis fails, the
   limit falls back to each process). They carry no credential and
   answer `Cache-Control: no-store`. Invitation tokens and codes travel in JSON
@@ -151,19 +169,17 @@ makes each one visible and tested against a fake IdP
 ## Limitations
 
 - One identity provider per Brain.
-- The throttle is keyed by the socket peer: all dashboard users share the
-  dashboard's address. A burst from one person can delay others for a few
-  minutes.
-- The invitation token sits in the query of the `/auth/oidc/start` link, so it
-  can appear in dashboard access logs and browser history until it is redeemed
-  (the dashboard redirects immediately with `Referrer-Policy: no-referrer`).
-  Keep the expiry short.
-- Each SSO sign-in issues a new seven-day credential. Signing out of the
-  dashboard drops the cookie but does not revoke that credential; it expires on
-  its own. Revoke the member, or their credentials, to cut access sooner.
-- `sso-unbind` stops future SSO sign-ins but does not end sessions that are
-  already open (they last until the credential expires or the member is
-  revoked).
+- Unless `BRAIN_TRUSTED_PROXY_IPS` lists the dashboard's address, the throttle
+  is keyed by the socket peer and all dashboard users share the dashboard's
+  address: a burst from one person can delay others for a few minutes.
+- An invitation token put in the query of a `/auth/oidc/start` link by hand (as
+  Brain's "use single sign-on" refusal suggests) can appear in dashboard access
+  logs and browser history until it is redeemed (the dashboard redirects
+  immediately with `Referrer-Policy: no-referrer`). The `/invite` page POSTs it
+  instead. Keep the expiry short.
+- A browser that is closed without signing out leaves its SSO credential live
+  until the next sign-in rotates it or its seven days run out. Revoke the
+  member, or their credentials, to cut access sooner.
 - An IdP account stays bound to a member after that member is revoked. To let
   the same person join again through a new invitation, unbind it first.
 - Login CSRF: an attacker who can plant cookies for the dashboard's host (for

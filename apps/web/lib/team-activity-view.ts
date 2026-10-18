@@ -39,6 +39,7 @@ export const ACTIVITY_KINDS: Record<string, string[]> = {
   project_role: ["project_role.granted", "project_role.changed", "project_role.revoked"],
   execution: ["execution.granted", "execution.revoked"],
   invitation: ["invitation.created", "invitation.accepted", "invitation.revoked"],
+  sso: ["sso.bound", "sso.unbound"],
   task: ["task.created"],
   run: ["run.requested"],
   job: ["job.queued"],

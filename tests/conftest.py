@@ -33,6 +33,8 @@ _NEUTRAL_ENV = {
     # Single sign-on changes invitation acceptance; tests that need it patch settings.
     "BRAIN_OIDC_ENABLED": "false",
     "BRAIN_OIDC_REQUIRE_FOR_INVITATIONS": "false",
+    # Trusting forwarded addresses changes the throttle key; tests that need it patch settings.
+    "BRAIN_TRUSTED_PROXY_IPS": "",
     "OPENAI_API_KEY": "",
     "ANTHROPIC_API_KEY": "",
     "GOOGLE_API_KEY": "",

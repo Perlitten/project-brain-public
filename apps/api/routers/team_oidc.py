@@ -1,13 +1,13 @@
 """OIDC single sign-on for team members (``brain.team.oidc``; docs/operations/TEAM_SSO.md).
 
-Every route here is unauthenticated by design: it is how a person without a
-credential gets one. The dashboard's ``/auth/oidc/start`` and
+Every route but ``/logout`` is unauthenticated by design: it is how a person
+without a credential gets one. The dashboard's ``/auth/oidc/start`` and
 ``/auth/oidc/callback`` handlers are the intended callers; they keep the
 ``state`` and a random browser binding secret in an httpOnly cookie and send
 the binding with both calls, so a stolen authorization code cannot be redeemed
 from another browser. Invitation tokens and codes travel in JSON bodies, never
-in this API's URLs. Start and callback share a per-address throttle (socket
-peer), kept in Redis like invitation acceptance so every API process counts
+in this API's URLs. Start and callback share a per-address throttle (the client
+address from ``invitation_throttle.client_ip``), kept in Redis like invitation acceptance so every API process counts
 against one limit (``apps/api/invitation_throttle.py``; in memory under Lite).
 A throttled attempt gets HTTP 429 with ``Retry-After``. Answers are ``no-store``.
 
@@ -18,14 +18,20 @@ A throttled attempt gets HTTP 429 with ``Retry-After``. Answers are ``no-store``
   ``mode`` is ``signin`` or ``invitation``. 404 when SSO is off, 403 when the
   flow, token or identity is refused, 409 for team conflicts, 502 when the
   identity provider cannot be used.
+* ``POST /team/oidc/logout`` (``X-API-Key``) -> ``{revoked}``: dashboard logout.
+  Revokes the presented credential when it is the caller's live SSO session
+  and nothing else; a key SSO did not mint is left alone. Works while SSO is
+  off, so sessions issued before it was switched off can still be ended.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 
-from apps.api.invitation_throttle import AcceptThrottle, InProcessWindow, RedisWindow, retry_after_header
+from apps.api.auth import require_principal
+from apps.api.invitation_throttle import AcceptThrottle, InProcessWindow, RedisWindow, client_ip, retry_after_header
+from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
 
 from brain.database.session import async_session_factory
@@ -54,10 +60,6 @@ class OidcCallbackRequest(BaseModel):
     binding: str = Field(min_length=oidc.MIN_BINDING_LENGTH, max_length=oidc.MAX_BINDING_LENGTH)
 
 
-def _client_ip(request: Request) -> str:
-    return request.client.host if request.client and request.client.host else "unknown"
-
-
 def oidc_throttle() -> AcceptThrottle:
     """Shared Redis window under full storage (its own key prefix), the in-process window under Lite."""
     global _throttle
@@ -72,7 +74,7 @@ def oidc_throttle() -> AcceptThrottle:
 
 
 async def _check_throttle(request: Request) -> None:
-    retry_after = await oidc_throttle().hit(_client_ip(request), limit=OIDC_LIMIT, window_s=OIDC_WINDOW_S)
+    retry_after = await oidc_throttle().hit(client_ip(request), limit=OIDC_LIMIT, window_s=OIDC_WINDOW_S)
     if retry_after is not None:
         raise HTTPException(429, "Too many sign-in attempts; try again later",
                             headers={"Retry-After": retry_after_header(retry_after)})
@@ -143,3 +145,14 @@ async def oidc_callback(body: OidcCallbackRequest, request: Request, response: R
         raise _refusal(exc) from exc
     response.headers["Cache-Control"] = "no-store"
     return result
+
+
+@router.post("/logout")
+async def oidc_logout(response: Response, principal: ResolvedPrincipal = Depends(require_principal)) -> dict[str, bool]:
+    """End the caller's single sign-on session (only the presented credential, only if SSO minted it)."""
+    revoked = False
+    if settings.BRAIN_STORAGE_MODE == "full" and principal.id > 0 and principal.credential_id is not None:
+        async with async_session_factory() as session, session.begin():
+            revoked = await oidc.sign_out(session, principal_id=principal.id, credential_id=principal.credential_id)
+    response.headers["Cache-Control"] = "no-store"
+    return {"revoked": revoked}

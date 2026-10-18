@@ -78,6 +78,10 @@ class Settings(BaseSettings):
 
     # Orchestration API (scheduler, GitHub Actions, external triggers)
     PROJECT_BRAIN_API_KEY: Optional[str] = None
+    # Comma-separated addresses or CIDRs of proxies (the web dashboard and any
+    # reverse proxy in front of the API) whose X-Forwarded-For the invitation
+    # and single sign-on throttles believe. Empty: the socket peer is the client.
+    BRAIN_TRUSTED_PROXY_IPS: str = ""
     # Mirrors nginx `client_max_body_size 25m` for deployments that expose
     # uvicorn directly (docker compose publishes 8000 without the proxy).
     # 0 disables the application-level cap.
