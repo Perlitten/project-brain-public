@@ -17,7 +17,12 @@ them. Contract and design: [ADR: team collaboration](adr/team-collaboration.md).
 - Shell access to the server (or the API container) with the server's `.env`
   loaded. The first administrator can only be created there.
 - HTTPS in front of the API if anyone will redeem an invitation or use a key
-  from another machine ([Deployment](operations/DEPLOYMENT.md)).
+  from another machine ([Deployment](operations/DEPLOYMENT.md)). For one team
+  on one host, [one-team cloud deployment](operations/TEAM_DEPLOY.md) packages
+  the API and dashboard behind Caddy with automatic TLS.
+- `brain team doctor` checks the team setup read-only (state, administrators,
+  SSO settings, revocations, restore fence, stuck executions, source freshness,
+  backups) and prints a fix for each problem.
 - The repository you want to share, indexed on the server. Note the path it
   was indexed under: that exact string is the repository's identity.
 

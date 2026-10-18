@@ -532,6 +532,12 @@ class Settings(BaseSettings):
     # stay server-side: they are passed on the git command line only and are
     # redacted from every stored or reported value.
     BRAIN_ORIGIN_REMOTES: str = ""
+    # Where database backups land, as this process sees it (``brain team doctor``
+    # reads the newest backup_manifest.json from scripts/backup_runner.py or
+    # brain_db.sql.gz from deploy/server_up.sh; nothing is written). Blank:
+    # backup status is reported as unknown.
+    BRAIN_BACKUP_DIR: str = ""
+    BRAIN_BACKUP_MAX_AGE_HOURS: int = 48
 
     @field_validator("POSTGRES_POOL_SIZE")
     @classmethod
