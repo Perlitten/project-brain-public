@@ -194,12 +194,12 @@ async def test_admin_mint_refuses_wildcard_unheld_scopes_and_other_members(team_
     async with client_for(admin_app(factory, monkeypatch)) as client:
         wildcard = await client.post("/admin/principals/4/credentials", headers=ADMIN, json={"scopes": ["*"]})
         assert wildcard.status_code == 422
-        unheld = await client.post("/admin/principals/4/credentials", headers=ADMIN, json={"scopes": ["harness:write"]})
-        assert unheld.status_code == 403 and "harness:write" in unheld.json()["detail"]
+        unheld = await client.post("/admin/principals/4/credentials", headers=ADMIN, json={"scopes": ["graph:write"]})
+        assert unheld.status_code == 403 and "graph:write" in unheld.json()["detail"]
         other = await client.post("/admin/principals/1/credentials", headers=ADMIN, json={"scopes": ["team:read"]})
         assert other.status_code == 403 and "another team member" in other.json()["detail"]
         created = await client.post("/admin/principals", headers=ADMIN,
-                                    json={"name": "ci-bot", "kind": "service", "scopes": ["harness:write"]})
+                                    json={"name": "ci-bot", "kind": "service", "scopes": ["graph:write"]})
         assert created.status_code == 403
         own = await client.post("/admin/principals/4/credentials", headers=ADMIN, json={"scopes": ["team:read"]})
         assert own.status_code == 201 and own.json()["credential"]["scopes"] == ["team:read"]

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.database.models import ApiCredential, Principal
@@ -107,6 +107,29 @@ async def mint_credential(
     return raw, cred
 
 
+# ``last_used_at`` is a coarse "seen recently" marker, written at most once per interval.
+LAST_USED_INTERVAL = timedelta(seconds=60)
+
+
+async def _touch(session: AsyncSession, credential_id: int, now: datetime) -> None:
+    """Record a credential's use without ever waiting for its row lock.
+
+    Every authenticated request lands here. An unconditional ``UPDATE`` queued
+    behind any transaction that holds the credential row (each team
+    transaction of that key read-locks it), and later readers queued behind
+    the waiting update: one slow request stalled every other request of the
+    same key. The write is skipped while the row is locked (``SKIP LOCKED``)
+    and when it was recorded less than ``LAST_USED_INTERVAL`` ago."""
+    locked_free = (select(ApiCredential.id).where(ApiCredential.id == credential_id)
+                   .with_for_update(key_share=True, skip_locked=True).scalar_subquery())
+    await session.execute(
+        update(ApiCredential)
+        .where(ApiCredential.id == locked_free,
+               or_(ApiCredential.last_used_at.is_(None), ApiCredential.last_used_at < now - LAST_USED_INTERVAL))
+        .values(last_used_at=now)
+        .execution_options(synchronize_session=False))
+
+
 async def resolve_credential(
     session: AsyncSession, raw_key: str
 ) -> Optional[ResolvedPrincipal]:
@@ -134,7 +157,7 @@ async def resolve_credential(
 
     if await access_fenced(session):
         return None
-    cred.last_used_at = now
+    await _touch(session, cred.id, now)
     return ResolvedPrincipal(
         id=principal.id,
         name=principal.name,

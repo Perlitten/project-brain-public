@@ -150,7 +150,8 @@ jobs:
             -c "CREATE DATABASE brain_team_test OWNER fixture"
           TEST_TEAM_POSTGRES_URL="postgresql+asyncpg://fixture:fixture_local_only@127.0.0.1:$POSTGRES_PORT/brain_team_test" \
             pytest tests/test_team_foundations.py tests/test_team_transport.py tests/test_team_restore.py \
-            tests/test_team_invitations.py tests/test_team_restore_fence.py tests/test_team_execution.py -q
+            tests/test_team_invitations.py tests/test_team_restore_fence.py tests/test_team_execution.py \
+            tests/test_team_lock_order.py -q
 
       - name: Coverage summary
         run: |

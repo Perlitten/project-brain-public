@@ -5,15 +5,17 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sqlalchemy.exc import DBAPIError
 
 from apps.api.auth import require_principal
 from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
-from brain.database.models import Repository
+from brain.database.models import Principal, Repository
 from brain.database.session import async_session_factory, redis_client
 from brain.team import execution, provisioning, store
 from brain.team.authorization import (Permission, TeamConflict, TeamDenied, administrator, fresh, require_team_storage,
                                       team_administrator)
+from brain.team.locking import bound_team_transaction, retryable
 from brain.team.models import TeamTaskBinding
 from brain.team.provisioning import TeamNotFound
 from brain.workers.initiator import JobInitiator
@@ -109,7 +111,12 @@ async def team_session():
     try:
         require_team_storage()
         async with async_session_factory() as session, session.begin():
+            await bound_team_transaction(session)
             yield session
+    except DBAPIError as exc:
+        if not retryable(exc):
+            raise
+        raise HTTPException(503, "Team data is busy; retry shortly", headers={"Retry-After": "1"}) from exc
     except TeamDenied as exc:
         raise HTTPException(403, "Team authority denied") from exc
     except TeamNotFound as exc:
@@ -165,7 +172,10 @@ async def revoke_team_member(principal_id: int, caller: ResolvedPrincipal = Depe
     admin = await team_administrator(session, caller)
     if principal_id == admin.principal_id:
         raise TeamConflict("Administrators cannot revoke their own membership")
-    principal = await provisioning.resolve_principal(session, principal_id)
+    # Unlocked lookup: revoke_member takes the principal's row lock itself, in the team lock order.
+    principal = await session.get(Principal, principal_id)
+    if principal is None:
+        raise TeamNotFound(f"Principal {principal_id!r} not found")
     member = await provisioning.revoke_member(session, principal=principal, actor_id=caller.author_id)
     return provisioning.member_dict(member, principal)
 

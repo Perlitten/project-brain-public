@@ -21,6 +21,7 @@ from brain.team.activity import record_event
 from brain.database.models import ApiCredential, OAuthRefreshToken, Principal, Repository
 from brain.memory.proposals import withdraw_author_proposals
 from brain.team.authorization import ROLE_PERMISSIONS, Permission, TeamConflict, TeamDenied, fresh, permissions
+from brain.team.locking import retry_transient
 from brain.team.models import (AgentRun, ProjectMember, ProjectRepository, Team, TeamExecutionGrant, TeamMember,
                                TeamProject, TeamResourceLease)
 
@@ -32,13 +33,15 @@ CREDENTIAL_ISSUER = "brain-credential"
 # Issuer for members verified against the web UI login (approver subject ``web:<user>``).
 WEB_LOGIN_ISSUER = "brain-web-login"
 ADMIN_SCOPE = "team:admin"
-# What a member's own dashboard and MCP client read, plus recording decisions and rules and queuing
-# jobs. Project roles still decide every repository (a job needs the run.request permission on its
-# repository; one without a repository needs a team administrator); kept equal to DASHBOARD_SCOPES in
-# apps/web/lib/team-scopes.ts.
+# What a member's own dashboard and MCP client read, plus recording decisions and rules, queuing
+# jobs and recording harness work (task observations, lessons, handoffs). Project roles still decide
+# every repository (a job needs the run.request permission on its repository; one without a repository
+# needs a team administrator; a lesson or observation needs knowledge.propose on its task's repository,
+# so Readers are still refused); kept equal to DASHBOARD_SCOPES in apps/web/lib/team-scopes.ts.
 MEMBER_CORE_SCOPES = frozenset({
     "control:read", "core:write", "coupling:read", "drift:read", "freshness:read", "graph:read", "harness:read",
-    "impact:read", "jobs:write", "ledger:read", "operations:read", "portfolio:read", "setup:read", "workspace:read",
+    "harness:write", "impact:read", "jobs:write", "ledger:read", "operations:read", "portfolio:read", "setup:read",
+    "workspace:read",
 })
 # Extra for team admins: run the Team page (members, roles), issue member keys, and use the
 # administrative dashboard screens (Setup, Settings, Access, job retries). Those routes also require
@@ -304,6 +307,18 @@ async def revoke_principal_access(session: AsyncSession, principal: Principal) -
     await session.flush()
 
 
+async def lock_principal(session: AsyncSession, principal_id: int) -> Principal | None:
+    """Lock a principal row ``FOR NO KEY UPDATE``: the first lock of anything that revokes it.
+
+    Every request of that principal starts by taking the row ``FOR SHARE``
+    (``live_credential``), so this waits for requests in flight and holds new
+    ones back before they lock anything else. ``NO KEY`` keeps foreign-key
+    inserts that reference the principal (activity events, proposals) unblocked."""
+    return (await session.execute(select(Principal).where(Principal.id == principal_id)
+                                  .with_for_update(key_share=True)
+                                  .execution_options(populate_existing=True))).scalar_one_or_none()
+
+
 async def revoke_member(session: AsyncSession, *, principal: Principal, actor_id: int | None = None) -> TeamMember:
     """Revoke team membership, every live project role and all access acting for the principal.
 
@@ -311,22 +326,49 @@ async def revoke_member(session: AsyncSession, *, principal: Principal, actor_id
     ``Author access revoked`` (brain/memory/proposals.py): nobody is left to
     answer review questions about them, and a reviewer approving one later
     would publish knowledge on behalf of someone who no longer has access.
-    Knowledge already approved stays."""
-    member = await fresh(session, TeamMember, TeamMember.principal_id == principal.id, exclusive=True)
-    if member is None:
-        raise TeamNotFound("Principal is not a team member")
-    if member.revoked_at is None:
-        member.revoked_at = _now()
-        await _record_membership(session, "membership.revoked", f"{principal.name} was removed from the team",
-                                 actor_id=actor_id, principal_id=principal.id)
-    rows = (await session.execute(select(ProjectMember).where(ProjectMember.principal_id == principal.id,
-                                                              ProjectMember.revoked_at.is_(None)))).scalars().all()
-    for membership in rows:
-        membership.revoked_at = member.revoked_at
-        membership.version += 1
-    await revoke_principal_access(session, principal)
-    await withdraw_author_proposals(session, principal.id)
-    return member
+    Knowledge already approved stays.
+
+    Locks follow the team lock order (``brain/team/authorization.py``): the
+    principals of the runs the member initiated (newest first, as a run
+    request walks its delegation chain), the member's own principal, those
+    runs, then the membership row. A request of the member or of one of its
+    runs takes the same rows in the same order, so revocation waits for it
+    instead of deadlocking with it, and once this transaction commits every
+    credential acting for the member is revoked. A deadlock victim attempt is
+    rolled back to a savepoint and retried a bounded number of times
+    (``retry_transient``); if every attempt fails the error propagates and
+    nothing is revoked."""
+    principal_id, principal_name = principal.id, principal.name
+
+    async def attempt() -> TeamMember:
+        run_principals = (await session.execute(
+            select(AgentRun.principal_id).where(AgentRun.initiator_id == principal_id, AgentRun.revoked_at.is_(None))
+            .order_by(AgentRun.principal_id.desc()))).scalars().all()
+        for run_principal in run_principals:
+            await lock_principal(session, run_principal)
+        identity = await lock_principal(session, principal_id)
+        if identity is None:
+            raise TeamNotFound("Principal is not a team member")
+        await session.execute(select(AgentRun.id).where(AgentRun.initiator_id == principal_id,
+                                                        AgentRun.revoked_at.is_(None)).with_for_update())
+        member = await fresh(session, TeamMember, TeamMember.principal_id == principal_id, exclusive=True)
+        if member is None:
+            raise TeamNotFound("Principal is not a team member")
+        if member.revoked_at is None:
+            member.revoked_at = _now()
+            await _record_membership(session, "membership.revoked", f"{principal_name} was removed from the team",
+                                     actor_id=actor_id, principal_id=principal_id)
+        rows = (await session.execute(select(ProjectMember).where(ProjectMember.principal_id == principal_id,
+                                                                  ProjectMember.revoked_at.is_(None))
+                                      .with_for_update())).scalars().all()
+        for membership in rows:
+            membership.revoked_at = member.revoked_at
+            membership.version += 1
+        await revoke_principal_access(session, identity)
+        await withdraw_author_proposals(session, principal_id)
+        return member
+
+    return await retry_transient(session, attempt)
 
 
 async def dissolve_team(session: AsyncSession, team_id: int = TEAM_ID) -> Team:
