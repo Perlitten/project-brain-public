@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.database.models import ApiCredential, Principal
@@ -134,7 +134,17 @@ async def resolve_credential(
 
     if await access_fenced(session):
         return None
-    cred.last_used_at = now
+    # Usage telemetry must not queue authentication behind a transaction that
+    # holds this credential FOR SHARE. Update at most every five minutes and
+    # skip busy rows; liveness is always read above, never cached with telemetry.
+    cutoff = now - timedelta(minutes=5)
+    if cred.last_used_at is None or cred.last_used_at < cutoff:
+        available = select(ApiCredential.id).where(
+            ApiCredential.id == cred.id, ApiCredential.revoked_at.is_(None),
+            or_(ApiCredential.last_used_at.is_(None), ApiCredential.last_used_at < cutoff)
+        ).with_for_update(skip_locked=True)
+        await session.execute(update(ApiCredential).where(ApiCredential.id.in_(available))
+                              .values(last_used_at=now).execution_options(synchronize_session=False))
     return ResolvedPrincipal(
         id=principal.id,
         name=principal.name,

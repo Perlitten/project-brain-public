@@ -522,6 +522,8 @@ async def create_learning(body: LearningCreate, principal: ResolvedPrincipal = D
             author_principal_id=principal.author_id,
             status=proposals.PERSONAL_STATUS if personal else "active",
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(f"Failed to add learning: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to add learning") from exc

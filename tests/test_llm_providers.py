@@ -58,6 +58,8 @@ async def test_mock_embedding_provider():
 
     different = await embedder.embed("completely different content")
     assert vec != different
+    # Disjoint vocabulary must not look like near-duplicates to consolidation G1.
+    assert sum(a * b for a, b in zip(vec, different)) < 0.3
 
     vecs = await embedder.embed_batch(["text1", "text2"])
     assert len(vecs) == 2

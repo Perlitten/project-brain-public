@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -317,7 +317,11 @@ async def revoke_member(session: AsyncSession, *, principal: Principal, actor_id
     if member is None:
         raise TeamNotFound("Principal is not a team member")
     if member.revoked_at is None:
-        member.revoked_at = _now()
+        # Compare with DB-generated memory.created_at on the same clock. Use
+        # wall time *after* obtaining the gate, not the transaction start time:
+        # we may have waited for an in-flight writer to commit.
+        member.revoked_at = (await session.scalar(select(func.clock_timestamp()))
+                             if session.get_bind().dialect.name == "postgresql" else _now())
         await _record_membership(session, "membership.revoked", f"{principal.name} was removed from the team",
                                  actor_id=actor_id, principal_id=principal.id)
     rows = (await session.execute(select(ProjectMember).where(ProjectMember.principal_id == principal.id,
@@ -420,7 +424,10 @@ async def assign_project_member(session: AsyncSession, *, project_id: uuid.UUID,
     """Grant or change a project role; a no-op when the live role already matches."""
     if role not in ROLE_PERMISSIONS:
         raise TeamConflict("Unknown project role")
-    project = await fresh(session, TeamProject, TeamProject.id == project_id, exclusive=True)
+    # The project is only read. Its SHARE lock fences policy/deletion while the
+    # individual membership below is locked for mutation. Upgrading a project
+    # already read by resolve_project/_redeem deadlocks concurrent onboarding.
+    project = await fresh(session, TeamProject, TeamProject.id == project_id)
     if project is None:
         raise TeamNotFound("Project not found")
     member = await fresh(session, TeamMember, TeamMember.principal_id == principal_id,
@@ -441,7 +448,7 @@ async def assign_project_member(session: AsyncSession, *, project_id: uuid.UUID,
             return membership
         except IntegrityError:
             membership = await fresh(session, ProjectMember, ProjectMember.project_id == project_id,
-                                     ProjectMember.principal_id == principal_id)
+                                     ProjectMember.principal_id == principal_id, exclusive=True)
             if membership is None:
                 raise
     if membership.role != role or membership.revoked_at is not None:

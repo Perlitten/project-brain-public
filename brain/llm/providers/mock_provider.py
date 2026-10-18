@@ -19,7 +19,7 @@ def _deterministic_vector(text: str, dimension: int = 1536) -> List[float]:
     for token, count in counts.items():
         tf = 1.0 + math.log(count)
         digest = hashlib.sha256(token.encode("utf-8")).digest()
-        for i in range(12):
+        for i in range(len(digest) // 4):
             idx = int.from_bytes(digest[i * 4 : i * 4 + 4], "big") % dimension
             vec[idx] += tf
         if len(token) > 4:

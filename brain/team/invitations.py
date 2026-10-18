@@ -31,20 +31,21 @@ CLI runs them as a trusted operator and the HTTP router authorizes first.
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import re
 import secrets
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import ResolvedPrincipal, hash_credential, mint_credential
 from brain.config.settings import settings
 from brain.database.models import ApiCredential, Principal
 from brain.team.authorization import ROLE_PERMISSIONS, TeamConflict, TeamDenied, fresh
-from brain.team.models import ProjectMember, Team, TeamIdentity, TeamInvitation, TeamMember, TeamProject
+from brain.team.models import ProjectMember, TeamIdentity, TeamInvitation, TeamMember, TeamProject
 from brain.team.provisioning import (
     TEAM_ID,
     TeamNotFound,
@@ -158,12 +159,17 @@ async def create_invitation(session: AsyncSession, *, invited_by: str, invited_b
                             email: str | None = None, name: str | None = None,
                             expires_hours: int = DEFAULT_TTL_HOURS, team_id: int = TEAM_ID) -> tuple[str, dict]:
     """Issue an invitation; returns the plaintext token (shown once) and the public view."""
-    # Serialize the check-and-insert sequence on the shared parent row. A partial
-    # uniqueness constraint cannot express "unaccepted, unrevoked and unexpired",
-    # and without this lock concurrent administrators could mint two live tokens
-    # for the same principal name.
-    if await fresh(session, Team, Team.id == team_id, exclusive=True) is None:
-        raise TeamNotFound("Team is not initialized; run `brain team init` first")
+    name = (name or "").strip() or f"invitee-{secrets.token_hex(6)}"
+    if not NAME_PATTERN.fullmatch(name):
+        raise TeamConflict("Principal name must start with a letter and use only letters, digits and ._@+-")
+    # Serialize only competing invitations for the same name. Locking the team
+    # exclusively made unrelated onboarding/read requests queue behind issuance.
+    # Expiry is time-dependent, so a partial unique index cannot encode this.
+    if session.get_bind().dialect.name == "postgresql":
+        digest = hashlib.sha256(f"team-invitation:{team_id}:{name}".encode()).digest()
+        lock_id = int.from_bytes(digest[:8], "big", signed=True)
+        await session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_id})
+    await require_team(session, team_id)
     if role not in ROLE_PERMISSIONS:
         raise TeamConflict("Unknown project role")
     if not 1 <= expires_hours <= MAX_TTL_HOURS:
@@ -184,9 +190,6 @@ async def create_invitation(session: AsyncSession, *, invited_by: str, invited_b
     if email is None and oidc_required():
         raise TeamConflict("Invitations are accepted only through single sign-on here, "
                            "so an invitation needs the invitee's email address")
-    name = (name or "").strip() or f"invitee-{secrets.token_hex(6)}"
-    if not NAME_PATTERN.fullmatch(name):
-        raise TeamConflict("Principal name must start with a letter and use only letters, digits and ._@+-")
     if await fresh(session, Principal, Principal.name == name) is not None:
         raise TeamConflict(f"Principal name {name!r} is already taken")
     now = _now()

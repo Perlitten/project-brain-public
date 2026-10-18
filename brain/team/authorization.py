@@ -112,11 +112,32 @@ async def fresh(session: AsyncSession, model, *predicates, exclusive: bool = Fal
                                   .execution_options(populate_existing=True))).scalar_one_or_none()
 
 
+async def membership_gate(session: AsyncSession, principal_id: int) -> TeamMember | None:
+    """Lock membership before credentials, projects, runs or mutable domain rows.
+
+    Revocation holds this row exclusively until all access and private memory
+    are retired. Run requests take their human initiator's gate *before* their
+    own credential; otherwise revocation can deadlock on a run credential too.
+    The unlocked run lookup only discovers the gate: authorize still validates
+    the live run and complete delegation chain after acquiring it.
+    """
+    member = await fresh(session, TeamMember, TeamMember.principal_id == principal_id)
+    if member is not None:
+        return member
+    initiator_id = (await session.execute(select(AgentRun.initiator_id).where(
+        AgentRun.principal_id == principal_id))).scalar_one_or_none()
+    return (await fresh(session, TeamMember, TeamMember.principal_id == initiator_id)
+            if initiator_id is not None else None)
+
+
 async def live_credential(session: AsyncSession, principal_id: int, credential_id: int | None) -> ResolvedPrincipal:
     if principal_id <= 0 or credential_id is None:
         raise TeamDenied("A named live credential is required")
     if await access_fenced(session):
         raise TeamDenied(FENCED)
+    member = await membership_gate(session, principal_id)
+    if member is not None and member.revoked_at is not None:
+        raise TeamDenied("Credential is no longer authorized")
     identity = await fresh(session, Principal, Principal.id == principal_id)
     credential = await fresh(session, ApiCredential, ApiCredential.id == credential_id)
     now = datetime.now(timezone.utc)
@@ -126,6 +147,18 @@ async def live_credential(session: AsyncSession, principal_id: int, credential_i
         raise TeamDenied("Credential is no longer authorized")
     return ResolvedPrincipal(id=identity.id, name=identity.name, kind=identity.kind,
                              credential_id=credential.id, scopes=frozenset(credential.scopes or []))
+
+
+async def memory_author_gate(session: AsyncSession, author_id: int | None) -> None:
+    """Keep an attributed draft/private insert atomic with membership revocation."""
+    if settings.BRAIN_STORAGE_MODE != "full":
+        return
+    member = await membership_gate(session, author_id) if author_id is not None else None
+    if member is not None:
+        if member.revoked_at is not None or member.verified_at is None:
+            raise TeamDenied("Memory author is no longer a live team member")
+    elif await team_state(session) == "team":
+        raise TeamDenied("Memory drafts require live team membership")
 
 
 async def human_member(session: AsyncSession, caller: ResolvedPrincipal, team_id: int) -> TeamMember:
