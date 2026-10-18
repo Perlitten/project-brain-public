@@ -120,12 +120,17 @@ def _unsupported_domain_query(
     return should_abstain_for_unsupported_query(query, result.candidates, slices or [])
 
 
-def _mirror_verified(raw_freshness: dict[str, Any], status: str, indexed_revision: str | None) -> bool:
-    """True when the freshness verdict comes from the origin mirror and its head is the indexed commit."""
+def _source_identity_verified(
+    raw_freshness: dict[str, Any], status: str, indexed_revision: str | None
+) -> bool:
+    """True when a non-Git source identity proves that the source matches the index."""
     return (
         status == "current"
-        and raw_freshness.get("index_source") == "mirror"
         and revision_matches(raw_freshness.get("source_head_commit"), indexed_revision)
+        and (
+            raw_freshness.get("index_source") == "mirror"
+            or raw_freshness.get("source_revision_kind") == "snapshot_manifest"
+        )
     )
 
 
@@ -217,17 +222,24 @@ class RuntimeContextBuilder:
             )
             return payload
 
-        if _mirror_verified(raw_freshness, freshness, repo.get("indexed_revision")):
-            # The index was read from the origin mirror at exactly this commit,
-            # not from the registered root (a read-only checkout or a non-git
-            # snapshot such as a tar-deployed /app). A diff against that root
-            # proves nothing about the index and can never complete there.
-            delta = SourceDelta(head=raw_freshness.get("source_head_commit"), complete=True,
-                                source_present=True, reason="mirror_verified")
-        else:
-            delta = await asyncio.to_thread(
-                collect_source_delta, Path(repo_str), repo.get("indexed_revision"),
-                limit=settings.BRAIN_STALE_DIFF_MAX_FILES, timeout=settings.BRAIN_STALE_DIFF_TIMEOUT_S,
+        delta = await asyncio.to_thread(
+            collect_source_delta, Path(repo_str), repo.get("indexed_revision"),
+            limit=settings.BRAIN_STALE_DIFF_MAX_FILES, timeout=settings.BRAIN_STALE_DIFF_TIMEOUT_S,
+        )
+        if (
+            delta.source_present
+            and delta.reason == "git_unavailable"
+            and _source_identity_verified(raw_freshness, freshness, repo.get("indexed_revision"))
+        ):
+            # A mirror verdict or content-bound snapshot manifest can verify a
+            # non-Git root. Git worktrees still keep their real delta so dirty
+            # files are never hidden merely because indexing used a mirror.
+            verified_by = (
+                "mirror" if raw_freshness.get("index_source") == "mirror" else "snapshot_manifest"
+            )
+            delta = SourceDelta(
+                head=raw_freshness.get("source_head_commit"), complete=True,
+                source_present=True, reason=f"{verified_by}_verified",
             )
         unverified_diff = (delta.source_present and not delta.complete
                            and bool(re.fullmatch(r"[0-9a-fA-F]{40,64}", repo.get("indexed_revision") or "")))

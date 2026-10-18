@@ -44,11 +44,13 @@ REQUEST_COOLDOWN = timedelta(hours=1)
 
 EnqueueReindex = Callable[[Any, str], Awaitable[str]]
 
-# Row fields that only describe an active origin follow.
+# Remote observations only describe an active origin follow. Mirror provenance
+# is retained so a temporarily disabled follow can resume without waiting for a
+# new upstream commit; freshness hides it while no origin is configured.
 _FOLLOW_CLEARED: Dict[str, Any] = {
     name: None
-    for name in ("source_mode", "mirror_head", "remote_url", "tracked_branch", "remote_head",
-                 "commits_behind", "commits_behind_base", "commits_behind_head")
+    for name in ("remote_url", "tracked_branch", "remote_head", "commits_behind",
+                 "commits_behind_base", "commits_behind_head")
 }
 
 
@@ -129,8 +131,9 @@ async def poll_repository(repo: Any, *, enqueue: EnqueueReindex = enqueue_reinde
             f"{repo.path}."
         )
         # Following was switched off (BRAIN_ORIGIN_REMOTES no longer names the
-        # source): what an earlier follow recorded, the mirror marking above
-        # all, must not keep judging the index against a mirror head.
+        # source). Clear remote observations, while preserving mirror
+        # provenance so re-enabling follow can recover even when origin did not
+        # advance. effective_origin_state hides that provenance while disabled.
         await upsert_origin_state(repo.id, polled_at=now, poll_status="unconfigured", poll_error=message,
                                   **_FOLLOW_CLEARED)
         return {**report, "status": "unconfigured", "error": message}

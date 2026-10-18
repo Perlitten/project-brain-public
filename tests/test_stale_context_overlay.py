@@ -239,6 +239,41 @@ async def test_mirror_verified_snapshot_is_not_strict_blocked(snapshot_root, mon
 
 
 @pytest.mark.asyncio
+async def test_matching_snapshot_manifest_is_not_strict_blocked(snapshot_root, monkeypatch):
+    indexed = "a" * 40
+    builder, queued = context_builder(snapshot_root, indexed, "current", monkeypatch)
+    builder.retrieval.retrieve.return_value.repository["freshness"].update({
+        "source_head_commit": indexed,
+        "source_revision_kind": "snapshot_manifest",
+    })
+    monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "strict_block")
+
+    payload = await builder.build("Explain feature", snapshot_root)
+
+    assert payload["status"] == "ok"
+    assert payload["freshness"]["state"] == "fresh"
+    assert "current_source_required_for_code_change" not in payload["missing"]
+    queued.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mirror_index_does_not_hide_a_dirty_git_worktree(repository, monkeypatch):
+    root, indexed = repository
+    (root / "feature.py").write_text("def feature():\n    return 'dirty-live'\n")
+    builder, queued = context_builder(root, indexed, "current", monkeypatch)
+    mirror_served(builder, indexed=indexed, mirror_head=indexed, status="current")
+    monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "strict_block")
+
+    payload = await builder.build("Explain feature", root)
+
+    assert payload["status"] == "stale_blocked"
+    assert payload["freshness"]["reason"] == "policy_strict_block"
+    assert "current_source_required_for_code_change" in payload["missing"]
+    assert "auto_reindex_deferred_until_clean" in payload["missing"]
+    queued.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_mirror_behind_the_index_still_blocks_under_strict_policy(snapshot_root, monkeypatch):
     indexed = "a" * 40
     builder, queued = context_builder(snapshot_root, indexed, "behind", monkeypatch)
