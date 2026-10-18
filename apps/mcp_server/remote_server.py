@@ -268,6 +268,10 @@ async def _get(path: str, timeout: float = 30.0) -> Any:
     return await _request("GET", path, None, timeout)
 
 
+async def _put(path: str, payload: dict, timeout: float = 30.0) -> Any:
+    return await _request("PUT", path, payload, timeout)
+
+
 # --- resources and prompts ---------------------------------------------------------
 
 

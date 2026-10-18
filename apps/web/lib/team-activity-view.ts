@@ -48,6 +48,7 @@ export const ACTIVITY_KINDS: Record<string, string[]> = {
     "coordination.overlap", "coordination.integration_queued", "coordination.integrated", "coordination.needs_rebase",
     "coordination.stale_instructions", "coordination.integration_rejected",
   ],
+  registry: ["registry.registered", "registry.disabled", "registry.enabled", "registry.inspected"],
 };
 const KNOWN_KINDS = new Set([...Object.keys(ACTIVITY_KINDS), ...Object.values(ACTIVITY_KINDS).flat()]);
 export const ACTIVITY_PAGE_SIZE = 50;

@@ -1,6 +1,7 @@
 import typer
 import asyncio
 from typing import Optional
+from apps.cli.commands._local_memory import run_as_operator, write_as_local_principal
 from brain.memory.decision_store import DecisionStore
 
 decision_cli = typer.Typer(help="Manage technical and architectural decisions (ADRs).")
@@ -21,6 +22,11 @@ def add_decision_cmd(
     modules_list = [m.strip() for m in modules.split(",")] if modules else []
     files_list = [f.strip() for f in files.split(",")] if files else []
 
+    if write_as_local_principal("decision", dict(
+        title=title, description=description, status=status, reason=reason, consequences=consequences,
+        affected_features=features_list, affected_modules=modules_list, affected_files=files_list,
+    )):
+        return
     try:
         dec_id = asyncio.run(DecisionStore.add_decision(
             title=title,
@@ -31,7 +37,8 @@ def add_decision_cmd(
             affected_features=features_list,
             affected_modules=modules_list,
             affected_files=files_list,
-            # The CLI runs with the operator's own database access: admin role.
+            # No BRAIN_LOCAL_PRINCIPAL_KEY: the CLI runs with the operator's own
+            # database access (the local administrator): admin role, direct write.
             caller_role="admin",
         ))
         typer.secho(f"Successfully added decision with ID {dec_id}", fg=typer.colors.GREEN)
@@ -81,7 +88,7 @@ def deprecate_decision_cmd(
 ):
     """Deprecate a decision by its ID."""
     try:
-        success = asyncio.run(DecisionStore.deprecate_decision(decision_id))
+        success = run_as_operator("decision deprecate", lambda: DecisionStore.deprecate_decision(decision_id))
         if success:
             typer.secho(f"Successfully deprecated decision with ID {decision_id}", fg=typer.colors.GREEN)
         else:

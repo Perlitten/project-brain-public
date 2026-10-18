@@ -10,6 +10,11 @@ lower case), so the spelling a path was stored under does not matter.
 
 A repository with no registry record carries no trust restriction: the
 registry is optional and most indexed repositories are never registered.
+
+This module reads the registry *file*, which is the registry in solo state. In
+team state the registry is the shared ``workspace_registry_entries`` table that
+the API, the worker and the CLI all read (``brain.team.registry``); the file is
+imported into it once and read here only while the table is empty.
 """
 from __future__ import annotations
 

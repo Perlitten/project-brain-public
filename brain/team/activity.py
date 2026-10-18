@@ -14,7 +14,7 @@ other dated trace:
 * invitations (created, accepted, revoked) from ``team_invitations``;
 * team tasks and runs from ``team_task_bindings`` / ``agent_runs``;
 * membership and project-role changes, single sign-on bindings, queued jobs,
-  coordination events (scope overlaps, integration queue outcomes) and memory
+  coordination events (scope overlaps, integration queue outcomes, forced lease releases) and memory
   review events (``memory.proposed`` / ``memory.approved`` / ``memory.rejected``)
   from ``team_activity_events`` (written by provisioning, ``brain.team.oidc``, the
   job endpoints, ``brain/team/coordination.py`` and ``brain/memory/proposals.py``).
@@ -68,15 +68,19 @@ KINDS: dict[str, tuple[str, ...]] = {
     "job": ("job.queued",),
     "coordination": ("coordination.overlap", "coordination.integration_queued", "coordination.integrated",
                      "coordination.needs_rebase", "coordination.stale_instructions",
-                     "coordination.integration_rejected"),
+                     "coordination.integration_rejected", "coordination.lease_force_released"),
     # Governed memory review: a proposal was submitted, approved or rejected (no draft content in the event).
     "memory": ("memory.proposed", "memory.approved", "memory.rejected"),
+    # Workspace-registry trust administration in team state (brain.team.registry): administrators only.
+    "registry": ("registry.registered", "registry.disabled", "registry.enabled", "registry.inspected"),
 }
 ALL_KINDS = frozenset(kind for kinds in KINDS.values() for kind in kinds)
 # Families only team administrators read: team administration itself, and the
 # episode/skill memory whose API is administrator-only as well.
-ADMIN_FAMILIES = frozenset({"membership", "project_role", "execution", "invitation", "sso", "episode", "skill"})
-TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "sso", "job", "coordination", "memory"})
+ADMIN_FAMILIES = frozenset({"membership", "project_role", "execution", "invitation", "sso", "episode", "skill",
+                            "registry"})
+TABLE_FAMILIES = frozenset({"membership", "project_role", "execution", "sso", "job", "coordination", "memory",
+                            "registry"})
 
 _PRINCIPAL_LABEL = re.compile(r"^principal:(\d+)$")
 

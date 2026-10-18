@@ -28,6 +28,10 @@ Use the same absolute `repo_path` in tool calls that you passed to indexing.
 Repository decisions and rules should use that scope; omit it only for
 intentionally global knowledge. Availability of tools does not make the client
 invoke them automatically; add an appropriate task workflow to its instructions.
+The local server acts as the operator and writes decisions and rules directly.
+In a team, set `BRAIN_LOCAL_PRINCIPAL_KEY` to a member's `pbk_` key to make its
+writes follow [governed memory](MEMORY_REVIEW.md#local-surfaces-stdio-mcp-server-and-brain-cli)
+(a proposal for a member, a direct write for a team administrator).
 
 ### Remote transports
 
@@ -64,15 +68,18 @@ client label, not an authenticated agent identity; see the
 ## Tool reference
 
 Local stdio exposes 13 tools. The HTTP-backed stdio bridge and native `/mcp`
-add `get_diff_review`, for the asynchronous review flow, and the fourteen
-`team_*` tools of the [experimental team mode](TEAM.md): 28 tools in all. The
+add `get_diff_review`, for the asynchronous review flow, and the nineteen
+`team_*` tools of the [experimental team mode](TEAM.md): 33 tools in all. The
 task and memory review tools answer only for verified team members within their
 project roles; `team_me` works in solo state too; `team_request_run` records a
 run. MCP has no tool to execute it; the first, off-by-default execution slice is
 HTTP only ([bounded team execution](operations/TEAM_EXECUTION.md)). The five
-memory review tools follow [governed memory](MEMORY_REVIEW.md). The four
-coordination tools are read-only; plans, leases and the integration queue change
-through the HTTP API ([team coordination](TEAM.md#team-coordination-m3)).
+memory review tools follow [governed memory](MEMORY_REVIEW.md). Of the nine
+coordination tools, four read and five write: claim, renew and release a lease,
+declare a task's scope, and queue a run for integration. They call the same HTTP
+routes, so the same project roles, fencing tokens and plan versions apply.
+Creating subtasks and integrating or rejecting queue entries stay on the HTTP API
+and the web Board ([team coordination](TEAM.md#team-coordination-m3)).
 
 | Tool | Purpose |
 |---|---|
@@ -104,6 +111,11 @@ through the HTTP API ([team coordination](TEAM.md#team-coordination-m3)).
 | `team_coordination_overlaps` | Remote only, experimental: declared-scope overlaps among active tasks and leases |
 | `team_list_leases` | Remote only, experimental: critical leases with holders and fencing tokens |
 | `team_integration_queue` | Remote only, experimental: the integration queue and each entry's last check |
+| `team_claim_lease` | Remote only, experimental: claim a fenced lease on a path or resource (Contributor) |
+| `team_renew_lease` | Remote only, experimental: extend a lease you hold, with its fencing token |
+| `team_release_lease` | Remote only, experimental: release a lease you hold, with its fencing token |
+| `team_declare_scope` | Remote only, experimental: declare the paths a task touches (plan version compare-and-swap) |
+| `team_enqueue_integration` | Remote only, experimental: queue a run that reported its head revision for integration |
 
 Memory writes follow the [lesson and approval policy](MEMORY_LESSON_PROTOCOL.md).
 A tool's reported evidence is not proof that Brain independently executed tests.

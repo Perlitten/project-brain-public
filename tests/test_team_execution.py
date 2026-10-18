@@ -20,14 +20,15 @@ from brain.config.settings import settings
 from brain.database.harness_models import AgentTask, AgentTaskEvent
 from brain.database.models import (ApiCredential, Base, Decision, MemoryProposal, OAuthClient, OAuthRefreshToken,
                                    Principal, Repository, Rule)
-from brain.execution.bounded import SubprocessBackend
-from brain.team import execution, provisioning
+from brain.execution.bounded import ExecutorError, SubprocessBackend, WorkingCopy
+from brain.team import coordination, execution, provisioning
 from brain.team.authorization import Permission, TeamConflict, TeamDenied, authorize
 from brain.team.execution import ExecutionDenied, ExecutionRunner, Lease
 from brain.team.models import (AgentRun, AgentRunExecution, ProjectMember, ProjectRepository, Team, TeamAccessFence,
                                TeamActivityEvent, TeamExecutionGrant, TeamIdentity, TeamInvitation, TeamMember,
                                TeamIntegrationEntry, TeamOidcFlow, TeamProject, TeamResourceLease,
-                               TeamRunResolution, TeamTaskBinding, TeamTaskPlan)
+                               TeamRunResolution, TeamTaskBinding, TeamTaskPlan, WorkspaceRegistryEntry,
+                               WorkspaceRegistryEvent)
 from brain.team.store import create_task, request_run
 
 TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, AgentTask, AgentTaskEvent,
@@ -38,7 +39,9 @@ TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, Ag
           # SSO tables reference invitations; the shared PostgreSQL database must drop them first.
           TeamIdentity, TeamOidcFlow,
           # Coordination (M3) tables reference task bindings, runs and repositories.
-          TeamTaskPlan, TeamResourceLease, TeamRunResolution, TeamIntegrationEntry)]
+          TeamTaskPlan, TeamResourceLease, TeamRunResolution, TeamIntegrationEntry,
+          # Shared workspace registry: repository trust every process reads in team state.
+          WorkspaceRegistryEntry, WorkspaceRegistryEvent)]
 NOW = datetime.now(timezone.utc)
 SECRET_VALUE = "fixture-secret-value-7f3a9c"
 PY = sys.executable
@@ -616,3 +619,172 @@ async def test_http_execution_routes_sit_behind_every_gate(team_db, source_repo,
         missing = f"/team/projects/{a}/tasks/{task_id}/runs/{uuid.uuid4()}/execution"
         assert (await client.get(missing, headers=CONTRIBUTOR)).status_code in {403, 404}
         assert (await client.delete(grant_url, headers=ADMIN)).json()["active"] is False
+
+
+# --------------------------------------------------------------------------- M3 seams: dependencies and changed files
+
+
+async def _subtasks(factory, project, base_sha):
+    """A parent with two independent subtasks (both ready); returns (parent, first, second)."""
+    async with factory() as session, session.begin():
+        parent = uuid.UUID((await create_task(session, caller(2), project, dict(
+            repository_id=1, title="parent", goal="bounded", branch="main", base_sha=base_sha,
+            permissions=["read", "run.request"], idempotency_key=f"task-{uuid.uuid4().hex}")))["id"])
+        ids = []
+        for key in ("first", "second"):
+            created = await coordination.create_subtask(session, caller(2), project, parent, dict(
+                title=key, goal="bounded", idempotency_key=f"{key}-{uuid.uuid4().hex[:8]}"))
+            ids.append(uuid.UUID(created["id"]))
+    return parent, ids[0], ids[1]
+
+
+async def _run_for(factory, project, task_id):
+    async with factory() as session, session.begin():
+        run = await request_run(session, caller(2), project, task_id, dict(
+            branch=f"brain/run-{uuid.uuid4().hex[:8]}", permissions=["read", "run.request"],
+            idempotency_key=f"run-{uuid.uuid4().hex}"))
+    return uuid.UUID(run["id"])
+
+
+@pytest.mark.asyncio
+async def test_execution_rechecks_dependencies_when_it_starts(team_db, source_repo, enabled):
+    factory, a, _ = team_db
+    _, first, second = await _subtasks(factory, a, source_repo[1])
+    await grant(factory, a)
+    queued = await _run_for(factory, a, second)
+    unrequested = await _run_for(factory, a, second)
+    queued_body = payload({"tool": "touch", "args": ["too-early.txt"]})
+    accepted = await request(factory, a, second, queued, queued_body)
+    # After the request, the plan gains a dependency that is not done yet.
+    async with factory() as session, session.begin():
+        await coordination.update_plan(session, caller(2), a, second, {"depends_on": [str(first)],
+                                                                       "expected_version": 1})
+    with pytest.raises(TeamConflict, match="Dependencies are not done"):
+        await request(factory, a, second, unrequested, payload("hello"))
+    assert await request(factory, a, second, queued, queued_body) == accepted
+    state = await execution.execute_run(queued, factory=factory)
+    assert state["state"] == "revoked", state["events"]
+    final = state["events"][-1]["payload"]
+    assert final["reason"].startswith("Dependencies are not done") and final["steps_recorded"] == 0
+    assert [e["type"] for e in state["events"]] == ["run.execution.requested", "run.execution.revoked"]
+    assert not list(enabled.rglob("too-early.txt")) and not list(enabled.glob("*/repo"))  # no working copy at all
+
+    # Once the dependency is done, a new run of the same subtask executes.
+    async with factory() as session, session.begin():
+        await session.execute(update(AgentTask).where(AgentTask.id == first).values(status="completed"))
+    ready = await _run_for(factory, a, second)
+    await request(factory, a, second, ready, payload("hello"))
+    assert (await execution.execute_run(ready, factory=factory))["state"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_completed_execution_records_changed_files_and_their_overlaps(team_db, source_repo, enabled):
+    factory, a, _ = team_db
+    task_id, run_id, _ = await make_run(factory, a, source_repo[1])
+    other_task, _, _ = await make_run(factory, a, source_repo[1])
+    async with factory() as session, session.begin():
+        await coordination.update_plan(session, caller(2), a, other_task, {"scope_paths": ["README.md"],
+                                                                           "expected_version": 0})
+        lease = (await coordination.acquire_lease(session, caller(3), a, {
+            "repository_id": 1, "resource": "notes.txt"}))["lease"]
+    await grant(factory, a)
+    await request(factory, a, task_id, run_id, payload({"tool": "touch", "args": ["README.md"]},
+                                                       {"tool": "touch", "args": ["notes.txt"]}))
+    state = await execution.execute_run(run_id, factory=factory)
+    assert state["state"] == "completed", state["events"]
+    completed = state["events"][-1]["payload"]
+    # A modified tracked file and a new untracked one, relative to the task base.
+    assert completed["changed_paths"] == ["README.md", "notes.txt"] and completed["changed_paths_total"] == 2
+    assert completed["overlaps"] == 2
+    async with factory() as session:
+        rows = (await session.execute(select(TeamActivityEvent).where(
+            TeamActivityEvent.kind == "coordination.overlap"))).scalars().all()
+    assert sorted((row.details["kind"], row.details["source"]) for row in rows) == [
+        ("lease", "changed_paths"), ("task", "changed_paths")]
+    by_kind = {row.details["kind"]: row.details for row in rows}
+    assert by_kind["task"]["other_task_id"] == str(other_task) and by_kind["lease"]["lease_id"] == lease["id"]
+    assert all(row.actor_principal_id == 2 and row.repository_id == 1 for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_unreadable_changes_never_fail_a_completed_execution(team_db, source_repo, enabled):
+    @dataclass
+    class NoChanges(SubprocessBackend):
+        def changed_paths(self, copy):
+            raise ExecutorError("git diff failed with exit code 128")
+
+    factory, a, _ = team_db
+    task_id, run_id, _ = await make_run(factory, a, source_repo[1])
+    await grant(factory, a)
+    await request(factory, a, task_id, run_id, payload("hello"))
+    state = await execution.execute_run(run_id, factory=factory, backend=NoChanges())
+    assert state["state"] == "completed"
+    completed = state["events"][-1]["payload"]
+    assert completed["changed_paths"] is None and completed["changed_paths_total"] is None
+    assert completed["overlaps"] == 0
+
+
+def test_subprocess_backend_lists_committed_uncommitted_and_untracked_changes(source_repo, tmp_path):
+    repo, base = source_repo
+    (repo / ".gitignore").write_text("ignored.log\n")
+    (repo / "committed.txt").write_text("x")
+    _git(repo, "add", ".gitignore", "committed.txt")
+    _git(repo, "commit", "-q", "-m", "after base")
+    (repo / "README.md").write_text("changed\n")
+    (repo / "dir with space").mkdir()
+    (repo / "dir with space" / "new file.txt").write_text("x")
+    (repo / "ignored.log").write_text("x")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    copy = WorkingCopy(run_dir=run_dir, path=repo, branch="main", base_sha=base)
+    assert SubprocessBackend().changed_paths(copy) == [".gitignore", "README.md", "committed.txt",
+                                                       "dir with space/new file.txt"]
+    with pytest.raises(ExecutorError):
+        SubprocessBackend().changed_paths(WorkingCopy(run_dir=run_dir, path=repo, branch="main", base_sha="HEAD"))
+
+
+def test_subprocess_git_timeout_is_an_executor_error(source_repo, tmp_path, monkeypatch):
+    repo, base = source_repo
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    copy = WorkingCopy(run_dir=run_dir, path=repo, branch="main", base_sha=base)
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(
+        subprocess.TimeoutExpired(cmd="git diff", timeout=120)))
+    with pytest.raises(ExecutorError, match="git diff could not be run"):
+        SubprocessBackend().changed_paths(copy)
+
+
+# --------------------------------------------------------------------------- PostgreSQL lease races
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not os.getenv("TEST_TEAM_POSTGRES_URL"), reason="requires a disposable PostgreSQL team database")
+async def test_concurrent_workers_claim_an_execution_lease_once(team_db, source_repo, enabled):
+    factory, a, _ = team_db
+    _, run_id = await _queued(factory, a, source_repo)
+    results = await asyncio.gather(*(execution.acquire_lease(factory, run_id, f"worker-{index}", lease_seconds=30)
+                                     for index in range(8)))
+    winners = [lease for lease in results if lease is not None]
+    assert len(winners) == 1 and winners[0].token == 1
+    async with factory() as session:
+        row = await session.get(AgentRunExecution, run_id)
+        assert row.lease_owner == winners[0].owner and row.fencing_token == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not os.getenv("TEST_TEAM_POSTGRES_URL"), reason="requires a disposable PostgreSQL team database")
+async def test_concurrent_workers_execute_a_run_once(team_db, source_repo, enabled):
+    factory, a, _ = team_db
+    task_id, run_id, _ = await make_run(factory, a, source_repo[1])
+    await grant(factory, a)
+    await request(factory, a, task_id, run_id, payload({"tool": "touch", "args": ["once.txt"]}))
+    states = await asyncio.gather(execution.execute_run(run_id, owner="worker-a", factory=factory),
+                                  execution.execute_run(run_id, owner="worker-b", factory=factory))
+    assert {state["state"] for state in states} <= {"completed", "running", "requested"}
+    final = await execution.execution_state(factory, run_id)
+    assert final["state"] == "completed"
+    async with factory() as session:
+        events = (await session.execute(select(AgentTaskEvent.event_type).where(
+            AgentTaskEvent.task_id == task_id, AgentTaskEvent.event_type.like("run.execution.%")))).scalars().all()
+    assert events.count("run.execution.started") == 1 and events.count("run.execution.step") == 1
+    assert events.count("run.execution.completed") == 1

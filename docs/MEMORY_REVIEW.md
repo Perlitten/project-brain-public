@@ -17,8 +17,9 @@ member or agent ──propose──▶ pending proposal ──approve (Reviewer,
 ```
 
 Code: `brain/memory/proposals.py` (service), `apps/api/routers/memory_review.py`
-(HTTP), `apps/mcp_server/team_server.py` (MCP tools), `apps/web/app/review/`
-(dashboard). Tests: `tests/test_memory_proposals.py`.
+(HTTP), `apps/mcp_server/team_server.py` (MCP tools), `apps/api/local_memory.py`
+(stdio MCP server and `brain` CLI), `apps/web/app/review/` (dashboard). Tests:
+`tests/test_memory_proposals.py`.
 
 ## Who may do what
 
@@ -50,6 +51,32 @@ canonical row: they create a pending proposal and answer **HTTP 202**:
 
 Team administrators keep writing directly (HTTP 200). `POST /decisions/proposals`
 and `POST /rules/proposals` always propose, for anyone allowed to.
+
+The remote MCP bridge and native `/mcp` call these endpoints with the caller's
+own credential, so a member's key used over MCP files a proposal exactly like
+the HTTP call; there is no MCP path that writes shared memory for a member.
+
+## Local surfaces: stdio MCP server and `brain` CLI
+
+The local stdio MCP server and the `brain` CLI run in the operator's own
+process with the operator's database credentials. Who they act as:
+
+| `BRAIN_LOCAL_PRINCIPAL_KEY` | Acts as | `record_decision` / `record_rule`, `brain decision add`, `brain rules add` |
+|---|---|---|
+| Empty (default) | **The operator**: the local administrator of this Brain | Direct write, unattributed, as before |
+| A named `pbk_` credential | That principal | The same handler as `POST /decisions` / `POST /rules`: a member's write is a pending proposal (MCP `status: "proposed"`, the CLI prints the proposal number), a Reader is refused, a team administrator (or solo state) writes directly and attributed |
+
+- A configured key that does not resolve to a live credential, or the shared
+  `PROJECT_BRAIN_API_KEY` once the team has members, **fails closed**: the
+  write is refused (`status: "denied"`, CLI exit code 1), never performed as
+  the operator instead.
+- Bulk commands that write shared memory directly (`brain rules sync`,
+  `brain decision deprecate`, `brain import obsidian`) run only as the
+  operator or as a key that may write directly (a team administrator, or solo
+  state); for a member's key they are refused before anything is written.
+- Leave the key empty on the server itself, where the operator administers the
+  Brain. Set it on a member's workstation that points the local surfaces at a
+  shared database, so their writes go through review.
 
 **Edits are proposals too.** A proposal with the same title (decision) or rule id
 (rule) and scope as an approved item is an edit of it. The proposal records the
@@ -117,6 +144,16 @@ leaving out their own (solo state: every pending proposal; a team
 administrator: every scope; a member: the repositories of projects where they
 hold `knowledge.approve`).
 
+**Telegram (opt-in).** With `MEMORY_REVIEW_TELEGRAM_NOTIFY=true` (default
+`false`) and owner alerts configured (`TELEGRAM_ALERTS_ENABLED`, bot token and
+chat id), every new proposal, consolidation proposals included, sends a short
+English notice to the owner chat once it is committed, for example
+`📝 Memory proposal #7 awaits review` / `Learning in my-service` and a link to
+the review page when `BRAIN_WEB_URL` is set. It names only the proposal number,
+its kind and the repository's name, never the title, statement or other draft
+text. The push is best effort and bounded (at most 5 seconds): a slow or
+failing channel never fails or delays the submission.
+
 ## Revoked authors
 
 - Revoking a member's team membership (`brain team member revoke`, the Team
@@ -180,8 +217,26 @@ memory on one person's word:
   the evidence, filed in the same transaction. Approving it (a Reviewer of the
   scope who is not that author) writes the active learning with author and
   approver and marks the episode `promoted`; rejecting it marks the episode
-  `rejected`. Run reports list such clusters under `proposed`. High-severity
-  candidates still go to the episode approval queue (G4) first.
+  `rejected`. Run reports list such clusters under `proposed`.
+- **G4 escalations join the same queue.** In team state a cluster that G4
+  sends to human approval (high severity, an unresolved contradiction,
+  `MEMORY_CONSOLIDATION_REQUIRE_APPROVAL=true`, …) is not left as a `pending`
+  episode: its episode waits as `proposed` on a learning proposal with
+  `payload.gate = "G4"` and the gate's reason in `payload.approval_reason`.
+  Run reports keep listing it under `needs_approval`, now with its
+  `proposal_id`, and it does not count towards `pending_total`. It is decided
+  like any other proposal: a Reviewer of the scope, with the version
+  compare-and-swap. `POST /episodes/{id}/approve|reject` refuses a `proposed`
+  episode (decide it in `/memory/proposals`).
+- **Evidence authors are not independent.** For every consolidation proposal
+  (G2 or G4), a principal whose events are part of its evidence may not
+  approve or reject it (403 "rests on your own evidence"), even when someone
+  else is its author.
+- **System-filed proposals.** A G4 escalation of evidence that names nobody
+  has no author: it is filed by the system (`author_principal_id` null). Any
+  Reviewer of the scope who is not behind the evidence may decide it; the
+  revoked-author check does not apply, and the approved learning stays
+  unattributed with the reviewer as its approver.
 - **Rule and decision projection proposes.** In team state the rule or
   decision a promoted learning implies is filed as a proposal (authored by the
   lead evidence principal) instead of written canonically.
@@ -193,8 +248,13 @@ memory on one person's word:
 
 ## Not governed (known limitations)
 
-- The local stdio MCP server and the `brain` CLI are operator surfaces on the
-  server and write directly.
-- Consolidation episodes routed to G4 approval (`POST /episodes/{id}/approve`)
-  are decided by a team administrator, outside the proposal queue.
+- Without `BRAIN_LOCAL_PRINCIPAL_KEY` the local stdio MCP server and the
+  `brain` CLI act as the operator (the local administrator) and write directly,
+  unattributed. Anyone who can run them already holds the operator's database
+  credentials, so the key is a way to route a member's own work through
+  review, not a security boundary against the operator.
+- Solo state keeps G4 episodes on `GET /episodes?status=pending` and
+  `POST /episodes/{id}/approve`, as before.
+- Review notifications go only to the owner's Telegram chat; there is no
+  per-reviewer channel yet.
 - A revoked member's personal learnings stay stored and invisible to everyone.

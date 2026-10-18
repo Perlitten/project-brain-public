@@ -5,16 +5,14 @@ administrator, except a vector repair, which needs ``run.request`` on the
 registry repository it names.
 """
 
-from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from brain.operations.nightly import NightlyOperationsManager
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import registry_authority
+from apps.api.registry_access import registry_authority, workspace_registry
 from apps.api.team_access import team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.team.authorization import Permission
-from brain.workspace.registry_store import RegistryStore
 
 router = APIRouter(prefix="/operations", tags=["operations"])
 mgr = NightlyOperationsManager()
@@ -38,7 +36,7 @@ def list_operations_freshness(authenticated: bool = Depends(require_api_key)):
 @router.post("/repositories/{repository_id}/repair-vectors", dependencies=[Depends(require_scope("operations:write"))])
 async def repair_repository_vectors(repository_id: str, authenticated: bool = Depends(require_api_key),
                                     principal: ResolvedPrincipal = Depends(require_principal)):
-    record = RegistryStore(Path(".brain/workspace")).get(repository_id)
+    record = (await workspace_registry()).get(repository_id)
     await registry_authority(principal, Permission.REQUEST_RUN, record)
     job = mgr.repair_vectors(repository_id)
     return job.model_dump()

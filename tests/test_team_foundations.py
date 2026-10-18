@@ -18,7 +18,8 @@ from brain.team.authorization import Permission, TeamConflict, TeamDenied, autho
 from brain.team.models import (AgentRun, AgentRunExecution, ProjectMember, ProjectRepository, Team, TeamAccessFence,
                                TeamActivityEvent, TeamExecutionGrant, TeamIdentity, TeamInvitation, TeamMember,
                                TeamIntegrationEntry, TeamOidcFlow, TeamProject, TeamResourceLease,
-                               TeamRunResolution, TeamTaskBinding, TeamTaskPlan)
+                               TeamRunResolution, TeamTaskBinding, TeamTaskPlan, WorkspaceRegistryEntry,
+                               WorkspaceRegistryEvent)
 from brain.team.store import create_task, list_tasks, request_run
 
 TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, AgentTask, AgentTaskEvent,
@@ -28,7 +29,9 @@ TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, Ag
           # Governed memory: member revocation withdraws proposals; proposals read the canonical decisions/rules.
           Decision, Rule, MemoryProposal, TeamExecutionGrant, AgentRunExecution,
           # Coordination (M3): plans, leases, run instruction snapshots and the integration queue.
-          TeamTaskPlan, TeamResourceLease, TeamRunResolution, TeamIntegrationEntry)]
+          TeamTaskPlan, TeamResourceLease, TeamRunResolution, TeamIntegrationEntry,
+          # Shared workspace registry: repository trust every process reads in team state.
+          WorkspaceRegistryEntry, WorkspaceRegistryEvent)]
 NOW = datetime.now(timezone.utc)
 
 

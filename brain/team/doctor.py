@@ -26,7 +26,7 @@ from brain.database.models import ApiCredential, Principal, Repository, Reposito
 from brain.memory.source_manifest import revision_matches
 from brain.auth.principals import ALL_SCOPES
 from brain.team.authorization import team_state
-from brain.team.execution import operator_policy
+from brain.team.execution import execution_config_health, operator_policy
 from brain.team.models import (AgentRun, AgentRunExecution, TeamAccessFence, TeamIdentity, TeamInvitation,
                                TeamMember)
 from brain.team.provisioning import TEAM_ID
@@ -103,39 +103,68 @@ def check_oidc() -> Check:
     return Check("oidc", "pass", f"SSO is enabled with issuer {issuer}")
 
 
+# Fix hints for the worst execution_config finding, most specific first.
+_EXECUTION_HINTS = {
+    "root": "Set BRAIN_EXECUTION_ROOT to a writable directory owned by the worker, and create it.",
+    "environments": "Declare at least one image in BRAIN_EXECUTION_ENVIRONMENTS (docs/operations/TEAM_EXECUTION.md).",
+    "docker": "Install the docker CLI on the worker or point BRAIN_EXECUTION_DOCKER at it.",
+    "tools": "Declare the allowed tools in BRAIN_EXECUTION_TOOLS and install them on the worker.",
+    "secrets": "Set the environment variables BRAIN_EXECUTION_SECRETS references on the worker.",
+    "egress": "Set BRAIN_EXECUTION_EGRESS_PROXY_IMAGE with the container backend, or unset BRAIN_EXECUTION_EGRESS.",
+    "backend": "Use BRAIN_EXECUTION_BACKEND=container for a filesystem and network boundary between steps and the "
+               "server.",
+}
+
+
+def _resolves(program: str) -> bool:
+    return bool(shutil.which(program) or (os.path.isabs(program) and os.access(program, os.X_OK)))
+
+
 def check_execution_config() -> Check:
+    """``execution_config_health()`` (backend, environments, egress proxy image, tools, secrets) plus what only
+    this process can see: the root exists and the host binaries resolve."""
     policy = operator_policy()
     if policy.error:
         return Check("execution_config", "fail", policy.error,
                      "Fix the JSON in BRAIN_EXECUTION_TOOLS / BRAIN_EXECUTION_SECRETS (docs/operations/TEAM_EXECUTION.md).")
     if not policy.enabled:
         return Check("execution_config", "pass", "Execution is disabled on this process")
-    if policy.root is None:
-        return Check("execution_config", "fail", "Execution is enabled but BRAIN_EXECUTION_ROOT is not set",
-                     "Set BRAIN_EXECUTION_ROOT to a writable directory owned by the worker.")
-    problems: list[str] = []
-    if not policy.root.is_dir():
-        problems.append(f"BRAIN_EXECUTION_ROOT {policy.root} does not exist")
-    for name, spec in sorted(policy.tools.items()):
-        program = spec.argv[0]
-        if not (shutil.which(program) or (os.path.isabs(program) and os.access(program, os.X_OK))):
-            problems.append(f"tool {name!r} runs {program!r}, which is not found")
+    findings: list[tuple[str, Status, str]] = []  # (area, status, message)
+    health = execution_config_health(policy)
+    for item in health["checks"]:
+        status: Status = {"error": "fail", "warn": "warn"}.get(item["status"], "pass")  # type: ignore[assignment]
+        # Secrets are checked below with the variable names (a missing value fails); tools are resolved below.
+        if status != "pass" and item["name"] not in {"secrets", "config"}:
+            detail = item["detail"]
+            if item["name"] == "root":
+                detail = "Execution is enabled but BRAIN_EXECUTION_ROOT is not set"
+            elif item["name"] == "tools":
+                detail = "Execution is enabled but BRAIN_EXECUTION_TOOLS lists no tools"
+            findings.append((item["name"], status, detail))
+    if policy.root is not None and not policy.root.is_dir():
+        findings.append(("root", "fail", f"BRAIN_EXECUTION_ROOT {policy.root} does not exist"))
+    if policy.backend == "container":
+        # Tools run inside the environment images; only the docker CLI has to exist on this host.
+        docker = policy.container.docker[0] if policy.container.docker else ""
+        if not docker or not _resolves(docker):
+            findings.append(("docker", "fail", f"the docker CLI {docker!r} is not found"))
+    else:
+        for name, spec in sorted(policy.tools.items()):
+            if not _resolves(spec.argv[0]):
+                findings.append(("tools", "fail", f"tool {name!r} runs {spec.argv[0]!r}, which is not found"))
     for ref, variable in sorted(policy.secrets.items()):
         if not os.environ.get(variable):
-            problems.append(f"secret {ref!r} reads ${variable}, which is not set")
-    if problems:
-        return Check("execution_config", "fail", "; ".join(problems),
-                     "Create the root, install the tools or set the referenced environment variables on the worker.")
-    if policy.egress:
-        return Check("execution_config", "warn",
-                     f"BRAIN_EXECUTION_EGRESS lists {len(policy.egress)} host(s); the subprocess backend refuses egress",
-                     "Unset BRAIN_EXECUTION_EGRESS unless a backend that enforces egress is configured.")
-    if not policy.tools:
-        return Check("execution_config", "warn", "Execution is enabled but BRAIN_EXECUTION_TOOLS lists no tools",
-                     "Declare the allowed tools in BRAIN_EXECUTION_TOOLS.")
+            findings.append(("secrets", "fail", f"secret {ref!r} reads ${variable}, which is not set"))
+    if findings:
+        worst: Status = "fail" if any(status == "fail" for _, status, _ in findings) else "warn"
+        areas = [area for area, status, _ in findings if status == worst]
+        hint = next(text for area, text in _EXECUTION_HINTS.items() if area in areas)
+        return Check("execution_config", worst, "; ".join(message for _, _, message in findings), hint)
+    environments = f", environments {', '.join(health['environments'])}" if health.get("environments") else ""
+    egress = "egress allowlist enforced by the proxy" if health.get("egress_enforced") else "egress denied"
     return Check("execution_config", "pass",
-                 f"Execution is enabled: {len(policy.tools)} tool(s), {len(policy.secrets)} secret ref(s), "
-                 f"root {policy.root}")
+                 f"Execution is enabled: {policy.backend} backend{environments}, {len(policy.tools)} tool(s), "
+                 f"{len(policy.secrets)} secret ref(s), {egress}, root {policy.root}")
 
 
 def check_origin_settings() -> Check:

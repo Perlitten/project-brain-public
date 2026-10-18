@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, Uuid, func
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from brain.database.harness_models import HARNESS_SCHEMA
@@ -358,3 +358,34 @@ class TeamIntegrationEntry(Base):
     decided_by: Mapped[int | None] = mapped_column(ForeignKey("principals.id"), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class WorkspaceRegistryEntry(Base):
+    """One workspace-registry record (repository trust), shared by the API, the worker and the CLI.
+
+    In team state this table is the registry (``brain.team.registry``); the
+    per-process file ``.brain/workspace/repository_registry.json`` is read only
+    as a legacy fallback while the table is empty, and imported into it once.
+    ``record`` holds the full ``RepositoryRecord``; the other columns repeat the
+    fields trust decisions and listings need. ``version`` is the record's own
+    optimistic version."""
+    __tablename__ = "workspace_registry_entries"
+    repository_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    normalized_root_identity: Mapped[str] = mapped_column(String(1024), nullable=False)
+    trust_level: Mapped[str] = mapped_column(String(32), nullable=False)
+    disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    record: Mapped[dict] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now(),
+                                                 onupdate=func.now())
+
+
+class WorkspaceRegistryEvent(Base):
+    """Append-only registry audit trail (``RegistryEvent``), in insertion order (``id``)."""
+    __tablename__ = "workspace_registry_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    repository_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    event: Mapped[dict] = mapped_column(JSON, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())

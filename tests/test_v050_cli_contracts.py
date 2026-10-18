@@ -45,6 +45,7 @@ COVERED_COMMANDS: Set[Tuple[str, str]] = {
     ("brain.workspace.cli", "repositories events"),
     ("brain.workspace.cli", "repositories verify"),
     ("brain.workspace.cli", "repositories disable"),
+    ("brain.workspace.cli", "repositories enable"),
     ("brain.portfolio.cli", "create"),
     ("brain.portfolio.cli", "list"),
     ("brain.portfolio.cli", "summary"),
@@ -267,6 +268,15 @@ def test_repositories_disable_is_recorded(registered, cli):
         ["repositories", "disable", repo_id, "--reason", "smoke test"],
     )
     assert _json(cli("brain.workspace.cli", ["repositories", "show", repo_id]))["disabled"] is True
+
+
+def test_repositories_enable_restores_the_trust_before_disable(registered, cli):
+    repo_id = registered["deployment-config"]
+    before = _json(cli("brain.workspace.cli", ["repositories", "show", repo_id]))["trust_level"]
+    cli("brain.workspace.cli", ["repositories", "disable", repo_id])
+    cli("brain.workspace.cli", ["repositories", "enable", repo_id, "--reason", "smoke test"])
+    shown = _json(cli("brain.workspace.cli", ["repositories", "show", repo_id]))
+    assert (shown["disabled"], shown["trust_level"]) == (False, before)
 
 
 # ── brain.portfolio.cli ──

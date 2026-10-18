@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import registry_authority
+from apps.api.registry_access import registry_authority, workspace_registry
 from brain.auth.principals import ResolvedPrincipal
 from brain.experiments.models import (
     ExperimentOption,
@@ -24,7 +24,6 @@ from brain.experiments.orchestrator import ExperimentManager, ExperimentStore
 from brain.lab.laboratory import ChangeLaboratory
 from brain.team.authorization import Authority, Permission
 from brain.workspace.models import Capability
-from brain.workspace.registry_store import RegistryStore
 
 router = APIRouter(
     prefix="/experiments",
@@ -46,7 +45,7 @@ def _manager() -> ExperimentManager:
 async def _authorize(principal: ResolvedPrincipal, permission: Permission,
                      repository_id: str | None) -> Authority:
     """``permission`` on an experiment's registry repository; none or unknown means a team administrator."""
-    record = RegistryStore(Path(".brain/workspace")).get(repository_id) if repository_id else None
+    record = (await workspace_registry()).get(repository_id) if repository_id else None
     return await registry_authority(principal, permission, record)
 
 
@@ -58,8 +57,8 @@ async def _authorized_experiment(manager: ExperimentManager, experiment_id: str,
     return experiment if experiment is not None else _require_experiment(manager, experiment_id)
 
 
-def _require_repository(repository_id: str, *capabilities: Capability):
-    record = RegistryStore(Path(".brain/workspace")).get(repository_id)
+async def _require_repository(repository_id: str, *capabilities: Capability):
+    record = (await workspace_registry()).get(repository_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"Repository '{repository_id}' not found")
     if record.disabled:
@@ -121,7 +120,7 @@ class ExportRequest(BaseModel):
 @router.post("", dependencies=[Depends(require_scope("experiments:write"))])
 async def create_experiment(req: CreateExperimentRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     authority = await _authorize(principal, Permission.REQUEST_RUN, req.repository_id)
-    record = _require_repository(
+    record = await _require_repository(
         req.repository_id,
         Capability.CREATE_WORKTREES,
         Capability.APPLY_CANDIDATE_PATCHES,
@@ -196,7 +195,7 @@ async def get_experiment(experiment_id: str, principal: ResolvedPrincipal = Depe
 async def run_experiment(experiment_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     manager = _manager()
     experiment = await _authorized_experiment(manager, experiment_id, principal, Permission.REQUEST_RUN)
-    record = _require_repository(
+    record = await _require_repository(
         experiment.repository_id,
         Capability.CREATE_WORKTREES,
         Capability.APPLY_CANDIDATE_PATCHES,
@@ -286,7 +285,7 @@ async def export_patch(experiment_id: str, req: ExportRequest,
     the authoritative repository."""
     manager = _manager()
     experiment = await _authorized_experiment(manager, experiment_id, principal, Permission.REQUEST_RUN)
-    record = _require_repository(experiment.repository_id, Capability.EXPORT_PATCH)
+    record = await _require_repository(experiment.repository_id, Capability.EXPORT_PATCH)
     try:
         export = manager.export_patch(
             experiment_id,

@@ -426,6 +426,19 @@ async def impact_analysis(change_request: str, repo_path: Optional[str] = None) 
                 "freshness": unknown_envelope("tool_failed")}
 
 
+async def _local_governed_write(kind: Literal["decision", "rule"], fields: dict) -> dict | None:
+    """Act as ``BRAIN_LOCAL_PRINCIPAL_KEY`` when it is set: the HTTP handler, hence the same governance.
+
+    None means no key is configured and the caller writes as the operator.
+    """
+    from apps.api import local_memory
+
+    try:
+        return await local_memory.local_write(kind, fields)
+    except Exception as e:
+        return {"error": f"Failed to record {kind}: {str(e)}", "status": "failed"}
+
+
 @mcp.tool(**tool_meta("record_decision"))
 async def record_decision(
     title: str,
@@ -452,10 +465,17 @@ async def record_decision(
     declined = await confirm_memory_write(ctx, f"Record decision: {title}. {description or ''}".strip())
     if declined is not None:
         return declined
+    governed = await _local_governed_write("decision", dict(
+        title=title, repo_path=repo_path, description=description, status=status, reason=reason,
+        consequences=consequences, affected_features=affected_features, affected_modules=affected_modules,
+        affected_files=affected_files, expected_version=expected_version))
+    if governed is not None:
+        return governed
     try:
-        # The stdio server runs under the operator's own process without a
-        # resolved principal, so authorship stays unattributed here; the HTTP
-        # and remote MCP paths stamp the caller.
+        # No BRAIN_LOCAL_PRINCIPAL_KEY: the stdio server is the operator's own
+        # process (the local administrator), so the write is direct and
+        # authorship stays unattributed; the HTTP and remote MCP paths stamp
+        # and govern the caller.
         result = await DecisionStore.record_decision(
             title=title,
             repo_path=repo_path,
@@ -505,7 +525,13 @@ async def record_rule(
     declined = await confirm_memory_write(ctx, f"Record {severity} rule: {name}. {description or ''}".strip())
     if declined is not None:
         return declined
+    governed = await _local_governed_write("rule", dict(
+        name=name, repo_path=repo_path, description=description, type=type, severity=severity, status=status,
+        applies_to=applies_to, rule_id=rule_id, expected_version=expected_version))
+    if governed is not None:
+        return governed
     try:
+        # No BRAIN_LOCAL_PRINCIPAL_KEY: operator write, direct and unattributed (see record_decision).
         result = await RuleStore.record_rule(
             name=name,
             repo_path=repo_path,

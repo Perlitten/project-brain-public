@@ -342,3 +342,54 @@ async def test_self_diagnosis_still_alerts_when_schema_initialization_is_down():
 
     assert result["status"] == "completed"
     deliver.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_memory_proposal_notice_is_opt_in_and_carries_no_draft_content(monkeypatch):
+    send = AsyncMock(return_value={"status": "sent"})
+    monkeypatch.setattr(telegram, "_send", send)
+    monkeypatch.setattr(telegram.settings, "TELEGRAM_ALERTS_ENABLED", True)
+    monkeypatch.setattr(telegram.settings, "BRAIN_WEB_URL", "https://brain.example/")
+
+    # Off by default, even with the alert channel configured.
+    off = await telegram.deliver_memory_proposal_notice(proposal_id=7, kind="decision", repo_path="/synthetic/A")
+    assert off["status"] == "disabled"
+    send.assert_not_awaited()
+
+    monkeypatch.setattr(telegram.settings, "MEMORY_REVIEW_TELEGRAM_NOTIFY", True)
+    assert (await telegram.deliver_memory_proposal_notice(proposal_id=7, kind="learning",
+                                                          repo_path=r"C:\work\Synthetic"))["status"] == "sent"
+    text = send.await_args.args[0]
+    assert text.splitlines() == ["📝 Memory proposal #7 awaits review", "Learning in Synthetic",
+                                 "https://brain.example/review"]
+    await telegram.deliver_memory_proposal_notice(proposal_id=8, kind="rule", repo_path=None)
+    assert "Rule in system-global" in send.await_args.args[0]
+
+    # The opt-in never bypasses the channel's own switch.
+    monkeypatch.setattr(telegram.settings, "TELEGRAM_ALERTS_ENABLED", False)
+    assert (await telegram.deliver_memory_proposal_notice(proposal_id=9, kind="rule",
+                                                          repo_path=None))["status"] == "disabled"
+    assert send.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_review_notification_never_fails_or_stalls_the_submission(monkeypatch):
+    import asyncio
+
+    from brain.memory import proposals
+
+    deliver = AsyncMock(side_effect=RuntimeError("telegram is down"))
+    monkeypatch.setattr(telegram, "deliver_memory_proposal_notice", deliver)
+    await proposals.notify_reviewers(1, "decision", "/synthetic/A")
+    deliver.assert_not_awaited()  # MEMORY_REVIEW_TELEGRAM_NOTIFY is off by default
+
+    monkeypatch.setattr(proposals.settings, "MEMORY_REVIEW_TELEGRAM_NOTIFY", True)
+    await proposals.notify_reviewers(1, "decision", "/synthetic/A")
+    deliver.assert_awaited_once_with(proposal_id=1, kind="decision", repo_path="/synthetic/A")
+
+    async def hang(**_kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(telegram, "deliver_memory_proposal_notice", hang)
+    monkeypatch.setattr(proposals.settings, "TELEGRAM_ALERT_TIMEOUT_S", 0.05)
+    await asyncio.wait_for(proposals.notify_reviewers(2, "rule", None), timeout=2)

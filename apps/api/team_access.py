@@ -50,6 +50,7 @@ from brain.team.authorization import (
     team_state,
 )
 from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamProject, TeamTaskBinding
+from brain.team.registry import ensure_legacy_imported
 
 
 class MemoryScopedRow(Protocol):
@@ -76,6 +77,8 @@ async def repository_authority(principal: ResolvedPrincipal, permission: Permiss
     Denials become HTTP 403 so every personal route reports them the same way."""
     if await current_team_state() == "solo":
         return solo_authority(principal)
+    # The first team-state decision moves this process's legacy registry file into the shared table.
+    await ensure_legacy_imported(async_session_factory)
     try:
         async with async_session_factory() as session:
             if repository_id is None and repo_path:
@@ -199,7 +202,7 @@ async def readable_repository_ids(principal: ResolvedPrincipal, repository_ids: 
             return granted
         # Registry trust caps membership here exactly as in ``authorize_repository``.
         try:
-            records = registry_records()
+            records = await registry_records(session)
         except TeamDenied:
             return set()
         if not records:

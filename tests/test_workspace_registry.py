@@ -682,3 +682,36 @@ class TestRegistryTrust:
         assert registry_trust_ceiling([_trust_record(root, "unknown-level")], root)[0] == frozenset()
         # Every matching path narrows: an indexed path and a registry root are both honoured.
         assert registry_trust_ceiling([_trust_record(root, disabled=True)], "/synthetic/other", root)[0] == frozenset()
+
+
+# ──────────────────────────────────────────────
+# Re-enabling a disabled entry (shared by the file store and the team table)
+# ──────────────────────────────────────────────
+
+class TestRegistryReEnable:
+    def test_restores_the_level_before_disable(self, store, sample_record):
+        from brain.team.registry import restored_trust_level
+        store.register(sample_record)
+        store.disable(sample_record.repository_id, actor="test", source="test", reason="synthetic")
+        events = store.list_events(repository_id=sample_record.repository_id)
+        assert restored_trust_level(events, None) == sample_record.trust_level
+
+    def test_explicit_level_wins_and_disabled_or_unknown_levels_are_refused(self):
+        from brain.team.registry import RegistryConflict, restored_trust_level
+        assert restored_trust_level([], TrustLevel.FIXTURE.value) == TrustLevel.FIXTURE.value
+        with pytest.raises(RegistryConflict):
+            restored_trust_level([], TrustLevel.DISABLED.value)
+        with pytest.raises(ValueError):
+            restored_trust_level([], "bogus")
+
+    def test_no_recorded_level_needs_an_explicit_one(self):
+        from brain.team.registry import RegistryConflict, restored_trust_level
+        with pytest.raises(RegistryConflict, match="trust_level"):
+            restored_trust_level([], None)
+
+    def test_snapshot_reads_like_the_store(self):
+        from brain.team.registry import RegistrySnapshot
+        record = _trust_record("/synthetic/repo")
+        snapshot = RegistrySnapshot([record])
+        assert snapshot.get(record.repository_id) == record and snapshot.get("repo-missing") is None
+        assert snapshot.list_all() == [record] and snapshot.verify_integrity()[0] is True

@@ -10,7 +10,7 @@ from apps.api.team_access import team_administrator_access
 from brain.portfolio.graph_builder import PortfolioCoupling, PortfolioGraphBuilder
 from brain.portfolio.models import parse_portfolio_config
 from brain.portfolio.store import PortfolioStore
-from brain.workspace.registry_store import RegistryStore
+from apps.api.registry_access import workspace_registry
 
 router = APIRouter(
     prefix="/portfolio",
@@ -66,7 +66,7 @@ async def build_portfolio_graph(portfolio_id: str):
     # A generation records the revision it was built from, so the revisions have
     # to come from the registry. Writing a literal "HEAD" would make a record
     # that can never be resolved back to a commit look like a current one.
-    registry = RegistryStore(Path(".brain/workspace"))
+    registry = await workspace_registry()
     revisions: dict[str, str] = {}
     generations: dict[str, str] = {}
     missing: list[str] = []

@@ -8,6 +8,7 @@ from typing import Optional
 
 import typer
 
+from apps.cli.commands._local_memory import run_as_operator
 from brain.config.settings import settings
 from brain.config.paths import resolve_repo_path
 from brain.database.repository_utils import require_repository_by_path
@@ -79,7 +80,7 @@ def import_obsidian(
 
     typer.echo(f"Importing Obsidian vault from {vault_path} ...")
     try:
-        results = asyncio.run(_run())
+        results = run_as_operator("import obsidian", _run)
     except Exception as exc:
         typer.secho(f"Obsidian import failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc

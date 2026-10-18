@@ -303,3 +303,33 @@ def test_envelope_model_is_the_api_contract():
     assert mapped["age_s"] == 7 and mapped["index_status"] == "stale"
     assert mapped["origin_head"] == "e" * 40  # a field the freshness module adds passes through
     assert FreshnessEnvelope.model_validate(mapped).state == "stale_served"
+
+
+@pytest.mark.asyncio
+async def test_stdio_memory_writes_act_as_the_configured_local_principal(monkeypatch):
+    """BRAIN_LOCAL_PRINCIPAL_KEY routes the stdio write through the governed HTTP handler, never the operator store."""
+    import json
+
+    from apps.api import local_memory
+
+    governed = AsyncMock(return_value={"status": "proposed", "proposal_id": 5, "version": 1})
+    operator_decision = AsyncMock()
+    operator_rule = AsyncMock()
+    monkeypatch.setattr(local_memory, "local_write", governed)
+    with patch("apps.mcp_server.server.DecisionStore.record_decision", operator_decision), \
+            patch("apps.mcp_server.server.RuleStore.record_rule", operator_rule):
+        made = await mcp.call_tool("record_decision", {"title": "Use one queue", "repo_path": "/indexed/example"})
+        ruled = await mcp.call_tool("record_rule", {"name": "No blocking IO", "repo_path": "/indexed/example"})
+    assert json.loads(made.content[0].text)["status"] == "proposed"
+    assert json.loads(ruled.content[0].text)["status"] == "proposed"
+    assert [call.args[0] for call in governed.await_args_list] == ["decision", "rule"]
+    assert governed.await_args_list[0].args[1]["repo_path"] == "/indexed/example"
+    operator_decision.assert_not_awaited()
+    operator_rule.assert_not_awaited()
+
+    # A failing governed write is reported, never retried as the operator.
+    monkeypatch.setattr(local_memory, "local_write", AsyncMock(side_effect=RuntimeError("database is down")))
+    with patch("apps.mcp_server.server.DecisionStore.record_decision", operator_decision):
+        failed = await mcp.call_tool("record_decision", {"title": "Use one queue"})
+    assert json.loads(failed.content[0].text)["status"] == "failed"
+    operator_decision.assert_not_awaited()

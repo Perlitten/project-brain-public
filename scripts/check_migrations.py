@@ -58,6 +58,9 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("team_invitations", "verified_subject"),
     ("team_identities", "subject"),
     ("team_identities", "session_credential_id"),
+    # Team-state workspace registry (brain.team.registry): shared by API, worker and CLI.
+    ("workspace_registry_entries", "trust_level"),
+    ("workspace_registry_events", "event_id"),
     ("team_oidc_flows", "binding_hash"),
     # Every credential resolution reads the restore fence (brain.team.restore_fence).
     ("team_access_fences", "cleared_at"),

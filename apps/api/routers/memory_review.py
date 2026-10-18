@@ -176,9 +176,13 @@ async def get_memory_proposal(proposal_id: int, caller: ResolvedPrincipal = Depe
 
 
 async def _approval_authority(caller: ResolvedPrincipal, row) -> Authority:
-    """Reviewer on the project and not the author; system-global or unattached: a team administrator, not the author."""
+    """Reviewer on the project and not the author; system-global or unattached: a team administrator, not the author.
+
+    A proposal the system filed (consolidation of unattributed evidence) has no author to be independent of;
+    whoever supplied its evidence is refused by ``proposals.approve_proposal``."""
+    author = proposals.SYSTEM_AUTHOR_ID if proposals.system_filed(row) else row.author_principal_id
     return await repository_authority(caller, Permission.APPROVE, repo_path=row.requested_repo_path or row.repo_path,
-                                      author_id=row.author_principal_id)
+                                      author_id=author)
 
 
 async def _decide(proposal_id: int, body: ProposalDecisionRequest, caller: ResolvedPrincipal, approve: bool):

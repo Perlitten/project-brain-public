@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from apps.api.auth import require_api_key, require_principal, require_scope
-from apps.api.registry_access import registry_authority
+from apps.api.registry_access import registry_authority, workspace_registry
 from apps.api.schemas import OriginFreshness
 from brain.auth.principals import ResolvedPrincipal
 from brain.freshness.generation_deriver import GenerationDeriver
@@ -22,7 +22,6 @@ from brain.graph.generation_manager import GraphGenerationManager
 from brain.memory.repo_freshness import describe_origin
 from brain.team.authorization import Permission
 from brain.workspace.models import Capability
-from brain.workspace.registry_store import RegistryStore
 
 router = APIRouter(
     prefix="/freshness",
@@ -31,16 +30,12 @@ router = APIRouter(
 )
 
 
-def _registry() -> RegistryStore:
-    return RegistryStore(Path(".brain/workspace"))
-
-
 def _tracker() -> FreshnessTracker:
     return FreshnessTracker(Path(".brain/freshness"))
 
 
 async def _resolve_repository(repository_id: str, principal: ResolvedPrincipal, permission: Permission):
-    record = _registry().get(repository_id)
+    record = (await workspace_registry()).get(repository_id)
     # Authorize before the existence checks: in team state an unknown id is unattached (team administrator).
     await registry_authority(principal, permission, record)
     if record is None:
@@ -99,7 +94,8 @@ async def repository_freshness(repository_id: str, principal: ResolvedPrincipal 
 async def artifact_freshness(artifact_id: str, principal: ResolvedPrincipal = Depends(require_principal)):
     """Evidence-based explanation of one artifact's freshness."""
     result = _tracker().explain(artifact_id)
-    owner = _registry().get(result["repository_id"]) if result.get("found") and result.get("repository_id") else None
+    owned = result.get("found") and result.get("repository_id")
+    owner = (await workspace_registry()).get(result["repository_id"]) if owned else None
     await registry_authority(principal, Permission.READ, owner)
     if not result.get("found"):
         raise HTTPException(status_code=404, detail=f"Artifact '{artifact_id}' not tracked")

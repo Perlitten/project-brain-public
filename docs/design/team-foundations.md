@@ -238,12 +238,24 @@ transaction as the registry write: `project_id` names the project, or the reposi
 must already be attached to one. The repository must be indexed first (409 otherwise);
 a repository attached to another project is refused (409) rather than moved; no
 `project_id` and no existing link is refused (422). The offline `brain workspace` CLI
-still writes the registry without a project: such a record grants nobody but team
-administrators until the repository is attached with `brain team project attach`.
+(`python -m brain.workspace.cli`) needs `--project` in team state and links the same
+way, in one transaction.
+
+In team state the registry is one PostgreSQL table, `workspace_registry_entries` (with
+its audit trail in `workspace_registry_events`; `brain/team/registry.py`), read by the
+API, the worker's per-job re-authorization and the CLI alike. Each process's legacy
+file is imported once while the table is empty and read, with a warning, only until
+then ([upgrade note](../operations/TEAM_DEPLOY.md#workspace-registry-file-to-table)).
+Every team-state registry change (register + link, disable, re-enable) commits with its
+`registry.*` row in the team activity feed. A team administrator can re-enable a
+disabled entry (`POST /workspace/repositories/{id}/enable`, `brain workspace
+repositories enable`; the earlier trust level unless one is given) and open it by id
+(`registry.inspected`).
 
 Solo state is unchanged: `authorize_repository` returns before reading the registry,
-and registration ignores `project_id`. No schema change: the link is the existing
-`project_repositories` row, matched to the registry record through `repositories.path`.
+registration ignores `project_id`, and the registry stays the file. The link is the
+existing `project_repositories` row, matched to the registry record through
+`repositories.path`.
 
 | Requirement | Evidence |
 |---|---|
