@@ -758,6 +758,20 @@ async def force_release_lease(session: AsyncSession, caller: ResolvedPrincipal, 
     The fencing token increases, so the previous holder can no longer renew or
     release it (and any write it fences on that token is refused)."""
     await administrator(session, caller, project_id)
+    return await _force_release(session, project_id, lease_id, payload, actor_id=caller.id, actor_label=None)
+
+
+async def operator_force_release_lease(session: AsyncSession, project_id: uuid.UUID, lease_id: int, payload: dict,
+                                       *, actor_label: str) -> dict:
+    """The same release for the server operator (``brain team coord force-release``), who has database access.
+
+    There is no principal to authorize: like the other operator commands the
+    CLI is trusted, and the activity row names ``actor_label`` instead."""
+    return await _force_release(session, project_id, lease_id, payload, actor_id=None, actor_label=actor_label)
+
+
+async def _force_release(session: AsyncSession, project_id: uuid.UUID, lease_id: int, payload: dict, *,
+                         actor_id: int | None, actor_label: str | None) -> dict:
     reason = " ".join(str(payload.get("reason") or "").split())
     if not reason:
         raise TeamConflict("A reason is required to force-release a lease")
@@ -780,10 +794,12 @@ async def force_release_lease(session: AsyncSession, caller: ResolvedPrincipal, 
     if changed.scalar_one_or_none() is None:
         raise TeamConflict("Lease changed concurrently; retry")
     lease = await fresh(session, TeamResourceLease, TeamResourceLease.id == lease_id)
+    by = "the server operator" if actor_id is None else "an administrator"
     await record_event(session, kind="coordination.lease_force_released",
-                       summary=f"Lease on {lease.resource} force-released by an administrator",
-                       audience="repository", actor_principal_id=caller.id, subject_principal_id=previous_holder,
-                       project_id=project_id, repository_id=lease.repository_id,
+                       summary=f"Lease on {lease.resource} force-released by {by}",
+                       audience="repository", actor_principal_id=actor_id, actor_label=actor_label,
+                       subject_principal_id=previous_holder, project_id=project_id,
+                       repository_id=lease.repository_id,
                        details={"lease_id": lease.id, "resource": lease.resource, "holder_id": previous_holder,
                                 "task_id": str(lease.task_id) if lease.task_id else None,
                                 "previous_fencing_token": previous_token, "fencing_token": lease.fencing_token,
@@ -1034,6 +1050,7 @@ async def list_queue(session: AsyncSession, caller: ResolvedPrincipal, project_i
 __all__ = ["acquire_lease", "changed_scope", "create_subtask", "dispatch", "enqueue", "find_cycle",
            "force_release_lease", "get_plan", "get_run_instructions",
            "integrate", "leases_view", "list_leases", "list_overlaps", "list_queue", "normalize_path",
+           "operator_force_release_lease",
            "normalize_resource", "overlaps_view", "paths_overlap", "plan_view", "queue_view", "record_change_overlaps",
            "reject", "release_lease", "renew_lease", "require_dependencies_done",
            "resolve_instructions", "snapshot_instructions", "superseded_instructions", "update_plan"]

@@ -64,6 +64,13 @@ class LeaseReleaseRequest(BaseModel):
     fencing_token: int = Field(gt=0)
 
 
+class LeaseForceReleaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    reason: str = Field(min_length=1, max_length=coordination.MAX_REASON)
+    # Optional compare-and-swap: refuse when the lease moved on since the administrator looked at it.
+    fencing_token: int | None = Field(default=None, gt=0)
+
+
 class EnqueueRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     run_id: uuid.UUID
@@ -147,6 +154,14 @@ async def release_lease(project_id: uuid.UUID, lease_id: int, body: LeaseRelease
                         caller: ResolvedPrincipal = Depends(require_principal),
                         session=Depends(team_session, scope="function")):
     return await coordination.release_lease(session, caller, project_id, lease_id, body.model_dump())
+
+
+@router.post("/{project_id}/leases/{lease_id}/force-release")
+async def force_release_lease(project_id: uuid.UUID, lease_id: int, body: LeaseForceReleaseRequest,
+                              caller: ResolvedPrincipal = Depends(require_principal),
+                              session=Depends(team_session, scope="function")):
+    """Team administrators only: release another member's lease with a recorded reason."""
+    return await coordination.force_release_lease(session, caller, project_id, lease_id, body.model_dump())
 
 
 @router.get("/{project_id}/integration")

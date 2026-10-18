@@ -2,7 +2,8 @@ import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
 import {
-  ACTIVITY_KINDS, ACTIVITY_PAGE_SIZE, activityFilters, activityHref, activityProjects, getActivity, getMeView, type ActivityRow,
+  ACTIVITY_KINDS, ACTIVITY_PAGE_SIZE, activityFilters, activityHref, activityLabel, activityProjects, getActivity, getMeView,
+  type ActivityRow,
 } from "@/lib/team-activity-view";
 
 export const metadata = { title: "Team activity" };
@@ -48,7 +49,7 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
                 {Object.entries(ACTIVITY_KINDS).map(([family, kinds]) => (
                   <optgroup key={family} label={family}>
                     <option value={family}>All {family.replace("_", " ")} events</option>
-                    {kinds.map((k) => <option key={k} value={k}>{k}</option>)}
+                    {kinds.map((k) => <option key={k} value={k}>{activityLabel(k)}</option>)}
                   </optgroup>
                 ))}
               </select>
@@ -76,8 +77,8 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
                 columns={[
                   { head: "When", cell: (r) => <span className="num">{when(r.occurredAt)}</span> },
                   { head: "Who", cell: (r) => r.actor },
-                  { head: "Kind", cell: (r) => <Chip tone="idle" dot={false}>{r.kind}</Chip> },
-                  { head: "What", cell: (r) => r.summary },
+                  { head: "Kind", cell: (r) => <span title={r.kind}><Chip tone="idle" dot={false}>{activityLabel(r.kind)}</Chip></span> },
+                  { head: "What", cell: (r) => (r.detail ? <>{r.summary}<br /><span className="text-faint">{r.detail}</span></> : r.summary) },
                   { head: "Where", cell: (r) => (r.projectId ? projectName.get(r.projectId) ?? "a project" : r.repositoryId ? `repository ${r.repositoryId}` : "global") },
                 ]}
               />

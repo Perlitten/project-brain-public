@@ -117,6 +117,8 @@ TOOL_ANNOTATIONS: dict[str, ToolAnnotations] = {
     "team_release_lease": _annotations("Release a team lease", read_only=False, idempotent=True),
     "team_declare_scope": _annotations("Declare a task's scope", read_only=False, idempotent=True),
     "team_enqueue_integration": _annotations("Queue a run for integration", read_only=False, idempotent=True),
+    # Administrators only. A repeat finds the lease already released and changes nothing.
+    "team_force_release_lease": _annotations("Force-release a team lease", read_only=False, idempotent=True),
 }
 
 

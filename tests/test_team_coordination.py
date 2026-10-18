@@ -345,6 +345,29 @@ async def test_admin_force_release_bumps_the_token_and_reaches_the_activity_feed
 
 
 @pytest.mark.asyncio
+async def test_operator_force_release_is_recorded_as_the_server_operator(team_db):
+    """``brain team coord force-release`` runs as the trusted operator: no principal, a labelled actor."""
+    factory, a, _ = team_db
+    async with factory() as session, session.begin():
+        held = (await coordination.acquire_lease(session, caller(2), a, {
+            "repository_id": 1, "resource": "resource:deploy"}))["lease"]
+        with pytest.raises(TeamConflict, match="reason is required"):
+            await coordination.operator_force_release_lease(session, a, held["id"], {"reason": " "},
+                                                            actor_label="operator:cli")
+        with pytest.raises(TeamNotFound):
+            await coordination.operator_force_release_lease(session, uuid.uuid4(), held["id"], {"reason": "x"},
+                                                            actor_label="operator:cli")
+        released = await coordination.operator_force_release_lease(session, a, held["id"], {"reason": "deploy hung"},
+                                                                   actor_label="operator:cli")
+        assert released["state"] == "released" and released["fencing_token"] == 2
+        [event] = (await session.execute(select(TeamActivityEvent).where(
+            TeamActivityEvent.kind == "coordination.lease_force_released"))).scalars().all()
+        assert event.actor_principal_id is None and event.actor_label == "operator:cli"
+        assert event.subject_principal_id == 2 and event.details["reason"] == "deploy hung"
+        assert "server operator" in event.summary
+
+
+@pytest.mark.asyncio
 @pytest.mark.skipif(not os.getenv("TEST_TEAM_POSTGRES_URL"), reason="requires a disposable PostgreSQL team database")
 async def test_concurrent_lease_acquisitions_have_one_holder(team_db):
     import asyncio
@@ -624,9 +647,46 @@ async def test_http_coordination_routes(team_db, monkeypatch):
                                   json={"reason": "late", "expected_version": 2})).status_code == 409
 
 
+@pytest.mark.asyncio
+async def test_http_force_release_is_for_team_administrators_only(team_db, monkeypatch):
+    from apps.api.routers import team_coordination
+    from tests.test_team_transport import CONTRIBUTOR, READER, client_for, membership_driven, personal_app
+
+    factory, a, b = team_db
+    membership_driven(monkeypatch)
+    app = personal_app(factory, monkeypatch)
+    app.include_router(team_coordination.router)
+    reviewer, admin = {"X-API-Key": "fixture-3"}, {"X-API-Key": "fixture-4"}
+    base = f"/team/projects/{a}"
+    async with client_for(app) as client:
+        lease = (await client.post(f"{base}/leases", headers=reviewer,
+                                   json={"repository_id": 1, "resource": "src/api"})).json()["lease"]
+        url = f"{base}/leases/{lease['id']}/force-release"
+        # Reader, Contributor and the holder itself (a Reviewer) are members, not administrators.
+        for headers in (READER, CONTRIBUTOR, reviewer):
+            denied = await client.post(url, headers=headers, json={"reason": "stuck"})
+            assert denied.status_code == 403, denied.text
+        assert (await client.post(url, headers={"X-API-Key": "nope"}, json={"reason": "stuck"})).status_code == 401
+        for payload in ({}, {"reason": ""}, {"reason": "   "}, {"reason": "x" * 501},
+                        {"reason": "stuck", "fencing_token": 0}, {"reason": "stuck", "extra": 1}):
+            assert (await client.post(url, headers=admin, json=payload)).status_code == 422, payload
+        assert (await client.post(f"{base}/leases/424242/force-release", headers=admin,
+                                  json={"reason": "stuck"})).status_code == 404
+        assert (await client.post(f"/team/projects/{b}/leases/{lease['id']}/force-release", headers=admin,
+                                  json={"reason": "stuck"})).status_code == 404, "the lease belongs to another project"
+        moved = await client.post(url, headers=admin, json={"reason": "stuck", "fencing_token": 5})
+        assert moved.status_code == 409 and "fencing token changed" in moved.json()["detail"]
+        released = await client.post(url, headers=admin, json={"reason": "holder is on leave", "fencing_token": 1})
+        assert released.status_code == 200, released.text
+        assert released.json()["state"] == "released" and released.json()["fencing_token"] == 2
+        assert (await client.post(url, headers=admin, json={"reason": "again"})).status_code == 409
+        assert (await client.post(f"{base}/leases/{lease['id']}/release", headers=reviewer,
+                                  json={"fencing_token": 1})).status_code == 409, "the old token is burned"
+
+
 COORDINATION_READS = ("team_task_plan", "team_coordination_overlaps", "team_list_leases", "team_integration_queue")
 COORDINATION_WRITES = ("team_claim_lease", "team_renew_lease", "team_release_lease", "team_declare_scope",
-                       "team_enqueue_integration")
+                       "team_enqueue_integration", "team_force_release_lease")
 
 
 def test_coordination_mcp_tools_are_registered_with_their_annotations():
@@ -711,3 +771,15 @@ async def test_coordination_mcp_writes_go_through_the_api_routes_and_their_denia
             again = body(await client.call_tool("team_enqueue_integration", {"project_id": str(a),
                                                                              "run_id": str(run_id)}))
             assert again["id"] == entry["id"], "a run is queued once"
+
+            held = body(await client.call_tool("team_claim_lease", claim))["lease"]
+            force = {"project_id": str(a), "lease_id": held["id"], "reason": "stuck"}
+            member = await client.call_tool("team_force_release_lease", force)
+            assert member.is_error and "403" in member.content[0].text, "members cannot force-release"
+
+        admin_http, admin = await session_for("fixture-4")
+        async with admin_http, admin:
+            forced = body(await admin.call_tool("team_force_release_lease", {**force, "fencing_token": held["fencing_token"]}))
+            assert forced["state"] == "released" and forced["released_reason"] == "force released: stuck"
+            again = await admin.call_tool("team_force_release_lease", force)
+            assert again.is_error and "409" in again.content[0].text
