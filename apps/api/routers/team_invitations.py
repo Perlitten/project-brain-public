@@ -8,8 +8,9 @@ caller out unless it was the invitee. The first administrator is bootstrapped
 on the server instead (``brain team invite create --admin`` or ``brain team
 member add --admin --mint-key``). Accepting needs no API key: the token is the
 credential. It is read from the JSON body, never the URL, so access logs never
-carry it. Attempts are throttled per client address (socket peer;
-X-Forwarded-For is ignored because no trusted-proxy setting exists). The
+carry it. Attempts are throttled per client address (the socket peer, or the
+X-Forwarded-For client when the peer is in ``BRAIN_TRUSTED_PROXY_IPS``, e.g.
+the web dashboard; ``invitation_throttle.client_ip``). The
 attempt log is kept in Redis, so every API process shares one limit
 (``apps/api/invitation_throttle.py``); Lite, which has no team and runs one
 process, keeps it in memory. A throttled attempt gets HTTP 429 with
@@ -25,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 
 from apps.api.auth import require_principal
-from apps.api.invitation_throttle import AcceptThrottle, default_throttle, retry_after_header
+from apps.api.invitation_throttle import AcceptThrottle, client_ip, default_throttle, retry_after_header
 from brain.auth.principals import ResolvedPrincipal
 from brain.database.session import async_session_factory
 from brain.team import invitations
@@ -84,10 +85,6 @@ async def _inviter(session, caller: ResolvedPrincipal) -> tuple[str, int]:
     return f"principal:{member.principal_id}", member.principal_id
 
 
-def _client_ip(request: Request) -> str:
-    return request.client.host if request.client and request.client.host else "unknown"
-
-
 def accept_throttle(request: Request) -> AcceptThrottle:
     """The app's throttle if one was installed on ``app.state``, else the process-wide default."""
     global _throttle
@@ -130,8 +127,8 @@ async def revoke_invitation(invitation_id: uuid.UUID, body: InvitationRevokeRequ
 
 @router.post("/accept")
 async def accept_invitation(body: InvitationAcceptRequest, request: Request, response: Response):
-    retry_after = await accept_throttle(request).hit(_client_ip(request), limit=ACCEPT_LIMIT,
-                                                     window_s=ACCEPT_WINDOW_S)
+    retry_after = await accept_throttle(request).hit(client_ip(request), limit=ACCEPT_LIMIT,
+                                                    window_s=ACCEPT_WINDOW_S)
     if retry_after is not None:
         raise HTTPException(429, "Too many invitation attempts; try again later",
                             headers={"Retry-After": retry_after_header(retry_after)})

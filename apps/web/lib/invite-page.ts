@@ -13,6 +13,8 @@ import { INVITE_PATH, TOKEN_RE, type AcceptOutcome } from "./invitations";
 export interface InviteAlternative {
   label: string;
   href: string;
+  /** Hand the token in the field to ``href`` as a POSTed ``invitation`` (never in the URL). */
+  invitation?: boolean;
 }
 
 export type InviteNotice = { eyebrow: string; title: string; detail: string; status?: number };
@@ -41,7 +43,7 @@ function steps(state: [Step, Step, Step]) {
 
 function form(token: string, alternatives: InviteAlternative[]) {
   const alt = alternatives.length
-    ? `<div class="alt"><span class="alt__or">or</span>${alternatives.map((a) => `<a class="btn btn--ghost" href="${escape(a.href)}">${escape(a.label)}</a>`).join("")}</div>`
+    ? `<div class="alt"><span class="alt__or">or</span>${alternatives.map((a) => `<a class="btn btn--ghost" href="${escape(a.href)}"${a.invitation ? " data-invitation" : ""}>${escape(a.label)}</a>`).join("")}</div>`
     : "";
   return `<form method="post" action="${INVITE_PATH}" id="invite" autocomplete="off">
       <label class="field"><span class="field__label">Invitation token</span>
@@ -173,6 +175,18 @@ const SCRIPT = `(function () {
     // The token is a secret: keep it out of the address bar, history and bookmarks.
     history.replaceState(null, "", location.pathname + location.search);
   }
+  // Single sign-on with the token from the field, POSTed so it stays out of URLs and logs; without one it is a plain sign-in.
+  document.querySelectorAll("a[data-invitation]").forEach(function (a) {
+    a.addEventListener("click", function (e) {
+      var value = field ? field.value.trim() : "";
+      if (!RE.test(value)) return;
+      e.preventDefault();
+      var post = document.createElement("form"), input = document.createElement("input");
+      post.method = "post"; post.action = a.getAttribute("href");
+      input.type = "hidden"; input.name = "invitation"; input.value = value;
+      post.appendChild(input); document.body.appendChild(post); post.submit();
+    });
+  });
   var form = document.getElementById("invite");
   if (form) form.addEventListener("submit", function (e) {
     var b = form.querySelector("button[type=submit]");

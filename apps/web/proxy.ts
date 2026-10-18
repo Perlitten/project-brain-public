@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { clientAddress } from "./lib/client-address";
 import { acceptInvitation } from "./lib/invite-accept";
 import { invitePage, type InvitePageInput } from "./lib/invite-page";
 import { INVITE_PATH } from "./lib/invitations";
@@ -6,7 +7,7 @@ import { loginPage } from "./lib/login-page";
 import { OIDC_CALLBACK, OIDC_START, oidcCallback, oidcStart, ssoHref, ssoOffered } from "./lib/oidc";
 import {
   MEMBER_COOKIE, MEMBER_MAX_AGE, SESSION_COOKIE, authorizeWebRequest, forgetLoginState, lockReason, loginState, memberFor, memberFrom,
-  sessionFrom, signIn, signInMember, webAuthResponse,
+  sessionFrom, signIn, signInMember, signOutMember, webAuthResponse,
 } from "./lib/web-auth";
 
 // Who may enter is decided in lib/web-auth.ts (WEB_BASIC_AUTH, or the login
@@ -87,6 +88,8 @@ async function gate(req: NextRequest): Promise<Response> {
   const { pathname, search } = req.nextUrl;
 
   if (pathname === LOGOUT) {
+    // An SSO session ends in Brain too, not only in this browser.
+    await signOutMember(memberFrom(req.headers.get("cookie")));
     const res = NextResponse.redirect(new URL("/", req.url), 303);
     res.cookies.delete(SESSION_COOKIE);
     res.cookies.delete(MEMBER_COOKIE);
@@ -194,14 +197,16 @@ async function invite(req: NextRequest): Promise<Response> {
   }
   const notice = await inviteNotice();
   if (notice) return invitePageResponse({ notice });
-  if (req.method !== "POST") return invitePageResponse({});
+  // With single sign-on on, the invitee can join through the identity provider instead of the token form.
+  const alternatives = (await ssoOffered()) ? [{ label: "Sign in with SSO", href: OIDC_START, invitation: true }] : [];
+  if (req.method !== "POST") return invitePageResponse({ alternatives });
   if (!sameOrigin(req)) {
     return invitePageResponse({ notice: { status: 403, eyebrow: "Refused", title: "Accept the invitation from its own page.", detail: "This form came from another site. Open your invitation link in this browser and accept it there." } });
   }
   const form = await req.formData().catch(() => null);
   const raw = form?.get("token");
   const token = typeof raw === "string" ? raw.trim() : "";
-  const outcome = await acceptInvitation(token);
+  const outcome = await acceptInvitation(token, { client: clientAddress(req.headers) });
   if (outcome.kind === "accepted") {
     // Brain may have just become a team: ask afresh rather than trust the cached solo answer.
     forgetLoginState();
@@ -217,7 +222,7 @@ async function invite(req: NextRequest): Promise<Response> {
     return invitePageResponse({ outcome, signedIn: current?.name === outcome.name });
   }
   const notTheToken = outcome.kind === "throttled" || outcome.kind === "unavailable" || outcome.kind === "conflict";
-  return invitePageResponse({ outcome, token: notTheToken ? token : "" });
+  return invitePageResponse({ outcome, token: notTheToken ? token : "", alternatives });
 }
 
 // robots.txt stays reachable so crawlers can read "Disallow" even on a locked site.

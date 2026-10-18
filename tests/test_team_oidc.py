@@ -24,7 +24,7 @@ from brain.config.settings import Settings, settings
 from brain.database.models import ApiCredential
 from brain.team import invitations, oidc
 from brain.team.authorization import TeamConflict
-from brain.team.models import TeamIdentity, TeamInvitation, TeamMember, TeamOidcFlow
+from brain.team.models import TeamActivityEvent, TeamIdentity, TeamInvitation, TeamMember, TeamOidcFlow
 from tests.test_team_foundations import team_db as team_fixture
 from tests.test_team_transport import client_for, membership_driven, personal_app
 
@@ -347,6 +347,68 @@ async def test_start_is_throttled_per_address(team_db, monkeypatch, idp):
     assert int(answers[-1].headers["Retry-After"]) >= 1
 
 
+async def session_status(client, credential):
+    return (await client.get("/api/web-session", headers={"X-API-Key": credential})).status_code
+
+
+@pytest.mark.asyncio
+async def test_each_sign_in_rotates_the_previous_sso_session(team_db, monkeypatch, idp):
+    factory, _, _ = team_db
+    await bind(factory)
+    async with client_for(sso_app(factory, monkeypatch)) as client:
+        first = (await sign_in_flow(client, idp)).json()["credential"]
+        second = (await sign_in_flow(client, idp, code="code-2")).json()["credential"]
+        assert await session_status(client, first) == 401
+        assert await session_status(client, second) == 200
+        assert await session_status(client, "fixture-1") == 200  # keys SSO did not mint are untouched
+    async with factory() as db:
+        live = (await db.execute(select(ApiCredential.id).where(ApiCredential.principal_id == 1,
+                                                                ApiCredential.revoked_at.is_(None)))).scalars().all()
+        identity = (await db.execute(select(TeamIdentity))).scalar_one()
+    assert sorted(live) == sorted([1, identity.session_credential_id])
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes_only_the_callers_sso_session(team_db, monkeypatch, idp):
+    factory, _, _ = team_db
+    await bind(factory)
+    async with client_for(sso_app(factory, monkeypatch)) as client:
+        credential = (await sign_in_flow(client, idp)).json()["credential"]
+        other = await client.post("/team/oidc/logout", headers={"X-API-Key": "fixture-1"})
+        assert other.status_code == 200 and other.json() == {"revoked": False}
+        assert await session_status(client, "fixture-1") == 200 and await session_status(client, credential) == 200
+        done = await client.post("/team/oidc/logout", headers={"X-API-Key": credential})
+        assert done.status_code == 200 and done.json() == {"revoked": True}
+        assert done.headers["cache-control"] == "no-store"
+        assert await session_status(client, credential) == 401
+        assert (await client.post("/team/oidc/logout")).status_code == 401
+        later = (await sign_in_flow(client, idp, code="code-2")).json()["credential"]
+        monkeypatch.setattr(settings, "BRAIN_OIDC_ENABLED", False)  # a session can still be ended with SSO off
+        off = await client.post("/team/oidc/logout", headers={"X-API-Key": later})
+        assert off.json() == {"revoked": True} and await session_status(client, later) == 401
+    async with factory() as db:
+        identity = (await db.execute(select(TeamIdentity))).scalar_one()
+    assert identity.session_credential_id is None
+
+
+@pytest.mark.asyncio
+async def test_unbind_revokes_the_sso_session_and_both_changes_reach_the_activity_feed(team_db, monkeypatch, idp):
+    factory, _, _ = team_db
+    await bind(factory)
+    async with client_for(sso_app(factory, monkeypatch)) as client:
+        credential = (await sign_in_flow(client, idp)).json()["credential"]
+        async with factory() as session, session.begin():
+            assert await oidc.unbind_identity(session, principal_name="human-1") == 1
+        assert await session_status(client, credential) == 401
+        assert await session_status(client, "fixture-1") == 200
+    async with factory() as db:
+        events = (await db.execute(select(TeamActivityEvent).where(TeamActivityEvent.kind.like("sso.%"))
+                                   .order_by(TeamActivityEvent.id))).scalars().all()
+    assert [(row.kind, row.audience, row.subject_principal_id, row.actor_label) for row in events] == [
+        ("sso.bound", "admin", 1, "operator"), ("sso.unbound", "admin", 1, "operator")]
+    assert events[0].details["issuer"] == ISSUER and "single sign-on" in events[0].summary
+
+
 # --- invitations --------------------------------------------------------------------------------------------------
 
 
@@ -378,6 +440,10 @@ async def test_invitation_accepted_through_sso_then_member_signs_in(team_db, mon
         assert again.status_code == 403
         later = await sign_in_flow(client, idp, code="later", sub="carol-sub", email="carol@example.test")
         assert later.status_code == 200 and later.json()["mode"] == "signin"
+        # The acceptance key was the first SSO session: signing in again rotates it out.
+        assert (await client.get("/api/web-session", headers={"X-API-Key": result["credential"]})).status_code == 401
+        listed = await client.get("/team/invitations", headers={"X-API-Key": "fixture-4"})
+        assert [row["state"] for row in listed.json()] == ["active"]
     async with factory() as db:
         member = (await db.execute(select(TeamMember).where(TeamMember.principal_id == result["member"]["principal_id"]))
                   ).scalar_one()
@@ -386,6 +452,10 @@ async def test_invitation_accepted_through_sso_then_member_signs_in(team_db, mon
     assert (member.verification_issuer, member.verification_subject) == (ISSUER, "carol-sub")
     assert identity.bound_by == f"invitation:{view['id']}" and str(identity.invitation_id) == view["id"]
     assert (invitation.verified_issuer, invitation.verified_subject) == (ISSUER, "carol-sub")
+    async with factory() as db:
+        bound = (await db.execute(select(TeamActivityEvent).where(TeamActivityEvent.kind == "sso.bound"))
+                 ).scalar_one()
+    assert bound.actor_principal_id == bound.subject_principal_id == member.principal_id
 
 
 @pytest.mark.asyncio

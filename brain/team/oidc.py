@@ -21,6 +21,12 @@ protocol and the authorization decisions:
   the scopes of that member's dashboard key. Unknown subjects, revoked or
   disabled members and a fenced (restored) database are refused; there is no
   auto-provisioning.
+* The binding remembers the credential its latest sign-in minted
+  (``session_credential_id``); the next sign-in revokes it, so a member holds
+  one live SSO credential per identity. ``sign_out`` (dashboard logout) and
+  ``unbind_identity`` revoke it as well.
+* Binding and unbinding are recorded in the team activity feed
+  (``sso.bound`` / ``sso.unbound``, read by team administrators).
 * Invitation acceptance through SSO is ``invitations.accept_invitation_oidc``.
 
 Library: PyJWT (``pyjwt[crypto]``, already locked as an MCP dependency and now
@@ -45,16 +51,24 @@ from urllib.parse import urlencode, urlparse, urlsplit, urlunsplit
 
 import httpx
 import jwt
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import mint_credential
 from brain.config.settings import settings
-from brain.database.models import Principal
+from brain.database.models import ApiCredential, Principal
 from brain.team import invitations
 from brain.team.authorization import TeamConflict, TeamDenied, fresh
 from brain.team.models import TeamIdentity, TeamMember, TeamOidcFlow
-from brain.team.provisioning import TEAM_ID, TeamNotFound, _iso, _now, member_dict, member_scopes
+from brain.team.provisioning import (
+    TEAM_ID,
+    TeamNotFound,
+    _iso,
+    _now,
+    member_dict,
+    member_scopes,
+    record_sso_event,
+)
 from brain.team.restore_fence import FENCED, access_fenced
 
 FLOW_TTL = timedelta(minutes=10)
@@ -426,8 +440,11 @@ async def sign_in(session: AsyncSession, identity: OidcIdentity, team_id: int = 
     if (member is None or member.revoked_at is not None or not member.verified_at or principal is None
             or principal.kind != "human" or principal.disabled_at is not None):
         raise OidcRejected(NOT_LINKED)
+    await _revoke_session(session, binding)
     raw, credential = await mint_credential(session, name=principal.name, scopes=member_scopes(bool(member.is_admin)),
                                             kind="human", ttl_days=SESSION_TTL_DAYS)
+    await session.flush()
+    binding.session_credential_id = credential.id
     binding.last_login_at = _now()
     binding.email = identity.email
     await session.flush()
@@ -448,6 +465,34 @@ async def accept(session: AsyncSession, ticket: FlowTicket, identity: OidcIdenti
             "invitation": result["invitation"], "project_memberships": result["project_memberships"]}
 
 
+async def _revoke_session(session: AsyncSession, binding: TeamIdentity) -> None:
+    """Revoke the dashboard credential the binding's latest sign-in minted (never another principal's key)."""
+    if binding.session_credential_id is None:
+        return
+    await session.execute(update(ApiCredential).where(
+        ApiCredential.id == binding.session_credential_id, ApiCredential.principal_id == binding.principal_id,
+        ApiCredential.revoked_at.is_(None)).values(revoked_at=_now()))
+    binding.session_credential_id = None
+
+
+async def sign_out(session: AsyncSession, *, principal_id: int, credential_id: int | None) -> bool:
+    """Revoke ``credential_id`` when it is the live SSO session credential of one of the principal's bindings.
+
+    Dashboard logout calls this with the credential the browser held. A key SSO
+    did not mint (an invitation key pasted at sign-in, a CLI key) is left alone:
+    logging out of the dashboard must not break the member's MCP clients.
+    Returns whether a session was revoked."""
+    if credential_id is None:
+        return False
+    binding = await fresh(session, TeamIdentity, TeamIdentity.principal_id == principal_id,
+                          TeamIdentity.session_credential_id == credential_id, exclusive=True)
+    if binding is None:
+        return False
+    await _revoke_session(session, binding)
+    await session.flush()
+    return True
+
+
 def identity_dict(row: TeamIdentity, principal_name: str | None = None) -> dict[str, Any]:
     return {"id": row.id, "principal_id": row.principal_id, "principal_name": principal_name,
             "issuer": row.issuer, "subject": row.subject, "email": row.email,
@@ -463,7 +508,8 @@ async def list_identities(session: AsyncSession, team_id: int = TEAM_ID) -> list
 
 
 async def bind_identity(session: AsyncSession, *, principal_name: str, subject: str, issuer: str | None = None,
-                        email: str | None = None, bound_by: str, team_id: int = TEAM_ID) -> dict[str, Any]:
+                        email: str | None = None, bound_by: str, team_id: int = TEAM_ID,
+                        actor_id: int | None = None) -> dict[str, Any]:
     """Operator action: let an existing member sign in with an SSO account (no email check)."""
     issuer = (issuer or settings.BRAIN_OIDC_ISSUER or "").strip().rstrip("/")
     subject = (subject or "").strip()
@@ -488,12 +534,17 @@ async def bind_identity(session: AsyncSession, *, principal_name: str, subject: 
     session.add(row)
     await session.flush()
     await session.refresh(row)
+    await record_sso_event(session, "sso.bound", principal, issuer, actor_id=actor_id)
     return identity_dict(row, principal.name)
 
 
 async def unbind_identity(session: AsyncSession, *, principal_name: str, issuer: str | None = None,
-                          team_id: int = TEAM_ID) -> int:
-    """Operator action: remove a member's SSO binding; returns how many rows were removed."""
+                          team_id: int = TEAM_ID, actor_id: int | None = None) -> int:
+    """Operator action: remove a member's SSO binding and end its session; returns how many rows were removed.
+
+    The dashboard credential the binding's latest sign-in minted is revoked with
+    it, so unbinding ends the SSO session at once instead of when its seven
+    days run out. Keys the member holds by other means stay live."""
     issuer = (issuer or settings.BRAIN_OIDC_ISSUER or "").strip().rstrip("/")
     principal = await fresh(session, Principal, Principal.name == principal_name)
     if principal is None:
@@ -501,6 +552,11 @@ async def unbind_identity(session: AsyncSession, *, principal_name: str, issuer:
     predicates = [TeamIdentity.principal_id == principal.id, TeamIdentity.team_id == team_id]
     if issuer:
         predicates.append(TeamIdentity.issuer == issuer)
-    result = await session.execute(delete(TeamIdentity).where(*predicates))
+    rows = (await session.execute(select(TeamIdentity).where(*predicates).with_for_update())).scalars().all()
+    for row in rows:
+        await _revoke_session(session, row)
+        await record_sso_event(session, "sso.unbound", principal, row.issuer, actor_id=actor_id)
+    if rows:
+        await session.execute(delete(TeamIdentity).where(TeamIdentity.id.in_([row.id for row in rows])))
     await session.flush()
-    return int(getattr(result, "rowcount", 0) or 0)
+    return len(rows)

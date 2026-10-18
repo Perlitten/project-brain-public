@@ -54,7 +54,7 @@ function fakeBrain({ team = true } = {}) {
   brain.fetch = async (url, options = {}) => {
     const u = new URL(String(url));
     const key = options.headers?.['X-API-Key'];
-    brain.calls.push({ method: options.method ?? 'GET', path: u.pathname, key, body: options.body });
+    brain.calls.push({ method: options.method ?? 'GET', path: u.pathname, key, body: options.body, forwarded: options.headers?.['X-Forwarded-For'] });
     if (u.pathname === '/brain/team/invitations/accept') {
       if (brain.accept === 'down') throw new TypeError('fetch failed');
       if (brain.accept) return Response.json({ detail: brain.accept.detail }, { status: brain.accept.status });
@@ -94,12 +94,12 @@ function inviteProxy() {
   const { NextRequest } = require('next/server');
   const auth = load('lib/web-auth.ts');
   const { proxy } = load('proxy.ts', { './lib/web-auth': auth, '@/components/Icon': { MARK_TOKENS: [] } });
-  const post = (fields, { origin = 'https://web.example', cookie, site } = {}) => new NextRequest('https://web.example/invite', {
+  const post = (fields, { origin = 'https://web.example', cookie, site, headers = {} } = {}) => new NextRequest('https://web.example/invite', {
     method: 'POST',
     body: new URLSearchParams(fields),
     headers: {
       'content-type': 'application/x-www-form-urlencoded', accept: 'text/html',
-      ...(origin ? { origin } : {}), ...(cookie ? { cookie } : {}), ...(site ? { 'sec-fetch-site': site } : {}),
+      ...(origin ? { origin } : {}), ...(cookie ? { cookie } : {}), ...(site ? { 'sec-fetch-site': site } : {}), ...headers,
     },
   });
   const get = () => new NextRequest('https://web.example/invite', { headers: { accept: 'text/html' } });
@@ -160,6 +160,22 @@ test('the accept call sends the token in the body and no API key, keeps the path
   await withEnv({}, async () => assert.equal((await load('lib/invite-accept.ts').acceptInvitation(TOKEN)).kind, 'unavailable'));
 });
 
+test('the accept call passes the invitee address on, so Brain throttles each dashboard visitor separately', async () => {
+  const { clientAddress } = load('lib/client-address.ts');
+  const h = values => new Headers(values);
+  assert.equal(clientAddress(h({ 'x-forwarded-for': '198.51.100.9, 203.0.113.5' })), '203.0.113.5', 'the hop the front proxy wrote');
+  assert.equal(clientAddress(h({ 'x-forwarded-for': 'junk', 'x-real-ip': '2001:db8::7' })), '2001:db8::7');
+  assert.equal(clientAddress(h({ 'x-forwarded-for': '203.0.113.5:443' })), null);
+  assert.equal(clientAddress(h({})), null);
+  const brain = fakeBrain();
+  await withEnv(LIVE, () => withFetch(brain.fetch, async () => {
+    const { proxy, post } = inviteProxy();
+    await proxy(post({ token: TOKEN }, { headers: { 'x-forwarded-for': '198.51.100.9, 203.0.113.5' } }));
+    await proxy(post({ token: TOKEN }));
+    assert.deepEqual(accepts(brain).map(c => c.forwarded), ['203.0.113.5', undefined]);
+  }));
+});
+
 test('/invite is public, shows the token form and never reaches Brain on a GET', async () => {
   const brain = fakeBrain();
   await withEnv(LIVE, () => withFetch(brain.fetch, async () => {
@@ -174,7 +190,8 @@ test('/invite is public, shows the token form and never reaches Brain on a GET',
     assert.match(html, /Join the team · Project Brain/);
     assert.match(html, /history\.replaceState/, 'the token is cleared from the address bar');
     assert.doesNotMatch(html, /fixture/);
-    assert.ok(brain.calls.every(c => c.path.endsWith('/api/web-login')), 'only the sign-in state probe');
+    assert.ok(brain.calls.every(c => c.path.endsWith('/api/web-login') || c.path.endsWith('/team/oidc/config')),
+      'only the sign-in state and SSO availability probes');
   }));
 });
 

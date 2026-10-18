@@ -57,6 +57,7 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("team_invitations", "verified_issuer"),
     ("team_invitations", "verified_subject"),
     ("team_identities", "subject"),
+    ("team_identities", "session_credential_id"),
     ("team_oidc_flows", "binding_hash"),
     # Every credential resolution reads the restore fence (brain.team.restore_fence).
     ("team_access_fences", "cleared_at"),

@@ -75,6 +75,7 @@ SEPARATE_OPERATIONS = {
     ("get", "/team/oidc/config"): "public SSO availability flag, no data; test_team_oidc",
     ("post", "/team/oidc/start"): "unauthenticated SSO start, throttled; test_team_oidc",
     ("post", "/team/oidc/callback"): "single-use OIDC flow + browser binding + ID token, throttled; test_team_oidc",
+    ("post", "/team/oidc/logout"): "revokes only the caller's own SSO session credential; test_team_oidc",
     ("post", "/v1/intake/capture"): "handler-level bridge auth; test_telegram_bridge_auth",
     ("post", "/v1/assistant/reply"): "handler-level bridge auth; test_telegram_bridge_auth",
     ("post", "/webhooks/git-merge"): "webhook secret policy; test_worker_scheduler",

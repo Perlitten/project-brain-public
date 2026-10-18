@@ -81,6 +81,14 @@ async def _record_membership(session: AsyncSession, kind: str, summary: str, *, 
                        project_id=project_id, details={"principal_id": principal_id, **details})
 
 
+async def record_sso_event(session: AsyncSession, kind: str, principal: Principal, issuer: str, *,
+                           actor_id: int | None) -> None:
+    """Record a single sign-on binding change (``sso.bound`` / ``sso.unbound``) for team administrators."""
+    change = "can now sign in" if kind == "sso.bound" else "can no longer sign in"
+    await _record_membership(session, kind, f"{principal.name} {change} with single sign-on",
+                             actor_id=actor_id, principal_id=principal.id, issuer=issuer)
+
+
 def team_dict(team: Team) -> dict:
     return {"id": team.id, "name": team.name}
 
@@ -224,13 +232,47 @@ async def add_member(session: AsyncSession, *, principal: Principal, issuer: str
     return member
 
 
+async def approver_subjects(session: AsyncSession, principal: Principal) -> set[str]:
+    """The consent subjects (``OAuthRefreshToken.subject``) under which ``principal`` approves OAuth clients.
+
+    A key approval records the key's principal name; a web-login approval
+    records ``web:<user>``, which is this principal only when its membership
+    is verified under the web login (see ``brain/team/oauth_link.py``)."""
+    subjects = {principal.name}
+    member = (await session.execute(select(TeamMember).where(TeamMember.principal_id == principal.id))
+              ).scalar_one_or_none()
+    if member is not None and member.verification_issuer == WEB_LOGIN_ISSUER and member.verification_subject:
+        subjects.add(f"web:{member.verification_subject}")
+    return subjects
+
+
+async def revoke_oauth_approvals(session: AsyncSession, principal: Principal, now: datetime | None = None) -> None:
+    """Revoke every OAuth grant ``principal`` approved or holds: refresh tokens and their access credentials.
+
+    Personal-scope tokens live on a per-client service principal
+    (``oauth:<client>``), not on the approver, so they are matched by the
+    consent subject recorded on the refresh row. Team-scope tokens live on the
+    member's own principal and are matched by principal name."""
+    now = now or _now()
+    linked = or_(OAuthRefreshToken.principal_name == principal.name,
+                 OAuthRefreshToken.subject.in_(sorted(await approver_subjects(session, principal))))
+    await session.execute(update(ApiCredential).where(
+        ApiCredential.revoked_at.is_(None),
+        ApiCredential.id.in_(select(OAuthRefreshToken.access_credential_id).where(
+            linked, OAuthRefreshToken.access_credential_id.is_not(None))))
+        .values(revoked_at=now))
+    await session.execute(update(OAuthRefreshToken).where(OAuthRefreshToken.revoked_at.is_(None), linked)
+                          .values(revoked_at=now))
+
+
 async def revoke_principal_access(session: AsyncSession, principal: Principal) -> None:
     """Revoke every credential, OAuth refresh token and agent run that acts for ``principal``.
 
     Membership rows alone do not stop a key: a revoked member's credential
     would otherwise stay live for solo surfaces and for any later fallback.
     This revokes the principal's own credentials (named keys and OAuth access
-    tokens), the refresh tokens that could mint new ones, and the runs it
+    tokens), the OAuth grants it approved (``revoke_oauth_approvals``: personal
+    clients too, whose tokens live on a service principal), and the runs it
     initiated together with their run credentials, in the caller's transaction.
     Execution grants on every project are revoked too, so a re-added member
     needs a fresh grant."""
@@ -247,8 +289,8 @@ async def revoke_principal_access(session: AsyncSession, principal: Principal) -
         run.revoked_at = now
     await session.execute(update(OAuthRefreshToken).where(
         OAuthRefreshToken.revoked_at.is_(None),
-        or_(OAuthRefreshToken.principal_name == principal.name,
-            OAuthRefreshToken.access_credential_id.in_(credential_ids))).values(revoked_at=now))
+        OAuthRefreshToken.access_credential_id.in_(credential_ids)).values(revoked_at=now))
+    await revoke_oauth_approvals(session, principal, now)
     await session.execute(update(ApiCredential).where(
         ApiCredential.revoked_at.is_(None),
         or_(ApiCredential.principal_id == principal.id, ApiCredential.id.in_(run_credentials)))
@@ -287,7 +329,12 @@ async def dissolve_team(session: AsyncSession, team_id: int = TEAM_ID) -> Team:
     Solo makes every authenticated key the implicit administrator, so the
     switch is never automatic: ``team_state`` stays ``"team"`` after the last
     revocation until this records ``dissolved_at``. Refused while any verified
-    member is live. Adding a member afterwards turns the team back on."""
+    member is live. Adding a member afterwards turns the team back on.
+
+    Solo authority goes to every live credential, so the OAuth grants former
+    members approved are revoked again here (``revoke_oauth_approvals``): a
+    personal client a member approved must not come back as the owner. Other
+    credentials are left alone; the owner's own keys become the owner's."""
     team = await fresh(session, Team, Team.id == team_id, exclusive=True)
     if team is None:
         raise TeamNotFound("Team is not initialized; run `brain team init` first")
@@ -296,6 +343,10 @@ async def dissolve_team(session: AsyncSession, team_id: int = TEAM_ID) -> Team:
         .limit(1))).scalar_one_or_none()
     if live is not None:
         raise TeamConflict("Revoke every team member before dissolving the team")
+    former = (await session.execute(select(Principal).join(TeamMember, TeamMember.principal_id == Principal.id)
+                                    .where(TeamMember.team_id == team_id))).scalars().all()
+    for principal in former:
+        await revoke_oauth_approvals(session, principal)
     team.dissolved_at = _now()
     await session.flush()
     return team
