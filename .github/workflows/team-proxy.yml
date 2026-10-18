@@ -18,6 +18,7 @@ on:
       - Dockerfile
       - apps/web/Dockerfile
       - apps/web/proxy.ts
+      - apps/web/lib/client-address.ts
       - apps/web/lib/oidc.ts
       - apps/web/lib/web-auth.ts
       - apps/web/lib/invitations.ts

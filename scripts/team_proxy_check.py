@@ -425,11 +425,12 @@ def main(argv: list[str] | None = None) -> int:
         except StackError as exc:
             print(f"stack error: {exc}", file=sys.stderr)
             status = 2
-        if status:
-            stack.compose("ps", "-a", check=False)
-            stack.compose("logs", "--no-color", "--tail", "80", "api", "web", "caddy", check=False)
-        if not args.keep:
-            stack.compose("down", "-v", "--remove-orphans", check=False, quiet=True)
+        finally:
+            if status:
+                stack.compose("ps", "-a", check=False)
+                stack.compose("logs", "--no-color", "--tail", "80", "api", "web", "caddy", check=False)
+            if not args.keep:
+                stack.compose("down", "-v", "--remove-orphans", check=False, quiet=True)
     verdict = "passed" if status == 0 else "FAILED"
     print(f"team proxy check {verdict} in {time.monotonic() - began:.0f}s", flush=True)
     return status
