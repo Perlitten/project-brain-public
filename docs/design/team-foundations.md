@@ -33,7 +33,15 @@ access included, is the implicit administrator of every repository. In the
 team state the shared key and dev-open access are refused with
 `Named credential required: this Brain has team members`, and repository
 access follows `ProjectRepository -> TeamProject -> member role`; an
-unattached repository or an unscoped call needs a team administrator.
+unattached repository normally needs a team administrator and remains subject
+to that repository's workspace-registry trust. A genuinely unscoped operation
+also normally needs a team administrator, except for member-filtered listings;
+what it exposes or changes depends on the endpoint. Some unscoped surfaces expose
+cross-project rows, while some omitted-scope routes operate on the configured
+default repository after administrator authorization. An administrator without
+a project role is still refused on calls explicitly scoped to a project
+repository (see the ADR's
+[team administrator reads](../adr/team-collaboration.md#team-administrator-reads)).
 `BRAIN_TEAM_MODE=true` remains as a deprecated strictness alias that treats an
 empty team as a team (logged once as a deprecation warning); Lite rejects it.
 Trusted operators provision verified membership and named credentials, directly
@@ -220,7 +228,7 @@ Now `brain.team.authorization.authorize_repository` decides both, in team state 
 
 | Question | Owner | Where |
 |---|---|---|
-| Who may use the repository | Team membership (project role, project policy, credential scopes); unattached repositories: team administrators | `authorize`, `team_administrator` |
+| Who may use the repository | Attached repository: project role, project policy and credential scopes. Unattached repository: team administrator, capped by registry trust. Unscoped operation: normally team administrator; member-filtered listings admit verified members and filter by readable repositories | `authorize`, `authorize_repository`, `filters_unreadable`, `readable_repository_ids` |
 | What anyone may do on it | Workspace registry trust: no record = no restriction; `untrusted_external` = read only; disabled, archived or trust level `disabled` = nothing, for everyone including administrators; unknown trust level or unreadable registry = nothing | `registry_trust_ceiling`, `brain/workspace/trust.py` |
 
 Membership is evaluated first, so a caller without access is told "Project access
