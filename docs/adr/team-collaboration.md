@@ -2,6 +2,7 @@
 
 Status: target architecture; M0 contract, not a team-readiness claim.
 Amended 2026-10-15: unified model, see [Decision: solo is a team of one](#decision-2026-10-15-solo-is-a-team-of-one).
+Amended 2026-10-18: [team administrator reads](#team-administrator-reads) documented as implemented.
 
 Requirements source: the owner's 2026-10-14 requirements summary (private design notes). It is design input, not implemented-feature evidence.
 
@@ -99,7 +100,7 @@ executor is simulated: M1 records authority/provenance only; execution is denied
 
 | Action | Reader | Contributor | Reviewer | Team administrator |
 |---|---|---|---|---|
-| Project read | Yes | Yes | Yes | Only with project membership |
+| Project read | Yes | Yes | Yes | Repository-scoped calls: only with a project role. Unscoped calls: every project ([note](#team-administrator-reads)) |
 | Task creation / run request | No | Eligible | Eligible | Only with project role |
 | Knowledge proposal | No | Eligible | Eligible | Only with project role |
 | Normative approval / task acceptance | No | No | Eligible, independent author | Not implied by administration |
@@ -107,6 +108,22 @@ executor is simulated: M1 records authority/provenance only; execution is denied
 | Merge | No | Separate exact-version approval | Separate exact-version approval | Not implied |
 | Membership/policy administration | No | No | No | Separate team-admin permission |
 | External-provider transfer | No implicit grant | No implicit grant | No implicit grant | No implicit grant |
+
+<a id="team-administrator-reads"></a>
+**Team administrator reads (amended 2026-10-18 to match the code).** A call that
+names a repository attached to a project is checked against the caller's project
+role, so an administrator without one gets `Project access denied`. A call that
+names no repository (no `repository_id`/`repo_path`), or names an unattached
+repository, needs a team administrator and grants full authority over every
+repository (`authorize_repository`). Listings do not filter an administrator's
+results either (`readable_repository_ids` returns no filter). An administrator
+without a project role therefore reads every project's memory through the
+unscoped surfaces. The owner chose to keep this: an administrator can grant
+themselves a project role anyway, so a membership-only rule would not add a
+real boundary. Calls scoped to a project repository (reads, writes, run requests,
+approvals) still need a project role; the unscoped writes an administrator can
+make are the system-global ones (global decisions, rules and skills, unscoped
+learnings). Execution and merge still need the separate grants in the table.
 
 Eligibility is not an enabled feature. Effective run authority is the intersection
 of live initiator credential/membership, project policy, task permissions,

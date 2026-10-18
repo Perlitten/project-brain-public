@@ -33,7 +33,12 @@ access included, is the implicit administrator of every repository. In the
 team state the shared key and dev-open access are refused with
 `Named credential required: this Brain has team members`, and repository
 access follows `ProjectRepository -> TeamProject -> member role`; an
-unattached repository or an unscoped call needs a team administrator.
+unattached repository or an unscoped call needs a team administrator. Such a
+call grants the administrator full authority over every repository, project
+repositories included, so a team administrator without a project role reads
+every project's memory through unscoped calls and unfiltered listings, but is
+refused on calls scoped to a project repository (see the ADR's
+[team administrator reads](../adr/team-collaboration.md#team-administrator-reads)).
 `BRAIN_TEAM_MODE=true` remains as a deprecated strictness alias that treats an
 empty team as a team (logged once as a deprecation warning); Lite rejects it.
 Trusted operators provision verified membership and named credentials, directly
@@ -220,7 +225,7 @@ Now `brain.team.authorization.authorize_repository` decides both, in team state 
 
 | Question | Owner | Where |
 |---|---|---|
-| Who may use the repository | Team membership (project role, project policy, credential scopes); unattached repositories: team administrators | `authorize`, `team_administrator` |
+| Who may use the repository | Team membership (project role, project policy, credential scopes); unattached repositories and unscoped calls (every repository): team administrators | `authorize`, `team_administrator` |
 | What anyone may do on it | Workspace registry trust: no record = no restriction; `untrusted_external` = read only; disabled, archived or trust level `disabled` = nothing, for everyone including administrators; unknown trust level or unreadable registry = nothing | `registry_trust_ceiling`, `brain/workspace/trust.py` |
 
 Membership is evaluated first, so a caller without access is told "Project access
