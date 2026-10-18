@@ -812,13 +812,15 @@ async def list_leases(session: AsyncSession, caller: ResolvedPrincipal, project_
 # --------------------------------------------------------------------------- integration queue
 
 
-def entry_dict(entry: TeamIntegrationEntry) -> dict:
+def entry_dict(entry: TeamIntegrationEntry, run: AgentRun | None = None) -> dict:
     return {"id": entry.id, "project_id": str(entry.project_id), "repository_id": entry.repository_id,
             "task_id": str(entry.task_id), "run_id": str(entry.run_id), "base_sha": entry.base_sha,
             "head_sha": entry.head_sha, "status": entry.status, "reason": entry.reason,
             "checked_base_sha": entry.checked_base_sha, "checked_at": _iso(entry.checked_at),
             "enqueued_by": entry.enqueued_by, "enqueued_at": _iso(entry.enqueued_at),
-            "decided_by": entry.decided_by, "decided_at": _iso(entry.decided_at), "version": entry.version}
+            "decided_by": entry.decided_by, "decided_at": _iso(entry.decided_at), "version": entry.version,
+            "initiator_id": run.initiator_id if run is not None else None,
+            "requested_by": run.requested_by if run is not None else None}
 
 
 async def _executed_base(session: AsyncSession, run: AgentRun) -> str:
@@ -850,7 +852,7 @@ async def enqueue(session: AsyncSession, caller: ResolvedPrincipal, project_id: 
     await authorize(session, caller, project_id, Permission.READ, task_id=run.task_id)
     existing = await fresh(session, TeamIntegrationEntry, TeamIntegrationEntry.run_id == run.id)
     if existing is not None:
-        return entry_dict(existing)
+        return entry_dict(existing, run)
     if run.revoked_at is not None:
         raise TeamConflict("Run was revoked")
     if not run.head_sha:
@@ -867,10 +869,10 @@ async def enqueue(session: AsyncSession, caller: ResolvedPrincipal, project_id: 
         found = await fresh(session, TeamIntegrationEntry, TeamIntegrationEntry.run_id == run.id)
         if found is None:
             raise
-        return entry_dict(found)
+        return entry_dict(found, run)
     await _coordination_event(session, "coordination.integration_queued", "Run queued for integration", entry,
                               authority.actor_id, head_sha=entry.head_sha)
-    return entry_dict(entry)
+    return entry_dict(entry, run)
 
 
 async def _settle_task(session: AsyncSession, entry: TeamIntegrationEntry, actor_id: int) -> None:
@@ -980,7 +982,7 @@ async def integrate(session: AsyncSession, caller: ResolvedPrincipal, project_id
         await _settle_task(session, entry, authority.actor_id)
     await _coordination_event(session, kind, summary, entry, authority.actor_id, base_sha=current_base,
                               superseded=stale[:20])
-    return {**entry_dict(entry), "superseded_instructions": stale}
+    return {**entry_dict(entry, run), "superseded_instructions": stale}
 
 
 async def reject(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID, entry_id: int,
@@ -1016,8 +1018,11 @@ async def queue_view(session: AsyncSession, project_id: uuid.UUID, repository_id
         query = query.where(TeamIntegrationEntry.repository_id == repository_id)
     if not include_done:
         query = query.where(TeamIntegrationEntry.status.in_(PENDING))
-    return [entry_dict(row) for row in (await session.execute(query.order_by(TeamIntegrationEntry.id).limit(500)))
-            .scalars().all()]
+    entries = (await session.execute(query.order_by(TeamIntegrationEntry.id).limit(500))).scalars().all()
+    run_ids = [entry.run_id for entry in entries]
+    runs = ({row.id: row for row in (await session.execute(select(AgentRun).where(AgentRun.id.in_(run_ids))))
+             .scalars().all()} if run_ids else {})
+    return [entry_dict(entry, runs.get(entry.run_id)) for entry in entries]
 
 
 async def list_queue(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,

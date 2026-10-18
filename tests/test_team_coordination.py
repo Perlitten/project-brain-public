@@ -389,7 +389,9 @@ async def test_integration_queue_order_rebase_instructions_and_authority(team_db
         assert e1["status"] == "queued" and e1["base_sha"] == A and e1["head_sha"] == B
         assert await coordination.enqueue(session, caller(2), a, {"run_id": str(r1)}) == e1
         e2 = await coordination.enqueue(session, caller(2), a, {"run_id": str(r2)})
-        assert [item["id"] for item in await coordination.list_queue(session, caller(1), a)] == [e1["id"], e2["id"]]
+        queue = await coordination.list_queue(session, caller(1), a)
+        assert [item["id"] for item in queue] == [e1["id"], e2["id"]]
+        assert (queue[0]["initiator_id"], queue[0]["requested_by"]) == (2, 2)
 
         with pytest.raises(TeamDenied):  # Contributors cannot integrate
             await coordination.integrate(session, caller(2), a, e1["id"], {"expected_version": 1})
@@ -622,12 +624,90 @@ async def test_http_coordination_routes(team_db, monkeypatch):
                                   json={"reason": "late", "expected_version": 2})).status_code == 409
 
 
-def test_coordination_mcp_tools_are_registered_read_only():
+COORDINATION_READS = ("team_task_plan", "team_coordination_overlaps", "team_list_leases", "team_integration_queue")
+COORDINATION_WRITES = ("team_claim_lease", "team_renew_lease", "team_release_lease", "team_declare_scope",
+                       "team_enqueue_integration")
+
+
+def test_coordination_mcp_tools_are_registered_with_their_annotations():
     import asyncio
 
     import apps.mcp_server.team_server  # noqa: F401 - registers the team tools
     from apps.mcp_server.remote_server import mcp
 
     tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
-    for name in ("team_task_plan", "team_coordination_overlaps", "team_list_leases", "team_integration_queue"):
+    for name in COORDINATION_READS:
         assert tools[name].annotations.read_only_hint is True
+    for name in COORDINATION_WRITES:
+        assert tools[name].annotations.read_only_hint is False, name
+        assert tools[name].annotations.destructive_hint is False, name
+        assert tools[name].annotations.idempotent_hint is (name != "team_renew_lease"), name
+
+
+@pytest.mark.asyncio
+async def test_coordination_mcp_writes_go_through_the_api_routes_and_their_denials(team_db, monkeypatch):
+    import json
+
+    import httpx
+    from mcp import Client
+    from mcp.client.streamable_http import streamable_http_client
+
+    from apps.api.routers import team_coordination
+    from tests.test_mcp_http import _free_port, _serve
+    from tests.test_team_transport import membership_driven, personal_app
+
+    factory, a, b = team_db
+    membership_driven(monkeypatch)
+    async with factory() as session, session.begin():
+        task_id = await make_parent(session, a, key="mcp-parent-01")
+        run_id = await make_run(session, a, task_id, "mcp-run-0001", head=B)
+    app = personal_app(factory, monkeypatch)
+    app.include_router(team_coordination.router)
+
+    def body(result):
+        assert not result.is_error, result.content
+        return json.loads(result.content[0].text)
+
+    with _serve(app, _free_port()) as url:
+        async def session_for(key):
+            http_client = httpx.AsyncClient(headers={"Authorization": f"Bearer {key}"}, timeout=30)
+            return http_client, Client(streamable_http_client(f"{url}/mcp", http_client=http_client))
+
+        reader_http, reader = await session_for("fixture-1")
+        async with reader_http, reader:
+            names = {tool.name for tool in (await reader.list_tools()).tools}
+            assert set(COORDINATION_WRITES) <= names
+            denied = await reader.call_tool("team_claim_lease", {"project_id": str(a), "repository_id": 1,
+                                                                 "resource": "src/api"})
+            assert denied.is_error and "403" in denied.content[0].text
+
+        http_client, client = await session_for("fixture-2")
+        async with http_client, client:
+            claim = {"project_id": str(a), "repository_id": 1, "resource": "src/api", "task_id": str(task_id)}
+            lease = body(await client.call_tool("team_claim_lease", claim))["lease"]
+            assert lease["holder_id"] == 2 and lease["fencing_token"] == 1
+            assert body(await client.call_tool("team_claim_lease", claim))["lease"]["id"] == lease["id"], "a retry"
+            assert (await client.call_tool("team_claim_lease", {**claim, "project_id": str(b)})).is_error
+            renewed = body(await client.call_tool("team_renew_lease", {"project_id": str(a), "lease_id": lease["id"],
+                                                                       "fencing_token": 1, "ttl_seconds": 120}))
+            assert renewed["fencing_token"] == 1
+            assert (await client.call_tool("team_release_lease", {"project_id": str(a), "lease_id": lease["id"],
+                                                                  "fencing_token": 9})).is_error, "wrong token"
+            released = body(await client.call_tool("team_release_lease", {"project_id": str(a),
+                                                                          "lease_id": lease["id"], "fencing_token": 1}))
+            assert released["state"] == "released"
+
+            plan = body(await client.call_tool("team_declare_scope", {"project_id": str(a), "task_id": str(task_id),
+                                                                      "scope_paths": ["src/api"],
+                                                                      "expected_version": 0}))
+            assert plan["plan"]["scope_paths"] == ["src/api"]
+            stale = await client.call_tool("team_declare_scope", {"project_id": str(a), "task_id": str(task_id),
+                                                                  "scope_paths": ["docs"], "expected_version": 0})
+            assert stale.is_error and "409" in stale.content[0].text
+
+            entry = body(await client.call_tool("team_enqueue_integration", {"project_id": str(a),
+                                                                             "run_id": str(run_id)}))
+            assert entry["status"] == "queued" and entry["head_sha"] == B
+            again = body(await client.call_tool("team_enqueue_integration", {"project_id": str(a),
+                                                                             "run_id": str(run_id)}))
+            assert again["id"] == entry["id"], "a run is queued once"
