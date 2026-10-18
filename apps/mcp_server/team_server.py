@@ -3,7 +3,9 @@
 Importing this module adds ``team_me``, ``team_activity``, ``team_list_tasks``,
 ``team_create_task``, ``team_request_run`` and the governed-memory tools
 (``team_propose_decision``, ``team_propose_rule``, ``team_list_proposals``,
-``team_approve_proposal``, ``team_reject_proposal``) to ``remote_server.mcp``;
+``team_approve_proposal``, ``team_reject_proposal``) and the read-only
+coordination tools (``team_task_plan``, ``team_coordination_overlaps``,
+``team_list_leases``, ``team_integration_queue``) to ``remote_server.mcp``;
 the API routes behind them apply live membership and project policy, so a
 caller without team access sees the same denials here as over HTTP.
 """
@@ -17,7 +19,8 @@ from apps.mcp_server.remote_server import _get, _post, checked_tool, mcp
 
 __all__ = ["mcp", "team_me", "team_activity", "team_list_tasks", "team_create_task", "team_request_run",
            "team_propose_decision", "team_propose_rule", "team_list_proposals", "team_approve_proposal",
-           "team_reject_proposal"]
+           "team_reject_proposal", "team_task_plan", "team_coordination_overlaps", "team_list_leases",
+           "team_integration_queue"]
 
 
 @mcp.tool(**tool_meta("team_me"))
@@ -121,3 +124,42 @@ async def team_reject_proposal(proposal_id: int, expected_version: int, reason: 
     """Reject a proposal you did not author; nothing reaches approved memory."""
     return await _post(f"/memory/proposals/{proposal_id}/reject",
                        {"expected_version": expected_version, "reason": reason})
+
+
+# --- coordination (M3), read-only: changes go through the HTTP API (docs/TEAM.md) ---------------
+
+
+@mcp.tool(**tool_meta("team_task_plan"))
+@checked_tool
+async def team_task_plan(project_id: UUID, task_id: UUID) -> dict:
+    """A task's subtasks with dependency states (ready, waiting, running, done) and the ready set."""
+    return await _get(f"/team/projects/{project_id}/tasks/{task_id}/plan")
+
+
+@mcp.tool(**tool_meta("team_coordination_overlaps"))
+@checked_tool
+async def team_coordination_overlaps(project_id: UUID, repository_id: int | None = None) -> dict:
+    """Declared-scope overlaps among active tasks and with live leases (a risk signal, not a conflict check)."""
+    query = f"?{urlencode({'repository_id': repository_id})}" if repository_id is not None else ""
+    return await _get(f"/team/projects/{project_id}/overlaps{query}")
+
+
+@mcp.tool(**tool_meta("team_list_leases"))
+@checked_tool
+async def team_list_leases(project_id: UUID, repository_id: int | None = None, include_inactive: bool = False) -> dict:
+    """Critical leases on a project: resource, holder, fencing token and expiry."""
+    params: dict[str, str] = {"include_inactive": str(include_inactive).lower()}
+    if repository_id is not None:
+        params["repository_id"] = str(repository_id)
+    return await _get(f"/team/projects/{project_id}/leases?{urlencode(params)}")
+
+
+@mcp.tool(**tool_meta("team_integration_queue"))
+@checked_tool
+async def team_integration_queue(project_id: UUID, repository_id: int | None = None,
+                                 include_done: bool = False) -> dict:
+    """The integration queue in order, with each entry's last re-validation result."""
+    params: dict[str, str] = {"include_done": str(include_done).lower()}
+    if repository_id is not None:
+        params["repository_id"] = str(repository_id)
+    return await _get(f"/team/projects/{project_id}/integration?{urlencode(params)}")

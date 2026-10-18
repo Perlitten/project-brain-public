@@ -22,7 +22,7 @@ from brain.database.models import ApiCredential, OAuthRefreshToken, Principal, R
 from brain.memory.proposals import withdraw_author_proposals
 from brain.team.authorization import ROLE_PERMISSIONS, Permission, TeamConflict, TeamDenied, fresh, permissions
 from brain.team.models import (AgentRun, ProjectMember, ProjectRepository, Team, TeamExecutionGrant, TeamMember,
-                               TeamProject)
+                               TeamProject, TeamResourceLease)
 
 TEAM_ID = 1
 # Issuer recorded for members an operator verified against a Brain credential
@@ -233,8 +233,14 @@ async def revoke_principal_access(session: AsyncSession, principal: Principal) -
     tokens), the refresh tokens that could mint new ones, and the runs it
     initiated together with their run credentials, in the caller's transaction.
     Execution grants on every project are revoked too, so a re-added member
-    needs a fresh grant."""
+    needs a fresh grant. Coordination leases held by the principal or by its
+    runs are released, and their fencing tokens advance."""
     now = _now()
+    await session.execute(update(TeamResourceLease).where(
+        TeamResourceLease.released_at.is_(None),
+        or_(TeamResourceLease.holder_id == principal.id,
+            TeamResourceLease.holder_id.in_(select(AgentRun.principal_id).where(AgentRun.initiator_id == principal.id))))
+        .values(released_at=now, released_reason="holder revoked", fencing_token=TeamResourceLease.fencing_token + 1))
     await session.execute(update(TeamExecutionGrant).where(
         TeamExecutionGrant.principal_id == principal.id, TeamExecutionGrant.revoked_at.is_(None))
         .values(revoked_at=now, revoked_by="system:member-revoked", version=TeamExecutionGrant.version + 1))

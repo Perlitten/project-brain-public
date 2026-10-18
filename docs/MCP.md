@@ -64,13 +64,15 @@ client label, not an authenticated agent identity; see the
 ## Tool reference
 
 Local stdio exposes 13 tools. The HTTP-backed stdio bridge and native `/mcp`
-add `get_diff_review`, for the asynchronous review flow, and the ten
-`team_*` tools of the [experimental team mode](TEAM.md): 24 tools in all. The
+add `get_diff_review`, for the asynchronous review flow, and the fourteen
+`team_*` tools of the [experimental team mode](TEAM.md): 28 tools in all. The
 task and memory review tools answer only for verified team members within their
 project roles; `team_me` works in solo state too; `team_request_run` records a
 run. MCP has no tool to execute it; the first, off-by-default execution slice is
 HTTP only ([bounded team execution](operations/TEAM_EXECUTION.md)). The five
-memory review tools follow [governed memory](MEMORY_REVIEW.md).
+memory review tools follow [governed memory](MEMORY_REVIEW.md). The four
+coordination tools are read-only; plans, leases and the integration queue change
+through the HTTP API ([team coordination](TEAM.md#team-coordination-m3)).
 
 | Tool | Purpose |
 |---|---|
@@ -98,6 +100,10 @@ memory review tools follow [governed memory](MEMORY_REVIEW.md).
 | `team_list_proposals` | Remote only, experimental: list a review queue or your own proposals |
 | `team_approve_proposal` | Remote only, experimental: approve someone else's proposal (Reviewer) |
 | `team_reject_proposal` | Remote only, experimental: reject someone else's proposal (Reviewer) |
+| `team_task_plan` | Remote only, experimental: a task's subtasks, dependency states and ready set |
+| `team_coordination_overlaps` | Remote only, experimental: declared-scope overlaps among active tasks and leases |
+| `team_list_leases` | Remote only, experimental: critical leases with holders and fencing tokens |
+| `team_integration_queue` | Remote only, experimental: the integration queue and each entry's last check |
 
 Memory writes follow the [lesson and approval policy](MEMORY_LESSON_PROTOCOL.md).
 A tool's reported evidence is not proof that Brain independently executed tests.

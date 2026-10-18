@@ -67,6 +67,11 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("memory_proposals", "reviewed_by_principal_id"),
     # Membership, role and queued-job history for the team activity feed (brain.team.activity).
     ("team_activity_events", "audience"),
+    # Team coordination (brain.team.coordination): plans, leases, instruction snapshots, integration queue.
+    ("team_task_plans", "depends_on"),
+    ("team_resource_leases", "fencing_token"),
+    ("team_run_resolutions", "resolved"),
+    ("team_integration_entries", "checked_base_sha"),
 ]
 
 
