@@ -5,7 +5,9 @@ allowlisted tool invocation in it. It knows nothing about authority: the
 caller (``brain.team.execution``) re-authorizes before every call and decides
 whether a result may be committed.
 
-``SubprocessBackend`` is the only backend today:
+Two backends implement the interface: ``SubprocessBackend`` (below) and
+``ContainerBackend`` (``brain.execution.container``), selected by
+``BRAIN_EXECUTION_BACKEND``. ``SubprocessBackend``:
 
 - the working copy is a fresh ``git clone`` of the source repository into
   ``<root>/<run id>/repo``, checked out at the run's base SHA on the run's own
@@ -20,8 +22,9 @@ whether a result may be committed.
 It does **not** contain the process: a tool can read what the server user can
 read and open network connections. Worktree isolation is not security
 containment (ADR). ``enforces_egress`` is therefore ``False`` and the caller
-refuses any run that asks for egress. A container backend (no network, a
-read-only root, mounted secrets) implements the same interface later.
+refuses any run that asks for egress. ``ContainerBackend`` runs each step in a
+hardened container (no network by default, read-only root, secrets as mounted
+files) and enforces an egress allowlist through ``brain.execution.egress``.
 """
 from __future__ import annotations
 
@@ -35,7 +38,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Awaitable, Callable, Mapping, Protocol, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
 
 from brain.config.paths import allowed_repo_roots, resolve_within
 from brain.execution.cancellation import ExecutionCancellationManager
@@ -77,6 +80,9 @@ class StepRequest:
     timeout_seconds: float
     output_cap: int
     check_interval: float = 1.0
+    # Container backend only: the resolved environment (``container.ResolvedEnvironment``) and the egress hosts.
+    environment: Any = None
+    egress: tuple[str, ...] = ()
 
 
 @dataclass
@@ -94,12 +100,16 @@ class StepOutcome:
     stopped: str | None = None
     error: str | None = None
     log_path: str | None = None
+    runtime: dict | None = None
 
     def evidence(self) -> dict:
-        return {"index": self.index, "tool": self.tool, "argv": self.argv, "exit_code": self.exit_code,
-                "duration_ms": self.duration_ms, "output_bytes": self.output_bytes, "truncated": self.truncated,
-                "output_sha256": self.output_sha256, "excerpt": self.excerpt, "timed_out": self.timed_out,
-                "stopped": self.stopped, "error": self.error}
+        evidence = {"index": self.index, "tool": self.tool, "argv": self.argv, "exit_code": self.exit_code,
+                    "duration_ms": self.duration_ms, "output_bytes": self.output_bytes, "truncated": self.truncated,
+                    "output_sha256": self.output_sha256, "excerpt": self.excerpt, "timed_out": self.timed_out,
+                    "stopped": self.stopped, "error": self.error}
+        if self.runtime is not None:
+            evidence["runtime"] = self.runtime
+        return evidence
 
 
 StopProbe = Callable[[], Awaitable[str | None]]
@@ -108,6 +118,12 @@ StopProbe = Callable[[], Awaitable[str | None]]
 class ExecutorBackend(Protocol):
     name: str
     enforces_egress: bool
+    # True when every execution must name an operator-defined environment (image + tools).
+    uses_environments: bool
+
+    def resolve_environment(self, environment: Any) -> Any:
+        """Pin an environment to what will actually run (an image ID); ``None`` for backends without one."""
+        ...
 
     def prepare(self, root: Path, run_id: str, source: Path, base_sha: str, branch: str) -> WorkingCopy:
         ...
@@ -116,6 +132,10 @@ class ExecutorBackend(Protocol):
         ...
 
     def head(self, copy: WorkingCopy) -> tuple[str, bool]:
+        ...
+
+    def release(self, copy: WorkingCopy) -> None:
+        """Tear down per-run resources (networks, sidecars). Idempotent; never raises."""
         ...
 
 
@@ -199,10 +219,89 @@ def _drain(stream, buffer: _TailBuffer) -> None:
 
 
 @dataclass
+class ProcessResult:
+    exit_code: int | None
+    timed_out: bool
+    stopped: str | None
+    error: str | None
+    buffer: _TailBuffer
+    started: float
+
+
+async def supervise(argv: list[str], *, cwd: Path, env: Mapping[str, str], step: StepRequest, should_stop: StopProbe,
+                    on_stop: Callable[[], None] | None = None,
+                    start_error: str = "The tool executable could not be started") -> ProcessResult:
+    """Run ``argv`` without a shell in its own process group under the step's timeout and stop probe.
+
+    ``on_stop`` runs (in a thread) before the process group is terminated, for
+    work the local process cannot do itself, such as killing a container."""
+    buffer = _TailBuffer(step.output_cap)
+    started = time.monotonic()
+    kwargs: dict = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+    exit_code: int | None = None
+    timed_out = False
+    stopped: str | None = None
+    error: str | None = None
+    try:
+        process = subprocess.Popen(argv, cwd=str(cwd), env=dict(env), stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=False, close_fds=True,
+                                   **kwargs)
+    except OSError:
+        process = None
+        error = start_error
+    if process is not None:
+        reader = threading.Thread(target=_drain, args=(process.stdout, buffer), daemon=True)
+        reader.start()
+        next_check = started + step.check_interval
+        while process.poll() is None:
+            await asyncio.sleep(0.05)
+            now = time.monotonic()
+            if now - started >= step.timeout_seconds:
+                timed_out = True
+                break
+            if now >= next_check:
+                next_check = now + step.check_interval
+                stopped = await should_stop()
+                if stopped:
+                    break
+        if process.poll() is None:
+            if on_stop is not None:
+                await asyncio.to_thread(on_stop)
+            if process.poll() is None:
+                await asyncio.to_thread(ExecutionCancellationManager.terminate_process_group, process, 5.0)
+        exit_code = process.wait()
+        await asyncio.to_thread(reader.join, 5.0)
+    return ProcessResult(exit_code=exit_code, timed_out=timed_out, stopped=stopped, error=error, buffer=buffer,
+                         started=started)
+
+
+def finish_step(copy: WorkingCopy, step: StepRequest, argv: list[str], result: ProcessResult,
+                runtime: dict | None = None) -> StepOutcome:
+    """Redact the kept output tail, store it under ``logs`` with its SHA-256 and build the step evidence."""
+    kept = result.buffer.value()
+    truncated = result.buffer.total > len(kept)
+    text = redact(kept.decode("utf-8", "replace"), list(step.secrets.values()), truncated_head=truncated)
+    stored = text.encode("utf-8")
+    checksum = hashlib.sha256(stored).hexdigest()
+    log_path = copy.run_dir / "logs" / f"step-{step.index:03d}.log"
+    log_path.write_bytes(stored)
+    return StepOutcome(index=step.index, tool=step.tool.name, argv=argv, exit_code=result.exit_code,
+                       duration_ms=int((time.monotonic() - result.started) * 1000), output_bytes=result.buffer.total,
+                       truncated=truncated, output_sha256=checksum, excerpt=text[-EXCERPT_CHARS:],
+                       timed_out=result.timed_out, stopped=result.stopped, error=result.error,
+                       log_path=str(log_path), runtime=runtime)
+
+
+@dataclass
 class SubprocessBackend:
     """Clone-per-run working copy and allowlisted subprocesses; no container, no network boundary."""
     name: str = "subprocess"
     enforces_egress: bool = False
+    uses_environments: bool = False
     git: str = "git"
     source_roots: Callable[[], list[Path]] = field(default=allowed_repo_roots)
 
@@ -249,54 +348,17 @@ class SubprocessBackend:
         dirty = bool(self._git(["status", "--porcelain"], copy.path, copy.run_dir))
         return sha, dirty
 
+    def resolve_environment(self, environment: Any) -> Any:
+        if environment is not None:
+            raise ExecutorError("Execution environments need the container backend")
+        return None
+
+    def release(self, copy: WorkingCopy) -> None:
+        return None
+
     async def run_step(self, copy: WorkingCopy, step: StepRequest, should_stop: StopProbe) -> StepOutcome:
         cwd = PathSandbox([copy.run_dir]).validate(copy.path, require_git=True)
         argv = [*step.tool.argv, *step.args]
-        buffer = _TailBuffer(step.output_cap)
-        started = time.monotonic()
-        kwargs: dict = {}
-        if sys.platform == "win32":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        else:
-            kwargs["start_new_session"] = True
-        exit_code: int | None = None
-        timed_out = False
-        stopped: str | None = None
-        error: str | None = None
-        try:
-            process = subprocess.Popen(argv, cwd=str(cwd), env=minimal_env(copy.run_dir, step.secrets),
-                                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                       shell=False, close_fds=True, **kwargs)
-        except OSError:
-            process = None
-            error = "The tool executable could not be started"
-        if process is not None:
-            reader = threading.Thread(target=_drain, args=(process.stdout, buffer), daemon=True)
-            reader.start()
-            next_check = started + step.check_interval
-            while process.poll() is None:
-                await asyncio.sleep(0.05)
-                now = time.monotonic()
-                if now - started >= step.timeout_seconds:
-                    timed_out = True
-                    break
-                if now >= next_check:
-                    next_check = now + step.check_interval
-                    stopped = await should_stop()
-                    if stopped:
-                        break
-            if process.poll() is None:
-                await asyncio.to_thread(ExecutionCancellationManager.terminate_process_group, process, 5.0)
-            exit_code = process.wait()
-            await asyncio.to_thread(reader.join, 5.0)
-        kept = buffer.value()
-        truncated = buffer.total > len(kept)
-        text = redact(kept.decode("utf-8", "replace"), list(step.secrets.values()), truncated_head=truncated)
-        stored = text.encode("utf-8")
-        checksum = hashlib.sha256(stored).hexdigest()
-        log_path = copy.run_dir / "logs" / f"step-{step.index:03d}.log"
-        log_path.write_bytes(stored)
-        return StepOutcome(index=step.index, tool=step.tool.name, argv=argv, exit_code=exit_code,
-                           duration_ms=int((time.monotonic() - started) * 1000), output_bytes=buffer.total,
-                           truncated=truncated, output_sha256=checksum, excerpt=text[-EXCERPT_CHARS:],
-                           timed_out=timed_out, stopped=stopped, error=error, log_path=str(log_path))
+        result = await supervise(argv, cwd=cwd, env=minimal_env(copy.run_dir, step.secrets), step=step,
+                                 should_stop=should_stop)
+        return finish_step(copy, step, argv, result)

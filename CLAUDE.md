@@ -59,7 +59,7 @@ Start with the files for the task rather than relying on a stale repository size
 | Team provisioning (team, projects, members, repos), OAuth clients as team members | `apps/cli/commands/team.py`, `brain/team/provisioning.py`, `brain/team/oauth_link.py`; ADR — `docs/adr/team-collaboration.md` |
 | Who may read/write a repository (solo vs. team state, roles, `Named credential required`) | `brain/team/authorization.py` (`team_state`, `authorize_repository`), `apps/api/team_access.py`, `apps/api/auth.py::named_credential_required`; `tests/test_team_transport.py` |
 | Deferred MCP results and inline byte budgets | `apps/mcp_server/deferred_payload.py`, `tests/test_mcp_deferred_payload.py` |
-| Bounded team execution (M2: grants, capabilities, leases, subprocess backend) | `brain/team/execution.py`, `brain/execution/bounded.py`, `docs/operations/TEAM_EXECUTION.md`, `tests/test_team_execution.py` |
+| Bounded team execution (M2: grants, capabilities, leases, subprocess and container backends, egress proxy) | `brain/team/execution.py`, `brain/execution/bounded.py`, `container.py`, `egress.py`, `docs/operations/TEAM_EXECUTION.md`, `tests/test_team_execution.py`, `test_team_execution_container.py` |
 | Background jobs | `brain/workers/tasks.py`, `queue.py`, `worker.py` |
 | DB schema, migrations | `brain/database/models.py`, `harness_models.py`, `migrations.py` |
 | Settings, paths | `brain/config/settings.py`, `paths.py` |
