@@ -261,7 +261,9 @@ def render_revocation(outcome: dict[str, Any]) -> list[str]:
     if outcome.get("took_effect"):
         rows += [("Requests sent after the revoke returned", outcome.get("requests_after_revoke", "-")),
                  ("Their statuses (all 401 expected)", _cell(outcome.get("after_revoke_statuses"))),
-                 ("Honoured after the revoke (0 expected)", outcome.get("honoured_after_revoke", "-")),
+                 ("Honoured (2xx) after the revoke (0 expected)", outcome.get("honoured_after_revoke", "-")),
+                 ("Other non-401 answers after the revoke (0 expected)",
+                  outcome.get("non_401_errors_after_revoke", "-")),
                  ("Writes dated after revoked_at (0 expected)", _cell(outcome.get("late_writes"))),
                  ("Latest late write, ms after revoked_at", outcome.get("late_write_max_ms") or "-"),
                  ("Pending proposals left (0 expected)", outcome.get("pending_proposals_left", "-")),
@@ -2157,7 +2159,8 @@ class Run:
         outcome.update({
             "requests_after_revoke": len(after),
             "after_revoke_statuses": {str(k): v for k, v in Counter(e["status"] for e in after).items()},
-            "honoured_after_revoke": len(accepted_after),
+            "honoured_after_revoke": len(honored_after),
+            "non_401_errors_after_revoke": len(unexpected_after),
             "late_writes": {table: len(rows) for table, rows in late.items()},
             "late_write_max_ms": late_write_max_ms(late, revoked_at),
             "pending_proposals_left": len(pending), "proposal_states": dict(states),
