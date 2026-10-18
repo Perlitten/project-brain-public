@@ -1,6 +1,28 @@
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
-from brain.config.settings import Settings
+from brain.config.settings import Settings, _env_files
+
+
+def test_disable_dotenv_isolation_switch(monkeypatch, tmp_path):
+    monkeypatch.setenv("BRAIN_DISABLE_DOTENV", "true")
+    monkeypatch.setenv("BRAIN_STORAGE_MODE", "full")
+    monkeypatch.setenv("BRAIN_ENV_FILE", "explicit.env")
+    assert _env_files() == ()
+    (tmp_path / ".env").write_text("POSTGRES_POOL_SIZE=50\n", encoding="utf-8")
+    env = dict(os.environ)
+    env.pop("POSTGRES_POOL_SIZE", None)
+    env.update({"BRAIN_DISABLE_DOTENV": "true", "BRAIN_STORAGE_MODE": "full",
+                "PYTHONPATH": str(Path(__file__).resolve().parents[1])})
+    proc = subprocess.run(
+        [sys.executable, "-c", "from brain.config.settings import settings; print(settings.POSTGRES_POOL_SIZE)"],
+        cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+    )
+    assert proc.stdout.strip() == "10"
 
 
 def test_postgres_pool_settings_have_bounded_operational_defaults():

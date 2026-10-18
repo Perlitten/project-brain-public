@@ -17,6 +17,8 @@ Findings of the first runs: [docs/reports/team-memory-load-e2e-2026-10-18.md](..
 - Mock LLM and embedding providers (`LLM_PROVIDER=mock`, `EMBEDDING_PROVIDER=mock`). Neo4j is not
   started; the graph is reported unavailable and nothing here depends on it.
 - A generated shared key and generated member credentials. The project's `.env` is never read.
+  Child processes set `BRAIN_DISABLE_DOTENV=true` and receive their complete configuration from the harness,
+  including uvicorn worker processes started by `--api-workers`.
 
 The team: N principals (minimum 12) over three projects (`core`, `beta`, `gamma`): admins,
 reviewers, contributors, a reader, a personal-tier pair and an OAuth client acting for a member.

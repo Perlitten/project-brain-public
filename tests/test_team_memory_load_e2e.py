@@ -136,4 +136,21 @@ def test_stack_run_keeps_isolation_invariants(tmp_path):
                           capture_output=True, text=True, timeout=1800)
     report = json.loads((out / "report.json").read_text(encoding="utf-8"))
     assert report["checks"]["errors"] == [], proc.stderr[-2000:]
+    skipped_required = [item for item in report["not_exercised"]
+                        if item.startswith(("restore fence:", "post-revocation checks:"))]
+    assert skipped_required == [], skipped_required
+    check_names = [row["name"] for row in report["checks"]["checks"]]
+    required_checks = (
+        "reader (viewer) cannot write decisions, rules, shared learnings, leases",
+        "self-approval, members, readers, reviewers of another project",
+        "G2: one principal x8 events over two tasks never becomes active shared memory",
+        "lease churn: no two leases on one resource ever overlapped in time",
+        "requests sent after the revoke returned: all 401",
+        "in-flight writes are fenced: nothing authored by the revoked member is dated after revoked_at",
+        "fenced restore: no restored credential honoured",
+    )
+    missing = [fragment for fragment in required_checks if not any(fragment in name for name in check_names)]
+    assert missing == [], {"missing_checks": missing, "checks": check_names}
+    assert report["results"]["load"]["ops_done"] > 0
+    assert report["results"]["post_revoke_reads"]["ops_done"] > 0
     assert not ISOLATION_VIOLATIONS & set(report["violations"]), report["violations"]

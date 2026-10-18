@@ -70,6 +70,7 @@ OAUTH_SCOPES = "team:read team:knowledge.propose core:write"  # an MCP client ac
 ACCEPT_LIMIT = 10  # apps/api/routers/team_invitations.ACCEPT_LIMIT (per client address per 300 s)
 MARKER_RE = re.compile(r"\b(mk-(?P<project>[a-z]+)-[0-9a-f]{8}|pm-(?P<owner>[a-z0-9_]+)-[0-9a-f]{8})\b")
 MAX_EXAMPLES = 5
+REVOCATION_DRAIN_TIMEOUT_S = 130.0  # the HTTP timeout (120 s) plus process/thread scheduling slack
 
 
 # --------------------------------------------------------------------------- pure helpers (unit-tested)
@@ -313,6 +314,9 @@ class Stack:
             "PYTHONUNBUFFERED": "1",
             "ENVIRONMENT": "production",
             "BRAIN_STORAGE_MODE": "full",
+            # The e2e supplies every setting it needs and must never inherit a checkout's real configuration.
+            # This also applies to child uvicorn workers, unlike an in-process settings override.
+            "BRAIN_DISABLE_DOTENV": "true",
             "DATABASE_URL": base.brain_url(self.url(database)),
             "REDIS_URL": self.args.redis_url,
             "WORKER_REDIS_PREFIX": JOB_PREFIX,
@@ -498,7 +502,13 @@ def stop_process_tree(proc: subprocess.Popen) -> None:
     try:
         proc.wait(timeout=20)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        if sys.platform == "win32":
+            proc.kill()
+        else:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         proc.wait(timeout=10)
 
 
@@ -757,6 +767,7 @@ class Run:
                     self.onboarding_retries[f"{name} (invitation create)"] += 1
                 if status != 200:
                     raise RuntimeError(f"invitation for {name}: {status} {base.detail(body)}")
+                invitation_id = body["invitation"]["id"]
                 invite_token = r.secret(body["token"])
                 # Every member accepts at the same time (a team onboarding burst). A 500 is recorded as a
                 # violation by ``call``; the harness then retries so the rest of the run can proceed.
@@ -772,7 +783,19 @@ class Run:
                     time.sleep(random.uniform(0.2, 2.0))  # jitter, so the retries do not deadlock in lockstep
                 if status != 200:
                     raise RuntimeError(f"accept for {name}: {status} {base.detail(body)}")
-                member.key = r.secret(body["credential"])
+                credential = body.get("credential")
+                if credential is None:
+                    # The first accept may have committed while its response timed out. The idempotent retry then
+                    # deliberately returns no plaintext credential, so mint a replacement through the trusted
+                    # operator path using the invitation identity already recorded on the member.
+                    recover = ["member", "add", "--principal", name, "--issuer", "brain-invitation",
+                               "--subject", f"invitation:{invitation_id}", "--mint-key", "--project",
+                               first_project, "--role", roles[first_project]]
+                    if is_admin:
+                        recover.append("--admin")
+                    recovered = self.stack.cli(*recover)
+                    credential = base.shown_secret(recovered.stderr)
+                member.key = r.secret(credential)
             return member
 
         with _pool(8) as pool:
@@ -1950,8 +1973,15 @@ class Run:
         revoke_done.set()
         time.sleep(self.args.revoke_tail)
         stop.set()
+        drain_deadline = time.monotonic() + REVOCATION_DRAIN_TIMEOUT_S
         for thread in threads:
-            thread.join(timeout=60)
+            thread.join(timeout=max(0.0, drain_deadline - time.monotonic()))
+        alive = [thread.name for thread in threads if thread.is_alive()]
+        r.check(s, "every revocation hammer request drained before persisted writes were inspected", not alive,
+                {"alive_threads": alive, "timeout_s": REVOCATION_DRAIN_TIMEOUT_S})
+        if alive:
+            self.violations.add("harness_exception", {"revocation_hammer_threads_still_alive": alive})
+            raise RuntimeError("revocation hammer requests outlived the HTTP timeout; persisted-write check unsafe")
         r.check(s, "admin revokes a member while she is writing: the first attempt succeeds",
                 attempts[0]["status"] == 200, {"attempts": attempts})
         if attempts[0]["status"] != 200:
@@ -1970,14 +2000,17 @@ class Run:
             self.not_exercised.append("post-revocation checks: the member could not be revoked under load")
             return
         after = [e for e in events if e["sent"] > revoke_completed_at[0]]
-        accepted_after = [e for e in after if e["status"] != 401]
+        honored_after = [e for e in after if 200 <= e["status"] < 300]
+        unexpected_after = [e for e in after if e["status"] != 401 and not 200 <= e["status"] < 300]
         before_ok = [e for e in events if e["received"] < revoke_completed_at[0] - 0.5 and e["status"] in {200, 202}]
         r.check(s, f"{len(after)} requests sent after the revoke returned: all 401 "
-                   f"({len(before_ok)} accepted before it)", after and not accepted_after,
+                   f"({len(before_ok)} accepted before it)", after and not honored_after and not unexpected_after,
                 {"after_statuses": dict(Counter(e["status"] for e in after)),
-                 "examples": accepted_after[:3]})
-        if accepted_after:
-            self.violations.add("request_honoured_after_revoke", accepted_after[:5])
+                 "honored_examples": honored_after[:3], "unexpected_examples": unexpected_after[:3]})
+        if honored_after:
+            self.violations.add("request_honoured_after_revoke", honored_after[:5])
+        if unexpected_after:
+            self.violations.add("post_revoke_request_error", unexpected_after[:5])
         late = {
             "learnings": self.stack.sql("SELECT id, status, created_at FROM memory_learnings WHERE "
                                         "author_principal_id=$1 AND created_at > $2", revokee.principal_id, revoked_at),
