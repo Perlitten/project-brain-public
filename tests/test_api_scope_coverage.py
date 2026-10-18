@@ -43,6 +43,8 @@ READ_ONLY_POSTS = {
 PUBLIC_OPERATIONS = {("get", "/health"), ("get", "/ready"), ("get", "/api/version")}
 # Separate transport policies have dedicated HTTP/storage tests. Keep the list
 # explicit: a new endpoint cannot silently inherit a whole-tag exemption.
+OWN_INBOX = "the caller's own inbox, live team membership (member_authority); test_team_notifications"
+OWN_TELEGRAM_LINK = "the caller's own Telegram link, live team membership (member_authority); test_team_notifications"
 SEPARATE_OPERATIONS = {
     ("get", "/team/projects/{project_id}/tasks"): "live team membership/project policy; test_team_transport/foundations",
     ("post", "/team/projects/{project_id}/tasks"): "live team membership/project policy; test_team_transport/foundations",
@@ -109,6 +111,13 @@ SEPARATE_OPERATIONS = {
     ("post", "/webhooks/git-merge"): "webhook secret policy; test_worker_scheduler",
     ("get", "/api/web-session"): "identity of the caller's own credential (dashboard sign-in); test_web_session",
     ("get", "/team/me"): "identity and roles of the caller's own credential; test_team_activity",
+    ("get", "/team/me/notifications"): OWN_INBOX,
+    ("post", "/team/me/notifications/read-all"): OWN_INBOX,
+    ("post", "/team/me/notifications/{notification_id}/read"): OWN_INBOX,
+    ("get", "/team/me/telegram"): OWN_TELEGRAM_LINK,
+    ("post", "/team/me/telegram"): OWN_TELEGRAM_LINK,
+    ("post", "/team/me/telegram/verify"): OWN_TELEGRAM_LINK,
+    ("delete", "/team/me/telegram"): OWN_TELEGRAM_LINK,
 }
 
 

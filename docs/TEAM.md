@@ -238,6 +238,10 @@ approved promotion. Details: [governed memory](MEMORY_REVIEW.md).
   team administrator, their project roles with each project's effective
   permissions and repositories, and the scopes of the presented key. In solo
   state it reports the owner as the administrator of every repository.
+- **`GET /team/me/notifications`** (dashboard **Settings → Me**) is the caller's
+  own inbox: memory proposals waiting for their review, with mark-read routes.
+  Members who link their own Telegram chat there (`TEAM_MEMBER_TELEGRAM_NOTIFY`)
+  also get a short notice. Details: [governed memory](MEMORY_REVIEW.md).
 - **`GET /team/activity`** (MCP `team_activity`, dashboard **Settings → Team
   activity**) is the shared log, newest first: decision and rule versions,
   learning, episode and skill changes, membership and project-role changes,

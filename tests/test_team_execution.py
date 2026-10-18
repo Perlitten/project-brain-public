@@ -27,8 +27,8 @@ from brain.team.execution import ExecutionDenied, ExecutionRunner, Lease
 from brain.team.models import (AgentRun, AgentRunExecution, ProjectMember, ProjectRepository, Team, TeamAccessFence,
                                TeamActivityEvent, TeamExecutionGrant, TeamIdentity, TeamInvitation, TeamMember,
                                TeamIntegrationEntry, TeamOidcFlow, TeamProject, TeamResourceLease,
-                               TeamRunResolution, TeamTaskBinding, TeamTaskPlan, WorkspaceRegistryEntry,
-                               WorkspaceRegistryEvent)
+                               TeamNotification, TeamRunResolution, TeamTaskBinding, TeamTaskPlan,
+                               TeamTelegramLink, WorkspaceRegistryEntry, WorkspaceRegistryEvent)
 from brain.team.store import create_task, request_run
 
 TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, AgentTask, AgentTaskEvent,
@@ -41,7 +41,9 @@ TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, Ag
           # Coordination (M3) tables reference task bindings, runs and repositories.
           TeamTaskPlan, TeamResourceLease, TeamRunResolution, TeamIntegrationEntry,
           # Shared workspace registry: repository trust every process reads in team state.
-          WorkspaceRegistryEntry, WorkspaceRegistryEvent)]
+          WorkspaceRegistryEntry, WorkspaceRegistryEvent,
+          # Review-needed notifications: each member's inbox and linked Telegram chat.
+          TeamNotification, TeamTelegramLink)]
 NOW = datetime.now(timezone.utc)
 SECRET_VALUE = "fixture-secret-value-7f3a9c"
 PY = sys.executable

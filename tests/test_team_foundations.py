@@ -18,8 +18,8 @@ from brain.team.authorization import Permission, TeamConflict, TeamDenied, autho
 from brain.team.models import (AgentRun, AgentRunExecution, ProjectMember, ProjectRepository, Team, TeamAccessFence,
                                TeamActivityEvent, TeamExecutionGrant, TeamIdentity, TeamInvitation, TeamMember,
                                TeamIntegrationEntry, TeamOidcFlow, TeamProject, TeamResourceLease,
-                               TeamRunResolution, TeamTaskBinding, TeamTaskPlan, WorkspaceRegistryEntry,
-                               WorkspaceRegistryEvent)
+                               TeamNotification, TeamRunResolution, TeamTaskBinding, TeamTaskPlan,
+                               TeamTelegramLink, WorkspaceRegistryEntry, WorkspaceRegistryEvent)
 from brain.team.store import create_task, list_tasks, request_run
 
 TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, AgentTask, AgentTaskEvent,
@@ -31,7 +31,9 @@ TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, Ag
           # Coordination (M3): plans, leases, run instruction snapshots and the integration queue.
           TeamTaskPlan, TeamResourceLease, TeamRunResolution, TeamIntegrationEntry,
           # Shared workspace registry: repository trust every process reads in team state.
-          WorkspaceRegistryEntry, WorkspaceRegistryEvent)]
+          WorkspaceRegistryEntry, WorkspaceRegistryEvent,
+          # Review-needed notifications: each member's inbox and linked Telegram chat.
+          TeamNotification, TeamTelegramLink)]
 NOW = datetime.now(timezone.utc)
 
 

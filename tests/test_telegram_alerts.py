@@ -378,6 +378,8 @@ async def test_review_notification_never_fails_or_stalls_the_submission(monkeypa
 
     from brain.memory import proposals
 
+    team = AsyncMock()  # the in-app/team half needs a database; tests/test_team_notifications.py covers it
+    monkeypatch.setattr(proposals, "notify_team_reviewers", team)
     deliver = AsyncMock(side_effect=RuntimeError("telegram is down"))
     monkeypatch.setattr(telegram, "deliver_memory_proposal_notice", deliver)
     await proposals.notify_reviewers(1, "decision", "/synthetic/A")
@@ -393,3 +395,4 @@ async def test_review_notification_never_fails_or_stalls_the_submission(monkeypa
     monkeypatch.setattr(telegram, "deliver_memory_proposal_notice", hang)
     monkeypatch.setattr(proposals.settings, "TELEGRAM_ALERT_TIMEOUT_S", 0.05)
     await asyncio.wait_for(proposals.notify_reviewers(2, "rule", None), timeout=2)
+    assert team.await_count == 3  # the team half runs whatever the owner push does
