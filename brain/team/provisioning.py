@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from brain.auth.principals import mint_credential
 from brain.team.activity import record_event
 from brain.database.models import ApiCredential, OAuthRefreshToken, Principal, Repository
-from brain.memory.proposals import withdraw_author_proposals
+from brain.memory.proposals import retire_personal_learnings, withdraw_author_proposals
 from brain.team.authorization import ROLE_PERMISSIONS, Permission, TeamConflict, TeamDenied, fresh, permissions
 from brain.team.models import (AgentRun, ProjectMember, ProjectRepository, Team, TeamExecutionGrant, TeamMember,
                                TeamProject, TeamResourceLease)
@@ -311,7 +311,8 @@ async def revoke_member(session: AsyncSession, *, principal: Principal, actor_id
     ``Author access revoked`` (brain/memory/proposals.py): nobody is left to
     answer review questions about them, and a reviewer approving one later
     would publish knowledge on behalf of someone who no longer has access.
-    Knowledge already approved stays."""
+    Their personal-tier learnings are retired (kept for audit, never read or
+    promoted again). Knowledge already approved stays."""
     member = await fresh(session, TeamMember, TeamMember.principal_id == principal.id, exclusive=True)
     if member is None:
         raise TeamNotFound("Principal is not a team member")
@@ -326,6 +327,7 @@ async def revoke_member(session: AsyncSession, *, principal: Principal, actor_id
         membership.version += 1
     await revoke_principal_access(session, principal)
     await withdraw_author_proposals(session, principal.id)
+    await retire_personal_learnings(session, principal.id)
     return member
 
 
