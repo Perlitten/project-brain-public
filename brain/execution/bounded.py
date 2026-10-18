@@ -320,9 +320,12 @@ class SubprocessBackend:
     source_roots: Callable[[], list[Path]] = field(default=allowed_repo_roots)
 
     def _git(self, args: list[str], cwd: Path | None, run_dir: Path, *, strip: bool = True) -> str:
-        result = subprocess.run([self.git, *args], cwd=str(cwd) if cwd else None, env=minimal_env(run_dir, {}),
-                                stdin=subprocess.DEVNULL, capture_output=True, timeout=_GIT_TIMEOUT_SECONDS,
-                                check=False)
+        try:
+            result = subprocess.run([self.git, *args], cwd=str(cwd) if cwd else None, env=minimal_env(run_dir, {}),
+                                    stdin=subprocess.DEVNULL, capture_output=True, timeout=_GIT_TIMEOUT_SECONDS,
+                                    check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ExecutorError(f"git {args[0]} could not be run") from exc
         if result.returncode != 0:
             raise ExecutorError(f"git {args[0]} failed with exit code {result.returncode}")
         output = result.stdout.decode("utf-8", "replace")

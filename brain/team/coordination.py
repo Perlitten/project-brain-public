@@ -64,7 +64,7 @@ MAX_RESOLVED = 500
 MIN_LEASE_SECONDS = 10
 MAX_LEASE_SECONDS = 3600
 # Changed files compared for overlap after an execution, and path pairs kept per warning.
-MAX_CHANGED_PATHS = 500
+MAX_CHANGED_PATHS = 5000
 MAX_OVERLAP_PAIRS = 50
 MAX_REASON = 500
 INACTIVE_TASK_STATUSES = ("completed", "cancelled")
@@ -111,6 +111,16 @@ def normalize_scope(values: list[str]) -> list[str]:
     if len(values) > MAX_SCOPE_PATHS:
         raise TeamConflict(f"At most {MAX_SCOPE_PATHS} scope paths are allowed")
     return sorted({normalize_path(value) for value in values})
+
+
+def normalize_changed_path(value: str) -> str:
+    """Validate a literal repository-relative path reported by Git without rewriting its filename."""
+    raw = str(value)
+    if not raw or len(raw) > 4096 or raw.startswith("/") or _DRIVE.match(raw) or "\x00" in raw:
+        raise TeamConflict(f"Changed path must be repository-relative: {value!r}")
+    if any(part in ("", ".", "..") for part in raw.split("/")):
+        raise TeamConflict(f"Changed path must stay inside the repository: {value!r}")
+    return raw
 
 
 def normalize_resource(value: str) -> str:
@@ -476,15 +486,17 @@ def _conflicts(binding: TeamTaskBinding, plan: TeamTaskPlan | None,
 async def _record_overlaps(session: AsyncSession, project_id: uuid.UUID, warnings: list[dict],
                            actor_id: int | None) -> None:
     for warning in warnings:
-        fingerprint = digest({"paths": warning["paths"]})[:16]
         changed = warning.get("source") == "changed_paths"
+        fingerprint = digest({"paths": warning["paths"]})[:16]
         if warning["kind"] == "task":
             pair = sorted([warning["task_id"], warning["other_task_id"]])
-            key = f"overlap:task:{pair[0]}:{pair[1]}:{fingerprint}"
+            key = (f"overlap:changed:task:{pair[0]}:{pair[1]}" if changed
+                   else f"overlap:task:{pair[0]}:{pair[1]}:{fingerprint}")
             summary = (f"Changed files overlap the scope of task {warning['other_title']}" if changed
                        else f"Scope overlap with task {warning['other_title']}")
         else:
-            key = f"overlap:lease:{warning['task_id']}:{warning['lease_id']}:{fingerprint}"
+            key = (f"overlap:changed:lease:{warning['task_id']}:{warning['lease_id']}" if changed
+                   else f"overlap:lease:{warning['task_id']}:{warning['lease_id']}:{fingerprint}")
             summary = (f"Changed files overlap leased resource {warning['resource']}" if changed
                        else f"Scope overlaps leased resource {warning['resource']}")
         seen = (await session.execute(select(TeamActivityEvent.id).where(TeamActivityEvent.dedupe_key == key)
@@ -517,7 +529,7 @@ def changed_scope(paths: list[str] | None) -> list[str]:
     result: set[str] = set()
     for value in paths or []:
         try:
-            result.add(normalize_path(value, allow_glob=False))
+            result.add(normalize_changed_path(value))
         except TeamConflict:
             continue
     return sorted(result)[:MAX_CHANGED_PATHS]

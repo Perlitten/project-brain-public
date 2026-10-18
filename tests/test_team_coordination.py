@@ -515,7 +515,8 @@ async def test_changed_files_overlap_scopes_and_leases_once_per_pair(team_db):
         own_lease = await coordination.acquire_lease(session, caller(2), a, {
             "repository_id": 1, "resource": "src/mine", "task_id": str(mine)})
         assert own_lease["warnings"] == []
-        changed = ["docs/guide.md", "src/core/db.py", "src/mine/x.py", "README.md", "../escape", "/abs/path"]
+        changed = ["docs/guide.md", "src/core/db.py", "src/mine/x.py", "README.md", "app/[id]/page.tsx",
+                   " leading.txt", "dir\\name.txt", "../escape", "/abs/path"]
         warnings = await coordination.record_change_overlaps(session, mine, changed, actor_id=2)
         assert sorted((w["kind"], w["source"]) for w in warnings) == [("lease", "changed_paths"),
                                                                       ("task", "changed_paths")]
@@ -531,8 +532,15 @@ async def test_changed_files_overlap_scopes_and_leases_once_per_pair(team_db):
         assert len(rows) == 2 and all(row.details["source"] == "changed_paths" for row in rows)
         assert sorted(row.summary for row in rows) == ["Changed files overlap leased resource src/core",
                                                        "Changed files overlap the scope of task synthetic"]
-        assert coordination.changed_scope(changed) == ["README.md", "docs/guide.md", "src/core/db.py",
+        assert coordination.changed_scope(changed) == [" leading.txt", "README.md", "app/[id]/page.tsx",
+                                                       "dir\\name.txt", "docs/guide.md", "src/core/db.py",
                                                        "src/mine/x.py"]
+        assert len(coordination.changed_scope([f"files/{index:04d}.txt" for index in range(600)])) == 600
+        # A later run with different files under the same broad scope/lease does not add activity rows.
+        await coordination.record_change_overlaps(session, mine, ["docs/other.md", "src/core/new.py"], actor_id=2)
+        rows = (await session.execute(select(TeamActivityEvent).where(
+            TeamActivityEvent.kind == "coordination.overlap"))).scalars().all()
+        assert len(rows) == 2
         assert await coordination.record_change_overlaps(session, mine, None, actor_id=2) == []
         assert await coordination.record_change_overlaps(session, mine, ["unrelated.txt"], actor_id=2) == []
         # Finished tasks and released leases stop counting.

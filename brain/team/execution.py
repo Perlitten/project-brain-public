@@ -533,9 +533,6 @@ async def request_execution(session: AsyncSession, caller: ResolvedPrincipal, pr
     run, authority, effective = await authorize_execution(session, caller, project_id, task_id, run_id,
                                                           policy=policy, backend=backend, capabilities=requested)
     _check_steps(steps, effective, policy)
-    from brain.team import coordination  # lazy: coordination builds on brain.team.store, as this module does
-
-    await coordination.require_dependencies_done(session, task_id)
     key = str(payload.get("idempotency_key") or "")
     if not key or len(key) > 128:
         raise ExecutionDenied("An idempotency key of at most 128 characters is required")
@@ -552,6 +549,9 @@ async def request_execution(session: AsyncSession, caller: ResolvedPrincipal, pr
     replay = await existing()
     if replay is not None:
         return replay
+    from brain.team import coordination  # lazy: coordination builds on brain.team.store, as this module does
+
+    await coordination.require_dependencies_done(session, task_id)
     try:
         async with session.begin_nested():
             row = AgentRunExecution(run_id=run.id, request_key=key, request_digest=fingerprint,

@@ -650,13 +650,15 @@ async def test_execution_rechecks_dependencies_when_it_starts(team_db, source_re
     await grant(factory, a)
     queued = await _run_for(factory, a, second)
     unrequested = await _run_for(factory, a, second)
-    await request(factory, a, second, queued, payload({"tool": "touch", "args": ["too-early.txt"]}))
+    queued_body = payload({"tool": "touch", "args": ["too-early.txt"]})
+    accepted = await request(factory, a, second, queued, queued_body)
     # After the request, the plan gains a dependency that is not done yet.
     async with factory() as session, session.begin():
         await coordination.update_plan(session, caller(2), a, second, {"depends_on": [str(first)],
                                                                        "expected_version": 1})
     with pytest.raises(TeamConflict, match="Dependencies are not done"):
         await request(factory, a, second, unrequested, payload("hello"))
+    assert await request(factory, a, second, queued, queued_body) == accepted
     state = await execution.execute_run(queued, factory=factory)
     assert state["state"] == "revoked", state["events"]
     final = state["events"][-1]["payload"]
@@ -736,6 +738,17 @@ def test_subprocess_backend_lists_committed_uncommitted_and_untracked_changes(so
                                                        "dir with space/new file.txt"]
     with pytest.raises(ExecutorError):
         SubprocessBackend().changed_paths(WorkingCopy(run_dir=run_dir, path=repo, branch="main", base_sha="HEAD"))
+
+
+def test_subprocess_git_timeout_is_an_executor_error(source_repo, tmp_path, monkeypatch):
+    repo, base = source_repo
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    copy = WorkingCopy(run_dir=run_dir, path=repo, branch="main", base_sha=base)
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(
+        subprocess.TimeoutExpired(cmd="git diff", timeout=120)))
+    with pytest.raises(ExecutorError, match="git diff could not be run"):
+        SubprocessBackend().changed_paths(copy)
 
 
 # --------------------------------------------------------------------------- PostgreSQL lease races
