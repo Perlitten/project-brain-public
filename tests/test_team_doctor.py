@@ -339,6 +339,20 @@ def test_execution_config_container_backend(factory, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "BRAIN_EXECUTION_EGRESS_PROXY_IMAGE", "brain-api:latest")
     enforced = doctor.check_execution_config()
     assert enforced.status == "pass" and "enforced by the proxy" in enforced.message
+    # An LLM API host in the egress allowlist must belong to a configured LLM provider.
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_EGRESS", "pypi.org,api.openai.com")
+    unowned = doctor.check_execution_config()
+    assert unowned.status == "warn" and "api.openai.com" in unowned.message
+    assert "BRAIN_EXECUTION_LLM_PROVIDERS" in unowned.hint
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_LLM_PROVIDERS",
+                        json.dumps({"openai": {"hosts": ["api.openai.com"]}}))
+    owned = doctor.check_execution_config()
+    assert owned.status == "pass" and "1 LLM provider(s)" in owned.message
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_EGRESS", "pypi.org")
+    assert doctor.check_execution_config().status == "warn"  # the provider's host is not in the allowlist
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_LLM_PROVIDERS", "not json")
+    assert doctor.check_execution_config().status == "fail"
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_LLM_PROVIDERS", "{}")
     monkeypatch.setattr(settings, "BRAIN_EXECUTION_DOCKER", "definitely-not-installed-docker-7f3a")
     no_docker = doctor.check_execution_config()
     assert no_docker.status == "fail" and "docker CLI" in no_docker.message

@@ -99,6 +99,8 @@ def _discard_stale_db_connections():
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "team_state: run the real team-state probe instead of the solo stub")
+    config.addinivalue_line("markers", "real_docker: needs a Docker daemon and test images (CI job "
+                                       "container-real-docker; BRAIN_TEST_REQUIRE_DOCKER=1 fails instead of skipping)")
 
 
 @pytest.fixture(autouse=True)

@@ -691,36 +691,84 @@ async def test_run_step_refuses_tools_outside_the_environment(tmp_path, containe
     assert _calls(log) == []
 
 
-# --------------------------------------------------------------------------- real docker (optional)
+# --------------------------------------------------------------------------- real docker (pytest -m real_docker)
+# Skipped without a reachable Docker daemon and the images; the CI job container-real-docker builds them from
+# tests/docker/execution.Dockerfile and sets BRAIN_TEST_REQUIRE_DOCKER=1, which turns every skip into a failure.
 
 
 REAL_IMAGE = os.getenv("BRAIN_TEST_EXECUTION_IMAGE", "python:3.12-slim")
+PROXY_IMAGE = os.getenv("BRAIN_TEST_EGRESS_PROXY_IMAGE", "")
+REQUIRE_DOCKER = os.getenv("BRAIN_TEST_REQUIRE_DOCKER") == "1"
 
 
-def _docker_ready() -> bool:
+def _docker_missing(*images: str) -> str | None:
     if not shutil.which("docker"):
-        return False
+        return "needs the docker CLI"
     try:
-        info = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"], capture_output=True, timeout=20)
-        image = subprocess.run(["docker", "image", "inspect", REAL_IMAGE], capture_output=True, timeout=20)
+        if subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"], capture_output=True,
+                          timeout=20).returncode:
+            return "needs a reachable Docker daemon"
+        for image in images:
+            if not image:
+                return "needs BRAIN_TEST_EGRESS_PROXY_IMAGE (an image that runs brain.execution.egress)"
+            if subprocess.run(["docker", "image", "inspect", image], capture_output=True, timeout=20).returncode:
+                return f"needs the local image {image}"
     except (OSError, subprocess.TimeoutExpired):
-        return False
-    return info.returncode == 0 and image.returncode == 0
+        return "the docker CLI did not answer"
+    return None
 
 
-@pytest.mark.asyncio
-@pytest.mark.skipif(not _docker_ready(), reason=f"needs a reachable Docker daemon and the local image {REAL_IMAGE}")
-async def test_real_docker_step_is_isolated(tmp_path, source_repo):
-    repo, sha = source_repo
-    backend = ContainerBackend(ContainerSettings(), source_roots=lambda: [tmp_path])
-    resolved = await asyncio.to_thread(backend.resolve_environment,
-                                       Environment(name="py", image=REAL_IMAGE, tools=frozenset({"probe", "sleep"})))
-    copy = await asyncio.to_thread(backend.prepare, tmp_path / "executions", uuid.uuid4().hex, repo, sha, "brain/real")
+def _skip(reason: str) -> None:
+    if REQUIRE_DOCKER:
+        pytest.fail(f"BRAIN_TEST_REQUIRE_DOCKER=1: {reason}")
+    pytest.skip(reason)
+
+
+def _need_docker(*images: str) -> None:
+    reason = _docker_missing(*images)
+    if reason:
+        _skip(reason)
+
+
+def _real_settings(**kwargs) -> ContainerSettings:
+    # Steps write to a bind-mounted working copy owned by this process, so they run as this uid where it is
+    # not root (the default 1000:1000 matches a typical developer machine only).
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    user = f"{uid}:{os.getgid()}" if uid else "1000:1000"
+    return ContainerSettings(user=user, **kwargs)
+
+
+def _check_bind_mounts(copy) -> None:
     visible = subprocess.run(["docker", "run", "--rm", "--network", "none", "--mount",
                               f"type=bind,source={copy.path},target=/probe,readonly", "--entrypoint", "ls",
                               REAL_IMAGE, "/probe"], capture_output=True, text=True, timeout=60)
     if "README.md" not in visible.stdout:
-        pytest.skip("the Docker daemon cannot bind-mount this host's paths (remote or WSL daemon)")
+        _skip("the Docker daemon cannot bind-mount this host's paths (remote or WSL daemon)")
+
+
+def _leftovers(run_id: str) -> tuple[str, str]:
+    label = f"label=brain.execution.run={run_id}"
+    containers = subprocess.run(["docker", "ps", "--all", "--quiet", "--filter", label], capture_output=True,
+                                text=True, timeout=30)
+    networks = subprocess.run(["docker", "network", "ls", "--quiet", "--filter", label], capture_output=True,
+                              text=True, timeout=30)
+    return containers.stdout.strip(), networks.stdout.strip()
+
+
+async def _never():
+    return None
+
+
+@pytest.mark.real_docker
+@pytest.mark.asyncio
+async def test_real_docker_step_is_isolated(tmp_path, source_repo):
+    _need_docker(REAL_IMAGE)
+    repo, sha = source_repo
+    backend = ContainerBackend(_real_settings(), source_roots=lambda: [tmp_path])
+    resolved = await asyncio.to_thread(backend.resolve_environment,
+                                       Environment(name="py", image=REAL_IMAGE, tools=frozenset({"probe", "sleep"})))
+    copy = await asyncio.to_thread(backend.prepare, tmp_path / "executions", uuid.uuid4().hex, repo, sha, "brain/real")
+    _check_bind_mounts(copy)
     probe = ToolSpec(name="probe", argv=("python", "-c", (
         "import os, pathlib, socket\n"
         "print('uid', os.getuid())\n"
@@ -732,13 +780,10 @@ async def test_real_docker_step_is_isolated(tmp_path, source_repo):
         "print('secret-file', len((pathlib.Path(os.environ['BRAIN_SECRETS_DIR']) / 'token').read_text()))\n"
         "pathlib.Path('written.txt').write_text('x')\n")))
 
-    async def never():
-        return None
-
     try:
         outcome = await backend.run_step(copy, StepRequest(index=0, tool=probe, args=(), secrets={"token": SECRET_VALUE},
                                                            timeout_seconds=60, output_cap=65536,
-                                                           environment=resolved), never)
+                                                           environment=resolved), _never)
         assert outcome.exit_code == 0, outcome.excerpt
         assert "root-read-only" in outcome.excerpt and "network-closed" in outcome.excerpt
         assert "uid 0" not in outcome.excerpt and "secret-env False" in outcome.excerpt
@@ -746,7 +791,7 @@ async def test_real_docker_step_is_isolated(tmp_path, source_repo):
         assert (copy.path / "written.txt").exists()
         sleep = ToolSpec(name="sleep", argv=("python", "-c", "import time; time.sleep(120)"))
         timed = await backend.run_step(copy, StepRequest(index=1, tool=sleep, args=(), secrets={}, timeout_seconds=3,
-                                                         output_cap=1024, environment=resolved), never)
+                                                         output_cap=1024, environment=resolved), _never)
         assert timed.timed_out
         name = f"brain-exec-{copy.run_dir.name}-s001"
         left = subprocess.run(["docker", "ps", "--all", "--quiet", "--filter", f"name={name}"], capture_output=True,
@@ -756,3 +801,88 @@ async def test_real_docker_step_is_isolated(tmp_path, source_repo):
         backend.release(copy)
         backend.reap(copy.run_dir.name)
     assert not list((copy.run_dir / "secrets").glob("*/*"))
+
+
+PROBE_TARGETS = ("example.com:443", "pypi.org:22", "169.254.169.254:80", "10.0.0.1:443")
+
+
+@pytest.mark.real_docker
+@pytest.mark.asyncio
+async def test_real_docker_egress_proxy_denies_unlisted_destinations_and_direct_connections(tmp_path, source_repo):
+    """The step's only route out is the proxy on an --internal network; the proxy refuses what is not allowlisted.
+
+    No allowed destination is contacted, so the test needs no outside network and cannot flake on it."""
+    _need_docker(REAL_IMAGE, PROXY_IMAGE)
+    repo, sha = source_repo
+    backend = ContainerBackend(_real_settings(proxy_image=PROXY_IMAGE), source_roots=lambda: [tmp_path])
+    assert backend.enforces_egress
+    resolved = await asyncio.to_thread(backend.resolve_environment,
+                                       Environment(name="py", image=REAL_IMAGE, tools=frozenset({"probe"})))
+    copy = await asyncio.to_thread(backend.prepare, tmp_path / "executions", uuid.uuid4().hex, repo, sha,
+                                   "brain/egress")
+    _check_bind_mounts(copy)
+    probe = ToolSpec(name="probe", argv=("python", "-c", (
+        "import os, socket\n"
+        "print('proxy-env', os.environ.get('HTTPS_PROXY'))\n"
+        "def connect(target):\n"
+        "    s = socket.create_connection(('brain-egress', 3128), 10)\n"
+        "    s.sendall(('CONNECT ' + target + ' HTTP/1.1' + chr(13) + chr(10) + chr(13) + chr(10)).encode())\n"
+        "    line = s.recv(4096).splitlines()[0].decode()\n"
+        "    s.close()\n"
+        "    return line\n"
+        f"for target in {PROBE_TARGETS!r}:\n"
+        "    print('proxy', target, connect(target))\n"
+        "try:\n    socket.create_connection(('1.1.1.1', 53), 3); print('direct-open')\n"
+        "except OSError: print('direct-closed')\n")))
+    run_id = copy.run_dir.name
+    try:
+        outcome = await backend.run_step(copy, StepRequest(index=0, tool=probe, args=(), secrets={},
+                                                           timeout_seconds=90, output_cap=65536,
+                                                           environment=resolved, egress=("pypi.org",)), _never)
+        assert outcome.exit_code == 0, outcome.excerpt
+        assert "proxy-env http://brain-egress:3128" in outcome.excerpt
+        for target in PROBE_TARGETS:
+            assert f"proxy {target} HTTP/1.1 403 Forbidden" in outcome.excerpt, outcome.excerpt
+        assert "direct-closed" in outcome.excerpt and "direct-open" not in outcome.excerpt
+        logs = subprocess.run(["docker", "logs", f"brain-egress-{run_id}"], capture_output=True, text=True,
+                              timeout=30).stdout
+        decisions = [json.loads(line) for line in logs.splitlines() if line.startswith("{") and "decision" in line]
+        assert [d["decision"] for d in decisions] == ["deny"] * len(PROBE_TARGETS)
+    finally:
+        backend.release(copy)
+        backend.reap(run_id)
+    assert _leftovers(run_id) == ("", "")
+
+
+@pytest.mark.real_docker
+@pytest.mark.asyncio
+async def test_real_docker_changes_and_patch_are_read_inside_the_environment(tmp_path, source_repo):
+    _need_docker(REAL_IMAGE)
+    if subprocess.run(["docker", "run", "--rm", "--network", "none", "--entrypoint", "git", REAL_IMAGE, "--version"],
+                      capture_output=True, timeout=60).returncode:
+        _skip(f"the image {REAL_IMAGE} has no git (build tests/docker/execution.Dockerfile --target environment)")
+    repo, sha = source_repo
+    backend = ContainerBackend(_real_settings(), source_roots=lambda: [tmp_path])
+    resolved = await asyncio.to_thread(backend.resolve_environment,
+                                       Environment(name="py", image=REAL_IMAGE, tools=frozenset({"edit"})))
+    copy = await asyncio.to_thread(backend.prepare, tmp_path / "executions", uuid.uuid4().hex, repo, sha,
+                                   "brain/patch")
+    _check_bind_mounts(copy)
+    edit = ToolSpec(name="edit", argv=("python", "-c", (
+        "import pathlib\n"
+        "pathlib.Path('README.md').write_bytes(b'synthetic' + bytes([10]) + b'changed in a container' + bytes([10]))\n"
+        "pathlib.Path('added.txt').write_bytes(b'one' + bytes([10]))\n")))
+    try:
+        outcome = await backend.run_step(copy, StepRequest(index=0, tool=edit, args=(), secrets={}, timeout_seconds=60,
+                                                           output_cap=4096, environment=resolved), _never)
+        assert outcome.exit_code == 0, outcome.excerpt
+        head, dirty = await asyncio.to_thread(backend.head, copy)
+        assert head == sha and dirty
+        assert await asyncio.to_thread(backend.changed_paths, copy) == ["README.md", "added.txt"]
+        patch, truncated = await asyncio.to_thread(backend.patch, copy, 1 << 20)
+        assert not truncated and b"+changed in a container" in patch
+        assert b"diff --git a/added.txt b/added.txt\nnew file mode 100644" in patch
+    finally:
+        backend.release(copy)
+        backend.reap(copy.run_dir.name)
+    assert _leftovers(copy.run_dir.name) == ("", "")

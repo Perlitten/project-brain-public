@@ -517,3 +517,31 @@ def test_report_artifacts_skip_symlinks_and_are_capped(tmp_path, monkeypatch):
     assert [(d.name, d.kind, d.content_type, d.truncated) for d in drafts] == [
         ("step-003-report.json", "test-report", "application/json", True)]
     assert len(drafts[0].content) <= 1024 + 4096 and drafts[0].original_bytes == 9002
+
+
+def test_cli_records_consent_and_budget(team_db, providers, monkeypatch):
+    from typer.testing import CliRunner
+
+    from apps.cli.commands import team as team_commands
+
+    factory, a, _ = team_db
+    monkeypatch.setattr(team_commands, "async_session_factory", factory)
+    runner = CliRunner()
+    cli = team_commands.team_cli
+    granted = runner.invoke(cli, ["execution", "consent", "grant", "--project", str(a), "--provider", "openai"])
+    assert granted.exit_code == 0, granted.output
+    assert json.loads(granted.output)["consented_by"] == "operator:cli"
+    unknown = runner.invoke(cli, ["execution", "consent", "grant", "--project", str(a), "--provider", "nope"])
+    assert unknown.exit_code != 0 and "not configured" in unknown.output
+    listed = json.loads(runner.invoke(cli, ["execution", "consent", "list", "--project", str(a)]).output)
+    assert [(row["provider"], row["active"]) for row in listed] == [("openai", True)]
+    set_ = runner.invoke(cli, ["execution", "budget", "set", "--project", str(a), "--max-tokens", "1000",
+                               "--per-member-max-tokens", "400"])
+    assert set_.exit_code == 0, set_.output
+    assert json.loads(set_.output)["budget"]["per_member_max_tokens"] == 400
+    shown = json.loads(runner.invoke(cli, ["execution", "budget", "show", "--project", str(a)]).output)
+    assert shown["usage"]["tokens"] == 0 and shown["state"] == "team"
+    revoked = runner.invoke(cli, ["execution", "consent", "revoke", "--project", str(a), "--provider", "openai"])
+    assert revoked.exit_code == 0 and not json.loads(revoked.output)["active"]
+    cleared = json.loads(runner.invoke(cli, ["execution", "budget", "clear", "--project", str(a)]).output)
+    assert cleared["budget"] is None
