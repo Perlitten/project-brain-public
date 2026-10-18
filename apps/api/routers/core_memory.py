@@ -24,7 +24,7 @@ from apps.api import team_access
 from apps.api.routers import memory_review
 from apps.api.team_access import repository_authority, team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
-from brain.team.authorization import Permission
+from brain.team.authorization import Permission, TeamDenied
 from brain.database.session import async_session_factory
 from brain.memory.decision_store import DecisionStore, caller_role_for
 from brain.memory import proposals
@@ -197,6 +197,8 @@ async def create_rule(body: RuleCreate, caller: ResolvedPrincipal = Depends(requ
         return {"status": "success", "rule_id": result.id, **result.as_dict()}
     except MemoryVersionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except TeamDenied as exc:  # e.g. the write fence after a revocation
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(f"Failed to add rule: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to add rule") from exc
@@ -331,6 +333,8 @@ async def _decide_episode(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except EpisodeStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except TeamDenied as exc:  # e.g. the write fence after a revocation
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(f"Episode decision failed for {episode_id}: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Episode decision failed") from exc
@@ -426,6 +430,8 @@ async def create_skill(body: SkillCreate, principal: ResolvedPrincipal = Depends
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TeamDenied as exc:  # e.g. the write fence after a revocation
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(f"Failed to create skill: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to create skill") from exc
@@ -448,6 +454,8 @@ async def _decide_skill(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except SkillStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except TeamDenied as exc:  # e.g. the write fence after a revocation
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(f"Skill decision failed for {skill_id}: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Skill decision failed") from exc
@@ -522,7 +530,7 @@ async def create_learning(body: LearningCreate, principal: ResolvedPrincipal = D
             author_principal_id=principal.author_id,
             status=proposals.PERSONAL_STATUS if personal else "active",
         )
-    except PermissionError as exc:
+    except TeamDenied as exc:  # e.g. the write fence after a revocation
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(f"Failed to add learning: {type(exc).__name__}: {exc}")
@@ -549,6 +557,8 @@ async def delete_learning(learning_id: int):
     try:
         await LearningStore.reject(learning_id)
         return {"status": "success", "learning_id": learning_id}
+    except TeamDenied as exc:  # e.g. the write fence after a revocation
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         logger.error(f"Failed to reject learning: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Failed to reject learning") from exc

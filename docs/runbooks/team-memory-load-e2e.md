@@ -8,8 +8,6 @@ consolidation, revocation and coordination leases.
 
 Findings of the first runs: [docs/reports/team-memory-load-e2e-2026-10-18.md](../reports/team-memory-load-e2e-2026-10-18.md).
 
-The harness and original report were imported from commit
-`993eee81a0ab9c74d0b232689532fa35ca2d0c69`; they were absent from main after PR156.
 Reports now include `source.commit` and `source.dirty`. Run from a clean commit
 for release evidence. Personal retirement is a required check, not a known gap.
 The original findings document the earlier code, not the current fixes.
@@ -90,7 +88,7 @@ DOCKER="wsl -d Ubuntu-24.04 docker" PYTHON=.venv/Scripts/python \
     scripts/team_memory_load_e2e.sh --users 36 --ops 50 --api-workers 2
 ```
 
-A 12├ù50 run takes about 4 minutes, 36├ù50 about 8 minutes. At 36 users the onboarding burst and the
+A 12×50 run takes about 4 minutes, 36×50 about 8 minutes. At 36 users the onboarding burst and the
 `teams` row lock can stall single requests for the full 120 s client timeout (see the findings
 report); setup retries those, later phases record them as transport errors.
 
@@ -131,12 +129,20 @@ Without `--docker-cmd`/`--pg-container` the restore-fence scenario is skipped an
 
 ## Outputs
 
-- `REPORT.md` ΓÇö checks (PASS/FAIL/GAP), violations with examples, per-endpoint latency
-  (p50/p95/p99/max) and status counts, load throughput, not-exercised notes.
-- `report.json` ΓÇö the same, machine-readable: `checks`, `violations`, `metrics.endpoints`,
-  `metrics.phases` (throughput), `metrics.status_distribution`, `results` (CAS rounds, revocation
-  attempts, admin visibility, roster), `not_exercised`.
-- `api-*.log`, `worker.log` ΓÇö server logs. Secrets are redacted from the reports; the SQL dumps are
+- `REPORT.md` — checks (PASS/FAIL/GAP), violations with examples, per-endpoint latency
+  (p50/p95/p99/max) and status counts, load throughput, not-exercised notes. Two sections are
+  meant for before/after comparisons:
+  - **CAS outcomes**: one row per CAS round (decisions, rules, the create race, concurrent
+    approvals, approve vs reject) with `expected_version`, the winner count, the losers' status
+    codes (`{"409": 5}` is correct; any `500` is a defect) and acknowledged writes lost from the
+    supersede chain, followed by chain and blind-write summaries.
+  - **Revocation outcome**: revoke attempt statuses, whether the first one succeeded, requests
+    honoured after the revoke returned, writes dated after `revoked_at` per table (and how many ms
+    after), pending proposals left, kept personal rows, and REST/MCP status of the revoked key.
+- `report.json` — the same, machine-readable: `checks`, `violations`, `metrics.endpoints`,
+  `metrics.phases` (throughput), `metrics.status_distribution`, `results` (`cas` with per-round
+  verdicts and chain summaries, `revocation_outcome`, admin visibility, roster), `not_exercised`.
+- `api-*.log`, `worker.log` — server logs. Secrets are redacted from the reports; the SQL dumps are
   deleted after the run.
 
 Exit code: 0 when every check passed (known gaps allowed), 1 otherwise. The first runs exit 1:
@@ -152,9 +158,10 @@ they find the product defects listed in the findings report.
   start when the API port already accepts connections.
 - Onboarding retries (invitation create, accept, CLI `member add`) are counted and still fail the
   onboarding check; they only let the rest of the run proceed.
-- Consolidation evidence lives in its own repository (`/e2e/alpha-memory`) and the two G2 scenarios
-  run as separate consolidation passes. The empty SHA-256 slices in the mock embedder are fixed;
-  these deterministic scenarios still do not validate live provider behaviour.
+- The mock embedder used to score almost any two texts as near-duplicates (defect 7 in the findings
+  report, fixed in the same change: sha512 digest, unrelated texts now score ~0.01 instead of ~0.87).
+  Consolidation evidence still lives in its own repository (`/e2e/alpha-memory`) and the two G2
+  scenarios run as separate consolidation passes, so runs before and after the fix stay comparable.
 
 ## Pytest
 

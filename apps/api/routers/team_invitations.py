@@ -23,7 +23,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from apps.api.auth import require_principal
 from apps.api.invitation_throttle import AcceptThrottle, client_ip, default_throttle, retry_after_header
@@ -31,9 +31,11 @@ from brain.auth.principals import ResolvedPrincipal
 from brain.database.session import async_session_factory
 from brain.team import invitations
 from brain.team.authorization import TeamConflict, TeamDenied, require_team_storage, team_administrator, team_state
+from brain.team.locking import bound_team_transaction, retryable
 from brain.team.provisioning import TEAM_ID, TeamNotFound
 
 router = APIRouter(prefix="/team/invitations", tags=["experimental-team"])
+BUSY = "Team data is busy; retry shortly"
 
 ACCEPT_LIMIT = 10
 ACCEPT_WINDOW_S = 300
@@ -66,7 +68,12 @@ async def invitation_session():
     try:
         require_team_storage()
         async with async_session_factory() as session, session.begin():
+            await bound_team_transaction(session)
             yield session
+    except DBAPIError as exc:
+        if not retryable(exc):
+            raise
+        raise HTTPException(503, BUSY, headers={"Retry-After": "1"}) from exc
     except TeamDenied as exc:
         raise HTTPException(403, "Team authority denied") from exc
     except TeamNotFound as exc:
@@ -135,6 +142,7 @@ async def accept_invitation(body: InvitationAcceptRequest, request: Request, res
     try:
         require_team_storage()
         async with async_session_factory() as session, session.begin():
+            await bound_team_transaction(session)
             result = await invitations.accept_invitation(session, body.token)
             request.state.principal = await invitations.accepted_principal(
                 session, uuid.UUID(result["invitation"]["id"])
@@ -149,5 +157,9 @@ async def accept_invitation(body: InvitationAcceptRequest, request: Request, res
         raise HTTPException(409, str(exc)) from exc
     except IntegrityError as exc:
         raise HTTPException(409, "Invitation could not be accepted concurrently; retry with the same token") from exc
+    except DBAPIError as exc:
+        if not retryable(exc):
+            raise
+        raise HTTPException(503, BUSY, headers={"Retry-After": "1"}) from exc
     response.headers["Cache-Control"] = "no-store"
     return result

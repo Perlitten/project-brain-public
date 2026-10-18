@@ -107,6 +107,29 @@ async def mint_credential(
     return raw, cred
 
 
+# ``last_used_at`` is a coarse "seen recently" marker, written at most once per interval.
+LAST_USED_INTERVAL = timedelta(seconds=60)
+
+
+async def _touch(session: AsyncSession, credential_id: int, now: datetime) -> None:
+    """Record a credential's use without ever waiting for its row lock.
+
+    Every authenticated request lands here. An unconditional ``UPDATE`` queued
+    behind any transaction that holds the credential row (each team
+    transaction of that key read-locks it), and later readers queued behind
+    the waiting update: one slow request stalled every other request of the
+    same key. The write is skipped while the row is locked (``SKIP LOCKED``)
+    and when it was recorded less than ``LAST_USED_INTERVAL`` ago."""
+    locked_free = (select(ApiCredential.id).where(ApiCredential.id == credential_id)
+                   .with_for_update(key_share=True, skip_locked=True).scalar_subquery())
+    await session.execute(
+        update(ApiCredential)
+        .where(ApiCredential.id == locked_free,
+               or_(ApiCredential.last_used_at.is_(None), ApiCredential.last_used_at < now - LAST_USED_INTERVAL))
+        .values(last_used_at=now)
+        .execution_options(synchronize_session=False))
+
+
 async def resolve_credential(
     session: AsyncSession, raw_key: str
 ) -> Optional[ResolvedPrincipal]:
@@ -134,17 +157,7 @@ async def resolve_credential(
 
     if await access_fenced(session):
         return None
-    # Usage telemetry must not queue authentication behind a transaction that
-    # holds this credential FOR SHARE. Update at most every five minutes and
-    # skip busy rows; liveness is always read above, never cached with telemetry.
-    cutoff = now - timedelta(minutes=5)
-    if cred.last_used_at is None or cred.last_used_at < cutoff:
-        available = select(ApiCredential.id).where(
-            ApiCredential.id == cred.id, ApiCredential.revoked_at.is_(None),
-            or_(ApiCredential.last_used_at.is_(None), ApiCredential.last_used_at < cutoff)
-        ).with_for_update(skip_locked=True)
-        await session.execute(update(ApiCredential).where(ApiCredential.id.in_(available))
-                              .values(last_used_at=now).execution_options(synchronize_session=False))
+    await _touch(session, cred.id, now)
     return ResolvedPrincipal(
         id=principal.id,
         name=principal.name,

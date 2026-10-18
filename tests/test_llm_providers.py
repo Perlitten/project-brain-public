@@ -67,6 +67,18 @@ async def test_mock_embedding_provider():
     assert len(vecs[1]) == 1536
 
 
+def test_mock_embedding_separates_unrelated_texts():
+    # Regression: with a 32-byte digest four of the twelve hash slots were empty and all landed on
+    # dimension 0, so any two texts scored as near-duplicates (cosine ~0.87).
+    from brain.llm.providers.mock_provider import _deterministic_vector
+
+    def cosine(a: str, b: str) -> float:
+        return sum(x * y for x, y in zip(_deterministic_vector(a), _deterministic_vector(b)))
+
+    assert cosine("postgres connection pool timeout", "react button color theme") < 0.2
+    assert cosine("postgres connection pool timeout", "postgres pool timeout") > 0.7
+
+
 @pytest.mark.asyncio
 async def test_mock_summarizer_provider():
     summarizer = get_summarizer_provider("mock")

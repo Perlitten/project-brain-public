@@ -195,12 +195,11 @@ async def _target(session: AsyncSession, kind: str, title: str, repo_path: Optio
 
 
 async def _draft_author_gate(session: AsyncSession, author_principal_id: Optional[int]) -> None:
-    from brain.team.authorization import TeamDenied, memory_author_gate
+    from brain.team.authorization import memory_author_gate
 
-    try:
-        await memory_author_gate(session, author_principal_id)
-    except TeamDenied as exc:
-        raise ProposalStateError(str(exc)) from exc
+    # Preserve TeamDenied so the HTTP write-fence handler returns 403 for a
+    # caller revoked between request authorization and this transaction.
+    await memory_author_gate(session, author_principal_id)
 
 
 async def create_proposal(kind: Literal["decision", "rule"], *, title: str, repo_path: Optional[str],

@@ -18,8 +18,10 @@ def _deterministic_vector(text: str, dimension: int = 1536) -> List[float]:
     counts = Counter(tokens)
     for token, count in counts.items():
         tf = 1.0 + math.log(count)
-        digest = hashlib.sha256(token.encode("utf-8")).digest()
-        for i in range(len(digest) // 4):
+        # sha512: twelve 4-byte slots need 48 bytes. With sha256 (32 bytes) slots 8-11 were empty, so every
+        # token also hit dimension 0 and unrelated texts scored as near-duplicates (cosine ~0.87).
+        digest = hashlib.sha512(token.encode("utf-8")).digest()
+        for i in range(12):
             idx = int.from_bytes(digest[i * 4 : i * 4 + 4], "big") % dimension
             vec[idx] += tf
         if len(token) > 4:

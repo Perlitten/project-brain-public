@@ -23,7 +23,11 @@ def _env_files() -> tuple[str, ...]:
     working directory still find the install's configuration. The process
     CWD's ``.env`` then overrides it (backwards compatible), and an explicit
     ``BRAIN_ENV_FILE`` path wins over everything — the supported way to point
-    an installed wheel at its configuration."""
+    an installed wheel at its configuration. ``BRAIN_DISABLE_DOTENV`` is the
+    supported isolation switch for test harnesses that provide a complete
+    process environment and must not read either checkout file."""
+    if os.getenv("BRAIN_DISABLE_DOTENV", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return ()
     files: list[str] = []
     if os.getenv("BRAIN_STORAGE_MODE") == "lite":
         explicit = os.getenv("BRAIN_ENV_FILE", "").strip()
@@ -163,6 +167,13 @@ class Settings(BaseSettings):
     # With SSO on: refuse token-only invitation acceptance (and invitations
     # without an email), so every new member proves the invited address.
     BRAIN_OIDC_REQUIRE_FOR_INVITATIONS: bool = False
+    # Team transactions (team, invitation and coordination routes) wait at most
+    # this long for a row lock before answering HTTP 503 with Retry-After, and a
+    # team transaction left idle this long is ended by PostgreSQL, so one stuck
+    # request cannot hold team rows (and pool connections) for minutes.
+    # 0 turns a bound off. See brain/team/locking.py.
+    BRAIN_TEAM_LOCK_TIMEOUT_MS: int = 5000
+    BRAIN_TEAM_IDLE_TX_TIMEOUT_MS: int = 30000
 
     # PostgreSQL Configuration
     POSTGRES_HOST: str = "localhost"
@@ -590,6 +601,13 @@ class Settings(BaseSettings):
     def validate_postgres_max_overflow(cls, value: int) -> int:
         if not 0 <= value <= 50:
             raise ValueError("POSTGRES_MAX_OVERFLOW must be between 0 and 50")
+        return value
+
+    @field_validator("BRAIN_TEAM_LOCK_TIMEOUT_MS", "BRAIN_TEAM_IDLE_TX_TIMEOUT_MS")
+    @classmethod
+    def validate_team_transaction_bounds(cls, value: int) -> int:
+        if not 0 <= value <= 600_000:
+            raise ValueError("Team transaction timeouts must be between 0 and 600000 milliseconds")
         return value
 
     @field_validator("POSTGRES_POOL_TIMEOUT_SECONDS")

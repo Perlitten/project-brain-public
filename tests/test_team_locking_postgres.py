@@ -170,12 +170,12 @@ async def test_previously_authorized_proposal_cannot_survive_revocation(team_db,
     async with factory() as session:
         await live_credential(session, 2, 2)
     await revoke(factory)
-    with pytest.raises(proposals.ProposalStateError):
+    with pytest.raises(TeamDenied):
         await proposals.create_proposal("decision", title="delayed draft", repo_path="/synthetic/A",
                                         payload={}, author_principal_id=2)
 
 
-async def test_run_credential_takes_initiator_gate_before_revocation(team_db):
+async def test_run_and_initiator_authorization_follow_revocation_lock_order(team_db):
     factory, a, _ = team_db
     async with factory() as session, session.begin():
         task = await create_task(session, caller(2), a, task_payload())
@@ -196,6 +196,56 @@ async def test_run_credential_takes_initiator_gate_before_revocation(team_db):
     await asyncio.wait_for(removal, 5)
     async with factory() as session:
         assert await resolve_credential(session, run["credential"]) is None
+
+
+async def test_direct_personal_gate_and_http_write_fence_share_lock_order(team_db, monkeypatch):
+    from brain.team.write_fence import arm, request_scope
+
+    factory, _, _ = team_db
+    engine = factory.kw["bind"]
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda sync: Learning.__table__.create(sync, checkfirst=True))
+    gate_taken, continue_write = asyncio.Event(), asyncio.Event()
+    original_gate = learning_store._personal_write_gate
+
+    async def pause_after_gate(session, status, author_id):
+        await original_gate(session, status, author_id)
+        gate_taken.set()
+        await continue_write.wait()
+
+    async def embed(_statement):
+        return None
+
+    monkeypatch.setattr(learning_store, "_personal_write_gate", pause_after_gate)
+    monkeypatch.setattr(learning_store, "async_session_factory", factory)
+    monkeypatch.setattr("brain.llm.get_embedding_provider", lambda: SimpleNamespace(embed=embed, model="test"))
+
+    async def write():
+        with request_scope():
+            arm(2, 2, 2, 2)
+            return await learning_store.LearningStore.add_learning(
+                "armed request with direct gate", status="personal", author_principal_id=2)
+
+    writer = asyncio.create_task(write())
+    removal = None
+    try:
+        await asyncio.wait_for(gate_taken.wait(), 3)
+        ready = asyncio.get_running_loop().create_future()
+        removal = asyncio.create_task(revoke(factory, ready=ready))
+        await blocked(factory, await ready)
+        continue_write.set()
+        learning_id, _ = await asyncio.wait_for(asyncio.gather(writer, removal), 5)
+        async with factory() as session:
+            assert (await session.get(Learning, learning_id)).status == "personal_retired"
+            assert await resolve_credential(session, "fixture-2") is None
+    finally:
+        continue_write.set()
+        for task in (writer, removal):
+            if task is not None and not task.done():
+                task.cancel()
+        await asyncio.gather(*(task for task in (writer, removal) if task is not None), return_exceptions=True)
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda sync: Learning.__table__.drop(sync))
 
 
 async def test_personal_insert_rechecks_membership_after_embedding(team_db, monkeypatch):

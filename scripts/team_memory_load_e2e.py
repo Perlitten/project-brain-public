@@ -120,10 +120,10 @@ def leaked_markers(text: str, readable_projects: set[str], owner: str, *,
                    scope_project: Optional[str] = None) -> list[str]:
     """Markers in ``text`` the reader must not see.
 
-    A shared marker ``mk-<project>-ΓÇª`` leaks when the reader cannot read that project (or,
+    A shared marker ``mk-<project>-…`` leaks when the reader cannot read that project (or,
     with ``scope_project``, when it belongs to another project than the one the reply is
     scoped to: a context pack for alpha must not carry beta's memory). A personal marker
-    ``pm-<owner>-ΓÇª`` leaks to anyone but its owner."""
+    ``pm-<owner>-…`` leaks to anyone but its owner."""
     found = []
     for match in MARKER_RE.finditer(text or ""):
         project, marker_owner = match.group("project"), match.group("owner")
@@ -184,8 +184,94 @@ def cas_round_verdict(statuses: list[int]) -> dict[str, Any]:
     """One CAS round: every writer sent the same expected_version; exactly one may win."""
     counts = Counter(statuses)
     return {"winners": counts.get(200, 0), "conflicts": counts.get(409, 0),
+            "losers": {str(k): v for k, v in sorted(counts.items()) if k != 200},
             "other": {str(k): v for k, v in counts.items() if k not in {200, 409}},
             "ok": counts.get(200, 0) == 1 and counts.get(200, 0) + counts.get(409, 0) == len(statuses)}
+
+
+def late_write_max_ms(late: dict[str, list[dict]], revoked_at: Any) -> Optional[float]:
+    """How long after ``revoked_at`` the latest write of a revoked member landed, in milliseconds."""
+    if not isinstance(revoked_at, datetime):
+        return None
+    stamps = [row["created_at"] for rows in late.values() for row in rows
+              if isinstance(row.get("created_at"), datetime)]
+    if not stamps:
+        return None
+    return round(max((stamp - revoked_at).total_seconds() * 1000 for stamp in stamps), 1)
+
+
+def _cell(value: Any) -> str:
+    return f"`{json.dumps(value, default=str, sort_keys=True)}`" if value not in (None, {}, []) else "-"
+
+
+def render_cas(cas: dict[str, Any]) -> list[str]:
+    """CAS outcomes per round: the comparison table between a run before and after the fixes."""
+    lines = ["## CAS outcomes", ""]
+    if not cas:
+        return lines + ["Not recorded (the CAS phase did not finish).", ""]
+    lines += ["Every writer of a round sends the same `expected_version`: exactly one 200 is correct, every loser "
+              "must get 409. `lost` counts acknowledged (200) writes missing from the supersede chain.", "",
+              "| Kind | Round | expected_version | Winners | Losers (status: count) | Lost | OK |",
+              "|---|---|---|---|---|---|---|"]
+    for kind, key in (("decision", "decision_rounds"), ("rule", "rule_rounds")):
+        for index, verdict in enumerate(cas.get(key, [])):
+            lines.append(f"| {kind} | {index} | {verdict.get('expected_version', '-')} | {verdict['winners']} | "
+                         f"{_cell(verdict.get('losers'))} | {verdict.get('lost_winners', '-')} | "
+                         f"{'yes' if verdict['ok'] else 'NO'} |")
+    for label, key in (("create race (expected_version=0)", "create_race_verdict"),
+                       ("concurrent approvals of rival proposals", "concurrent_approvals_verdict")):
+        verdict = cas.get(key)
+        if verdict:
+            lines.append(f"| {label} | - | {verdict.get('base_version', 0)} | {verdict['winners']} | "
+                         f"{_cell(verdict.get('losers'))} | - | {'yes' if verdict['ok'] else 'NO'} |")
+    race = cas.get("approve_vs_reject")
+    if race:
+        clean = sorted(race) == [200, 409]
+        lines.append(f"| approve vs reject (one proposal) | - | 1 | {race.count(200)} | "
+                     f"{_cell({str(st): race.count(st) for st in sorted(set(race)) if st != 200})} | - | "
+                     f"{'yes' if clean else 'NO'} |")
+    chain, blind = cas.get("decision_chain", {}), cas.get("blind_writes", {})
+    create, approvals = cas.get("create_race_verdict", {}), cas.get("concurrent_approvals_verdict", {})
+    lines += ["", f"- Decision chain: {chain.get('acknowledged_writes', '-')} acknowledged writes, "
+                  f"{chain.get('lost_writes', '-')} lost, {chain.get('phantom_losers', '-')} 409s persisted anyway, "
+                  f"final version {chain.get('final_version', '-')}, chain problems "
+                  f"{_cell(chain.get('chain_problems'))}.",
+              f"- Blind writes (no expected_version): statuses {_cell(blind.get('statuses'))}, "
+              f"{blind.get('vanished', '-')} of {blind.get('accepted', '-')} accepted writes vanished from history, "
+              f"chain problems {_cell(blind.get('chain_problems'))}.",
+              f"- Rule chain: {cas.get('rule_chain', {}).get('lost_writes', '-')} lost writes, chain problems "
+              f"{_cell(cas.get('rule_chain', {}).get('chain_problems'))}.",
+              f"- Create race: {create.get('canonical_rows', '-')} canonical row(s) (1 expected).",
+              f"- Concurrent approvals: version {approvals.get('base_version', '-')} -> "
+              f"{approvals.get('final_version', '-')} (+1 expected), proposal states "
+              f"{_cell(approvals.get('proposal_states'))}.",
+              f"- Approve vs reject: statuses {_cell(race)}, final state "
+              f"`{cas.get('approve_vs_reject_state', '-')}`.", ""]
+    return lines
+
+
+def render_revocation(outcome: dict[str, Any]) -> list[str]:
+    lines = ["## Revocation outcome", ""]
+    if not outcome:
+        return lines + ["Not recorded (the revocation phase did not run).", ""]
+    rows = [("Revoke attempts (statuses)", _cell(outcome.get("attempt_statuses"))),
+            ("First attempt succeeded", "yes" if outcome.get("first_attempt_ok") else "NO"),
+            ("Revocation took effect", "yes" if outcome.get("took_effect") else "NO"),
+            ("Seconds until the revoke returned", outcome.get("revoke_seconds", "-")),
+            ("revoked_at", f"`{outcome.get('revoked_at')}`")]
+    if outcome.get("took_effect"):
+        rows += [("Requests sent after the revoke returned", outcome.get("requests_after_revoke", "-")),
+                 ("Their statuses (all 401 expected)", _cell(outcome.get("after_revoke_statuses"))),
+                 ("Honoured (2xx) after the revoke (0 expected)", outcome.get("honoured_after_revoke", "-")),
+                 ("Other non-401 answers after the revoke (0 expected)",
+                  outcome.get("non_401_errors_after_revoke", "-")),
+                 ("Writes dated after revoked_at (0 expected)", _cell(outcome.get("late_writes"))),
+                 ("Latest late write, ms after revoked_at", outcome.get("late_write_max_ms") or "-"),
+                 ("Pending proposals left (0 expected)", outcome.get("pending_proposals_left", "-")),
+                 ("Proposal states of the revoked member", _cell(outcome.get("proposal_states"))),
+                 ("Personal-tier rows kept (0 expected)", outcome.get("personal_rows_kept", "-")),
+                 ("Revoked key on REST / MCP (401 expected)", _cell(outcome.get("revoked_key")))]
+    return lines + ["| Measure | Value |", "|---|---|"] + [f"| {k} | {v} |" for k, v in rows] + [""]
 
 
 # --------------------------------------------------------------------------- recording
@@ -1185,7 +1271,8 @@ class Run:
         decision_id = int(body["decision_id"])
         winners: list[str] = []
         losers: list[str] = []
-        rounds = []
+        rounds: list[dict[str, Any]] = []
+        round_winners: list[list[str]] = []
         k = self.args.cas_writers
         for round_no in range(self.args.cas_rounds):
             version = int(self.stack.scalar("SELECT version FROM decisions WHERE id=$1", decision_id))
@@ -1203,7 +1290,9 @@ class Run:
             with _pool(k) as pool:
                 outcomes = list(pool.map(write, range(k)))
             verdict = cas_round_verdict([st for st, _ in outcomes])
+            verdict["expected_version"] = version
             rounds.append(verdict)
+            round_winners.append([d for st, d in outcomes if st == 200])
             winners += [d for st, d in outcomes if st == 200]
             losers += [d for st, d in outcomes if st == 409]
         lost_rounds = [v for v in rounds if v["winners"] > 1]
@@ -1216,6 +1305,11 @@ class Run:
         descriptions = Counter(row["description"] for row in rows)
         missing = [d for d in winners if descriptions.get(d, 0) == 0]
         phantom = [d for d in losers if descriptions.get(d, 0) > 0]
+        for verdict, won in zip(rounds, round_winners):
+            verdict["lost_winners"] = sum(1 for d in won if descriptions.get(d, 0) == 0)
+        decision_chain = {"chain_problems": problems, "acknowledged_writes": len(winners),
+                          "lost_writes": len(missing), "phantom_losers": len(phantom),
+                          "final_version": max((int(row["version"]) for row in rows), default=0)}
         r.check(s, "decision CAS: no lost update (every 200 is in the chain, no 409 is) and a linear chain",
                 not problems and not missing and not phantom,
                 {"chain_problems": problems, "missing_winners": missing[:5], "phantom_losers": phantom[:5],
@@ -1243,6 +1337,8 @@ class Run:
         accepted = [d for st, d in blind_out if st == 200]
         vanished = [d for d in accepted if descriptions.get(d, 0) == 0]
         problems = verify_chain(rows, decision_id)
+        blind_result = {"statuses": dict(Counter(str(st) for st, _ in blind_out)), "accepted": len(accepted),
+                        "vanished": len(vanished), "chain_problems": problems}
         r.check(s, f"decision blind writes: {k} concurrent edits without expected_version all keep their content "
                    "in the supersede history", not vanished and not problems,
                 {"statuses": dict(Counter(st for st, _ in blind_out)), "vanished": vanished[:5],
@@ -1267,6 +1363,7 @@ class Run:
         canon = self.stack.scalar("SELECT count(*) FROM decisions WHERE lower(trim(title))=lower(trim($1)) "
                                   "AND superseded_by_id IS NULL", new_title)
         verdict = cas_round_verdict(created)
+        create_result = {**verdict, "canonical_rows": canon}
         r.check(s, f"decision create race: {k} concurrent creators with expected_version=0 -> one row",
                 verdict["winners"] == 1 and canon == 1, {**verdict, "canonical_rows": canon})
         r.check(s, "decision create race: every losing creator gets 409 (not a server error)", verdict["ok"],
@@ -1285,7 +1382,7 @@ class Run:
         # The stored key is scoped to the repository (``_find_rule``), so resolve it by name.
         rule_key = self.stack.scalar("SELECT id FROM rules WHERE name=$1 AND superseded_by_id IS NULL",
                                      f"{rule_marker} CAS rule") or rule_marker
-        rule_rounds = []
+        rule_rounds: list[dict[str, Any]] = []
         rule_winners: list[str] = []
         for round_no in range(max(1, self.args.cas_rounds // 2)):
             version = int(self.stack.scalar("SELECT version FROM rules WHERE id=$1", rule_key) or 1)
@@ -1302,7 +1399,7 @@ class Run:
 
             with _pool(k) as pool:
                 outcomes = list(pool.map(rule_write, range(k)))
-            rule_rounds.append(cas_round_verdict([st for st, _ in outcomes]))
+            rule_rounds.append({**cas_round_verdict([st for st, _ in outcomes]), "expected_version": version})
             rule_winners += [d for st, d in outcomes if st == 200]
         rule_rows = self.stack.sql("SELECT id, version, description, supersedes_id, superseded_by_id FROM rules "
                                    "WHERE id=$1 OR superseded_by_id=$1", rule_key)
@@ -1357,6 +1454,8 @@ class Run:
                               "WHERE id=$1 OR superseded_by_id=$1", decision_id)
         problems = verify_chain(rows, decision_id)
         verdict = cas_round_verdict(approvals)
+        approvals_result: dict[str, Any] = {**verdict, "base_version": version, "final_version": final_version,
+                                            "chain_problems": problems}
         states = Counter(row["state"] for row in self.stack.sql(
             "SELECT state FROM memory_proposals WHERE id = ANY($1::int[])", proposal_ids))
         r.check(s, f"{len(proposal_ids)} member proposals on base v{version}, approved concurrently by different "
@@ -1364,6 +1463,7 @@ class Run:
                 and final_version == version + 1 and not problems,
                 {**verdict, "base_version": version, "final_version": final_version, "proposal_states": states,
                  "chain_problems": problems[:5]})
+        approvals_result["proposal_states"] = dict(states)
         if verdict["winners"] > 1 or final_version > version + 1:
             self.violations.add("lost_update_concurrent_approvals", {**verdict, "base_version": version,
                                                                      "final_version": final_version})
@@ -1391,8 +1491,12 @@ class Run:
         r.check(s, "approve vs reject of one proposal at once: exactly one 200, the other 409",
                 sorted(decided) == [200, 409] and state in {"approved", "rejected"},
                 {"statuses": decided, "state": state})
-        self.results["cas"] = {"decision_rounds": rounds, "rule_rounds": rule_rounds, "create_race": created,
-                               "concurrent_approvals": approvals, "approve_vs_reject": decided}
+        self.results["cas"] = {"decision_rounds": rounds, "decision_chain": decision_chain,
+                               "blind_writes": blind_result, "rule_rounds": rule_rounds,
+                               "rule_chain": {"chain_problems": rule_problems, "lost_writes": len(rule_missing)},
+                               "create_race": created, "create_race_verdict": create_result,
+                               "concurrent_approvals": approvals, "concurrent_approvals_verdict": approvals_result,
+                               "approve_vs_reject": decided, "approve_vs_reject_state": state}
 
     # ------------------------------------------------------------------ phase 3: governance probes
 
@@ -1967,6 +2071,7 @@ class Run:
         # which is itself the finding; the later checks need a revocation that took effect.
         attempts: list[dict] = []
         st, body = 0, None
+        revoke_started = time.time()
         for _ in range(REVOKE_ATTEMPTS):
             st, body, _ = self.call("DELETE /team/projects/members/{id}", "DELETE",
                                     f"/team/projects/members/{revokee.principal_id}", owner.key)
@@ -2000,6 +2105,11 @@ class Run:
                                        revokee.principal_id)
         self.revoked_at = revoked_at
         self.results["revocation_attempts"] = attempts
+        outcome: dict[str, Any] = {
+            "attempt_statuses": [a["status"] for a in attempts], "first_attempt_ok": attempts[0]["status"] == 200,
+            "took_effect": st == 200 and revoked_at is not None, "revoked_at": str(revoked_at),
+            "revoke_seconds": round(revoke_completed_at[0] - revoke_started, 3)}
+        self.results["revocation_outcome"] = outcome
         if st != 200 or revoked_at is None:
             r.check(s, f"revocation took effect within {REVOKE_ATTEMPTS} attempts", False, {"attempts": attempts})
             self.not_exercised.append("post-revocation checks: the member could not be revoked under load")
@@ -2051,6 +2161,15 @@ class Run:
         self.results["revocation"] = {"requests": len(events), "after_revoke": len(after),
                                       "statuses": dict(Counter(e["status"] for e in events)),
                                       "proposal_states": dict(states)}
+        outcome.update({
+            "requests_after_revoke": len(after),
+            "after_revoke_statuses": {str(k): v for k, v in Counter(e["status"] for e in after).items()},
+            "honoured_after_revoke": len(honored_after),
+            "non_401_errors_after_revoke": len(unexpected_after),
+            "late_writes": {table: len(rows) for table, rows in late.items()},
+            "late_write_max_ms": late_write_max_ms(late, revoked_at),
+            "pending_proposals_left": len(pending), "proposal_states": dict(states),
+            "personal_rows_kept": personal, "revoked_key": statuses})
 
     def phase_restore_fence(self) -> None:
         r = self.report
@@ -2193,6 +2312,8 @@ class _pool:
 
 def render_markdown(summary: dict[str, Any]) -> str:
     lines = ["# Team memory multi-user E2E", "",
+             f"Source `{summary['source']['commit']}`; dirty={summary['source']['dirty']}. "
+             f"Runtime: {summary['runtime']['platform']}, Python {summary['runtime']['python']}.", "",
              f"Generated {summary['generated_at']} - users {summary['config']['users']}, ops/user "
              f"{summary['config']['ops']}, API workers {summary['config']['api_workers']}.", "",
              f"**Result:** {'PASS' if summary['ok'] else 'FAIL'} - {summary['checks']['passed']} checks passed, "
@@ -2209,7 +2330,9 @@ def render_markdown(summary: dict[str, Any]) -> str:
         lines.append(f"- **{category}**: {data['count']}")
         for example in data["examples"][:2]:
             lines.append(f"  - `{example[:300]}`")
-    lines += ["", "## Throughput", "", "| Phase | Requests | Seconds | req/s |", "|---|---|---|---|"]
+    lines += [""] + render_cas(summary["results"].get("cas", {}))
+    lines += render_revocation(summary["results"].get("revocation_outcome", {}))
+    lines += ["## Throughput", "", "| Phase | Requests | Seconds | req/s |", "|---|---|---|---|"]
     for phase, data in summary["metrics"]["phases"].items():
         lines.append(f"| {phase} | {data['requests']} | {data['seconds']} | {data['throughput_rps']} |")
     lines += ["", f"Status distribution: `{json.dumps(summary['metrics']['status_distribution'])}`", "",

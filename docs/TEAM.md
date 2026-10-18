@@ -215,9 +215,11 @@ for team administrators).
 repository paths her roles grant); the task tools take a project id. See
 [MCP](MCP.md).
 `team_request_run` records a run; MCP cannot execute it. Bounded execution exists over
-HTTP only, off by default ([bounded team execution](operations/TEAM_EXECUTION.md)). Member keys do not
-carry `harness:write`, so `record_task_observation` and `record_task_lesson`
-are refused for them.
+HTTP only, off by default ([bounded team execution](operations/TEAM_EXECUTION.md)). Member keys
+carry `harness:write`, so a member's agent can call `record_task_observation`
+and `record_task_lesson`; the role still decides: a lesson or observation needs
+`knowledge.propose` on its task's repository (Contributor or Reviewer, never
+Reader), and the other harness writes need the task permission they name.
 
 ## 6a. Shared memory goes through review
 
@@ -289,6 +291,20 @@ authority. An operator returns it to solo with `brain team dissolve --yes`. In
 solo state every authenticated key that is still valid acts as administrator.
 Administrators cannot revoke their own membership over the API; an operator on
 the server can.
+
+A successful revocation is final for requests already in flight, too. A write
+the member's request had been authorized for before the revocation either
+commits before it (and the revocation then withdraws its proposal like any
+other) or is refused with HTTP 403 after it: every write transaction of an
+authorized request re-checks the member's principal, key and membership under a
+share lock (`brain/team/write_fence.py`). Revocation itself retries when
+PostgreSQL picks it as a deadlock victim; if it still cannot finish, the API
+answers HTTP 503 with `Retry-After` and nothing was revoked, so retry it.
+
+Team routes bound each transaction's lock waits (`BRAIN_TEAM_LOCK_TIMEOUT_MS`,
+default 5000) and idle time (`BRAIN_TEAM_IDLE_TX_TIMEOUT_MS`, default 30000).
+A request that would wait longer gets HTTP 503 with `Retry-After: 1` instead of
+queueing behind a long transaction.
 
 ## Team coordination (M3)
 
@@ -482,6 +498,17 @@ which is the source of truth.
   or `brain workspace repositories enable`); both appear in the activity feed. The
   offline `brain workspace repositories register` needs `--project` in team state
   ([upgrade note](operations/TEAM_DEPLOY.md#workspace-registry-file-to-table)).
+- **A team administrator reads every project's memory.** The decision and
+  rule lists give a member only the rows of repositories their roles may read,
+  but give a team administrator every row; the Brain-wide lists (episodes,
+  learnings, skills) and other unscoped reads need a team administrator and
+  return every project's rows. Both hold for projects where the administrator
+  has no project role. A scoped request for an attached repository still needs
+  a project role, administrators included. The
+  [ADR permission matrix](adr/team-collaboration.md#permission-matrix) says an
+  administrator reads a project "only with project membership"; the unscoped
+  surface does not follow that row yet. Until it does, give the administrator
+  flag only to people who may read all of the team's memory.
 - **Coordination does not merge.** The integration queue records decisions
   against a base you name and checks that a run's patch applies on top of the
   entries already integrated on its base; it does not merge, push, build or

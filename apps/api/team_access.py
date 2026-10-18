@@ -23,6 +23,7 @@ import uuid
 from typing import Protocol, TypeVar
 
 from fastapi import Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from apps.api import auth
@@ -51,6 +52,7 @@ from brain.team.authorization import (
 )
 from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamProject, TeamTaskBinding
 from brain.team.registry import ensure_legacy_imported
+from brain.team import write_fence
 
 
 class MemoryScopedRow(Protocol):
@@ -83,10 +85,24 @@ async def repository_authority(principal: ResolvedPrincipal, permission: Permiss
         async with async_session_factory() as session:
             if repository_id is None and repo_path:
                 repository_id = await find_repository_id(session, repo_path)
-            return await authorize_repository(session, principal, repository_id, permission, author_id=author_id,
-                                              repo_path=repo_path)
+            authority = await authorize_repository(session, principal, repository_id, permission,
+                                                   author_id=author_id, repo_path=repo_path)
     except TeamDenied as exc:
         raise HTTPException(status_code=403, detail=f"Repository access denied: {exc}") from exc
+    _arm(principal, authority)
+    return authority
+
+
+async def team_denied_response(request: Request, exc: Exception) -> JSONResponse:
+    """A team refusal raised below the route (the write fence after a revocation) is HTTP 403, never a 500."""
+    return JSONResponse(status_code=403, content={"detail": f"Team access denied: {exc}"})
+
+
+def _arm(principal: ResolvedPrincipal, authority: Authority) -> None:
+    """Fence the rest of this request's writes on the identities just authorized (``brain/team/write_fence.py``)."""
+    if authority.team_state == "team":
+        write_fence.arm(authority.actor_id, principal.credential_id, authority.initiator_id,
+                        authority.initiator_credential_id)
 
 
 _SCOPE_KEYS = frozenset({"repository_id", "repo_path"})
@@ -324,7 +340,9 @@ async def member_authority(principal: ResolvedPrincipal) -> Authority:
     except TeamDenied as exc:
         raise HTTPException(status_code=403, detail=f"Team member required: {exc}") from exc
     assert live.credential_id is not None
-    return Authority(live.id, live.id, live.credential_id, frozenset({Permission.READ}))
+    authority = Authority(live.id, live.id, live.credential_id, frozenset({Permission.READ}))
+    _arm(principal, authority)
+    return authority
 
 
 async def proposer_authority(principal: ResolvedPrincipal) -> Authority:
@@ -348,9 +366,12 @@ async def proposer_authority(principal: ResolvedPrincipal) -> Authority:
             )).scalars().all()
             for project_id in project_ids:
                 try:
-                    return await authorize(session, live, project_id, Permission.PROPOSE)
+                    authority = await authorize(session, live, project_id, Permission.PROPOSE)
                 except TeamDenied as exc:
                     denied = exc
+                    continue
+                _arm(principal, authority)
+                return authority
     except TeamDenied as exc:
         denied = exc
     raise HTTPException(status_code=403, detail=f"Knowledge proposal denied: {denied}")
@@ -388,6 +409,7 @@ def team_administrator_access():
                 await team_administrator(session, principal)
         except TeamDenied as exc:
             raise HTTPException(status_code=403, detail=f"Team administrator required: {exc}") from exc
+        write_fence.arm(principal.id, principal.credential_id, principal.id, principal.credential_id)
         return principal
 
     return dependency

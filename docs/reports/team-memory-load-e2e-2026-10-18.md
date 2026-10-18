@@ -9,17 +9,17 @@ Code base: `main` at 411dfc2. No product code was changed for this report.
   Throwaway `pgvector/pgvector:pg16` (`max_connections=300`) and `redis:7-alpine` in WSL Docker.
   Mock LLM and embedding providers. No Neo4j (the graph reports unavailable). Generated keys only.
 - Two runs are reported:
-  - **12├ù50**: 12 principals, one API worker. 11 users ran 50 mixed operations each in the load phase
+  - **12×50**: 12 principals, one API worker. 11 users ran 50 mixed operations each in the load phase
     (the revokee is held back for the revocation scenario).
-  - **36├ù50**: 36 principals, `--api-workers 2`. 35 users ran 50 operations each.
-- The default scenario parameters were used: 5 CAS rounds ├ù 6 writers, lease contention with 8
+  - **36×50**: 36 principals, `--api-workers 2`. 35 users ran 50 operations each.
+- The default scenario parameters were used: 5 CAS rounds × 6 writers, lease contention with 8
   contenders and 15 churn cycles, revocation with 4 writer threads, revoke after 1.5 s and a 2 s tail.
 - Every member sends its own `X-Forwarded-For` address from TEST-NET-2. The API trusts
   127.0.0.1 as proxy, so per-address throttles see separate clients.
 
 ## Summary
 
-| | 12├ù50 | 36├ù50 (2 API workers) |
+| | 12×50 | 36×50 (2 API workers) |
 |---|---|---|
 | Checks | 40 pass, 9 fail, 2 known gaps | 36 pass, 13 fail, 2 known gaps |
 | Harness errors | none | none |
@@ -40,10 +40,10 @@ order inversions deadlock (revocation and onboarding), writes in flight still la
 and a request holding the `teams` row lock can stall unrelated requests for up to 120 s with two
 API workers.
 
-The 13 failures in the 36├ù50 run include 5 governance checks. They are a knock-on effect of one
+The 13 failures in the 36×50 run include 5 governance checks. They are a knock-on effect of one
 stalled request (finding 5), not authority defects. The member's `POST /decisions` timed out after
 120 s, so its proposal never existed, and the approve, stale-version and OAuth checks that depend
-on it saw 404 or a transport error. The same governance checks passed in the 12├ù50 run and in the
+on it saw 404 or a transport error. The same governance checks passed in the 12×50 run and in the
 earlier 36-user run.
 
 ## Defects, ranked
@@ -54,24 +54,24 @@ earlier 36-user run.
   canonical row through `find_canonical_decision` (line 51) without `FOR UPDATE`. It then checks
   `expected_version` in Python (`check_expected_version`, line 73) and writes an absolute version
   number. Concurrent writers that read the same version all pass the check.
-- **12├ù50 evidence.**
+- **12×50 evidence.**
   - Five rounds of six writers with the same `expected_version` produced 2, 3, 3, 2 and 2 winners
     instead of 1.
   - The chain ended at version 6 with 12 history rows instead of 5. Seven rows were unreachable
-    from the canonical row, and versions 1ΓÇô5 were duplicated. Seven acknowledged (200) writes are
+    from the canonical row, and versions 1–5 were duplicated. Seven acknowledged (200) writes are
     missing from the chain.
 - **Blind writes.** Six concurrent edits without `expected_version` all returned 200. Version 9
   had 18 history rows and 10 were unreachable, so the content of 3 writers vanished from the
   history.
 - **Concurrent approvals.** Four member proposals on base v1 were approved at once by different
-  reviewers: 3 approved (36├ù50: all 4) instead of 1 approval and 3 ├ù 409, and version 1 was
+  reviewers: 3 approved (36×50: all 4) instead of 1 approval and 3 × 409, and version 1 was
   duplicated.
-- **36├ù50 evidence.** Rounds had 1, 1, 2, 1 and 2 winners. Two acknowledged writes were lost, and
+- **36×50 evidence.** Rounds had 1, 1, 2, 1 and 2 winners. Two acknowledged writes were lost, and
   1 blind writer's content vanished.
 - **Impact.** Approved team knowledge can be overwritten without a trace, and `version` no longer
   identifies a single row. The review queue's CAS guarantee does not hold.
-- **Fix hint.** Lock the canonical row (`SELECT ΓÇª FOR UPDATE`), or make the bump an atomic
-  `UPDATE ΓÇª WHERE id = :id AND version = :expected RETURNING`. Add a unique constraint on
+- **Fix hint.** Lock the canonical row (`SELECT … FOR UPDATE`), or make the bump an atomic
+  `UPDATE … WHERE id = :id AND version = :expected RETURNING`. Add a unique constraint on
   (canonical id, version) for history rows, so a lost update fails loudly.
 
 ### 2. HIGH: revoking a member who is actively writing deadlocks, and the key stays live
@@ -84,12 +84,12 @@ earlier 36-user run.
     (`human_member`, line 131).
   - These two paths take the same locks in opposite order (lock-order inversion).
 - **Evidence.**
-  - 12├ù50 (latest run): the admin's revoke returned 500 twice. Postgres aborted it as the deadlock
+  - 12×50 (latest run): the admin's revoke returned 500 twice. Postgres aborted it as the deadlock
     victim and the transaction rolled back. The third attempt succeeded.
   - The same happened in an earlier smoke run.
   - Until a revoke succeeds, the member's key stays valid and her pending proposals are not
     withdrawn.
-  - In the 36├ù50 run and the earlier 12├ù50 run, the first attempt succeeded.
+  - In the 36×50 run and the earlier 12×50 run, the first attempt succeeded.
 - **Impact.** An admin removing a compromised or departing member gets an Internal Server Error
   exactly when the member is most active. If the admin does not retry, access is not revoked.
 - **Fix hint.** Take the locks in one global order in both paths: credential before member, or
@@ -102,10 +102,10 @@ earlier 36-user run.
   `apps/api/routers/core_memory.py create_learning` authorizes, then the store opens its own
   session to write.
 - **Evidence.**
-  - 12├ù50 (earlier run): personal learnings 90ΓÇô92 were created up to 214 ms after
+  - 12×50 (earlier run): personal learnings 90–92 were created up to 214 ms after
     `revoked_at`.
-  - 12├ù50 (latest run): learnings 97ΓÇô98 landed after `revoked_at`.
-  - 36├ù50: learnings 302ΓÇô304 landed after `revoked_at`.
+  - 12×50 (latest run): learnings 97–98 landed after `revoked_at`.
+  - 36×50: learnings 302–304 landed after `revoked_at`.
   - Proposals created in the same window ended up `withdrawn` (the proposal fence works).
   - No request *sent after* the revoke returned was honoured.
 - **Impact.** Small, bounded in time, but real: a revoked member can still write in the last few
@@ -120,10 +120,10 @@ earlier 36-user run.
   asks for the same row FOR UPDATE (line 421). Two accepts holding the share lock both wait to
   upgrade it, so they deadlock (lock upgrade).
 - **Evidence.**
-  - 12├ù50: 20 retries after 5xx across 7 members (2 of them on the CLI `member add` path).
-  - 36├ù50: 23 ├ù 500 on `POST /team/invitations/accept` (p95 3.6 s), with 23 retries across 9
+  - 12×50: 20 retries after 5xx across 7 members (2 of them on the CLI `member add` path).
+  - 36×50: 23 × 500 on `POST /team/invitations/accept` (p95 3.6 s), with 23 retries across 9
     members (one member needed 6).
-  - An earlier 36-user attempt saw 57 ├ù 500 before the per-address throttle answered 429 to the
+  - An earlier 36-user attempt saw 57 × 500 before the per-address throttle answered 429 to the
     retries.
 - **Impact.** A team onboarding together (a workshop, a new team) sees random 500s on accept.
   The client must retry. The invitation is not consumed, so a retry works.
@@ -143,7 +143,7 @@ earlier 36-user run.
   - `pg_stat_activity` during a 36-user run showed the holder `idle in transaction`
     (`ClientRead`) for more than 10 s while holding `teams` FOR UPDATE. The waiters were on
     `teams` FOR SHARE and `UPDATE api_credentials`.
-  - `POST /team/invitations`: p95 12.2 s and max 13.1 s (36├ù50); p95 8.8 s in the earlier 36-user
+  - `POST /team/invitations`: p95 12.2 s and max 13.1 s (36×50); p95 8.8 s in the earlier 36-user
     run.
   - Requests timed out after 120 s:
     - five times in one run, on invitation creation, which aborted that run's setup;
@@ -163,40 +163,45 @@ earlier 36-user run.
     transaction).
   - Set `idle_in_transaction_session_timeout` on the API role so a stuck holder is cut off.
 
-### 6. LOWΓÇôMEDIUM: CAS and create races answer 500 instead of 409
+### 6. LOW–MEDIUM: CAS and create races answer 500 instead of 409
 
 - **Rule CAS.** Losing writers hit `rules_pkey` (`brain/memory/rule_store.py::rule_history_id`,
-  line 32 builds the history id from the version) and get 500 "Failed to add rule". 12├ù50: 5 ├ù 500
-  in one round. 36├ù50: 4 ├ù 500.
+  line 32 builds the history id from the version) and get 500 "Failed to add rule". 12×50: 5 × 500
+  in one round. 36×50: 4 × 500.
 - **Decision create race.** Losing creators hit `uq_decisions_normalized_title`
   (`brain/database/migrations.py:363`) and get 500 "Failed to add decision" instead of 409.
-  12├ù50: 2 ├ù 500; 36├ù50: 3 ├ù 500.
+  12×50: 2 × 500; 36×50: 3 × 500.
 - **Impact.** The data stays consistent (the constraint holds). But clients cannot tell a conflict
   from a server fault, and the 500s pollute error monitoring.
 - **Fix hint.** Map `IntegrityError` on these constraints to 409 with the current version.
 
-### 7. LOW (test infrastructure only): mock embedder maps unrelated texts to near-duplicates
+### 7. LOW (test infrastructure only): mock embedder maps unrelated texts to near-duplicates — FIXED in this PR
 
 `brain/llm/providers/mock_provider.py::_deterministic_vector` slices `digest[i*4:i*4+4]` for
 `i in range(12)` over a 32-byte sha256. For `i >= 8` the slice is empty, so `idx` is always 0 and
 every token adds weight to dimension 0. Any two texts then score as near-duplicates.
 
 This makes mock-mode consolidation merge unrelated claims. The harness works around it by keeping
-the consolidation evidence in its own repository. Fix: use `range(8)`, or hash with a wider digest.
+the consolidation evidence in its own repository.
+
+**Fixed in this PR:** the digest is now sha512 (64 bytes, all twelve slots filled). Cosine of two
+unrelated texts dropped from 0.871 to 0.009; related texts still score 0.861. Regression test:
+`tests/test_llm_providers.py::test_mock_embedding_separates_unrelated_texts`. The numbers in this
+report were measured before the fix; mock-mode dedup and recall scores of later runs differ.
 
 ## Known gaps (recorded, not failures)
 
 - **Members cannot write L1 evidence in team state.** `brain/team/provisioning.py::member_scopes`
   grants `harness:read` but not `harness:write`. Member keys get 403 "lacks required scope" on
   `POST /harness/tasks` and observations, so the consolidation scenario mints separate harness keys.
-- **The revoked member's personal-tier learnings are kept.** 12 rows (36├ù50) and 18 rows (12├ù50)
+- **The revoked member's personal-tier learnings are kept.** 12 rows (36×50) and 18 rows (12×50)
   remain. Nobody else can read them, but they are not retired with the membership.
 
 ## Product decision to confirm: admin reads are unscoped
 
 An admin with no project role still reads every project's rows:
 
-| Endpoint | 12├ù50 rows | 36├ù50 rows |
+| Endpoint | 12×50 rows | 36×50 rows |
 |---|---|---|
 | `GET /decisions` | 19 | 17 |
 | `GET /team/activity` | 33 | 24 |
@@ -214,12 +219,12 @@ This may be intended, since admins administer every project, but it is not docum
   promoted. Two principals promoted, with the author left NULL and both principals in the
   evidence.
 - Every item and activity event names the principal that wrote it.
-- After the revoke returned, every revokee request was refused (401; 315 in 36├ù50, 237 in 12├ù50)
+- After the revoke returned, every revokee request was refused (401; 315 in 36×50, 237 in 12×50)
   and none was honoured. Pending proposals were withdrawn (9 and 17).
 - Restore fence: a snapshot taken before the revocation, restored and served by a second API,
   does not bring the revoked member or her key back.
 - Leases:
-  - Contention: 1 ├ù 200 and 7 ├ù 409. Churn: 80 grants and 80 releases (36├ù50), with no
+  - Contention: 1 × 200 and 7 × 409. Churn: 80 grants and 80 releases (36×50), with no
     overlap in time.
   - Nested-path overlap answered 409. A stale fencing token was refused, a non-holder could not
     release, and takeover bumped the token.
@@ -227,7 +232,7 @@ This may be intended, since admins administer every project, but it is not docum
 
 ## Latency (p50 / p95 / max, ms)
 
-| Endpoint | 12├ù50 | 36├ù50, 2 workers |
+| Endpoint | 12×50 | 36×50, 2 workers |
 |---|---|---|
 | `GET /decisions` | 428 / 640 / 1375 | 860 / 2805 / 120014 |
 | `POST /decisions` (member, proposal) | 667 / 1597 / 1721 | 1283 / 3718 / 120011 |
