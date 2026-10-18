@@ -44,6 +44,13 @@ REQUEST_COOLDOWN = timedelta(hours=1)
 
 EnqueueReindex = Callable[[Any, str], Awaitable[str]]
 
+# Row fields that only describe an active origin follow.
+_FOLLOW_CLEARED: Dict[str, Any] = {
+    name: None
+    for name in ("source_mode", "mirror_head", "remote_url", "tracked_branch", "remote_head",
+                 "commits_behind", "commits_behind_base", "commits_behind_head")
+}
+
 
 def _primary_repo_path() -> Optional[str]:
     try:
@@ -121,7 +128,11 @@ async def poll_repository(repo: Any, *, enqueue: EnqueueReindex = enqueue_reinde
             "No origin to poll: the source has no 'origin' remote and BRAIN_ORIGIN_REMOTES names none for "
             f"{repo.path}."
         )
-        await upsert_origin_state(repo.id, polled_at=now, poll_status="unconfigured", poll_error=message)
+        # Following was switched off (BRAIN_ORIGIN_REMOTES no longer names the
+        # source): what an earlier follow recorded, the mirror marking above
+        # all, must not keep judging the index against a mirror head.
+        await upsert_origin_state(repo.id, polled_at=now, poll_status="unconfigured", poll_error=message,
+                                  **_FOLLOW_CLEARED)
         return {**report, "status": "unconfigured", "error": message}
 
     base: Dict[str, Any] = {"remote_url": spec.display_url, "tracked_branch": spec.branch, "polled_at": now}

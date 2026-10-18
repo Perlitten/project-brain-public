@@ -13,6 +13,7 @@ from sqlalchemy import or_, select
 
 from brain.config.settings import settings
 from brain.memory.freshness_envelope import EnvelopeState, freshness_envelope
+from brain.memory.source_manifest import revision_matches
 from brain.memory.source_overlay import SourceDelta, collect_source_delta, current_ranges, read_live_source
 from brain.context.budget import BudgetedPayloadBuilder, truncate_utf8
 from brain.context.evidence_support import should_abstain_for_unsupported_query
@@ -119,6 +120,15 @@ def _unsupported_domain_query(
     return should_abstain_for_unsupported_query(query, result.candidates, slices or [])
 
 
+def _mirror_verified(raw_freshness: dict[str, Any], status: str, indexed_revision: str | None) -> bool:
+    """True when the freshness verdict comes from the origin mirror and its head is the indexed commit."""
+    return (
+        status == "current"
+        and raw_freshness.get("index_source") == "mirror"
+        and revision_matches(raw_freshness.get("source_head_commit"), indexed_revision)
+    )
+
+
 async def _queue_auto_reindex(repo_path: str) -> str | None:
     """Queue a reindex in its worker pool, throttled per repo by a Redis SET NX EX lock.
 
@@ -207,10 +217,18 @@ class RuntimeContextBuilder:
             )
             return payload
 
-        delta = await asyncio.to_thread(
-            collect_source_delta, Path(repo_str), repo.get("indexed_revision"),
-            limit=settings.BRAIN_STALE_DIFF_MAX_FILES, timeout=settings.BRAIN_STALE_DIFF_TIMEOUT_S,
-        )
+        if _mirror_verified(raw_freshness, freshness, repo.get("indexed_revision")):
+            # The index was read from the origin mirror at exactly this commit,
+            # not from the registered root (a read-only checkout or a non-git
+            # snapshot such as a tar-deployed /app). A diff against that root
+            # proves nothing about the index and can never complete there.
+            delta = SourceDelta(head=raw_freshness.get("source_head_commit"), complete=True,
+                                source_present=True, reason="mirror_verified")
+        else:
+            delta = await asyncio.to_thread(
+                collect_source_delta, Path(repo_str), repo.get("indexed_revision"),
+                limit=settings.BRAIN_STALE_DIFF_MAX_FILES, timeout=settings.BRAIN_STALE_DIFF_TIMEOUT_S,
+            )
         unverified_diff = (delta.source_present and not delta.complete
                            and bool(re.fullmatch(r"[0-9a-fA-F]{40,64}", repo.get("indexed_revision") or "")))
         source_unavailable = freshness != "current" and not delta.source_present
