@@ -6,6 +6,47 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Fix two harness artefacts in the multi-user memory load e2e: on Windows,
+  `--api-workers N` starts one API process per port instead of
+  `uvicorn --workers`, whose lost `accept()` race froze a worker for 120 s; and
+  late-write checks compare on the database clock, so host/database clock skew
+  no longer flags writes the revoke already withdrew. Harness only (#159).
+- Make team concurrency safe: one global row-lock order, a deadlock-free member
+  revoke with bounded retries (503 + `Retry-After` when it gives up), a write
+  fence (`brain/team/write_fence.py`) so a write authorized before a revoke
+  cannot land after it, `lock_timeout` and `idle_in_transaction_session_timeout`
+  on team routes (`BRAIN_TEAM_LOCK_TIMEOUT_MS`, `BRAIN_TEAM_IDLE_TX_TIMEOUT_MS`),
+  an advisory lock instead of the `teams` row lock on invitation creation, a
+  throttled non-blocking `last_used_at` touch, and `harness:write` for members
+  (#157).
+- Add a multi-user team memory load e2e (`scripts/team_memory_load_e2e.py`,
+  [runbook](docs/runbooks/team-memory-load-e2e.md),
+  [report](docs/reports/team-memory-load-e2e-2026-10-18.md)) and fix the mock
+  embedder that mapped unrelated texts to near-duplicates (#155).
+- Make decision and rule compare-and-set atomic under concurrency: exactly one
+  writer wins per `expected_version`, blind writes form one history chain,
+  concurrent creates and CAS losers answer 409 instead of 500, and only one of
+  several proposals approved on the same base publishes. Revoking a member now
+  retires their personal learnings (`personal_retired`) (#156).
+- Close the M2 execution gaps: LLM provider consent and per-project budgets
+  (`BRAIN_EXECUTION_LLM_PROVIDERS`, `team_llm_consents`, `team_llm_budgets`,
+  `brain team execution consent|budget`), stored execution artifacts (logs,
+  reports, `final.patch`; `BRAIN_EXECUTION_ARTIFACT_MAX_BYTES`,
+  `BRAIN_EXECUTION_ARTIFACTS_MAX_BYTES`) and a CI job that runs the container
+  backend against a real Docker daemon; agent-chosen steps stay deferred (#154).
+- Move the offline CLIs to the shared workspace registry in team state, and
+  send review notices to every reviewer: an in-app inbox
+  (`GET /team/me/notifications`) and opt-in per-member Telegram
+  (`TEAM_MEMBER_TELEGRAM_NOTIFY`, default off) (#153).
+- Close the M3 coordination gaps: admin force-release of a lease (API, MCP
+  `team_force_release_lease`, `brain team coord force-release`),
+  graph-dependency overlap warnings, and a real combined-patch check at
+  integration (#152).
+- Check the team HTTPS front end to end (`scripts/team_proxy_check.py`, "Team
+  proxy" workflow) and fix what it found in `deploy/team/`: trusted proxy
+  addresses on a fixed edge network, a 25 MiB limit on chunked bodies,
+  `/health` and `/ready` hidden (404) without the server key, and dashboard
+  security headers (#151).
 - In team state, keep the workspace registry in PostgreSQL
   (`workspace_registry_entries`, `workspace_registry_events`) so the API, the
   worker and the workspace CLI share one trust. The API imports its registry
