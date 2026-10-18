@@ -19,12 +19,16 @@ import json
 import sys
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from brain.lab.laboratory import ChangeLaboratory
 from brain.lab.models import PatchRecord, PatchSource
 from brain.workspace.models import Capability
+from brain.team.cli_registry import load_registry
 from brain.workspace.registry_store import RegistryStore
+
+if TYPE_CHECKING:
+    from brain.team.registry import RegistrySnapshot
 
 
 def _print_json(data) -> None:
@@ -35,8 +39,9 @@ def _laboratory(brain_dir: Optional[str]) -> ChangeLaboratory:
     return ChangeLaboratory(Path(brain_dir) if brain_dir else Path(".brain"))
 
 
-def _registry(registry_dir: Optional[str]) -> RegistryStore:
-    return RegistryStore(Path(registry_dir) if registry_dir else Path(".brain/workspace"))
+def _registry(registry_dir: Optional[str]) -> RegistrySnapshot | RegistryStore:
+    """The shared registry table in team state, the local file otherwise (``brain.team.cli_registry``)."""
+    return load_registry(Path(registry_dir) if registry_dir else Path(".brain/workspace"))
 
 
 def _resolve_repository(args, required_capability: Capability):

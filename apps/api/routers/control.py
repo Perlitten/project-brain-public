@@ -10,9 +10,10 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from apps.api.auth import require_api_key, require_scope
+from apps.api.registry_access import workspace_registry
 from apps.api.team_access import team_administrator_access
 from brain.control.budgets import BudgetExceededError, BudgetUnknownError
-from brain.control.plane import ALLOWED_ACTIONS, ControlPlane
+from brain.control.plane import ALLOWED_ACTIONS, ControlPlane, RegistryReader
 
 router = APIRouter(
     prefix="/control",
@@ -26,14 +27,16 @@ router = APIRouter(
 TEAM_ADMIN = Depends(team_administrator_access())
 
 
-def _plane() -> ControlPlane:
-    return ControlPlane(Path(".brain"))
+def _plane(registry: RegistryReader | None = None) -> ControlPlane:
+    """The control plane over ``registry``: pass ``await workspace_registry()``, the registry every surface reads
+    (the local file in solo state, the shared table in team state)."""
+    return ControlPlane(Path(".brain"), registry=registry)
 
 
 @router.get("/summary", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def summary():
     """Combined operator summary across every v0.5.0 subsystem."""
-    return _plane().summary()
+    return _plane(await workspace_registry()).summary()
 
 
 @router.get("/queue", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
@@ -44,7 +47,7 @@ async def queue(
 ):
     if action_type and action_type not in ALLOWED_ACTIONS:
         raise HTTPException(status_code=400, detail=f"Unknown action type: {action_type}")
-    items = _plane().action_queue(repository_id=repository_id)
+    items = _plane(await workspace_registry()).action_queue(repository_id=repository_id)
     if action_type:
         items = [i for i in items if i["action_type"] == action_type]
     if max_priority:
@@ -63,14 +66,14 @@ async def allowed_actions():
 
 @router.get("/budgets", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def budgets():
-    return _plane().budgets()
+    return _plane(await workspace_registry()).budgets()
 
 
 @router.get("/budgets/{budget}/check", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def check_budget(budget: str, requested: int = Query(1, ge=1, le=1000)):
     """Fail-closed admission check. Refusal is a 409, not a soft warning."""
     try:
-        usage = _plane().check_budget(budget, requested)
+        usage = _plane(await workspace_registry()).check_budget(budget, requested)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Unknown budget: {budget}")
     except BudgetExceededError as exc:
@@ -82,9 +85,9 @@ async def check_budget(budget: str, requested: int = Query(1, ge=1, le=1000)):
 
 @router.get("/metrics", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def metrics():
-    return _plane().metrics()
+    return _plane(await workspace_registry()).metrics()
 
 
 @router.get("/health", dependencies=[Depends(require_scope("control:read")), TEAM_ADMIN])
 async def health():
-    return _plane().health()
+    return _plane(await workspace_registry()).health()

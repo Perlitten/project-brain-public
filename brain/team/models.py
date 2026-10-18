@@ -389,3 +389,41 @@ class WorkspaceRegistryEvent(Base):
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
     event: Mapped[dict] = mapped_column(JSON, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+
+
+class TeamNotification(Base):
+    """One in-app notification for one team member (``brain.team.notifications``), read on ``/team/me``.
+
+    Written when a memory proposal needs review, for every member who may
+    approve it. ``dedupe_key`` (``memory.review:<proposal id>``) makes the write
+    idempotent per recipient; each inbox is pruned to its newest rows. Plain
+    principal ids, no foreign keys, like ``team_activity_events``: a row may outlive
+    what it points at and never blocks a membership change."""
+    __tablename__ = "team_notifications"
+    __table_args__ = (UniqueConstraint("recipient_principal_id", "dedupe_key", name="uq_team_notification_dedupe"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    recipient_principal_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    proposal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+    read_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+
+
+class TeamTelegramLink(Base):
+    """A member's own Telegram chat for review notifications, linked self-service on ``/team/me``.
+
+    ``chat_id`` is set only after the member echoes back the one-time code the
+    bot sent to ``pending_chat_id``, so nobody can point notifications at a chat
+    they do not control. Only ``code_hash`` is stored, never the code."""
+    __tablename__ = "team_telegram_links"
+    principal_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    chat_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    linked_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    pending_chat_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    code_sent_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    code_expires_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

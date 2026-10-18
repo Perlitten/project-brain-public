@@ -20,7 +20,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List, NoReturn, Optional
+from typing import TYPE_CHECKING, List, NoReturn, Optional
 
 from brain.experiments.models import (
     Experiment,
@@ -33,7 +33,11 @@ from brain.experiments.orchestrator import ExperimentManager, ExperimentStore
 from brain.experiments.packaging import ExperimentPackager
 from brain.lab.laboratory import ChangeLaboratory
 from brain.workspace.models import Capability
+from brain.team.cli_registry import load_registry
 from brain.workspace.registry_store import RegistryStore
+
+if TYPE_CHECKING:
+    from brain.team.registry import RegistrySnapshot
 
 
 def _print_json(data) -> None:
@@ -56,8 +60,9 @@ def _manager(args) -> ExperimentManager:
     )
 
 
-def _registry(args) -> RegistryStore:
-    return RegistryStore(
+def _registry(args) -> RegistrySnapshot | RegistryStore:
+    """The shared registry table in team state, the local file otherwise (``brain.team.cli_registry``)."""
+    return load_registry(
         Path(args.registry_dir) if args.registry_dir else Path(".brain/workspace")
     )
 

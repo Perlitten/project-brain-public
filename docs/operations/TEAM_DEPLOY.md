@@ -342,6 +342,21 @@ does not change.
 - **After the import** the file stays on disk but is not read in team state. If the
   team is dissolved back to solo, Brain reads the file again, which may be older
   than the table.
+- **Offline CLIs.** `brain workspace` and the offline tools that read the registry
+  (`python -m brain.lab.cli`, `brain.freshness.cli`, `brain.experiments.cli`,
+  `brain.portfolio.cli`, `brain.control.cli`) check the team state on each run
+  (`brain.team.cli_registry`). In team state they read the shared table (and do
+  the one-time import of their own file while it is empty); in solo state, or with
+  Lite storage, they read the local file as before. `GET /control/*` reads the
+  same registry as the other API routes.
+- **Database down.** When the CLI cannot reach the team database it falls back to
+  the local file with a stderr warning (`solo/offline fallback`), so a solo Brain
+  without PostgreSQL keeps working. A team-state run leaves a marker,
+  `<registry dir>/team_state.json` (the API writes one in its own working directory
+  at startup); while that marker exists, or `BRAIN_TEAM_MODE` is on, an
+  unreachable database is an error (exit code 2) instead, because the file may be
+  stale. Start the database, or delete the marker only if the Brain is back to solo
+  use. A solo run with a reachable database removes the marker.
 
 ## Limits
 

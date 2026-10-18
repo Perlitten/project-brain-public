@@ -1,4 +1,5 @@
-"""``/team/me`` (who am I, what can I touch) and ``/team/activity`` (the shared team log).
+"""``/team/me`` (who am I, what can I touch), ``/team/activity`` (the shared team log), and the
+caller's own notifications inbox and Telegram link (``/team/me/notifications``, ``/team/me/telegram``).
 
 Both work in solo state, where the owner is a team of one and the implicit
 administrator of every repository. ``/team/activity`` computes what the caller
@@ -13,10 +14,14 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from apps.api import team_access
 from apps.api.auth import require_principal, require_scope
+from apps.api.routers.team import team_session
+from brain.alerts import telegram
 from brain.auth.principals import ALL_SCOPES, ResolvedPrincipal
 from brain.config.settings import settings
 from brain.database.models import Repository
@@ -26,6 +31,7 @@ from brain.team.activity import (DEFAULT_LIMIT, MAX_LIMIT, MAX_OFFSET, ActivityQ
                                  list_activity, parse_kinds)
 from brain.team.authorization import (FULL_AUTHORITY, ROLE_PERMISSIONS, Permission, TeamDenied, human_member,
                                       live_credential, require_team_storage)
+from brain.team import notifications
 from brain.team.models import AgentRun, ProjectMember, ProjectRepository, TeamMember, TeamProject
 
 router = APIRouter(prefix="/team", tags=["experimental-team"])
@@ -274,3 +280,117 @@ async def team_activity(
     page["scope"] = {"administrator": scope.administrator,
                      "repositories": "all" if scope.repository_ids is None else len(scope.repository_ids)}
     return page
+
+
+# The caller's own notifications inbox and Telegram link. Every route acts on the principal the
+# presented credential belongs to (``member_authority``): no request names another member.
+
+
+class TelegramLinkRequest(BaseModel):
+    chat_id: str = Field(min_length=1, max_length=32)
+
+
+class TelegramVerifyRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=16)
+
+
+async def _inbox_owner(principal: ResolvedPrincipal) -> int | None:
+    """The caller's principal id in team state (403 unless a live, verified human member); ``None`` in solo."""
+    authority = await team_access.member_authority(principal)
+    return None if authority.team_state == "solo" else authority.initiator_id
+
+
+@router.get("/me/notifications")
+async def my_notifications(principal: ResolvedPrincipal = Depends(require_principal),
+                           unread_only: bool = Query(False),
+                           limit: int = Query(50, ge=1, le=notifications.LIST_LIMIT)):
+    """The caller's newest notifications (memory proposals awaiting their review). Solo state: empty."""
+    owner = await _inbox_owner(principal)
+    if owner is None or settings.BRAIN_STORAGE_MODE != "full":
+        return {"notifications": [], "unread_count": 0, "team_state": "solo"}
+    async with team_access.async_session_factory() as session:
+        page = await notifications.list_notifications(session, owner, unread_only=unread_only, limit=limit)
+    page["team_state"] = "team"
+    return page
+
+
+@router.post("/me/notifications/read-all")
+async def read_all_my_notifications(principal: ResolvedPrincipal = Depends(require_principal),
+                                    session=Depends(team_session, scope="function")):
+    owner = await _inbox_owner(principal)
+    if owner is None:
+        return {"updated": 0}
+    return {"updated": await notifications.mark_all_read(session, owner)}
+
+
+@router.post("/me/notifications/{notification_id}/read")
+async def read_my_notification(notification_id: int, principal: ResolvedPrincipal = Depends(require_principal),
+                               session=Depends(team_session, scope="function")):
+    owner = await _inbox_owner(principal)
+    row = None if owner is None else await notifications.mark_read(session, owner, notification_id)
+    if row is None:
+        # Someone else's notification answers exactly like a missing one.
+        raise HTTPException(404, "Notification not found")
+    return notifications.notification_dict(row)
+
+
+@router.get("/me/telegram")
+async def my_telegram_link(principal: ResolvedPrincipal = Depends(require_principal)):
+    """Whether the caller's own chat is linked for review notices (the chat id is masked)."""
+    owner = await _inbox_owner(principal)
+    available = telegram.member_telegram_available()
+    if owner is None or settings.BRAIN_STORAGE_MODE != "full":
+        return {**notifications.telegram_link_dict(None, available=False), "team_state": "solo"}
+    async with team_access.async_session_factory() as session:
+        link = await notifications.get_telegram_link(session, owner)
+    return {**notifications.telegram_link_dict(link, available=available), "team_state": "team"}
+
+
+async def _team_owner(principal: ResolvedPrincipal) -> int:
+    owner = await _inbox_owner(principal)
+    if owner is None:
+        raise HTTPException(409, "Per-member Telegram links are for team state; solo uses TELEGRAM_ALERT_CHAT_ID")
+    return owner
+
+
+@router.post("/me/telegram", status_code=202)
+async def start_my_telegram_link(body: TelegramLinkRequest, principal: ResolvedPrincipal = Depends(require_principal)):
+    """Send a one-time code to ``chat_id``; the link takes effect once the caller types it back."""
+    owner = await _team_owner(principal)
+    if not telegram.member_telegram_available():
+        raise HTTPException(409, "Telegram review notices are not enabled on this Brain")
+    try:
+        async with team_access.async_session_factory() as session, session.begin():
+            link, code = await notifications.start_telegram_link(session, owner, body.chat_id)
+            pending_chat_id = link.pending_chat_id or ""
+            pending_hash = link.code_hash or ""
+    except notifications.TelegramLinkError as exc:
+        raise HTTPException(400, "Could not start the Telegram link. Use a numeric chat id and wait before retrying") from exc
+    sent = await telegram.deliver_member_link_code(chat_id=pending_chat_id, code=code)
+    if sent.get("status") != "sent":
+        # The short write transaction committed before network I/O. Clear only that code if delivery failed.
+        async with team_access.async_session_factory() as session, session.begin():
+            await notifications.cancel_telegram_link(session, owner, pending_hash)
+        raise HTTPException(502, "The bot could not send the code. Start a chat with the bot first, then retry")
+    return notifications.telegram_link_dict(link, available=True)
+
+
+@router.post("/me/telegram/verify")
+async def verify_my_telegram_link(body: TelegramVerifyRequest,
+                                  principal: ResolvedPrincipal = Depends(require_principal),
+                                  session=Depends(team_session, scope="function")):
+    owner = await _team_owner(principal)
+    try:
+        link = await notifications.verify_telegram_link(session, owner, body.code)
+    except notifications.TelegramLinkError:
+        # A response, not an exception: the failed attempt is committed, so attempts stay bounded.
+        return JSONResponse(status_code=400, content={
+            "detail": "That code is invalid, expired, or was tried too often. Ask for a new code if needed"})
+    return notifications.telegram_link_dict(link, available=telegram.member_telegram_available())
+
+
+@router.delete("/me/telegram")
+async def unlink_my_telegram(principal: ResolvedPrincipal = Depends(require_principal),
+                             session=Depends(team_session, scope="function")):
+    owner = await _team_owner(principal)
+    return {"unlinked": await notifications.unlink_telegram(session, owner)}
