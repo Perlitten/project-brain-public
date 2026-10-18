@@ -16,12 +16,17 @@ from brain.execution.bounded import SubprocessBackend, WorkingCopy, build_patch,
 from brain.team import execution, execution_llm
 from brain.team.authorization import TeamConflict, TeamDenied
 from brain.team.execution import ExecutionDenied
-from brain.team.models import AgentRun, AgentRunExecutionArtifact, TeamActivityEvent, TeamProject
+from brain.team.models import AgentRun, TeamActivityEvent, TeamProject
 from brain.team.provisioning import TeamNotFound
-from tests.test_team_execution import (  # noqa: F401  (pytest fixtures)
-    SECRET_VALUE, TOOLS, HookBackend, _all_rows_text, _git, caller, enabled, grant, make_run, payload, request,
-    source_repo, team_db)
 from brain.team.store import request_run
+from tests import test_team_execution as base
+from tests.test_team_execution import (
+    SECRET_VALUE, TOOLS, HookBackend, _all_rows_text, _git, caller, grant, make_run, payload, request)
+
+# Shared fixtures from the subprocess-backend suite (assigned, so pytest collects them here too).
+team_db = base.team_db
+source_repo = base.source_repo
+enabled = base.enabled
 
 PY = sys.executable
 PROVIDERS = {"openai": {"hosts": ["api.openai.com"], "models": ["gpt-fixture", "gpt-other"]},
