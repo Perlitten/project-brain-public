@@ -225,6 +225,8 @@ class AgentRunExecution(Base):
     egress: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     budget: Mapped[dict] = mapped_column(JSON, nullable=False)
     backend: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Operator execution environment (container backend); NULL for the subprocess backend.
+    environment: Mapped[str | None] = mapped_column(String(64), nullable=True)
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     fencing_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     lease_expires_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
