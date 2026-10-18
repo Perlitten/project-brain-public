@@ -8,7 +8,10 @@ workspace registry; then wave 4: a verified HTTPS front (#151), the M3
 leftovers (#152), offline CLIs on the shared registry and review notices for
 every reviewer (#153), the M2 leftovers (#154), a multi-user memory load e2e
 (#155), atomic decision/rule CAS (#156) and the team lock-order and write-fence
-fixes (#157)). Update this file in
+fixes (#157)); then the Windows e2e stall fix (#159), the wave 4 status
+(#160) and the administrator-read amendment to the ADR (#161); `main` is
+18fb9ea. Production has run `main` (b2e9be0) in solo state since 2026-10-18.
+Update this file in
 the same PR as any team-mode change; it is the one place that answers "what
 stage is team mode at". The contract is the [ADR](../adr/team-collaboration.md);
 the per-requirement evidence is the [foundations matrix](team-foundations.md).
@@ -27,8 +30,9 @@ graph-dependency overlap and a combined patch at integration. The **M4** write
 paths (decisions, rules, learnings, skills, consolidation) are governed by
 proposals and review, with atomic CAS (#156) and notices to every reviewer
 (#153). **M5** (doctor, cloud packaging) has an HTTPS front checked end to end
-(#151). Team mode is **not deployed** (production runs c13d056) and has **not
-been tried with real people**; green CI, the scripted
+(#151). Production runs `main` (b2e9be0) **in solo state** since 2026-10-18:
+no team has been formed there, and team mode has **not been tried with real
+people**; green CI, the scripted
 [team e2e check](../runbooks/team-e2e-check.md) and the
 [multi-user memory load test](#multi-user-memory-load-test-2026-10-18) are the
 only evidence so far, and the ADR says plainly that green CI is not team
@@ -39,7 +43,7 @@ readiness.
 | Stage | Scope | Status |
 |---|---|---|
 | M0 | Contract, permission/revocation semantics, coverage matrix | Done |
-| M1 | Verified identity, membership, centralized authorization, provisioning, invitations, restore fence | Implemented, including the invitation UI (#132), OIDC SSO (#139, #144), one repository authority (#141, #149) and concurrency hardening: one global lock order, deadlock-free revoke, write fence, bounded team transactions (#157); not deployed |
+| M1 | Verified identity, membership, centralized authorization, provisioning, invitations, restore fence | Implemented, including the invitation UI (#132), OIDC SSO (#139, #144), one repository authority (#141, #149) and concurrency hardening: one global lock order, deadlock-free revoke, write fence, bounded team transactions (#157); deployed in solo state 2026-10-18 (no members) |
 | M2 | Bounded real executors, tool/secret/egress/budget capabilities, revocation checkpoints | Off by default: grants, leases with fencing, subprocess and container backends, execution environments, egress proxy (#136, #143, #147); LLM provider consent and budget, execution artifacts and a real-docker CI job (#154). Deferred: agent-chosen steps ([rationale](../operations/TEAM_EXECUTION.md#why-agent-chosen-steps-are-deferred)) |
 | M3 | Subtasks, coordinator, overlap detection, integration queue | Subtask DAG, declared-scope and changed-files overlap warnings, instruction versions, fenced leases, integration queue, MCP coordination writes (#142, #146, #147); admin force-release (API, MCP, CLI), graph-dependency overlap warnings and a real combined patch at integration (#152). Coordination does not merge or push |
 | M4 | Governed versioned memory, independent review | Write paths governed: provenance and CAS (#129); member decisions and rules become proposals with a review queue and a personal learnings tier (#137); member learnings and skills, consolidation and G4 episodes go through proposals; nobody approves their own (#145, #148); review notices to every reviewer (#153); atomic decision/rule CAS and retired learnings of revoked members (#156) |
@@ -341,7 +345,7 @@ Remaining observation: at 12×50, latency is about 1.5× the first run's. The
 likely cause is the write fence's three extra indexed reads per write
 transaction plus load on the test machine; it has not been profiled.
 
-## Known gaps (checked against `main` ca4b727 on 2026-10-18)
+## Known gaps (checked against `main` 18fb9ea on 2026-10-18)
 
 Closed since the 2026-10-17 snapshot: SSO (#139, #144), invitation UI (#132),
 per-process throttle (#133), `brain/workspace` and `brain/team` as two models
@@ -355,20 +359,25 @@ file (#153); review notices only to the owner (#153); a revoked member's
 personal learnings kept readable (#156); decision CAS lost updates and 500s on
 CAS and create races (#156); revocation and onboarding deadlocks, writes in
 flight after a revoke, the `teams` row convoy and members without
-`harness:write` (#157). Still open:
+`harness:write` (#157). Closed on 2026-10-18: production running a release
+from before team mode (`main` b2e9be0 deployed in solo state) and the open
+owner decision on administrator reads (the ADR now records the implemented
+boundary, #161). Still open:
 
-- **Not deployed.** Production still runs c13d056, a release from before team
-  mode.
+- **Deployed in solo state only.** Production runs b2e9be0 with no team
+  members. The team path (invite, sign-in with a key and with SSO, revoke) has
+  not been run on the deployed host, and production does not use the
+  `deploy/team/` Caddy overlay.
 - **Not exercised end to end with people**: no pilot yet (M6 needs humans);
   production upgrade/restore, external identities and secrets are untested. The
   scripted e2e check (#138), the proxy check (#151) and the memory load test
   (#155) drive throwaway Docker stacks, not real users.
-- **Admin read scope needs an owner decision.** [TEAM.md](../TEAM.md) says a
-  team administrator without a project role reads every project's memory
-  (decision and rule lists, and the Brain-wide episode, learning and skill
-  lists), but the [ADR permission matrix](../adr/team-collaboration.md#permission-matrix)
-  says "Only with project membership". Behaviour and ADR were deliberately left
-  unchanged in #157; one of them has to move.
+- **Administrator reads are broad by design.** A team administrator without a
+  project role reads every project's memory through the unscoped lists
+  (decisions, rules, and the Brain-wide episodes, learnings and skills). The
+  owner kept this boundary, and #161 amended the
+  [ADR](../adr/team-collaboration.md#team-administrator-reads) to match the
+  code; a scoped request for an attached repository still needs a project role.
 - **M2 execution:**
   - steps are a fixed operator list; agent-chosen steps are deferred
     ([rationale](../operations/TEAM_EXECUTION.md#why-agent-chosen-steps-are-deferred));
@@ -388,9 +397,9 @@ flight after a revoke, the `teams` row convoy and members without
     lock, so it is not serialized against concurrent rule writes;
   - duplicate decision versions written before #156 are not detected or
     repaired, and members revoked before #156 keep `personal` learnings until
-    someone retires them. Production (c13d056) has neither decision versions
-    nor team members, so this only affects a database that ran an earlier
-    `main` (see [Deploy implications](#deploy-implications));
+    someone retires them. Production went from c13d056 straight to b2e9be0
+    (after #156) and has no team members, so this only affects a database
+    that ran an earlier `main` (see [Deploy implications](#deploy-implications));
   - without `BRAIN_LOCAL_PRINCIPAL_KEY` the local MCP and CLI act as the
     operator.
 - **Workspace registry:** until the API has imported its file, a team-state
@@ -415,7 +424,9 @@ flight after a revoke, the `teams` row convoy and members without
 
 ## Deploy implications
 
-Everything below applies to the first deployment of `main` after c13d056. The
+Everything below applies to the first deployment of `main` after c13d056.
+Production took the solo step on 2026-10-18 (b2e9be0); the notes still apply
+to the team step there and to any other host upgrading from c13d056. The
 solo step is in [solo-deploy-c13d056-to-main.md](../release/solo-deploy-c13d056-to-main.md);
 the team step in [TEAM_DEPLOY.md](../operations/TEAM_DEPLOY.md).
 
@@ -468,7 +479,7 @@ instead.
 
 **Learnings of members revoked before #156.** Revocation retires personal
 learnings only from #156 on; there is no script or CLI for members revoked
-earlier. Production (c13d056) has no team tables, members or personal tier, so
+earlier. Production never ran a `main` before #156 and has no team members, so
 there is nothing to retire there. On any other database that ran an earlier
 `main` with revoked members, retire them by hand once: set `status` to
 `personal_retired` on `memory_learnings` rows with `status = 'personal'` whose
@@ -501,14 +512,14 @@ against the candidate and `brain team doctor` on the host.
 
 ## Next steps, in order
 
-1. Deploy `main` to production in solo state (registry copied out and back),
-   only after the owner's explicit go-ahead, and confirm nothing changed for
-   the owner.
-2. Run the one-time retire for members revoked before #156 on any database
-   that has them ([above](#deploy-implications)); production has no team
-   members yet, so there it is a check that finds nothing.
-3. Add one real member on one project and walk the invite → sign-in (key and
-   SSO) → revoke path on the deployed host.
-4. Get the owner's decision on admin read scope (TEAM.md versus the ADR
-   permission matrix) and align the code or the ADR.
-5. Run the M6 pilot with 3–5 people on two projects.
+Done on 2026-10-18: `main` deployed to production in solo state, with the
+owner's go-ahead and no change for the owner; the retire check for members
+revoked before #156 (production has never had members); the owner's decision
+on administrator reads (#161).
+
+1. Add one real member on one project and walk the invite → sign-in (key and
+   SSO) → revoke path on the deployed host. The first accepted invitation
+   switches the host to team state, which refuses the shared server key with
+   `Named credential required`, so the owner needs their own `pbk_` key for
+   the dashboard and their agents first.
+2. Run the M6 pilot with 3–5 people on two projects.
