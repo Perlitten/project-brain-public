@@ -39,6 +39,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_memory_authorship_columns(conn)
     await _ensure_team_dissolved_column(conn)
     await _ensure_team_invitation_oidc_columns(conn)
+    await _ensure_execution_environment_column(conn)
     await _ensure_team_identity_session_column(conn)
     await _backfill_non_current_knowledge_authority(conn)
     await _ensure_insights_table(conn)
@@ -275,6 +276,17 @@ async def _ensure_team_invitation_oidc_columns(conn: AsyncConnection) -> None:
         for column in columns:
             await conn.execute(text(
                 f"ALTER TABLE IF EXISTS team_invitations ADD COLUMN IF NOT EXISTS {column} VARCHAR(255)"))
+
+
+async def _ensure_execution_environment_column(conn: AsyncConnection) -> None:
+    """A bounded execution records the operator environment (image + tools) it runs in (container backend)."""
+    if conn.dialect.name == "sqlite":
+        existing = (await conn.execute(text("PRAGMA table_info(agent_run_executions)"))).fetchall()
+        if existing and "environment" not in {row[1] for row in existing}:
+            await conn.execute(text("ALTER TABLE agent_run_executions ADD COLUMN environment VARCHAR(64)"))
+    else:
+        await conn.execute(text(
+            "ALTER TABLE IF EXISTS harness.agent_run_executions ADD COLUMN IF NOT EXISTS environment VARCHAR(64)"))
 
 
 async def _ensure_team_identity_session_column(conn: AsyncConnection) -> None:

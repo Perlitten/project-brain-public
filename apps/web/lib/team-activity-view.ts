@@ -43,6 +43,10 @@ export const ACTIVITY_KINDS: Record<string, string[]> = {
   task: ["task.created"],
   run: ["run.requested"],
   job: ["job.queued"],
+  coordination: [
+    "coordination.overlap", "coordination.integration_queued", "coordination.integrated", "coordination.needs_rebase",
+    "coordination.stale_instructions", "coordination.integration_rejected",
+  ],
 };
 const KNOWN_KINDS = new Set([...Object.keys(ACTIVITY_KINDS), ...Object.values(ACTIVITY_KINDS).flat()]);
 export const ACTIVITY_PAGE_SIZE = 50;

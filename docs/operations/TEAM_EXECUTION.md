@@ -1,14 +1,22 @@
-# Bounded team execution (M2, first slice)
+# Bounded team execution (M2)
 
 **Experimental preview, `main` only, full storage only, off by default.** This
 page is the operator reference for running allowlisted tools on behalf of a team
 run. Design and acceptance matrix: [team foundations](../design/team-foundations.md#m2-bounded-execution-first-slice);
 decision record: [ADR](../adr/team-collaboration.md).
 
-The subprocess backend shipped here is **not a security boundary**. It gives every
-run its own clone and a stripped environment, but a tool still runs as the server
-user, can read what that user can read, and can open network connections. Enable it
-only for tools you would let any granted member run on the Brain host.
+Two executor backends share one interface, one authority model and one evidence
+format (`BRAIN_EXECUTION_BACKEND`):
+
+- **`subprocess`** (default) is **not a security boundary**. It gives every run its
+  own clone and a stripped environment, but a tool still runs as the server user,
+  can read what that user can read, and can open network connections. Enable it only
+  for tools you would let any granted member run on the Brain host.
+- **`container`** runs every step in a fresh, hardened Docker container from an
+  operator-named execution environment: no network by default, read-only root, only
+  the working copy mounted, secrets as read-only files, non-root, no capabilities,
+  resource limits. Egress, when granted, goes only through an allowlisting proxy.
+  See [Container backend](#container-backend) for what it does and does not contain.
 
 ## What a run can do
 
@@ -21,9 +29,14 @@ secret references. Brain:
    out the task's base SHA on the run's own branch and removes the `origin` remote;
 2. before every step, re-checks the lease, cancellation, the whole authority chain
    and the wall-clock budget, then runs the tool without a shell, with the working
-   copy as `cwd`, a minimal environment, a timeout and an output cap;
+   copy as `cwd`, a minimal environment, a timeout and an output cap (with the
+   container backend: inside a container, with the working copy at `/workspace`);
 3. records each step (argv, exit code, duration, output SHA-256, redacted excerpt)
-   and the final base/head SHAs as `run.execution.*` events in the task ledger.
+   and the final base/head SHAs as `run.execution.*` events in the task ledger. The
+   `run.execution.started` event also records the backend, the environment (name,
+   image reference, pinned image ID, repository digests) and the egress profile
+   (`none`, or `allowlist` with its hosts); each container step records its
+   container name, network and the secret references mounted.
 
 Nothing is pushed, merged or published. The working copy stays on disk for review.
 
@@ -44,9 +57,12 @@ Every layer below is required. Anything missing denies.
    Budget ceilings (defaults in brackets): `BRAIN_EXECUTION_MAX_WALL_SECONDS` [900],
    `BRAIN_EXECUTION_MAX_STEPS` [20], `BRAIN_EXECUTION_STEP_TIMEOUT_SECONDS` [300],
    `BRAIN_EXECUTION_MAX_OUTPUT_BYTES` [65536], `BRAIN_EXECUTION_LEASE_SECONDS` [60].
-   `BRAIN_EXECUTION_EGRESS` is a comma-separated destination allowlist (default none);
-   it has no effect with the subprocess backend, which refuses every egress request.
-   The source repository must be under the allowed repository roots.
+   `BRAIN_EXECUTION_EGRESS` is a comma-separated destination allowlist of `host` or
+   `host:port` entries (default none); the subprocess backend refuses every egress
+   request, the container backend enforces it through the
+   [egress proxy](#egress-deny-by-default). The source repository must be under the
+   allowed repository roots. For the container backend see also
+   [its settings](#container-backend).
 
 2. **Project policy** must include `execute`. Projects created without
    `--permission` allow every permission; a project created with an explicit list
@@ -80,12 +96,15 @@ Every layer below is required. Anything missing denies.
 POST /team/projects/{project}/tasks/{task}/runs/{run}/execution
 {"idempotency_key": "ci-lint-0001",
  "steps": [{"tool": "ruff", "args": ["brain"]}, {"tool": "tests", "secrets": ["pypi"]}],
- "tools": ["ruff", "tests"], "secret_refs": ["pypi"], "egress": [],
+ "tools": ["ruff", "tests"], "secret_refs": ["pypi"], "egress": [], "environment": "python",
  "budget": {"wall_seconds": 600, "steps": 2, "step_timeout_seconds": 300, "output_bytes": 65536}}
 ```
 
 `tools`, `secret_refs` and `budget` default to what the steps need and the operator
-ceilings. Only the principal that requested the run may request its execution. The
+ceilings. `environment` is required with the container backend (an unknown name, a
+tool the environment does not allow, or an environment sent to the subprocess
+backend is denied) and is part of the stored capabilities: a child run must use its
+parent's environment. Only the principal that requested the run may request its execution. The
 request is committed, then queued as the `team_run_execution` job. Replaying the same
 key and content returns the same record; different content under the same run
 conflicts (request a new run instead).
@@ -107,10 +126,14 @@ scopes, task binding, repository link, delegation chain) ∩ the run's stored
 capabilities ∩ each parent run's stored capabilities ∩ the operator allowlists.
 
 - **Capabilities are data.** Each execution stores its tool allowlist, secret
-  references (never values), egress allowlist and budget. A child run can only
-  narrow its parent's; a parent without an execution record grants nothing.
-- **Secrets** are resolved from the server environment at step start and passed as
-  `BRAIN_SECRET_<REF>` to that step only. Values never enter the database, API
+  references (never values), egress allowlist, environment, backend and budget. A
+  child run can only narrow its parent's; a parent without an execution record grants
+  nothing. If the operator switches the backend after a request, the run is revoked
+  before its first step ("The executor backend changed since the request").
+- **Secrets** are resolved from the server environment at step start and given to
+  that step only: with the subprocess backend as `BRAIN_SECRET_<REF>`, with the
+  container backend as read-only files `$BRAIN_SECRETS_DIR/<ref>` (never environment
+  variables or argv), removed after the step. Values never enter the database, API
   responses or step logs; output containing them is redacted. Tools inherit no other
   server variable except `PATH` (and Windows basics).
 - **Arguments** are refused for tools without `allow_args`. Allowed arguments are
@@ -121,7 +144,7 @@ capabilities ∩ each parent run's stored capabilities ∩ the operator allowlis
 - **Revocation checkpoints.** Revoking a grant, credential, membership or run, or
   removing `execute` from the policy, is seen at the next checkpoint. During a
   running step the probe re-checks every third of the lease interval (0.2 to 5 s) and
-  terminates the process group. The terminal event says honestly what was in flight:
+  terminates the process group (the container backend first kills the container). The terminal event says honestly what was in flight:
   `finished_unrecorded` (the step ran but could not be recorded), `terminated`, or
   `unknown` (the owner disappeared).
 - **Lease and fencing.** One worker owns an execution through a lease with a
@@ -129,17 +152,134 @@ capabilities ∩ each parent run's stored capabilities ∩ the operator allowlis
   owner whose lease expired cannot commit anything. On worker start (and before
   each execution) expired leases are fenced: the token is bumped, the run is released
   and marked `fenced`, and it is never resumed. `brain team execution recover` does
-  the same by hand.
+  the same by hand. With the container backend, recovery on worker start also removes
+  every container and network labelled `brain.execution.run=<run id>`.
 - **One status machine.** The only state is the run's `run.execution.*` events in
   `harness.agent_task_events`; the execution row holds request, capabilities and the
   lease, not a status column.
+
+## Container backend
+
+```bash
+BRAIN_EXECUTION_BACKEND=container
+BRAIN_EXECUTION_TOOLS='{"tests": {"argv": ["python", "-m", "pytest", "-q"]},
+                        "ruff": {"argv": ["ruff", "check"], "allow_args": true}}'
+BRAIN_EXECUTION_ENVIRONMENTS='{"python": {"image": "registry.example/brain-exec-python:3.12",
+                                          "tools": ["tests", "ruff"],
+                                          "cpus": "2", "memory": "2g", "pids": 512}}'
+```
+
+An **execution environment** names an image and the subset of
+`BRAIN_EXECUTION_TOOLS` allowed in it (`cpus`, `memory` and `pids` optionally
+override the defaults below). Tool `argv` is resolved inside the image. Every
+execution must name one environment; an unknown environment is denied at request
+time. At the start of a run the image is pinned by ID (`docker image inspect`); it is
+never pulled (`--pull never`), so pre-pull it on the executor host. A missing image
+fails the run in the `environment` phase before any step.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `BRAIN_EXECUTION_BACKEND` | `subprocess` | `subprocess` or `container` |
+| `BRAIN_EXECUTION_ENVIRONMENTS` | `{}` | JSON: name -> `{"image", "tools", "cpus"?, "memory"?, "pids"?}` |
+| `BRAIN_EXECUTION_DOCKER` | `docker` | docker CLI executable |
+| `BRAIN_EXECUTION_CONTAINER_USER` | worker `uid:gid` (else `65534:65534`) | numeric, non-root `uid[:gid]` |
+| `BRAIN_EXECUTION_CONTAINER_CPUS` | `1` | `--cpus` |
+| `BRAIN_EXECUTION_CONTAINER_MEMORY` | `1g` | `--memory` and `--memory-swap` (no swap) |
+| `BRAIN_EXECUTION_CONTAINER_PIDS` | `256` | `--pids-limit` |
+| `BRAIN_EXECUTION_CONTAINER_TMPFS` | `256m` | size of the `/tmp` tmpfs |
+| `BRAIN_EXECUTION_EGRESS_PROXY_IMAGE` | empty | image for the egress proxy; empty = egress refused |
+| `BRAIN_EXECUTION_EGRESS_UPSTREAM_NETWORK` | `bridge` | network the proxy uses to reach the internet |
+
+Each step runs as:
+
+```text
+docker run --rm --init --name brain-exec-<run>-s<NNN> --network none
+  --pull never --read-only --tmpfs /tmp:rw,nosuid,nodev,size=<tmpfs>
+  --user <uid:gid> --cap-drop ALL --security-opt no-new-privileges
+  --label brain.execution.run=<run> --env HOME=/tmp ...
+  --mount type=bind,source=<root>/<run>/repo,target=/workspace --workdir /workspace
+  --cpus <n> --memory <m> --memory-swap <m> --pids-limit <p> --log-driver none
+  [--mount type=bind,source=<root>/<run>/secrets/step-<NNN>,target=/run/brain-secrets,readonly
+   --env BRAIN_SECRETS_DIR=/run/brain-secrets]
+  --entrypoint <argv[0]> <image id> <argv[1:]...>
+```
+
+The docker CLI inherits only the variables it needs to reach the daemon
+(`DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`, TLS paths, `HOME`, `PATH`). The
+container is killed and removed on timeout, on a failed revocation checkpoint and
+after every step.
+
+After a step has run, the working copy's `.git` is untrusted (hooks,
+`core.fsmonitor` or filter drivers would execute on the host), so the final head is
+read by `git status` **inside** a network-less, read-only container from the same
+image. Environment images therefore need `git`.
+
+### Egress: deny by default
+
+Without egress the step has `--network none`. A run whose capabilities hold an
+egress allowlist (requested `egress`, within `BRAIN_EXECUTION_EGRESS`) instead gets:
+
+1. a per-run Docker network created with `--internal` (no route out), labelled with
+   the run;
+2. a sidecar proxy on that network with alias `brain-egress:3128`, started from
+   `BRAIN_EXECUTION_EGRESS_PROXY_IMAGE` as
+   `python -m brain.execution.egress --allow host:port ...` (hardened like a step),
+   and additionally connected to `BRAIN_EXECUTION_EGRESS_UPSTREAM_NETWORK`;
+3. `HTTP_PROXY` / `HTTPS_PROXY` (and lower-case forms) pointing at the proxy in every
+   step container, with `NO_PROXY` empty.
+
+The proxy (`brain/execution/egress.py`, standard library only) accepts
+`CONNECT host:port` and absolute-form `http://` requests, nothing else. A destination
+is allowed only when the host is listed exactly (no wildcards) with that port, or is
+listed without a port and the request is for 80/443. It resolves names itself and
+refuses a name that resolves to any non-global address (loopback, private,
+link-local such as cloud metadata); IP literals listed explicitly are allowed. It
+connects only to addresses it checked, and logs one JSON line per decision
+(`docker logs brain-egress-<run>` while the run is alive). The step's own DNS does
+not work on the internal network, so tools must use the proxy. The network and the
+proxy are removed when the run ends.
+
+`BRAIN_EXECUTION_EGRESS_PROXY_IMAGE` must contain the `brain` package (normally the
+Brain image itself). Prefer a dedicated upstream network to one shared with Brain's
+databases: the proxy refuses private destinations, but defence in depth is cheap.
+
+### Deployment notes
+
+- **Docker access is root-equivalent.** The worker needs the docker CLI and a daemon
+  socket (or `DOCKER_HOST`). Anyone who controls the worker controls the host. Run the
+  executor on a dedicated host or worker if you can.
+- **Paths must match.** The daemon bind-mounts `<BRAIN_EXECUTION_ROOT>/<run>/repo` by
+  path, so `BRAIN_EXECUTION_ROOT` must be the same path on the daemon host and in the
+  worker (when the worker itself runs in a container, mount it at the identical
+  path). A remote daemon that cannot see that path makes every step fail.
+- **File ownership.** Secret files are written `0400` by the worker user. The
+  container user must be able to read them and write the working copy: keep the
+  default (the worker's own `uid:gid`) or set `BRAIN_EXECUTION_CONTAINER_USER` to a
+  user that owns `BRAIN_EXECUTION_ROOT`.
+- **Cleanup.** Every container and network carries `brain.execution.run=<run id>`;
+  `docker ps --all --filter label=brain.execution.run` finds leftovers, and worker
+  start-up recovery removes those of fenced runs.
+- **Configuration health.** `brain.team.execution.execution_config_health()` returns
+  a pure, docker-free description of the execution configuration (backend,
+  environments, whether egress is enforced, missing secret variables) for
+  diagnostics such as `brain doctor`.
 
 ## Known limits
 
 - The subprocess backend is not containment: no filesystem, process or network
   isolation beyond a separate clone, `cwd` and environment. Proxy variables point at
-  a dead address, which only stops tools that honour them.
-- Egress cannot be enforced, so any non-empty egress request is refused.
+  a dead address, which only stops tools that honour them. It refuses any egress.
+- The container backend shares the host kernel: it is hardening, not a VM. A kernel
+  or runtime escape defeats it; for hostile code use a dedicated executor host, or a
+  sandboxed runtime (such as gVisor) as the daemon's default runtime.
+- Egress control is by destination name and port at the proxy. It does not inspect
+  TLS, so an allowed host can carry any traffic, and data can leave through any
+  allowed destination.
+- Images are pinned by ID per run, but environments name images by tag in settings;
+  re-tagging an image changes what new runs get (the evidence records the ID).
+- No CI job runs the container backend against a real daemon: the suite asserts the
+  exact docker argv with a fake CLI, and a real-daemon test runs only where Docker and
+  the test image are available.
 - Steps are a fixed list chosen at request time; no agent decides the next step.
 - Effects outside the working copy (network calls, files the server user can write)
   cannot be recalled or made idempotent.
@@ -148,15 +288,14 @@ capabilities ∩ each parent run's stored capabilities ∩ the operator allowlis
 
 ## What remains of M2
 
-- A container backend (no network, read-only root, mounted secrets, resource
-  limits) behind the same `ExecutorBackend` interface, and real egress enforcement.
-- Named execution environments (images, toolchains) instead of host tools.
 - Provider egress consent and an LLM token/cost budget for agent-driven runs.
 - Agent-driven dynamic steps (an agent proposing the next tool call within the
   stored capabilities).
 - Artifact upload/retention for working copies and logs, and cleanup policy.
 - External-effect idempotency (deduplicating side effects outside the clone).
-- `brain doctor` reporting for execution configuration and orphaned runs.
+- `brain doctor` reporting for execution configuration and orphaned runs (the pure
+  `execution_config_health()` is there to build on).
+- A CI job running the container backend against a real Docker daemon.
 - PostgreSQL concurrency tests for leases and fencing.
 - Dashboard UI and MCP tools for requesting and inspecting executions.
 - Resuming a fenced run from its last recorded step (today: request a new run).

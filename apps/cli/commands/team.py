@@ -477,3 +477,99 @@ def recover_execution_cmd():
         return {"fenced": await execution.recover_orphaned_runs(async_session_factory)}
 
     _emit(_run(run()))
+
+
+_DOCTOR_LABELS = {"pass": ("PASS", typer.colors.GREEN), "warn": ("WARN", typer.colors.YELLOW),
+                  "fail": ("FAIL", typer.colors.RED), "unknown": ("UNKNOWN", typer.colors.BRIGHT_BLACK)}
+
+
+@team_cli.command(name="doctor")
+def doctor_cmd(as_json: bool = typer.Option(False, "--json", help="Print the report as JSON.")):
+    """Read-only team diagnostics: state, auth, revocations, fence, leases, execution, sources, backups.
+
+    Exits 1 when any check fails. Works while the restore fence keeps the API closed."""
+    from brain.team import doctor
+
+    async def run():
+        async with async_session_factory() as session:
+            return doctor.summary(await doctor.run_checks(session))
+
+    report = _run(run())
+    if as_json:
+        _emit(report)
+    else:
+        for check in report["checks"]:
+            label, color = _DOCTOR_LABELS[check["status"]]
+            typer.secho(f"[{label}] {check['name']}: {check['message']}", fg=color)
+            if check["hint"] and check["status"] != "pass":
+                typer.echo(f"    fix: {check['hint']}")
+        counts = report["counts"]
+        typer.echo(f"{report['status'].upper()}: {counts['pass']} pass, {counts['warn']} warn, "
+                   f"{counts['fail']} fail, {counts['unknown']} unknown")
+    if report["status"] == "fail":
+        raise typer.Exit(code=1)
+
+
+coord_cli = typer.Typer(help="Team coordination (M3): subtask plans, scope overlaps, leases and the integration "
+                             "queue. Read-only; members change them through the API. See docs/TEAM.md.")
+team_cli.add_typer(coord_cli, name="coord")
+
+
+@coord_cli.command(name="plan")
+def coord_plan_cmd(project: str = typer.Option(..., "--project", help="Project id or name."),
+                   task: str = typer.Option(..., "--task", help="Parent task id.")):
+    """Show a task's subtasks with dependency states and the subtasks ready to run."""
+    from brain.team import coordination
+    from brain.team.authorization import TeamDenied
+
+    async def run():
+        async with async_session_factory() as session:
+            target = await provisioning.resolve_project(session, project)
+            try:
+                return await coordination.plan_view(session, target.id, uuid.UUID(task))
+            except (TeamDenied, ValueError) as exc:
+                raise TeamNotFound("Task not found in this project") from exc
+
+    _emit(_run(run()))
+
+
+@coord_cli.command(name="overlaps")
+def coord_overlaps_cmd(project: str = typer.Option(..., "--project", help="Project id or name."),
+                       repository: Optional[int] = typer.Option(None, "--repository", help="Repository id.")):
+    """List declared-scope overlaps among active tasks and with live leases."""
+    from brain.team import coordination
+
+    async def run():
+        async with async_session_factory() as session:
+            target = await provisioning.resolve_project(session, project)
+            return await coordination.overlaps_view(session, target.id, repository)
+
+    _emit(_run(run()))
+
+
+@coord_cli.command(name="leases")
+def coord_leases_cmd(project: str = typer.Option(..., "--project", help="Project id or name."),
+                     include_inactive: bool = typer.Option(False, "--all", help="Include released and expired leases.")):
+    """List critical leases with their holders and fencing tokens."""
+    from brain.team import coordination
+
+    async def run():
+        async with async_session_factory() as session:
+            target = await provisioning.resolve_project(session, project)
+            return await coordination.leases_view(session, target.id, include_inactive=include_inactive)
+
+    _emit(_run(run()))
+
+
+@coord_cli.command(name="queue")
+def coord_queue_cmd(project: str = typer.Option(..., "--project", help="Project id or name."),
+                    include_done: bool = typer.Option(False, "--all", help="Include integrated and rejected entries.")):
+    """List the integration queue in order."""
+    from brain.team import coordination
+
+    async def run():
+        async with async_session_factory() as session:
+            target = await provisioning.resolve_project(session, project)
+            return await coordination.queue_view(session, target.id, include_done=include_done)
+
+    _emit(_run(run()))
