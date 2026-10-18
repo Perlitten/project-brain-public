@@ -11,7 +11,7 @@ The files live in `deploy/team/`:
 | File | What it is |
 |---|---|
 | `docker-compose.team.yml` | Overlay on `deploy/docker-compose.prod.yml`: `caddy` (TLS on 80/443), `web` (dashboard), `worker-executor` (profile `executor`), and API/worker settings for HTTPS, backups and execution. |
-| `Caddyfile` | Two sites: `BRAIN_WEB_DOMAIN` -> dashboard, `BRAIN_API_DOMAIN` -> API and remote MCP. Caddy obtains and renews certificates itself. |
+| `Caddyfile` | Two sites: `BRAIN_WEB_DOMAIN` -> dashboard, `BRAIN_API_DOMAIN` -> API and remote MCP. Caddy obtains and renews certificates itself. See [The HTTPS front](#the-https-front). |
 | `.env.team.example` | The settings this page adds, with placeholders only. |
 
 ```text
@@ -19,6 +19,9 @@ internet --443--> caddy --> web:3100 (dashboard)  --> api:8000
                         \-> api:8000 (API, /mcp)       |-> postgres, redis, neo4j (internal only)
                                                        '-> worker, or worker-executor (profile executor)
 ```
+
+`caddy`, `web` and the API share a private `edge` network; the datastores stay
+on the default network, which `caddy` and `web` never join.
 
 ## Before you start
 
@@ -77,12 +80,73 @@ internet --443--> caddy --> web:3100 (dashboard)  --> api:8000
    the API to be ready. The first start can take a minute while Caddy gets the
    certificates.
 
-4. Check it: `https://<BRAIN_WEB_DOMAIN>` shows the dashboard sign-in and
-   `https://<BRAIN_API_DOMAIN>/health` answers with `"mode": "solo"`.
+4. Check it: `https://<BRAIN_WEB_DOMAIN>` shows the dashboard sign-in, and on
+   the host `curl http://127.0.0.1:8010/health` (or `BRAIN_API_PORT`) answers
+   with `"mode": "solo"`. Through Caddy `/health` and `/ready` answer only a
+   team administrator's key (the server key while solo):
+   `curl -H "X-API-Key: <key>" https://<BRAIN_API_DOMAIN>/health`. Without
+   one they are 404.
 
 Later commands in this page use the containers by name (`docker exec
 brain-api ...`), which needs no compose arguments. Never stop or remove
 containers by pattern on a shared host.
+
+## The HTTPS front
+
+`deploy/team/Caddyfile` is the only thing listening on the internet. What it
+does, and why:
+
+- **Client addresses.** Caddy replaces any `X-Forwarded-For` a visitor sends
+  with the address it sees. The overlay pins `caddy` and `web` to fixed
+  addresses on the `edge` network (`BRAIN_CADDY_IP`, `BRAIN_WEB_IP` in
+  `BRAIN_EDGE_SUBNET`) and sets the API's `BRAIN_TRUSTED_PROXY_IPS` to exactly
+  those two, so the invitation and single sign-on throttles count each visitor
+  separately instead of everyone sharing caddy's address (where ten bad
+  attempts by one person locked invitations for everybody for five minutes).
+  The overlay sets `BRAIN_TRUSTED_PROXY_IPS` itself: a value in `.env` does
+  not apply. If `172.31.250.0/24` is already used on the host, change all
+  three `BRAIN_EDGE_*`/`BRAIN_*_IP` values together.
+- **Health.** `/health` and `/ready` on the API name describe repositories,
+  workers and versions. Caddy asks the API's admin-only
+  `/api/status/diagnostics` first and answers 404 unless the request carries a
+  team administrator's key. `server_up.sh` and the compose health checks call
+  the API directly on the host or in its container and are unaffected.
+- **Body size.** Requests over 25 MiB are refused with 413 on both names, the
+  same limit as the API's `API_MAX_REQUEST_BODY_BYTES`. The API itself checks
+  only a declared `Content-Length`; Caddy also stops chunked bodies.
+- **Security headers.** The API sets its own (HSTS with `includeSubDomains`,
+  `nosniff`, `X-Frame-Options`, referrer and permissions policies). Caddy adds
+  the same set to answers that lack them, mainly the dashboard's, and never
+  replaces a header the app chose (for example `no-referrer` on `/invite`).
+- **Single sign-on and cookies.** The overlay sets `BRAIN_WEB_URL` to
+  `https://<BRAIN_WEB_DOMAIN>`, so the callback the provider is told is https;
+  the dashboard marks its cookies `Secure` because Caddy tells it the visitor
+  used https.
+- **Streaming.** Remote MCP answers are passed on unbuffered.
+- **Unknown names.** Port 80 only redirects to https. A TLS handshake for a
+  name Caddy has no certificate for fails; a known name with another `Host`
+  header gets an empty answer and reaches neither the API nor the dashboard.
+
+### Checking the HTTPS front
+
+`scripts/team_proxy_check.py` builds the API and dashboard images from the
+checkout and starts the real production compose file, this overlay and a
+test-only override (`deploy/team-proxy-check/`) under the project name
+`brain-proxycheck`: throwaway Postgres and Redis, no Neo4j, no published ports
+or bind mounts, and the real Caddyfile with Caddy's local certificate
+authority instead of ACME. Two outside clients and one container on the edge
+network then check everything listed above and the stack is removed. It needs
+Docker with Compose 2.24.4 or later and Python 3.10+ (standard library only):
+
+```bash
+python3 scripts/team_proxy_check.py              # about 3 minutes with a build
+python3 scripts/team_proxy_check.py --no-build   # reuse the images from the last run
+python3 scripts/team_proxy_check.py --keep       # leave the stack up to inspect it
+```
+
+Use `--build-network host` if image builds cannot reach the package mirrors
+(some WSL engines). The **Team proxy** workflow runs the same script on pull
+requests that touch the front, the overlay or the code it checks.
 
 ## First administrator and the team
 
@@ -286,4 +350,6 @@ does not change.
   and no egress control.
 - The dashboard keeps member sessions sealed with `PROJECT_BRAIN_API_KEY`;
   rotating it signs everyone out.
+- Caddy does no rate limiting of its own: only the API's invitation and single
+  sign-on throttles, per visitor address, limit repeated attempts.
 - Not piloted: no real team has run this package yet.

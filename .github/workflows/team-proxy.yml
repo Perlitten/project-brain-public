@@ -1,0 +1,53 @@
+name: Team proxy
+
+# The team deployment's HTTPS front, end to end: the real Caddyfile (local
+# certificates instead of ACME) in front of the API and the dashboard, built
+# from this checkout, with throwaway Postgres and Redis. Asserts health gating,
+# trusted client addresses, https single sign-on redirects, secure cookies,
+# the body limit and unknown names. Runs locally too:
+#   python3 scripts/team_proxy_check.py
+# See docs/operations/TEAM_DEPLOY.md#checking-the-https-front.
+on:
+  pull_request:
+    paths: &paths
+      - .github/workflows/team-proxy.yml
+      - scripts/team_proxy_check.py
+      - deploy/team/**
+      - deploy/team-proxy-check/**
+      - deploy/docker-compose.prod.yml
+      - Dockerfile
+      - apps/web/Dockerfile
+      - apps/web/proxy.ts
+      - apps/web/lib/client-address.ts
+      - apps/web/lib/oidc.ts
+      - apps/web/lib/web-auth.ts
+      - apps/web/lib/invitations.ts
+      - apps/web/lib/invite-*.ts
+      - apps/web/lib/login-page.ts
+      - apps/api/main.py
+      - apps/api/invitation_throttle.py
+      - apps/api/routers/team_invitations.py
+      - apps/api/routers/team_oidc.py
+      - apps/api/routers/core_status.py
+      - brain/team/oidc.py
+      - brain/config/settings.py
+  push:
+    branches: [main]
+    paths: *paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: team-proxy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  team-proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the HTTPS front in throwaway containers
+        run: python3 scripts/team_proxy_check.py
