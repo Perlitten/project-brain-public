@@ -78,6 +78,10 @@ class Settings(BaseSettings):
 
     # Orchestration API (scheduler, GitHub Actions, external triggers)
     PROJECT_BRAIN_API_KEY: Optional[str] = None
+    # Local surfaces (stdio MCP server, `brain` CLI) act as the operator by default: direct,
+    # unattributed memory writes. A named pbk_ credential here makes them act as that principal
+    # instead, under the same team-state governance as the HTTP API (docs/MEMORY_REVIEW.md).
+    BRAIN_LOCAL_PRINCIPAL_KEY: Optional[str] = None
     # Comma-separated addresses or CIDRs of proxies (the web dashboard and any
     # reverse proxy in front of the API) whose X-Forwarded-For the invitation
     # and single sign-on throttles believe. Empty: the socket peer is the client.
@@ -496,6 +500,8 @@ class Settings(BaseSettings):
     TELEGRAM_ALERT_CHAT_ID: Optional[str] = None
     TELEGRAM_ALERT_COOLDOWN_SECONDS: int = 24 * 60 * 60
     TELEGRAM_ALERT_TIMEOUT_S: float = 20.0
+    # Opt-in: tell the owner chat when a memory proposal awaits review (no draft content is sent).
+    MEMORY_REVIEW_TELEGRAM_NOTIFY: bool = False
     BRAIN_TELEGRAM_DEFAULT_REPO: Optional[str] = None
 
     # Web dashboard sign-in, managed from its Settings screen (apps/api/routers/web_login.py).

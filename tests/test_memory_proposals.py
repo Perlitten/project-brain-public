@@ -10,11 +10,19 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
+from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import func, select, update
+from typer.testing import CliRunner
 
-from apps.api import auth, team_access
+from apps.api import auth, local_memory, team_access
 from apps.api.routers import core_memory, memory_review, team_me
+from apps.cli.commands import decision as decision_cmd
+from apps.cli.commands import rules as rules_cmd
+from apps.cli.main import cli
+from apps.mcp_server import remote_server
+from apps.mcp_server import server as stdio_server
 from apps.mcp_server.protocol import only_active
+from brain.config.settings import settings
 from brain.context import context_pack_builder
 from brain.context.runtime_context_builder import RuntimeContextBuilder
 from brain.database.models import Decision, Learning, MemoryEpisode, MemoryProposal, MemorySkill, Principal, Rule
@@ -165,7 +173,7 @@ async def test_stale_versions_get_409_and_never_publish(team_db, monkeypatch):
 
         stale = await client.post(f"/memory/proposals/{first['proposal_id']}/approve",
                                   json={"expected_version": 2}, headers=REVIEWER)
-        assert stale.status_code == 409
+        assert stale.status_code == 409, stale.text
         assert (await client.post(f"/memory/proposals/{first['proposal_id']}/approve",
                                   json={"expected_version": 1}, headers=REVIEWER)).status_code == 200
         # Deciding twice is a conflict, not a second write.
@@ -468,3 +476,200 @@ async def test_personal_and_draft_memory_never_reach_other_members(team_db, monk
         assert "seed queue data" in str(await runtime_memory()).lower()
         # The personal note is still the author's alone.
         assert private.json()["learning_id"] not in {item["id"] for item in found}
+
+
+def local_key(monkeypatch, headers) -> None:
+    """Run the local surfaces (stdio MCP, CLI) as the credential behind ``headers``."""
+    monkeypatch.setattr(settings, "BRAIN_LOCAL_PRINCIPAL_KEY", headers["X-API-Key"] if headers else "")
+
+
+@pytest.mark.asyncio
+async def test_local_surfaces_follow_team_governance_as_the_configured_principal(team_db, monkeypatch):
+    factory, _, _ = team_db
+    review_app(factory, monkeypatch)
+
+    # A contributor's key: the stdio tools file proposals exactly like POST /decisions and /rules.
+    local_key(monkeypatch, CONTRIBUTOR)
+    made = await stdio_server.record_decision(title="Use one queue", repo_path=REPO, description="synthetic")
+    ruled = await stdio_server.record_rule(name="No blocking IO", repo_path=REPO, description="synthetic")
+    assert made["status"] == "proposed" and ruled["status"] == "proposed"
+    assert await count(factory, Decision) == 0 and await count(factory, Rule) == 0
+    assert (await proposal_row(factory, made["proposal_id"])).author_principal_id == 2
+    # Bulk operator commands (rules sync, decision deprecate, import) write directly: refused.
+    with pytest.raises(local_memory.LocalPrincipalError, match="team administrator"):
+        await local_memory.require_local_administrator("rules sync")
+
+    # A Reader may not propose; a key that does not resolve fails closed instead of acting as the operator.
+    local_key(monkeypatch, READER)
+    assert (await stdio_server.record_decision(title="Reader", repo_path=REPO))["status"] == "denied"
+    local_key(monkeypatch, {"X-API-Key": "pbk_not_a_credential"})
+    unknown = await stdio_server.record_rule(name="Unknown", repo_path=REPO)
+    assert unknown["status"] == "denied" and "does not resolve" in unknown["error"]
+    with pytest.raises(local_memory.LocalPrincipalError):
+        await local_memory.require_local_administrator("rules sync")
+    # The shared key is not a team identity once the team has members.
+    monkeypatch.setattr(settings, "PROJECT_BRAIN_API_KEY", "synthetic-shared-key")
+    local_key(monkeypatch, {"X-API-Key": "synthetic-shared-key"})
+    shared = await stdio_server.record_decision(title="Shared", repo_path=REPO)
+    assert shared["status"] == "denied" and "named credential" in shared["error"]
+
+    # A team administrator's key writes directly, attributed, and may run bulk commands.
+    local_key(monkeypatch, ADMIN)
+    direct = await stdio_server.record_decision(title="Admin direct", repo_path=None, description="synthetic")
+    assert direct["status"] == "success"
+    await local_memory.require_local_administrator("rules sync")
+    # Attributed to the key's principal: an operator write would be unattributed.
+    async with factory() as session:
+        stored = (await session.execute(select(Decision))).scalar_one()
+    assert (stored.title, stored.author_principal_id) == ("Admin direct", 4)
+
+
+@pytest.mark.asyncio
+async def test_local_principal_in_solo_state_writes_directly(team_db, monkeypatch):
+    factory, _, _ = team_db
+    review_app(factory, monkeypatch)
+    await revoke_everyone(factory)
+    local_key(monkeypatch, CONTRIBUTOR)
+    made = await stdio_server.record_decision(title="Use one queue", repo_path=REPO, description="synthetic")
+    assert made["status"] == "success"
+    await local_memory.require_local_administrator("rules sync")
+    assert await count(factory, Decision) == 1 and await count(factory, MemoryProposal) == 0
+    # No key: the local surfaces are the operator and the governed path is not taken at all.
+    local_key(monkeypatch, None)
+    assert await local_memory.local_write("decision", {"title": "Operator"}) is None
+    assert await local_memory.local_principal() is None
+
+
+@pytest.mark.asyncio
+async def test_member_key_over_remote_and_native_mcp_cannot_bypass_review(team_db, monkeypatch):
+    """Remote MCP and native /mcp call the API with the caller's own key: a member's write is a proposal."""
+    factory, _, _ = team_db
+    app = review_app(factory, monkeypatch)
+    monkeypatch.setattr(remote_server, "_asgi_app", app)  # what apps/api/mcp_http.py installs
+    caller = {"key": CONTRIBUTOR["X-API-Key"]}
+    monkeypatch.setattr(remote_server, "_caller_credential", lambda: caller["key"])
+
+    made = await remote_server.record_decision(title="Use one queue", repo_path=REPO, description="synthetic")
+    ruled = await remote_server.record_rule(name="No blocking IO", repo_path=REPO, description="synthetic")
+    assert made["status"] == "proposed" and ruled["status"] == "proposed"
+    assert await count(factory, Decision) == 0 and await count(factory, Rule) == 0
+    assert {(await proposal_row(factory, body["proposal_id"])).author_principal_id for body in (made, ruled)} == {2}
+
+    caller["key"] = READER["X-API-Key"]
+    with pytest.raises(ToolError, match="HTTP 403"):
+        await remote_server.record_decision(title="Reader", repo_path=REPO)
+    caller["key"] = ADMIN["X-API-Key"]
+    assert (await remote_server.record_decision(title="Admin direct", repo_path=None))["status"] == "success"
+    assert await count(factory, Decision) == 1
+
+
+def test_cli_writes_as_the_local_principal_and_refuses_bulk_commands(monkeypatch):
+    runner = CliRunner()
+    operator_add = AsyncMock(side_effect=AssertionError("the operator store must not be reached"))
+    monkeypatch.setattr(decision_cmd.DecisionStore, "add_decision", operator_add)
+    monkeypatch.setattr(rules_cmd.RuleStore, "add_rule", operator_add, raising=False)
+    monkeypatch.setattr(rules_cmd.RuleStore, "record_rule", operator_add, raising=False)
+    sync = AsyncMock(side_effect=AssertionError("refused before any write"))
+    monkeypatch.setattr(rules_cmd.RuleStore, "sync_rules_from_yaml", sync)
+    monkeypatch.setattr(settings, "BRAIN_LOCAL_PRINCIPAL_KEY", "pbk_synthetic_member")
+    governed = AsyncMock(return_value={"status": "proposed", "proposal_id": 9, "version": 1})
+    monkeypatch.setattr(local_memory, "local_write", governed)
+
+    added = runner.invoke(cli, ["decision", "add", "Use one queue", "--desc", "synthetic"])
+    assert added.exit_code == 0, added.output
+    assert "proposal #9" in added.output and "not approved knowledge" in added.output
+    assert governed.await_args.args[0] == "decision" and governed.await_args.args[1]["title"] == "Use one queue"
+    ruled = runner.invoke(cli, ["rules", "add", "No blocking IO", "--repo", REPO])
+    assert ruled.exit_code == 0 and governed.await_args.args[0] == "rule"
+
+    monkeypatch.setattr(local_memory, "local_write",
+                        AsyncMock(return_value={"status": "denied", "error": "Reader cannot propose"}))
+    denied = runner.invoke(cli, ["decision", "add", "Reader"])
+    assert denied.exit_code == 1 and "Reader cannot propose" in denied.output
+    operator_add.assert_not_awaited()
+
+    monkeypatch.setattr(local_memory, "require_local_administrator",
+                        AsyncMock(side_effect=local_memory.LocalPrincipalError("rules sync needs a team administrator")))
+    refused = runner.invoke(cli, ["rules", "sync", "rules.yaml"])
+    assert refused.exit_code == 1 and "needs a team administrator" in refused.output
+    sync.assert_not_awaited()
+
+
+async def consolidated_g4_proposal(factory, *, evidence_authors, author=None) -> MemoryProposal:
+    """A team-state G4 escalation as _persist_cluster files it: a ``proposed`` episode plus its learning proposal."""
+    async with factory() as session, session.begin():
+        episode = MemoryEpisode(source_event_ids=[1, 2], distilled_summary="Queue workers must be idempotent",
+                                topic="infra", status="proposed", confidence=0.9, repo_scope=REPO,
+                                gate_reasons=["G4: high severity needs a human"])
+        session.add(episode)
+        await session.flush()
+        evidence = [{"event_id": i, **({"author_principal_id": who} if who else {})}
+                    for i, who in enumerate(evidence_authors, start=1)]
+        row = await proposals.add_consolidated_learning_proposal(
+            session, statement="Queue workers must be idempotent", category="infra", confidence=0.9,
+            evidence=evidence, repo_path=REPO, requested_repo_path=REPO, author_principal_id=author,
+            episode_id=episode.id, supersedes=[], severity="high", suggested_target="learning",
+            evidence_tier="validated", approval_reason="G4: high severity needs a human")
+    return row
+
+
+@pytest.mark.asyncio
+async def test_g4_consolidation_proposals_need_a_reviewer_independent_of_the_evidence(team_db, monkeypatch):
+    factory, _, _ = team_db
+    await learning_table(factory)
+    app = review_app(factory, monkeypatch)
+    # Unattributed and the Reviewer's own evidence mixed: filed by the system (no author).
+    own = await consolidated_g4_proposal(factory, evidence_authors=[3, None])
+    assert own.author_principal_id is None
+    assert own.payload["gate"] == "G4" and own.payload["approval_reason"].startswith("G4:")
+    other = await consolidated_g4_proposal(factory, evidence_authors=[2, None])
+    async with client_for(app) as client:
+        queue = (await client.get("/memory/proposals", params={"repo_path": REPO}, headers=REVIEWER)).json()
+        assert sorted(p["id"] for p in queue["proposals"]) == [own.id, other.id]
+        for verb in ("approve", "reject"):
+            refused = await client.post(f"/memory/proposals/{own.id}/{verb}", json={"expected_version": 1},
+                                        headers=REVIEWER)
+            assert refused.status_code == 403 and "your own evidence" in refused.json()["detail"]
+        # Someone else's evidence: the project's Reviewer decides it, with the usual compare-and-swap.
+        stale = await client.post(f"/memory/proposals/{other.id}/approve", json={"expected_version": 2},
+                                  headers=REVIEWER)
+        assert stale.status_code == 409, stale.text
+        approved = await client.post(f"/memory/proposals/{other.id}/approve",
+                                     json={"expected_version": 1, "reason": "reproduced"}, headers=REVIEWER)
+        assert approved.status_code == 200, approved.text
+    async with factory() as session:
+        learning = (await session.execute(select(Learning))).scalar_one()
+        promoted = await session.get(MemoryEpisode, int(other.payload["episode_id"]))
+        waiting = await session.get(MemoryEpisode, int(own.payload["episode_id"]))
+    assert learning.status == "active" and learning.approved_by_principal_id == 3
+    assert learning.author_principal_id is None
+    assert promoted.status == "promoted" and promoted.promoted_to_learning_id == learning.id
+    assert waiting.status == "proposed"
+
+    # The episode is decided in the queue only: the legacy episode endpoint refuses it.
+    second = await consolidated_g4_proposal(factory, evidence_authors=[2, 2], author=2)
+    from brain.memory.consolidation import EpisodeStateError, approve_episode
+
+    monkeypatch.setattr("brain.memory.consolidation.async_session_factory", factory)
+    with pytest.raises(EpisodeStateError, match="review queue"):
+        await approve_episode(int(second.payload["episode_id"]), "ok", principal_id=3, team_state="team")
+
+
+@pytest.mark.asyncio
+async def test_new_proposals_notify_reviewers_without_draft_content(team_db, monkeypatch):
+    factory, _, _ = team_db
+    app = review_app(factory, monkeypatch)
+    deliver = AsyncMock(return_value={"status": "sent"})
+    monkeypatch.setattr("brain.alerts.telegram.deliver_memory_proposal_notice", deliver)
+    async with client_for(app) as client:
+        assert (await client.post("/decisions", json=decision("Secret title"), headers=CONTRIBUTOR)).status_code == 202
+        deliver.assert_not_awaited()  # off by default
+        monkeypatch.setattr(settings, "MEMORY_REVIEW_TELEGRAM_NOTIFY", True)
+        made = await client.post("/rules", json=rule("Secret rule"), headers=CONTRIBUTOR)
+        assert made.status_code == 202
+        # A failing channel never fails the submission.
+        deliver.side_effect = RuntimeError("telegram is down")
+        assert (await client.post("/decisions", json=decision("Another"), headers=CONTRIBUTOR)).status_code == 202
+    first = deliver.await_args_list[0]
+    assert first.kwargs == {"proposal_id": made.json()["proposal_id"], "kind": "rule", "repo_path": REPO}
+    assert "Secret" not in repr(deliver.await_args_list)
