@@ -731,11 +731,12 @@ def _need_docker(*images: str) -> None:
 
 
 def _real_settings(**kwargs) -> ContainerSettings:
-    # Steps write to a bind-mounted working copy owned by this process, so they run as this uid where it is
-    # not root (the default 1000:1000 matches a typical developer machine only).
+    # Steps write to the bind-mounted working copy and read secret files this process created (mode 0600), so
+    # they run as this process's uid, as in production where BRAIN_EXECUTION_CONTAINER_USER is the worker's uid.
     uid = os.getuid() if hasattr(os, "getuid") else 0
-    user = f"{uid}:{os.getgid()}" if uid else "1000:1000"
-    return ContainerSettings(user=user, **kwargs)
+    if not uid:
+        _skip("the real-docker tests run as a non-root user (steps run as the caller's uid, never root)")
+    return ContainerSettings(user=f"{uid}:{os.getgid()}", **kwargs)
 
 
 def _check_bind_mounts(copy) -> None:
