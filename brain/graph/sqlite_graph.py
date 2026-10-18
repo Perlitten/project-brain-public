@@ -229,6 +229,25 @@ class SQLiteGraphClient:
             return output
         return await asyncio.to_thread(read)
 
+    async def get_import_neighbors(self, name_or_path, limit):
+        def read():
+            nodes, edges = self.driver._snapshot(self.repository_id)
+            seeds = {node_id for node_id, node in nodes.items()
+                     if "File" in node.labels and (node.get("name") == name_or_path or node.get("path") == name_or_path)}
+            output = []
+            for source, target, rel, props in edges:
+                if rel != "IMPORTS":
+                    continue
+                for seed, other in ((source, target), (target, source)):
+                    if seed in seeds and "File" in nodes[other].labels:
+                        output.append({"source": {"labels": list(nodes[seed].labels), "properties": dict(nodes[seed])},
+                            "relationship": {"type": rel, "properties": json.loads(props)},
+                            "target": {"labels": list(nodes[other].labels), "properties": dict(nodes[other])}})
+                        if len(output) >= limit:
+                            return output
+            return output
+        return await asyncio.to_thread(read)
+
     async def purge_repository(self):
         def write():
             with self.driver.connection() as db:

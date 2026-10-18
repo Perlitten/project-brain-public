@@ -63,6 +63,12 @@ async def test_graph_client_methods():
         assert neighbors[0]["relationship"]["type"] == "IMPORTS"
         assert neighbors[0]["target"]["properties"]["name"] == "b.py"
 
+        neighbors = await client.get_import_neighbors("a.py", 65)
+        assert len(neighbors) == 1
+        query = mock_session.run.await_args.args[0]
+        assert "[r:IMPORTS]" in query and "(m:File)" in query and "LIMIT $limit" in query
+        assert mock_session.run.await_args.kwargs["limit"] == 65
+
         # Test clear_graph
         await client.clear_graph()
         assert mock_session.run.called

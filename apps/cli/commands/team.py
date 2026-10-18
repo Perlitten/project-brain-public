@@ -479,6 +479,116 @@ def recover_execution_cmd():
     _emit(_run(run()))
 
 
+llm_consent_cli = typer.Typer(help="Team administrator consent for executions that send repository content to an "
+                                   "LLM provider (BRAIN_EXECUTION_LLM_PROVIDERS).")
+execution_cli.add_typer(llm_consent_cli, name="consent")
+llm_budget_cli = typer.Typer(help="Per-project LLM token/cost budget for executions (required in team state).")
+execution_cli.add_typer(llm_budget_cli, name="budget")
+
+
+@llm_consent_cli.command(name="grant")
+def grant_llm_consent_cmd(
+    project: str = typer.Option(..., "--project", help="Project id or name."),
+    provider: str = typer.Option(..., "--provider", help="Provider name from BRAIN_EXECUTION_LLM_PROVIDERS."),
+    model: str = typer.Option("*", "--model", help="One model, or * for any model the provider allows."),
+):
+    """Record consent; executions on this project may then declare this provider and model."""
+    from brain.team import execution, execution_llm
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            target = await provisioning.resolve_project(session, project)
+            row = await execution_llm.set_consent(session, target.id, provider, model, CLI_OPERATOR,
+                                                  providers=execution.operator_policy().llm_providers)
+            return execution_llm.consent_dict(row)
+
+    _emit(_run(run()))
+
+
+@llm_consent_cli.command(name="revoke")
+def revoke_llm_consent_cmd(
+    project: str = typer.Option(..., "--project", help="Project id or name."),
+    provider: str = typer.Option(..., "--provider", help="Provider name."),
+    model: str = typer.Option("*", "--model", help="The model the consent names (* by default)."),
+):
+    """Revoke consent; running executions that rely on it stop at their next checkpoint."""
+    from brain.team import execution_llm
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            target = await provisioning.resolve_project(session, project)
+            row = await execution_llm.revoke_consent(session, target.id, provider, model, CLI_OPERATOR)
+            return execution_llm.consent_dict(row)
+
+    _emit(_run(run()))
+
+
+@llm_consent_cli.command(name="list")
+def list_llm_consent_cmd(project: str = typer.Option(..., "--project", help="Project id or name.")):
+    """List LLM consents on a project, including revoked ones."""
+    from brain.team import execution_llm
+
+    async def run():
+        async with async_session_factory() as session:
+            target = await provisioning.resolve_project(session, project)
+            return await execution_llm.list_consents(session, target.id)
+
+    _emit(_run(run()))
+
+
+@llm_budget_cli.command(name="set")
+def set_llm_budget_cmd(
+    project: str = typer.Option(..., "--project", help="Project id or name."),
+    period: str = typer.Option("month", "--period", help="month (UTC calendar month) or total."),
+    max_tokens: Optional[int] = typer.Option(None, "--max-tokens", help="Project token limit."),
+    max_cost_cents: Optional[int] = typer.Option(None, "--max-cost-cents", help="Project cost limit in cents."),
+    per_member_max_tokens: Optional[int] = typer.Option(None, "--per-member-max-tokens",
+                                                        help="Token limit per initiating member."),
+    per_member_max_cost_cents: Optional[int] = typer.Option(None, "--per-member-max-cost-cents",
+                                                            help="Cost limit per initiating member, in cents."),
+):
+    """Set (replace) the project's LLM budget; omitted limits are unlimited."""
+    from brain.team import execution_llm
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            target = await provisioning.resolve_project(session, project)
+            await execution_llm.set_budget(session, target.id, CLI_OPERATOR, period=period, max_tokens=max_tokens,
+                                           max_cost_cents=max_cost_cents,
+                                           per_member_max_tokens=per_member_max_tokens,
+                                           per_member_max_cost_cents=per_member_max_cost_cents)
+            return await execution_llm.budget_report(session, target.id)
+
+    _emit(_run(run()))
+
+
+@llm_budget_cli.command(name="clear")
+def clear_llm_budget_cmd(project: str = typer.Option(..., "--project", help="Project id or name.")):
+    """Remove the budget; in team state that stops new LLM use on the project."""
+    from brain.team import execution_llm
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            target = await provisioning.resolve_project(session, project)
+            await execution_llm.clear_budget(session, target.id, CLI_OPERATOR)
+            return await execution_llm.budget_report(session, target.id)
+
+    _emit(_run(run()))
+
+
+@llm_budget_cli.command(name="show")
+def show_llm_budget_cmd(project: str = typer.Option(..., "--project", help="Project id or name.")):
+    """Show the budget and what the project's executions reserved in the current period."""
+    from brain.team import execution_llm
+
+    async def run():
+        async with async_session_factory() as session:
+            target = await provisioning.resolve_project(session, project)
+            return await execution_llm.budget_report(session, target.id)
+
+    _emit(_run(run()))
+
+
 _DOCTOR_LABELS = {"pass": ("PASS", typer.colors.GREEN), "warn": ("WARN", typer.colors.YELLOW),
                   "fail": ("FAIL", typer.colors.RED), "unknown": ("UNKNOWN", typer.colors.BRIGHT_BLACK)}
 
@@ -511,7 +621,8 @@ def doctor_cmd(as_json: bool = typer.Option(False, "--json", help="Print the rep
 
 
 coord_cli = typer.Typer(help="Team coordination (M3): subtask plans, scope overlaps, leases and the integration "
-                             "queue. Read-only; members change them through the API. See docs/TEAM.md.")
+                             "queue. Read-only except force-release; members change them through the API. "
+                             "See docs/TEAM.md.")
 team_cli.add_typer(coord_cli, name="coord")
 
 
@@ -571,5 +682,24 @@ def coord_queue_cmd(project: str = typer.Option(..., "--project", help="Project 
         async with async_session_factory() as session:
             target = await provisioning.resolve_project(session, project)
             return await coordination.queue_view(session, target.id, include_done=include_done)
+
+    _emit(_run(run()))
+
+
+@coord_cli.command(name="force-release")
+def coord_force_release_cmd(project: str = typer.Option(..., "--project", help="Project id or name."),
+                            lease: int = typer.Option(..., "--lease", help="Lease id (see `team coord leases`)."),
+                            reason: str = typer.Option(..., "--reason", help="Why the lease is released (recorded)."),
+                            fencing_token: Optional[int] = typer.Option(
+                                None, "--fencing-token", help="Refuse unless the lease still has this token.")):
+    """Release someone's lease as the server operator; the reason goes to the activity feed."""
+    from brain.team import coordination
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            target = await provisioning.resolve_project(session, project)
+            return await coordination.operator_force_release_lease(
+                session, target.id, lease, {"reason": reason, "fencing_token": fencing_token},
+                actor_label=CLI_OPERATOR)
 
     _emit(_run(run()))

@@ -38,6 +38,7 @@ from brain.database.models import Repository
 from brain.database.repository_utils import find_repository_id
 from brain.team import provisioning
 from brain.team import registry as shared
+from brain.team.cli_registry import mark_team_state
 from brain.team.authorization import (Authority, Permission, TeamConflict, TeamDenied, administrator, fresh,
                                       live_credential, team_administrator)
 from brain.team.models import ProjectRepository, TeamProject
@@ -79,9 +80,13 @@ async def import_registry_file_at_startup() -> None:
     """In team state, import this process's legacy registry file into the shared table (once, while it is empty).
 
     Every team-state read does the same on first use; running it at startup
-    puts the import (and its log line) next to the deploy that triggers it."""
+    puts the import (and its log line) next to the deploy that triggers it. It
+    also leaves the team-state marker, so an offline CLI run in this working
+    directory refuses the local file while the database is down
+    (``brain.team.cli_registry``)."""
     if await team_access.current_team_state() != "solo":
         await shared.ensure_legacy_imported(team_access.async_session_factory, REGISTRY_DIR)
+        mark_team_state(REGISTRY_DIR)
 
 
 def _actor(principal: ResolvedPrincipal) -> str:

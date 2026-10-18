@@ -164,6 +164,40 @@ its kind and the repository's name, never the title, statement or other draft
 text. The push is best effort and bounded (at most 5 seconds): a slow or
 failing channel never fails or delays the submission.
 
+**Reviewer inbox (team state).** Once a proposal is committed, every member who
+may approve it gets one in-app notification, listed on the dashboard
+**Settings → Me** page and at `GET /team/me/notifications`
+(`?unread_only=true`, `limit` up to 100; the response carries `unread_count`).
+Recipients follow the approval rule: a proposal on a repository attached to a
+project goes to that project's live, verified human Reviewers (when the project
+policy allows `knowledge.approve`); a system-global proposal, or one on a
+repository attached to no project, goes to the team administrators. The author
+and, for consolidation proposals, whoever supplied the evidence are left out.
+The check is about membership: a reviewer whose current key lacks the
+`team:knowledge.approve` scope is still told, and the queue still refuses the
+decision. Each notification names the proposal number, its kind and the
+repository name, and shows the proposal's current state; there is no draft
+text. One row per proposal and recipient (a repeated call adds nothing), at
+most 100 recipients per proposal, and each inbox keeps its newest 500 rows.
+`POST /team/me/notifications/{id}/read` and `POST /team/me/notifications/read-all`
+mark the caller's own rows; another member's id answers 404 like a missing one.
+Solo state writes no notifications and returns an empty inbox.
+
+**Telegram per member (opt-in).** With `TEAM_MEMBER_TELEGRAM_NOTIFY=true`
+(default `false`) and a bot token (`TELEGRAM_ALERT_BOT_TOKEN`), a member can
+link their own chat on **Settings → Me**: `POST /team/me/telegram`
+`{"chat_id": "123456789"}` makes the bot send a 6-digit code to that chat
+(valid 10 minutes, one request a minute), and `POST /team/me/telegram/verify`
+`{"code": "…"}` links it; five wrong tries void the code. `GET /team/me/telegram`
+shows the link with the chat id masked, and `DELETE /team/me/telegram` removes
+it. Every route acts on the caller's own principal, so no member can set or read
+another member's chat. Linked recipients then also get
+`📝 Memory proposal #7 awaits your review` / `Decision in my-service` (and the
+review link when `BRAIN_WEB_URL` is set). The push runs after the inbox rows
+are committed, concurrently and bounded (5 seconds; 10 for the whole
+notification step), and never fails the submission. The owner-chat notice above
+is unchanged and independent.
+
 ## Revoked authors
 
 - Revoking a member's team membership (`brain team member revoke`, the Team
@@ -271,8 +305,8 @@ memory on one person's word:
   review, not a security boundary against the operator.
 - Solo state keeps G4 episodes on `GET /episodes?status=pending` and
   `POST /episodes/{id}/approve`, as before.
-- Review notifications go only to the owner's Telegram chat; there is no
-  per-reviewer channel yet.
+- Review notifications are in-app and Telegram only: there is no e-mail or
+  webhook channel, and a member's Telegram link needs the numeric chat id.
 - A personal learning written after a member's revocation committed (a
   request that was already in flight) is not retired: it stays `personal`,
   readable only by that principal, who has no access while revoked.

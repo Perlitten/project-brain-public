@@ -20,6 +20,7 @@ _NEUTRAL_ENV = {
     "PROJECT_BRAIN_WEBHOOK_TOKEN": "",
     "BRAIN_LOCAL_PRINCIPAL_KEY": "",
     "MEMORY_REVIEW_TELEGRAM_NOTIFY": "false",
+    "TEAM_MEMBER_TELEGRAM_NOTIFY": "false",
     "BRAIN_WEB_URL": "",
     "BRAIN_PUBLIC_URL": "",
     "BRAIN_PUBLIC_HOST": "",
@@ -99,6 +100,8 @@ def _discard_stale_db_connections():
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "team_state: run the real team-state probe instead of the solo stub")
+    config.addinivalue_line("markers", "real_docker: needs a Docker daemon and test images (CI job "
+                                       "container-real-docker; BRAIN_TEST_REQUIRE_DOCKER=1 fails instead of skipping)")
 
 
 @pytest.fixture(autouse=True)

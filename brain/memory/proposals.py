@@ -144,21 +144,44 @@ async def record_review_event(session: AsyncSession, row: MemoryProposal, kind: 
         logger.warning("Could not record %s for proposal %s: %s: %s", kind, row.id, type(exc).__name__, exc)
 
 
-async def notify_reviewers(proposal_id: int, kind: str, repo_path: Optional[str]) -> None:
-    """Opt-in push (``MEMORY_REVIEW_TELEGRAM_NOTIFY``) to the owner chat once a proposal is committed.
+# Bounds the in-app notification write plus the per-member Telegram push after a submission.
+TEAM_NOTIFY_TIMEOUT_S = 10.0
 
-    The message names the proposal, never its draft content. Best effort and
-    bounded: a slow or failing channel never fails or stalls the submission."""
-    if not settings.MEMORY_REVIEW_TELEGRAM_NOTIFY:
+
+async def notify_reviewers(proposal_id: int, kind: str, repo_path: Optional[str]) -> None:
+    """Tell reviewers once a proposal is committed; never fails or stalls the submission.
+
+    * Opt-in push (``MEMORY_REVIEW_TELEGRAM_NOTIFY``) to the owner chat, as before.
+    * Team state (full storage): an in-app notification for every member who may
+      approve it, plus a Telegram notice to those who linked their own chat
+      (``brain.team.notifications``). Solo state writes nothing.
+
+    Messages name the proposal, never its draft content. Best effort and bounded."""
+    if settings.MEMORY_REVIEW_TELEGRAM_NOTIFY:
+        try:
+            from brain.alerts.telegram import deliver_memory_proposal_notice
+
+            await asyncio.wait_for(
+                deliver_memory_proposal_notice(proposal_id=proposal_id, kind=kind, repo_path=repo_path),
+                timeout=min(5.0, float(settings.TELEGRAM_ALERT_TIMEOUT_S)))
+        except Exception as exc:  # noqa: BLE001 - the proposal stands; the push is best effort
+            logger.warning("Review notification for proposal %s failed: %s", proposal_id, type(exc).__name__)
+    await notify_team_reviewers(proposal_id)
+
+
+async def notify_team_reviewers(proposal_id: int) -> None:
+    """In-app (and linked-chat) review notifications for the members who may approve; team state only."""
+    if settings.BRAIN_STORAGE_MODE != "full":
         return
     try:
-        from brain.alerts.telegram import deliver_memory_proposal_notice
+        from brain.team.notifications import notify_review_needed
 
         await asyncio.wait_for(
-            deliver_memory_proposal_notice(proposal_id=proposal_id, kind=kind, repo_path=repo_path),
-            timeout=min(5.0, float(settings.TELEGRAM_ALERT_TIMEOUT_S)))
-    except Exception as exc:  # noqa: BLE001 - the proposal stands; the push is best effort
-        logger.warning("Review notification for proposal %s failed: %s", proposal_id, type(exc).__name__)
+            notify_review_needed(async_session_factory, proposal_id,
+                                 telegram_timeout_s=min(5.0, float(settings.TELEGRAM_ALERT_TIMEOUT_S))),
+            timeout=TEAM_NOTIFY_TIMEOUT_S)
+    except Exception as exc:  # noqa: BLE001 - the proposal stands; notifications are best effort
+        logger.warning("Team review notifications for proposal %s failed: %s", proposal_id, type(exc).__name__)
 
 
 async def _target(session: AsyncSession, kind: str, title: str, repo_path: Optional[str],

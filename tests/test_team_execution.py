@@ -24,16 +24,19 @@ from brain.execution.bounded import ExecutorError, SubprocessBackend, WorkingCop
 from brain.team import coordination, execution, provisioning
 from brain.team.authorization import Permission, TeamConflict, TeamDenied, authorize
 from brain.team.execution import ExecutionDenied, ExecutionRunner, Lease
-from brain.team.models import (AgentRun, AgentRunExecution, ProjectMember, ProjectRepository, Team, TeamAccessFence,
-                               TeamActivityEvent, TeamExecutionGrant, TeamIdentity, TeamInvitation, TeamMember,
-                               TeamIntegrationEntry, TeamOidcFlow, TeamProject, TeamResourceLease,
-                               TeamRunResolution, TeamTaskBinding, TeamTaskPlan, WorkspaceRegistryEntry,
-                               WorkspaceRegistryEvent)
+from brain.team.models import (AgentRun, AgentRunExecution, AgentRunExecutionArtifact, ProjectMember,
+                               ProjectRepository, Team, TeamAccessFence, TeamActivityEvent, TeamExecutionGrant,
+                               TeamIdentity, TeamInvitation, TeamIntegrationEntry, TeamLlmBudget, TeamLlmConsent,
+                               TeamMember, TeamNotification, TeamOidcFlow, TeamProject, TeamResourceLease,
+                               TeamRunResolution, TeamTaskBinding, TeamTaskPlan, TeamTelegramLink,
+                               WorkspaceRegistryEntry, WorkspaceRegistryEvent)
 from brain.team.store import create_task, request_run
 
 TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, AgentTask, AgentTaskEvent,
           OAuthClient, OAuthRefreshToken, Team, TeamAccessFence, TeamMember, TeamProject, ProjectMember,
           ProjectRepository, TeamTaskBinding, AgentRun, TeamInvitation, TeamExecutionGrant, AgentRunExecution,
+          # Execution artifacts and LLM consent/budget reference executions and projects.
+          AgentRunExecutionArtifact, TeamLlmConsent, TeamLlmBudget,
           # Member revocation logs activity and withdraws memory proposals.
           TeamActivityEvent, Decision, Rule, MemoryProposal,
           # SSO tables reference invitations; the shared PostgreSQL database must drop them first.
@@ -41,7 +44,9 @@ TABLES = [model.__table__ for model in (Principal, ApiCredential, Repository, Ag
           # Coordination (M3) tables reference task bindings, runs and repositories.
           TeamTaskPlan, TeamResourceLease, TeamRunResolution, TeamIntegrationEntry,
           # Shared workspace registry: repository trust every process reads in team state.
-          WorkspaceRegistryEntry, WorkspaceRegistryEvent)]
+          WorkspaceRegistryEntry, WorkspaceRegistryEvent,
+          # Review-needed notifications: each member's inbox and linked Telegram chat.
+          TeamNotification, TeamTelegramLink)]
 NOW = datetime.now(timezone.utc)
 SECRET_VALUE = "fixture-secret-value-7f3a9c"
 PY = sys.executable

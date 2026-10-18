@@ -32,8 +32,10 @@ import asyncio
 import hashlib
 import os
 import re
+import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -53,6 +55,11 @@ _GIT_TIMEOUT_SECONDS = 120
 MAX_CHANGED_PATHS = 5000
 # What the run changed against its base: tracked changes (committed or not) and untracked, unignored files.
 CHANGED_PATHS_GIT = (("diff", "--name-only", "-z", "--no-renames"), ("ls-files", "--others", "--exclude-standard", "-z"))
+# The final patch: tracked changes against the base (no repository-configured diff drivers); untracked files are
+# appended as new-file hunks built from the working copy (``build_patch``). Binary changes stay "Binary files ...
+# differ" stubs on purpose: embedded binary data could not be redacted, and the run's working copy holds the bytes.
+PATCH_GIT = ("diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--full-index")
+_REPORT_PATH = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$")
 
 
 class ExecutorError(RuntimeError):
@@ -65,6 +72,8 @@ class ToolSpec:
     name: str
     argv: tuple[str, ...]
     allow_args: bool = False
+    # Optional working-copy-relative file the tool writes (a test report); kept as an execution artifact.
+    report: str | None = None
 
 
 @dataclass(frozen=True)
@@ -140,6 +149,10 @@ class ExecutorBackend(Protocol):
 
     def changed_paths(self, copy: WorkingCopy) -> list[str]:
         """Repository-relative paths the run changed against ``copy.base_sha`` (raises ``ExecutorError``)."""
+        ...
+
+    def patch(self, copy: WorkingCopy, limit: int) -> tuple[bytes, bool]:
+        """The run's changes against ``copy.base_sha`` as a patch: (at most ``limit`` bytes, truncated)."""
         ...
 
     def release(self, copy: WorkingCopy) -> None:
@@ -304,6 +317,83 @@ def finish_step(copy: WorkingCopy, step: StepRequest, argv: list[str], result: P
                        log_path=str(log_path), runtime=runtime)
 
 
+def valid_report_path(value: object) -> bool:
+    """A tool report path: relative, inside the working copy, no ``..``, at most 255 characters."""
+    return (isinstance(value, str) and 0 < len(value) <= 255 and bool(_REPORT_PATH.match(value))
+            and ".." not in value.split("/"))
+
+
+def read_confined(root: Path, relative: str, limit: int) -> tuple[bytes, int, str] | None:
+    """Read at most ``limit`` bytes of ``root/relative`` without following symlinks anywhere on the way.
+
+    Returns (content, size, kind) with kind ``file``, ``exec`` or ``symlink``
+    (content is then the link target), or ``None`` when the path is missing,
+    not a regular file or symlink, or leaves ``root``."""
+    parts = relative.split("/")
+    if not relative or relative.startswith("/") or any(part in ("", ".", "..") for part in parts):
+        return None
+    current = root
+    try:
+        for part in parts[:-1]:
+            current = current / part
+            if not stat.S_ISDIR(os.lstat(current).st_mode):
+                return None
+        target = current / parts[-1]
+        info = os.lstat(target)
+        if stat.S_ISLNK(info.st_mode):
+            link = os.readlink(target).encode("utf-8", "surrogateescape")
+            return link[:limit], len(link), "symlink"
+        if not stat.S_ISREG(info.st_mode):
+            return None
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        descriptor = os.open(target, flags)
+        with os.fdopen(descriptor, "rb") as handle:
+            content = handle.read(max(0, limit))
+        return content, info.st_size, "exec" if info.st_mode & 0o111 and sys.platform != "win32" else "file"
+    except (OSError, ValueError):
+        return None
+
+
+def _new_file_hunk(root: Path, relative: str, limit: int) -> bytes | None:
+    read = read_confined(root, relative, limit)
+    if read is None:
+        return None
+    content, _size, kind = read
+    path = relative.encode("utf-8", "surrogateescape")
+    mode = {"symlink": b"120000", "exec": b"100755"}.get(kind, b"100644")
+    head = b"diff --git a/" + path + b" b/" + path + b"\nnew file mode " + mode + b"\n"
+    if not content:
+        return head
+    if b"\0" in content[:8000]:
+        return head + b"Binary files /dev/null and b/" + path + b" differ\n"
+    lines = content.split(b"\n")
+    complete = content.endswith(b"\n")
+    if complete:
+        lines = lines[:-1]
+    count = b"" if len(lines) == 1 else b"," + str(len(lines)).encode()
+    body = b"".join(b"+" + line + b"\n" for line in lines)
+    tail = b"" if complete else b"\\ No newline at end of file\n"
+    return head + b"--- /dev/null\n+++ b/" + path + b"\n@@ -0,0 +1" + count + b" @@\n" + body + tail
+
+
+def build_patch(tracked: bytes, tracked_total: int, root: Path, untracked: Sequence[str],
+                limit: int) -> tuple[bytes, bool]:
+    """Tracked ``git diff`` output plus new-file hunks for untracked files, cut at ``limit`` bytes."""
+    out = bytearray(tracked[:limit])
+    truncated = tracked_total > limit
+    for relative in untracked:
+        if len(out) >= limit:
+            truncated = True
+            break
+        hunk = _new_file_hunk(root, relative, limit - len(out) + 1)
+        if hunk is not None:
+            out += hunk
+    if len(out) > limit:
+        del out[limit:]
+        truncated = True
+    return bytes(out), truncated
+
+
 def parse_changed_paths(outputs: Sequence[str]) -> list[str]:
     """NUL-separated ``git diff --name-only -z`` / ``git ls-files -z`` outputs → sorted unique paths (capped)."""
     paths = {item for output in outputs for item in output.split("\0") if item}
@@ -372,6 +462,28 @@ class SubprocessBackend:
         outputs = [self._git([*args, copy.base_sha] if args[0] == "diff" else list(args), copy.path, copy.run_dir,
                              strip=False) for args in CHANGED_PATHS_GIT]
         return parse_changed_paths(outputs)
+
+    def _git_capped(self, args: list[str], cwd: Path, run_dir: Path, limit: int) -> tuple[bytes, int]:
+        """Run git with stdout spooled to a temporary file; (first ``limit`` bytes, total bytes)."""
+        with tempfile.TemporaryFile() as spool:
+            try:
+                result = subprocess.run([self.git, *args], cwd=str(cwd), env=minimal_env(run_dir, {}),
+                                        stdin=subprocess.DEVNULL, stdout=spool, stderr=subprocess.DEVNULL,
+                                        timeout=_GIT_TIMEOUT_SECONDS, check=False)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise ExecutorError(f"git {args[0]} could not be run") from exc
+            if result.returncode != 0:
+                raise ExecutorError(f"git {args[0]} failed with exit code {result.returncode}")
+            total = spool.tell()
+            spool.seek(0)
+            return spool.read(limit), total
+
+    def patch(self, copy: WorkingCopy, limit: int) -> tuple[bytes, bool]:
+        if not SHA_PATTERN.match(copy.base_sha or ""):
+            raise ExecutorError("The task base SHA is not a full commit SHA")
+        tracked, total = self._git_capped([*PATCH_GIT, copy.base_sha], copy.path, copy.run_dir, limit)
+        untracked = self._git(list(CHANGED_PATHS_GIT[1]), copy.path, copy.run_dir, strip=False)
+        return build_patch(tracked, total, copy.path, parse_changed_paths([untracked]), limit)
 
     def resolve_environment(self, environment: Any) -> Any:
         if environment is not None:
