@@ -109,6 +109,13 @@ TOOL_ANNOTATIONS: dict[str, ToolAnnotations] = {
     "team_coordination_overlaps": _annotations("List team scope overlaps", read_only=True),
     "team_list_leases": _annotations("List team leases", read_only=True),
     "team_integration_queue": _annotations("Show the integration queue", read_only=True),
+    # Coordination writes: a holder repeating a claim gets its live lease back, a run is queued once,
+    # and renew/release/declare carry a fencing token or plan version, so a repeat adds no effect.
+    "team_claim_lease": _annotations("Claim a team lease", read_only=False, idempotent=True),
+    "team_renew_lease": _annotations("Renew a team lease", read_only=False, idempotent=True),
+    "team_release_lease": _annotations("Release a team lease", read_only=False, idempotent=True),
+    "team_declare_scope": _annotations("Declare a task's scope", read_only=False, idempotent=True),
+    "team_enqueue_integration": _annotations("Queue a run for integration", read_only=False, idempotent=True),
 }
 
 

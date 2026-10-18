@@ -202,12 +202,14 @@ no project, is refused for anyone but an administrator. To see the paths she
 can use, she can call `GET /repositories` with her key; it lists only
 repositories she can read.
 
-Both transports serve 28 tools: the personal ones plus `team_me`,
+Both transports serve 33 tools: the personal ones plus `team_me`,
 `team_activity`, `team_list_tasks`, `team_create_task` and `team_request_run`,
 the five memory review tools (`team_propose_decision`, `team_propose_rule`,
 `team_list_proposals`, `team_approve_proposal`, `team_reject_proposal`), and
-four read-only coordination tools (`team_task_plan`,
-`team_coordination_overlaps`, `team_list_leases`, `team_integration_queue`).
+nine coordination tools: four that read (`team_task_plan`,
+`team_coordination_overlaps`, `team_list_leases`, `team_integration_queue`) and
+five that write (`team_claim_lease`, `team_renew_lease`, `team_release_lease`,
+`team_declare_scope`, `team_enqueue_integration`).
 `team_me` answers "who am I and what can I touch" (the project ids and
 repository paths her roles grant); the task tools take a project id. See
 [MCP](MCP.md).
@@ -346,8 +348,31 @@ review and CI.
 
 Read-only views: `brain team coord plan|overlaps|leases|queue --project <name>`
 and the MCP tools `team_task_plan`, `team_coordination_overlaps`,
-`team_list_leases` and `team_integration_queue`. Creating subtasks, leases and
-queue entries is API-only for now.
+`team_list_leases` and `team_integration_queue`. Agents can also claim, renew
+and release leases, declare a task's scope and queue a run for integration over
+MCP (`team_claim_lease`, `team_renew_lease`, `team_release_lease`,
+`team_declare_scope`, `team_enqueue_integration`). Those tools call the HTTP
+routes above, with the same roles, fencing tokens and versions. Creating
+subtasks and integrating or rejecting entries are HTTP-only.
+
+The web dashboard's **Board** page (`/team/board`, under Settings) shows each
+project you belong to. Tasks and subtasks sit in columns: blocked by
+dependencies, ready, running, awaiting integration, needs rebase, stale
+instructions and integrated. Each card shows its dependencies. The page also
+lists live leases (holder, path, expiry, fencing token), overlap warnings and
+the pending integration queue in order. It reads the routes above with your own
+key. Its conflict view names the overlapping paths, the other task or lease
+holder, and the superseded decision or rule versions, with links to Memory.
+Each control appears only when your role allows it:
+
+- release your own lease;
+- request a fresh run of the task (Brain resolves the current instructions; the
+  run key is shown once);
+- integrate, if you are a Reviewer who did not queue the entry;
+- reject, if you are a Reviewer, or withdraw, if you queued the entry.
+
+A fresh run still starts from the task's declared base, so rebase in the agent
+before you queue it again.
 
 ## Known limitations
 
