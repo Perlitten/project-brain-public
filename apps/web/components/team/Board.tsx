@@ -10,7 +10,7 @@ import { CodeBlock, Dialog, LockNote, RunButton, useAction } from "@/components/
 import { Chip, Table } from "@/components/ui";
 import { integrateEntry, rejectEntry, releaseLease, renewLease, requestRun, type NewRun } from "@/lib/actions/board";
 import {
-  BOARD_COLUMNS, entryActions, instructionHref, leaseActions,
+  BOARD_COLUMNS, entryActions, instructionHref, leaseActions, queuePosition,
   type BoardTask, type Lease, type Overlap, type ProjectBoard, type QueueEntry, type QueueStatus, type SupersededInstruction,
 } from "@/lib/board-model";
 import type { Tone } from "@/lib/types";
@@ -415,11 +415,11 @@ export function QueueTable({ board, selfId }: { board: ProjectBoard; selfId: num
   return (
     <>
       <Table<QueueEntry>
-        caption="Integration queue, in order"
+        caption="Pending integration entries"
         rows={board.queue}
         rowKey={(e) => String(e.id)}
         columns={[
-          { head: "#", cell: (e) => <span className="num">{board.queue.indexOf(e) + 1}</span> },
+          { head: "Repo queue", cell: (e) => <span className="num">{queuePosition(board.queue, e) ?? "—"}</span> },
           { head: "Task", cell: (e) => <><TaskLink id={e.taskId} ctx={ctx} /><span className="sub mono">run {e.runId.slice(0, 8)} · head {short(e.headSha)}</span></> },
           { head: "Status", cell: (e) => <Chip tone={STATUS_TONE[e.status]}>{STATUS_WORD[e.status]}</Chip> },
           { head: "Base", cell: (e) => <span className="mono">{short(e.baseSha)}{e.checkedBaseSha && e.checkedBaseSha !== e.baseSha ? ` → ${short(e.checkedBaseSha)}` : ""}</span> },

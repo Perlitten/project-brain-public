@@ -15,8 +15,6 @@ export * from "./board-model";
 // Loading
 
 /** Board limits: one page of tasks (Brain returns at most 100), one plan read per task, a few instruction reads. */
-const MAX_PROJECTS = 10;
-const MAX_PLANS = 60;
 const MAX_INSTRUCTION_READS = 20;
 const CONCURRENCY = 6;
 
@@ -50,9 +48,10 @@ export async function loadProject(project: MeProject): Promise<ProjectBoard> {
   if (!leasesRes.ok) missing.push("leases");
   if (!overlapsRes.ok) missing.push("overlap warnings");
   if (!pendingRes.ok) missing.push("integration queue");
+  if (!doneRes.ok) missing.push("integration history");
 
   const ids = tasks.map((t) => str(obj(t)?.id)).filter(Boolean);
-  const planIds = ids.slice(0, MAX_PLANS);
+  const planIds = ids;
   const planAnswers = await pool(planIds, CONCURRENCY, (id) => read(`${base}/tasks/${encodeURIComponent(id)}/plan`));
   const plans: Record<string, unknown> = {};
   planAnswers.forEach((answer, index) => {
@@ -73,7 +72,7 @@ export async function loadProject(project: MeProject): Promise<ProjectBoard> {
     overlaps: list(overlapsRes.ok ? overlapsRes.data : null, "overlaps"),
     entries,
     instructions: instructionAnswers.filter((a) => a.ok).map((a) => (a.ok ? a.data : null)),
-    truncated: tasks.length >= 100 || ids.length > MAX_PLANS,
+    truncated: tasks.length >= 100,
     missing,
   });
 }
@@ -90,6 +89,6 @@ export async function getBoardView(): Promise<BoardView> {
   const me = await getMeView();
   if (me.kind !== "ok") return { kind: "unavailable" };
   if (me.teamState !== "team") return { kind: "solo" };
-  const projects = me.projects.filter((p) => !p.disabled).slice(0, MAX_PROJECTS);
+  const projects = me.projects.filter((p) => !p.disabled);
   return { kind: "ok", demo: false, selfId: me.principal.id, projects: await Promise.all(projects.map(loadProject)) };
 }

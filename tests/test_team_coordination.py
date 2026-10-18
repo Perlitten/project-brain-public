@@ -343,7 +343,9 @@ async def test_integration_queue_order_rebase_instructions_and_authority(team_db
         assert e1["status"] == "queued" and e1["base_sha"] == A and e1["head_sha"] == B
         assert await coordination.enqueue(session, caller(2), a, {"run_id": str(r1)}) == e1
         e2 = await coordination.enqueue(session, caller(2), a, {"run_id": str(r2)})
-        assert [item["id"] for item in await coordination.list_queue(session, caller(1), a)] == [e1["id"], e2["id"]]
+        queue = await coordination.list_queue(session, caller(1), a)
+        assert [item["id"] for item in queue] == [e1["id"], e2["id"]]
+        assert (queue[0]["initiator_id"], queue[0]["requested_by"]) == (2, 2)
 
         with pytest.raises(TeamDenied):  # Contributors cannot integrate
             await coordination.integrate(session, caller(2), a, e1["id"], {"expected_version": 1})
@@ -504,7 +506,7 @@ def test_coordination_mcp_tools_are_registered_with_their_annotations():
     for name in COORDINATION_WRITES:
         assert tools[name].annotations.read_only_hint is False, name
         assert tools[name].annotations.destructive_hint is False, name
-        assert tools[name].annotations.idempotent_hint is True, name
+        assert tools[name].annotations.idempotent_hint is (name != "team_renew_lease"), name
 
 
 @pytest.mark.asyncio

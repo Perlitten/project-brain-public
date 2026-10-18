@@ -21,7 +21,7 @@ const subtask = (taskId: string, title: string, state: string, depends: string[]
 const entry = (entryId: number, taskId: string, run: string, status: string, enqueuedBy: number, extra: Record<string, unknown> = {}) => ({
   id: entryId, project_id: PROJECT, repository_id: 1, task_id: taskId, run_id: run, base_sha: SHA("a"), head_sha: SHA(String(entryId)),
   status, reason: null, checked_base_sha: null, checked_at: null, enqueued_by: enqueuedBy, enqueued_at: "2026-10-18T08:0" + entryId + ":00+00:00",
-  decided_by: null, decided_at: null, version: 1, ...extra,
+  decided_by: null, decided_at: null, initiator_id: enqueuedBy, requested_by: enqueuedBy, version: 1, ...extra,
 });
 
 const subtasks = [

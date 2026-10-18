@@ -36,6 +36,8 @@ export interface QueueEntry {
   checkedAt: string | null;
   enqueuedBy: number | null;
   enqueuedAt: string | null;
+  initiatorId: number | null;
+  requestedBy: number | null;
   version: number;
 }
 
@@ -153,6 +155,8 @@ export function toEntry(raw: unknown): QueueEntry | null {
     checkedAt: text(e.checked_at),
     enqueuedBy: int(e.enqueued_by),
     enqueuedAt: text(e.enqueued_at),
+    initiatorId: int(e.initiator_id),
+    requestedBy: int(e.requested_by),
   };
 }
 
@@ -336,13 +340,21 @@ export interface EntryActions {
 export function entryActions(entry: QueueEntry, permissions: string[], selfId: number | null): EntryActions {
   const reviewer = permissions.includes("task.accept");
   const mine = selfId !== null && entry.enqueuedBy === selfId;
+  const independent = selfId !== null && entry.initiatorId !== selfId && entry.requestedBy !== selfId;
   const pending = PENDING.has(entry.status);
   return {
-    integrate: pending && reviewer && !mine,
+    integrate: pending && reviewer && independent,
     reject: pending && reviewer,
     withdraw: pending && !reviewer && mine,
     rerun: entry.status !== "integrated" && permissions.includes("run.request"),
   };
+}
+
+/** Blocking position within the repository's queued entries; non-queued verdicts do not block. */
+export function queuePosition(entries: QueueEntry[], target: QueueEntry): number | null {
+  if (target.status !== "queued") return null;
+  return entries.filter((entry) => entry.status === "queued"
+    && entry.repositoryId === target.repositoryId && entry.id <= target.id).length;
 }
 
 export interface LeaseActions { release: boolean; renew: boolean }

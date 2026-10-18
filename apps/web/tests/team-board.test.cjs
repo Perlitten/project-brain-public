@@ -115,8 +115,25 @@ test('integrate needs an independent reviewer; withdraw is for the member who qu
   eq({ ...view.entryActions(queued, ['read'], 4) }, { integrate: false, reject: false, withdraw: false, rerun: false }, 'a viewer only reads');
   const done = { ...queued, status: 'integrated' };
   eq({ ...view.entryActions(done, REVIEWER, 4) }, { integrate: false, reject: false, withdraw: false, rerun: false });
-  assert.equal(view.entryActions(rebase, REVIEWER, null).integrate, true);
+  assert.equal(view.entryActions(rebase, REVIEWER, null).integrate, false);
+  assert.equal(view.entryActions({ ...rebase, enqueuedBy: 4, initiatorId: 9, requestedBy: 9 }, REVIEWER, 4).integrate, true,
+    'the member who queued another member\'s run may independently review it');
+  assert.equal(view.entryActions({ ...rebase, enqueuedBy: 9, initiatorId: 4 }, REVIEWER, 4).integrate, false,
+    'the run initiator may not integrate even when another member queued it');
   assert.equal(view.entryActions(stale, CONTRIBUTOR, null).withdraw, false, 'unknown member: nothing is theirs');
+});
+
+test('queue positions count only earlier queued entries in the same repository', () => {
+  const view = loadView();
+  const board = view.assembleProject(demo.project, demo.raw);
+  const [rebase, stale, queued] = board.queue;
+  assert.equal(view.queuePosition(board.queue, rebase), null);
+  assert.equal(view.queuePosition(board.queue, stale), null);
+  assert.equal(view.queuePosition(board.queue, queued), 1);
+  const later = { ...queued, id: queued.id + 10 };
+  const otherRepo = { ...queued, id: queued.id + 20, repositoryId: 99 };
+  assert.equal(view.queuePosition([...board.queue, later, otherRepo], later), 2);
+  assert.equal(view.queuePosition([...board.queue, later, otherRepo], otherRepo), 1);
 });
 
 test('only the holder may release or renew a lease', () => {
@@ -153,7 +170,7 @@ test('a team board reads every coordination route fresh with the member key and 
     if (p === `${base}/leases`) return { ok: false, status: 503, reason: 'http_error' };
     if (p === `${base}/overlaps`) return { ok: true, status: 200, data: { overlaps: demo.raw.overlaps } };
     if (p === `${base}/integration`) return { ok: true, status: 200, data: { entries: demo.raw.entries.filter((e) => e.status !== 'integrated') } };
-    if (p === `${base}/integration?include_done=true`) return { ok: true, status: 200, data: { entries: demo.raw.entries } };
+    if (p === `${base}/integration?include_done=true`) return { ok: false, status: 503, reason: 'http_error' };
     const plan = p.match(/\/tasks\/([^/]+)\/plan$/);
     if (plan) return demo.raw.plans[plan[1]] ? { ok: true, status: 200, data: demo.raw.plans[plan[1]] } : { ok: true, status: 200, data: { plan: { task_id: plan[1] }, subtasks: [] } };
     if (/\/runs\/[^/]+\/instructions$/.test(p)) return { ok: true, status: 200, data: demo.raw.instructions[0] };
@@ -171,7 +188,7 @@ test('a team board reads every coordination route fresh with the member key and 
   const board = view.projects[0];
   assert.ok(calls.every(([, opts]) => opts.fresh === true), 'never served from the data cache');
   assert.ok(calls.some(([p]) => p.endsWith('/instructions')), 'stale entries fetch their superseded instructions');
-  eq(board.missing, ['leases']);
+  eq(board.missing, ['leases', 'integration history']);
   assert.equal(board.leases.length, 0);
   assert.equal(byTitle(board)['Document the retry policy'].column, 'stale_instructions');
   eq(board.queue.map((e) => e.id), [2, 3, 4]);
