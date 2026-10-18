@@ -84,7 +84,8 @@ action, NOT self-registration or a claim of deployed OIDC. Single-use
 invitations through the API and CLI landed in M1 (2026-10-16); optional generic
 OIDC single sign-on (invitation acceptance bound to the invited email, member
 dashboard sign-in, no auto-provisioning) landed 2026-10-18
-([TEAM_SSO.md](../operations/TEAM_SSO.md)); the invitation UX is M5.
+([TEAM_SSO.md](../operations/TEAM_SSO.md)); the dashboard invitation UI (issue,
+track, revoke, redeem on `/invite`) landed 2026-10-18; invitations are not emailed.
 Run credentials identify a particular run and store only hashes. Git/provider
 secrets stay server-held and are not copied into run records or client payloads.
 
@@ -200,8 +201,11 @@ green ADR/CI is not team readiness.
   dashboard members sign in as themselves and admins manage them on a Team
   page; a team snapshot restored with the supported script stays fenced until
   `brain team reconcile`.
-  Still open: merging `brain/workspace` with `brain/team`, SSO, invitation UX,
-  deployment. Current status: [team status](../design/team-status.md).
+  Since then (2026-10-18): the invitation UI, optional OIDC SSO, and one
+  repository authority (registry trust caps `authorize_repository`; in team
+  state the registry lives in PostgreSQL). Still open: deployment, the offline
+  CLIs that still read the registry file, and a pilot with real people.
+  Current status: [team status](../design/team-status.md).
 - **M2 after M1:** bounded real executors, run tools/secrets/egress/budget capabilities,
   revocation checkpoints, environments, timeout/cancel/crash fencing.
 - **M3 after M1/M2:** same-task subtasks/dependencies/coordinator, semantic overlap,
@@ -213,8 +217,11 @@ green ADR/CI is not team readiness.
   exclusive expiring leases with fencing tokens, released on member revocation;
   an ordered integration queue re-checked against the current base
   (`needs_rebase`, `stale_instructions`) with independent Reviewer authority.
-  Still open: graph-neighbour overlap, actual touched-file scope, a real merge or
-  combined-patch validation, board UI, administrator lease break.
+  Since then: overlap also compares the paths a run changed, the board and
+  conflict view, MCP lease and integration writes, dependency rechecks before
+  execution. Still open: graph-neighbour overlap, a real merge or combined-patch
+  validation, an operator surface (API, MCP, CLI) for the administrator lease
+  break that exists only in the service layer.
 - **M4 after M1 (execution evidence also needs M2):** governed versioned memory,
   exact-source provenance, independent review, draft isolation and optimistic updates.
 - **M5 after M1, integrated with M2–M4:** invitation/board/conflict UX, one-team cloud
