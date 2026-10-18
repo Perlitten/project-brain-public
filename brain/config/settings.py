@@ -23,7 +23,11 @@ def _env_files() -> tuple[str, ...]:
     working directory still find the install's configuration. The process
     CWD's ``.env`` then overrides it (backwards compatible), and an explicit
     ``BRAIN_ENV_FILE`` path wins over everything — the supported way to point
-    an installed wheel at its configuration."""
+    an installed wheel at its configuration. ``BRAIN_DISABLE_DOTENV`` is the
+    supported isolation switch for test harnesses that provide a complete
+    process environment and must not read either checkout file."""
+    if os.getenv("BRAIN_DISABLE_DOTENV", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return ()
     files: list[str] = []
     if os.getenv("BRAIN_STORAGE_MODE") == "lite":
         explicit = os.getenv("BRAIN_ENV_FILE", "").strip()
