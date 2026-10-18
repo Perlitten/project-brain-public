@@ -6,13 +6,16 @@ Five pieces, all on top of the M1 task/run model and the central ``authorize()``
   ``team_task_plans`` row names its parent. ``depends_on`` lists sibling
   subtasks; the dependency graph is kept acyclic on every write, and
   ``brain.team.store.request_run`` refuses a run while a dependency is not done
-  (``require_dependencies_done``). ``plan_view`` derives each subtask's state
+  (``require_dependencies_done``). The bounded executor checks again when the
+  execution is requested and when it actually starts (``brain.team.execution``). ``plan_view`` derives each subtask's state
   and the ready set in topological order; ``dispatch`` requests runs for it.
 * **Overlap detection.** Declared scope paths of active tasks in one
   repository, and live path leases, are compared by path prefix (a glob counts
   from its static prefix). An overlap is a warning in the response and a
-  ``coordination.overlap`` row in the activity feed. It flags risk only: same
-  files can be independent and separate files can still conflict.
+  ``coordination.overlap`` row in the activity feed. When a bounded execution
+  completes, the files it actually changed are compared the same way
+  (``record_change_overlaps``). It flags risk only: same files can be
+  independent and separate files can still conflict.
 * **Instruction resolution.** Each new run records the canonical, active
   decision and rule versions that applied to its repository
   (``team_run_resolutions``). Integration flags a run whose instructions were
@@ -20,12 +23,17 @@ Five pieces, all on top of the M1 task/run model and the central ``authorize()``
 * **Critical leases.** Exclusive, expiring leases on repository paths or named
   resources with fencing tokens (``team_resource_leases``), the same
   compare-and-swap pattern as the M2 execution lease. Revoking a member
-  releases their leases (``brain.team.provisioning.revoke_principal_access``).
+  releases their leases (``brain.team.provisioning.revoke_principal_access``);
+  a project administrator can force-release a lease with a recorded reason
+  (``force_release_lease``), which also bumps the fencing token.
 * **Integration queue.** Completed runs (a recorded head revision) are queued
   per repository. ``integrate`` re-validates the next entry against the
   current base revision: a different base gives ``needs_rebase``, superseded
   instructions give ``stale_instructions``, otherwise an independent reviewer
-  marks it ``integrated``. No git merge happens here.
+  marks it ``integrated``. No git merge happens here. An integrated entry
+  completes its task (``agent_tasks.status = "completed"`` plus a
+  ``status_change`` event); a rejected one is recorded on the task ledger and
+  leaves the task open for another run.
 """
 from __future__ import annotations
 
@@ -42,7 +50,8 @@ from brain.database.harness_models import AgentTask, AgentTaskEvent
 from brain.database.models import Decision, Repository, Rule
 from brain.database.repository_utils import repository_path_candidates
 from brain.team.activity import record_event
-from brain.team.authorization import Permission, TeamConflict, TeamDenied, authorize, fresh, permissions
+from brain.team.authorization import (Permission, TeamConflict, TeamDenied, administrator, authorize, fresh,
+                                      permissions)
 from brain.team.models import (AgentRun, ProjectRepository, TeamActivityEvent, TeamIntegrationEntry,
                                TeamResourceLease, TeamRunResolution, TeamTaskBinding, TeamTaskPlan)
 from brain.team.provisioning import TeamNotFound
@@ -54,6 +63,10 @@ MAX_SUBTASKS = 200
 MAX_RESOLVED = 500
 MIN_LEASE_SECONDS = 10
 MAX_LEASE_SECONDS = 3600
+# Changed files compared for overlap after an execution, and path pairs kept per warning.
+MAX_CHANGED_PATHS = 500
+MAX_OVERLAP_PAIRS = 50
+MAX_REASON = 500
 INACTIVE_TASK_STATUSES = ("completed", "cancelled")
 PENDING = ("queued", "needs_rebase", "stale_instructions")
 FINAL = ("integrated", "rejected")
@@ -203,7 +216,10 @@ async def _validate_dependencies(session: AsyncSession, parent_id: uuid.UUID | N
 
 
 async def _done(session: AsyncSession, task_ids: list[uuid.UUID]) -> set[str]:
-    """Tasks that are done: harness status ``completed`` or a run of theirs integrated."""
+    """Tasks that are done: status ``completed``.
+
+    Integrating a run sets that status (``integrate``); an integrated queue
+    entry also counts so entries integrated before that existed stay done."""
     if not task_ids:
         return set()
     completed = (await session.execute(select(AgentTask.id).where(AgentTask.id.in_(task_ids),
@@ -426,27 +442,34 @@ def _related(first: TeamTaskPlan, second: TeamTaskPlan) -> bool:
     return first.parent_task_id == second.task_id or second.parent_task_id == first.task_id
 
 
-def _conflicts(binding: TeamTaskBinding, plan: TeamTaskPlan,
+def _conflicts(binding: TeamTaskBinding, plan: TeamTaskPlan | None,
                others: list[tuple[TeamTaskBinding, TeamTaskPlan, AgentTask]],
-               leases: list[TeamResourceLease]) -> list[dict]:
+               leases: list[TeamResourceLease], paths: list[str] | None = None) -> list[dict]:
+    """Overlaps of ``paths`` (default: the plan's declared scope) with other tasks' scopes and live leases."""
+    if paths is not None:
+        mine, extra = list(paths), {"source": "changed_paths"}
+    else:
+        mine, extra = list(plan.scope_paths or []) if plan is not None else [], {}
     warnings: list[dict] = []
+    if not mine:
+        return warnings
     for other_binding, other_plan, other_task in others:
         if (other_binding.task_id == binding.task_id or other_binding.repository_id != binding.repository_id
-                or _related(plan, other_plan)):
+                or (plan is not None and _related(plan, other_plan))):
             continue
-        pairs = overlapping(list(plan.scope_paths or []), list(other_plan.scope_paths or []))
+        pairs = overlapping(mine, list(other_plan.scope_paths or []))[:MAX_OVERLAP_PAIRS]
         if pairs:
             warnings.append({"kind": "task", "repository_id": binding.repository_id, "task_id": str(binding.task_id),
                              "other_task_id": str(other_binding.task_id), "other_title": other_task.title,
-                             "paths": pairs})
+                             "paths": pairs, **extra})
     for lease in leases:
         if lease.repository_id != binding.repository_id or lease.task_id == binding.task_id:
             continue
-        pairs = overlapping(list(plan.scope_paths or []), [lease.resource])
+        pairs = overlapping(mine, [lease.resource])[:MAX_OVERLAP_PAIRS]
         if pairs:
             warnings.append({"kind": "lease", "repository_id": binding.repository_id, "task_id": str(binding.task_id),
                              "lease_id": lease.id, "resource": lease.resource, "holder_id": lease.holder_id,
-                             "expires_at": _iso(lease.expires_at), "paths": pairs})
+                             "expires_at": _iso(lease.expires_at), "paths": pairs, **extra})
     return warnings
 
 
@@ -454,13 +477,16 @@ async def _record_overlaps(session: AsyncSession, project_id: uuid.UUID, warning
                            actor_id: int | None) -> None:
     for warning in warnings:
         fingerprint = digest({"paths": warning["paths"]})[:16]
+        changed = warning.get("source") == "changed_paths"
         if warning["kind"] == "task":
             pair = sorted([warning["task_id"], warning["other_task_id"]])
             key = f"overlap:task:{pair[0]}:{pair[1]}:{fingerprint}"
-            summary = f"Scope overlap with task {warning['other_title']}"
+            summary = (f"Changed files overlap the scope of task {warning['other_title']}" if changed
+                       else f"Scope overlap with task {warning['other_title']}")
         else:
             key = f"overlap:lease:{warning['task_id']}:{warning['lease_id']}:{fingerprint}"
-            summary = f"Scope overlaps leased resource {warning['resource']}"
+            summary = (f"Changed files overlap leased resource {warning['resource']}" if changed
+                       else f"Scope overlaps leased resource {warning['resource']}")
         seen = (await session.execute(select(TeamActivityEvent.id).where(TeamActivityEvent.dedupe_key == key)
                                       .limit(1))).scalar_one_or_none()
         if seen is not None:
@@ -482,6 +508,36 @@ async def detect_overlaps(session: AsyncSession, binding: TeamTaskBinding, plan:
     warnings = _conflicts(binding, plan, await _active_plans(session, binding.project_id, binding.repository_id),
                           await _live_leases(session, binding.project_id, binding.repository_id))
     if record and warnings:
+        await _record_overlaps(session, binding.project_id, warnings, actor_id)
+    return warnings
+
+
+def changed_scope(paths: list[str] | None) -> list[str]:
+    """Normalized, de-duplicated changed paths (at most ``MAX_CHANGED_PATHS``); unusable entries are skipped."""
+    result: set[str] = set()
+    for value in paths or []:
+        try:
+            result.add(normalize_path(value, allow_glob=False))
+        except TeamConflict:
+            continue
+    return sorted(result)[:MAX_CHANGED_PATHS]
+
+
+async def record_change_overlaps(session: AsyncSession, task_id: uuid.UUID, changed_paths: list[str] | None, *,
+                                 actor_id: int | None) -> list[dict]:
+    """Compare the files a finished execution changed with other active tasks' scopes and live leases.
+
+    Called by the executor in the transaction that records the run as
+    completed. Each overlap is recorded once (the same ``coordination.overlap``
+    dedupe as declared scopes) and returned."""
+    paths = changed_scope(changed_paths)
+    binding = await fresh(session, TeamTaskBinding, TeamTaskBinding.task_id == task_id)
+    if binding is None or not paths:
+        return []
+    plan = (await session.execute(select(TeamTaskPlan).where(TeamTaskPlan.task_id == task_id))).scalar_one_or_none()
+    warnings = _conflicts(binding, plan, await _active_plans(session, binding.project_id, binding.repository_id),
+                          await _live_leases(session, binding.project_id, binding.repository_id), paths=paths)
+    if warnings:
         await _record_overlaps(session, binding.project_id, warnings, actor_id)
     return warnings
 
@@ -683,6 +739,46 @@ async def release_lease(session: AsyncSession, caller: ResolvedPrincipal, projec
     return lease_dict(lease)
 
 
+async def force_release_lease(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID, lease_id: int,
+                              payload: dict) -> dict:
+    """A project administrator releases someone's lease, with a reason recorded in the activity feed.
+
+    The fencing token increases, so the previous holder can no longer renew or
+    release it (and any write it fences on that token is refused)."""
+    await administrator(session, caller, project_id)
+    reason = " ".join(str(payload.get("reason") or "").split())
+    if not reason:
+        raise TeamConflict("A reason is required to force-release a lease")
+    lease = await fresh(session, TeamResourceLease, TeamResourceLease.id == lease_id,
+                        TeamResourceLease.project_id == project_id, exclusive=True)
+    if lease is None:
+        raise TeamNotFound("Lease not found")
+    if lease.released_at is not None:
+        raise TeamConflict("Lease is already released")
+    expected = payload.get("fencing_token")
+    if expected is not None and int(expected) != lease.fencing_token:
+        raise TeamConflict("Lease fencing token changed; reload the lease")
+    now = _now()
+    previous_holder, previous_token = lease.holder_id, lease.fencing_token
+    changed = await session.execute(update(TeamResourceLease).where(
+        TeamResourceLease.id == lease.id, TeamResourceLease.fencing_token == previous_token,
+        TeamResourceLease.released_at.is_(None))
+        .values(released_at=now, released_reason=f"force released: {reason}"[:64],
+                fencing_token=previous_token + 1).returning(TeamResourceLease.id))
+    if changed.scalar_one_or_none() is None:
+        raise TeamConflict("Lease changed concurrently; retry")
+    lease = await fresh(session, TeamResourceLease, TeamResourceLease.id == lease_id)
+    await record_event(session, kind="coordination.lease_force_released",
+                       summary=f"Lease on {lease.resource} force-released by an administrator",
+                       audience="repository", actor_principal_id=caller.id, subject_principal_id=previous_holder,
+                       project_id=project_id, repository_id=lease.repository_id,
+                       details={"lease_id": lease.id, "resource": lease.resource, "holder_id": previous_holder,
+                                "task_id": str(lease.task_id) if lease.task_id else None,
+                                "previous_fencing_token": previous_token, "fencing_token": lease.fencing_token,
+                                "reason": reason[:MAX_REASON]})
+    return lease_dict(lease, now)
+
+
 async def leases_view(session: AsyncSession, project_id: uuid.UUID, repository_id: int | None = None,
                       include_inactive: bool = False) -> list[dict]:
     query = select(TeamResourceLease).where(TeamResourceLease.project_id == project_id)
@@ -765,6 +861,39 @@ async def enqueue(session: AsyncSession, caller: ResolvedPrincipal, project_id: 
     return entry_dict(entry)
 
 
+async def _settle_task(session: AsyncSession, entry: TeamIntegrationEntry, actor_id: int) -> None:
+    """Mirror a final queue outcome on the task: integrated completes it, rejected is recorded only.
+
+    ``team_task_bindings`` has no status of its own; the task's
+    ``agent_tasks.status`` is the one that ``_done``, ``_active_plans`` and the
+    run-request gate read."""
+    task = await fresh(session, AgentTask, AgentTask.id == entry.task_id, exclusive=True)
+    if task is None:
+        return
+    payload = {"entry_id": entry.id, "run_id": str(entry.run_id), "head_sha": entry.head_sha,
+               "reason": entry.reason}
+    actor = f"principal:{actor_id}"
+    if entry.status == "integrated" and task.status not in INACTIVE_TASK_STATUSES:
+        previous = task.status
+        changed = await session.execute(update(AgentTask).where(
+            AgentTask.id == task.id, AgentTask.version == task.version)
+            .values(status="completed", version=task.version + 1).returning(AgentTask.version))
+        version = changed.scalar_one_or_none()
+        if version is None:
+            raise TeamConflict("Task changed concurrently; retry the integration")
+        session.add(AgentTaskEvent(task_id=task.id, event_type="status_change", actor=actor,
+                                   classification="decision", expected_task_version=version - 1,
+                                   task_version=version, idempotency_key=f"integration:{entry.id}:completed",
+                                   payload_json={"from": previous, "to": "completed",
+                                                 "note": "Run integrated from the team integration queue",
+                                                 **payload}))
+    elif entry.status in FINAL:
+        session.add(AgentTaskEvent(task_id=task.id, event_type=f"integration.{entry.status}", actor=actor,
+                                   task_version=task.version, idempotency_key=f"integration:{entry.id}:{entry.status}",
+                                   payload_json=payload))
+    await session.flush()
+
+
 async def _entry(session: AsyncSession, project_id: uuid.UUID, entry_id: int, expected_version: int
                  ) -> TeamIntegrationEntry:
     entry = await fresh(session, TeamIntegrationEntry, TeamIntegrationEntry.id == entry_id,
@@ -835,6 +964,8 @@ async def integrate(session: AsyncSession, caller: ResolvedPrincipal, project_id
              "stale_instructions": ("coordination.stale_instructions", "Run resolved instructions that were superseded"),
              "rejected": ("coordination.integration_rejected", "Run rejected from the integration queue")}
     kind, summary = kinds[status]
+    if status in FINAL:
+        await _settle_task(session, entry, authority.actor_id)
     await _coordination_event(session, kind, summary, entry, authority.actor_id, base_sha=current_base,
                               superseded=stale[:20])
     return {**entry_dict(entry), "superseded_instructions": stale}
@@ -860,6 +991,7 @@ async def reject(session: AsyncSession, caller: ResolvedPrincipal, project_id: u
     if changed.scalar_one_or_none() is None:
         raise TeamConflict("Queue entry version conflict")
     entry = await fresh(session, TeamIntegrationEntry, TeamIntegrationEntry.id == entry_id)
+    await _settle_task(session, entry, authority.actor_id)
     await _coordination_event(session, "coordination.integration_rejected", "Run removed from the integration queue",
                               entry, authority.actor_id, reason=entry.reason)
     return entry_dict(entry)
@@ -882,8 +1014,9 @@ async def list_queue(session: AsyncSession, caller: ResolvedPrincipal, project_i
     return await queue_view(session, project_id, repository_id, include_done)
 
 
-__all__ = ["acquire_lease", "create_subtask", "dispatch", "enqueue", "find_cycle", "get_plan", "get_run_instructions",
+__all__ = ["acquire_lease", "changed_scope", "create_subtask", "dispatch", "enqueue", "find_cycle",
+           "force_release_lease", "get_plan", "get_run_instructions",
            "integrate", "leases_view", "list_leases", "list_overlaps", "list_queue", "normalize_path",
-           "normalize_resource", "overlaps_view", "paths_overlap", "plan_view", "queue_view", "reject",
-           "release_lease", "renew_lease", "require_dependencies_done",
+           "normalize_resource", "overlaps_view", "paths_overlap", "plan_view", "queue_view", "record_change_overlaps",
+           "reject", "release_lease", "renew_lease", "require_dependencies_done",
            "resolve_instructions", "snapshot_instructions", "superseded_instructions", "update_plan"]

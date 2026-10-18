@@ -297,10 +297,12 @@ dependency on the task itself or on a task outside the same parent is
 refused with 409. `GET .../tasks/{task_id}/plan` shows each subtask as
 `ready`, `waiting`, `running`, `done`, `cancelled` or `blocked` (a dependency
 was cancelled). A run for a subtask can be requested only when every
-dependency is done: completed, or with a run integrated through the queue
-below. `POST .../tasks/{task_id}/dispatch` is the coordinator: it requests one
-run for every ready subtask that has no active run yet, and a repeat call
-dispatches nothing new.
+dependency is done: the task is completed (integrating one of its runs through
+the queue below completes it). The check runs again when a bounded execution
+actually starts, so a run requested before its plan gained an unfinished
+dependency is revoked before any step runs. `POST .../tasks/{task_id}/dispatch`
+is the coordinator: it requests one run for every ready subtask that has no
+active run yet, and a repeat call dispatches nothing new.
 
 **Overlap warnings.** When a member declares a scope or takes a lease, the
 Brain compares it with the scopes of other open tasks and with live leases in
@@ -309,7 +311,11 @@ recorded once per pair as `coordination.overlap` in the activity feed, visible
 to members who can see that repository. They are warnings, not locks. The check
 is conservative: a glob is compared by its fixed directory prefix, so it can warn
 about paths that would not actually collide. A task and its own subtasks are
-never flagged. `GET .../overlaps` lists the current overlaps.
+never flagged. `GET .../overlaps` lists the current overlaps. When a bounded
+execution finishes, the files it changed against the task base (committed,
+uncommitted and untracked) are compared the same way with the scopes of other
+open tasks and with live leases; those warnings carry `source: changed_paths`
+and are recorded once per pair too.
 
 **Instruction versions.** When a run is requested, the Brain records which
 decisions and rules applied to its repository and their versions.
@@ -325,6 +331,11 @@ and release (`.../leases/{id}/renew`, `.../release`) need the current token,
 and only the holder can use it. An expired lease can be taken over, and the token
 goes up, so a holder that wakes up late is refused. Revoking a member releases
 their leases and the leases of runs they started. Readers cannot take leases.
+A team administrator can force-release a stuck lease with a required reason
+(`coordination.force_release_lease`; no HTTP route or MCP tool yet). The token
+goes up, so the previous holder can no longer renew or release it, and the
+release is recorded as `coordination.lease_force_released` in the activity feed
+with the reason and the previous holder.
 
 **Integration queue.** `POST .../integration` with a `run_id` queues a run that
 reported a head revision. A Reviewer or Administrator other than the person who
@@ -335,11 +346,13 @@ recorded as one of:
 
 | Status | Meaning |
 |---|---|
-| `integrated` | The run was built on the current base and its instructions are unchanged. Its subtask now counts as done. |
+| `integrated` | The run was built on the current base and its instructions are unchanged. Its task is marked completed (a `status_change` on the task ledger), so it counts as done. |
 | `needs_rebase` | The run was built on an older base. Check it again after a rebase. |
 | `stale_instructions` | A decision or rule it started with was changed before integration. |
 | `rejected` | Rejected by a Reviewer or withdrawn by the member who queued it, or the run was revoked. |
 
+Other final outcomes are also written to the task's ledger
+(`integration.rejected`, for example) but leave the task open for another run.
 The Brain records the decision and the base it checked against. It does not
 run `git merge` or test the combined result. That stays with your normal
 review and CI.
@@ -391,7 +404,8 @@ which is the source of truth.
   ([details](design/team-foundations.md#workspace-registry-and-team-membership-one-authority)).
 - **Coordination does not merge.** The integration queue records decisions
   against a base you name; it does not run `git merge` or test the combined
-  patch. Overlap detection compares declared paths only, not code dependencies.
+  patch. Overlap detection compares paths (declared scopes, leases and the files an
+execution changed), not code dependencies.
 
 Backups of a team Brain have their own restore procedure, including the
 restore fence and `brain team reconcile`:

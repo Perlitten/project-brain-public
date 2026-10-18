@@ -14,7 +14,7 @@ other dated trace:
 * invitations (created, accepted, revoked) from ``team_invitations``;
 * team tasks and runs from ``team_task_bindings`` / ``agent_runs``;
 * membership and project-role changes, single sign-on bindings, queued jobs,
-  coordination events (scope overlaps, integration queue outcomes) and memory
+  coordination events (scope overlaps, integration queue outcomes, forced lease releases) and memory
   review events (``memory.proposed`` / ``memory.approved`` / ``memory.rejected``)
   from ``team_activity_events`` (written by provisioning, ``brain.team.oidc``, the
   job endpoints, ``brain/team/coordination.py`` and ``brain/memory/proposals.py``).
@@ -68,7 +68,7 @@ KINDS: dict[str, tuple[str, ...]] = {
     "job": ("job.queued",),
     "coordination": ("coordination.overlap", "coordination.integration_queued", "coordination.integrated",
                      "coordination.needs_rebase", "coordination.stale_instructions",
-                     "coordination.integration_rejected"),
+                     "coordination.integration_rejected", "coordination.lease_force_released"),
     # Governed memory review: a proposal was submitted, approved or rejected (no draft content in the event).
     "memory": ("memory.proposed", "memory.approved", "memory.rejected"),
 }

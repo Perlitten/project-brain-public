@@ -34,8 +34,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from brain.execution.bounded import (_GIT_TIMEOUT_SECONDS, SHA_PATTERN, ExecutorError, StepOutcome, StepRequest,
-                                     StopProbe, SubprocessBackend, WorkingCopy, finish_step, supervise)
+from brain.execution.bounded import (_GIT_TIMEOUT_SECONDS, CHANGED_PATHS_GIT, SHA_PATTERN, ExecutorError,
+                                     StepOutcome, StepRequest, StopProbe, SubprocessBackend, WorkingCopy, finish_step,
+                                     parse_changed_paths, supervise)
 from brain.execution.egress import PROXY_ALIAS, PROXY_PORT, READY_EVENT, EgressAllowlist
 
 WORKSPACE = "/workspace"
@@ -163,14 +164,18 @@ def step_argv(docker: Sequence[str], spec: StepContainer) -> list[str]:
     return [*argv, "--entrypoint", spec.command[0], spec.image_id, *spec.command[1:]]
 
 
-def head_argv(docker: Sequence[str], *, name: str, run_id: str, image_id: str, workdir: Path, user: str) -> list[str]:
-    """git status inside a hardened, network-less container over a read-only mount of the working copy."""
+HEAD_GIT = ("status", "--porcelain=v2", "--branch")
+
+
+def head_argv(docker: Sequence[str], *, name: str, run_id: str, image_id: str, workdir: Path, user: str,
+              git: Sequence[str] = HEAD_GIT) -> list[str]:
+    """git (status by default) inside a hardened, network-less container over a read-only mount of the working copy."""
     return [*docker, "run", "--rm", "--name", name, "--network", "none", *_hardening(user, run_id, "64m"),
             "--mount", f"type=bind,source={workdir},target={WORKSPACE},readonly", "--workdir", WORKSPACE,
             "--cpus", "1", "--memory", "256m", "--memory-swap", "256m", "--pids-limit", "64",
             "--log-driver", "none", "--env", "GIT_CONFIG_NOSYSTEM=1", "--env", "GIT_TERMINAL_PROMPT=0",
             "--entrypoint", "git", image_id, "--no-optional-locks", "-c", "safe.directory=*",
-            "-c", "core.fsmonitor=false", "status", "--porcelain=v2", "--branch"]
+            "-c", "core.fsmonitor=false", *git]
 
 
 def proxy_argv(docker: Sequence[str], *, name: str, run_id: str, network: str, image: str,
@@ -394,6 +399,25 @@ class ContainerBackend(SubprocessBackend):
             self._quiet(["rm", "--force", f"brain-exec-{run_id}-head"])
             raise ExecutorError("Could not read the working copy head (the environment image needs git)")
         return parse_status(result.stdout.decode("utf-8", "replace"))
+
+    def changed_paths(self, copy: WorkingCopy) -> list[str]:
+        state = self._runs.get(str(copy.run_dir))
+        if state is None or state.image_id is None:
+            return super().changed_paths(copy)
+        if not SHA_PATTERN.match(copy.base_sha or ""):
+            raise ExecutorError("The task base SHA is not a full commit SHA")
+        run_id, outputs = copy.run_dir.name, []
+        for index, args in enumerate(CHANGED_PATHS_GIT):
+            name = f"brain-exec-{run_id}-changes{index}"
+            git = [*args, copy.base_sha] if args[0] == "diff" else list(args)
+            result = self._docker(head_argv((), name=name, run_id=run_id, image_id=state.image_id,
+                                            workdir=_safe_mount_path(copy.path), user=self.config.user, git=git),
+                                  timeout=_GIT_TIMEOUT_SECONDS)
+            if result.returncode != 0:
+                self._quiet(["rm", "--force", name])
+                raise ExecutorError("Could not list the working copy changes (the environment image needs git)")
+            outputs.append(result.stdout.decode("utf-8", "replace"))
+        return parse_changed_paths(outputs)
 
 
 def parse_status(output: str) -> tuple[str, bool]:

@@ -261,8 +261,20 @@ databases: the proxy refuses private destinations, but defence in depth is cheap
   start-up recovery removes those of fenced runs.
 - **Configuration health.** `brain.team.execution.execution_config_health()` returns
   a pure, docker-free description of the execution configuration (backend,
-  environments, whether egress is enforced, missing secret variables) for
-  diagnostics such as `brain doctor`.
+  environments, whether egress is enforced, missing secret variables). The team
+  doctor's `execution_config` check is built on it and adds what only the worker
+  process can see: the root exists, and the docker CLI (container backend) or the
+  host tools (subprocess backend) resolve. The subprocess backend is reported as
+  a warning because it has no filesystem or network boundary.
+- **Changed files.** A completed execution records `changed_paths` (sorted,
+  repository-relative, at most 5000) and `changed_paths_total`: what the run
+  changed against the task base, tracked and untracked but not ignored. The
+  container backend lists them inside a network-less container over a read-only
+  mount. These paths feed M3 overlap detection (`overlaps` counts the warnings);
+  if they cannot be read the execution still completes with `changed_paths: null`.
+- **Dependencies.** M3 subtask dependencies are checked when an execution is
+  requested and again when it starts; an unfinished dependency at start revokes
+  it before a working copy is made.
 
 ## Known limits
 
@@ -283,8 +295,9 @@ databases: the proxy refuses private destinations, but defence in depth is cheap
 - Steps are a fixed list chosen at request time; no agent decides the next step.
 - Effects outside the working copy (network calls, files the server user can write)
   cannot be recalled or made idempotent.
-- The execution suite runs on SQLite and PostgreSQL, but sequentially: there is no
-  test of two workers racing for one lease on PostgreSQL yet.
+- The PostgreSQL race tests (several workers claiming one execution lease, two
+  workers executing one run) run only where `TEST_TEAM_POSTGRES_URL` points at a
+  disposable database; CI on SQLite skips them.
 
 ## What remains of M2
 
@@ -293,9 +306,9 @@ databases: the proxy refuses private destinations, but defence in depth is cheap
   stored capabilities).
 - Artifact upload/retention for working copies and logs, and cleanup policy.
 - External-effect idempotency (deduplicating side effects outside the clone).
-- `brain doctor` reporting for execution configuration and orphaned runs (the pure
-  `execution_config_health()` is there to build on).
+- `brain doctor` reporting for orphaned runs (execution configuration is covered
+  by the `execution_config` check).
 - A CI job running the container backend against a real Docker daemon.
-- PostgreSQL concurrency tests for leases and fencing.
+- Running the PostgreSQL concurrency tests in CI.
 - Dashboard UI and MCP tools for requesting and inspecting executions.
 - Resuming a fenced run from its last recorded step (today: request a new run).

@@ -49,6 +49,10 @@ EXCERPT_CHARS = 4000
 REDACTED = "[REDACTED]"
 _DEAD_PROXY = "http://127.0.0.1:9"
 _GIT_TIMEOUT_SECONDS = 120
+# Changed paths listed after a run (for overlap detection); a larger change set is truncated.
+MAX_CHANGED_PATHS = 5000
+# What the run changed against its base: tracked changes (committed or not) and untracked, unignored files.
+CHANGED_PATHS_GIT = (("diff", "--name-only", "-z", "--no-renames"), ("ls-files", "--others", "--exclude-standard", "-z"))
 
 
 class ExecutorError(RuntimeError):
@@ -132,6 +136,10 @@ class ExecutorBackend(Protocol):
         ...
 
     def head(self, copy: WorkingCopy) -> tuple[str, bool]:
+        ...
+
+    def changed_paths(self, copy: WorkingCopy) -> list[str]:
+        """Repository-relative paths the run changed against ``copy.base_sha`` (raises ``ExecutorError``)."""
         ...
 
     def release(self, copy: WorkingCopy) -> None:
@@ -296,6 +304,12 @@ def finish_step(copy: WorkingCopy, step: StepRequest, argv: list[str], result: P
                        log_path=str(log_path), runtime=runtime)
 
 
+def parse_changed_paths(outputs: Sequence[str]) -> list[str]:
+    """NUL-separated ``git diff --name-only -z`` / ``git ls-files -z`` outputs → sorted unique paths (capped)."""
+    paths = {item for output in outputs for item in output.split("\0") if item}
+    return sorted(paths)[:MAX_CHANGED_PATHS]
+
+
 @dataclass
 class SubprocessBackend:
     """Clone-per-run working copy and allowlisted subprocesses; no container, no network boundary."""
@@ -305,13 +319,14 @@ class SubprocessBackend:
     git: str = "git"
     source_roots: Callable[[], list[Path]] = field(default=allowed_repo_roots)
 
-    def _git(self, args: list[str], cwd: Path | None, run_dir: Path) -> str:
+    def _git(self, args: list[str], cwd: Path | None, run_dir: Path, *, strip: bool = True) -> str:
         result = subprocess.run([self.git, *args], cwd=str(cwd) if cwd else None, env=minimal_env(run_dir, {}),
                                 stdin=subprocess.DEVNULL, capture_output=True, timeout=_GIT_TIMEOUT_SECONDS,
                                 check=False)
         if result.returncode != 0:
             raise ExecutorError(f"git {args[0]} failed with exit code {result.returncode}")
-        return result.stdout.decode("utf-8", "replace").strip()
+        output = result.stdout.decode("utf-8", "replace")
+        return output.strip() if strip else output
 
     def prepare(self, root: Path, run_id: str, source: Path, base_sha: str, branch: str) -> WorkingCopy:
         if not SHA_PATTERN.match(base_sha or ""):
@@ -347,6 +362,13 @@ class SubprocessBackend:
         sha = self._git(["rev-parse", "HEAD"], copy.path, copy.run_dir)
         dirty = bool(self._git(["status", "--porcelain"], copy.path, copy.run_dir))
         return sha, dirty
+
+    def changed_paths(self, copy: WorkingCopy) -> list[str]:
+        if not SHA_PATTERN.match(copy.base_sha or ""):
+            raise ExecutorError("The task base SHA is not a full commit SHA")
+        outputs = [self._git([*args, copy.base_sha] if args[0] == "diff" else list(args), copy.path, copy.run_dir,
+                             strip=False) for args in CHANGED_PATHS_GIT]
+        return parse_changed_paths(outputs)
 
     def resolve_environment(self, environment: Any) -> Any:
         if environment is not None:

@@ -503,7 +503,14 @@ async def test_container_run_records_environment_egress_and_runtime_evidence(tea
     calls = _calls(log)
     assert calls[0]["argv"] == ["image", "inspect", "--", "brain-exec-test:1"]
     runs = _runs(calls)
-    assert len(runs) == 5 and runs[-1][runs[-1].index("--entrypoint") + 1] == "git"  # head read inside a container
+    # After the four steps: head, then the changed paths (diff against base, untracked files), all read inside
+    # hardened, network-less containers over a read-only mount; .git is untrusted once a step ran.
+    assert len(runs) == 7 and all(argv[argv.index("--entrypoint") + 1] == "git" for argv in runs[4:])
+    assert [argv[argv.index("--name") + 1] for argv in runs[5:]] == [f"brain-exec-{run_id}-changes0",
+                                                                      f"brain-exec-{run_id}-changes1"]
+    assert all(argv[argv.index("--network") + 1] == "none" and argv[argv.index("--mount") + 1].endswith(",readonly")
+               for argv in runs[4:])
+    assert runs[5][-5:] == ["diff", "--name-only", "-z", "--no-renames", source_repo[1]]
     for index, argv in enumerate(runs[:4]):
         name = f"brain-exec-{run_id}-s{index:03d}"
         assert argv[argv.index("--name") + 1] == name and argv[argv.index("--network") + 1] == "none"
@@ -517,6 +524,8 @@ async def test_container_run_records_environment_egress_and_runtime_evidence(tea
     assert (Path(completed["worktree_path"]) / "made-in-container.txt").exists() and completed["dirty"] is True
     assert not list((Path(completed["worktree_path"]).parent / "secrets").glob("*/*"))  # removed after each step
     assert completed["head_sha"] == source_repo[1]
+    assert completed["changed_paths"] == ["made-in-container.txt"] and completed["changed_paths_total"] == 1
+    assert completed["overlaps"] == 0
 
 
 @pytest.mark.asyncio

@@ -37,6 +37,14 @@ refuses further effects. Every write also presents the lease owner and
 fencing token; an owner whose lease expired or was taken over commits nothing.
 ``recover_orphaned_runs`` fences runs whose owner stopped renewing its lease.
 
+M3 subtask dependencies (``brain.team.coordination``) are checked when the
+run is requested, again when its execution is requested, and once more when the
+worker actually starts it: a dependency that is no longer done at that point
+(for example a dependency added to the plan since) revokes the execution before
+any working copy exists. When an execution completes, the files it changed
+(``changed_paths`` on the ``completed`` event) are compared with other active
+tasks' declared scopes and live leases (``coordination.overlap``).
+
 The outcome is derived from the ``run.execution.*`` events on the task ledger
 (``harness.agent_task_events``); there is no second status column.
 """
@@ -525,6 +533,9 @@ async def request_execution(session: AsyncSession, caller: ResolvedPrincipal, pr
     run, authority, effective = await authorize_execution(session, caller, project_id, task_id, run_id,
                                                           policy=policy, backend=backend, capabilities=requested)
     _check_steps(steps, effective, policy)
+    from brain.team import coordination  # lazy: coordination builds on brain.team.store, as this module does
+
+    await coordination.require_dependencies_done(session, task_id)
     key = str(payload.get("idempotency_key") or "")
     if not key or len(key) > 128:
         raise ExecutionDenied("An idempotency key of at most 128 characters is required")
@@ -813,7 +824,8 @@ class ExecutionRunner:
     def actor(self) -> str:
         return f"run:{self.lease.run_id}"
 
-    async def _deny_reason(self, session: AsyncSession, row: AgentRunExecution) -> str | None:
+    async def _deny_reason(self, session: AsyncSession, row: AgentRunExecution, *,
+                           starting: bool = False) -> str | None:
         if row.backend != self.backend.name:
             return "The executor backend changed since the request"
         requester = ResolvedPrincipal(row.requested_by, "", "", credential_id=row.requested_credential_id)
@@ -823,21 +835,30 @@ class ExecutionRunner:
                                       capabilities=Capabilities.from_row(row))
         except TeamDenied as exc:
             return str(exc)
+        if starting:
+            from brain.team import coordination  # lazy: see request_execution
+
+            try:
+                await coordination.require_dependencies_done(session, self.task_id)
+            except TeamConflict as exc:
+                return str(exc)
         return None
 
     async def checkpoint(self, write: Callable[[AsyncSession, AgentRunExecution, AgentRun], Awaitable[None]]
-                         | None = None) -> tuple[str, str]:
+                         | None = None, *, starting: bool = False) -> tuple[str, str]:
         """Fence, re-authorize, check cancellation and budget, then run ``write`` in the same transaction.
 
-        Returns ``("ok", "")`` or ``(outcome, reason)``. On revocation the
-        cancellation request is committed even though nothing else is."""
+        ``starting`` also re-checks the task's M3 dependencies (the checkpoint
+        before the first effect). Returns ``("ok", "")`` or ``(outcome, reason)``.
+        On revocation the cancellation request is committed even though nothing
+        else is."""
         async with self.factory() as session, session.begin():
             row = await _fence(session, self.lease, self.policy.lease_seconds)
             if row is None:
                 return "fenced", "The lease was lost; this owner may not commit results"
             if row.cancel_requested_at is not None:
                 return "cancelled", "Cancellation was requested"
-            reason = await self._deny_reason(session, row)
+            reason = await self._deny_reason(session, row, starting=starting)
             if reason is not None:
                 row.cancel_requested_at = _now()
                 return "revoked", reason
@@ -885,6 +906,21 @@ async def execution_state(factory: SessionFactory, run_id: uuid.UUID) -> dict:
         return await execution_dict(session, row, run)
 
 
+async def _changed_paths(backend: ExecutorBackend, copy: Any) -> list[str] | None:
+    """Files the run changed against its base (committed, uncommitted and untracked); ``None`` if unreadable.
+
+    Overlap detection is advisory, so a backend that cannot list changes does
+    not fail an otherwise completed run."""
+    lister = getattr(backend, "changed_paths", None)
+    if lister is None:
+        return None
+    try:
+        return list(await asyncio.to_thread(lister, copy))
+    except ExecutorError as exc:
+        logger.warning("Could not list changed files for run {}: {}", copy.run_dir.name, exc)
+        return None
+
+
 def _failure(outcome_evidence: dict) -> str:
     if outcome_evidence.get("error"):
         return str(outcome_evidence["error"])
@@ -924,8 +960,9 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
             await runner.conclude(outcome, {"reason": reason, "steps_recorded": recorded, "in_flight": in_flight})
         return await execution_state(factory, run_id)
 
-    # Every gate (including a known environment for this backend) before the first docker call.
-    outcome, reason = await runner.checkpoint()
+    # Every gate (including a known environment for this backend and the task's dependencies) before the first
+    # docker call.
+    outcome, reason = await runner.checkpoint(starting=True)
     if outcome != "ok":
         return await stop(outcome, reason, None, 0)
     try:
@@ -1002,14 +1039,22 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
                                                  "steps_recorded": index + 1, "in_flight": None})
                 return await execution_state(factory, run_id)
         head_sha, dirty = await asyncio.to_thread(backend.head, copy)
+        changed_paths = await _changed_paths(backend, copy)
 
         async def complete(session: AsyncSession, current_row: AgentRunExecution, current: AgentRun) -> None:
+            from brain.team import coordination  # lazy: see request_execution
+
             now = _now()
             current.head_sha, current.worktree_path = head_sha, str(copy.path)
             current_row.released_at = now
+            overlaps = await coordination.record_change_overlaps(session, current.task_id, changed_paths,
+                                                                 actor_id=current.requested_by)
             _event(session, current, "completed", f"{lease.token}:completed", runner.actor,
                    {"fencing_token": lease.token, "base_sha": base_sha, "head_sha": head_sha, "dirty": dirty,
-                    "worktree_path": str(copy.path), "steps_recorded": len(steps)})
+                    "worktree_path": str(copy.path), "steps_recorded": len(steps),
+                    "changed_paths": coordination.changed_scope(changed_paths) if changed_paths is not None else None,
+                    "changed_paths_total": len(changed_paths) if changed_paths is not None else None,
+                    "overlaps": len(overlaps)})
 
         outcome, reason = await runner.checkpoint(complete)
         if outcome != "ok":
