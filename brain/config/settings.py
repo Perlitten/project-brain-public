@@ -294,6 +294,14 @@ class Settings(BaseSettings):
     BRAIN_EXECUTION_CONTAINER_TMPFS: str = "256m"
     BRAIN_EXECUTION_EGRESS_PROXY_IMAGE: str = ""
     BRAIN_EXECUTION_EGRESS_UPSTREAM_NETWORK: str = "bridge"
+    # LLM providers executions may declare (docs/operations/TEAM_EXECUTION.md#llm-providers-consent-and-budget):
+    # JSON name -> {"hosts": ["api.example.com", ...], "models": [...] (optional; empty = any)}. In team state a
+    # run that declares one also needs a team administrator's consent and a project LLM budget.
+    BRAIN_EXECUTION_LLM_PROVIDERS: str = "{}"
+    # Execution artifacts (step log tails, test reports, the final patch) stored in the database: the cap for
+    # one artifact and for all artifacts of one run.
+    BRAIN_EXECUTION_ARTIFACT_MAX_BYTES: int = 1048576
+    BRAIN_EXECUTION_ARTIFACTS_MAX_BYTES: int = 8388608
     # Deterministic retrieval: skip LLM for task classification/keyword extraction
     RETRIEVAL_USE_LLM_CLASSIFICATION: bool = False
     # Optional LLM rerank for top-30 -> top-10 (deterministic fallback always available)

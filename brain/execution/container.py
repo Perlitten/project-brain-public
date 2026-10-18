@@ -34,9 +34,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from brain.execution.bounded import (_GIT_TIMEOUT_SECONDS, CHANGED_PATHS_GIT, SHA_PATTERN, ExecutorError,
-                                     StepOutcome, StepRequest, StopProbe, SubprocessBackend, WorkingCopy, finish_step,
-                                     parse_changed_paths, supervise)
+from brain.execution.bounded import (_GIT_TIMEOUT_SECONDS, CHANGED_PATHS_GIT, PATCH_GIT, SHA_PATTERN, ExecutorError,
+                                     StepOutcome, StepRequest, StopProbe, SubprocessBackend, WorkingCopy, build_patch,
+                                     finish_step, parse_changed_paths, supervise)
 from brain.execution.egress import PROXY_ALIAS, PROXY_PORT, READY_EVENT, EgressAllowlist
 
 WORKSPACE = "/workspace"
@@ -418,6 +418,28 @@ class ContainerBackend(SubprocessBackend):
                 raise ExecutorError("Could not list the working copy changes (the environment image needs git)")
             outputs.append(result.stdout.decode("utf-8", "replace"))
         return parse_changed_paths(outputs)
+
+    def patch(self, copy: WorkingCopy, limit: int) -> tuple[bytes, bool]:
+        """git runs inside a container (the ``.git`` is untrusted); untracked files are read here without
+        following symlinks."""
+        state = self._runs.get(str(copy.run_dir))
+        if state is None or state.image_id is None:
+            return super().patch(copy, limit)
+        if not SHA_PATTERN.match(copy.base_sha or ""):
+            raise ExecutorError("The task base SHA is not a full commit SHA")
+        run_id, outputs = copy.run_dir.name, []
+        for index, git in enumerate(([*PATCH_GIT, copy.base_sha], list(CHANGED_PATHS_GIT[1]))):
+            name = f"brain-exec-{run_id}-patch{index}"
+            result = self._docker(head_argv((), name=name, run_id=run_id, image_id=state.image_id,
+                                            workdir=_safe_mount_path(copy.path), user=self.config.user, git=git),
+                                  timeout=_GIT_TIMEOUT_SECONDS)
+            if result.returncode != 0:
+                self._quiet(["rm", "--force", name])
+                raise ExecutorError("Could not build the working copy patch (the environment image needs git)")
+            outputs.append(result.stdout)
+        tracked, untracked = outputs
+        return build_patch(tracked[:limit], len(tracked), copy.path,
+                           parse_changed_paths([untracked.decode("utf-8", "replace")]), limit)
 
 
 def parse_status(output: str) -> tuple[str, bool]:
