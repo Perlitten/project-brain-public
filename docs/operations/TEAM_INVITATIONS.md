@@ -132,7 +132,8 @@ recorded state.
   listed hop, and uses the first address that is not listed. List the web
   dashboard's address as the API sees it, plus any reverse proxy between them
   (for nginx in front of the API, its address too, since it appends the
-  dashboard's address to the header). The dashboard sends the address its own
+  dashboard's address to the header). The [one-team package](TEAM_DEPLOY.md#the-https-front)
+  sets it to Caddy's and the dashboard's addresses for you. The dashboard sends the address its own
   front proxy reported (the rightmost `X-Forwarded-For` entry, else
   `X-Real-IP`; Vercel sets both), so run it behind such a proxy. Without the
   setting, every dashboard invitee shares the dashboard's one budget, and a
