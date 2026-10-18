@@ -38,6 +38,7 @@ a live author, compare-and-swap and one decision per proposal.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional, cast
@@ -54,7 +55,7 @@ from brain.memory.learning_store import LearningStore
 from brain.memory.provenance import SelfApprovalError, check_expected_version
 from brain.memory.repo_scope import normalize_repo_scope
 from brain.memory.rule_store import RuleStore, _find_rule, slugify
-from brain.team.models import TeamMember
+from brain.team.models import AgentRun, TeamMember
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,10 @@ PERSONAL_STATUS = "personal"
 REVOKED_AUTHOR_REASON = "Author access revoked"
 # ``payload.origin`` of a learning proposal filed by consolidation (no personal learning behind it).
 CONSOLIDATION_ORIGIN = "memory_consolidation"
+# The independence check's author for a proposal the system filed (consolidation of
+# unattributed evidence): no team-state principal has id 0, so every named reviewer
+# is independent of it; the evidence authors are excluded separately.
+SYSTEM_AUTHOR_ID = 0
 
 DECISION_FIELDS = ("description", "status", "date", "reason", "consequences",
                    "affected_features", "affected_modules", "affected_files")
@@ -137,6 +142,23 @@ async def record_review_event(session: AsyncSession, row: MemoryProposal, kind: 
         logger.warning("Could not record %s for proposal %s: %s: %s", kind, row.id, type(exc).__name__, exc)
 
 
+async def notify_reviewers(proposal_id: int, kind: str, repo_path: Optional[str]) -> None:
+    """Opt-in push (``MEMORY_REVIEW_TELEGRAM_NOTIFY``) to the owner chat once a proposal is committed.
+
+    The message names the proposal, never its draft content. Best effort and
+    bounded: a slow or failing channel never fails or stalls the submission."""
+    if not settings.MEMORY_REVIEW_TELEGRAM_NOTIFY:
+        return
+    try:
+        from brain.alerts.telegram import deliver_memory_proposal_notice
+
+        await asyncio.wait_for(
+            deliver_memory_proposal_notice(proposal_id=proposal_id, kind=kind, repo_path=repo_path),
+            timeout=min(5.0, float(settings.TELEGRAM_ALERT_TIMEOUT_S)))
+    except Exception as exc:  # noqa: BLE001 - the proposal stands; the push is best effort
+        logger.warning("Review notification for proposal %s failed: %s", proposal_id, type(exc).__name__)
+
+
 async def _target(session: AsyncSession, kind: str, title: str, repo_path: Optional[str],
                   payload: dict[str, Any]) -> tuple[Optional[str], int]:
     """(canonical key, current version) of the item a decision/rule proposal would change; (None, 0) if new."""
@@ -174,7 +196,8 @@ async def create_proposal(kind: Literal["decision", "rule"], *, title: str, repo
         await record_review_event(session, row, "memory.proposed", author_principal_id)
         await session.commit()
         await session.refresh(row)
-        return row
+    await notify_reviewers(row.id, row.kind, row.requested_repo_path or row.repo_path)
+    return row
 
 
 async def registered_repo_spelling(scope: Optional[str]) -> Optional[str]:
@@ -218,28 +241,33 @@ async def propose_learning(learning_id: int, author_principal_id: Optional[int],
         await record_review_event(session, row, "memory.proposed", author_principal_id)
         await session.commit()
         await session.refresh(row)
-        return row
+    await notify_reviewers(row.id, row.kind, row.requested_repo_path or row.repo_path)
+    return row
 
 
 async def add_consolidated_learning_proposal(
         session: AsyncSession, *, statement: str, category: Optional[str], confidence: float,
         evidence: list[dict[str, Any]], repo_path: Optional[str], requested_repo_path: Optional[str],
-        author_principal_id: int, episode_id: int, supersedes: list[int], severity: str,
-        suggested_target: str, evidence_tier: str) -> MemoryProposal:
+        author_principal_id: Optional[int], episode_id: int, supersedes: list[int], severity: str,
+        suggested_target: str, evidence_tier: str, approval_reason: Optional[str] = None) -> MemoryProposal:
     """File a consolidation learning proposal inside the caller's (episode) transaction.
 
     Team state only: the cluster's evidence comes from too few principals to
-    reach shared memory unreviewed. The proposal is authored by the lead
-    principal behind the evidence and carries everything approval needs to
+    reach shared memory unreviewed, or gate G4 wants a human approval
+    (``approval_reason`` set, ``payload.gate == "G4"``). The proposal is
+    authored by the lead principal behind the evidence (None, i.e. the system,
+    when no evidence is attributed) and carries everything approval needs to
     write the learning; ``target_key`` stays NULL (no personal learning)."""
+    payload: dict[str, Any] = {
+        "origin": CONSOLIDATION_ORIGIN, "statement": statement, "category": category, "confidence": confidence,
+        "evidence": list(evidence), "episode_id": episode_id, "supersedes": [int(item) for item in supersedes],
+        "severity": severity, "suggested_target": suggested_target, "evidence_tier": evidence_tier,
+    }
+    if approval_reason:
+        payload.update(gate="G4", approval_reason=approval_reason)
     row = MemoryProposal(kind="learning", state="pending", version=1, repo_path=normalize_repo_scope(repo_path),
                          requested_repo_path=requested_repo_path, target_key=None, base_version=0,
-                         title=statement[:255],
-                         payload={"origin": CONSOLIDATION_ORIGIN, "statement": statement, "category": category,
-                                  "confidence": confidence, "evidence": list(evidence), "episode_id": episode_id,
-                                  "supersedes": [int(item) for item in supersedes], "severity": severity,
-                                  "suggested_target": suggested_target, "evidence_tier": evidence_tier},
-                         author_principal_id=author_principal_id)
+                         title=statement[:255], payload=payload, author_principal_id=author_principal_id)
     session.add(row)
     await session.flush()
     await record_review_event(session, row, "memory.proposed", author_principal_id)
@@ -270,13 +298,14 @@ async def personal_learnings(author_principal_id: Optional[int]) -> list[Learnin
 
 
 async def count_pending_proposals(*, scopes: Optional[list[Optional[str]]] = None,
-                                  exclude_author: Optional[int] = None) -> int:
+                                  exclude_author: Optional[int] = None,
+                                  exclude_evidence_author: Optional[int] = None) -> int:
     """How many pending proposals wait in ``scopes`` (None = every scope), leaving out ``exclude_author``'s own
     (nobody reviews their own proposal). Same scope semantics as ``list_proposals``."""
-    stmt = select(func.count()).select_from(MemoryProposal).where(MemoryProposal.state == "pending")
+    filters = [MemoryProposal.state == "pending"]
     if exclude_author is not None:
-        stmt = stmt.where(or_(MemoryProposal.author_principal_id.is_(None),
-                              MemoryProposal.author_principal_id != exclude_author))
+        filters.append(or_(MemoryProposal.author_principal_id.is_(None),
+                           MemoryProposal.author_principal_id != exclude_author))
     if scopes is not None:
         paths = [scope for scope in scopes if scope is not None]
         clauses = []
@@ -286,9 +315,13 @@ async def count_pending_proposals(*, scopes: Optional[list[Optional[str]]] = Non
             clauses.append(MemoryProposal.repo_path.is_(None))
         if not clauses:
             return 0
-        stmt = stmt.where(or_(*clauses))
+        filters.append(or_(*clauses))
     async with async_session_factory() as session:
-        return int((await session.execute(stmt)).scalar_one())
+        if exclude_evidence_author is None:
+            stmt = select(func.count()).select_from(MemoryProposal).where(*filters)
+            return int((await session.execute(stmt)).scalar_one())
+        rows = (await session.execute(select(MemoryProposal).where(*filters))).scalars().all()
+        return sum(exclude_evidence_author not in _evidence_principals(row) for row in rows)
 
 
 async def get_proposal(proposal_id: int) -> MemoryProposal:
@@ -327,12 +360,20 @@ async def list_proposals(*, state: Optional[str] = "pending", kind: Optional[str
 
 
 async def _author_is_live(session: AsyncSession, author_principal_id: Optional[int]) -> bool:
-    """A team author must still be a live, verified team member for their proposal to be decided on."""
+    """A team author, or a run's human initiator, must still be a live verified member."""
     if author_principal_id is None:
         return False
     member = (await session.execute(select(TeamMember).where(
         TeamMember.principal_id == author_principal_id))).scalar_one_or_none()
-    return bool(member and member.verified_at and not member.revoked_at)
+    if member is not None:
+        return bool(member.verified_at and not member.revoked_at)
+    run = (await session.execute(select(AgentRun).where(
+        AgentRun.principal_id == author_principal_id))).scalar_one_or_none()
+    if run is None or run.revoked_at is not None:
+        return False
+    initiator = (await session.execute(select(TeamMember).where(
+        TeamMember.principal_id == run.initiator_id))).scalar_one_or_none()
+    return bool(initiator and initiator.verified_at and not initiator.revoked_at)
 
 
 async def _claim(session: AsyncSession, proposal_id: int, expected_version: int, new_state: str,
@@ -358,10 +399,37 @@ async def _claim(session: AsyncSession, proposal_id: int, expected_version: int,
     return row
 
 
+def _is_consolidated(row: MemoryProposal) -> bool:
+    return row.kind == "learning" and (row.payload or {}).get("origin") == CONSOLIDATION_ORIGIN
+
+
+def system_filed(row: MemoryProposal) -> bool:
+    """A consolidation proposal without an author: filed by the system for unattributed evidence."""
+    return row.author_principal_id is None and _is_consolidated(row)
+
+
+def _evidence_principals(row: MemoryProposal) -> set[int]:
+    """Principals behind a consolidation proposal's L1 evidence."""
+    found: set[int] = set()
+    for item in (row.payload or {}).get("evidence") or []:
+        try:
+            if isinstance(item, dict) and item.get("author_principal_id") is not None:
+                found.add(int(item["author_principal_id"]))
+        except (TypeError, ValueError):
+            continue
+    return found
+
+
 def _check_independent(row: MemoryProposal, reviewer_principal_id: Optional[int], team_state: str) -> None:
-    if team_state == "team" and (reviewer_principal_id is None or reviewer_principal_id == row.author_principal_id):
+    if team_state != "team":
+        return
+    if reviewer_principal_id is None or reviewer_principal_id == row.author_principal_id:
         raise SelfApprovalError("Independent, attributed approval is required: the author cannot review "
                                 "their own proposal")
+    # Consolidated memory: whoever supplied the evidence is not independent of the claim either.
+    if _is_consolidated(row) and reviewer_principal_id in _evidence_principals(row):
+        raise SelfApprovalError("Independent, attributed approval is required: this proposal rests on your own "
+                                "evidence")
 
 
 async def approve_proposal(proposal_id: int, *, expected_version: int, reviewer_principal_id: Optional[int],
@@ -376,7 +444,9 @@ async def approve_proposal(proposal_id: int, *, expected_version: int, reviewer_
         if row is None:
             raise ProposalNotFound(f"Proposal {proposal_id} not found")
         _check_independent(row, reviewer_principal_id, team_state)
-        if team_state == "team" and not await _author_is_live(session, row.author_principal_id):
+        # A consolidation proposal without an author was filed by the system (unattributed G4 evidence).
+        if team_state == "team" and not system_filed(row) and not await _author_is_live(session,
+                                                                                         row.author_principal_id):
             raise ProposalStateError(f"Proposal {proposal_id} cannot be approved: its author no longer has "
                                      "team access")
         row = await _claim(session, proposal_id, expected_version, "approved", reviewer_principal_id, reason)

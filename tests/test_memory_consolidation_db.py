@@ -690,3 +690,57 @@ async def test_promote_candidate_explicit_scope_wins_and_underivable_stays_null(
         orphan = await session.get(Learning, orphan_id)
     assert explicit.repo_scope == "/tmp/explicit-repo"
     assert orphan.repo_scope is None
+
+
+@pytest.mark.asyncio
+async def test_team_state_g4_episode_is_decided_in_the_proposal_queue(memory_db):
+    with patch.object(consolidation, "_memory_team_state", AsyncMock(return_value="team")):
+        await memory_db.add_events(2, authors=[11, 12])
+        report = await memory_db.run(require_approval=True)
+    entry = report["needs_approval"][0]
+    assert "proposal_id" in entry and report["pending_total"] == 0
+    async with memory_db.sessions() as session:
+        row = await session.get(MemoryProposal, entry["proposal_id"])
+        episode = await session.get(MemoryEpisode, entry["episode_id"])
+    assert episode.status == "proposed" and row.state == "pending" and row.kind == "learning"
+    assert row.payload["gate"] == "G4" and row.payload["approval_reason"].startswith("G4:")
+    assert row.author_principal_id == 11 and row.payload["episode_id"] == episode.id
+    assert await memory_db.count(Learning) == 0
+
+    # One queue: the legacy episode endpoint refuses it.
+    with pytest.raises(EpisodeStateError, match="review queue"):
+        await approve_episode(episode.id, "ok", principal_id=13, team_state="team")
+    with pytest.raises(EpisodeStateError, match="review queue"):
+        await reject_episode(episode.id, "no", principal_id=13, team_state="team")
+
+    # A principal behind the evidence is not an independent reviewer, even when not the author.
+    with patch("brain.memory.proposals._author_is_live", AsyncMock(return_value=True)):
+        with pytest.raises(SelfApprovalError, match="your own evidence"):
+            await proposals.approve_proposal(row.id, reviewer_principal_id=12, expected_version=row.version,
+                                             team_state="team")
+        approved = await proposals.approve_proposal(row.id, reviewer_principal_id=13,
+                                                    expected_version=row.version, team_state="team")
+    assert approved.state == "approved"
+    async with memory_db.sessions() as session:
+        learning = (await session.execute(select(Learning))).scalar_one()
+        episode = await session.get(MemoryEpisode, entry["episode_id"])
+    assert learning.status == "active" and learning.approved_by_principal_id == 13
+    assert episode.status == "promoted" and episode.promoted_to_learning_id == learning.id
+
+
+@pytest.mark.asyncio
+async def test_team_state_g4_on_unattributed_evidence_is_filed_by_the_system(memory_db):
+    with patch.object(consolidation, "_memory_team_state", AsyncMock(return_value="team")):
+        await memory_db.add_events(2)
+        report = await memory_db.run(require_approval=True)
+    entry = report["needs_approval"][0]
+    async with memory_db.sessions() as session:
+        row = await session.get(MemoryProposal, entry["proposal_id"])
+    assert row.author_principal_id is None and proposals.system_filed(row)
+    # No author to check for liveness: any attributed reviewer may decide it.
+    approved = await proposals.approve_proposal(row.id, reviewer_principal_id=13, expected_version=row.version,
+                                                team_state="team")
+    assert approved.state == "approved"
+    async with memory_db.sessions() as session:
+        learning = (await session.execute(select(Learning))).scalar_one()
+    assert learning.author_principal_id is None and learning.approved_by_principal_id == 13

@@ -450,6 +450,33 @@ async def deliver_maintenance_alert(
     return await _send("\n".join(lines)[:TELEGRAM_MAX_TEXT])
 
 
+def _repository_name(repo_path: str | None) -> str:
+    """Last path segment of a repository path (POSIX or Windows spelling); system-global when none."""
+    if not repo_path or not repo_path.strip():
+        return "system-global"
+    return repo_path.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1] or repo_path
+
+
+async def deliver_memory_proposal_notice(*, proposal_id: int, kind: str, repo_path: str | None) -> dict[str, Any]:
+    """Tell the owner chat that a memory proposal awaits review (opt-in, off by default).
+
+    Only the proposal number, its kind and the repository name are sent: never
+    the title, statement or any other draft content, which stays in the review queue.
+    """
+    if not settings.MEMORY_REVIEW_TELEGRAM_NOTIFY:
+        return {"status": "disabled", "reason": "MEMORY_REVIEW_TELEGRAM_NOTIFY=false"}
+    if not settings.TELEGRAM_ALERTS_ENABLED:
+        return {"status": "disabled", "reason": "TELEGRAM_ALERTS_ENABLED=false"}
+    lines = [
+        f"📝 Memory proposal #{proposal_id} awaits review",
+        f"{_text(kind, 20).capitalize()} in {_text(_repository_name(repo_path), 80)}",
+    ]
+    link = _link("/review")
+    if link:
+        lines.append(link)
+    return await _send("\n".join(lines)[:TELEGRAM_MAX_TEXT])
+
+
 async def deliver_deep_context_alert(
     *,
     repo_path: str,

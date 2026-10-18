@@ -832,6 +832,11 @@ async def _propose_normative_projection(
     return {"target": target, "proposal_id": row.id}
 
 
+def _reviewed_as_proposal(outcome: GateOutcome, team_state: Optional[str]) -> bool:
+    """PROPOSE, and in team state a G4 escalation, are decided in the memory proposal queue."""
+    return outcome == GateOutcome.PROPOSE or (outcome == GateOutcome.NEEDS_APPROVAL and team_state == "team")
+
+
 async def _persist_cluster(
     cluster: List[AgentTaskEvent],
     candidate: ConsolidationCandidate,
@@ -847,12 +852,16 @@ async def _persist_cluster(
     The episode and learning are attributed to the sole principal behind the
     evidence (None when the evidence is mixed or unattributed).
     PROPOSE (team state) writes no learning: the episode waits as ``proposed``
-    on a learning ``MemoryProposal`` filed in the same transaction.
+    on a learning ``MemoryProposal`` filed in the same transaction. So does a
+    G4 NEEDS_APPROVAL episode in team state: reviewers decide it in the one
+    proposal queue (independent reviewer, CAS) instead of on ``/episodes``;
+    solo state keeps the ``pending`` episode and its approval endpoint.
     """
     embedding = await _episode_embedding(candidate.statement)
     author_id = sole_principal(candidate.evidence)
+    reviewed = _reviewed_as_proposal(gate.outcome, team_state)
     proposal_spelling: Optional[str] = None
-    if gate.outcome == GateOutcome.PROPOSE and repo_scope is not None:
+    if reviewed and repo_scope is not None:
         from brain.memory.proposals import registered_repo_spelling
 
         proposal_spelling = await registered_repo_spelling(normalize_repo_scope(repo_scope))
@@ -862,7 +871,7 @@ async def _persist_cluster(
                 source_event_ids=[e.id for e in cluster],
                 distilled_summary=candidate.statement,
                 topic=candidate.category,
-                status=_EPISODE_STATUS[gate.outcome],
+                status="proposed" if reviewed else _EPISODE_STATUS[gate.outcome],
                 confidence=candidate.confidence,
                 gate_reasons=list(gate.reasons),
                 duplicate_of_learning_id=gate.duplicate_of,
@@ -899,12 +908,15 @@ async def _persist_cluster(
                     session=session,
                 )
             proposal_id = None
-            if gate.outcome == GateOutcome.PROPOSE:
+            if reviewed:
                 from brain.memory.proposals import add_consolidated_learning_proposal
 
+                # The lead principal behind the evidence authors it; a G4 escalation of
+                # unattributed evidence (require_approval skips G2) has no author: "system".
                 proposer = lead_principal(candidate.evidence)
-                if proposer is None:  # pragma: no cover - G2 only proposes attributed evidence
+                if proposer is None and gate.outcome == GateOutcome.PROPOSE:  # pragma: no cover - G2
                     raise ValueError("A consolidation proposal needs an attributed principal")
+                approval = [r for r in gate.reasons if r.startswith("G4:")]
                 proposal = await add_consolidated_learning_proposal(
                     session, statement=candidate.statement, category=candidate.category,
                     confidence=candidate.confidence, evidence=candidate.evidence,
@@ -912,15 +924,20 @@ async def _persist_cluster(
                     author_principal_id=proposer, episode_id=episode.id, supersedes=list(gate.supersedes),
                     severity=candidate.severity, suggested_target=candidate.suggested_target,
                     evidence_tier=candidate.evidence_tier,
+                    approval_reason=approval[-1] if gate.outcome == GateOutcome.NEEDS_APPROVAL and approval else None,
                 )
                 proposal_id = proposal.id
             await session.flush()
             result: Dict[str, Any] = {"episode_id": episode.id, "learning_id": learning_id}
             if proposal_id is not None:
                 result["proposal_id"] = proposal_id
-            if gate.supersedes and gate.outcome != GateOutcome.PROPOSE:
+            if gate.supersedes and not reviewed:
                 result["superseded"] = list(gate.supersedes)
             scope = episode.repo_scope
+    if proposal_id is not None:
+        from brain.memory.proposals import notify_reviewers
+
+        await notify_reviewers(proposal_id, "learning", proposal_spelling or scope)
     if learning_id is not None:
         try:
             routed = await _route_to_normative_store(
@@ -1078,6 +1095,9 @@ async def _decide_pending_episode(
             ).scalar_one_or_none()
             if episode is None:
                 raise LookupError(f"Episode {episode_id} not found")
+            if episode.status == "proposed":
+                raise EpisodeStateError(f"Episode {episode_id} is reviewed as a memory proposal: decide it in "
+                                        "the review queue (/memory/proposals)")
             if episode.status != "pending":
                 raise EpisodeStateError(f"Episode {episode_id} is {episode.status}, not pending")
             evidence = await _episode_evidence(session, episode)

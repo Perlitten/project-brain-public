@@ -110,14 +110,16 @@ async def _pending_review_count(principal: ResolvedPrincipal, state: str, is_adm
         if state == "solo":
             return await proposals.count_pending_proposals()
         if is_admin:
-            return await proposals.count_pending_proposals(exclude_author=principal.author_id)
+            return await proposals.count_pending_proposals(exclude_author=principal.author_id,
+                                                           exclude_evidence_author=principal.author_id)
         paths = {normalize_repo_scope(repository.get("path"))
                  for project in projects if Permission.APPROVE.value in project["effective_permissions"]
                  for repository in project["repositories"]}
         scopes: list[str | None] = [path for path in sorted(p for p in paths if p)]
         if not scopes:
             return 0
-        return await proposals.count_pending_proposals(scopes=scopes, exclude_author=principal.author_id)
+        return await proposals.count_pending_proposals(scopes=scopes, exclude_author=principal.author_id,
+                                                       exclude_evidence_author=principal.author_id)
     except Exception as exc:  # the identity endpoint must answer even if the review queue cannot be read
         logger.warning("Pending review count failed: %s: %s", type(exc).__name__, exc)
         return 0

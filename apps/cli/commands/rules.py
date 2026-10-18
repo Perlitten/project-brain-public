@@ -2,6 +2,7 @@ import typer
 import asyncio
 from typing import Optional
 import json
+from apps.cli.commands._local_memory import run_as_operator, write_as_local_principal
 from brain.memory.rule_store import RuleStore
 
 rules_cli = typer.Typer(help="Manage compliance and architecture rules.")
@@ -26,6 +27,11 @@ def add_rule_cmd(
             typer.secho("Error: --applies-to must be valid JSON.", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=1)
 
+    if write_as_local_principal("rule", dict(
+        name=name, repo_path=repo_path, description=description, type=rule_type, severity=severity,
+        status=status, applies_to=applies_to, rule_id=rule_id,
+    )):
+        return
     try:
         r_id = asyncio.run(RuleStore.add_rule(
             name=name,
@@ -66,7 +72,7 @@ def sync_rules_cmd(
 ):
     """Synchronize rules from a YAML configuration file."""
     try:
-        asyncio.run(RuleStore.sync_rules_from_yaml(yaml_path))
+        run_as_operator("rules sync", lambda: RuleStore.sync_rules_from_yaml(yaml_path))
         typer.secho(f"Successfully synchronized rules from {yaml_path}", fg=typer.colors.GREEN)
     except Exception as e:
         typer.secho(f"Failed to sync rules: {e}", fg=typer.colors.RED, err=True)

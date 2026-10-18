@@ -28,6 +28,10 @@ Use the same absolute `repo_path` in tool calls that you passed to indexing.
 Repository decisions and rules should use that scope; omit it only for
 intentionally global knowledge. Availability of tools does not make the client
 invoke them automatically; add an appropriate task workflow to its instructions.
+The local server acts as the operator and writes decisions and rules directly.
+In a team, set `BRAIN_LOCAL_PRINCIPAL_KEY` to a member's `pbk_` key to make its
+writes follow [governed memory](MEMORY_REVIEW.md#local-surfaces-stdio-mcp-server-and-brain-cli)
+(a proposal for a member, a direct write for a team administrator).
 
 ### Remote transports
 
