@@ -28,13 +28,18 @@ Five pieces, all on top of the M1 task/run model and the central ``authorize()``
   resources with fencing tokens (``team_resource_leases``), the same
   compare-and-swap pattern as the M2 execution lease. Revoking a member
   releases their leases (``brain.team.provisioning.revoke_principal_access``);
-  a project administrator can force-release a lease with a recorded reason
+  a team administrator can force-release a lease with a recorded reason
   (``force_release_lease``), which also bumps the fencing token.
 * **Integration queue.** Completed runs (a recorded head revision) are queued
   per repository. ``integrate`` re-validates the next entry against the
-  current base revision: a different base gives ``needs_rebase``, superseded
-  instructions give ``stale_instructions``, otherwise an independent reviewer
-  marks it ``integrated``. No git merge happens here. An integrated entry
+  current base revision: a different base gives ``needs_rebase`` unless the
+  current base is the head of entries integrated on the run's own base, in
+  which case the run's patch is applied after theirs in a temporary index
+  (``brain.team.combined_patch``): a conflict rejects it with the paths, a
+  clean result goes on to the other checks; superseded instructions give
+  ``stale_instructions``, otherwise an independent reviewer marks it
+  ``integrated``. No git merge or push happens here: the combined patch is
+  computed and reported, and the integrator merges. An integrated entry
   completes its task (``agent_tasks.status = "completed"`` plus a
   ``status_change`` event); a rejected one is recorded on the task ledger and
   leaves the task open for another run.
@@ -56,6 +61,8 @@ from brain.auth.principals import ResolvedPrincipal
 from brain.database.harness_models import AgentTask, AgentTaskEvent
 from brain.database.models import Decision, Repository, Rule
 from brain.database.repository_utils import repository_path_candidates
+from brain.config.settings import settings
+from brain.team import combined_patch
 from brain.team.activity import record_event
 from brain.team.authorization import (Permission, TeamConflict, TeamDenied, administrator, authorize, fresh,
                                       permissions)
@@ -1105,6 +1112,32 @@ async def _entry(session: AsyncSession, project_id: uuid.UUID, entry_id: int, ex
     return entry
 
 
+def _run_copy(path: str | None) -> str | None:
+    """A run's working copy, only when it lies inside the operator's execution root."""
+    root = settings.BRAIN_EXECUTION_ROOT
+    if not path or not root:
+        return None
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+    except (OSError, ValueError):
+        return None
+    return path
+
+
+async def _combined_patch(session: AsyncSession, entry: TeamIntegrationEntry, run: AgentRun,
+                          integrated: list[TeamIntegrationEntry]) -> dict:
+    """``entry``'s patch applied after ``integrated`` (oldest first) on its base, off the event loop."""
+    repository = await fresh(session, Repository, Repository.id == entry.repository_id)
+    runs = {row.id: row for row in (await session.execute(select(AgentRun).where(
+        AgentRun.id.in_([item.run_id for item in integrated])))).scalars().all()} if integrated else {}
+    sources = [repository.path if repository is not None else None, _run_copy(run.worktree_path),
+               *(_run_copy(runs[item.run_id].worktree_path) for item in integrated if item.run_id in runs)]
+    return await asyncio.to_thread(
+        combined_patch.combine, entry.base_sha,
+        [combined_patch.Patch(str(item.id), item.head_sha) for item in integrated],
+        combined_patch.Patch(str(entry.id), entry.head_sha), sources)
+
+
 async def integrate(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID, entry_id: int,
                     payload: dict) -> dict:
     """Re-validate one entry against the current base and mark it integrated, or record why not.
@@ -1113,7 +1146,14 @@ async def integrate(session: AsyncSession, caller: ResolvedPrincipal, project_id
     initiator or requester. Entries are taken in queue order: an earlier entry
     still ``queued`` in the same repository must be integrated or rejected first.
     The outcome is returned (and committed) rather than raised, so a
-    ``needs_rebase`` or ``stale_instructions`` verdict stays on record."""
+    ``needs_rebase`` or ``stale_instructions`` verdict stays on record.
+
+    A run built on an older base is not sent back for a rebase when the
+    current base is the head of an entry integrated on that same base: its
+    patch is applied after those entries' patches in a temporary index
+    (``combined_patch``). Clean -> checked like any other entry; conflict ->
+    ``rejected`` with the paths; the check could not run -> ``needs_rebase``.
+    Nothing is merged or pushed; the response carries the combined patch."""
     authority = await authorize(session, caller, project_id, Permission.ACCEPT)
     entry = await _entry(session, project_id, entry_id, payload["expected_version"])
     run = await fresh(session, AgentRun, AgentRun.id == entry.run_id)
@@ -1131,15 +1171,39 @@ async def integrate(session: AsyncSession, caller: ResolvedPrincipal, project_id
     current_base = payload.get("current_base_sha") or (integrated[0].head_sha if integrated else None)
     if current_base is None:
         raise TeamConflict("current_base_sha is required until an entry has been integrated in this repository")
-    if any(item.base_sha == current_base and item.head_sha != current_base for item in integrated):
+    # An entry checked against another entry's head (its own base or a combined one) moved the target past it.
+    if any(current_base in {item.base_sha, item.checked_base_sha} and item.head_sha != current_base
+           for item in integrated):
         raise TeamConflict("current_base_sha predates an integrated entry; use the current target revision")
     now = _now()
     stale: list[dict] = []
+    combined: dict | None = None
+    status: str | None = None
+    reason: str | None = None
+    # Heads of entries integrated by combination: no commit holds the combined result.
+    combined_heads = {item.head_sha for item in integrated
+                      if item.checked_base_sha is not None and item.checked_base_sha != item.base_sha}
     if run.revoked_at is not None:
         status, reason = "rejected", "Run was revoked"
+    elif entry.base_sha == current_base and current_base in combined_heads:
+        status, reason = "needs_rebase", (f"Run base {current_base[:12]} is the head of a combined integration, not "
+                                          "the merged result; pass current_base_sha of the merged revision")
     elif entry.base_sha != current_base:
-        status, reason = "needs_rebase", f"Run base {entry.base_sha[:12]} is not the current base {current_base[:12]}"
+        siblings = [item for item in reversed(integrated) if item.base_sha == entry.base_sha]  # oldest first
+        rebase = f"Run base {entry.base_sha[:12]} is not the current base {current_base[:12]}"
+        if current_base not in {item.head_sha for item in siblings}:
+            status, reason = "needs_rebase", rebase
+        else:
+            combined = await _combined_patch(session, entry, run, siblings)
+            if combined["status"] == "conflict":
+                status = "rejected"
+                reason = (f"Patch conflicts with integrated tasks on base {entry.base_sha[:12]}: "
+                          + ", ".join(combined["conflicts"]))
+            elif combined["status"] != "clean":
+                status, reason = "needs_rebase", f"{rebase}; combined patch check unavailable: {combined['reason']}"
     else:
+        combined = await _combined_patch(session, entry, run, [])  # the patch alone, for the integrator
+    if status is None:
         stale = await superseded_instructions(session, entry.run_id) or []
         if stale:
             status = "stale_instructions"
@@ -1165,8 +1229,9 @@ async def integrate(session: AsyncSession, caller: ResolvedPrincipal, project_id
     if status in FINAL:
         await _settle_task(session, entry, authority.actor_id)
     await _coordination_event(session, kind, summary, entry, authority.actor_id, base_sha=current_base,
-                              superseded=stale[:20])
-    return {**entry_dict(entry, run), "superseded_instructions": stale}
+                              superseded=stale[:20],
+                              combined_patch=combined_patch.summary(combined) if combined is not None else None)
+    return {**entry_dict(entry, run), "superseded_instructions": stale, "combined_patch": combined}
 
 
 async def reject(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID, entry_id: int,

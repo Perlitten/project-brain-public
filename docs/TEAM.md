@@ -202,14 +202,15 @@ no project, is refused for anyone but an administrator. To see the paths she
 can use, she can call `GET /repositories` with her key; it lists only
 repositories she can read.
 
-Both transports serve 33 tools: the personal ones plus `team_me`,
+Both transports serve 34 tools: the personal ones plus `team_me`,
 `team_activity`, `team_list_tasks`, `team_create_task` and `team_request_run`,
 the five memory review tools (`team_propose_decision`, `team_propose_rule`,
 `team_list_proposals`, `team_approve_proposal`, `team_reject_proposal`), and
-nine coordination tools: four that read (`team_task_plan`,
+ten coordination tools: four that read (`team_task_plan`,
 `team_coordination_overlaps`, `team_list_leases`, `team_integration_queue`) and
-five that write (`team_claim_lease`, `team_renew_lease`, `team_release_lease`,
-`team_declare_scope`, `team_enqueue_integration`).
+six that write (`team_claim_lease`, `team_renew_lease`, `team_release_lease`,
+`team_declare_scope`, `team_enqueue_integration`, and `team_force_release_lease`
+for team administrators).
 `team_me` answers "who am I and what can I touch" (the project ids and
 repository paths her roles grant); the task tools take a project id. See
 [MCP](MCP.md).
@@ -286,7 +287,7 @@ the server can.
 
 The first coordination slice lets several members and their agents split one
 task without stepping on each other. Everything is recorded and checked by the
-API; nothing here merges git branches or runs code by itself. All routes live
+API; nothing here merges or pushes git branches or runs code by itself. All routes live
 under `/team/projects/{project_id}` and go through the same authority checks
 as tasks and runs.
 
@@ -319,6 +320,19 @@ uncommitted and untracked) are compared the same way with the scopes of other
 open tasks and with live leases; those warnings carry `source: changed_paths`
 and are recorded once per pair too.
 
+When the repository's code graph is indexed and current, declared file paths
+are also compared through it: if one task's scope imports, or is imported by,
+another open task's scope without sharing a path, you get a warning with
+`kind: dependency` and the importing pairs. It is weaker than a shared path and
+is not reported for a pair that already shares one. The lookup is bounded (at
+most 32 files per check, 64 neighbours per file, 5 seconds) and sorted, so the
+same scopes give the same warnings. Directory and glob scopes are not looked up.
+Each response says how far to trust it in `dependency_graph` (or
+`dependency_graphs` per repository on `GET .../overlaps`): `ok`, `stale` (the
+index is behind the checkout, so only paths were compared), `unavailable` (no
+index, no checkout or the graph did not answer; paths only), or `skipped`
+(nothing to compare), with `truncated` when files were left out.
+
 **Instruction versions.** When a run is requested, the Brain records which
 decisions and rules applied to its repository and their versions.
 `GET .../tasks/{task_id}/runs/{run_id}/instructions` reports `current` or
@@ -333,9 +347,13 @@ and release (`.../leases/{id}/renew`, `.../release`) need the current token,
 and only the holder can use it. An expired lease can be taken over, and the token
 goes up, so a holder that wakes up late is refused. Revoking a member releases
 their leases and the leases of runs they started. Readers cannot take leases.
-A team administrator can force-release a stuck lease with a required reason
-(`coordination.force_release_lease`; no HTTP route or MCP tool yet). The token
-goes up, so the previous holder can no longer renew or release it, and the
+A team administrator (or owner) can force-release a stuck lease with a
+required reason: `POST .../leases/{id}/force-release` with `reason` and,
+optionally, the `fencing_token` they looked at (refused with 409 if the lease
+moved on); the MCP tool `team_force_release_lease`; or, on the server,
+`brain team coord force-release --project <name> --lease <id> --reason <text>`.
+Project members, Reviewers and project Administrators included, get 403. The
+token goes up, so the previous holder can no longer renew or release it, and the
 release is recorded as `coordination.lease_force_released` in the activity feed
 with the reason and the previous holder.
 
@@ -343,21 +361,40 @@ with the reason and the previous holder.
 reported a head revision. A Reviewer or Administrator other than the person who
 started the run calls `.../integration/{id}/integrate` with `expected_version`
 and, for the first entry, `current_base_sha`; later entries default to the
-head of the last integrated entry. Entries are checked in order. The result is
-recorded as one of:
+head of the last integrated entry. Entries are checked in order.
+
+A run built on an older base is not sent back right away when the current base
+is the head of an entry integrated on that same older base. The Brain applies
+the integrated entries' patches (oldest first) and then this run's patch to the
+old base, in a temporary index of a throwaway repository that reads git objects
+from the repository checkout and the runs' working copies under
+`BRAIN_EXECUTION_ROOT`. Nothing is written to them, and nothing is merged or
+pushed. If the patch applies, the entry goes on to the instruction check; if it
+does not, the entry is `rejected` with the paths that conflict; if the check
+cannot run (git missing, objects unreachable, a working copy outside the
+execution root), the entry is `needs_rebase` and the reason says why. Every
+`integrate` response carries `combined_patch`: `status` (`clean`, `conflict` or
+`unavailable`), the entries applied, the resulting tree, per-file line counts,
+the conflicting paths, and the patch text against the base (up to 200 KB,
+`truncated` past that). The activity event keeps the same summary without the
+patch text. A combined result has no commit of its own, so after one, merge it
+yourself and pass that revision as `current_base_sha`; a run built on the
+combined entry's head is sent back for a rebase.
+
+The result is recorded as one of:
 
 | Status | Meaning |
 |---|---|
-| `integrated` | The run was built on the current base and its instructions are unchanged. Its task is marked completed (a `status_change` on the task ledger), so it counts as done. |
-| `needs_rebase` | The run was built on an older base. Check it again after a rebase. |
+| `integrated` | The run was built on the current base, or its patch applies on top of the entries integrated on its base, and its instructions are unchanged. Its task is marked completed (a `status_change` on the task ledger), so it counts as done. |
+| `needs_rebase` | The run was built on an older base and its patch could not be checked against the current one. Check it again after a rebase. |
 | `stale_instructions` | A decision or rule it started with was changed before integration. |
-| `rejected` | Rejected by a Reviewer or withdrawn by the member who queued it, or the run was revoked. |
+| `rejected` | Rejected by a Reviewer or withdrawn by the member who queued it, the run was revoked, or its patch conflicts with entries already integrated on its base. |
 
 Other final outcomes are also written to the task's ledger
 (`integration.rejected`, for example) but leave the task open for another run.
-The Brain records the decision and the base it checked against. It does not
-run `git merge` or test the combined result. That stays with your normal
-review and CI.
+The Brain records the decision, the base it checked against and, when it could
+compute one, the combined patch. It does not merge, push, build or test the
+combined result. That stays with your normal review and CI.
 
 Read-only views: `brain team coord plan|overlaps|leases|queue --project <name>`
 and the MCP tools `team_task_plan`, `team_coordination_overlaps`,
@@ -365,8 +402,10 @@ and the MCP tools `team_task_plan`, `team_coordination_overlaps`,
 and release leases, declare a task's scope and queue a run for integration over
 MCP (`team_claim_lease`, `team_renew_lease`, `team_release_lease`,
 `team_declare_scope`, `team_enqueue_integration`). Those tools call the HTTP
-routes above, with the same roles, fencing tokens and versions. Creating
-subtasks and integrating or rejecting entries are HTTP-only.
+routes above, with the same roles, fencing tokens and versions. Team
+administrators can also force-release a lease over MCP
+(`team_force_release_lease`). Creating subtasks and integrating or rejecting
+entries are HTTP-only.
 
 The web dashboard's **Board** page (`/team/board`, under Settings) shows each
 project you belong to. Tasks and subtasks sit in columns: blocked by
@@ -435,9 +474,15 @@ which is the source of truth.
   offline `brain workspace repositories register` needs `--project` in team state
   ([upgrade note](operations/TEAM_DEPLOY.md#workspace-registry-file-to-table)).
 - **Coordination does not merge.** The integration queue records decisions
-  against a base you name; it does not run `git merge` or test the combined
-  patch. Overlap detection compares paths (declared scopes, leases and the files an
-execution changed), not code dependencies.
+  against a base you name and checks that a run's patch applies on top of the
+  entries already integrated on its base; it does not merge, push, build or
+  test the combined patch. That check needs git and read access to the
+  repository checkout and `BRAIN_EXECUTION_ROOT` from the API process;
+  otherwise the entry falls back to `needs_rebase`. Overlap detection compares
+  paths (declared scopes, leases and the files an execution changed) and, when
+  the code graph is current, import edges between declared files; it does not
+  look up directory or glob scopes, or the files an execution changed, in the
+  graph.
 
 Backups of a team Brain have their own restore procedure, including the
 restore fence and `brain team reconcile`:

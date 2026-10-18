@@ -2,8 +2,12 @@
 current-base integration queue. Runs on SQLite, and on the shared PostgreSQL database when TEST_TEAM_POSTGRES_URL
 is set (the ``team_db`` fixture from test_team_foundations)."""
 import os
+import shutil
+import subprocess
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select, update
@@ -11,7 +15,7 @@ from sqlalchemy import select, update
 from brain.auth.principals import ResolvedPrincipal
 from brain.database.harness_models import AgentTask, AgentTaskEvent
 from brain.database.models import ApiCredential, Decision, Principal, Rule
-from brain.team import coordination
+from brain.team import combined_patch, coordination
 from brain.team.activity import ActivityQuery, ActivityScope, list_activity
 from brain.team.authorization import TeamConflict, TeamDenied
 from brain.team.models import (AgentRun, TeamActivityEvent, TeamIntegrationEntry, TeamResourceLease,
@@ -353,6 +357,175 @@ async def test_default_dependency_provider_reads_imports_only_from_a_current_ind
             assert status in result["reason"]
 
 
+# --------------------------------------------------------------------------- combined patch (temp git repository)
+
+needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not installed")
+
+
+def git(cwd, *args) -> str:
+    env = {"PATH": os.environ.get("PATH", ""), "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@example.invalid", "HOME": str(cwd)}
+    for name in ("SYSTEMROOT", "WINDIR", "PATHEXT"):
+        if os.environ.get(name):
+            env[name] = os.environ[name]
+    return subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, check=True).stdout.decode().strip()
+
+
+@dataclass
+class GitProject:
+    src: Path
+    root: Path
+    base: str
+
+    def run_copy(self, name: str, changes: dict[str, str]) -> tuple[Path, str]:
+        """A run's working copy as the executor leaves it: a clone under the execution root with one commit."""
+        path = self.root / name / "repo"
+        path.parent.mkdir(parents=True)
+        git(path.parent, "clone", "--quiet", str(self.src), str(path))
+        for file, text in changes.items():
+            (path / file).write_bytes(text.encode())
+        git(path, "commit", "--quiet", "-am", name)
+        return path, git(path, "rev-parse", "HEAD")
+
+    def snapshot(self) -> tuple[str, str, str]:
+        return (git(self.src, "for-each-ref"), git(self.src, "status", "--porcelain"),
+                git(self.src, "rev-parse", "HEAD"))
+
+
+def git_project(tmp_path) -> GitProject:
+    src = tmp_path / "src"
+    src.mkdir()
+    git(src, "init", "--quiet")
+    for file, text in {"f.txt": "a\nb\nc\n", "g.txt": "x\n", "h.txt": "k\n"}.items():
+        (src / file).write_bytes(text.encode())
+    git(src, "add", ".")
+    git(src, "commit", "--quiet", "-m", "base")
+    return GitProject(src=src, root=tmp_path / "runs", base=git(src, "rev-parse", "HEAD"))
+
+
+def test_conflict_paths_and_object_stores(tmp_path):
+    stderr = ("error: patch failed: f.txt:1\nerror: f.txt: patch does not apply\n"
+              "error: new.txt: already exists in index\nerror: gone.txt: does not exist in index\nwarning: x\n")
+    assert combined_patch.conflict_paths(stderr) == ["f.txt", "new.txt", "gone.txt"]
+    assert combined_patch.object_store(None) is None
+    assert combined_patch.object_store(tmp_path / "missing") is None
+    if shutil.which("git") is None:
+        return
+    project = git_project(tmp_path)
+    objects = (project.src / ".git" / "objects").resolve()
+    assert combined_patch.object_store(project.src) == objects
+    git(project.src, "worktree", "add", "--quiet", str(tmp_path / "linked"))
+    assert combined_patch.object_store(tmp_path / "linked") == objects, "a linked worktree reads the common objects"
+    git(tmp_path, "clone", "--quiet", "--bare", str(project.src), str(tmp_path / "bare.git"))
+    assert combined_patch.object_store(tmp_path / "bare.git") == (tmp_path / "bare.git" / "objects").resolve()
+
+
+@needs_git
+def test_combined_patch_applies_integrated_patches_first_and_names_conflicts(tmp_path, monkeypatch):
+    project = git_project(tmp_path)
+    one, one_head = project.run_copy("one", {"f.txt": "a\nB1\nc\n"})
+    two, two_head = project.run_copy("two", {"g.txt": "x2\n"})
+    three, three_head = project.run_copy("three", {"f.txt": "a\nB3\nc\n", "h.txt": "k3\n"})
+    before = project.snapshot()
+    copies_before = [git(path, "status", "--porcelain") + git(path, "rev-parse", "HEAD") for path in (one, two, three)]
+    sources = [project.src, one, two, three]
+    first, second, third = (combined_patch.Patch("1", one_head), combined_patch.Patch("2", two_head),
+                            combined_patch.Patch("3", three_head))
+
+    clean = combined_patch.combine(project.base, [first], second, sources)
+    assert clean["status"] == "clean" and clean["reason"] is None and clean["applied"] == ["1", "2"]
+    assert clean["files"] == [{"path": "f.txt", "added": 1, "deleted": 1}, {"path": "g.txt", "added": 1, "deleted": 1}]
+    assert (clean["files_total"], clean["insertions"], clean["deletions"], clean["truncated"]) == (2, 2, 2, False)
+    assert "+B1" in clean["patch"] and "+x2" in clean["patch"] and len(clean["tree_sha"]) == 40
+    assert combined_patch.summary(clean).keys() == clean.keys() - {"patch", "files"}
+
+    conflict = combined_patch.combine(project.base, [first, second], third, sources)
+    assert (conflict["status"], conflict["conflicts"], conflict["applied"]) == ("conflict", ["f.txt"], ["1", "2"])
+    assert conflict["patch"] is None and conflict["tree_sha"] is None
+
+    broken = combined_patch.combine(project.base, [first, third], second, sources)
+    assert broken["status"] == "unavailable" and "entry 3" in broken["reason"], "integrated patches must combine"
+    missing = combined_patch.combine(project.base, [first], second, [project.src, one])
+    assert missing["status"] == "unavailable" and two_head[:12] in missing["reason"]
+    assert combined_patch.combine(project.base, [], second, [tmp_path / "nowhere"])["status"] == "unavailable"
+    assert combined_patch.combine("main", [], second, sources)["reason"] == "A revision is not a full commit SHA"
+
+    monkeypatch.setattr(combined_patch, "MAX_PATCH_BYTES", 40)
+    short = combined_patch.combine(project.base, [first], second, sources)
+    assert short["status"] == "clean" and short["truncated"] is True and len(short["patch"].encode()) <= 40
+
+    assert project.snapshot() == before, "the source checkout is not touched"
+    assert [git(path, "status", "--porcelain") + git(path, "rev-parse", "HEAD")
+            for path in (one, two, three)] == copies_before, "nor are the runs' working copies"
+
+
+@needs_git
+@pytest.mark.asyncio
+async def test_integration_combines_patches_on_the_same_base_or_rejects_with_the_conflicts(team_db, tmp_path,
+                                                                                         monkeypatch):
+    from brain.config.settings import settings
+    from brain.database.models import Repository
+
+    factory, a, _ = team_db
+    project = git_project(tmp_path)
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_ROOT", str(project.root))
+    copies = [project.run_copy("one", {"f.txt": "a\nB1\nc\n"}), project.run_copy("two", {"g.txt": "x2\n"}),
+              project.run_copy("three", {"f.txt": "a\nB3\nc\n"}), project.run_copy("five", {"h.txt": "k5\n"})]
+    before = project.snapshot()
+
+    async def queued(session, index, head, base=project.base, worktree=None):
+        task = await make_parent(session, a, f"cp-task-{index:04}")
+        run = await make_run(session, a, task, f"cp-run-{index:04}", head=head)
+        await session.execute(update(AgentRun).where(AgentRun.id == run).values(
+            base_sha=base, worktree_path=str(worktree) if worktree else None))
+        return await coordination.enqueue(session, caller(2), a, {"run_id": str(run)})
+
+    async with factory() as session, session.begin():
+        await session.execute(update(Repository).where(Repository.id == 1).values(path=str(project.src)))
+        e1, e2, e3 = [await queued(session, i, head, worktree=path) for i, (path, head) in enumerate(copies[:3])]
+
+        first = await coordination.integrate(session, caller(3), a, e1["id"], {"expected_version": 1,
+                                                                              "current_base_sha": project.base})
+        assert first["status"] == "integrated" and first["combined_patch"]["status"] == "clean"
+        assert first["combined_patch"]["applied"] == [str(e1["id"])], "on its own base: the patch alone"
+
+        # Built on the same base as the entry just integrated: applied after it instead of a rebase.
+        second = await coordination.integrate(session, caller(3), a, e2["id"], {"expected_version": 1})
+        assert second["status"] == "integrated" and second["checked_base_sha"] == copies[0][1]
+        combined = second["combined_patch"]
+        assert combined["applied"] == [str(e1["id"]), str(e2["id"])]
+        assert [item["path"] for item in combined["files"]] == ["f.txt", "g.txt"] and "+x2" in combined["patch"]
+        event = (await session.execute(select(TeamActivityEvent).where(
+            TeamActivityEvent.kind == "coordination.integrated").order_by(TeamActivityEvent.id.desc())
+            .limit(1))).scalar_one()
+        assert event.details["combined_patch"]["files_total"] == 2 and "patch" not in event.details["combined_patch"]
+
+        # The third run edits the line the first one changed: rejected with the path, the task stays open.
+        third = await coordination.integrate(session, caller(3), a, e3["id"], {"expected_version": 1})
+        assert third["status"] == "rejected" and third["decided_by"] == 3
+        assert third["reason"] == f"Patch conflicts with integrated tasks on base {project.base[:12]}: f.txt"
+        assert third["combined_patch"]["conflicts"] == ["f.txt"]
+        task = await session.get(AgentTask, uuid.UUID(e3["task_id"]))
+        assert task.status != "completed"
+
+        # No commit holds the combined result: a run built on the second head is sent back, and the first head
+        # (which the second entry was checked against) is no longer a valid target.
+        e4 = await queued(session, 4, "f" * 40, base=copies[1][1])
+        sent_back = await coordination.integrate(session, caller(3), a, e4["id"], {"expected_version": 1})
+        assert sent_back["status"] == "needs_rebase" and "combined integration" in sent_back["reason"]
+        with pytest.raises(TeamConflict, match="predates"):
+            await coordination.integrate(session, caller(3), a, e4["id"], {"expected_version": 2,
+                                                                          "current_base_sha": copies[0][1]})
+
+        # Working copies outside the execution root are not read: the check cannot run, so it is a rebase.
+        e5 = await queued(session, 5, copies[3][1], worktree=copies[3][0])
+        monkeypatch.setattr(settings, "BRAIN_EXECUTION_ROOT", str(tmp_path / "elsewhere"))
+        fallback = await coordination.integrate(session, caller(3), a, e5["id"], {"expected_version": 1})
+        assert fallback["status"] == "needs_rebase" and "combined patch check unavailable" in fallback["reason"]
+    assert project.snapshot() == before, "nothing was merged, committed or checked out in the source repository"
+
+
 # --------------------------------------------------------------------------- instruction resolution
 
 
@@ -610,6 +783,8 @@ async def test_integration_queue_order_rebase_instructions_and_authority(team_db
         # The second run was built on A, but the current base is now B: it needs a rebase (kept on record).
         rebase = await coordination.integrate(session, caller(3), a, e2["id"], {"expected_version": 1})
         assert rebase["status"] == "needs_rebase" and rebase["checked_base_sha"] == B and rebase["version"] == 2
+        assert "combined patch check unavailable" in rebase["reason"], "no git objects for synthetic revisions"
+        assert rebase["combined_patch"]["status"] == "unavailable"
         with pytest.raises(TeamConflict, match="predates"):
             await coordination.integrate(session, caller(3), a, e2["id"], {"expected_version": 2,
                                                                           "current_base_sha": A})
@@ -815,6 +990,7 @@ async def test_http_coordination_routes(team_db, monkeypatch):
         integrated = await client.post(f"{base}/integration/{entry['id']}/integrate", headers=reviewer,
                                        json={"expected_version": 1, "current_base_sha": A})
         assert integrated.json()["status"] == "integrated"
+        assert integrated.json()["combined_patch"]["status"] == "unavailable", "no checkout behind /synthetic/A"
         queue = await client.get(f"{base}/integration", headers=READER, params={"include_done": "true"})
         assert [item["status"] for item in queue.json()["entries"]] == ["integrated"]
         assert (await client.post(f"{base}/integration/{entry['id']}/reject", headers=reviewer,
