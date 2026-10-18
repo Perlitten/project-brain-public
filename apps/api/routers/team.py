@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from apps.api.auth import require_principal
@@ -90,6 +90,31 @@ class ExecutionBudget(BaseModel):
     output_bytes: int | None = Field(default=None, gt=0)
 
 
+class ExecutionLLM(BaseModel):
+    """The LLM provider a step may send repository content to; ``max_*`` are reserved in full against the budget."""
+    model_config = ConfigDict(extra="forbid")
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=128)
+    max_tokens: int = Field(gt=0, le=2**31 - 1)
+    max_cost_cents: int | None = Field(default=None, ge=0, le=2**31 - 1)
+
+
+class LlmConsentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(default="*", min_length=1, max_length=128)
+
+
+class LlmBudgetRequest(BaseModel):
+    """Limits are optional (unlimited when omitted); ``period`` is ``month`` (UTC calendar month) or ``total``."""
+    model_config = ConfigDict(extra="forbid")
+    period: Literal["month", "total"] = "month"
+    max_tokens: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    max_cost_cents: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    per_member_max_tokens: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    per_member_max_cost_cents: int | None = Field(default=None, ge=0, le=2**31 - 1)
+
+
 class ExecutionRequest(BaseModel):
     """Capabilities requested for one run; each must lie within the operator and parent-run ceilings.
 
@@ -102,6 +127,8 @@ class ExecutionRequest(BaseModel):
     budget: ExecutionBudget = Field(default_factory=ExecutionBudget)
     # Operator-defined execution environment (image + tools); required by the container backend.
     environment: str | None = Field(default=None, max_length=64)
+    # Declared LLM use (provider consent and budget gates); omitted when the steps reach no LLM provider.
+    llm: ExecutionLLM | None = None
     idempotency_key: str = Field(min_length=8, max_length=128)
 
 
@@ -255,6 +282,46 @@ async def revoke_execution_grant(project_id: uuid.UUID, principal_id: int,
     return await execution.revoke_execution(session, caller, project_id, principal_id)
 
 
+@router.get("/{project_id}/execution/llm-consents")
+async def list_llm_consents(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
+                            session=Depends(team_session, scope="function")):
+    return await execution.list_llm_consents(session, caller, project_id)
+
+
+@router.put("/{project_id}/execution/llm-consents")
+async def consent_llm(project_id: uuid.UUID, body: LlmConsentRequest,
+                      caller: ResolvedPrincipal = Depends(require_principal),
+                      session=Depends(team_session, scope="function")):
+    """A team administrator consents to executions sending repository content to this provider and model."""
+    return await execution.consent_llm(session, caller, project_id, body.provider, body.model)
+
+
+@router.delete("/{project_id}/execution/llm-consents/{provider}")
+async def revoke_llm_consent(project_id: uuid.UUID, provider: str, model: str = "*",
+                             caller: ResolvedPrincipal = Depends(require_principal),
+                             session=Depends(team_session, scope="function")):
+    return await execution.revoke_llm_consent(session, caller, project_id, provider, model)
+
+
+@router.get("/{project_id}/execution/llm-budget")
+async def get_llm_budget(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
+                         session=Depends(team_session, scope="function")):
+    return await execution.llm_budget(session, caller, project_id)
+
+
+@router.put("/{project_id}/execution/llm-budget")
+async def set_llm_budget(project_id: uuid.UUID, body: LlmBudgetRequest,
+                         caller: ResolvedPrincipal = Depends(require_principal),
+                         session=Depends(team_session, scope="function")):
+    return await execution.set_llm_budget(session, caller, project_id, body.model_dump())
+
+
+@router.delete("/{project_id}/execution/llm-budget")
+async def clear_llm_budget(project_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
+                           session=Depends(team_session, scope="function")):
+    return await execution.clear_llm_budget(session, caller, project_id)
+
+
 def _execution_queue() -> JobQueue:
     return queue_for_job(redis_client, settings.WORKER_REDIS_PREFIX, "team_run_execution",
                          pools_enabled=settings.BRAIN_WORKER_POOLS_V2_ENABLED)
@@ -305,3 +372,28 @@ async def cancel_execution(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uu
         return await execution.cancel_execution(session, caller, project_id, task_id, run_id)
     except execution.ExecutionNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/{project_id}/tasks/{task_id}/runs/{run_id}/execution/artifacts")
+async def list_execution_artifacts(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uuid.UUID,
+                                   caller: ResolvedPrincipal = Depends(require_principal),
+                                   session=Depends(team_session, scope="function")):
+    try:
+        return await execution.list_artifacts(session, caller, project_id, task_id, run_id)
+    except execution.ExecutionNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/{project_id}/tasks/{task_id}/runs/{run_id}/execution/artifacts/{artifact_id}")
+async def download_execution_artifact(project_id: uuid.UUID, task_id: uuid.UUID, run_id: uuid.UUID,
+                                      artifact_id: uuid.UUID, caller: ResolvedPrincipal = Depends(require_principal),
+                                      session=Depends(team_session, scope="function")):
+    """The stored (capped, redacted) bytes, always as a download so a browser never renders them."""
+    try:
+        meta, content = await execution.get_artifact(session, caller, project_id, task_id, run_id, artifact_id)
+    except execution.ExecutionNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return Response(content, media_type=meta["content_type"], headers={
+        "Content-Disposition": f'attachment; filename="{meta["name"]}"', "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store", "X-Artifact-SHA256": meta["sha256"],
+        "X-Artifact-Truncated": "true" if meta["truncated"] else "false"})

@@ -503,11 +503,15 @@ async def test_container_run_records_environment_egress_and_runtime_evidence(tea
     calls = _calls(log)
     assert calls[0]["argv"] == ["image", "inspect", "--", "brain-exec-test:1"]
     runs = _runs(calls)
-    # After the four steps: head, then the changed paths (diff against base, untracked files), all read inside
-    # hardened, network-less containers over a read-only mount; .git is untrusted once a step ran.
-    assert len(runs) == 7 and all(argv[argv.index("--entrypoint") + 1] == "git" for argv in runs[4:])
-    assert [argv[argv.index("--name") + 1] for argv in runs[5:]] == [f"brain-exec-{run_id}-changes0",
-                                                                      f"brain-exec-{run_id}-changes1"]
+    # After the four steps: head, the changed paths (diff against base, untracked files), then the final patch
+    # (tracked diff, untracked files), all read inside hardened, network-less containers over a read-only mount;
+    # .git is untrusted once a step ran.
+    assert len(runs) == 9 and all(argv[argv.index("--entrypoint") + 1] == "git" for argv in runs[4:])
+    assert [argv[argv.index("--name") + 1] for argv in runs[5:]] == [
+        f"brain-exec-{run_id}-changes0", f"brain-exec-{run_id}-changes1", f"brain-exec-{run_id}-patch0",
+        f"brain-exec-{run_id}-patch1"]
+    assert runs[7][-7:] == ["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--full-index",
+                            source_repo[1]]
     assert all(argv[argv.index("--network") + 1] == "none" and argv[argv.index("--mount") + 1].endswith(",readonly")
                for argv in runs[4:])
     assert runs[5][-5:] == ["diff", "--name-only", "-z", "--no-renames", source_repo[1]]
