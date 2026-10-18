@@ -277,3 +277,60 @@ numbers are not a capacity estimate. The 120 s maxima are the stalls from findin
 - Lost updates (defect 1) are probabilistic. The winner counts vary between runs, but every run had
   at least two rounds with more than one winner.
 - The stall root cause (defect 5) is not isolated. A fix for the lock order alone may not remove it.
+
+## Results after the fixes (#156, #157, #159)
+
+Re-run on the same setup (Windows 11 host, throwaway PostgreSQL and Redis in WSL Docker, mock
+providers) against `main` at ca4b727, which contains #156 and #157. #159 is a harness-only fix.
+
+### Final `main`, 12×50 (one API worker): PASS 50/0
+
+- No invariant violations.
+- **Decision CAS:** 5 rounds with exactly one winner each, 0 lost writes. Rule CAS, the create
+  race, concurrent approvals and approve-vs-reject each had one winner; the rest answered 409.
+- **Revoke:** 200 on the first attempt in 0.77 s. The 67 revokee requests after it were all
+  401, 0 writes landed after the revoke, 3 proposals were withdrawn and her personal learnings
+  were retired.
+- **Load:** 601 requests in 58.9 s (10.2 rps), 0 deadlocks, 0 5xx. Status mix over the whole run:
+  200:676, 202:113, 401:68, 403:94, 409:78, 422:1, 429:2.
+
+### Final `main`, 36×50 (two API workers)
+
+0 deadlocks, 0 5xx, revoke 200 in 0.16 s, and 270 post-revoke requests all 401. The run failed
+only on two harness artefacts, both fixed in #159:
+
+- **8 requests stalled for 120 s.** On Windows, `uvicorn --workers` shares one listening socket,
+  and a worker that loses the `accept()` race freezes its event loop until the next connection.
+  Linux and production are not affected. With #159 the harness starts one API process per port on
+  Windows.
+- **6 rows flagged as written after the revoke.** This was clock skew: Docker Postgres in WSL ran
+  about 467 ms ahead of the Windows host, while `revoked_at` comes from the host clock. All six
+  rows were already `withdrawn` or `personal_retired`, states only the revoke sets, so they
+  committed before it. With #159 the harness compares on the database clock.
+
+With #159, 36×50 runs passed: 3 of 4 earlier runs (the fourth failed only on the clock-skew check,
+before that fix) plus a verification run. See #159 for the run table.
+
+### Status of the original findings
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | Decision CAS loses updates | Fixed in #156 (row lock plus a conditional version `UPDATE`) |
+| 2 | Revocation deadlock | Fixed in #157 (one global lock order, revoke inside `retry_transient`, 503 + `Retry-After` if it gives up) |
+| 3 | Writes in flight persisted after `revoked_at` | Fixed in #157 (write fence, `brain/team/write_fence.py`) |
+| 4 | Concurrent invitation accepts deadlock | Fixed in #157 (`_redeem` takes its project locks up front in id order) |
+| 5 | `teams` row lock convoy | Fixed in #157 (advisory lock in `create_invitation`, throttled non-blocking `last_used_at`, `lock_timeout` and `idle_in_transaction_session_timeout` on team routes). The 120 s stalls left in the final 36×50 run were traced to `uvicorn --workers` on Windows, a harness artefact fixed in #159 |
+| 6 | 500 instead of 409 on CAS and create races | Fixed in #156 |
+| 7 | Mock embedder near-duplicates | Fixed earlier, in #155 (see above) |
+
+The two known gaps are closed too: members have `harness:write` (#157), and a revoked member's
+personal learnings are retired to `personal_retired` (#156).
+
+### Remaining observations
+
+- **Latency.** At 12×50, latency is about 1.5× the first run's. The likely cause is the write
+  fence's three extra indexed reads per write transaction, plus load on the test machine. It has
+  not been profiled.
+- **Admin read scope.** An administrator without a project role still reads every project's
+  memory. `docs/TEAM.md` now documents this, but it contradicts the ADR permission matrix
+  ("Only with project membership"). The owner has to decide which one changes.
