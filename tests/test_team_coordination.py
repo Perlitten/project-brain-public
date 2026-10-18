@@ -254,6 +254,13 @@ async def test_dependency_overlap_warns_without_blocking_and_reaches_the_feed(te
         assert len(rows) == 1, "recorded once"
         assert rows[0].details["kind"] == "dependency" and rows[0].summary == "Dependency overlap with task synthetic"
 
+        reverse = await coordination.update_plan(session, caller(2), a, lib,
+                                                  {"scope_paths": ["src/lib/db.py"], "expected_version": 1})
+        assert reverse["warnings"][0]["other_task_id"] == str(api)
+        rows = (await session.execute(select(TeamActivityEvent).where(
+            TeamActivityEvent.kind == "coordination.overlap"))).scalars().all()
+        assert len(rows) == 1, "the reverse task update has the same canonical fingerprint"
+
         report = await coordination.list_overlaps(session, caller(1), a)
         [item] = report["overlaps"]
         assert item["kind"] == "dependency" and {item["task_id"], item["other_task_id"]} == {str(lib), str(api)}
@@ -322,8 +329,9 @@ async def test_default_dependency_provider_reads_imports_only_from_a_current_ind
         def __init__(self, repository_id):
             assert repository_id == 1
 
-        async def get_neighbors(self, path):
+        async def get_import_neighbors(self, path, limit):
             await asyncio.sleep(self.delay)
+            assert limit == coordination.MAX_DEPENDENCY_NEIGHBORS + 1
             if path == "boom.py":
                 raise RuntimeError("neo4j down")
             file = lambda name: {"labels": ["File"], "properties": {"name": name}}  # noqa: E731
@@ -397,7 +405,7 @@ def git_project(tmp_path) -> GitProject:
     src = tmp_path / "src"
     src.mkdir()
     git(src, "init", "--quiet")
-    for file, text in {"f.txt": "a\nb\nc\n", "g.txt": "x\n", "h.txt": "k\n"}.items():
+    for file, text in {"f.txt": "a\nb\nc\n", "g.txt": "x\n", "h.txt": "k\n", "blob.bin": "\0base"}.items():
         (src / file).write_bytes(text.encode())
     git(src, "add", ".")
     git(src, "commit", "--quiet", "-m", "base")
@@ -458,6 +466,18 @@ def test_combined_patch_applies_integrated_patches_first_and_names_conflicts(tmp
     assert project.snapshot() == before, "the source checkout is not touched"
     assert [git(path, "status", "--porcelain") + git(path, "rev-parse", "HEAD")
             for path in (one, two, three)] == copies_before, "nor are the runs' working copies"
+
+
+@needs_git
+def test_combined_patch_includes_binary_data_and_bounds_git_output(tmp_path, monkeypatch):
+    project = git_project(tmp_path)
+    run, head = project.run_copy("binary", {"blob.bin": "\0changed-binary-content"})
+    patch = combined_patch.Patch("binary", head)
+    result = combined_patch.combine(project.base, [], patch, [project.src, run])
+    assert result["status"] == "clean" and "GIT binary patch" in result["patch"]
+    monkeypatch.setattr(combined_patch, "MAX_DIFF_BYTES", 40)
+    bounded = combined_patch.combine(project.base, [], patch, [project.src, run])
+    assert bounded["status"] == "unavailable" and bounded["reason"] == "A patch is too large to check"
 
 
 @needs_git

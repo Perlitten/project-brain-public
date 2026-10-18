@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 import tempfile
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,6 +102,56 @@ def _ok(result: subprocess.CompletedProcess[bytes], what: str) -> bytes:
     return result.stdout
 
 
+def _bounded_stdout(git: str, args: list[str], env: dict[str, str], limit: int, what: str) -> tuple[bytes, bool]:
+    """Capture at most ``limit + 1`` stdout bytes, killing Git as soon as it crosses the bound."""
+    try:
+        process = subprocess.Popen([git, *args], env=env, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError as exc:
+        raise _Unavailable("git could not be run") from exc
+    stdout = bytearray()
+    stderr = bytearray()
+    overflow = threading.Event()
+
+    def drain_stdout() -> None:
+        assert process.stdout is not None
+        while chunk := process.stdout.read(64 * 1024):
+            remaining = limit + 1 - len(stdout)
+            if remaining > 0:
+                stdout.extend(chunk[:remaining])
+            if len(chunk) > remaining or len(stdout) > limit:
+                overflow.set()
+                process.kill()
+                break
+
+    def drain_stderr() -> None:
+        assert process.stderr is not None
+        while chunk := process.stderr.read(64 * 1024):
+            remaining = MAX_PATCH_BYTES + 1 - len(stderr)
+            if remaining > 0:
+                stderr.extend(chunk[:remaining])
+
+    readers = [threading.Thread(target=drain_stdout, daemon=True),
+               threading.Thread(target=drain_stderr, daemon=True)]
+    for reader in readers:
+        reader.start()
+    try:
+        returncode = process.wait(timeout=GIT_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        process.kill()
+        process.wait()
+        for reader in readers:
+            reader.join()
+        raise _Unavailable("git timed out") from exc
+    for reader in readers:
+        reader.join()
+    if overflow.is_set():
+        return bytes(stdout[:limit]), True
+    if returncode != 0:
+        raise _Unavailable(f"git {what} failed")
+    return bytes(stdout), False
+
+
 def conflict_paths(stderr: str) -> list[str]:
     """The paths named by ``git apply --check`` failures, in order, without duplicates."""
     paths: list[str] = []
@@ -166,9 +217,10 @@ def combine(base_sha: str, integrated: Sequence[Patch], candidate: Patch, source
             _ok(_run(git, [*base, "read-tree", base_sha], env), "read-tree")
 
             def diff(head: str) -> bytes:
-                out = _ok(_run(git, [*base, "diff", "--binary", "--full-index", "--no-renames", "--no-ext-diff",
-                                     "--no-textconv", "--no-color", base_sha, head], env), "diff")
-                if len(out) > MAX_DIFF_BYTES:
+                out, too_large = _bounded_stdout(
+                    git, [*base, "diff", "--binary", "--full-index", "--no-renames", "--no-ext-diff",
+                          "--no-textconv", "--no-color", base_sha, head], env, MAX_DIFF_BYTES, "diff")
+                if too_large:
                     raise _Unavailable("A patch is too large to check")
                 return out
 
@@ -192,9 +244,9 @@ def combine(base_sha: str, integrated: Sequence[Patch], candidate: Patch, source
             tree = _ok(_run(git, [*base, "write-tree"], env), "write-tree").decode().strip()
             files, insertions, deletions = _numstat(_ok(_run(git, [*base, "diff", "--numstat", "-z", "--no-renames",
                                                                    base_sha, tree], env), "diff --numstat"))
-            shown = _ok(_run(git, [*base, "diff", "--no-renames", "--no-ext-diff", "--no-textconv", "--no-color",
-                                   base_sha, tree], env), "diff")
-            truncated = len(shown) > MAX_PATCH_BYTES
+            shown, truncated = _bounded_stdout(
+                git, [*base, "diff", "--binary", "--full-index", "--no-renames", "--no-ext-diff", "--no-textconv",
+                      "--no-color", base_sha, tree], env, MAX_PATCH_BYTES, "diff")
             if truncated:
                 cut = shown.rfind(b"\n", 0, MAX_PATCH_BYTES)
                 shown = shown[:cut + 1 if cut > 0 else MAX_PATCH_BYTES]

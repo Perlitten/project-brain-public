@@ -544,7 +544,7 @@ async def graph_dependencies(session: AsyncSession, repository_id: int, paths: l
         truncated = False
         for path in paths:
             found: set[str] = set()
-            for neighbor in await client.get_neighbors(path):
+            for neighbor in await client.get_import_neighbors(path, MAX_DEPENDENCY_NEIGHBORS + 1):
                 target = neighbor.get("target") or {}
                 props = target.get("properties") or {}
                 name = props.get("name") or props.get("path")
@@ -625,18 +625,22 @@ async def _record_overlaps(session: AsyncSession, project_id: uuid.UUID, warning
                            actor_id: int | None) -> None:
     for warning in warnings:
         changed = warning.get("source") == "changed_paths"
-        fingerprint = digest({"paths": warning["paths"]})[:16]
         if warning["kind"] == "dependency":
             pair = sorted([warning["task_id"], warning["other_task_id"]])
+            canonical_paths = (warning["paths"] if warning["task_id"] == pair[0]
+                               else [[right, left] for left, right in warning["paths"]])
+            fingerprint = digest({"paths": canonical_paths})[:16]
             key = f"overlap:dependency:{pair[0]}:{pair[1]}:{fingerprint}"
             summary = f"Dependency overlap with task {warning['other_title']}"
         elif warning["kind"] == "task":
+            fingerprint = digest({"paths": warning["paths"]})[:16]
             pair = sorted([warning["task_id"], warning["other_task_id"]])
             key = (f"overlap:changed:task:{pair[0]}:{pair[1]}" if changed
                    else f"overlap:task:{pair[0]}:{pair[1]}:{fingerprint}")
             summary = (f"Changed files overlap the scope of task {warning['other_title']}" if changed
                        else f"Scope overlap with task {warning['other_title']}")
         else:
+            fingerprint = digest({"paths": warning["paths"]})[:16]
             key = (f"overlap:changed:lease:{warning['task_id']}:{warning['lease_id']}" if changed
                    else f"overlap:lease:{warning['task_id']}:{warning['lease_id']}:{fingerprint}")
             summary = (f"Changed files overlap leased resource {warning['resource']}" if changed
