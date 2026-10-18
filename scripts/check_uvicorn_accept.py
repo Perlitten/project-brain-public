@@ -44,7 +44,8 @@ async def app(scope, receive, send):
 
 
 def main() -> int:
-    from team_memory_load_e2e import stop_process_tree
+    sys.path.insert(0, str(ROOT))
+    from scripts.team_memory_load_e2e import stop_process_tree
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workers", type=int, choices=(1, 2), default=2)

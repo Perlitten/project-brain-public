@@ -191,7 +191,7 @@ async def memory_author_gate(session: AsyncSession, author_id: int | None) -> No
             if initiator is None or initiator.disabled_at is not None:
                 raise TeamDenied("Memory author is no longer a live team member")
             member = await fresh(session, TeamMember, TeamMember.principal_id == initiator_id)
-    if member is not None:
+    if member is not None and identity is not None:
         if identity.disabled_at is not None or member.revoked_at is not None or member.verified_at is None:
             raise TeamDenied("Memory author is no longer a live team member")
     elif await team_state(session) == "team":
