@@ -113,6 +113,8 @@ _EXECUTION_HINTS = {
     "egress": "Set BRAIN_EXECUTION_EGRESS_PROXY_IMAGE with the container backend, or unset BRAIN_EXECUTION_EGRESS.",
     "backend": "Use BRAIN_EXECUTION_BACKEND=container for a filesystem and network boundary between steps and the "
                "server.",
+    "llm": "Give every LLM API host in BRAIN_EXECUTION_EGRESS to a provider in BRAIN_EXECUTION_LLM_PROVIDERS, and "
+           "allow each provider's hosts in BRAIN_EXECUTION_EGRESS.",
 }
 
 
@@ -126,7 +128,8 @@ def check_execution_config() -> Check:
     policy = operator_policy()
     if policy.error:
         return Check("execution_config", "fail", policy.error,
-                     "Fix the JSON in BRAIN_EXECUTION_TOOLS / BRAIN_EXECUTION_SECRETS (docs/operations/TEAM_EXECUTION.md).")
+                     "Fix the JSON in BRAIN_EXECUTION_TOOLS / BRAIN_EXECUTION_SECRETS / BRAIN_EXECUTION_ENVIRONMENTS / "
+                     "BRAIN_EXECUTION_LLM_PROVIDERS (docs/operations/TEAM_EXECUTION.md).")
     if not policy.enabled:
         return Check("execution_config", "pass", "Execution is disabled on this process")
     findings: list[tuple[str, Status, str]] = []  # (area, status, message)
@@ -164,7 +167,8 @@ def check_execution_config() -> Check:
     egress = "egress allowlist enforced by the proxy" if health.get("egress_enforced") else "egress denied"
     return Check("execution_config", "pass",
                  f"Execution is enabled: {policy.backend} backend{environments}, {len(policy.tools)} tool(s), "
-                 f"{len(policy.secrets)} secret ref(s), {egress}, root {policy.root}")
+                 f"{len(policy.secrets)} secret ref(s), {len(policy.llm_providers)} LLM provider(s), {egress}, "
+                 f"root {policy.root}")
 
 
 def check_origin_settings() -> Check:

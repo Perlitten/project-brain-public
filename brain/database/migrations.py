@@ -40,6 +40,7 @@ async def apply_migrations(conn: AsyncConnection, *, acquire_lock: bool = True) 
     await _ensure_team_dissolved_column(conn)
     await _ensure_team_invitation_oidc_columns(conn)
     await _ensure_execution_environment_column(conn)
+    await _ensure_execution_llm_column(conn)
     await _ensure_team_identity_session_column(conn)
     await _ensure_workspace_registry_tables(conn)
     await _backfill_non_current_knowledge_authority(conn)
@@ -325,6 +326,17 @@ async def _ensure_execution_environment_column(conn: AsyncConnection) -> None:
     else:
         await conn.execute(text(
             "ALTER TABLE IF EXISTS harness.agent_run_executions ADD COLUMN IF NOT EXISTS environment VARCHAR(64)"))
+
+
+async def _ensure_execution_llm_column(conn: AsyncConnection) -> None:
+    """A bounded execution records its declared LLM provider, model and token/cost ceiling (NULL: none)."""
+    if conn.dialect.name == "sqlite":
+        existing = (await conn.execute(text("PRAGMA table_info(agent_run_executions)"))).fetchall()
+        if existing and "llm" not in {row[1] for row in existing}:
+            await conn.execute(text("ALTER TABLE agent_run_executions ADD COLUMN llm JSON"))
+    else:
+        await conn.execute(text(
+            "ALTER TABLE IF EXISTS harness.agent_run_executions ADD COLUMN IF NOT EXISTS llm JSON"))
 
 
 async def _ensure_team_identity_session_column(conn: AsyncConnection) -> None:

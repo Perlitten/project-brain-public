@@ -38,7 +38,14 @@ export const ACTIVITY_KINDS: Record<string, string[]> = {
   memory: ["memory.proposed", "memory.approved", "memory.rejected"],
   membership: ["membership.added", "membership.revoked", "membership.admin_granted", "membership.admin_revoked"],
   project_role: ["project_role.granted", "project_role.changed", "project_role.revoked"],
-  execution: ["execution.granted", "execution.revoked"],
+  execution: [
+    "execution.granted",
+    "execution.revoked",
+    "execution.llm_consented",
+    "execution.llm_consent_revoked",
+    "execution.llm_budget_set",
+    "execution.llm_budget_cleared",
+  ],
   invitation: ["invitation.created", "invitation.accepted", "invitation.revoked"],
   sso: ["sso.bound", "sso.unbound"],
   task: ["task.created"],
@@ -46,10 +53,62 @@ export const ACTIVITY_KINDS: Record<string, string[]> = {
   job: ["job.queued"],
   coordination: [
     "coordination.overlap", "coordination.integration_queued", "coordination.integrated", "coordination.needs_rebase",
-    "coordination.stale_instructions", "coordination.integration_rejected",
+    "coordination.stale_instructions", "coordination.integration_rejected", "coordination.lease_force_released",
   ],
   registry: ["registry.registered", "registry.disabled", "registry.enabled", "registry.inspected"],
 };
+
+/** A readable label for every kind in ACTIVITY_KINDS (tests/team-activity.test.cjs keeps both in step with Brain). */
+export const ACTIVITY_LABELS: Record<string, string> = {
+  "decision.created": "Decision recorded",
+  "decision.updated": "Decision updated",
+  "rule.created": "Rule recorded",
+  "rule.updated": "Rule updated",
+  "learning.created": "Learning recorded",
+  "learning.updated": "Learning updated",
+  "episode.created": "Episode recorded",
+  "episode.updated": "Episode updated",
+  "skill.created": "Skill recorded",
+  "skill.updated": "Skill updated",
+  "memory.proposed": "Memory proposed",
+  "memory.approved": "Proposal approved",
+  "memory.rejected": "Proposal rejected",
+  "membership.added": "Member added",
+  "membership.revoked": "Member revoked",
+  "membership.admin_granted": "Admin granted",
+  "membership.admin_revoked": "Admin revoked",
+  "project_role.granted": "Project role granted",
+  "project_role.changed": "Project role changed",
+  "project_role.revoked": "Project role revoked",
+  "execution.granted": "Execution granted",
+  "execution.revoked": "Execution revoked",
+  "execution.llm_consented": "LLM provider consented",
+  "execution.llm_consent_revoked": "LLM consent revoked",
+  "execution.llm_budget_set": "LLM budget set",
+  "execution.llm_budget_cleared": "LLM budget cleared",
+  "invitation.created": "Invitation issued",
+  "invitation.accepted": "Invitation accepted",
+  "invitation.revoked": "Invitation revoked",
+  "sso.bound": "SSO identity linked",
+  "sso.unbound": "SSO identity unlinked",
+  "task.created": "Task created",
+  "run.requested": "Run requested",
+  "job.queued": "Job queued",
+  "coordination.overlap": "Overlap warning",
+  "coordination.integration_queued": "Queued for integration",
+  "coordination.integrated": "Integrated",
+  "coordination.needs_rebase": "Needs rebase",
+  "coordination.stale_instructions": "Stale instructions",
+  "coordination.integration_rejected": "Integration rejected",
+  "coordination.lease_force_released": "Lease force-released",
+  "registry.registered": "Workspace registered",
+  "registry.disabled": "Workspace disabled",
+  "registry.enabled": "Workspace enabled",
+  "registry.inspected": "Workspace inspected",
+};
+
+/** The label for a kind; a kind this build does not know yet is shown as Brain sent it. */
+export const activityLabel = (kind: string): string => ACTIVITY_LABELS[kind] ?? kind;
 const KNOWN_KINDS = new Set([...Object.keys(ACTIVITY_KINDS), ...Object.values(ACTIVITY_KINDS).flat()]);
 export const ACTIVITY_PAGE_SIZE = 50;
 const MAX_OFFSET = 5000;
@@ -69,6 +128,8 @@ export interface ActivityRow {
   kind: string;
   occurredAt: string | null;
   summary: string;
+  /** Extra context some kinds carry in their details, e.g. the reason a lease was force-released. */
+  detail: string | null;
   actor: string;
   actorId: number | null;
   projectId: string | null;
@@ -130,6 +191,16 @@ const str = (v: unknown) => (typeof v === "string" ? v : "");
 const strings = (v: unknown) => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : []);
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
+function detailOf(kind: string, details: unknown): string | null {
+  const d = details && typeof details === "object" ? (details as Record<string, unknown>) : {};
+  if (kind === "coordination.lease_force_released") {
+    const reason = str(d.reason);
+    return reason ? `Reason: ${reason}` : null;
+  }
+  if (kind === "coordination.overlap" && d.kind === "dependency") return "Import dependency, not a shared path";
+  return null;
+}
+
 export function toActivityRow(raw: unknown): ActivityRow | null {
   if (!raw || typeof raw !== "object") return null;
   const e = raw as Record<string, unknown>;
@@ -142,6 +213,7 @@ export function toActivityRow(raw: unknown): ActivityRow | null {
     kind: e.kind,
     occurredAt: str(e.occurred_at) || null,
     summary: str(e.summary) || e.kind,
+    detail: detailOf(e.kind, e.details),
     actor: label,
     actorId,
     projectId: str(e.project_id) || null,

@@ -14,7 +14,7 @@ from typing import Optional
 from brain.portfolio.graph_builder import PortfolioCoupling, PortfolioGraphBuilder
 from brain.portfolio.models import parse_portfolio_config
 from brain.portfolio.store import PortfolioStore
-from brain.workspace.registry_store import RegistryStore
+from brain.team.cli_registry import load_registry
 
 
 def _get_store(brain_dir: Optional[str] = None) -> PortfolioStore:
@@ -71,8 +71,9 @@ def cmd_build(args):
     # would make an unresolvable record look like a current one.
     # ".brain/workspace" is where every other entry point reads and writes the
     # registry; a different default here would make `build` report a correctly
-    # registered portfolio as unregistered.
-    registry = RegistryStore(Path(args.registry_dir) if args.registry_dir else Path(".brain/workspace"))
+    # registered portfolio as unregistered. In team state the registry is the
+    # shared table the API reads (brain.team.cli_registry).
+    registry = load_registry(Path(args.registry_dir) if args.registry_dir else Path(".brain/workspace"))
     revisions: dict[str, str] = {}
     generations: dict[str, str] = {}
     missing: list[str] = []

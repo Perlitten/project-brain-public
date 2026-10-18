@@ -26,6 +26,7 @@ from brain.control.budgets import (
     BudgetUnknownError,
 )
 from brain.control.plane import ALLOWED_ACTIONS, ControlPlane
+from brain.team.cli_registry import load_registry
 
 
 def _print_json(payload: Any) -> None:
@@ -33,7 +34,9 @@ def _print_json(payload: Any) -> None:
 
 
 def _plane(args: argparse.Namespace) -> ControlPlane:
-    return ControlPlane(Path(args.brain_dir))
+    brain_dir = Path(args.brain_dir)
+    # The shared registry table in team state, the local file otherwise (brain.team.cli_registry).
+    return ControlPlane(brain_dir, registry=load_registry(brain_dir / "workspace"))
 
 
 def build_parser() -> argparse.ArgumentParser:

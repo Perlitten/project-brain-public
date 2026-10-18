@@ -3,7 +3,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, Uuid, func
+from sqlalchemy import (Boolean, CheckConstraint, ForeignKey, Integer, JSON, LargeBinary, String, Text, UniqueConstraint,
+                        Uuid, func)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from brain.database.harness_models import HARNESS_SCHEMA
@@ -240,6 +241,74 @@ class AgentRunExecution(Base):
     started_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
     steps_done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+    # Declared LLM use: {"provider", "model", "max_tokens", "max_cost_cents"?}; NULL when the run sends nothing
+    # to an LLM provider. Reserved in full against the project's LLM budget (``team_llm_budgets``).
+    llm: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+
+
+class AgentRunExecutionArtifact(Base):
+    """A bounded output of one execution (step log tail, test report, final patch), stored in the database.
+
+    Size-capped (``BRAIN_EXECUTION_ARTIFACT_MAX_BYTES`` each,
+    ``BRAIN_EXECUTION_ARTIFACTS_MAX_BYTES`` per run) and redacted of every
+    secret value the run used before it is written. Written by the lease owner
+    inside a fenced checkpoint, so a fenced owner stores nothing. Readable by
+    project members with read access to the task."""
+    __tablename__ = "agent_run_execution_artifacts"
+    __table_args__ = (UniqueConstraint("run_id", "name", name="uq_agent_run_execution_artifacts_name"),
+                      {"schema": HARNESS_SCHEMA})
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey(f"{HARNESS_SCHEMA}.agent_run_executions.run_id",
+                                                         ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)  # log | test-report | patch
+    step: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    original_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    fencing_token: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+
+
+class TeamLlmConsent(Base):
+    """A team administrator's consent that executions in one project may send repository content to one LLM provider.
+
+    ``model`` is a model name or ``*`` (any model the operator allows for that
+    provider). Revoking sets ``revoked_at``; re-consenting clears it and bumps
+    ``version``. In solo state the owner consents implicitly and no row is needed."""
+    __tablename__ = "team_llm_consents"
+    __table_args__ = (UniqueConstraint("project_id", "provider", "model", name="uq_team_llm_consents_scope"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("team_projects.id"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(128), nullable=False, default="*")
+    consented_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    consented_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class TeamLlmBudget(Base):
+    """The LLM token/cost budget of one project (and optionally of each member in it).
+
+    Executions reserve their declared ``max_tokens`` / ``max_cost_cents`` in
+    full when they are requested; the sum over the period (``month``: the
+    current UTC calendar month, ``total``: ever) may not exceed the limits.
+    ``NULL`` limits are unlimited."""
+    __tablename__ = "team_llm_budgets"
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("team_projects.id"), primary_key=True)
+    period: Mapped[str] = mapped_column(String(16), nullable=False, default="month")
+    max_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    per_member_max_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    per_member_max_cost_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    set_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    set_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class TeamActivityEvent(Base):
@@ -389,3 +458,41 @@ class WorkspaceRegistryEvent(Base):
     event_type: Mapped[str] = mapped_column(String(32), nullable=False)
     event: Mapped[dict] = mapped_column(JSON, nullable=False)
     recorded_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+
+
+class TeamNotification(Base):
+    """One in-app notification for one team member (``brain.team.notifications``), read on ``/team/me``.
+
+    Written when a memory proposal needs review, for every member who may
+    approve it. ``dedupe_key`` (``memory.review:<proposal id>``) makes the write
+    idempotent per recipient; each inbox is pruned to its newest rows. Plain
+    principal ids, no foreign keys, like ``team_activity_events``: a row may outlive
+    what it points at and never blocks a membership change."""
+    __tablename__ = "team_notifications"
+    __table_args__ = (UniqueConstraint("recipient_principal_id", "dedupe_key", name="uq_team_notification_dedupe"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    recipient_principal_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    proposal_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    details: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(utc_datetime(), nullable=False, server_default=func.now())
+    read_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+
+
+class TeamTelegramLink(Base):
+    """A member's own Telegram chat for review notifications, linked self-service on ``/team/me``.
+
+    ``chat_id`` is set only after the member echoes back the one-time code the
+    bot sent to ``pending_chat_id``, so nobody can point notifications at a chat
+    they do not control. Only ``code_hash`` is stored, never the code."""
+    __tablename__ = "team_telegram_links"
+    principal_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    chat_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    linked_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    pending_chat_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    code_sent_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    code_expires_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

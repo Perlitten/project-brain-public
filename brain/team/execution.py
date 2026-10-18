@@ -51,6 +51,7 @@ The outcome is derived from the ``run.execution.*`` events on the task ledger
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -62,7 +63,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping
 
 from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,15 +71,17 @@ from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
 from brain.database.harness_models import AgentTaskEvent
 from brain.database.models import Repository
-from brain.execution.bounded import (ExecutorBackend, ExecutorError, StepRequest, SubprocessBackend, ToolSpec,
-                                     validate_args)
+from brain.execution.bounded import (REDACTED, ExecutorBackend, ExecutorError, StepRequest, SubprocessBackend,
+                                     ToolSpec, read_confined, validate_args, valid_report_path)
 from brain.execution.container import (ContainerBackend, ContainerSettings, Environment, default_user, valid_cpus,
                                        valid_image, valid_memory, valid_network, valid_user)
+from brain.team import execution_llm
 from brain.team.activity import record_event
 from brain.team.authorization import (Authority, Permission, TeamConflict, TeamDenied, administrator, authorize,
                                       fresh, permissions, require_team_storage)
-from brain.team.models import (AgentRun, AgentRunExecution, ProjectMember, TeamExecutionGrant, TeamMember,
-                               TeamProject, TeamTaskBinding)
+from brain.team.execution_llm import LlmCeiling, LlmDenied, LlmProvider
+from brain.team.models import (AgentRun, AgentRunExecution, AgentRunExecutionArtifact, ProjectMember,
+                               TeamExecutionGrant, TeamMember, TeamProject, TeamTaskBinding)
 from brain.team.store import digest
 
 EVENT_PREFIX = "run.execution."
@@ -131,6 +134,7 @@ class ExecutionPolicy:
     backend: str = "subprocess"
     environments: dict[str, Environment] = field(default_factory=dict)
     container: ContainerSettings = field(default_factory=ContainerSettings)
+    llm_providers: dict[str, LlmProvider] = field(default_factory=dict)
 
     def disabled_reason(self) -> str | None:
         if self.error:
@@ -161,7 +165,11 @@ def operator_policy() -> ExecutionPolicy:
             if (not _NAME.match(str(name)) or not isinstance(argv, list) or not argv
                     or not all(isinstance(item, str) and item for item in argv)):
                 raise ValueError("invalid tool")
-            tools[name] = ToolSpec(name=name, argv=tuple(argv), allow_args=bool(spec.get("allow_args", False)))
+            report = spec.get("report")
+            if report is not None and not valid_report_path(report):
+                raise ValueError("invalid tool report path")
+            tools[name] = ToolSpec(name=name, argv=tuple(argv), allow_args=bool(spec.get("allow_args", False)),
+                                   report=report)
         for ref, variable in raw_secrets.items():
             if not _REF.match(str(ref)) or not isinstance(variable, str) or not variable:
                 raise ValueError("invalid secret reference")
@@ -175,14 +183,16 @@ def operator_policy() -> ExecutionPolicy:
     backend = str(settings.BRAIN_EXECUTION_BACKEND or "subprocess").strip().lower()
     environments: dict[str, Environment] = {}
     container = ContainerSettings()
+    llm_providers: dict[str, LlmProvider] = {}
     if error is None:
         try:
             if backend not in BACKENDS:
                 raise ValueError(f"BRAIN_EXECUTION_BACKEND must be one of {', '.join(BACKENDS)}")
             environments = _parse_environments(settings.BRAIN_EXECUTION_ENVIRONMENTS, tools)
             container = _container_settings()
+            llm_providers = execution_llm.parse_providers(settings.BRAIN_EXECUTION_LLM_PROVIDERS)
         except ValueError as exc:
-            error, environments = f"Execution is misconfigured: {exc}", {}
+            error, environments, llm_providers = f"Execution is misconfigured: {exc}", {}, {}
     return ExecutionPolicy(
         enabled=bool(settings.BRAIN_EXECUTION_ENABLED), root=root, tools=tools, secrets=secrets, egress=egress,
         max_wall_seconds=max(1, int(settings.BRAIN_EXECUTION_MAX_WALL_SECONDS)),
@@ -190,7 +200,8 @@ def operator_policy() -> ExecutionPolicy:
         step_timeout_seconds=max(1, int(settings.BRAIN_EXECUTION_STEP_TIMEOUT_SECONDS)),
         max_output_bytes=max(1024, int(settings.BRAIN_EXECUTION_MAX_OUTPUT_BYTES)),
         lease_seconds=max(1, int(settings.BRAIN_EXECUTION_LEASE_SECONDS)), error=error,
-        backend=backend if backend in BACKENDS else "subprocess", environments=environments, container=container)
+        backend=backend if backend in BACKENDS else "subprocess", environments=environments, container=container,
+        llm_providers=llm_providers)
 
 
 def _parse_environments(raw: str | None, tools: Mapping[str, ToolSpec]) -> dict[str, Environment]:
@@ -293,6 +304,7 @@ def execution_config_health(policy: ExecutionPolicy | None = None,
             else "BRAIN_EXECUTION_EGRESS is set but this backend cannot enforce it; requests with egress are denied")
     else:
         add("egress", "ok", "Egress denied for every run")
+    _llm_health(policy, add)
     missing = sorted(ref for ref, variable in policy.secrets.items() if not environ.get(variable))
     add("secrets", "warn" if missing else "ok",
         f"Secret references without a server value: {', '.join(missing)}" if missing
@@ -301,6 +313,25 @@ def execution_config_health(policy: ExecutionPolicy | None = None,
     status = max((check["status"] for check in checks), key=order.__getitem__, default="ok")
     return {"status": status, "enabled": True, "backend": policy.backend,
             "environments": sorted(policy.environments), "egress_enforced": enforced, "checks": checks}
+
+
+def _llm_health(policy: ExecutionPolicy, add: Callable[[str, str, str], None]) -> None:
+    providers = policy.llm_providers
+    reached = execution_llm.llm_hosts(policy.egress, providers)
+    unowned = sorted(entry for entry, owners in reached.items() if not owners)
+    egress_hosts = {execution_llm.host_name(entry) for entry in policy.egress}
+    unreachable = sorted(f"{p.name}: {host}" for p in providers.values() for host in p.hosts
+                         if host not in egress_hosts)
+    if unowned:
+        add("llm", "warn", "BRAIN_EXECUTION_EGRESS allows LLM API hosts no configured provider declares (requests "
+                           f"naming them are denied): {', '.join(unowned)}")
+    elif unreachable:
+        add("llm", "warn", f"LLM provider hosts missing from BRAIN_EXECUTION_EGRESS: {', '.join(unreachable)}")
+    elif providers:
+        add("llm", "ok", f"{len(providers)} LLM provider(s): {', '.join(sorted(providers))}; team runs need a team "
+                         "administrator's consent and a project LLM budget")
+    else:
+        add("llm", "ok", "No LLM providers configured; egress to LLM API hosts is denied")
 
 
 # --------------------------------------------------------------------------- capabilities
@@ -313,16 +344,17 @@ class Capabilities:
     egress: frozenset[str]
     budget: dict[str, int] = field(default_factory=dict)
     environment: str | None = None
+    llm: dict | None = None
 
     @classmethod
     def from_row(cls, row: AgentRunExecution) -> Capabilities:
         return cls(frozenset(row.tools), frozenset(row.secret_refs), frozenset(row.egress), dict(row.budget),
-                   row.environment)
+                   row.environment, dict(row.llm) if row.llm else None)
 
     def as_dict(self) -> dict:
         return {"tools": sorted(self.tools), "secret_refs": sorted(self.secret_refs), "egress": sorted(self.egress),
                 "budget": {key: self.budget[key] for key in BUDGET_KEYS if key in self.budget},
-                "environment": self.environment}
+                "environment": self.environment, "llm": self.llm}
 
 
 def _normalize_request(payload: dict) -> tuple[list[dict], Capabilities, dict]:
@@ -364,17 +396,25 @@ def _normalize_request(payload: dict) -> tuple[list[dict], Capabilities, dict]:
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise ExecutionDenied(f"Budget {key} must be a positive integer")
         budget[key] = value
+    try:
+        llm = execution_llm.normalize_llm(payload.get("llm"))
+    except ValueError as exc:
+        raise ExecutionDenied(str(exc)) from None
     canonical = {"steps": steps, "tools": sorted(tools), "secret_refs": sorted(refs), "egress": sorted(egress),
                  "budget": dict(sorted(budget.items()))}
     if environment is not None:
         canonical["environment"] = environment  # absent when unset, so earlier request digests stay stable
-    return steps, Capabilities(tools, refs, egress, budget, environment), canonical
+    if llm is not None:
+        canonical["llm"] = llm  # likewise
+    return steps, Capabilities(tools, refs, egress, budget, environment, llm), canonical
 
 
-async def _ceiling(session: AsyncSession, run: AgentRun, policy: ExecutionPolicy) -> Capabilities:
-    """The operator ceiling narrowed by every parent run's executor capabilities."""
+async def _ceiling(session: AsyncSession, run: AgentRun,
+                   policy: ExecutionPolicy) -> tuple[Capabilities, LlmCeiling]:
+    """The operator ceiling narrowed by every parent run's executor capabilities (and LLM declarations)."""
     tools, refs, egress, budget = set(policy.tools), set(policy.secrets), set(policy.egress), policy.budget()
     environment: str | None = None
+    llm = LlmCeiling()
     parent_id, depth = run.parent_id, 0
     while parent_id is not None:
         depth += 1
@@ -393,8 +433,9 @@ async def _ceiling(session: AsyncSession, run: AgentRun, policy: ExecutionPolicy
             if environment is not None and environment != granted.environment:
                 raise ExecutionDenied("Invalid delegation chain")
             environment = granted.environment
+        llm = execution_llm.narrow(llm, granted.llm)
         parent_id = parent.parent_id
-    return Capabilities(frozenset(tools), frozenset(refs), frozenset(egress), budget, environment)
+    return Capabilities(frozenset(tools), frozenset(refs), frozenset(egress), budget, environment), llm
 
 
 def _within(requested: Capabilities, ceiling: Capabilities, backend: ExecutorBackend,
@@ -428,7 +469,8 @@ def _within(requested: Capabilities, ceiling: Capabilities, backend: ExecutorBac
         if limit < 1 or value > limit:
             raise ExecutionDenied(f"Budget {key} exceeds the allowed ceiling")
         budget[key] = value
-    return Capabilities(requested.tools, requested.secret_refs, requested.egress, budget, requested.environment)
+    return Capabilities(requested.tools, requested.secret_refs, requested.egress, budget, requested.environment,
+                        requested.llm)
 
 
 async def authorize_execution(session: AsyncSession, requester: ResolvedPrincipal, project_id: uuid.UUID,
@@ -459,7 +501,13 @@ async def authorize_execution(session: AsyncSession, requester: ResolvedPrincipa
                         TeamExecutionGrant.principal_id == run.initiator_id)
     if grant is None or grant.revoked_at is not None:
         raise ExecutionDenied("The run's initiator holds no execution grant on this project")
-    effective = _within(capabilities, await _ceiling(session, run, policy), backend, policy)
+    ceiling, llm_ceiling = await _ceiling(session, run, policy)
+    effective = _within(capabilities, ceiling, backend, policy)
+    try:
+        await execution_llm.check(session, project=project, run=run, llm=effective.llm, egress=effective.egress,
+                                  ceiling=llm_ceiling, providers=policy.llm_providers)
+    except LlmDenied as exc:
+        raise ExecutionDenied(str(exc)) from None
     return run, authority, effective
 
 
@@ -505,6 +553,7 @@ def derive_state(row: AgentRunExecution, events: list[AgentTaskEvent], now: date
 
 async def execution_dict(session: AsyncSession, row: AgentRunExecution, run: AgentRun) -> dict:
     events = await _events(session, run)
+    artifacts = await _artifact_list(session, run.id)
     return {
         "run_id": str(run.id), "task_id": str(run.task_id), "state": derive_state(row, events),
         "backend": row.backend, **Capabilities.from_row(row).as_dict(), "steps": row.steps,
@@ -513,7 +562,149 @@ async def execution_dict(session: AsyncSession, row: AgentRunExecution, run: Age
         "cancel_requested_at": _iso(row.cancel_requested_at), "base_sha": run.base_sha, "head_sha": run.head_sha,
         "events": [{"type": item.event_type, "actor": item.actor, "at": _iso(item.created_at),
                     "payload": item.payload_json} for item in events],
+        "artifacts": artifacts,
     }
+
+
+# --------------------------------------------------------------------------- artifacts
+
+ARTIFACT_KINDS = ("log", "test-report", "patch")
+# Extra bytes read beyond a cap so a secret cut by the read boundary is still redacted before the final cut.
+_REDACTION_MARGIN = 4096
+_ARTIFACT_COLUMNS = (AgentRunExecutionArtifact.id, AgentRunExecutionArtifact.name, AgentRunExecutionArtifact.kind,
+                     AgentRunExecutionArtifact.step, AgentRunExecutionArtifact.content_type,
+                     AgentRunExecutionArtifact.size_bytes, AgentRunExecutionArtifact.original_bytes,
+                     AgentRunExecutionArtifact.truncated, AgentRunExecutionArtifact.sha256,
+                     AgentRunExecutionArtifact.created_at)
+
+
+@dataclass(frozen=True)
+class ArtifactDraft:
+    """An artifact prepared outside the transaction; capped and stored by ``_store_artifacts``."""
+    name: str
+    kind: str
+    step: int | None
+    content_type: str
+    content: bytes
+    original_bytes: int
+    truncated: bool
+    keep_tail: bool = False
+
+
+def artifact_caps() -> tuple[int, int]:
+    """(per-artifact cap, per-run cap) in bytes."""
+    each = max(1024, int(settings.BRAIN_EXECUTION_ARTIFACT_MAX_BYTES))
+    return each, max(each, int(settings.BRAIN_EXECUTION_ARTIFACTS_MAX_BYTES))
+
+
+def redact_bytes(data: bytes, secrets: set[str] | frozenset[str]) -> bytes:
+    for value in sorted({s for s in secrets if s and len(s) >= 4}, key=len, reverse=True):
+        data = data.replace(value.encode("utf-8"), REDACTED.encode())
+    return data
+
+
+def _artifact_meta(row: Any) -> dict:
+    return {"id": str(row.id), "name": row.name, "kind": row.kind, "step": row.step,
+            "content_type": row.content_type, "bytes": row.size_bytes, "original_bytes": row.original_bytes,
+            "truncated": row.truncated, "sha256": row.sha256, "created_at": _iso(row.created_at)}
+
+
+async def _artifact_list(session: AsyncSession, run_id: uuid.UUID) -> list[dict]:
+    rows = (await session.execute(select(*_ARTIFACT_COLUMNS).where(AgentRunExecutionArtifact.run_id == run_id)
+                                  .order_by(AgentRunExecutionArtifact.created_at,
+                                            AgentRunExecutionArtifact.name))).all()
+    return [_artifact_meta(row) for row in rows]
+
+
+async def _store_artifacts(session: AsyncSession, row: AgentRunExecution, token: int, drafts: list[ArtifactDraft],
+                           secrets: set[str]) -> None:
+    """Redact, cap (per artifact and per run) and add the drafts in the caller's fenced transaction."""
+    each, total = artifact_caps()
+    used = int((await session.execute(select(func.coalesce(func.sum(AgentRunExecutionArtifact.size_bytes), 0))
+                                      .where(AgentRunExecutionArtifact.run_id == row.run_id))).scalar_one())
+    for draft in drafts:
+        room = min(each, total - used)
+        if room <= 0:
+            logger.warning("Execution {} reached its artifact cap; {} not stored", row.run_id, draft.name)
+            break
+        content, truncated = redact_bytes(draft.content, secrets), draft.truncated
+        if len(content) > room:
+            content = content[-room:] if draft.keep_tail else content[:room]
+            truncated = True
+        session.add(AgentRunExecutionArtifact(
+            run_id=row.run_id, name=draft.name[:128], kind=draft.kind, step=draft.step,
+            content_type=draft.content_type, size_bytes=len(content), original_bytes=draft.original_bytes,
+            truncated=truncated, sha256=hashlib.sha256(content).hexdigest(), content=content,
+            fencing_token=token))
+        used += len(content)
+
+
+def _report_type(path: str) -> tuple[str, str]:
+    name = path.rsplit("/", 1)[-1]
+    suffix = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    content_type = {"xml": "application/xml", "json": "application/json"}.get(suffix, "text/plain; charset=utf-8")
+    return (suffix if re.fullmatch(r"[a-z0-9]{1,8}", suffix) else "txt"), content_type
+
+
+def step_artifacts(copy: Any, tool: ToolSpec, index: int, log_path: str | None) -> list[ArtifactDraft]:
+    """The step's log tail (already redacted by the backend) and the tool's report file, if any."""
+    each, _ = artifact_caps()
+    drafts: list[ArtifactDraft] = []
+    if log_path:
+        try:
+            with open(log_path, "rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                size = handle.tell()
+                handle.seek(max(0, size - each))
+                content = handle.read()
+            drafts.append(ArtifactDraft(f"step-{index:03d}.log", "log", index, "text/plain; charset=utf-8", content,
+                                        size, size > len(content), keep_tail=True))
+        except OSError as exc:
+            logger.warning("Could not read the log of step {}: {}", index, exc)
+    if tool.report:
+        read = read_confined(Path(copy.path), tool.report, each + _REDACTION_MARGIN)
+        if read is not None and read[2] != "symlink":
+            content, size, _kind = read
+            suffix, content_type = _report_type(tool.report)
+            drafts.append(ArtifactDraft(f"step-{index:03d}-report.{suffix}", "test-report", index, content_type,
+                                        content, size, size > len(content)))
+    return drafts
+
+
+async def _patch_artifact(backend: ExecutorBackend, copy: Any) -> ArtifactDraft | None:
+    """The final patch against the base; ``None`` (advisory, like changed paths) when it cannot be built."""
+    builder = getattr(backend, "patch", None)
+    if builder is None:
+        return None
+    each, _ = artifact_caps()
+    try:
+        content, truncated = await asyncio.to_thread(builder, copy, each + _REDACTION_MARGIN)
+    except (ExecutorError, OSError) as exc:
+        logger.warning("Could not build the patch for run {}: {}", copy.run_dir.name, exc)
+        return None
+    if not content:
+        return None
+    return ArtifactDraft("final.patch", "patch", None, "text/x-diff; charset=utf-8", content,
+                         len(content), truncated)
+
+
+async def list_artifacts(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
+                         task_id: uuid.UUID, run_id: uuid.UUID) -> list[dict]:
+    await authorize(session, caller, project_id, Permission.READ, task_id=task_id)
+    run, _ = await _run_and_row(session, task_id, run_id)
+    return await _artifact_list(session, run.id)
+
+
+async def get_artifact(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
+                       task_id: uuid.UUID, run_id: uuid.UUID, artifact_id: uuid.UUID) -> tuple[dict, bytes]:
+    """Metadata and content of one artifact, for project members with read access to the task."""
+    await authorize(session, caller, project_id, Permission.READ, task_id=task_id)
+    run, _ = await _run_and_row(session, task_id, run_id)
+    row = (await session.execute(select(AgentRunExecutionArtifact).where(
+        AgentRunExecutionArtifact.id == artifact_id, AgentRunExecutionArtifact.run_id == run.id))).scalar_one_or_none()
+    if row is None:
+        raise ExecutionNotFound("Artifact not found")
+    return _artifact_meta(row), bytes(row.content)
 
 
 # --------------------------------------------------------------------------- API-facing operations
@@ -530,6 +721,8 @@ async def request_execution(session: AsyncSession, caller: ResolvedPrincipal, pr
     if reason:
         raise ExecutionDenied(reason)
     steps, requested, canonical = _normalize_request(payload)
+    if requested.llm is not None:
+        await execution_llm.lock_budget(session, project_id)  # serialise reservations against the budget
     run, authority, effective = await authorize_execution(session, caller, project_id, task_id, run_id,
                                                           policy=policy, backend=backend, capabilities=requested)
     _check_steps(steps, effective, policy)
@@ -559,7 +752,8 @@ async def request_execution(session: AsyncSession, caller: ResolvedPrincipal, pr
                                     steps=steps, tools=sorted(effective.tools),
                                     secret_refs=sorted(effective.secret_refs), egress=sorted(effective.egress),
                                     budget=effective.budget, backend=backend.name,
-                                    environment=effective.environment, fencing_token=0, steps_done=0)
+                                    environment=effective.environment, llm=effective.llm, fencing_token=0,
+                                    steps_done=0)
             session.add(row)
             _event(session, run, "requested", "requested", f"principal:{authority.actor_id}",
                    {**effective.as_dict(), "backend": backend.name,
@@ -714,6 +908,46 @@ async def revoke_execution(session: AsyncSession, caller: ResolvedPrincipal, pro
 async def list_execution_grants(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID) -> list[dict]:
     await administrator(session, caller, project_id)
     return await list_grants(session, project_id)
+
+
+# LLM provider consent and budget (brain/team/execution_llm.py): members read, team administrators change.
+
+async def list_llm_consents(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID) -> list[dict]:
+    await authorize(session, caller, project_id, Permission.READ)
+    return await execution_llm.list_consents(session, project_id)
+
+
+async def consent_llm(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID, provider: str,
+                      model: str = execution_llm.ANY_MODEL) -> dict:
+    await administrator(session, caller, project_id)
+    row = await execution_llm.set_consent(session, project_id, provider, model, f"principal:{caller.id}",
+                                          providers=operator_policy().llm_providers)
+    return execution_llm.consent_dict(row)
+
+
+async def revoke_llm_consent(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID, provider: str,
+                             model: str = execution_llm.ANY_MODEL) -> dict:
+    await administrator(session, caller, project_id)
+    row = await execution_llm.revoke_consent(session, project_id, provider, model, f"principal:{caller.id}")
+    return execution_llm.consent_dict(row)
+
+
+async def llm_budget(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID) -> dict:
+    await authorize(session, caller, project_id, Permission.READ)
+    return await execution_llm.budget_report(session, project_id)
+
+
+async def set_llm_budget(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
+                         limits: Mapping[str, Any]) -> dict:
+    await administrator(session, caller, project_id)
+    await execution_llm.set_budget(session, project_id, f"principal:{caller.id}", **limits)
+    return await execution_llm.budget_report(session, project_id)
+
+
+async def clear_llm_budget(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID) -> dict:
+    await administrator(session, caller, project_id)
+    await execution_llm.clear_budget(session, project_id, f"principal:{caller.id}")
+    return await execution_llm.budget_report(session, project_id)
 
 
 # --------------------------------------------------------------------------- lease, fencing, recovery
@@ -990,6 +1224,7 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
         await runner.conclude("failed", {"reason": str(exc), "phase": "prepare", "steps_recorded": 0,
                                          "in_flight": None})
         return await execution_state(factory, run_id)
+    used_secrets: set[str] = set()
     try:
         for index, step in enumerate(steps):
             outcome, reason = await runner.checkpoint()
@@ -1005,6 +1240,7 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
                                                  "failed_step": index, "steps_recorded": index, "in_flight": None})
                 return await execution_state(factory, run_id)
             secrets = {ref: os.environ[policy.secrets[ref]] for ref in step["secrets"]}
+            used_secrets.update(secrets.values())
             async with factory() as session:
                 current = await fresh(session, AgentRunExecution, AgentRunExecution.run_id == run_id)
                 assert current is not None and current.started_at is not None
@@ -1025,10 +1261,14 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
                                    "note": "The process was stopped; changes it made in the working copy before "
                                            "that are not undone, and network effects cannot be recalled."}, index)
 
+            drafts = await asyncio.to_thread(step_artifacts, copy, tool, index, result.log_path)
+
             async def record(session: AsyncSession, current_row: AgentRunExecution, current: AgentRun,
-                             evidence: dict = evidence, index: int = index) -> None:
+                             evidence: dict = evidence, index: int = index,
+                             drafts: list[ArtifactDraft] = drafts) -> None:
                 current_row.steps_done = index + 1
                 _event(session, current, "step", f"{lease.token}:step:{index}", runner.actor, evidence)
+                await _store_artifacts(session, current_row, lease.token, drafts, used_secrets)
 
             outcome, reason = await runner.checkpoint(record)
             if outcome != "ok":
@@ -1040,12 +1280,15 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
                 return await execution_state(factory, run_id)
         head_sha, dirty = await asyncio.to_thread(backend.head, copy)
         changed_paths = await _changed_paths(backend, copy)
+        patch = await _patch_artifact(backend, copy)
 
         async def complete(session: AsyncSession, current_row: AgentRunExecution, current: AgentRun) -> None:
             from brain.team import coordination  # lazy: see request_execution
 
             now = _now()
             current.head_sha, current.worktree_path = head_sha, str(copy.path)
+            if patch is not None:
+                await _store_artifacts(session, current_row, lease.token, [patch], used_secrets)
             current_row.released_at = now
             overlaps = await coordination.record_change_overlaps(session, current.task_id, changed_paths,
                                                                  actor_id=current.requested_by)

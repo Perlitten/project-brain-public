@@ -4,6 +4,10 @@
 #   - caddy: the only published ports (80, 443), automatic TLS for two domains
 #     (BRAIN_WEB_DOMAIN -> dashboard, BRAIN_API_DOMAIN -> API and remote MCP);
 #   - web: the Next.js dashboard, reachable only through caddy;
+#   - edge: the network caddy, web and the API share, with fixed addresses for
+#     caddy and web so the API can trust exactly those two to report the
+#     client address (BRAIN_TRUSTED_PROXY_IPS). Without it every visitor would
+#     share one invitation and sign-in throttle budget: caddy's or web's;
 #   - worker-executor (profile "executor"): a worker with bounded execution on.
 #     It replaces the plain worker, so set BRAIN_PLAIN_WORKER_REPLICAS=0 when
 #     you enable the profile (two workers with different execution settings
@@ -34,6 +38,9 @@ services:
     depends_on:
       - api
       - web
+    networks:
+      edge:
+        ipv4_address: ${BRAIN_CADDY_IP:-172.31.250.10}
     mem_limit: 256m
     security_opt:
       - no-new-privileges:true
@@ -67,6 +74,9 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      edge:
+        ipv4_address: ${BRAIN_WEB_IP:-172.31.250.11}
     mem_limit: 512m
     security_opt:
       - no-new-privileges:true
@@ -86,6 +96,13 @@ services:
       # Read-only view of the backups deploy/server_up.sh (or your own job)
       # writes, so `brain team doctor` can report the newest one.
       BRAIN_BACKUP_DIR: /backups
+      # Only these two peers may name the client in X-Forwarded-For (invitation
+      # and sign-in throttles); any other caller is keyed by its own address.
+      # Set here, so a value in .env does not apply: change the addresses above.
+      BRAIN_TRUSTED_PROXY_IPS: ${BRAIN_CADDY_IP:-172.31.250.10},${BRAIN_WEB_IP:-172.31.250.11}
+    networks:
+      - default
+      - edge
     volumes:
       - ${BRAIN_BACKUP_HOST_DIR:-./backups}:/backups:ro
       # Read-only: the API only checks the execution root exists.
@@ -171,6 +188,14 @@ services:
         max-size: "50m"
         max-file: "5"
     restart: unless-stopped
+
+networks:
+  edge:
+    ipam:
+      config:
+        # Change all three (subnet and the two addresses in it) if this range
+        # is taken on the host.
+        - subnet: ${BRAIN_EDGE_SUBNET:-172.31.250.0/24}
 
 volumes:
   caddy_data:

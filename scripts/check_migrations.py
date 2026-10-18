@@ -76,6 +76,15 @@ EXPECTED_MIGRATED_COLUMNS = [
     ("team_resource_leases", "fencing_token"),
     ("team_run_resolutions", "resolved"),
     ("team_integration_entries", "checked_base_sha"),
+    # Review-needed notifications (brain.team.notifications): the in-app inbox and per-member Telegram links.
+    ("team_notifications", "read_at"),
+    ("team_telegram_links", "chat_id"),
+    # Bounded execution (brain.team.execution): environment, declared LLM use, artifacts, provider consent, budget.
+    ("agent_run_executions", "environment"),
+    ("agent_run_executions", "llm"),
+    ("agent_run_execution_artifacts", "sha256"),
+    ("team_llm_consents", "revoked_at"),
+    ("team_llm_budgets", "per_member_max_tokens"),
 ]
 
 

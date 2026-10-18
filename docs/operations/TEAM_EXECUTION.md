@@ -276,6 +276,169 @@ databases: the proxy refuses private destinations, but defence in depth is cheap
   requested and again when it starts; an unfinished dependency at start revokes
   it before a working copy is made.
 
+## LLM providers: consent and budget
+
+A step that may send repository content to an external LLM provider (an agent CLI,
+a review tool calling a model API) has to say so. The execution request carries an
+`llm` declaration next to `egress`:
+
+```json
+{"steps": [...], "egress": ["api.openai.com:443"],
+ "llm": {"provider": "openai", "model": "gpt-5", "max_tokens": 200000, "max_cost_cents": 300}}
+```
+
+The operator names the providers this Brain may use, with their API hosts and,
+optionally, the models it allows (no `models`: any model):
+
+```bash
+BRAIN_EXECUTION_LLM_PROVIDERS='{"openai": {"hosts": ["api.openai.com"], "models": ["gpt-5"]},
+                                "anthropic": {"hosts": ["api.anthropic.com"]}}'
+```
+
+Egress to a host that belongs to an LLM provider (a configured provider's host, or a
+well-known public LLM API host such as `api.openai.com` or `api.anthropic.com`) is
+refused unless the execution declares that provider, so an egress allowlist cannot be
+used to reach a model without the gates below. The subprocess backend refuses all
+egress, so LLM use in practice needs the container backend with the egress proxy.
+
+In **team state** a declared provider also needs both of these:
+
+1. **Consent.** A team administrator records explicit consent for the project, provider
+   and model (`*` covers every model the provider allows). The record keeps who
+   consented and when, and is revocable. Revoking it (or removing the provider from
+   settings) revokes running executions at their next step checkpoint.
+2. **Budget.** The project needs an LLM budget: tokens and/or cost in cents, per UTC
+   calendar `month` or `total`, with optional per-member limits (per initiator). Without
+   a budget LLM use fails closed. Brain cannot meter tokens inside a step's TLS
+   connection, so the declared `max_tokens` / `max_cost_cents` are **reserved in full**
+   when the execution is requested. They are checked again at every checkpoint, so a
+   lowered budget also revokes a running execution. An execution cancelled before it
+   started reserves nothing. When a budget limits cost, the declaration must include
+   `max_cost_cents`. A refusal names the scope (project or member), the amount already
+   reserved, the limit and the declared amount.
+
+In **solo state** (a team of one) the owner consents implicitly. No consent record is
+needed, and a budget applies only if the owner set one. Adding the first member
+switches to team state, and the consent and budget rules then apply to every new
+request and every checkpoint.
+
+A child run may declare LLM use only within its parent runs' declarations: the same
+provider and model, and no higher `max_tokens` / `max_cost_cents`.
+
+| | API (`/team/projects/{project}/execution/…`) | CLI (`brain team execution …`) |
+|---|---|---|
+| list consents | `GET llm-consents` (project read) | `consent list --project P` |
+| consent | `PUT llm-consents` `{"provider", "model"}` (admin) | `consent grant --project P --provider X [--model M]` |
+| revoke | `DELETE llm-consents/{provider}?model=M` (admin) | `consent revoke --project P --provider X [--model M]` |
+| show budget and usage | `GET llm-budget` (project read) | `budget show --project P` |
+| set budget | `PUT llm-budget` (admin) | `budget set --project P [--period month or total] [--max-tokens N] [--max-cost-cents N] [--per-member-max-tokens N] [--per-member-max-cost-cents N]` |
+| clear budget | `DELETE llm-budget` (admin) | `budget clear --project P` |
+
+Every change is an admin-audience activity event (`execution.llm_consented`,
+`execution.llm_consent_revoked`, `execution.llm_budget_set`,
+`execution.llm_budget_cleared`). The execution detail and `run.execution.started`
+evidence record the declaration. The team doctor's `execution_config` check warns when
+an egress host is an LLM API host that no configured provider owns, or when a provider
+host is missing from `BRAIN_EXECUTION_EGRESS`. It fails when the providers setting is
+invalid.
+
+## Artifacts
+
+Each execution keeps bounded outputs in `agent_run_execution_artifacts`, linked to the
+run:
+
+| Name | Kind | What |
+|---|---|---|
+| `step-NNN.log` | `log` | the tail of the step's output (already redacted by the backend) |
+| `step-NNN-report.<ext>` | `test-report` | the file named by the tool's `report` key, if the step wrote it |
+| `final.patch` | `patch` | the working copy against the task base: tracked changes (`git diff --full-index`, no external diff or text conversion) plus new untracked, non-ignored files; binary files appear as `Binary files … differ` stubs |
+
+A tool declares its report file in `BRAIN_EXECUTION_TOOLS`, as a path relative to the
+working copy:
+
+```bash
+BRAIN_EXECUTION_TOOLS='{"tests": {"argv": ["python", "-m", "pytest", "-q", "--junitxml=report.xml"],
+                                  "report": "report.xml"}}'
+```
+
+The report is read without following symlinks and only inside the working copy. A step
+that fails keeps its log. Before storage every artifact is redacted with the values of
+the secrets the run used. It is then capped: `BRAIN_EXECUTION_ARTIFACT_MAX_BYTES`
+(default 1 MiB) per artifact, keeping the tail for logs and the head otherwise, and
+`BRAIN_EXECUTION_ARTIFACTS_MAX_BYTES` (default 8 MiB) per run. Artifacts beyond the
+run cap are not stored. Each record keeps its size, original size, `truncated` flag
+and SHA-256. The container backend builds the patch inside a network-less container
+over a read-only mount. A patch that cannot be built is skipped and does not fail the
+execution.
+
+The execution detail (`GET …/runs/{run}/execution`) lists artifact metadata. For
+project members with read access to the task:
+
+- `GET …/runs/{run}/execution/artifacts` lists them.
+- `GET …/runs/{run}/execution/artifacts/{id}` downloads one, always as an attachment,
+  with `X-Content-Type-Options: nosniff`, `Cache-Control: no-store`,
+  `X-Artifact-SHA256` and `X-Artifact-Truncated`.
+
+These are deliberately not `agent_task_artifacts`. That table belongs to a task, its
+rows are reported by the client (path, kind, content hash), it stores no content and
+it has no link to a run or an execution. Execution artifacts are produced by the
+server from the run's own working copy, carry their bytes, and are fenced by the
+execution lease like the rest of the run's evidence.
+
+## Real-docker tests
+
+The unit suite checks the exact docker argv against a fake CLI. The tests marked
+`real_docker` in `tests/test_team_execution_container.py` drive a real daemon:
+
+- step isolation: non-root user, read-only root, no network, secret files, timeout
+  and container removal;
+- egress denial: on the `--internal` network the proxy answers 403 to unlisted names,
+  ports, metadata and private addresses, a direct connection fails, and the proxy logs
+  each denial;
+- head, changed paths and the final patch read inside the environment image.
+
+No test contacts an outside host. The CI job `container-real-docker` (ubuntu-latest,
+15-minute job timeout, 8-minute test step) builds both test images from
+`tests/docker/execution.Dockerfile`. The `environment` target is `python:3.12-slim`
+with git. The `egress-proxy` target holds only the `brain.execution` package. These
+are test images, not production images. The job runs
+`pytest tests/test_team_execution_container.py -m real_docker` with
+`BRAIN_TEST_EXECUTION_IMAGE`, `BRAIN_TEST_EGRESS_PROXY_IMAGE` and
+`BRAIN_TEST_REQUIRE_DOCKER=1`, which turns every skip into a failure.
+
+Elsewhere these tests skip without a daemon, without the images or when run as root
+(steps run as the caller's uid, as they do in production). To run them locally:
+
+```bash
+docker build -f tests/docker/execution.Dockerfile --target environment -t brain-exec-test-env .
+docker build -f tests/docker/execution.Dockerfile --target egress-proxy -t brain-exec-test-proxy .
+BRAIN_TEST_EXECUTION_IMAGE=brain-exec-test-env BRAIN_TEST_EGRESS_PROXY_IMAGE=brain-exec-test-proxy \
+  python -m pytest tests/test_team_execution_container.py -m real_docker -v
+```
+
+## Why agent-chosen steps are deferred
+
+Steps stay a fixed list chosen at request time. An agent that picks the next tool
+call would need, inside the executor:
+
+- an LLM loop that reads tool output, which is repository content and can carry prompt
+  injection;
+- a per-call policy decision;
+- a review story for actions nobody approved one by one.
+
+The safety properties above rely on the steps being known when the request is
+authorized:
+
+- the stored capability ceiling;
+- the evidence in the task ledger;
+- the budget reservation.
+
+An agent can already run inside one step, as an allowlisted tool that declares its LLM
+provider: its tool calls stay inside that step's container, egress profile and
+budget. Planning across steps is a separate design. Dynamic steps would have to
+re-authorize each proposed call against the stored capabilities, and record the
+proposal and the decision as evidence.
+
 ## Known limits
 
 - The subprocess backend is not containment: no filesystem, process or network
@@ -289,10 +452,15 @@ databases: the proxy refuses private destinations, but defence in depth is cheap
   allowed destination.
 - Images are pinned by ID per run, but environments name images by tag in settings;
   re-tagging an image changes what new runs get (the evidence records the ID).
-- No CI job runs the container backend against a real daemon: the suite asserts the
-  exact docker argv with a fake CLI, and a real-daemon test runs only where Docker and
-  the test image are available.
-- Steps are a fixed list chosen at request time; no agent decides the next step.
+- The real-docker CI job uses test images, not the production Brain image, and runs on
+  GitHub's runner kernel and default runtime.
+- LLM budgets are reservations of declared ceilings, not metered usage: Brain cannot see
+  inside a step's TLS connection, so a tool that ignores its declared `max_tokens`
+  can spend more at the provider. Use provider-side keys with their own spend limits.
+- Steps are a fixed list chosen at request time; no agent decides the next step
+  (see [Why agent-chosen steps are deferred](#why-agent-chosen-steps-are-deferred)).
+- Artifacts live in the database with the run; there is no retention or pruning
+  policy yet beyond the per-run cap.
 - Effects outside the working copy (network calls, files the server user can write)
   cannot be recalled or made idempotent.
 - The PostgreSQL race tests (several workers claiming one execution lease, two
@@ -301,14 +469,14 @@ databases: the proxy refuses private destinations, but defence in depth is cheap
 
 ## What remains of M2
 
-- Provider egress consent and an LLM token/cost budget for agent-driven runs.
 - Agent-driven dynamic steps (an agent proposing the next tool call within the
-  stored capabilities).
-- Artifact upload/retention for working copies and logs, and cleanup policy.
+  stored capabilities), deferred; see [above](#why-agent-chosen-steps-are-deferred).
+- Metered LLM usage (actual tokens and cost reported by the provider) instead of
+  reserved ceilings.
+- Artifact retention and cleanup policy for working copies and stored artifacts.
 - External-effect idempotency (deduplicating side effects outside the clone).
 - `brain doctor` reporting for orphaned runs (execution configuration is covered
   by the `execution_config` check).
-- A CI job running the container backend against a real Docker daemon.
 - Running the PostgreSQL concurrency tests in CI.
 - Dashboard UI and MCP tools for requesting and inspecting executions.
 - Resuming a fenced run from its last recorded step (today: request a new run).
