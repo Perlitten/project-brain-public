@@ -6,7 +6,8 @@ Importing this module adds ``team_me``, ``team_activity``, ``team_list_tasks``,
 ``team_approve_proposal``, ``team_reject_proposal``) and the coordination tools
 (read: ``team_task_plan``, ``team_coordination_overlaps``, ``team_list_leases``,
 ``team_integration_queue``; write: ``team_claim_lease``, ``team_renew_lease``,
-``team_release_lease``, ``team_declare_scope``, ``team_enqueue_integration``) to
+``team_release_lease``, ``team_declare_scope``, ``team_enqueue_integration``; team
+administrators: ``team_force_release_lease``) to
 ``remote_server.mcp``. Every tool calls the HTTP API route, so live membership,
 project policy and ``authorize()`` apply: a caller without team access sees the
 same denials here as over HTTP.
@@ -23,7 +24,7 @@ __all__ = ["mcp", "team_me", "team_activity", "team_list_tasks", "team_create_ta
            "team_propose_decision", "team_propose_rule", "team_list_proposals", "team_approve_proposal",
            "team_reject_proposal", "team_task_plan", "team_coordination_overlaps", "team_list_leases",
            "team_integration_queue", "team_claim_lease", "team_renew_lease", "team_release_lease",
-           "team_declare_scope", "team_enqueue_integration"]
+           "team_declare_scope", "team_enqueue_integration", "team_force_release_lease"]
 
 
 @mcp.tool(**tool_meta("team_me"))
@@ -131,7 +132,7 @@ async def team_reject_proposal(proposal_id: int, expected_version: int, reason: 
 
 # --- coordination (M3) --------------------------------------------------------------------------
 # Reads, then the member-side writes: claim/renew/release a lease, declare a task's scope, queue a
-# run. Creating subtasks and integrating or rejecting queue entries stay on the HTTP API and the
+# run; and the administrators' force-release of someone else's lease. Creating subtasks and integrating or rejecting queue entries stay on the HTTP API and the
 # web Board (docs/TEAM.md#team-coordination-m3).
 
 
@@ -209,3 +210,14 @@ async def team_declare_scope(project_id: UUID, task_id: UUID, scope_paths: list[
 async def team_enqueue_integration(project_id: UUID, run_id: UUID) -> dict:
     """Queue a run that reported its head revision for integration; a reviewer integrates in order."""
     return await _post(f"/team/projects/{project_id}/integration", {"run_id": str(run_id)})
+
+
+@mcp.tool(**tool_meta("team_force_release_lease"))
+@checked_tool
+async def team_force_release_lease(project_id: UUID, lease_id: int, reason: str,
+                                   fencing_token: int | None = None) -> dict:
+    """Team administrators: release another member's lease; the reason is recorded in the activity feed."""
+    payload: dict = {"reason": reason}
+    if fencing_token is not None:
+        payload["fencing_token"] = fencing_token
+    return await _post(f"/team/projects/{project_id}/leases/{lease_id}/force-release", payload)

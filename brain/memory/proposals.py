@@ -43,7 +43,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional, cast
 
-from sqlalchemy import CursorResult, func, or_, select, update
+from sqlalchemy import CursorResult, func, inspect, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.config.settings import settings
@@ -61,6 +61,8 @@ logger = logging.getLogger(__name__)
 
 ProposalKind = Literal["decision", "rule", "learning"]
 PERSONAL_STATUS = "personal"
+# A revoked member's personal learnings: kept for the audit trail, never read, promoted or recalled again.
+RETIRED_PERSONAL_STATUS = "personal_retired"
 REVOKED_AUTHOR_REASON = "Author access revoked"
 # ``payload.origin`` of a learning proposal filed by consolidation (no personal learning behind it).
 CONSOLIDATION_ORIGIN = "memory_consolidation"
@@ -142,21 +144,44 @@ async def record_review_event(session: AsyncSession, row: MemoryProposal, kind: 
         logger.warning("Could not record %s for proposal %s: %s: %s", kind, row.id, type(exc).__name__, exc)
 
 
-async def notify_reviewers(proposal_id: int, kind: str, repo_path: Optional[str]) -> None:
-    """Opt-in push (``MEMORY_REVIEW_TELEGRAM_NOTIFY``) to the owner chat once a proposal is committed.
+# Bounds the in-app notification write plus the per-member Telegram push after a submission.
+TEAM_NOTIFY_TIMEOUT_S = 10.0
 
-    The message names the proposal, never its draft content. Best effort and
-    bounded: a slow or failing channel never fails or stalls the submission."""
-    if not settings.MEMORY_REVIEW_TELEGRAM_NOTIFY:
+
+async def notify_reviewers(proposal_id: int, kind: str, repo_path: Optional[str]) -> None:
+    """Tell reviewers once a proposal is committed; never fails or stalls the submission.
+
+    * Opt-in push (``MEMORY_REVIEW_TELEGRAM_NOTIFY``) to the owner chat, as before.
+    * Team state (full storage): an in-app notification for every member who may
+      approve it, plus a Telegram notice to those who linked their own chat
+      (``brain.team.notifications``). Solo state writes nothing.
+
+    Messages name the proposal, never its draft content. Best effort and bounded."""
+    if settings.MEMORY_REVIEW_TELEGRAM_NOTIFY:
+        try:
+            from brain.alerts.telegram import deliver_memory_proposal_notice
+
+            await asyncio.wait_for(
+                deliver_memory_proposal_notice(proposal_id=proposal_id, kind=kind, repo_path=repo_path),
+                timeout=min(5.0, float(settings.TELEGRAM_ALERT_TIMEOUT_S)))
+        except Exception as exc:  # noqa: BLE001 - the proposal stands; the push is best effort
+            logger.warning("Review notification for proposal %s failed: %s", proposal_id, type(exc).__name__)
+    await notify_team_reviewers(proposal_id)
+
+
+async def notify_team_reviewers(proposal_id: int) -> None:
+    """In-app (and linked-chat) review notifications for the members who may approve; team state only."""
+    if settings.BRAIN_STORAGE_MODE != "full":
         return
     try:
-        from brain.alerts.telegram import deliver_memory_proposal_notice
+        from brain.team.notifications import notify_review_needed
 
         await asyncio.wait_for(
-            deliver_memory_proposal_notice(proposal_id=proposal_id, kind=kind, repo_path=repo_path),
-            timeout=min(5.0, float(settings.TELEGRAM_ALERT_TIMEOUT_S)))
-    except Exception as exc:  # noqa: BLE001 - the proposal stands; the push is best effort
-        logger.warning("Review notification for proposal %s failed: %s", proposal_id, type(exc).__name__)
+            notify_review_needed(async_session_factory, proposal_id,
+                                 telegram_timeout_s=min(5.0, float(settings.TELEGRAM_ALERT_TIMEOUT_S))),
+            timeout=TEAM_NOTIFY_TIMEOUT_S)
+    except Exception as exc:  # noqa: BLE001 - the proposal stands; notifications are best effort
+        logger.warning("Team review notifications for proposal %s failed: %s", proposal_id, type(exc).__name__)
 
 
 async def _target(session: AsyncSession, kind: str, title: str, repo_path: Optional[str],
@@ -567,6 +592,23 @@ async def withdraw_proposal(proposal_id: int, *, expected_version: int,
         await session.commit()
         await session.refresh(row)
         return row
+
+
+async def retire_personal_learnings(session: AsyncSession, principal_id: int) -> int:
+    """Retire every personal learning of ``principal_id`` in the caller's transaction (member revocation).
+
+    The rows stay for the audit trail, but leave the personal tier: nobody reads, proposes or promotes them
+    again, not even the same principal after being re-added, and recall never used them (it reads ``active``
+    learnings only). Returns how many learnings were retired."""
+    if not await session.run_sync(lambda sync: inspect(sync.connection()).has_table(Learning.__tablename__)):
+        return 0  # a database without learnings (team-only test schemas) has nothing to retire
+    result = await session.execute(
+        update(Learning)
+        .where(Learning.author_principal_id == principal_id, Learning.status == PERSONAL_STATUS)
+        .values(status=RETIRED_PERSONAL_STATUS)
+        .execution_options(synchronize_session=False)
+    )
+    return int(cast(CursorResult[Any], result).rowcount or 0)
 
 
 async def withdraw_author_proposals(session: AsyncSession, principal_id: int,

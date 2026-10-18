@@ -1,0 +1,133 @@
+# Test-only override for scripts/team_proxy_check.py: the real production stack
+# (deploy/docker-compose.prod.yml) plus the real team overlay
+# (deploy/team/docker-compose.team.yml), made throwaway. Never deploy it.
+#
+#   - no published ports, bind mounts or .env: the script passes every value,
+#     and the stack runs under its own project name, container names and
+#     image tag, so it can share a host with a real deployment;
+#   - no Neo4j (the API reports it unhealthy, which nothing here depends on);
+#   - caddy runs the real Caddyfile with local certificates instead of ACME
+#     (the script copies that derived file in before caddy starts);
+#   - idp: a stand-in OpenID provider on the API's loopback, so the API can
+#     start single sign-on without a real provider;
+#   - client-a, client-b: two outside visitors that reach caddy only;
+#   - intruder: a container on the edge network that calls the API directly.
+
+services:
+  postgres:
+    container_name: brain-proxycheck-postgres
+    command: !override ["postgres"]
+
+  redis:
+    container_name: brain-proxycheck-redis
+
+  neo4j:
+    # Defined by the production file but never started here.
+    container_name: brain-proxycheck-neo4j
+
+  api:
+    container_name: brain-proxycheck-api
+    build:
+      # Some local daemons (WSL without working bridge NAT) only reach the
+      # package mirrors from the host network.
+      network: ${PROXYCHECK_BUILD_NETWORK:-default}
+      args:
+        BRAIN_REQUIRE_RELEASE_IDENTITY: "false"
+    env_file: !reset []
+    ports: !reset []
+    volumes: !reset []
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PROJECT_BRAIN_API_KEY: ${PROJECT_BRAIN_API_KEY}
+      PROJECT_BRAIN_WEBHOOK_TOKEN: ${PROJECT_BRAIN_WEBHOOK_TOKEN}
+      # Nothing listens there: graph calls fail fast.
+      NEO4J_URI: bolt://127.0.0.1:7687
+      BRAIN_SOURCE_MIRROR_DIR: ""
+      BRAIN_OIDC_ENABLED: "true"
+      BRAIN_OIDC_ISSUER: http://127.0.0.1:9999
+      BRAIN_OIDC_CLIENT_ID: proxy-check
+      BRAIN_OIDC_CLIENT_SECRET: ${PROXYCHECK_OIDC_SECRET}
+
+  worker:
+    container_name: brain-proxycheck-worker
+    env_file: !reset []
+    volumes: !reset []
+
+  web:
+    container_name: brain-proxycheck-web
+    build:
+      network: ${PROXYCHECK_BUILD_NETWORK:-default}
+
+  caddy:
+    container_name: brain-proxycheck-caddy
+    ports: !reset []
+    volumes: !reset []
+    networks:
+      outside:
+        ipv4_address: ${PROXYCHECK_CADDY_OUTSIDE_IP}
+
+  idp:
+    image: brain-api:${BRAIN_IMAGE_TAG}
+    pull_policy: never
+    container_name: brain-proxycheck-idp
+    network_mode: "service:api"
+    depends_on:
+      - api
+    entrypoint: ["python", "-c"]
+    command:
+      - |
+        import http.server, json
+        base = "http://127.0.0.1:9999"
+        doc = json.dumps({"issuer": base, "authorization_endpoint": base + "/authorize",
+                          "token_endpoint": base + "/token", "jwks_uri": base + "/jwks"}).encode()
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(doc)
+        http.server.HTTPServer(("127.0.0.1", 9999), Handler).serve_forever()
+
+  client-a:
+    image: brain-api:${BRAIN_IMAGE_TAG}
+    pull_policy: never
+    container_name: brain-proxycheck-client-a
+    entrypoint: ["sleep", "infinity"]
+    networks:
+      outside:
+        ipv4_address: ${PROXYCHECK_CLIENT_A_IP}
+    extra_hosts:
+      - "${BRAIN_WEB_DOMAIN}:${PROXYCHECK_CADDY_OUTSIDE_IP}"
+      - "${BRAIN_API_DOMAIN}:${PROXYCHECK_CADDY_OUTSIDE_IP}"
+
+  client-b:
+    image: brain-api:${BRAIN_IMAGE_TAG}
+    pull_policy: never
+    container_name: brain-proxycheck-client-b
+    entrypoint: ["sleep", "infinity"]
+    networks:
+      outside:
+        ipv4_address: ${PROXYCHECK_CLIENT_B_IP}
+    extra_hosts:
+      - "${BRAIN_WEB_DOMAIN}:${PROXYCHECK_CADDY_OUTSIDE_IP}"
+      - "${BRAIN_API_DOMAIN}:${PROXYCHECK_CADDY_OUTSIDE_IP}"
+
+  intruder:
+    image: brain-api:${BRAIN_IMAGE_TAG}
+    pull_policy: never
+    container_name: brain-proxycheck-intruder
+    entrypoint: ["sleep", "infinity"]
+    networks:
+      edge:
+        ipv4_address: ${PROXYCHECK_INTRUDER_IP}
+
+networks:
+  outside:
+    ipam:
+      config:
+        - subnet: ${PROXYCHECK_OUTSIDE_SUBNET}

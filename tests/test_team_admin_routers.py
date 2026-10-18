@@ -114,7 +114,8 @@ def admin_app(factory, monkeypatch):
     plane = MagicMock()
     plane.summary.return_value = plane.health.return_value = {}
     plane.action_queue.return_value = []
-    monkeypatch.setattr(control, "_plane", lambda: plane)
+    monkeypatch.setattr(control, "_plane", lambda _registry=None: plane)
+    monkeypatch.setattr(control, "workspace_registry", AsyncMock(return_value=None))
     monkeypatch.setattr(audit, "_fetch", AsyncMock(return_value=[]))
     monkeypatch.setattr(autonomy._goal_service, "get_goal_status", lambda _goal: SimpleNamespace(
         goal_id="synthetic", description="", current_phase=SimpleNamespace(value="GOAL_RECEIVED"),

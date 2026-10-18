@@ -621,7 +621,8 @@ def doctor_cmd(as_json: bool = typer.Option(False, "--json", help="Print the rep
 
 
 coord_cli = typer.Typer(help="Team coordination (M3): subtask plans, scope overlaps, leases and the integration "
-                             "queue. Read-only; members change them through the API. See docs/TEAM.md.")
+                             "queue. Read-only except force-release; members change them through the API. "
+                             "See docs/TEAM.md.")
 team_cli.add_typer(coord_cli, name="coord")
 
 
@@ -681,5 +682,24 @@ def coord_queue_cmd(project: str = typer.Option(..., "--project", help="Project 
         async with async_session_factory() as session:
             target = await provisioning.resolve_project(session, project)
             return await coordination.queue_view(session, target.id, include_done=include_done)
+
+    _emit(_run(run()))
+
+
+@coord_cli.command(name="force-release")
+def coord_force_release_cmd(project: str = typer.Option(..., "--project", help="Project id or name."),
+                            lease: int = typer.Option(..., "--lease", help="Lease id (see `team coord leases`)."),
+                            reason: str = typer.Option(..., "--reason", help="Why the lease is released (recorded)."),
+                            fencing_token: Optional[int] = typer.Option(
+                                None, "--fencing-token", help="Refuse unless the lease still has this token.")):
+    """Release someone's lease as the server operator; the reason goes to the activity feed."""
+    from brain.team import coordination
+
+    async def run():
+        async with async_session_factory() as session, session.begin():
+            target = await provisioning.resolve_project(session, project)
+            return await coordination.operator_force_release_lease(
+                session, target.id, lease, {"reason": reason, "fencing_token": fencing_token},
+                actor_label=CLI_OPERATOR)
 
     _emit(_run(run()))

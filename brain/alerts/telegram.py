@@ -386,9 +386,10 @@ def _diagnosis_message(
     return "\n\n".join(blocks)[:TELEGRAM_MAX_TEXT]
 
 
-async def _send(text: str) -> dict[str, Any]:
+async def _send(text: str, *, chat_id: str | None = None) -> dict[str, Any]:
+    """Post ``text`` to ``chat_id`` (default: the owner chat ``TELEGRAM_ALERT_CHAT_ID``)."""
     token = settings.TELEGRAM_ALERT_BOT_TOKEN
-    chat_id = settings.TELEGRAM_ALERT_CHAT_ID
+    chat_id = chat_id or settings.TELEGRAM_ALERT_CHAT_ID
     if not token or not chat_id:
         return {"status": "disabled", "reason": "telegram_credentials_missing"}
     url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -475,6 +476,41 @@ async def deliver_memory_proposal_notice(*, proposal_id: int, kind: str, repo_pa
     if link:
         lines.append(link)
     return await _send("\n".join(lines)[:TELEGRAM_MAX_TEXT])
+
+
+def member_telegram_available() -> bool:
+    """Per-member review notifications (``TEAM_MEMBER_TELEGRAM_NOTIFY``) are on and the bot has a token."""
+    return bool(settings.TEAM_MEMBER_TELEGRAM_NOTIFY and settings.TELEGRAM_ALERT_BOT_TOKEN)
+
+
+async def deliver_member_review_notice(*, chat_id: str, proposal_id: int, kind: str,
+                                       repo_path: str | None) -> dict[str, Any]:
+    """Tell one team member's linked chat that a memory proposal awaits their review.
+
+    Same content rule as the owner notice: the proposal number, its kind and the
+    repository name, never the draft itself."""
+    if not member_telegram_available():
+        return {"status": "disabled", "reason": "TEAM_MEMBER_TELEGRAM_NOTIFY=false"}
+    lines = [
+        f"📝 Memory proposal #{proposal_id} awaits your review",
+        f"{_text(kind, 20).capitalize()} in {_text(_repository_name(repo_path), 80)}",
+    ]
+    link = _link("/review")
+    if link:
+        lines.append(link)
+    return await _send("\n".join(lines)[:TELEGRAM_MAX_TEXT], chat_id=chat_id)
+
+
+async def deliver_member_link_code(*, chat_id: str, code: str) -> dict[str, Any]:
+    """Send the one-time code a member types on /team/me to link this chat."""
+    if not member_telegram_available():
+        return {"status": "disabled", "reason": "TEAM_MEMBER_TELEGRAM_NOTIFY=false"}
+    lines = [
+        f"🔐 Project Brain link code: {code}",
+        "Enter it on your Me page to get memory review notifications in this chat. It expires in 10 minutes.",
+        "If you did not ask for this, ignore this message.",
+    ]
+    return await _send("\n".join(lines), chat_id=chat_id)
 
 
 async def deliver_deep_context_alert(

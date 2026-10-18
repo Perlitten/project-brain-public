@@ -510,6 +510,9 @@ class Settings(BaseSettings):
     TELEGRAM_ALERT_TIMEOUT_S: float = 20.0
     # Opt-in: tell the owner chat when a memory proposal awaits review (no draft content is sent).
     MEMORY_REVIEW_TELEGRAM_NOTIFY: bool = False
+    # Opt-in: in team state, members may link their own chat on /team/me (the bot above sends a one-time
+    # code) and get review-needed notices there. Independent of the owner channel switch above.
+    TEAM_MEMBER_TELEGRAM_NOTIFY: bool = False
     BRAIN_TELEGRAM_DEFAULT_REPO: Optional[str] = None
 
     # Web dashboard sign-in, managed from its Settings screen (apps/api/routers/web_login.py).

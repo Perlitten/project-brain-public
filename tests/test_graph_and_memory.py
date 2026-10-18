@@ -63,6 +63,12 @@ async def test_graph_client_methods():
         assert neighbors[0]["relationship"]["type"] == "IMPORTS"
         assert neighbors[0]["target"]["properties"]["name"] == "b.py"
 
+        neighbors = await client.get_import_neighbors("a.py", 65)
+        assert len(neighbors) == 1
+        query = mock_session.run.await_args.args[0]
+        assert "[r:IMPORTS]" in query and "(m:File)" in query and "LIMIT $limit" in query
+        assert mock_session.run.await_args.kwargs["limit"] == 65
+
         # Test clear_graph
         await client.clear_graph()
         assert mock_session.run.called
@@ -292,8 +298,10 @@ async def test_focus_neighborhood_defaults_to_one_hop():
 async def test_decision_store_methods():
     mock_session = AsyncMock()
     # session.add is synchronous on AsyncSession; a bare AsyncMock would return
-    # an unawaited coroutine and emit RuntimeWarning.
+    # an unawaited coroutine and emit RuntimeWarning. begin_nested (the create savepoint) is
+    # synchronous too and returns an async context manager.
     mock_session.add = MagicMock()
+    mock_session.begin_nested = MagicMock()
     mock_session_factory = MagicMock()
     mock_session_factory.return_value.__aenter__.return_value = mock_session
 
@@ -369,6 +377,7 @@ async def test_decision_store_updates_existing_normalized_title():
     )
     execute_result = MagicMock()
     execute_result.scalar_one_or_none.return_value = existing
+    execute_result.rowcount = 1  # the version compare-and-swap claims the row
     mock_session = AsyncMock()
     mock_session.add = MagicMock()
     mock_session.execute.return_value = execute_result
@@ -415,8 +424,10 @@ async def test_decision_store_updates_existing_normalized_title():
 async def test_rule_store_methods(tmp_path):
     mock_session = AsyncMock()
     # session.add is synchronous on AsyncSession; a bare AsyncMock would return
-    # an unawaited coroutine and emit RuntimeWarning.
+    # an unawaited coroutine and emit RuntimeWarning. begin_nested (the create savepoint) is
+    # synchronous too and returns an async context manager.
     mock_session.add = MagicMock()
+    mock_session.begin_nested = MagicMock()
     mock_session_factory = MagicMock()
     mock_session_factory.return_value.__aenter__.return_value = mock_session
 

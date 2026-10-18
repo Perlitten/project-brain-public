@@ -1,19 +1,59 @@
-# Project Brain - one team. Caddy obtains and renews certificates for both
-# hosts on its own; both DNS names must point at this server and ports 80/443
-# must be reachable from the internet. Used by deploy/team/docker-compose.team.yml.
 {
 	email {$BRAIN_ACME_EMAIL}
 }
 
-{$BRAIN_WEB_DOMAIN} {
+# Shared by both sites.
+(edge) {
 	encode gzip
+	# Uploads and webhook payloads: the same ceiling as the API's own
+	# API_MAX_REQUEST_BODY_BYTES (25 MiB). The API checks only a declared
+	# Content-Length, so this is what stops a chunked body.
+	request_body {
+		max_size 25MiB
+	}
+	# Defaults for answers that carry none: the API sets its own
+	# (apps/api/main.py), the dashboard mostly does not. "?" never replaces a
+	# header the app chose, such as no-referrer on /invite and single sign-on.
+	header {
+		?Strict-Transport-Security "max-age=63072000"
+		?X-Content-Type-Options "nosniff"
+		?X-Frame-Options "DENY"
+		?Referrer-Policy "strict-origin-when-cross-origin"
+		?Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+}
+
+# Caddy overwrites any X-Forwarded-For a client sends with the address it sees,
+# and the API trusts that header only from caddy and web
+# (BRAIN_TRUSTED_PROXY_IPS, set in deploy/team/docker-compose.team.yml).
+
+{$BRAIN_WEB_DOMAIN} {
+	import edge
 	reverse_proxy web:3100
 }
 
 {$BRAIN_API_DOMAIN} {
-	encode gzip
-	# Remote MCP streams responses; do not buffer them.
-	reverse_proxy api:8000 {
-		flush_interval -1
+	import edge
+
+	# /health and /ready describe repositories, workers and versions: only a
+	# team administrator's key (the server key while solo) sees them; everyone
+	# else gets 404. Compose and the host check http://127.0.0.1:<port>/health.
+	@probe path /health /ready
+	handle @probe {
+		forward_auth api:8000 {
+			uri /api/status/diagnostics
+			@denied status 401 403
+			handle_response @denied {
+				respond 404
+			}
+		}
+		reverse_proxy api:8000
+	}
+
+	handle {
+		# Remote MCP streams responses; do not buffer them.
+		reverse_proxy api:8000 {
+			flush_interval -1
+		}
 	}
 }
