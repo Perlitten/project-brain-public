@@ -1206,6 +1206,14 @@ class Run:
             payload = {}
         if label == "MCP search_code":
             self.note_freshness(project, payload, label)
+        elif isinstance(payload, dict):
+            # A successful MCP envelope can still carry a degraded API result.
+            # Do not turn a server-side timeout into a false acceptance PASS.
+            reasons = [*payload.get("missing", []), *payload.get("degraded", [])]
+            errors = [str(reason) for reason in reasons
+                      if str(reason).startswith(("context_error:", "context_deadline_exceeded", "deadline_exceeded"))]
+            if errors:
+                self.violations.add("mcp_context_degraded", {"who": member.name, "reasons": errors})
 
     def op_probe(self, member: Member, rng: random.Random) -> None:
         """Requests that must be refused: other projects, approvals without the Reviewer role."""

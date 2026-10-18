@@ -29,6 +29,9 @@ class ContextRequest(BaseModel):
     persist: bool = False
     max_tokens: int = Field(default=3500, ge=500, le=8000)
     include_debug: bool = False
+    # Optional total budget for ephemeral assembly, including post-retrieval
+    # memory/source reads. Omitted requests retain the existing stage budgets.
+    deadline_s: Optional[float] = Field(default=None, gt=0, le=30, allow_inf_nan=False)
 
 
 class ImpactRequest(BaseModel):

@@ -121,3 +121,38 @@ The first command reproduced the Windows accept stall. The second is a diagnosti
 counterexample, not a supported workaround; it must fail if only one worker serves.
 On Linux use the default loop. The probe writes a report and bounded stack dumps,
 closes its clients and stops only the server process tree it created.
+
+## MCP context deadline follow-up
+
+The exact `b82ec3d` Linux 36-user acceptance reported one MCP context timeout;
+its 51 invariant checks passed, but the overall run failed. This is distinct
+from the native Windows accept stall. A separate instrumented reproduction on
+the unchanged source recorded request `6c9a40408df94c41903bd14c0e846c14`:
+
+- Internal ASGI call started at Unix 1792313144.6317, with a 9s outer timeout.
+- Repository authorization completed at 1792313150.6119 (3.092s in that stage,
+  after about 2.89s of earlier authentication/dispatch).
+- Retrieval took 1.942s; the complete builder returned at 1792313152.6690,
+  after 2.044s. Source-delta work took 0.00063s.
+- The outer bridge returned TimeoutError at 1792313153.8557 (9.240s).
+  At 7.142s all 20 pool connections were checked out. PostgreSQL observations
+  showed client waits, not a blocking lock chain. The reproduction is diagnostic,
+  stopped after collecting the spans, and is not another acceptance PASS.
+
+The old bridge cancelled the entire request at 9s despite a server retrieval
+budget of 30s and additional assembly work. Both MCP context entry points now
+send an explicit 30s total assembly budget and use a 35s transport timeout.
+The API bounds the complete ephemeral builder (including post-retrieval work)
+by the smaller of the caller's budget and configured context deadline. Omitted
+budgets retain the existing stage behavior. Authorization remains outside the
+partial-result fallback. No retries are added. The 5s difference is headroom,
+not a guarantee about authorization latency; cooperative cancellation also does
+not stop an already running source-delta thread.
+
+A deadline yields an explicit `context_deadline_exceeded` partial result. The
+load harness treats this and legacy context errors/retrieval deadline expiry as
+violations, preventing a timeout from becoming a false PASS. Tests exercise a
+real ASGI/MCP response beyond the old 9s boundary, whole-assembly cancellation,
+configuration clamping, invalid/nonfinite budgets, authorization denial and
+transport timeout error semantics. These are deterministic transport tests,
+not evidence of live-provider behavior.

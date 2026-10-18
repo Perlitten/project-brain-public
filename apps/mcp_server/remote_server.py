@@ -204,6 +204,12 @@ def _is_safe_base_url(url: str) -> bool:
 _IN_PROCESS_BASE = "http://brain.internal"
 _asgi_app: Any = None
 
+# The API's retrieval stage alone allows 30s. Request a total assembly budget
+# and leave transport headroom for authorization and request observation.
+# This remains bounded; a timeout is an error, never retried by the bridge.
+_CONTEXT_BUDGET_S = 30.0
+_CONTEXT_TRANSPORT_TIMEOUT_S = 35.0
+
 
 def use_asgi_backend(app: Any) -> None:
     """Route tool calls to ``app`` in-process instead of to BRAIN_API_URL."""
@@ -304,8 +310,9 @@ async def ask_project(
     # not need it, so let the client's own model answer from that instead.
     context = await _post(
         "/context",
-        {"task_description": query, "repo_path": repo, "persist": False, "max_tokens": 3500},
-        timeout=9.0,
+        {"task_description": query, "repo_path": repo, "persist": False, "max_tokens": 3500,
+         "deadline_s": _CONTEXT_BUDGET_S},
+        timeout=_CONTEXT_TRANSPORT_TIMEOUT_S,
     )
     if isinstance(context, dict) and context.get("status") != "failed":
         answer = await sample_answer(
@@ -333,8 +340,9 @@ async def prepare_task_context(task_description: str, repo_path: Optional[str] =
     """Bounded ephemeral code slices after a locator; no durable write by default."""
     return _with_envelope(await _post(
         "/context",
-        {"task_description": task_description, "repo_path": repo_path or DEFAULT_REPO, "persist": False, "max_tokens": 3500},
-        timeout=9.0,
+        {"task_description": task_description, "repo_path": repo_path or DEFAULT_REPO,
+         "persist": False, "max_tokens": 3500, "deadline_s": _CONTEXT_BUDGET_S},
+        timeout=_CONTEXT_TRANSPORT_TIMEOUT_S,
     ))
 
 
