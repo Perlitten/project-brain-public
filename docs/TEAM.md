@@ -268,8 +268,11 @@ There are two different things to revoke, and they are not the same:
 | Revoke **keys** | Dashboard **Settings → Access** (`/admin`): revoke the credential or disable the principal (`POST /admin/credentials/{id}/revoke`, `POST /admin/principals/{id}/disable`) | The key stops authenticating anything. Needs a team administrator. |
 | Revoke an **invitation member** completely | **Revoke member** in the Team page's Invitations panel, `brain team invite revoke <invitation-id> --revoke-member`, or `POST /team/invitations/{id}/revoke` with `{"revoke_member": true}` | Membership, every project role and every credential of that principal. |
 
-Revoking a membership also withdraws the member's pending memory proposals;
-knowledge already approved stays, with them on record as its author or editor
+Revoking a membership also withdraws the member's pending memory proposals
+and retires their personal-tier learnings (status `personal_retired`): the
+rows are kept for audit, but nobody reads, proposes or promotes them again,
+not even the same principal if they rejoin, and recall never uses them.
+Knowledge already approved stays, with them on record as its author or editor
 ([details](MEMORY_REVIEW.md#revoked-authors)).
 
 Revoking one project role leaves her keys valid: they still work for her other

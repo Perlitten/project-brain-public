@@ -45,6 +45,8 @@ from brain.team.models import AgentRun, ProjectRepository, TeamActivityEvent, Te
 
 # The personal tier (brain.memory.proposals.PERSONAL_STATUS): only the author ever reads those learnings.
 PERSONAL_LEARNING_STATUS = "personal"
+# A revoked member's retired personal learnings (brain.memory.proposals.RETIRED_PERSONAL_STATUS) stay private too.
+PRIVATE_LEARNING_STATUSES = (PERSONAL_LEARNING_STATUS, "personal_retired")
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
@@ -479,7 +481,7 @@ async def list_activity(session: AsyncSession, scope: ActivityScope, query: Acti
     streams += _authored_streams(Learning, Learning.statement, "learning", query,
                                  and_(_memory_location(Learning.repo_scope, scope, spellings,
                                                        global_visible=scope.unscoped),
-                                      Learning.status != PERSONAL_LEARNING_STATUS))
+                                      Learning.status.not_in(PRIVATE_LEARNING_STATUSES)))
     if _family_allowed("episode", scope):
         streams += _authored_streams(MemoryEpisode, MemoryEpisode.distilled_summary, "episode", query,
                                      _memory_location(MemoryEpisode.repo_scope, scope, spellings,

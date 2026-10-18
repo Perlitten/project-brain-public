@@ -1,11 +1,12 @@
 import dataclasses
 import datetime
-from typing import List, Optional, Any, Tuple
-from sqlalchemy import func, or_, select
+from typing import List, Optional, Any, Tuple, cast
+from sqlalchemy import CursorResult, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from brain.database.session import async_session_factory
 from brain.database.models import Decision
-from brain.memory.provenance import MemoryWriteResult, check_expected_version
+from brain.memory.provenance import MemoryVersionConflict, MemoryWriteResult, check_expected_version
 from brain.memory.repo_scope import normalize_repo_scope, scope_equals
 
 
@@ -48,9 +49,14 @@ def decision_scope(repo_path: Optional[str]) -> str:
     return normalized
 
 
-async def find_canonical_decision(session: AsyncSession, title: str, repo_path: Optional[str]) -> Optional[Decision]:
-    """The canonical (not superseded) decision for ``title`` in the scope of ``repo_path``, if any."""
-    result = await session.execute(
+async def find_canonical_decision(session: AsyncSession, title: str, repo_path: Optional[str],
+                                  lock: bool = False) -> Optional[Decision]:
+    """The canonical (not superseded) decision for ``title`` in the scope of ``repo_path``, if any.
+
+    ``lock`` takes the row lock (``SELECT ... FOR UPDATE`` on PostgreSQL) a compare-and-swap writer holds until
+    its transaction ends: concurrent writers queue on the row and each then reads the version the previous one
+    committed, so two of them can never pass the same ``expected_version``."""
+    query = (
         select(Decision)
         .where(
             func.lower(func.trim(Decision.title)) == title.strip().casefold(),
@@ -60,7 +66,15 @@ async def find_canonical_decision(session: AsyncSession, title: str, repo_path: 
         .order_by(Decision.id.desc())
         .limit(1)
     )
+    if lock:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    result = await session.execute(query)
     return result.scalar_one_or_none()
+
+
+async def _current_version(session: AsyncSession, title: str, repo_path: Optional[str]) -> int:
+    current = await find_canonical_decision(session, title, repo_path)
+    return (current.version or 1) if current is not None else 0
 
 
 async def _record_decision_in(session: AsyncSession, normalized_title: str, normalized_repo_path: str,
@@ -69,7 +83,7 @@ async def _record_decision_in(session: AsyncSession, normalized_title: str, norm
     """The body of ``DecisionStore.record_decision`` inside the caller's session (flushes, never commits).
 
     Returns the result and the canonical row it touched."""
-    existing = await find_canonical_decision(session, normalized_title, normalized_repo_path)
+    existing = await find_canonical_decision(session, normalized_title, normalized_repo_path, lock=True)
     check_expected_version("decision", normalized_title, expected_version,
                            existing.version if existing is not None else None)
     if existing is not None:
@@ -84,6 +98,20 @@ async def _record_decision_in(session: AsyncSession, normalized_title: str, norm
             await session.flush()
             return MemoryWriteResult(id=existing.id, version=existing.version or 1,
                                      created=False, changed=False), existing
+        read_version = existing.version
+        # Compare-and-swap on the version this writer read, before anything is written: a writer that slipped
+        # past the row lock (a database without one) claims nothing and gets the conflict instead of
+        # overwriting the winner's version.
+        claimed = await session.execute(
+            update(Decision)
+            .where(Decision.id == existing.id, Decision.superseded_by_id.is_(None),
+                   Decision.version.is_(None) if read_version is None else Decision.version == read_version)
+            .values(version=(read_version or 1) + 1)
+            .execution_options(synchronize_session=False)
+        )
+        if cast(CursorResult[Any], claimed).rowcount != 1:
+            raise MemoryVersionConflict("decision", normalized_title, read_version or 1,
+                                        await _current_version(session, normalized_title, normalized_repo_path))
         history = Decision(
             title=existing.title,
             repo_path=existing.repo_path,
@@ -93,7 +121,7 @@ async def _record_decision_in(session: AsyncSession, normalized_title: str, norm
             updated_by_principal_id=existing.updated_by_principal_id,
             approved_by_principal_id=existing.approved_by_principal_id,
             supersedes_id=existing.supersedes_id,
-            version=existing.version or 1,
+            version=read_version or 1,
             created_at=existing.created_at,
             **{field: getattr(existing, field) for field in _DECISION_CONTENT_FIELDS if field != "status"},
         )
@@ -101,7 +129,7 @@ async def _record_decision_in(session: AsyncSession, normalized_title: str, norm
         await session.flush()
         for field, value in changes.items():
             setattr(existing, field, value)
-        existing.version = (existing.version or 1) + 1
+        existing.version = (read_version or 1) + 1
         existing.supersedes_id = history.id
         existing.updated_by_principal_id = author_principal_id
         # A new version is unreviewed until an approval stamps it (brain/memory/proposals.py).
@@ -125,8 +153,17 @@ async def _record_decision_in(session: AsyncSession, normalized_title: str, norm
         updated_by_principal_id=author_principal_id,
         version=1,
     )
-    session.add(new_decision)
-    await session.flush()
+    try:
+        # A savepoint keeps the caller's transaction usable when a concurrent writer created it first.
+        async with session.begin_nested():
+            session.add(new_decision)
+            await session.flush()
+    except IntegrityError:
+        # uq_decisions_normalized_title: the same title and scope was created concurrently.
+        actual = await _current_version(session, normalized_title, normalized_repo_path)
+        if not actual:
+            raise
+        raise MemoryVersionConflict("decision", normalized_title, int(expected_version or 0), actual) from None
     return MemoryWriteResult(id=new_decision.id, version=1, created=True, changed=True), new_decision
 
 

@@ -43,7 +43,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional, cast
 
-from sqlalchemy import CursorResult, func, or_, select, update
+from sqlalchemy import CursorResult, func, inspect, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.config.settings import settings
@@ -61,6 +61,8 @@ logger = logging.getLogger(__name__)
 
 ProposalKind = Literal["decision", "rule", "learning"]
 PERSONAL_STATUS = "personal"
+# A revoked member's personal learnings: kept for the audit trail, never read, promoted or recalled again.
+RETIRED_PERSONAL_STATUS = "personal_retired"
 REVOKED_AUTHOR_REASON = "Author access revoked"
 # ``payload.origin`` of a learning proposal filed by consolidation (no personal learning behind it).
 CONSOLIDATION_ORIGIN = "memory_consolidation"
@@ -590,6 +592,23 @@ async def withdraw_proposal(proposal_id: int, *, expected_version: int,
         await session.commit()
         await session.refresh(row)
         return row
+
+
+async def retire_personal_learnings(session: AsyncSession, principal_id: int) -> int:
+    """Retire every personal learning of ``principal_id`` in the caller's transaction (member revocation).
+
+    The rows stay for the audit trail, but leave the personal tier: nobody reads, proposes or promotes them
+    again, not even the same principal after being re-added, and recall never used them (it reads ``active``
+    learnings only). Returns how many learnings were retired."""
+    if not await session.run_sync(lambda sync: inspect(sync.connection()).has_table(Learning.__tablename__)):
+        return 0  # a database without learnings (team-only test schemas) has nothing to retire
+    result = await session.execute(
+        update(Learning)
+        .where(Learning.author_principal_id == principal_id, Learning.status == PERSONAL_STATUS)
+        .values(status=RETIRED_PERSONAL_STATUS)
+        .execution_options(synchronize_session=False)
+    )
+    return int(cast(CursorResult[Any], result).rowcount or 0)
 
 
 async def withdraw_author_proposals(session: AsyncSession, principal_id: int,
