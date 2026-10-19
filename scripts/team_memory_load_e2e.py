@@ -33,6 +33,7 @@ import asyncio
 import itertools
 import json
 import os
+import platform
 import random
 import re
 import secrets
@@ -48,7 +49,7 @@ import uuid
 import zlib
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlsplit
@@ -270,7 +271,7 @@ def render_revocation(outcome: dict[str, Any]) -> list[str]:
                  ("Database clock minus API clock, ms (corrected for)", outcome.get("db_clock_skew_ms", "-")),
                  ("Pending proposals left (0 expected)", outcome.get("pending_proposals_left", "-")),
                  ("Proposal states of the revoked member", _cell(outcome.get("proposal_states"))),
-                 ("Personal-tier rows kept (known gap)", outcome.get("personal_rows_kept", "-")),
+                 ("Personal-tier rows kept (0 expected)", outcome.get("personal_rows_kept", "-")),
                  ("Revoked key on REST / MCP (401 expected)", _cell(outcome.get("revoked_key")))]
     return lines + ["| Measure | Value |", "|---|---|"] + [f"| {k} | {v} |" for k, v in rows] + [""]
 
@@ -476,24 +477,6 @@ class Stack:
         async def work(conn: Any) -> Any:
             return await conn.fetchval(query, *params)
         return self._pg(self.url(database), work)
-
-    def clock_skew_seconds(self, samples: int = 5) -> float:
-        """PostgreSQL's clock minus this host's clock, in seconds, from the lowest-latency sample.
-
-        The API runs on this host and stamps ``revoked_at`` with its own clock, while ``created_at`` comes from
-        PostgreSQL's ``now()``. When the database runs elsewhere (Docker in WSL drifts by hundreds of ms) the two
-        are only comparable after this correction."""
-        async def work(conn: Any) -> float:
-            best: Optional[tuple[float, float]] = None
-            for _ in range(samples):
-                before = time.time()
-                db_now = float(await conn.fetchval("SELECT extract(epoch FROM clock_timestamp())"))
-                after = time.time()
-                if best is None or after - before < best[0]:
-                    best = (after - before, db_now - (before + after) / 2)
-            assert best is not None
-            return best[1]
-        return self._pg(self.url(MAIN_DB), work)
 
     def recreate(self, database: str) -> None:
         self.url(database)  # namespace guard
@@ -716,6 +699,10 @@ class Run:
         self.local = threading.local()
         self.client_seq = itertools.count()
         self.onboarding_retries: Counter = Counter()
+        self.source_commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        self.source_dirty = bool(subprocess.check_output(
+            ["git", "status", "--porcelain"], cwd=ROOT, text=True).strip())
 
     # -- HTTP --------------------------------------------------------------------------
 
@@ -1257,6 +1244,14 @@ class Run:
             payload = {}
         if label == "MCP search_code":
             self.note_freshness(project, payload, label)
+        elif isinstance(payload, dict):
+            # A successful MCP envelope can still carry a degraded API result.
+            # Do not turn a server-side timeout into a false acceptance PASS.
+            reasons = [*payload.get("missing", []), *payload.get("degraded", [])]
+            errors = [str(reason) for reason in reasons
+                      if str(reason).startswith(("context_error:", "context_deadline_exceeded", "deadline_exceeded"))]
+            if errors:
+                self.violations.add("mcp_context_degraded", {"who": member.name, "reasons": errors})
 
     def op_probe(self, member: Member, rng: random.Random) -> None:
         """Requests that must be refused: other projects, approvals without the Reviewer role."""
@@ -2177,10 +2172,10 @@ class Run:
             self.violations.add("request_honoured_after_revoke", honored_after[:5])
         if unexpected_after:
             self.violations.add("post_revoke_request_error", unexpected_after[:5])
-        # revoked_at is stamped by the API (this host's clock), created_at by PostgreSQL's now(): compare them
-        # on the database clock.
-        clock_skew = self.stack.clock_skew_seconds()
-        revoked_at_db = revoked_at + timedelta(seconds=clock_skew)
+        # Revocation and row creation are both stamped by PostgreSQL. Applying
+        # host clock skew here would move the boundary and hide late writes.
+        clock_skew = 0.0
+        revoked_at_db = revoked_at
         late = {
             "learnings": self.stack.sql("SELECT id, status, created_at FROM memory_learnings WHERE "
                                         "author_principal_id=$1 AND created_at > $2", revokee.principal_id,
@@ -2210,7 +2205,7 @@ class Run:
             self.violations.add("pending_proposal_survives_revoke", pending[:5])
         personal = self.stack.scalar("SELECT count(*) FROM memory_learnings WHERE author_principal_id=$1 AND "
                                      "status='personal'", revokee.principal_id)
-        r.gap(s, "revoked member's personal-tier learnings are retired with her membership",
+        r.check(s, "revoked member's personal-tier learnings are retired with her membership",
               personal == 0, {"personal_rows_kept": personal,
                               "note": "kept rows are invisible (only their author reads them) but not removed"})
         statuses = {"rest": self.call("GET /decisions", "GET", "/decisions", revokee.key)[0],
@@ -2299,6 +2294,8 @@ class Run:
         report.pop("legacy_commit", None)
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),
+            "source": {"commit": self.source_commit, "dirty": self.source_dirty},
+            "runtime": {"platform": sys.platform, "python": platform.python_version()},
             "config": {k: v for k, v in vars(self.args).items() if k not in {"database_url"}},
             "ok": report["ok"] and not self.violations.counts,
             "checks": report,
@@ -2369,6 +2366,8 @@ class _pool:
 
 def render_markdown(summary: dict[str, Any]) -> str:
     lines = ["# Team memory multi-user E2E", "",
+             f"Source `{summary['source']['commit']}`; dirty={summary['source']['dirty']}. "
+             f"Runtime: {summary['runtime']['platform']}, Python {summary['runtime']['python']}.", "",
              f"Generated {summary['generated_at']} - users {summary['config']['users']}, ops/user "
              f"{summary['config']['ops']}, API workers {summary['config']['api_workers']}.", "",
              f"**Result:** {'PASS' if summary['ok'] else 'FAIL'} - {summary['checks']['passed']} checks passed, "
@@ -2441,6 +2440,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         parser.error("--database-url (or TEAM_MEMORY_E2E_DATABASE_URL) is required")
     if args.users < len(BASE_ROSTER):
         parser.error(f"--users must be at least {len(BASE_ROSTER)} (the base roster)")
+    if args.api_workers < 1:
+        parser.error("--api-workers must be positive")
     try:
         base.e2e_database_url(args.database_url, MAIN_DB)
     except ValueError as exc:

@@ -645,20 +645,25 @@ async def build_task_context(body: ContextRequest, request: Request = cast(Reque
         # measurements are independent of that artifact persistence contract.
         if not body.persist:
             try:
-                result = await RuntimeContextBuilder().build(
+                build = RuntimeContextBuilder().build(
                     body.task_description, repo_path,
                     max_tokens=body.max_tokens, include_debug=body.include_debug,
                 )
+                result = (await build if body.deadline_s is None else await asyncio.wait_for(
+                    build, timeout=min(body.deadline_s, settings.AGENT_CONTEXT_DEADLINE_S),
+                ))
                 outcome = classify_result(result, "context")
                 return result
             except Exception as exc:
                 logger.warning("/context v2 degraded: {}", type(exc).__name__)
+                reason = ("context_deadline_exceeded" if isinstance(exc, TimeoutError)
+                          else f"context_error:{type(exc).__name__}")
                 return attach_envelope(
                     BudgetedPayloadBuilder(
                         min(settings.AGENT_RUNTIME_CONTEXT_MAX_BYTES, body.max_tokens * 4),
-                        metadata={"status": "partial", "missing": [f"context_error:{type(exc).__name__}"]},
+                        metadata={"status": "partial", "missing": [reason]},
                     ).build(),
-                    unknown_envelope(f"context_error:{type(exc).__name__}"),
+                    unknown_envelope(reason),
                 )
         with repo_path_errors_as_400():
             repo_path = str(resolve_repo_path(body.repo_path))

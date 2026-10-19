@@ -194,6 +194,14 @@ async def _target(session: AsyncSession, kind: str, title: str, repo_path: Optio
     return (rule.id, rule.version or 1) if rule is not None else (None, 0)
 
 
+async def _draft_author_gate(session: AsyncSession, author_principal_id: Optional[int]) -> None:
+    from brain.team.authorization import memory_author_gate
+
+    # Preserve TeamDenied so the HTTP write-fence handler returns 403 for a
+    # caller revoked between request authorization and this transaction.
+    await memory_author_gate(session, author_principal_id)
+
+
 async def create_proposal(kind: Literal["decision", "rule"], *, title: str, repo_path: Optional[str],
                           payload: dict[str, Any], author_principal_id: Optional[int],
                           expected_version: Optional[int] = None) -> MemoryProposal:
@@ -210,6 +218,7 @@ async def create_proposal(kind: Literal["decision", "rule"], *, title: str, repo
     fields = DECISION_FIELDS if kind == "decision" else RULE_FIELDS
     clean = {field: payload.get(field) for field in fields if payload.get(field) is not None}
     async with async_session_factory() as session:
+        await _draft_author_gate(session, author_principal_id)
         target_key, current = await _target(session, kind, title, scope, clean)
         check_expected_version(kind, target_key or title, expected_version, current)
         row = MemoryProposal(kind=kind, state="pending", version=1, repo_path=scope,
@@ -248,6 +257,7 @@ async def propose_learning(learning_id: int, author_principal_id: Optional[int],
         if (learning is None or learning.status != PERSONAL_STATUS
                 or author_principal_id is None or learning.author_principal_id != author_principal_id):
             raise ProposalNotFound("Personal learning not found")
+        await _draft_author_gate(session, author_principal_id)
         pending = (await session.execute(select(MemoryProposal.id).where(
             MemoryProposal.kind == "learning", MemoryProposal.target_key == str(learning_id),
             MemoryProposal.state == "pending"))).scalar_one_or_none()

@@ -168,6 +168,36 @@ async def live_credential(session: AsyncSession, principal_id: int, credential_i
                              credential_id=credential.id, scopes=frozenset(credential.scopes or []))
 
 
+async def memory_author_gate(session: AsyncSession, author_id: int | None) -> None:
+    """Fence direct draft/private inserts using the same principal-first order as revocation.
+
+    HTTP writes also have the request write fence. Direct service callers lack
+    that ContextVar, so they need a gate in their own write transaction too.
+    Principal SHARE precedes membership SHARE; reversing these would deadlock
+    against revoke_member and the HTTP write fence.
+    """
+    if settings.BRAIN_STORAGE_MODE != "full":
+        return
+    identity = (await fresh(session, Principal, Principal.id == author_id)
+                if author_id is not None else None)
+    member = (await fresh(session, TeamMember, TeamMember.principal_id == author_id)
+              if identity is not None else None)
+    if identity is not None and member is None:
+        initiator_id = await session.scalar(select(AgentRun.initiator_id).where(AgentRun.principal_id == author_id))
+        if initiator_id is not None:
+            # Run identities are created after their initiator. Revocation takes
+            # their principal locks first, then the human's principal/member.
+            initiator = await fresh(session, Principal, Principal.id == initiator_id)
+            if initiator is None or initiator.disabled_at is not None:
+                raise TeamDenied("Memory author is no longer a live team member")
+            member = await fresh(session, TeamMember, TeamMember.principal_id == initiator_id)
+    if member is not None and identity is not None:
+        if identity.disabled_at is not None or member.revoked_at is not None or member.verified_at is None:
+            raise TeamDenied("Memory author is no longer a live team member")
+    elif await team_state(session) == "team":
+        raise TeamDenied("Memory drafts require live team membership")
+
+
 async def human_member(session: AsyncSession, caller: ResolvedPrincipal, team_id: int) -> TeamMember:
     member = await fresh(session, TeamMember, TeamMember.principal_id == caller.id, TeamMember.team_id == team_id)
     if (caller.kind != "human" or member is None or not member.verified_at or member.revoked_at

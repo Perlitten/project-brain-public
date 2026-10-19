@@ -195,6 +195,19 @@ def test_parse_args_refuses_small_teams_and_foreign_databases():
         load.parse_args(["--database-url", "mysql://u:p@h/db"])
 
 
+@pytest.mark.parametrize(("platform_name", "workers"), [("win32", 1), ("win32", 2), ("linux", 2)])
+def test_supported_worker_configuration_is_preserved(monkeypatch, platform_name, workers):
+    monkeypatch.setattr(load.sys, "platform", platform_name)
+    args = load.parse_args(["--database-url", "postgresql://fixture@localhost/postgres",
+                            "--api-workers", str(workers)])
+    assert args.api_workers == workers
+
+
+def test_nonpositive_workers_are_rejected():
+    with pytest.raises(SystemExit):
+        load.parse_args(["--database-url", "postgresql://fixture@localhost/postgres", "--api-workers", "0"])
+
+
 # Isolation and authority invariants that held in every recorded run; the known product defects
 # (lost updates, deadlocks, 500 instead of 409) are reported, not asserted here.
 ISOLATION_VIOLATIONS = {
@@ -233,3 +246,21 @@ def test_stack_run_keeps_isolation_invariants(tmp_path):
     assert report["results"]["load"]["ops_done"] > 0
     assert report["results"]["post_revoke_reads"]["ops_done"] > 0
     assert not ISOLATION_VIOLATIONS & set(report["violations"]), report["violations"]
+
+
+@pytest.mark.parametrize('reason', ['context_deadline_exceeded', 'context_error:TimeoutError',
+                                   'deadline_exceeded', 'context_error:RuntimeError', 'no_retrieval_candidates'])
+def test_context_partial_failure_cannot_become_a_load_pass(reason):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    run = load.Run.__new__(load.Run)
+    run.repo_paths = {'alpha': '/repo'}
+    run.scan = Mock()
+    run.violations = load.Violations(SimpleNamespace(secrets=[]))
+    run.mcp = Mock(return_value={'text': json.dumps({'status': 'partial', 'missing': [reason]})})
+    rng = Mock()
+    rng.choice.return_value = 'alpha'
+    rng.random.return_value = 0.9
+    run.op_mcp(load.Member('fixture', roles={'alpha': 'contributor'}), rng)
+    assert bool(run.violations.as_dict()) == (reason != 'no_retrieval_candidates')

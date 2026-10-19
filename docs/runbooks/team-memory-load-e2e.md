@@ -8,6 +8,21 @@ consolidation, revocation and coordination leases.
 
 Findings of the first runs: [docs/reports/team-memory-load-e2e-2026-10-18.md](../reports/team-memory-load-e2e-2026-10-18.md).
 
+Reports now include `source.commit` and `source.dirty`. Run from a clean commit
+for release evidence. Personal retirement is a required check, not a known gap.
+The original findings document the earlier code, not the current fixes.
+
+Reports also record `runtime.platform` and `runtime.python`. Windows uses one
+listening port per API process (the #159 workaround); Linux uses uvicorn workers
+on one port. Do not silently reduce the worker count when validating concurrency.
+
+A two-worker Windows run reproduced a 120-second OAuth GET timeout before ASGI
+admission: the worker event loop was blocked in synchronous Winsock `accept()`.
+The same failure reproduced without Brain, PostgreSQL or OAuth in a minimal
+uvicorn ASGI server. Forcing Proactor is not a valid workaround for a shared
+listener: a second worker failed with `WinError 87` registering it with IOCP.
+See [the diagnostic evidence](../reports/team-locking-regressions.md#windows-multi-worker-transport).
+
 ## What it runs
 
 - The real API (`uvicorn apps.api.main:app`, `--api-workers N`) and the real worker
@@ -75,11 +90,9 @@ A 12×50 run takes about 4 minutes, 36×50 about 8 minutes. A request that hangs
 client timeout is recorded as a transport error (status `0`); setup retries those. On Windows the
 120 s stalls came from `uvicorn --workers`, not from the database (next paragraph).
 
-The revocation check compares `revoked_at`, which the API stamps with this host's clock, with
-`created_at` from PostgreSQL's `now()`. The harness measures the database clock against this host's
-clock right before the check and compares on the database clock. Docker in WSL drifted about 470 ms
-ahead of Windows, enough to date fenced writes "after" the revoke. The report shows the measured
-offset.
+The revocation check compares PostgreSQL-stamped `revoked_at` and `created_at`
+directly. It does not apply host clock skew: both timestamps use the database
+clock. The legacy `db_clock_skew_ms` report field is zero.
 
 `--api-workers N` on Windows starts N single-process APIs on ports `api-port + 100 * i` and spreads the
 client threads across them, instead of `uvicorn --workers N`. Every process gets the first address as

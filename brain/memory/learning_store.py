@@ -13,6 +13,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.database.models import Learning
+from brain.config.settings import settings
 from brain.database.session import async_session_factory
 from brain.memory.repo_scope import normalize_repo_scope, scope_equals
 
@@ -32,6 +33,20 @@ def _scope_clause(repo_path: Optional[str]):
         Learning.repo_scope.is_(None),
         scope_equals(Learning.repo_scope, normalized),
     )
+
+
+async def _personal_write_gate(session: AsyncSession, status: str, author_id: Optional[int]) -> None:
+    """Fence an insert against member revocation in the same transaction.
+
+    Embedding happens before this lock: no external provider is awaited while
+    blocking revocation. Either the insert commits first and revoke retires it,
+    or revoke commits first and this write is refused.
+    """
+    if status != "personal" or settings.BRAIN_STORAGE_MODE != "full":
+        return
+    from brain.team.authorization import memory_author_gate
+
+    await memory_author_gate(session, author_id)
 
 
 class LearningStore:
@@ -105,10 +120,12 @@ class LearningStore:
             approved_by_principal_id=approved_by_principal_id,
         )
         if session is not None:
+            await _personal_write_gate(session, status, author_principal_id)
             session.add(learning)
             await session.flush()
             return learning.id
         async with async_session_factory() as own_session:
+            await _personal_write_gate(own_session, status, author_principal_id)
             own_session.add(learning)
             await own_session.commit()
             await own_session.refresh(learning)
