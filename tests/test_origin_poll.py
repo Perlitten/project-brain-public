@@ -222,6 +222,26 @@ async def test_poll_without_an_origin_is_reported_as_unconfigured(tmp_path, orig
 
 
 @pytest.mark.asyncio
+async def test_poll_after_origin_follow_is_switched_off_preserves_mirror_provenance(tmp_path, origin_db):
+    snapshot = tmp_path / "app"
+    snapshot.mkdir()
+    head = "e" * 40
+    await origin_state_store.upsert_origin_state(
+        8, source_mode="mirror", mirror_head=head, remote_head=head, tracked_branch="main",
+        remote_url="https://github.com/acme/app.git", commits_behind=0, last_reindex_head=head,
+    )
+    report = await origin_poll.poll_repository(
+        SimpleNamespace(id=8, path=snapshot.as_posix(), last_indexed_commit=head), enqueue=AsyncMock()
+    )
+    assert report["status"] == "unconfigured"
+    state = await origin_state_store.get_origin_state(8)
+    assert state["poll_status"] == "unconfigured"
+    assert state["source_mode"] == "mirror" and state["mirror_head"] == head
+    assert state["remote_head"] is None
+    assert state["last_reindex_head"] == head  # job history is kept
+
+
+@pytest.mark.asyncio
 async def test_poll_records_an_unreachable_origin_as_an_error(tmp_path, origin_db, monkeypatch):
     snapshot = tmp_path / "snapshot"
     snapshot.mkdir()

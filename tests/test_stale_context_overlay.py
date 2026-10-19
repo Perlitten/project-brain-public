@@ -189,3 +189,111 @@ def test_diff_is_nul_safe_and_bounded(repository):
     assert len(delta.changed_files) == 2 and delta.dirty and not delta.complete
     assert "new\nline.py" in delta.changed_files
     assert len(json.dumps(delta.warning(20)).encode()) < 400
+
+
+# A tar-deployed root (prod /app) has no .git. Origin follow indexes it from a
+# Brain-owned mirror, so the indexed revision is a bare 40-hex commit while the
+# working-tree diff can never be computed. Without the mirror verdict that
+# combination was "unverified" on every request and strict_block never lifted.
+
+
+@pytest.fixture
+def snapshot_root(tmp_path, monkeypatch):
+    root = tmp_path / "app"
+    root.mkdir()
+    (root / "feature.py").write_text("def feature():\n    return 'indexed-old'\n")
+    # Keep git from discovering a repository above the temporary directory.
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    return root
+
+
+def mirror_served(builder, *, indexed, mirror_head, status):
+    builder.retrieval.retrieve.return_value.repository["freshness"] = {
+        "status": status, "indexed_commit": indexed, "source_head_commit": mirror_head,
+        "source_revision_kind": "mirror", "index_source": "mirror", "age_seconds": 60,
+    }
+
+
+def test_snapshot_root_without_git_cannot_produce_a_complete_diff(snapshot_root):
+    delta = collect_source_delta(snapshot_root, "a" * 40, limit=10, timeout=1)
+    assert delta.source_present and not delta.complete
+    assert delta.reason == "git_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_mirror_verified_snapshot_is_not_strict_blocked(snapshot_root, monkeypatch):
+    indexed = "a" * 40
+    builder, queued = context_builder(snapshot_root, indexed, "current", monkeypatch)
+    mirror_served(builder, indexed=indexed, mirror_head=indexed, status="current")
+    monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "strict_block")
+
+    payload = await builder.build("Explain feature", snapshot_root)
+
+    assert payload["status"] == "ok"
+    assert "current_source_required_for_code_change" not in payload["missing"]
+    assert payload["repo"]["freshness"] == "current"
+    assert payload["freshness"]["state"] == "fresh"
+    assert "freshness_warning" not in payload
+    assert payload["slices"][0]["content"].endswith("'indexed-old'\n")
+    queued.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_matching_snapshot_manifest_is_not_strict_blocked(snapshot_root, monkeypatch):
+    indexed = "a" * 40
+    builder, queued = context_builder(snapshot_root, indexed, "current", monkeypatch)
+    builder.retrieval.retrieve.return_value.repository["freshness"].update({
+        "source_head_commit": indexed,
+        "source_revision_kind": "snapshot_manifest",
+    })
+    monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "strict_block")
+
+    payload = await builder.build("Explain feature", snapshot_root)
+
+    assert payload["status"] == "ok"
+    assert payload["freshness"]["state"] == "fresh"
+    assert "current_source_required_for_code_change" not in payload["missing"]
+    queued.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mirror_index_does_not_hide_a_dirty_git_worktree(repository, monkeypatch):
+    root, indexed = repository
+    (root / "feature.py").write_text("def feature():\n    return 'dirty-live'\n")
+    builder, queued = context_builder(root, indexed, "current", monkeypatch)
+    mirror_served(builder, indexed=indexed, mirror_head=indexed, status="current")
+    monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "strict_block")
+
+    payload = await builder.build("Explain feature", root)
+
+    assert payload["status"] == "stale_blocked"
+    assert payload["freshness"]["reason"] == "policy_strict_block"
+    assert "current_source_required_for_code_change" in payload["missing"]
+    assert "auto_reindex_deferred_until_clean" in payload["missing"]
+    queued.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mirror_behind_the_index_still_blocks_under_strict_policy(snapshot_root, monkeypatch):
+    indexed = "a" * 40
+    builder, queued = context_builder(snapshot_root, indexed, "behind", monkeypatch)
+    mirror_served(builder, indexed=indexed, mirror_head="b" * 40, status="behind")
+    monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "strict_block")
+
+    payload = await builder.build("Explain feature", snapshot_root)
+
+    assert payload["status"] == "stale_blocked"
+    assert "current_source_required_for_code_change" in payload["missing"]
+    queued.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_checkout_served_snapshot_with_a_commit_index_still_needs_a_diff(snapshot_root, monkeypatch):
+    # Not mirror-served: nothing proves the tree matches the commit, so strict mode keeps blocking.
+    indexed = "a" * 40
+    builder, _ = context_builder(snapshot_root, indexed, "current", monkeypatch)
+    monkeypatch.setattr(settings, "BRAIN_STALE_CONTEXT_POLICY", "strict_block")
+
+    payload = await builder.build("Explain feature", snapshot_root)
+
+    assert payload["status"] == "stale_blocked"

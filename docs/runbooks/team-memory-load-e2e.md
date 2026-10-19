@@ -12,11 +12,9 @@ Reports now include `source.commit` and `source.dirty`. Run from a clean commit
 for release evidence. Personal retirement is a required check, not a known gap.
 The original findings document the earlier code, not the current fixes.
 
-Reports also record `runtime.platform` and `runtime.python`. Native Windows supports
-one API worker only. Run `--api-workers 2` (or higher) from a Linux Python runtime,
-including WSL or a Linux container. Running a Windows Python executable from WSL
-still uses Windows and is rejected before any fixture is created. Do not silently
-reduce the worker count when validating concurrency.
+Reports also record `runtime.platform` and `runtime.python`. Windows uses one
+listening port per API process (the #159 workaround); Linux uses uvicorn workers
+on one port. Do not silently reduce the worker count when validating concurrency.
 
 A two-worker Windows run reproduced a 120-second OAuth GET timeout before ASGI
 admission: the worker event loop was blocked in synchronous Winsock `accept()`.
@@ -88,9 +86,22 @@ DOCKER="wsl -d Ubuntu-24.04 docker" PYTHON=.venv/Scripts/python \
     scripts/team_memory_load_e2e.sh --users 36 --ops 50 --api-workers 2
 ```
 
-A 12×50 run takes about 4 minutes, 36×50 about 8 minutes. At 36 users the onboarding burst and the
-`teams` row lock can stall single requests for the full 120 s client timeout (see the findings
-report); setup retries those, later phases record them as transport errors.
+A 12×50 run takes about 4 minutes, 36×50 about 8 minutes. A request that hangs for the full 120 s
+client timeout is recorded as a transport error (status `0`); setup retries those. On Windows the
+120 s stalls came from `uvicorn --workers`, not from the database (next paragraph).
+
+The revocation check compares PostgreSQL-stamped `revoked_at` and `created_at`
+directly. It does not apply host clock skew: both timestamps use the database
+clock. The legacy `db_clock_skew_ms` report field is zero.
+
+`--api-workers N` on Windows starts N single-process APIs on ports `api-port + 100 * i` and spreads the
+client threads across them, instead of `uvicorn --workers N`. Every process gets the first address as
+`BRAIN_PUBLIC_URL`, and CLI, OAuth and MCP calls go to that first process. uvicorn workers share one
+listening socket, and on Windows they then run a selector event loop. When two workers race for one
+connection, the loser's non-blocking `accept()` can block inside Winsock. That freezes that worker's
+event loop, with every request already on its keep-alive connections, until the next new connection
+arrives, which in this load run was often a client's 120 s timeout. A proactor loop does not help,
+because a shared socket attaches to only one IOCP. Linux keeps `uvicorn --workers N`.
 
 ## Manual run against containers you keep
 
@@ -118,7 +129,7 @@ Without `--docker-cmd`/`--pg-container` the restore-fence scenario is skipped an
 | `--redis-url` | `$TEAM_MEMORY_E2E_REDIS_URL` or `redis://127.0.0.1:6390/0` | throwaway Redis |
 | `--users` | 12 | principals (minimum 12) |
 | `--ops` | 50 | operations per user in the load phase |
-| `--api-workers` | 1 | uvicorn workers for the main API |
+| `--api-workers` | 1 | API processes for the main API (`uvicorn --workers`; on Windows one port per process, see above) |
 | `--cas-rounds`, `--cas-writers` | 5, 6 | CAS contention |
 | `--lease-contenders`, `--lease-churn` | 8, 15 | lease contention |
 | `--revoke-threads`, `--revoke-after`, `--revoke-tail` | 4, 1.5, 2.0 | revocation while writing |

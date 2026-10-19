@@ -13,6 +13,7 @@ from sqlalchemy import or_, select
 
 from brain.config.settings import settings
 from brain.memory.freshness_envelope import EnvelopeState, freshness_envelope
+from brain.memory.source_manifest import revision_matches
 from brain.memory.source_overlay import SourceDelta, collect_source_delta, current_ranges, read_live_source
 from brain.context.budget import BudgetedPayloadBuilder, truncate_utf8
 from brain.context.evidence_support import should_abstain_for_unsupported_query
@@ -119,6 +120,20 @@ def _unsupported_domain_query(
     return should_abstain_for_unsupported_query(query, result.candidates, slices or [])
 
 
+def _source_identity_verified(
+    raw_freshness: dict[str, Any], status: str, indexed_revision: str | None
+) -> bool:
+    """True when a non-Git source identity proves that the source matches the index."""
+    return (
+        status == "current"
+        and revision_matches(raw_freshness.get("source_head_commit"), indexed_revision)
+        and (
+            raw_freshness.get("index_source") == "mirror"
+            or raw_freshness.get("source_revision_kind") == "snapshot_manifest"
+        )
+    )
+
+
 async def _queue_auto_reindex(repo_path: str) -> str | None:
     """Queue a reindex in its worker pool, throttled per repo by a Redis SET NX EX lock.
 
@@ -211,6 +226,21 @@ class RuntimeContextBuilder:
             collect_source_delta, Path(repo_str), repo.get("indexed_revision"),
             limit=settings.BRAIN_STALE_DIFF_MAX_FILES, timeout=settings.BRAIN_STALE_DIFF_TIMEOUT_S,
         )
+        if (
+            delta.source_present
+            and delta.reason == "git_unavailable"
+            and _source_identity_verified(raw_freshness, freshness, repo.get("indexed_revision"))
+        ):
+            # A mirror verdict or content-bound snapshot manifest can verify a
+            # non-Git root. Git worktrees still keep their real delta so dirty
+            # files are never hidden merely because indexing used a mirror.
+            verified_by = (
+                "mirror" if raw_freshness.get("index_source") == "mirror" else "snapshot_manifest"
+            )
+            delta = SourceDelta(
+                head=raw_freshness.get("source_head_commit"), complete=True,
+                source_present=True, reason=f"{verified_by}_verified",
+            )
         unverified_diff = (delta.source_present and not delta.complete
                            and bool(re.fullmatch(r"[0-9a-fA-F]{40,64}", repo.get("indexed_revision") or "")))
         source_unavailable = freshness != "current" and not delta.source_present

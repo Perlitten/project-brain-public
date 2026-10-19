@@ -245,6 +245,43 @@ async def _load_origin_state(repository_id: int) -> dict[str, Any] | None:
     return await get_origin_state(repository_id)
 
 
+# What the poll reports about its own last run stays meaningful after origin
+# follow is switched off; everything else in the row describes a follow that
+# no longer happens.
+_POLL_RUN_FIELDS = ("poll_status", "polled_at", "poll_error")
+_MIRROR_FIELDS = ("source_mode", "mirror_head")
+
+
+def _origin_follow(repository_path: Path) -> tuple[bool, bool]:
+    """(an origin is configured for the source, mirrors are enabled) under the current settings."""
+    from brain.indexers.source_mirror import mirror_root, resolve_origin_spec
+
+    try:
+        spec = resolve_origin_spec(repository_path, timeout=GIT_TIMEOUT_SECONDS)
+    except Exception:
+        spec = None
+    return spec is not None, mirror_root() is not None
+
+
+def effective_origin_state(
+    state: dict[str, Any] | None, *, origin_configured: bool, mirrors_enabled: bool
+) -> dict[str, Any] | None:
+    """The part of a stored origin-state row that still applies once origin follow changed.
+
+    With no origin configured any more, only the poll's own run status is kept;
+    with mirrors disabled, the repository is no longer served from a mirror.
+    Without this a row persisted while following was on kept judging the index
+    against an old mirror head after ``BRAIN_ORIGIN_REMOTES`` was cleared.
+    """
+    if not state:
+        return state
+    if not origin_configured:
+        return {name: state.get(name) for name in _POLL_RUN_FIELDS}
+    if not mirrors_enabled and state.get("source_mode") == "mirror":
+        return {**state, **{name: None for name in _MIRROR_FIELDS}}
+    return state
+
+
 def _iso_or_none(value: Any) -> str | None:
     if value is None:
         return None
@@ -372,7 +409,14 @@ async def assess_repository_freshness(repo: Any) -> dict[str, Any]:
     freshness = await _assess_repository_freshness_uncached(repo)
     repository_id = getattr(repo, "id", None)
     if isinstance(repository_id, int) and not isinstance(repository_id, bool):
-        freshness = apply_origin_state(freshness, await _load_origin_state(repository_id))
+        state = await _load_origin_state(repository_id)
+        repo_path = _normalize_path(getattr(repo, "path", None))
+        if state and repo_path is not None:
+            origin_configured, mirrors_enabled = await asyncio.to_thread(_origin_follow, repo_path)
+            state = effective_origin_state(
+                state, origin_configured=origin_configured, mirrors_enabled=mirrors_enabled
+            )
+        freshness = apply_origin_state(freshness, state)
     if CACHE_TTL_SECONDS > 0:
         _FRESHNESS_CACHE[key] = (now_monotonic + CACHE_TTL_SECONDS, dict(freshness))
         if len(_FRESHNESS_CACHE) > 256:  # bounded: a handful of repos in practice

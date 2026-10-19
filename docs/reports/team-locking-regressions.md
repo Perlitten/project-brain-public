@@ -40,18 +40,18 @@ the host `127.0.0.1`, user `fixture`, database `brain_team_test` and the vector
 extension installed by the test server administrator.
 
 ```powershell
-$env:TEST_TEAM_POSTGRES_URL='postgresql+asyncpg://fixture:fixture@127.0.0.1:5459/brain_team_test'
+$env:TEST_TEAM_POSTGRES_URL='postgresql+asyncpg://fixture@127.0.0.1:5459/brain_team_test'
 $env:BRAIN_DISABLE_DOTENV='true'
 .venv/Scripts/python -m pytest tests/test_team_locking_postgres.py tests/test_memory_cas_concurrency.py -q
-.venv/Scripts/python scripts/team_memory_load_e2e.py --database-url postgresql://postgres:task3-disposable@127.0.0.1:5459/postgres --redis-url redis://127.0.0.1:6399/0 --docker-cmd docker --pg-container brain-diag-task3-pg --users 12 --ops 50 --out ../load-final-12
+.venv/Scripts/python scripts/team_memory_load_e2e.py --database-url postgresql://postgres@127.0.0.1:5459/postgres --redis-url redis://127.0.0.1:6399/0 --docker-cmd docker --pg-container brain-diag-task3-pg --users 12 --ops 50 --out ../load-final-12
 ```
 
 For the 36-user, two-worker scenario run the same harness from **Linux Python**
 (WSL or a Linux container), with `--users 36 --ops 50 --api-workers 2` and the
-disposable services' addresses in that runtime. Native Windows multi-worker
-uvicorn is rejected for the transport reason below.
+disposable services' addresses in that runtime. Windows uses the per-port API processes from PR159, avoiding the shared listener
+for the transport reason below.
 
-The example password belongs only to the disposable local test server. The two
+Supply disposable fixture credentials through your local PostgreSQL password configuration. The two
 load runs must be sequential because they use the same disposable database names
 and ports. Each includes onboarding, mixed REST/MCP traffic, CAS, governance,
 consolidation, freshness, lease contention, provenance, revocation, restore fence,
@@ -102,11 +102,11 @@ failed `CreateIoCompletionPort` with `WinError 87`. A test that only counted
 successful responses would have incorrectly certified it; both serving PIDs are
 required. The precise Winsock shared-socket mode transition remains unknown.
 
-The harness now fails fast for native Windows with more than one worker, before
-creating databases/processes, and reports the actual Python platform/version.
-This prevents misleading or stalled validation; it does not patch upstream
-Winsock/uvicorn. Multi-worker acceptance must run under Linux. The existing CLI
-single-worker launch and Linux behavior are unchanged. An earlier diagnostic
+The original branch rejected native Windows with more than one worker. After
+integration with PR159, the harness instead retains its per-port Windows API
+processes. Linux continues to use uvicorn workers on one listener. This avoids
+the unsafe Windows shared listener without reducing the requested process count.
+The existing CLI single-worker launch is unchanged. An earlier diagnostic
 attempt that broke MCP imports by replacing `Popen` with a function was excluded;
 the corrected reproduction retained its class interface and exercised MCP.
 
@@ -156,3 +156,10 @@ real ASGI/MCP response beyond the old 9s boundary, whole-assembly cancellation,
 configuration clamping, invalid/nonfinite budgets, authorization denial and
 transport timeout error semantics. These are deterministic transport tests,
 not evidence of live-provider behavior.
+
+## Integration with current main
+
+The follow-up merge retains PR159's per-port Windows API processes and removes
+the superseded Windows rejection. Revocation now uses PostgreSQL wall time, so
+the load harness compares its timestamps directly without a second host-clock
+correction. The `db_clock_skew_ms` compatibility field is zero.

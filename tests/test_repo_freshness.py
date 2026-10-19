@@ -476,3 +476,100 @@ async def test_describe_origin_for_a_non_git_directory(tmp_path: Path):
         "origin_head": None,
         "commits_behind_origin": None,
     }
+
+
+# Origin follow switched off (BRAIN_ORIGIN_REMOTES no longer names the source,
+# or BRAIN_SOURCE_MIRROR_DIR is blank) must not leave the repository judged
+# against a mirror it is no longer indexed from. Prod /app: the snapshot was
+# reindexed from its manifest, yet the persisted row kept it "behind" forever.
+
+
+def _snapshot_with_manifest(root: Path, source_revision: str) -> dict:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "a.py").write_text("print('a')", encoding="utf-8")
+    manifest = build_manifest(root, source_revision=source_revision)
+    (root / ".brain-source-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return manifest
+
+
+def _stale_mirror_row(mirror_head: str) -> dict:
+    return {
+        "source_mode": "mirror", "mirror_head": mirror_head, "remote_head": mirror_head,
+        "tracked_branch": "main", "remote_url": "https://github.com/acme/app.git", "poll_status": "ok",
+        "commits_behind": 0, "commits_behind_base": mirror_head, "commits_behind_head": mirror_head,
+    }
+
+
+async def _assess_with_row(monkeypatch, root: Path, indexed: str, row: dict) -> dict:
+    from unittest.mock import AsyncMock
+
+    from brain.memory import repo_freshness
+
+    repo_freshness._FRESHNESS_CACHE.clear()
+    monkeypatch.setattr(repo_freshness, "_load_origin_state", AsyncMock(return_value=row))
+    try:
+        return await assess_repository_freshness(
+            SimpleNamespace(id=7, path=str(root), last_indexed_commit=indexed,
+                            updated_at=datetime.now(timezone.utc), files=["a.py"])
+        )
+    finally:
+        repo_freshness._FRESHNESS_CACHE.clear()
+
+
+@pytest.mark.asyncio
+async def test_stale_mirror_row_is_ignored_once_origin_follow_is_off(tmp_path: Path, monkeypatch):
+    from brain.config.settings import settings
+
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    monkeypatch.setattr(settings, "BRAIN_ORIGIN_REMOTES", "")
+    monkeypatch.setattr(settings, "BRAIN_SOURCE_MIRROR_DIR", "")
+    deployed, old_mirror = "d" * 40, "0" * 40
+    root = tmp_path / "app"
+    manifest = _snapshot_with_manifest(root, deployed)
+
+    freshness = await _assess_with_row(monkeypatch, root, manifest["revision"], _stale_mirror_row(old_mirror))
+
+    assert freshness["status"] == "current"
+    assert freshness["source_revision_kind"] == "snapshot_manifest"
+    assert freshness.get("index_source") != "mirror"
+    assert freshness["origin_head"] is None and freshness["commits_behind_origin"] is None
+
+
+@pytest.mark.asyncio
+async def test_mirror_row_still_applies_while_origin_follow_is_on(tmp_path: Path, monkeypatch):
+    from brain.config.settings import settings
+
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    root = tmp_path / "app"
+    monkeypatch.setattr(settings, "BRAIN_ORIGIN_REMOTES",
+                        json.dumps({root.as_posix(): "https://github.com/acme/app.git"}))
+    monkeypatch.setattr(settings, "BRAIN_SOURCE_MIRROR_DIR", (tmp_path / "mirrors").as_posix())
+    mirror_head = "e" * 40
+    _snapshot_with_manifest(root, "d" * 40)
+
+    freshness = await _assess_with_row(monkeypatch, root, mirror_head, _stale_mirror_row(mirror_head))
+
+    assert freshness["index_source"] == "mirror"
+    assert freshness["source_head_commit"] == mirror_head
+    assert freshness["status"] == "current"
+
+
+@pytest.mark.asyncio
+async def test_mirror_marking_is_ignored_when_mirrors_are_disabled(tmp_path: Path, monkeypatch):
+    from brain.config.settings import settings
+
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    root = tmp_path / "app"
+    monkeypatch.setattr(settings, "BRAIN_ORIGIN_REMOTES",
+                        json.dumps({root.as_posix(): "https://github.com/acme/app.git"}))
+    monkeypatch.setattr(settings, "BRAIN_SOURCE_MIRROR_DIR", "")
+    deployed = "d" * 40
+    manifest = _snapshot_with_manifest(root, deployed)
+
+    freshness = await _assess_with_row(monkeypatch, root, manifest["revision"], _stale_mirror_row("0" * 40))
+
+    # The origin is still followed (its head is reported), but nothing is served from a mirror.
+    assert freshness["status"] == "current"
+    assert freshness.get("index_source") != "mirror"
+    assert freshness["source_revision_kind"] == "snapshot_manifest"
+    assert freshness["origin_head"] == "0" * 40
