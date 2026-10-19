@@ -30,7 +30,7 @@ dependencies = [
     # which is imported by the CLI entrypoint.
     "sqlalchemy[asyncio]>=2.0.54",
     "asyncpg",
-    "aiosqlite>=0.21,<1",
+    "aiosqlite>=0.22.1,<1",
     "redis>=4.2.0",
     "neo4j",
     "loguru",
