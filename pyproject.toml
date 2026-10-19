@@ -31,7 +31,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.54",
     "asyncpg",
     "aiosqlite>=0.21,<1",
-    "redis>=4.2.0",
+    "redis>=8.1.0",
     "neo4j",
     "loguru",
     "pyyaml",
