@@ -1,0 +1,27 @@
+when:
+- event:
+  - push
+  - pull_request
+  branch:
+  - main
+  - master
+labels:
+  platform: windows/amd64
+  backend: local
+steps:
+- name: checkout
+  image: powershell
+  commands:
+  - if ($env:CI_COMMIT_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Invalid commit SHA' }
+  - git init .; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  - git remote add origin https://github.com/Perlitten/project-brain-public.git; if ($LASTEXITCODE -ne 0) { exit
+    $LASTEXITCODE }
+  - git fetch --tags origin $env:CI_COMMIT_SHA; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  - git checkout --detach $env:CI_COMMIT_SHA; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+- name: lite-windows
+  image: powershell
+  commands:
+  - python scripts/run_lite_ci.py --install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  - python scripts/run_lite_ci.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  - python -m pytest tests/test_team_memory_load_e2e.py -q; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+skip_clone: true

@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 
 from scripts.write_source_manifest import build_manifest
+from scripts.woodpecker_gate import verify_revision
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,7 +22,7 @@ SOURCE_INPUTS = [
     "scripts/write_source_manifest.py", "scripts/validate_lfm_release_gate.py",
 ]
 DEPLOY_INPUTS = [
-    "Dockerfile", "deploy/docker-compose.prod.yml", "deploy/server_up.sh",
+    "Dockerfile", "deploy/docker-compose.prod.yml", "deploy/server_up.sh", "scripts/woodpecker_gate.py",
     "scripts/write_source_manifest.py", "scripts/validate_lfm_release_gate.py",
 ]
 
@@ -91,7 +92,7 @@ def main() -> None:
     except (ValueError, subprocess.CalledProcessError) as exc:
         raise SystemExit(str(exc)) from None
 
-    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    repository = os.environ.get("GITHUB_REPOSITORY", os.environ.get("CI_REPO", ""))
     token = os.environ.get("GITHUB_TOKEN", "")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or not token:
         raise SystemExit("GitHub repository and Actions-read token are required")
@@ -100,8 +101,16 @@ def main() -> None:
         url, headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            verified_ci_runs(json.load(response), revision)
+        provider = os.environ.get("BRAIN_CI_PROVIDER", "github")
+        if provider == "woodpecker":
+            verify_revision(revision, os.environ.get("BRAIN_WOODPECKER_SERVER", ""),
+                            os.environ.get("BRAIN_WOODPECKER_REPO_ID", ""),
+                            os.environ.get("BRAIN_WOODPECKER_TOKEN", ""))
+        elif provider == "github":
+            with urllib.request.urlopen(request, timeout=20) as response:
+                verified_ci_runs(json.load(response), revision)
+        else:
+            raise ValueError("Unknown CI provider")
         require_unpublished_release(repository, args.tag, token)
     except (ValueError, TypeError) as exc:
         raise SystemExit(str(exc)) from None
@@ -113,9 +122,9 @@ def main() -> None:
     ).strip()
     source = build_manifest(ROOT, revision, includes=source_inputs())
     deploy = build_manifest(ROOT, revision, includes=DEPLOY_INPUTS)
-    output = os.environ.get("GITHUB_OUTPUT")
+    output = os.environ.get("BRAIN_RELEASE_OUTPUT", os.environ.get("GITHUB_OUTPUT"))
     if not output:
-        raise SystemExit("GITHUB_OUTPUT is required for the release jobs")
+        raise SystemExit("BRAIN_RELEASE_OUTPUT is required for Woodpecker release jobs")
     with Path(output).open("a", encoding="utf-8") as handle:
         handle.write(
             f"commit_sha={revision}\nsource_digest={source['content_digest']}\n"

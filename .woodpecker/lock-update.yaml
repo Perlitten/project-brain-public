@@ -1,0 +1,19 @@
+when:
+- event: cron
+  cron: lock-update
+- event: deployment
+  branch: main
+  evaluate: CI_PIPELINE_DEPLOY_TASK == "lock-update"
+clone:
+  git:
+    image: woodpeckerci/plugin-git:2.10.1
+    settings:
+      depth: 0
+steps:
+- name: lock-update
+  image: python:3.12-bookworm
+  environment:
+    GH_TOKEN:
+      from_secret: github_lock_update_token
+  commands:
+  - bash scripts/ci/lock-update.sh

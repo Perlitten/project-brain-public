@@ -1,0 +1,45 @@
+when:
+- event: deployment
+  evaluate: CI_PIPELINE_DEPLOY_TASK == "team-e2e"
+labels:
+  platform: linux/amd64
+  backend: local
+  capability: brain-docker
+steps:
+- name: checkout
+  image: bash
+  commands:
+  - printf '%s\n' "$CI_COMMIT_SHA" | grep -Eq '^[0-9a-f]{40}$'
+  - git init .
+  - git remote add origin https://github.com/Perlitten/project-brain-public.git
+  - git fetch --tags origin "$CI_COMMIT_SHA"
+  - git checkout --detach "$CI_COMMIT_SHA"
+- name: team-e2e
+  image: bash
+  environment:
+    BRAIN_TEST_EXECUTION_IMAGE: brain-exec-test-env
+    BRAIN_TEST_EGRESS_PROXY_IMAGE: brain-exec-test-proxy
+    BRAIN_TEST_REQUIRE_DOCKER: '1'
+  commands:
+  - source scripts/ci/local-bootstrap.sh
+  - bash scripts/team_e2e_docker.sh
+- name: artifacts
+  image: plugin-s3
+  settings:
+    bucket:
+      from_secret: ci_artifact_bucket
+    endpoint:
+      from_secret: ci_artifact_endpoint
+    access_key:
+      from_secret: ci_artifact_access_key
+    secret_key:
+      from_secret: ci_artifact_secret_key
+    source: artifacts/team-e2e/latest/report.json
+    target: /project-brain/${CI_PIPELINE_NUMBER}/team-e2e
+    acl: private
+    path_style: true
+  when:
+  - status:
+    - success
+    - failure
+skip_clone: true

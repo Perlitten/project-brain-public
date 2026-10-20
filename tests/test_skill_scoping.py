@@ -32,7 +32,7 @@ async def skill_db(monkeypatch):
             await conn.execute(text("TRUNCATE memory_skills RESTART IDENTITY CASCADE"))
     except (OSError, ConnectionError):
         await engine.dispose()
-        if os.environ.get("GITHUB_ACTIONS"):
+        if (os.environ.get("GITHUB_ACTIONS") or os.environ.get("BRAIN_CI_REQUIRE_SERVICES")):
             raise
         pytest.skip("PostgreSQL is unavailable locally")
     sessions = async_sessionmaker(engine, expire_on_commit=False)
