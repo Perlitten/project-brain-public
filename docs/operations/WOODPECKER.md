@@ -216,3 +216,9 @@ and measurement on PR metadata events. The public GitHub PR API is read without
 credentials and checked against the exact repository/PR number; fork, missing,
 network or rate-limit failures stop the job. Each shard checks independently;
 no mutation score, shard count, timeout or measurement command is changed.
+
+Mutation's ephemeral PostgreSQL service uses the same loopback-only adapter that
+passed the full normal test workflow. Its restricted-role fixture URL is loopback,
+matching the source runner and unchanged destructive-test assertions. Exact-path
+git trust is configured before mutation. The original mutation.sh,32 shards and
+335-minute timeout remain unchanged; a complete mutation measurement is unverified.
