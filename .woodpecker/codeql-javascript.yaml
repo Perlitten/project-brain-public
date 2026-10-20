@@ -7,6 +7,10 @@ when:
   - master
 - event: cron
   cron: codeql
+- event: manual
+  branch:
+  - main
+  - master
 steps:
 - name: checkout
   image: bash

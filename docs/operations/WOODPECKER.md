@@ -2,12 +2,18 @@
 
 ## Current state
 
-The migration is staged. GitHub Actions remain active until the replacement has
-passed on the actual Woodpecker server and branch protection has been switched.
-The existing server URL, repository ID, runner provisioning and secrets are not
-part of this repository. A syntactically valid YAML file is not evidence of a
-successful CI run. Do not delete Actions or select `BRAIN_CI_PROVIDER=woodpecker`
-until the cutover below has been completed.
+The configuration migration is staged and the repository is now activated on
+Woodpecker. GitHub Actions have been disabled in repository settings to stop
+workflow execution; the YAML files are dormant. This does not establish
+successful replacement coverage. The current server has one Linux amd64 Docker
+agent with capacity two; Windows and the isolated local-backend capabilities
+below are not provisioned. Required artifact and release credentials still need
+live verification. Keep production publication fail-closed until every required
+Woodpecker workflow is green.
+
+Normal verification workflows also accept manual runs on main/master for
+bootstrap diagnostics. The release gate deliberately continues to require a
+real exact-revision main push, never a manual run.
 
 ## Workload inventory
 

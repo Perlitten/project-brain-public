@@ -45,7 +45,7 @@ def verify_revision(revision: str, server: str, repo_id: str, token: str) -> dic
             return json.load(response)
 
     # Search all pages. Ref-filtering alone is not proof of the event or commit.
-    matches = []
+    matches: list[dict] = []
     for page in range(1, 101):
         runs = fetch(f"repos/{repo_id}/pipelines?perPage=50&page={page}")
         if not isinstance(runs, list):
