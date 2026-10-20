@@ -28,10 +28,10 @@ dependencies = [
     "pydantic-settings",
     # asyncio extras pull in greenlet — required by brain.database.session,
     # which is imported by the CLI entrypoint.
-    "sqlalchemy[asyncio]>=2.0.54",
+    "sqlalchemy[asyncio]>=2.1.4",
     "asyncpg",
-    "aiosqlite>=0.21,<1",
-    "redis>=4.2.0",
+    "aiosqlite>=0.22.1,<1",
+    "redis>=8.1.0",
     "neo4j",
     "loguru",
     "pyyaml",
@@ -40,9 +40,9 @@ dependencies = [
     "mcp==2.3.0",
     "pgvector",
     "cryptography>=50.0.2",
-    "numpy>=2.2.6,<3",
+    "numpy>=2.5.4,<3",
     # Team single sign-on validates OIDC ID tokens (brain/team/oidc.py); already locked via mcp.
-    "pyjwt[crypto]>=2.10,<3",
+    "pyjwt[crypto]>=2.15.1,<3",
 ]
 
 [project.urls]
