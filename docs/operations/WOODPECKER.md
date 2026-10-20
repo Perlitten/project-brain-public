@@ -210,3 +210,9 @@ release workflow are unchanged. Legacy deployment selectors remain available
 only where deployments are enabled; Contabo currently disables that event.
 The benchmark container trusts only its exact CI workspace before indexing.
 No new deployment permission, credential or native capability is enabled.
+
+The source same-repository-only mutation restriction is enforced before bootstrap
+and measurement on PR metadata events. The public GitHub PR API is read without
+credentials and checked against the exact repository/PR number; fork, missing,
+network or rate-limit failures stop the job. Each shard checks independently;
+no mutation score, shard count, timeout or measurement command is changed.
