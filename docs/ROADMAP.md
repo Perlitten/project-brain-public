@@ -17,10 +17,13 @@ Direction, not commitments — items move between releases.
 
 ## Later
 
-- Team mode: an [experimental preview](TEAM.md) is on `main` (members,
-  projects, invitations, per-project authorization). Still to come: SSO, an
-  invitation UI, executors, deployment and a pilot; see
-  [team-mode status](design/team-status.md)
+- Team mode: an [experimental preview](TEAM.md) is on `main`, not in
+  v0.9.2. Members, per-project authorization, invitation UI, optional OIDC SSO,
+  governed memory review, coordination board and off-by-default bounded execution
+  of operator-allowlisted steps are implemented. The one-team HTTPS deployment
+  is CI-checked, not validated with real users on a live team host. Still to
+  come: real team pilot, agent-chosen execution and further operational hardening;
+  see [team-mode status](design/team-status.md)
 - Managed hosting option for people who don't want a VPS
 - Graph mining: architecture rule suggestions from coupling history
 
