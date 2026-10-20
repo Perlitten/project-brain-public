@@ -3,7 +3,7 @@ import asyncio
 import os
 import time
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 import redis
 from neo4j import GraphDatabase
 
