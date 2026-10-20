@@ -44,7 +44,7 @@ async def memory_db(monkeypatch):
             await conn.execute(text(f"TRUNCATE {_MEMORY_TABLES} RESTART IDENTITY CASCADE"))
     except (OSError, ConnectionError):
         await engine.dispose()
-        if os.environ.get("GITHUB_ACTIONS"):
+        if (os.environ.get("GITHUB_ACTIONS") or os.environ.get("BRAIN_CI_REQUIRE_SERVICES")):
             raise
         pytest.skip("PostgreSQL is unavailable locally")
     # Helper tasks belong to this fixture too; deleting only the main task

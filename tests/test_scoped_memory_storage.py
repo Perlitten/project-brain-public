@@ -28,7 +28,7 @@ async def memory_store(request, tmp_path, monkeypatch):
             await connection.run_sync(lambda conn: Decision.__table__.create(conn))
     except (OSError, ConnectionError):
         await engine.dispose()
-        if os.environ.get("GITHUB_ACTIONS"):
+        if (os.environ.get("GITHUB_ACTIONS") or os.environ.get("BRAIN_CI_REQUIRE_SERVICES")):
             raise
         pytest.skip("PostgreSQL unavailable locally")
     factory = async_sessionmaker(engine, expire_on_commit=False, info={"fixture_schema": schema})

@@ -1,0 +1,22 @@
+when:
+- event:
+  - push
+  - pull_request
+  branch:
+  - main
+  - master
+clone:
+  git:
+    image: woodpeckerci/plugin-git:2.10.1
+    settings:
+      depth: 0
+steps:
+- name: web
+  image: node:22-bookworm
+  commands:
+  - cd apps/web
+  - npm ci
+  - npm test
+  - npm run typecheck
+  - npm run build
+  - npm run test:production

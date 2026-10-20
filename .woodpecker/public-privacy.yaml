@@ -1,0 +1,18 @@
+when:
+- event:
+  - push
+  - pull_request
+  branch:
+  - main
+  - master
+clone:
+  git:
+    image: woodpeckerci/plugin-git:2.10.1
+    settings:
+      depth: 0
+steps:
+- name: public-privacy
+  image: python:3.12-bookworm
+  commands:
+  - python scripts/check_public_privacy.py --allow-github-identities
+  - python scripts/check_public_launch.py

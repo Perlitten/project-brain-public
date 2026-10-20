@@ -1,0 +1,32 @@
+when:
+- event: tag
+  ref: refs/tags/v*
+steps:
+- name: checkout
+  image: bash
+  commands:
+  - printf '%s\n' "$CI_COMMIT_SHA" | grep -Eq '^[0-9a-f]{40}$'
+  - git init .
+  - git remote add origin https://github.com/Perlitten/project-brain-public.git
+  - git fetch --tags origin "$CI_COMMIT_SHA"
+  - git checkout --detach "$CI_COMMIT_SHA"
+- name: release
+  image: bash
+  environment:
+    GITHUB_TOKEN:
+      from_secret: github_release_token
+    BRAIN_WOODPECKER_TOKEN:
+      from_secret: woodpecker_read_token
+    BRAIN_WOODPECKER_SERVER:
+      from_secret: woodpecker_server
+    BRAIN_WOODPECKER_REPO_ID:
+      from_secret: woodpecker_repo_id
+  commands:
+  - bash scripts/ci/release.sh
+labels:
+  platform: linux/amd64
+  backend: local
+  capability: brain-release
+concurrency:
+  limit: 1
+skip_clone: true

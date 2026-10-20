@@ -78,3 +78,9 @@ coverage.xml
 /mutants/
 /.mutation-results/
 /mutation-shard-*.tar.gz
+
+# Provider-independent CI scratch outputs
+/.ci-venv/
+/.release-venv/
+/.release-identity
+/mutation-results.tar.gz

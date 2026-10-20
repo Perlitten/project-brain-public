@@ -29,7 +29,7 @@ async def skill_db(monkeypatch):
             await _ensure_skill_outcomes_table(conn)
     except (OSError, ConnectionError, asyncpg.PostgresError):
         await engine.dispose()
-        if os.environ.get("GITHUB_ACTIONS"):
+        if (os.environ.get("GITHUB_ACTIONS") or os.environ.get("BRAIN_CI_REQUIRE_SERVICES")):
             raise
         pytest.skip("PostgreSQL is unavailable locally")
 

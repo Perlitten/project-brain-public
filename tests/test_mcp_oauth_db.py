@@ -52,7 +52,7 @@ async def sessions(monkeypatch):
             await conn.run_sync(lambda sync_conn: Principal.metadata.create_all(sync_conn, tables=_TABLES))
     except (OSError, ConnectionError):
         await engine.dispose()
-        if os.environ.get("GITHUB_ACTIONS"):
+        if (os.environ.get("GITHUB_ACTIONS") or os.environ.get("BRAIN_CI_REQUIRE_SERVICES")):
             raise
         pytest.skip("PostgreSQL is unavailable locally")
     factory = async_sessionmaker(engine, expire_on_commit=False)

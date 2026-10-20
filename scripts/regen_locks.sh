@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PYTHON="${PYTHON:-python}"
-"$PYTHON" -m piptools compile --generate-hashes -o requirements.lock pyproject.toml
-"$PYTHON" -m piptools compile --generate-hashes --extra dev -o requirements-dev.lock pyproject.toml
+"$PYTHON" -m piptools compile --generate-hashes --no-strip-extras -o requirements.lock pyproject.toml
+"$PYTHON" -m piptools compile --generate-hashes --no-strip-extras --extra dev -o requirements-dev.lock pyproject.toml
 
 echo "wrote requirements.lock and requirements-dev.lock"

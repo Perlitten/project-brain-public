@@ -283,6 +283,7 @@ python3 scripts/write_source_manifest.py . \
     --include Dockerfile \
     --include deploy/docker-compose.prod.yml \
     --include deploy/server_up.sh \
+    --include scripts/woodpecker_gate.py \
     --include scripts/write_source_manifest.py \
     --include scripts/validate_lfm_release_gate.py \
     >/dev/null
@@ -304,7 +305,19 @@ echo "==> Release identity: ${BRAIN_BUILD_SHA:0:12} source=${BRAIN_SOURCE_DIGEST
 # CI workflow for this exact immutable SHA. A local checkout can have tests,
 # but it cannot prove the commit that is about to be shipped passed CI.
 verify_production_ci() {
-    local repository workflow github_token api_url
+    local repository workflow github_token api_url provider
+    provider="$(env_value BRAIN_CI_PROVIDER)"
+    if [[ "$provider" == "woodpecker" ]]; then
+        BRAIN_WOODPECKER_SERVER="$(env_value BRAIN_WOODPECKER_SERVER)" \
+        BRAIN_WOODPECKER_REPO_ID="$(env_value BRAIN_WOODPECKER_REPO_ID)" \
+        BRAIN_WOODPECKER_TOKEN="$(deploy_env_value BRAIN_WOODPECKER_TOKEN)" \
+            python3 scripts/woodpecker_gate.py --sha "$BRAIN_BUILD_SHA"
+        return $?
+    fi
+    if [[ -n "$provider" && "$provider" != "github" ]]; then
+        echo "ERROR: unknown BRAIN_CI_PROVIDER; refusing production deploy." >&2
+        return 1
+    fi
     repository="$(env_value BRAIN_GITHUB_REPOSITORY)"
     workflow="$(env_value BRAIN_GITHUB_CI_WORKFLOW)"
     github_token="$(deploy_env_value BRAIN_GITHUB_TOKEN)"

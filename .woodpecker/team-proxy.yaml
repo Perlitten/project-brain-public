@@ -1,0 +1,30 @@
+when:
+- event:
+  - push
+  - pull_request
+  branch:
+  - main
+  - master
+labels:
+  platform: linux/amd64
+  backend: local
+  capability: brain-docker
+steps:
+- name: checkout
+  image: bash
+  commands:
+  - printf '%s\n' "$CI_COMMIT_SHA" | grep -Eq '^[0-9a-f]{40}$'
+  - git init .
+  - git remote add origin https://github.com/Perlitten/project-brain-public.git
+  - git fetch --tags origin "$CI_COMMIT_SHA"
+  - git checkout --detach "$CI_COMMIT_SHA"
+- name: team-proxy
+  image: bash
+  environment:
+    BRAIN_TEST_EXECUTION_IMAGE: brain-exec-test-env
+    BRAIN_TEST_EGRESS_PROXY_IMAGE: brain-exec-test-proxy
+    BRAIN_TEST_REQUIRE_DOCKER: '1'
+  commands:
+  - source scripts/ci/local-bootstrap.sh
+  - python scripts/team_proxy_check.py
+skip_clone: true
