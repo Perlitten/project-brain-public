@@ -146,8 +146,10 @@ agents automatically call Brain in every session: configure your client workflow
 
 ## From one developer to a team
 
-> **Experimental preview, `main` only, not in v0.9.2.** Not deployed or
-> piloted with real people; no SSO, and runs are recorded but never executed.
+> **Experimental preview, `main` only, not in v0.9.2.** Not piloted with
+> real people. Optional OIDC SSO and an invitation UI are implemented; bounded
+> execution of operator-allowlisted steps is available but off by default.
+> Agent-chosen execution and automatic git merges are not supported.
 
 A Brain starts as a team of one: with no team members registered, every
 authenticated caller (the shared `PROJECT_BRAIN_API_KEY` included) can use
