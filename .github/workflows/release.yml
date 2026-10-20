@@ -30,7 +30,7 @@ jobs:
       deploy_digest: ${{ steps.verify.outputs.deploy_digest }}
       build_time: ${{ steps.verify.outputs.build_time }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
@@ -47,7 +47,7 @@ jobs:
     needs: preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.preflight.outputs.commit_sha }}
       - uses: actions/setup-python@v5
@@ -83,7 +83,7 @@ jobs:
             context: apps/web
             dockerfile: apps/web/Dockerfile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.preflight.outputs.commit_sha }}
       - uses: actions/setup-python@v5
@@ -96,7 +96,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build ${{ matrix.name }} for validation
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -149,7 +149,7 @@ jobs:
     needs: preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.preflight.outputs.commit_sha }}
       - name: Generate source SBOM
@@ -172,15 +172,15 @@ jobs:
     needs: [preflight, dist, images, sbom]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.preflight.outputs.commit_sha }}
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: sbom-*
           merge-multiple: true
@@ -223,7 +223,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python -m scripts.release_gate --tag "$RELEASE_TAG"
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           body_path: release-notes.md

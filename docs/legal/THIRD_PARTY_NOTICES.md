@@ -103,7 +103,7 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 | mcp-types | 2.3.0 | MIT |
 | mdurl | 0.1.2 | MIT |
 | neo4j | 6.3.1 | Apache-2.0 AND Python-2.0 |
-| numpy | 2.5.3 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 |
+| numpy | 2.5.4 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 |
 | opentelemetry-api | 1.45.0 | Apache-2.0 |
 | pgvector | 0.5.0 | MIT |
 | pycparser | 3.0 | BSD-3-Clause |
@@ -121,7 +121,7 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 | rich | 15.0.0 | MIT |
 | rpds-py | 2026.6.3 | MIT |
 | shellingham | 1.5.4 | ISC |
-| sqlalchemy[asyncio] | 2.1.2 | MIT |
+| sqlalchemy[asyncio] | 2.1.4 | MIT |
 | sse-starlette | 3.5.0 | BSD-3-Clause |
 | starlette | 1.7.0 | BSD-3-Clause |
 | typer[all] | 0.27.2 | MIT |
@@ -170,12 +170,12 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 
 | Package | Version | License |
 |---|---|---|
-| next | 16.4.0 | MIT |
-| react | 19.3.0 | MIT |
-| react-dom | 19.3.0 | MIT |
+| next | 16.4.2 | MIT |
+| react | 19.3.1 | MIT |
+| react-dom | 19.3.1 | MIT |
 | typescript | 7.0.2 | Apache-2.0 |
 | typescript5 | 5.9.3 | Apache-2.0 |
-| @types/node | 26.6.4 | MIT |
+| @types/node | 26.6.5 | MIT |
 | @types/react | 19.3.0 | MIT |
 | @types/react-dom | 19.3.0 | MIT |
 
