@@ -190,3 +190,9 @@ on the binary's private default. Current artifact credentials/event filters were
 read back; all four keys enable pull_request and stay plugin-restricted.
 The one-time PostgreSQL diagnostic workflow was removed after its successful run.
 All normal test.sh phases and all nine release-required workflow names are retained.
+
+Manual10 produced five Python and one JavaScript finding. They are untriaged
+scanner results, not a clean-security attestation. Analysis errors still fail;
+the source action's finding/reporting behavior is unchanged. SARIF now records
+the language category explicitly so future multi-language uploads cannot overwrite
+each other. GitHub publication/comparison remains an unfinished credentialed step.
