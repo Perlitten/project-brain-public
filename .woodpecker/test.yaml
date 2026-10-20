@@ -14,6 +14,7 @@ clone:
     image: woodpeckerci/plugin-git:2.10.1
     settings:
       depth: 0
+      partial: false
 services:
   postgres:
     image: pgvector/pgvector:pg15
@@ -65,9 +66,10 @@ steps:
     secret_key:
       from_secret: ci_artifact_secret_key
     source: coverage.xml
-    target: /project-brain/${CI_PIPELINE_NUMBER}/test
-    acl: private
+    target: test/${CI_PIPELINE_NUMBER}
     path_style: true
+    access: private
+    region: us-east-1
   when:
   - status:
     - success

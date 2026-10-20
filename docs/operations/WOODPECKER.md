@@ -7,8 +7,9 @@ Woodpecker. GitHub Actions have been disabled in repository settings to stop
 workflow execution; the YAML files are dormant. This does not establish
 successful replacement coverage. The current server has one Linux amd64 Docker
 agent with capacity two; Windows and the isolated local-backend capabilities
-below are not provisioned. Required artifact and release credentials still need
-live verification. Keep production publication fail-closed until every required
+below are not provisioned. Private S3 artifact credentials are provisioned and the uploader transport has
+passed a real upload/download probe. Per-workflow artifact production and release
+credentials still need live verification. Keep production publication fail-closed until every required
 Woodpecker workflow is green.
 
 Normal verification workflows also accept manual runs on main/master for
@@ -34,9 +35,9 @@ real exact-revision main push, never a manual run.
 | Tagged release | `release` | Separate Linux local agent, `capability=brain-release`; Python 3.12, Docker, gh, Syft |
 
 Normal CI runs for PRs targeting main/master and pushes to those branches.
-Team proxy intentionally runs on every PR instead of relying on a potentially
-incomplete path list. Mutation measurement is explicit opt-in, rather than an
-expensive label webhook. Use the server's existing two execution slots as the
+Team proxy push/PR path filters match the source GitHub workflow. Mutation
+measurement is explicit opt-in through deployment task or a mutation-baseline
+label update; external PRs still require server-side approval. Use the server's existing two execution slots as the
 concurrency ceiling; each shard has its own database and 335-minute measurement
 limit. Set the server workflow timeout to at least 360 minutes for mutation runs.
 
@@ -131,3 +132,16 @@ Woodpecker CLI 3.19.0 strict lint accepts all 14 workflow files. Bash syntax,
 Python compilation, repository Ruff checks and 86 focused gate/release/deployment
 and inventory tests passed (one existing skip). These checks do not claim that
 any Woodpecker agent, secret, cron, artifact upload or publishing run has passed.
+
+## Artifact storage on Contabo — 2026-10-20
+
+Private repository-specific Garage buckets use path-style S3. The benchmark prefix
+`benchmark/` retains artifacts for 90 days, mutation prefix `mutation-baseline/`
+for one day, and test prefix `test/` for seven days. Older `project-brain/` objects
+retain the previous seven-day policy. No artifact is public. The current two-slot
+Linux agent is not a replacement for the isolated local Docker/CodeQL/release or
+Windows agents listed above; those capabilities remain unfinished.
+
+The first live privacy gate rejected shallow history. Clone steps explicitly set
+`partial: false` alongside `depth: 0`; zero depth alone did not request full history
+from plugin-git. The privacy check remains fail-closed and must pass on a real clone.

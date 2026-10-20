@@ -1,11 +1,14 @@
 when:
 - event: deployment
   evaluate: CI_PIPELINE_DEPLOY_TASK == "mutation-baseline"
+- event: pull_request_metadata
+  evaluate: CI_PIPELINE_EVENT_REASON == "label_updated" && CI_COMMIT_PULL_REQUEST_LABELS contains "mutation-baseline"
 clone:
   git:
     image: woodpeckerci/plugin-git:2.10.1
     settings:
       depth: 0
+      partial: false
 services:
   postgres:
     image: pgvector/pgvector:pg15
@@ -66,9 +69,10 @@ steps:
     secret_key:
       from_secret: ci_artifact_secret_key
     source: mutation-shard-*.tar.gz
-    target: /project-brain/${CI_PIPELINE_NUMBER}/mutation-baseline/${SHARD}
-    acl: private
+    target: mutation-baseline/${CI_PIPELINE_NUMBER}/${SHARD}
     path_style: true
+    access: private
+    region: us-east-1
   when:
   - status:
     - success

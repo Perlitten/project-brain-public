@@ -14,6 +14,7 @@ clone:
     image: woodpeckerci/plugin-git:2.10.1
     settings:
       depth: 0
+      partial: false
 steps:
 - name: web
   image: node:22-bookworm
