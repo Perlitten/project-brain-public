@@ -3,6 +3,8 @@ when:
   cron: benchmark
 - event: deployment
   evaluate: CI_PIPELINE_DEPLOY_TASK == "benchmark"
+- event: manual
+  evaluate: PIPELINE_TASK == "benchmark"
 clone:
   git:
     image: woodpeckerci/plugin-git:2.10.1
@@ -49,6 +51,7 @@ steps:
     PROJECT_BRAIN_API_KEY: ci-benchmark-ephemeral-key
   commands:
   - bash scripts/ci/bootstrap.sh
+  - git config --global --add safe.directory "$${CI_WORKSPACE}"
   - bash scripts/ci/benchmark.sh
 - name: artifacts
   image: woodpeckerci/plugin-s3@sha256:bf0a088e66b991803e3b9b0401f616245c4d736674195204a7e9e343a871a9ea

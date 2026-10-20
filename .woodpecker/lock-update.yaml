@@ -4,6 +4,9 @@ when:
 - event: deployment
   branch: main
   evaluate: CI_PIPELINE_DEPLOY_TASK == "lock-update"
+- event: manual
+  evaluate: PIPELINE_TASK == "lock-update"
+  branch: main
 clone:
   git:
     image: woodpeckerci/plugin-git:2.10.1

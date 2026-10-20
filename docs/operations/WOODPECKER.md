@@ -196,3 +196,17 @@ scanner results, not a clean-security attestation. Analysis errors still fail;
 the source action's finding/reporting behavior is unchanged. SARIF now records
 the language category explicitly so future multi-language uploads cannot overwrite
 each other. GitHub publication/comparison remains an unfinished credentialed step.
+
+
+## Explicit manual task selection
+
+Use the Run pipeline variable PIPELINE_TASK=benchmark, codeql, team-e2e or
+lock-update to select the corresponding source workflow_dispatch family.
+The lock updater remains main-only and fail-closed without its scoped token.
+Normal main/master manual CI excludes these named families, so a benchmark or
+CodeQL run cannot accidentally launch test/native/proxy jobs. Empty/default
+manual CI behavior is retained. Push/PR/tag/cron filters and every required
+release workflow are unchanged. Legacy deployment selectors remain available
+only where deployments are enabled; Contabo currently disables that event.
+The benchmark container trusts only its exact CI workspace before indexing.
+No new deployment permission, credential or native capability is enabled.
