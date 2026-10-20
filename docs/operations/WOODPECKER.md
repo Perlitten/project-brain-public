@@ -73,7 +73,7 @@ Configure these Woodpecker repository secrets; do not copy them into source:
 | `github_lock_update_token` | Main cron/deployment only; contents and PR write |
 | `github_code_scanning_token` | Main push only; security events write |
 | `ci_artifact_bucket`, `ci_artifact_endpoint` | Private S3-compatible artifact destination |
-| `ci_artifact_access_key`, `ci_artifact_secret_key` | Write-only repository prefix; restrict secret access to the approved S3 plugin image/binary |
+| `ci_artifact_access_key`, `ci_artifact_secret_key` | Separate private bucket; repository key has read/write/owner only for that bucket; secrets restricted to approved S3 plugin image/binary |
 
 Provision the S3 plugin binary `plugin-s3` on local agents. Docker agents use the
 published Woodpecker S3 plugin image. Artifacts are separated by pipeline,
@@ -154,12 +154,12 @@ On this single Docker host the administrator builds the image before enabling th
 two CodeQL workflows; it is not built from PR code and no socket is mounted into CI:
 
 ```
-docker build -t localhost/woodpecker-codeql:2.27.3-5e7607e1b721 -f scripts/ci/images/codeql.Dockerfile scripts/ci/images
+docker build -t localhost/woodpecker-codeql:2.27.3-node22.23.3 -f scripts/ci/images/codeql.Dockerfile scripts/ci/images
 ```
 
 The Dockerfile pins the Python base digest and official CodeQL bundle checksum.
 The workflows pin the installed local manifest
-55926369f574f467df1435391e5995addf658bda06ff1eb9c5722676cef54209; each step
+48e89e410cce721de876673c0d8c58dd931f74a046a5cbab84835b8c8f2da47f; each step
 checks CLI version 2.27.3. The digest was verified by an actual pull=never
 container run on Contabo. Rebuilding after package changes requires reviewing and
 updating the image digest in both workflows; a mutable tag is not used by CI. The localhost image name fails closed if the
@@ -173,3 +173,11 @@ on a review branch without credentials or publishing. This is not a main-push
 release attestation. Runtime validation is pending at this source checkpoint.
 GitHub SARIF publication still needs the separately scoped credential/uploader;
 its absence must not be converted into an omitted release gate.
+
+The team PostgreSQL fixtures deliberately require a loopback URL before destructive
+database tests. The Docker runner uses a loopback-only socat listener forwarding to
+its ephemeral postgres service, so the original safety assertions remain unchanged.
+All normal test.sh phases remain mandatory; the proxy is stopped on shell exit.
+The CodeQL JavaScript extractor also requires a Node executable on PATH. The image
+copies Node22.23.3 from the pinned official Bookworm image; no npm install or host
+credential is needed by that extractor.
