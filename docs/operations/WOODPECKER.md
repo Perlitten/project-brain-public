@@ -170,7 +170,9 @@ exact-SHA anonymous public checkout and main-only publication command are retain
 SARIF archives use the plugin-restricted private S3 image and codeql/ seven-day
 lifecycle. Manual diagnostic variable PIPELINE_TASK=codeql selects both languages
 on a review branch without credentials or publishing. This is not a main-push
-release attestation. Runtime validation is pending at this source checkpoint.
+release attestation. Manual pipeline10 passed both language analyses on the pinned Node-enabled image;
+manual pipeline9 passed the original guarded PostgreSQL phase through the loopback
+adapter. These diagnostics do not establish a complete exact-main release gate.
 GitHub SARIF publication still needs the separately scoped credential/uploader;
 its absence must not be converted into an omitted release gate.
 
@@ -181,3 +183,10 @@ All normal test.sh phases remain mandatory; the proxy is stopped on shell exit.
 The CodeQL JavaScript extractor also requires a Node executable on PATH. The image
 copies Node22.23.3 from the pinned official Bookworm image; no npm install or host
 credential is needed by that extractor.
+
+The digest-pinned S3 binary bf0a088... exposes --acl / PLUGIN_ACL; Docker uploaders
+now set acl:private explicitly. The earlier access field was ignored and relied
+on the binary's private default. Current artifact credentials/event filters were
+read back; all four keys enable pull_request and stay plugin-restricted.
+The one-time PostgreSQL diagnostic workflow was removed after its successful run.
+All normal test.sh phases and all nine release-required workflow names are retained.

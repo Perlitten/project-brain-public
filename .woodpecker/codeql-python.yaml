@@ -58,7 +58,7 @@ steps:
     source: artifacts/codeql/**/*.sarif
     target: codeql/${CI_PIPELINE_NUMBER}/python
     path_style: true
-    access: private
+    acl: private
     region: us-east-1
   when:
   - status:

@@ -67,7 +67,7 @@ steps:
 
     '
 - name: artifacts
-  image: woodpeckerci/plugin-s3
+  image: woodpeckerci/plugin-s3@sha256:bf0a088e66b991803e3b9b0401f616245c4d736674195204a7e9e343a871a9ea
   settings:
     bucket:
       from_secret: ci_artifact_bucket
@@ -80,7 +80,7 @@ steps:
     source: coverage.xml
     target: test/${CI_PIPELINE_NUMBER}
     path_style: true
-    access: private
+    acl: private
     region: us-east-1
   when:
   - status:
