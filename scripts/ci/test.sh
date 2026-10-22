@@ -17,8 +17,10 @@ bash scripts/mypy_gate.sh
 # Migration check (fresh init + idempotent re-apply)
 python scripts/check_migrations.py
 
-# Run tests (with coverage)
-pytest -q --cov=brain --cov=apps --cov-report=term-missing --cov-report=xml:coverage.xml
+# Show the active test and report the first failure immediately. A passing run
+# still executes the full suite; slow shared runners must not hide diagnostics
+# until thousands of subsequent tests finish.
+pytest -x -v --durations=20 --cov=brain --cov=apps --cov-report=term-missing --cov-report=xml:coverage.xml
 
 # Team authority PostgreSQL race, native MCP and restore checks
 PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
