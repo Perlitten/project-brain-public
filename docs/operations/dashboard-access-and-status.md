@@ -84,4 +84,5 @@ Request telemetry remains metadata-only by default. A team administrator may exp
 
 These contracts require the updated API and its startup migrations. The dashboard does not deploy the server, change Vercel bindings, or enable query capture automatically. Existing clients keep the previous metadata-only behavior unless the operator opts in.
 
-New team-administrator credentials include `workspace:write` for Add project. Existing credentials retain their stored scopes. If the dialog reports this permission missing, the server operator must issue a replacement administrator credential, switch the dashboard deployment to it and verify access before retiring the old credential. Repository registration still requires a live team administrator in team mode; ordinary members do not receive this scope.
+
+Repository registration in team mode requires a live team administrator and the target project administrator checks; existing administrator credentials keep their scopes and remain compatible. Solo registration continues to require the explicit `workspace:write` credential scope. The dialog reports this permission missing before submission, without changing stored keys.

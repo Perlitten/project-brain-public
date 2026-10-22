@@ -34,7 +34,7 @@ export const DASHBOARD_SCOPES = [
 ];
 
 /** Extra for team admins: the Team page, member keys, and the admin screens (Setup, Settings, Access, job retries). */
-export const TEAM_ADMIN_SCOPES = ["operations:write", "principals:read", "principals:write", "setup:write", "team:admin", "workspace:write"];
+export const TEAM_ADMIN_SCOPES = ["operations:write", "principals:read", "principals:write", "setup:write", "team:admin"];
 
 export function memberKeyScopes(admin: boolean): string[] {
   return [...new Set([...TEAM_ROLE_SCOPES, ...DASHBOARD_SCOPES, ...(admin ? TEAM_ADMIN_SCOPES : [])])].sort();
