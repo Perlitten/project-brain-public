@@ -29,7 +29,8 @@ PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U 
 TEST_TEAM_POSTGRES_URL="postgresql+asyncpg://fixture:fixture_local_only@${POSTGRES_HOST}:$POSTGRES_PORT/brain_team_test" \
   pytest tests/test_team_foundations.py tests/test_team_transport.py tests/test_team_restore.py \
   tests/test_team_invitations.py tests/test_team_restore_fence.py tests/test_team_execution.py \
-  tests/test_team_lock_order.py tests/test_team_execution_llm_artifacts.py tests/test_memory_cas_concurrency.py -q
+  tests/test_team_lock_order.py tests/test_team_execution_llm_artifacts.py tests/test_memory_cas_concurrency.py \
+  tests/test_team_bootstrap.py -q
 # Keep the untrusted vector extension out of the restricted-role restore fixture's dump.
 # Only the following memory-lock regressions require it.
 PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d brain_team_test -v ON_ERROR_STOP=1 \
