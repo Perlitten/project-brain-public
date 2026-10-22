@@ -683,3 +683,25 @@ async def test_registration_rejects_invalid_display_names_before_creating_index_
         async with factory() as session:
             assert (await session.execute(select(Repository).where(Repository.path == str(directory)))).scalar_one_or_none() is None
         assert await registry_activity(factory) == []
+
+
+@pytest.mark.asyncio
+async def test_registration_rejects_overlong_canonical_paths_before_creating_index_rows(
+        registration, team_db, monkeypatch):
+    factory, _, client, directory = registration
+    _, project, _ = team_db
+    async with factory() as session, session.begin():
+        await session.execute(delete(Repository).where(Repository.id == 4))
+    monkeypatch.setattr(workspace.PathSandbox, "validate", lambda *_args, **_kwargs: Path("x" * 1025))
+    response = await client.post(
+        "/workspace/repositories", headers=ADMIN,
+        json=register_body(directory, project_id=str(project), create_index_record=True),
+    )
+    assert response.status_code == 422, response.text
+    assert "1024-character" in response.json()["detail"]
+    async with factory() as session:
+        assert (await session.execute(
+            select(Repository).where(Repository.path == "x" * 1025)
+        )).scalar_one_or_none() is None
+    assert await registry_activity(factory) == []
+    assert await table_ids(factory) == set()
