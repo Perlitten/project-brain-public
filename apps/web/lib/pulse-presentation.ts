@@ -8,6 +8,7 @@ export function pulseHeadline(pulse: Pick<Pulse, "reachable" | "healthy" | "down
 
 /** Every destination names or displays the condition behind the status. */
 export function pulseDestination(pulse: Pulse, restricted = false): string {
+  if (pulse.indexAgeWarning && !pulse.freshness?.length) return "/help#server-status";
   if (pulse.reachable && !pulse.down.length && pulse.freshness?.length) return "/projects";
   if (!restricted && pulse.reachable && !pulse.down.length && pulse.warnings?.length) return "/settings#scheduler";
   return "/help#server-status";

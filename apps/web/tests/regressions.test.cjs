@@ -1725,3 +1725,18 @@ test('diagnostic UTC timestamps distinguish attempts within the same minute', ()
   assert.match(utcTime('2026-10-22T06:30:01+03:00', true), /03:30:01 UTC$/);
   assert.notEqual(utcTime('2026-10-22T03:30:01Z', true), utcTime('2026-10-22T03:30:02Z', true));
 });
+
+
+test('shared pulse never forwards other project identifiers from global liveness', async () => {
+  const { getPulse } = load('lib/actions/pulse.ts', {
+    '../api': { apiConfigured: true, brainFetch: async path => path === '/health' ? { status: 'degraded', details: {}, freshness: { exceeded: ['/synthetic/A', '/synthetic/B'] } } : null },
+    '../data': { getRepository: async () => ({ id: 1, path: '/synthetic/A', name: 'Synthetic A' }) },
+  });
+  const selected = await getPulse('1');
+  assert.deepEqual([...selected.freshness], ['Synthetic A']);
+  assert.equal(selected.indexAgeWarning, true);
+  assert.doesNotMatch(JSON.stringify(selected), /synthetic\/B/);
+  const global = await getPulse('');
+  assert.equal(global.freshness.length, 0);
+  assert.doesNotMatch(JSON.stringify(global), /synthetic\/[AB]/);
+});

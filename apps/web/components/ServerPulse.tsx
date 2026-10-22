@@ -19,6 +19,7 @@ export function ServerPulse() {
         <span className="sub">Observed {utcTime(new Date(pulse.at).toISOString())}</span>
         {pulse.workerHint && <p>{pulse.workerHint}</p>}
         {!!pulse.down.length && <p>Services needing attention: {pulse.down.join(", ")}</p>}
+        {pulse.indexAgeWarning && !pulse.freshness?.length && <p>Brain reported an index-age warning. This reading does not identify a source in the selected project. Ask an operator to inspect the freshness SLO.</p>}
         {!!pulse.freshness?.length && <p>Index age exceeds the configured limit: {pulse.freshness.join(", ")}</p>}
         {!!pulse.warnings?.length && <p>Overdue scheduled jobs: {pulse.warnings.join(", ")}</p>}
         {!pulse.reachable && <p>The last probes received no answer. Check API connectivity and logs; a timeout does not establish that the server has stopped.</p>}
