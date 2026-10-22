@@ -122,6 +122,7 @@ test("production pages distinguish failure, missing source, unmeasured tools and
       if (setupStatus !== 200) { res.writeHead(setupStatus); return res.end('{}'); }
       data = { steps: ['services', 'repo', 'provider', 'indexed', 'agent', 'first_task'].map(id => ({ id, status: 'done', detail: 'configured' })) };
     } else if (req.url === "/repositories") data = { repositories: [{ id: 1, name: "missing-checkout", path: "/repos/example", freshness: { status: "source_missing", commits_behind: 8 } }] };
+    else if (req.url === "/api/version") data = { version: "0.9.2", capabilities: { team: true, team_bootstrap: true, team_activity: true, repository_registration: true } };
     else if (req.url === "/api/status/mcp") data = { available: true, tools: [
       { name: "search_code", calls_24h: 1, error_rate: 0, p95_ms: 3300 },
       { name: "unused_tool", calls_24h: 0, error_rate: 0 },
@@ -179,6 +180,53 @@ test("production pages distinguish failure, missing source, unmeasured tools and
     assert.match(html, /Shared sign-in stays active until the final step/);
     assert.ok(!html.includes("synthetic-dashboard-key"));
   } finally {
+    if (web) await stopWeb(web);
+    await new Promise(resolve => backend.close(resolve));
+  }
+});
+
+test('page headings stream while API measurements are held, and legacy team routes stop at discovery', { timeout: 60000 }, async () => {
+  const waiting = new Set();
+  const calls = [];
+  let hold = true;
+  const backend = http.createServer((req, res) => {
+    calls.push(req.url);
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/api/web-login') return res.end(JSON.stringify({ mode: 'open', version: '0', from_env: [] }));
+    if (req.url === '/api/version') return res.end(JSON.stringify({ version: '0.9.2' }));
+    if (hold) { waiting.add(res); res.on('close', () => waiting.delete(res)); }
+    else { res.writeHead(503); res.end('{}'); }
+  });
+  const port = await listen(backend);
+  let web;
+  try {
+    web = await startWeb({ BRAIN_API_URL: `http://127.0.0.1:${port}`, BRAIN_API_KEY: 'synthetic-stream-key' });
+    for (const [route, heading] of [['/', 'Dashboard'], ['/projects', 'Projects'], ['/activity', 'Activity'], ['/quality', 'Quality'], ['/settings', 'Settings']]) {
+      hold = true;
+      const response = await fetch(web.base + route, { signal: AbortSignal.timeout(10000) });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let first = '';
+      while (!first.includes(`aria-label="${heading}"`)) {
+        const part = await reader.read();
+        assert.equal(part.done, false, `Expected a streamed ${heading} heading before the API completed`);
+        first += decoder.decode(part.value);
+      }
+      assert.match(first, /<h1\b/);
+      assert.ok(hold, 'the measurements have not been released');
+      hold = false;
+      for (const res of waiting) { res.writeHead(503); res.end('{}'); }
+      waiting.clear();
+      while (!(await reader.read()).done) {}
+    }
+    const before = calls.length;
+    const html = await (await fetch(web.base + '/team')).text();
+    assert.match(html, /Not supported by this server/);
+    assert.doesNotMatch(html, /Prepare administrator key/);
+    assert.ok(!calls.slice(before).some(url => url.startsWith('/team/')), 'legacy APIs are not probed for team data');
+  } finally {
+    hold = false;
+    for (const res of waiting) { res.writeHead(503); res.end('{}'); }
     if (web) await stopWeb(web);
     await new Promise(resolve => backend.close(resolve));
   }

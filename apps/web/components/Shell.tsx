@@ -12,6 +12,9 @@ import { ActionsProvider, LOCK_REASON, Toaster, dismissToast, report, toast } fr
 import { Ambient } from "./Ambient";
 import { BrandMark, Icon, type IconName } from "./Icon";
 import { RestrictedMemberProvider, useRestrictedMember } from "./MemberScope";
+import type { Capabilities } from "@/lib/capability-contract";
+import { CapabilitiesProvider, useCapabilities } from "./Capabilities";
+import { ShellConfigurationContext } from "./ShellConfiguration";
 import { PulseProvider } from "./PulseProvider";
 import { RailPulse } from "./RailPulse";
 
@@ -32,7 +35,19 @@ export interface ShellMember {
   admin: boolean;
 }
 
-export function Shell({ repos, demo, mode, access, member = null, children }: { repos: ShellRepo[]; demo: boolean; mode: ActionsMode; access: SignInMode; member?: ShellMember | null; children: ReactNode }) {
+export interface ShellConfiguration {
+  repos: ShellRepo[];
+  mode: ActionsMode;
+  access: SignInMode;
+  member: ShellMember | null;
+  capabilities: Capabilities;
+}
+export function Shell({ demo, children }: { demo: boolean; children: ReactNode }) {
+  const [configuration, setConfiguration] = useState<ShellConfiguration | null>(null);
+  const { repos, mode, access, member, capabilities } = configuration ?? {
+    repos: [], mode: demo ? "demo" : "locked", access: "unknown", member: null,
+    capabilities: { state: "unavailable", supported: [] },
+  } as ShellConfiguration;
   const path = usePathname();
   const params = useSearchParams();
   const page = locate(path)?.item;
@@ -126,9 +141,11 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
   const scoped = Boolean(current?.repoScoped);
 
   return (
+    <ShellConfigurationContext.Provider value={setConfiguration}>
+    <CapabilitiesProvider value={capabilities}>
     <RestrictedMemberProvider value={restricted}>
     <ActionsProvider mode={mode}>
-    <PulseProvider key={`${access}:${member?.id ?? "solo"}`} enabled={!demo} repoSlug={allowsAllRepos && !repoSlug ? "" : repoSlug}>
+    <PulseProvider key={`${access}:${member?.id ?? "solo"}`} enabled={!demo} poll={configuration !== null} repoSlug={allowsAllRepos && !repoSlug ? "" : repoSlug}>
     <div className={`shell${drawer ? " shell--drawer" : ""}${slim ? " shell--slim" : ""}`}>
       <Ambient />
       <a className="skip" href="#main">
@@ -202,6 +219,7 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
             <button
               type="button"
               className="repo__btn"
+              disabled={configuration === null}
               aria-label="Repository filter"
               aria-expanded={repoMenu}
               onClick={() => setRepoMenu((o) => !o)}
@@ -209,7 +227,7 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
               <span className={`dot tone-${repo?.tone}`} aria-hidden="true" />
               <span className="repo__label">
                 <small>Repository</small>
-                {repo?.name ?? (!repos.length ? "No projects connected" : allowsAllRepos && !repoSlug ? "All repositories" : "Repository not found")}
+                {repo?.name ?? (configuration === null ? "Loading projects…" : !repos.length ? "No projects connected" : allowsAllRepos && !repoSlug ? "All repositories" : "Repository not found")}
               </span>
               <Icon name="arrow" size={14} className="repo__caret" />
             </button>
@@ -285,6 +303,8 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
     </PulseProvider>
     </ActionsProvider>
     </RestrictedMemberProvider>
+    </CapabilitiesProvider>
+    </ShellConfigurationContext.Provider>
   );
 }
 
@@ -292,6 +312,7 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
 // change reads as movement from where you were to where you are.
 function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: string) => string; slim: boolean }) {
   const restricted = useRestrictedMember();
+  const capabilities = useCapabilities();
   const ref = useRef<HTMLElement>(null);
   const [mark, setMark] = useState<{ y: number; h: number } | null>(null);
   const [ready, setReady] = useState(false);
@@ -319,9 +340,9 @@ function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: stri
         <div className="nav__group" key={g.label}>
           <p className="nav__label">{g.label}</p>
           {g.items.map((item) => {
-            // Settings opens on the Team page, the one settings page a member has.
-            if (restricted && adminOnly(item.href) && item.key !== "settings") return null;
-            const href = restricted && item.key === "settings" ? "/team" : item.href;
+            if (item.capability && !capabilities.supported.includes(item.capability)) return null;
+            if (restricted && adminOnly(item.href)) return null;
+            const href = item.href;
             const on = activeSection(path) === item.key;
             return (
               <Link
@@ -383,6 +404,7 @@ function Palette({
   repoPath?: string;
 }) {
   const restricted = useRestrictedMember();
+  const capabilities = useCapabilities();
   const router = useRouter();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
@@ -397,7 +419,7 @@ function Palette({
   }, []);
 
   const entries = useMemo<Entry[]>(() => {
-    const pages: Entry[] = allNavItems.filter((i) => !restricted || !adminOnly(i.href)).map((i) => ({
+    const pages: Entry[] = allNavItems.filter((i) => (!i.capability || capabilities.supported.includes(i.capability)) && (!restricted || !adminOnly(i.href))).map((i) => ({
       id: i.key,
       label: i.label,
       hint: i.hint,
@@ -422,7 +444,7 @@ function Palette({
     return [...pages, ...commands, ...repoEntries].filter(
       (e) => !needle || e.label.toLowerCase().includes(needle) || e.hint.toLowerCase().includes(needle),
     );
-  }, [q, repos, withRepo, path, scoped, repoPath, restricted]);
+  }, [q, repos, withRepo, path, scoped, repoPath, restricted, capabilities]);
 
   useEffect(() => setSel(0), [q]);
   useEffect(() => {

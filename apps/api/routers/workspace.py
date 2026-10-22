@@ -57,6 +57,8 @@ class RegisterRequest(BaseModel):
     allowed_roots: List[str] = []
     # Team state only: the team project whose members may use the repository. Ignored in solo state.
     project_id: uuid.UUID | None = None
+    # Explicitly provision an empty index identity when adding a new team source.
+    create_index_record: bool = False
 
 
 class UpdateCapabilitiesRequest(BaseModel):
@@ -146,7 +148,8 @@ async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal
     try:
         saved, project_id = await register_for_team(
             principal, canonical, req.project_id, record,
-            lambda: _get_store().register(record, actor="api", source="api"))
+            lambda: _get_store().register(record, actor="api", source="api"),
+            create_index_record=req.create_index_record)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     response = {"status": "success", "repository": saved.to_dict()}

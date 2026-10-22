@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { adminOnly, withProject } from "@/lib/nav";
+import { adminOnly, locate, withProject } from "@/lib/nav";
+import { useCapabilities } from "./Capabilities";
 import { useRestrictedMember } from "./MemberScope";
 
 export type SectionNavItem = { href: string; label: string; active?: boolean };
@@ -30,13 +31,18 @@ const SECTIONS = {
   logs: { label: "Activity views", items: [["/activity", "Activity"], ["/runs", "Agent tasks"]] },
   // Reranker is a switch with a measurement next to it, not a report: it
   // belongs with the other things you configure.
-  settings: { label: "Settings views", items: [["/settings", "General"], ["/admin", "Access"], ["/team", "Team"], ["/team/me", "Me"], ["/team/activity", "Team activity"], ["/team/board", "Board"], ["/mcp", "Agent tools"], ["/reranker", "Reranker"]] },
+  team: { label: "Team views", items: [["/team", "Team"], ["/team/me", "Me"], ["/team/activity", "Team activity"], ["/team/board", "Board"]] },
+  settings: { label: "Settings views", items: [["/settings", "General"], ["/admin", "Access"], ["/mcp", "Agent tools"], ["/reranker", "Reranker"]] },
 } as const;
 
 export function SectionTabs({ section, active }: { section: keyof typeof SECTIONS; active: string }) {
   const restricted = useRestrictedMember();
+  const capabilities = useCapabilities();
   const s = SECTIONS[section];
-  const items = s.items.filter(([href]) => !restricted || !adminOnly(href));
+  const items = s.items.filter(([href]) => {
+    const feature = locate(href)?.item.capability;
+    return (!feature || capabilities.supported.includes(feature)) && (!restricted || !adminOnly(href));
+  });
   // A single-destination section is not a choice, so it draws no tab strip.
   if (items.length < 2) return null;
   return <SectionNav label={s.label} items={items.map(([href, label]) => ({ href, label, active: href === active }))} />;

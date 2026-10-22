@@ -1,3 +1,4 @@
+import { capabilityGate } from "@/components/CapabilityGate";
 import Link from "next/link";
 import { utcTime } from "@/lib/time";
 import { SectionTabs } from "@/components/SectionNav";
@@ -14,6 +15,8 @@ const LEDE = "Who changed what, newest first: decisions and rules, learnings, te
 const when = utcTime;
 
 export default async function TeamActivity({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const unsupported = await capabilityGate("team_activity", "Team activity");
+  if (unsupported) return unsupported;
   const filters = activityFilters(await searchParams);
   const [result, me] = await Promise.all([getActivity(filters), getMeView()]);
   const projects = await activityProjects(me);
@@ -22,7 +25,7 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
 
   if (result.kind === "denied") return <>
     <PageHead title="Team activity" lede={LEDE} />
-    <SectionTabs section="settings" active="/team/activity" />
+    <SectionTabs section="team" active="/team/activity" />
     <Panel id="activity-access" title="Permission required">
       <EmptyState title="Team activity is not available to this credential" body={`${result.reason} Check the credential under Access. Adding a scope does not create team membership or grant access to another project.`} action={<Link className="btn btn--neutral" href="/team/me">Check my identity and access</Link>} />
       {filtered && <Link className="btn btn--neutral" href="/team/activity">Clear filters</Link>}
@@ -32,7 +35,7 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageHead title="Team activity" lede={LEDE} />
-      <SectionTabs section="settings" active="/team/activity" />
+      <SectionTabs section="team" active="/team/activity" />
 
       <Panel id="activity-filters" title="Filters">
         <form className="form form--wide" method="get" action="/team/activity">

@@ -180,8 +180,17 @@ async def readiness_check():
 
 
 @router.get("/api/version")
-async def api_version():
-    return build_info()
+async def api_version() -> dict[str, Any]:
+    return {
+        **build_info(),
+        # Supported server contracts, not the caller's authorization. Every
+        # operation still checks its scopes, membership and project role.
+        "capabilities": {
+            "team": True, "team_bootstrap": True, "team_activity": True,
+            "team_board": True, "knowledge_review": True,
+            "repository_registration": True,
+        },
+    }
 
 
 @router.get("/late-interaction/status", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")),

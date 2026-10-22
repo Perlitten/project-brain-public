@@ -355,9 +355,14 @@ test('scheduler degradation is a warning rather than an empty service outage', (
   assert.equal(pulseHeadline({ reachable: true, healthy: true, down: [] }), 'Healthy');
 });
 
-test('owner navigation has seven destinations and nested deep links activate their parent', () => {
+test('owner navigation keeps Team separate and nested deep links activate their parent', () => {
   const nav = load('lib/nav.ts');
-  assert.equal(nav.primaryNavItems.length, 7);
+  assert.ok(nav.primaryNavItems.some(item => item.href === '/team' && item.capability === 'team'));
+  for (const [url, label] of [['/team/me', 'Me'], ['/team/activity', 'Team activity'], ['/team/board', 'Board']]) {
+    assert.equal(nav.locate(url).item.label, label);
+    assert.equal(nav.activeSection(url), 'team');
+    assert.equal(nav.adminOnly(url), false);
+  }
   assert.equal(nav.activeSection('/indexing'), 'projects');
   assert.equal(nav.activeSection('/packs/1504'), 'memory');
   assert.equal(nav.activeSection('/review'), 'memory');
@@ -1707,4 +1712,71 @@ test('a missed health probe retains independently reported build identity', asyn
   assert.equal(pulse.reachable, false);
   assert.equal(pulse.version, '0.9.2');
   assert.equal(pulse.build, '4935387');
+});
+
+
+test('repository summary never calls known omitted working-tree edits up to date', () => {
+  const { repositorySummary } = load('lib/repository-status.ts');
+  const repos = [{ id: 1, freshness: 'current', behind: 0 }];
+  const summary = repositorySummary(repos, new Map([[1, 3]]));
+  assert.match(summary, /1 with uncommitted changes omitted by the last index/);
+  assert.doesNotMatch(summary, /up to date/);
+  assert.match(repositorySummary(repos, new Map([[1, 0]])), /up to date/);
+  assert.match(repositorySummary(repos, new Map([[1, null]])), /up to date/);
+});
+
+test('diagnostic UTC timestamps distinguish attempts within the same minute', () => {
+  const { utcTime } = load('lib/time.ts');
+  assert.match(utcTime('2026-10-22T06:30:01+03:00', true), /03:30:01 UTC$/);
+  assert.notEqual(utcTime('2026-10-22T03:30:01Z', true), utcTime('2026-10-22T03:30:02Z', true));
+});
+
+test('capabilities require an explicit true contract and fail closed on old or unavailable APIs', async () => {
+  let reply = { ok: true, data: { version: '0.9.2' } };
+  const { getCapabilities } = load('lib/capabilities.ts', {
+    react: { cache: fn => fn }, './api': { apiConfigured: true, brainRead: async () => reply },
+  });
+  assert.equal((await getCapabilities()).state, 'legacy');
+  assert.equal((await getCapabilities()).supported.length, 0);
+  reply = { ok: false, status: 503, reason: 'http_error' };
+  assert.equal((await getCapabilities()).state, 'unavailable');
+  reply = { ok: true, data: { capabilities: { team: true, team_board: 'true', repository_registration: false } } };
+  assert.deepEqual([...(await getCapabilities()).supported], ['team']);
+  reply = { ok: true, data: null };
+  assert.equal((await getCapabilities()).state, 'unavailable');
+});
+
+test('an API without identity metadata leaves current credential unknown, never guessed from its name', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => ({ principals: [
+      { id: 1, name: 'web-ui-vercel', credentials: [{ id: 11, scopes: ['principals:write'] }] },
+    ] }) },
+  });
+  const identity = (await data.getAccessView()).identities[0];
+  assert.equal(identity.current, undefined);
+  assert.equal(identity.keys[0].current, undefined);
+});
+
+test('adding a repository validates paths, preserves defaults and reports index failure without retrying registration', async () => {
+  const writes = [];
+  const projects = load('lib/actions/projects.ts', {
+    '../capabilities': { getCapabilities: async () => ({ supported: ['repository_registration'] }) },
+    '../api': { brainRead: async () => ({ ok: true, data: { team_state: 'solo' } }) },
+    './gate': { mutate: async (path, opts) => { writes.push({ path, ...opts }); return { ok: true, message: 'registered' }; } },
+    './jobs': { startReindex: async () => ({ ok: false, message: 'Worker unavailable' }) },
+  });
+  for (const path of ['', 'relative/path', '/repo/../other', '/repo\nother']) {
+    assert.equal((await projects.addProject({ name: 'example', path, indexNow: true })).ok, false);
+  }
+  assert.equal(writes.length, 0);
+  const registered = await projects.addProject({ name: 'example', path: '/repos/example', indexNow: true });
+  assert.equal(registered.ok, true);
+  assert.equal(registered.data.registered, true);
+  assert.equal(registered.data.indexed, false);
+  assert.match(registered.message, /registered.*Worker unavailable/);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].path, '/workspace/repositories');
+  assert.equal(writes[0].body.path, '/repos/example');
+  assert.ok(!('target_repo_path' in writes[0].body), 'the default repository must not change');
 });

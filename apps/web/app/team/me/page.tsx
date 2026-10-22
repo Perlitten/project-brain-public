@@ -1,3 +1,4 @@
+import { capabilityGate } from "@/components/CapabilityGate";
 import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
@@ -10,11 +11,13 @@ export const metadata = { title: "Me" };
 const LEDE = "Who Brain sees when you use this dashboard: your team role, your project roles and repositories, and what the key you signed in with may do.";
 
 export default async function Me() {
+  const unsupported = await capabilityGate("team", "Me");
+  if (unsupported) return unsupported;
   const [me, inbox, telegram] = await Promise.all([getMeView(), getNotifications(), getTelegramLink()]);
   const head = (
     <>
       <PageHead title="Me" lede={LEDE} />
-      <SectionTabs section="settings" active="/team/me" />
+      <SectionTabs section="team" active="/team/me" />
     </>
   );
   if (me.kind !== "ok") {

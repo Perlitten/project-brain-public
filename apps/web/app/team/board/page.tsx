@@ -1,3 +1,4 @@
+import { capabilityGate } from "@/components/CapabilityGate";
 import { SectionTabs } from "@/components/SectionNav";
 import { BoardColumns, LeasesTable, OverlapList, QueueTable } from "@/components/team/Board";
 import { EmptyState, PageHead, Panel, Stat, fmt } from "@/components/ui";
@@ -44,11 +45,13 @@ function ProjectPanels({ board, selfId }: { board: ProjectBoard; selfId: number 
 }
 
 export default async function Board() {
+  const unsupported = await capabilityGate("team_board", "Board");
+  if (unsupported) return unsupported;
   const view = await getBoardView();
   const head = (status?: Parameters<typeof PageHead>[0]["status"]) => (
     <>
       <PageHead title="Board" lede={LEDE} status={status} />
-      <SectionTabs section="settings" active="/team/board" />
+      <SectionTabs section="team" active="/team/board" />
     </>
   );
 

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { adminOnlyPage } from "@/components/AdminOnly";
 import { EmptyState, Ledger, PageHead, Panel } from "@/components/ui";
 import { SectionTabs } from "@/components/SectionNav";
@@ -14,6 +15,14 @@ export const metadata = { title: "Activity" };
 export default async function Activity({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const gate = await adminOnlyPage("Activity");
   if (gate) return gate;
+  return <>
+    <PageHead title="Activity" lede="What agents asked Brain, and what Brain ran in the background on its own. Newest first." />
+    <SectionTabs section="logs" active="/activity" />
+    <Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><ActivityData searchParams={searchParams} /></Suspense>
+  </>;
+}
+
+async function ActivityData({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const repo = typeof params.repo === "string" ? params.repo : undefined;
   const period = dashboardPeriod(typeof params.period === "string" ? params.period : undefined);
@@ -25,8 +34,7 @@ export default async function Activity({ searchParams }: { searchParams: Promise
   const events = result.items;
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
   return <>
-    <PageHead title="Activity" lede="What agents asked Brain, and what Brain ran in the background on its own. Newest first." />
-    <SectionTabs section="logs" active="/activity" />
+
     <Panel id="requests" title="Agent requests" desc="The latest search and context calls, retries included. Handling time is measured on the server only." actions={<nav className="segmented" aria-label="Request period">{(["24h", "7d", "30d"] as const).map((p) => <Link key={p} scroll={false} aria-current={p === period ? "page" : undefined} href={`/activity?${new URLSearchParams({ ...(repo ? { repo } : {}), period: p })}`}>{p}</Link>)}</nav>} flush>
       <RequestHistory telemetry={telemetry} />
     </Panel>

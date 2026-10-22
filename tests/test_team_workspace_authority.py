@@ -20,7 +20,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import event, select
+from sqlalchemy import delete, event, select
 
 from loguru import logger
 
@@ -611,3 +611,40 @@ async def test_cli_keeps_the_local_file_in_solo_state(team_cli, monkeypatch):
     membership_driven(monkeypatch)
     await revoke_everyone(factory)
     assert await workspace_cli.run_team(cli_args("repositories", "list")) is False
+
+
+@pytest.mark.asyncio
+async def test_admin_adds_unindexed_source_with_atomic_project_link(registration, team_db):
+    factory, _, client, directory = registration
+    _, project, _ = team_db
+    async with factory() as session, session.begin():
+        await session.execute(delete(Repository).where(Repository.id == 4))
+    response = await client.post("/workspace/repositories", headers=ADMIN,
+                                 json=register_body(directory, project_id=str(project), create_index_record=True))
+    assert response.status_code == 200, response.text
+    async with factory() as session:
+        repository = (await session.execute(select(Repository).where(Repository.path == str(directory)))).scalar_one()
+        assert repository.indexing_status == "pending" and repository.last_indexed_commit is None
+        repository_id = repository.id
+    assert await link_of(factory, repository_id) == project
+    assert len(await registry_activity(factory)) == 1
+    again = await client.post("/workspace/repositories", headers=ADMIN,
+                              json=register_body(directory, project_id=str(project), create_index_record=True))
+    assert again.status_code in {400, 409}
+    assert len(await registry_activity(factory)) == 1
+
+
+@pytest.mark.asyncio
+async def test_add_unindexed_source_refusals_leave_no_identity_or_link(registration, team_db):
+    factory, _, client, directory = registration
+    _, project, _ = team_db
+    async with factory() as session, session.begin():
+        await session.execute(delete(Repository).where(Repository.id == 4))
+    for headers, target, expected in [(CONTRIBUTOR, project, 403), (ADMIN, uuid.uuid4(), 404)]:
+        response = await client.post("/workspace/repositories", headers=headers,
+                                     json=register_body(directory, project_id=str(target), create_index_record=True))
+        assert response.status_code == expected, response.text
+        async with factory() as session:
+            assert (await session.execute(select(Repository).where(Repository.path == str(directory)))).scalar_one_or_none() is None
+        assert await registry_activity(factory) == []
+        assert await table_ids(factory) == set()

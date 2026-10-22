@@ -1076,7 +1076,7 @@ export const getAccessView = async (): Promise<AccessView> => {
       const created = parseDate(p.created_at);
       return {
         id: int(p.id),
-        current: typeof data.current_principal_id === "number" && p.id === data.current_principal_id,
+        current: data.current_principal_id === undefined ? undefined : p.id === data.current_principal_id,
         name: str(p.name) || `principal ${str(p.id)}`,
         kind: kind === "human" ? "human" : kind === "agent" ? "agent" : "service",
         disabled: Boolean(p.disabled_at),
@@ -1084,7 +1084,7 @@ export const getAccessView = async (): Promise<AccessView> => {
         activeKeys: active.length,
         scopes: [...new Set(active.flatMap((k) => k.scopes))].sort(),
         lastSeen: seen ? fmtShort(seen.toISOString()) : "never",
-        keys: keys.map(({ at: _at, seen: _seen, ...k }) => ({ ...k, current: typeof data.current_credential_id === "number" && k.id === data.current_credential_id })),
+        keys: keys.map(({ at: _at, seen: _seen, ...k }) => ({ ...k, current: data.current_credential_id === undefined ? undefined : k.id === data.current_credential_id })),
       };
     });
     return { readable: true, identities, summary: summarize(identities) };

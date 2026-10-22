@@ -1,3 +1,4 @@
+import { capabilityGate } from "@/components/CapabilityGate";
 import { MyProposals, ReviewQueue } from "@/components/review/Review";
 import { SectionTabs } from "@/components/SectionNav";
 import { EmptyState, PageHead, Panel, Stat, fmt } from "@/components/ui";
@@ -11,6 +12,8 @@ const LEDE =
   "In a team, decisions and rules proposed by members wait here until a Reviewer on the project approves them. Agents only receive approved knowledge; a proposal never reaches a context pack, search result or rule check while it waits.";
 
 export default async function Review() {
+  const unsupported = await capabilityGate("knowledge_review", "Review");
+  if (unsupported) return unsupported;
   const [mode, member] = await Promise.all([signInMode(), currentMember()]);
   const head = (
     <>
