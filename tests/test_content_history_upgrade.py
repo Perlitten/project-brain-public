@@ -113,6 +113,9 @@ async def main():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app),base_url="http://test") as client:
         response=await client.patch("/api/settings",json={"values":{"REQUEST_TELEMETRY_CAPTURE_QUERY":False}})
         assert response.status_code == 200, response.text
+        notes = response.json()["notes"]
+        assert any("no MCP restart" in note for note in notes)
+        assert not any(note.startswith("Restart the workers") for note in notes)
     await close_database_connections()
 asyncio.run(main())
 ''', env)

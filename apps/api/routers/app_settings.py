@@ -221,7 +221,9 @@ async def patch_settings(body: SettingsPatch) -> Dict[str, Any]:
             raise HTTPException(status_code=503, detail="Query capture policy was not saved. Retry; do not assume capture has changed.") from exc
     for key, value in live.items():
         setattr(settings, key, value)
-    notes = ["Saved to the server’s .env and applied to the API. Restart the workers and scheduler so background jobs use it too."]
+    notes = ["Saved to the server’s .env and applied to the API."]
+    if set(live) - {"REQUEST_TELEMETRY_CAPTURE_QUERY"}:
+        notes.append("Restart the workers and scheduler so background jobs use the changed settings too.")
     if "REQUEST_TELEMETRY_CAPTURE_QUERY" in live:
         notes.append("Query capture is stored centrally and checked before each recording in API and MCP processes; no MCP restart is needed for this preference.")
     overridden = sorted(k for k in updates if k in os.environ and k != "REQUEST_TELEMETRY_CAPTURE_QUERY")

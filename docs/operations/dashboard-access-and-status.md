@@ -62,8 +62,9 @@ option retain the original full overview, including service probes. An omitted
 probe is `null`, never a fabricated healthy result. Failed jobs collection is
 unavailable, distinct from a successful empty job history.
 
-Saving Settings updates the API immediately. Workers need a restart to use those
-changes. Environment/deployment overrides can return after restart; update the
+Saving Settings updates the API immediately. Worker and scheduler settings need a
+restart in those processes. The shared query-capture preference is the exception:
+API and MCP recorders read it before every query record. Environment/deployment overrides can return after restart; update the
 deployment configuration when the Settings page identifies an override. Displayed
 server times use the shared UTC formatter; values without timezone information are
 not assigned one silently.
