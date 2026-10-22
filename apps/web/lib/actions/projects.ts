@@ -7,8 +7,10 @@ import type { ActionResult } from "./types";
 
 export async function projectRegistrationContext(): Promise<ActionResult<{ team: boolean; projects: { id: string; name: string }[] }>> {
   if (!(await getCapabilities()).supported.includes("repository_registration")) return { ok: false, message: "This server does not advertise repository registration. Update the API first." };
-  const me = await brainRead<{ team_state?: string }>("/team/me", { fresh: true });
+  const me = await brainRead<{ team_state?: string; scopes?: string[]; is_team_admin?: boolean }>("/team/me", { fresh: true });
   if (!me.ok || !["solo", "team"].includes(me.data.team_state ?? "")) return { ok: false, message: "Brain did not confirm solo/team state. Retry before adding a repository." };
+  if (!Array.isArray(me.data.scopes) || !me.data.scopes.some(scope => scope === "*" || scope === "workspace:write")) return { ok: false, message: "This credential lacks workspace:write. Ask the server operator for a replacement admin credential with repository registration permission; existing keys are unchanged." };
+  if (me.data.team_state === "team" && me.data.is_team_admin !== true) return { ok: false, message: "A team administrator must add repositories." };
   if (me.data.team_state === "solo") return { ok: true, message: "", data: { team: false, projects: [] } };
   const projects = await brainRead<{ id: string; name: string; disabled_at?: string | null }[]>("/team/projects/", { fresh: true });
   if (!projects.ok || !Array.isArray(projects.data)) return { ok: false, message: "Project choices unavailable. A team administrator must select an active project." };
