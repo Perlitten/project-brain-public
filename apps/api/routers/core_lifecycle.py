@@ -181,14 +181,15 @@ async def readiness_check():
 
 @router.get("/api/version")
 async def api_version() -> dict[str, Any]:
+    full = settings.BRAIN_STORAGE_MODE == "full"
     return {
         **build_info(),
         # Supported server contracts, not the caller's authorization. Every
         # operation still checks its scopes, membership and project role.
         "capabilities": {
-            "team": True, "team_bootstrap": True, "team_activity": True,
-            "team_board": True, "knowledge_review": True,
-            "repository_registration": True,
+            "team": full, "team_bootstrap": full, "team_activity": full,
+            "team_board": full, "knowledge_review": full,
+            "repository_registration": full,
         },
     }
 

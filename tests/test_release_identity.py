@@ -34,3 +34,13 @@ def test_api_advertises_supported_contracts_without_granting_permissions():
     assert data["capabilities"]["team"] is True
     assert data["capabilities"]["repository_registration"] is True
     assert "scopes" not in data and "api_key" not in data
+
+
+def test_lite_server_does_not_advertise_full_storage_contracts(monkeypatch):
+    from apps.api.main import app
+    from brain.config.settings import settings
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(settings, "BRAIN_STORAGE_MODE", "lite")
+    capabilities = TestClient(app).get("/api/version").json()["capabilities"]
+    assert not any(capabilities.values())
