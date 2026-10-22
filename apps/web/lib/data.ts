@@ -78,9 +78,13 @@ function parseDate(v: unknown): Date | null {
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
 }
+const dateOnlyFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", year: "numeric", month: "short", day: "2-digit" });
+const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
 const fmtWhen = (v: unknown) => typeof v === "string" ? utcTime(v) : typeof v === "number" && Number.isFinite(v) && parseDate(v) ? utcTime(new Date(v).toISOString()) : "—";
-const fmtClock = fmtWhen;
-const fmtShort = fmtWhen;
+const fmtClock = (v: unknown) => typeof v === "string" ? utcTime(v, true) : typeof v === "number" && Number.isFinite(v) && parseDate(v) ? utcTime(new Date(v).toISOString(), true) : "—";
+const fmtShort = (v: unknown) => typeof v === "string" && dateOnly.test(v)
+  ? dateOnlyFmt.format(new Date(`${v}T00:00:00Z`))
+  : fmtWhen(v);
 function fmtDuration(seconds: number | undefined): string {
   if (seconds === undefined || seconds < 0) return "—";
   if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1).replace(/\.0$/, "") : Math.round(seconds)}s`;
