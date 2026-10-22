@@ -12,6 +12,7 @@ from typing import Annotated, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, StringConstraints
 
+from apps.api import team_access
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.registry_access import (
     disable_registered,
@@ -22,7 +23,7 @@ from apps.api.registry_access import (
     workspace_events,
     workspace_registry,
 )
-from apps.api.team_access import current_team_state, team_administrator_access
+from apps.api.team_access import team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
 from brain.lab.laboratory import BUILTIN_PROFILES
 from brain.team.authorization import Permission
@@ -80,7 +81,16 @@ async def list_repositories():
     }
 
 
-@router.post("/repositories", dependencies=[Depends(team_administrator_access())])
+async def _require_registration_write(principal: ResolvedPrincipal = Depends(require_principal)) -> None:
+    # Existing team-administrator credentials intentionally carry workspace:read,
+    # not the solo registry's workspace:write scope. Team membership and the
+    # project-level administrator check below authorize this team-only operation;
+    # solo callers keep the original explicit write-scope requirement.
+    if await team_access.current_team_state() == "solo" and not principal.has_scope("workspace:write"):
+        raise HTTPException(status_code=403, detail="Missing required scope: workspace:write")
+
+
+@router.post("/repositories", dependencies=[Depends(team_administrator_access()), Depends(_require_registration_write)])
 async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     """Register a new repository.
 
@@ -88,12 +98,6 @@ async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal
     In team state the repository is also linked to a team project the caller administers
     (``register_for_team``); a registration no member could use is refused.
     """
-    # Existing team-administrator credentials intentionally carry workspace:read,
-    # not the solo registry's workspace:write scope. Team membership and the
-    # project-level administrator check below authorize this team-only operation;
-    # solo callers keep the original explicit write-scope requirement.
-    if await current_team_state() == "solo" and not principal.has_scope("workspace:write"):
-        raise HTTPException(status_code=403, detail="Missing required scope: workspace:write")
     # Validate trust level
     try:
         trust = TrustLevel(req.trust_level)
