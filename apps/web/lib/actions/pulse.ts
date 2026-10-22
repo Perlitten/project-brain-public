@@ -18,6 +18,7 @@ export interface Pulse {
   workerHint?: string;
   /** Scheduled jobs reported overdue by Brain, distinct from a service outage. */
   warnings?: string[];
+  freshness?: string[];
   version?: string;
   build?: string;
   llm?: string;
@@ -43,7 +44,9 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
     brainFetch<Json>("/api/setup/status", { fresh: true }),
     brainFetch<Json>("/api/setup/providers", { fresh: true }),
   ]);
-  if (!health) return { at: Date.now(), reachable: false, down: [] };
+  const sha = s(o(version).build_sha);
+  const identity = { version: s(o(version).version), build: sha && sha !== "unknown" ? sha.slice(0, 7) : undefined };
+  if (!health) return { at: Date.now(), reachable: false, down: [], ...identity };
   const details = o(health.details);
   const down = Object.entries(details)
     .filter(([, v]) => o(v).status !== "healthy")
@@ -63,7 +66,7 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
     const model = s(selected.model);
     return [name, model].filter(Boolean).join(" / ") || undefined;
   };
-  const sha = s(o(version).build_sha);
+  const exceeded = o(health.freshness).exceeded;
   return {
     at: Date.now(),
     reachable: true,
@@ -73,7 +76,8 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
     workerHint: workerDown ? s(worker.hint) ?? "Worker is not running." : undefined,
     warnings: Array.isArray(stale) ? stale.filter((job): job is string => typeof job === "string") : [],
     version: s(o(version).version) ?? s(health.version),
-    build: sha && sha !== "unknown" ? sha.slice(0, 7) : undefined,
+    build: identity.build,
+    freshness: Array.isArray(exceeded) ? exceeded.filter((name): name is string => typeof name === "string") : [],
     llm: modelLabel(current.llm, provider.llm),
     embedding: modelLabel(current.embedding, provider.embedding),
     index: run.status ? { status: String(run.status), at: s(run.completed_at) ?? s(run.started_at), uncommitted: uncommittedCount(run.uncommitted_changes) ?? undefined } : undefined,

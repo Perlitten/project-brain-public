@@ -186,7 +186,7 @@ function Services({ step }: { step: StepView }) {
       {!step.done && step.hint && <CodeBlock label="Start them on the Brain server" code={step.hint} />}
       <div className="btn-row">
         <RunButton action={startHealthCheck} label="Check again" icon="refresh" title="Health check" />
-        <Link className="btn btn--ghost" href="/logs">
+        <Link className="btn btn--ghost" href="/activity">
           See activity
         </Link>
       </div>

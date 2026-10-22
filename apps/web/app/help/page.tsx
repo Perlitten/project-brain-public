@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PageHead, Panel } from "@/components/ui";
-import { getPulse } from "@/lib/actions/pulse";
+import { ServerPulse } from "@/components/ServerPulse";
 import { glossary, type GlossaryKey } from "@/lib/glossary";
 import { withProject } from "@/lib/nav";
 
@@ -37,7 +37,7 @@ function faq(repo?: string): { q: string; a: ReactNode }[] {
             planning a change and <code>review_diff</code> before finishing.
           </p>
           <p>
-            MCP calls appear under <Link className="link" href={link("/logs")}>Activity</Link>, and prepared task context appears under{" "}
+            MCP calls appear under <Link className="link" href={link("/activity")}>Activity</Link>, and prepared task context appears under{" "}
             <Link className="link" href={link("/packs")}>Context packs</Link>. Agent tasks only lists work explicitly started through the harness. See the{" "}
             <a className="link" href={doc("docs/MCP.md#suggested-agent-workflow")}>suggested agent workflow</a>.
           </p>
@@ -68,7 +68,7 @@ function faq(repo?: string): { q: string; a: ReactNode }[] {
             For a Docker server, use <code>./deploy/server_up.sh</code> and follow the{" "}
             <a className="link" href={doc("deploy/RUNBOOK.md#start-or-update")}>deployment runbook</a> rather than starting a second local stack.
           </p>
-          <p><Link className="link" href={link("/logs")}>Activity</Link> shows each job and where it stopped.</p>
+          <p><Link className="link" href={link("/activity")}>Activity</Link> shows each job and where it stopped.</p>
         </>
       ),
     },
@@ -125,7 +125,6 @@ function faq(repo?: string): { q: string; a: ReactNode }[] {
 
 export default async function Help({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
   const { repo } = await searchParams;
-  const pulse = await getPulse("");
   const docs: { label: string; path: string; note: string }[] = [
     { label: "Getting started", path: "docs/GETTING_STARTED.md", note: "Install, index a repository and run a first task" },
     { label: "Connect agents (MCP)", path: "docs/MCP.md", note: "Client configs and every tool an agent can call" },
@@ -153,41 +152,7 @@ export default async function Help({ searchParams }: { searchParams: Promise<{ r
           each see only the projects they have a role on. It is early software; run it for people you trust.
         </p>
         <dl className="kv">
-          <dt>Version</dt>
-          <dd>
-            {pulse?.version ? (
-              <>
-                <b>v{pulse.version}</b>
-                {pulse.build ? <code> {pulse.build}</code> : null}
-              </>
-            ) : pulse ? (
-              "Not reported"
-            ) : (
-              "Demo data — not connected to a Brain server"
-            )}
-          </dd>
-          {pulse && (
-            <>
-              <dt>Server</dt>
-              <dd>
-                {!pulse.reachable
-                  ? "Not answering"
-                  : pulse.healthy
-                    ? "Answering, all services healthy"
-                    : pulse.down.length
-                      ? `Answering, ${pulse.down.join(", ")} not healthy`
-                      : pulse.warnings?.length
-                        ? `Answering; overdue scheduled jobs: ${pulse.warnings.join(", ")}`
-                        : "Answering with a server warning"}
-              </dd>
-              <dt>Models</dt>
-              <dd>
-                {pulse.llm || pulse.embedding
-                  ? `Language model: ${pulse.llm ?? "not set"} · Embeddings: ${pulse.embedding ?? "not set"}`
-                  : "Not reported"}
-              </dd>
-            </>
-          )}
+          <ServerPulse />
           <dt>Source</dt>
           <dd>
             <a className="link" href={REPO}>GitHub</a> · <a className="link" href={`${REPO}/releases`}>Releases</a> ·{" "}

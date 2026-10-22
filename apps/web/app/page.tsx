@@ -9,13 +9,16 @@ import { dashboardPeriod, getAgentValue, getQualityEvidence, getRequestTelemetry
 import { dataSource, getCodeModules, getCorpus, getJobs, getRepositoryFeed } from "@/lib/data";
 import { scopeMemberToProject } from "@/lib/member-scope";
 import { restrictedMember } from "@/lib/team-session";
-import { repositoryStatus } from "@/lib/repository-status";
+import { repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
 import type { Tone } from "@/lib/types";
+import { utcTime } from "@/lib/time";
 import "./dashboard.css";
+
+export const metadata = { title: "Dashboard" };
 
 type Props = { searchParams: Promise<{ repo?: string; period?: string }> };
 const periodWords = { "24h": "last 24 hours", "7d": "last 7 days", "30d": "last 30 days" };
-const when = (at: string) => new Date(at).toLocaleString("en-GB", { timeZone: "UTC", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) + " UTC";
+const when = utcTime;
 const severity: Record<Tone, number> = { bad: 3, warn: 2, info: 1, idle: 1, ok: 0 };
 
 // The home screen answers, in order: is project memory current (status line),
@@ -61,6 +64,7 @@ export default async function Dashboard({ searchParams }: Props) {
   const contextRate = telemetry?.context_total ? telemetry.context_success / telemetry.context_total * 100 : null;
 
   const first = attention[0];
+  const nextAction = first ? repositoryAction(first.repo) : null;
   const status: PageStatus = !feed.available
     ? { tone: "idle", text: <>Repository data is unavailable<small>{feed.note}. Check the Brain connection and retry.</small></>, action: admin ? <Link className="btn btn--neutral" href="/setup">Check connection</Link> : undefined }
     : slug && !selected
@@ -70,10 +74,10 @@ export default async function Dashboard({ searchParams }: Props) {
       : first
         ? {
           tone: first.tone,
-          text: <>{projects.length === 1 ? `${first.repo.name}: ${first.status.toLowerCase()}` : `${attention.length} of ${projects.length} projects need attention`}<small>{projects.length === 1 ? "Uncommitted changes are those omitted at the latest index run, not a live checkout count. Agents may get context from older code until it is reindexed." : attention.map((a) => `${a.repo.name} — ${a.status.toLowerCase()}`).join(" · ")}</small></>,
-          action: <Link className="btn btn--neutral" href={`/indexing?repo=${encodeURIComponent(first.repo.slug)}`}>Open {first.repo.name}</Link>,
+          text: <>{repositorySummary(projects)}<small>{first.repo.freshness === "source_missing" ? SOURCE_UNAVAILABLE_HELP : attention.map((a) => `${a.repo.name} — ${a.status.toLowerCase()}`).join(" · ")}</small></>,
+          action: nextAction ? <Link className="btn btn--neutral" href={nextAction.href}>{nextAction.label}</Link> : undefined,
         }
-        : { tone: "ok", text: <>Committed memory is current {projects.length === 1 ? `for ${projects[0].name}` : `in all ${projects.length} projects`}<small>{coverage !== null ? `${measuredNumber(coverage, "%")} of eligible code is searchable. ` : ""}Agents get context from the latest indexed revision. {snapshots.some((s) => s.corpus.uncommitted == null) ? "Working-tree changes were not reported by the latest run." : "The latest run recorded no uncommitted changes; later edits may not be detected."}</small></> };
+        : { tone: "ok", text: <>{repositorySummary(projects)}<small>{coverage !== null ? `${measuredNumber(coverage, "%")} of eligible code is searchable. ` : ""}Agents get context from the latest indexed revision. {snapshots.some((s) => s.corpus.uncommitted == null) ? "Working-tree changes were not reported by the latest run." : "The latest run recorded no uncommitted changes; later edits may not be detected."}</small></> };
 
   const packs = worthData?.packs;
   const ruleUse = worthData?.rules;
@@ -190,14 +194,14 @@ export default async function Dashboard({ searchParams }: Props) {
         {usage ? <>
           <dl className="usage">{usage.map((u) => <div key={u.label}><dt>{u.label}</dt><dd className="num">{u.value}</dd><dd className="usage__note">{u.note}</dd></div>)}</dl>
           <RequestChart buckets={telemetry.buckets} kind="requests" />
-          <p className="dashboard__legend"><span className="dot tone-ok" />Requests <span className="dot tone-bad" />Failures {admin && <Link className="link" href={withRepo("/logs", { period })}>Every request</Link>}</p>
+          <p className="dashboard__legend"><span className="dot tone-ok" />Requests <span className="dot tone-bad" />Failures {admin && <Link className="link" href={withRepo("/activity", { period })}>Every request</Link>}</p>
         </> : <div className="usage-off">
           <p className="usage-off__title">Not measured on this server</p>
           <p>Brain records each search and context call once request telemetry is reachable. Until then this stays empty instead of showing zero.</p>
         </div>}
       </Panel>
       <div className="stack">
-        <Panel id="jobs" title="Background jobs" desc="Code reads and checks Brain ran recently." actions={admin ? <Link className="link" href={withRepo("/logs")}>Activity</Link> : undefined} flush><BackgroundJobs jobs={jobs} unavailable={jobsUnread} /></Panel>
+        <Panel id="jobs" title="Background jobs" desc="Code reads and checks Brain ran recently." actions={admin ? <Link className="link" href={withRepo("/activity")}>Activity</Link> : undefined} flush><BackgroundJobs jobs={jobs} unavailable={jobsUnread} /></Panel>
         <Panel id="quality" title="Search quality" desc="How often search finds the right file, from the last saved test run." actions={admin ? <Link className="link" href="/quality">Quality</Link> : undefined}><QualityEvidence evidence={evidence} compact /></Panel>
       </div>
     </div>
@@ -205,10 +209,10 @@ export default async function Dashboard({ searchParams }: Props) {
     <details className="disclosure">
       <summary>How these numbers are measured</summary>
       <ul>
-        <li><b>Agent requests</b> are recorded HTTP <code>/search</code>, <code>/context</code> and MCP <code>search_code</code>, <code>prepare_task_context</code> calls, failures and timeouts included. {telemetry?.collection_started_at ? `Collection began ${when(telemetry.collection_started_at)} UTC.` : "This server returned no request history."} A dash means not measured, never zero.</li>
-        <li><b>Memory reach</b> is the share of context packs that carried at least one rule, decision or learning. Only packs whose contents Brain recorded are counted{packs?.measurement_started_at ? `; recording began ${when(packs.measurement_started_at)} UTC` : ", and nothing has been recorded yet"}. Older packs count as not measured, never as empty.</li>
+        <li><b>Agent requests</b> are recorded HTTP <code>/search</code>, <code>/context</code> and MCP <code>search_code</code>, <code>prepare_task_context</code> calls, failures and timeouts included. {telemetry?.collection_started_at ? `Collection began ${when(telemetry.collection_started_at)}.` : "This server returned no request history."} A dash means not measured, never zero.</li>
+        <li><b>Memory reach</b> is the share of context packs that carried at least one rule, decision or learning. Only packs whose contents Brain recorded are counted{packs?.measurement_started_at ? `; recording began ${when(packs.measurement_started_at)}` : ", and nothing has been recorded yet"}. Older packs count as not measured, never as empty.</li>
         <li><b>Pack rate</b> is how many durable packs an agent got per context call. It is not a count of its tasks: an agent can take context without a pack being stored, which is a normal outcome.</li>
-        <li><b>Rules reaching agents</b> counts rules that went into at least one pack. “Cited a rule” counts diff reviews that caught something against one{ruleUse?.measurement_started_at ? `, recorded since ${when(ruleUse.measurement_started_at)} UTC` : ""}. A review that failed to run records nothing, so it never reads as a clean diff.</li>
+        <li><b>Rules reaching agents</b> counts rules that went into at least one pack. “Cited a rule” counts diff reviews that caught something against one{ruleUse?.measurement_started_at ? `, recorded since ${when(ruleUse.measurement_started_at)}` : ""}. A review that failed to run records nothing, so it never reads as a clean diff.</li>
         <li><b>Context delivered</b> is technical success: the call returned context. It does not say whether the context was right.</li>
         <li><b>Response time</b> is server handling time, failures included; authentication and transport are excluded.</li>
         <li><b>Code agents can use now</b> counts indexed pieces of code that match the latest revision. It comes from the latest index and does not depend on the selected period.</li>
@@ -216,7 +220,7 @@ export default async function Dashboard({ searchParams }: Props) {
         <li><b>Search quality</b> is a saved benchmark on a fixed question set. Task usefulness and token, time or cost savings are not measured.</li>
         <li>A failed background job is a record of what happened, not proof of an open incident.</li>
       </ul>
-      <p className="text-faint">Observed {when(observed)} UTC.</p>
+      <p className="text-faint">Observed {when(observed)}.</p>
     </details>
   </div>;
 }

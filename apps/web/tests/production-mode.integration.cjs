@@ -126,6 +126,7 @@ test("production pages distinguish failure, missing source, unmeasured tools and
       { name: "search_code", calls_24h: 1, error_rate: 0, p95_ms: 3300 },
       { name: "unused_tool", calls_24h: 0, error_rate: 0 },
     ] };
+    else if (["/api/web/dashboard", "/api/web/agent-value", "/api/web/quality"].some(path => req.url.split("?")[0] === path)) { res.writeHead(503); return res.end('{}'); }
     else if (req.url.startsWith("/team/activity")) { res.writeHead(403); return res.end('{}'); }
     else if (req.url === "/team/me") data = { principal: { id: 1, name: "dashboard", kind: "service" }, team_state: "solo", scopes: [], projects: [] };
     res.end(JSON.stringify(data));
@@ -147,8 +148,28 @@ test("production pages distinguish failure, missing source, unmeasured tools and
     assert.match(html, /1 source unavailable/);
     assert.match(html, /mounted at the registered path/);
     assert.doesNotMatch(html, /1 of 1 projects are behind/);
+    html = await (await fetch(web.base + "/")).text();
+    assert.match(html, /1 projects: 1 source unavailable/);
+    assert.match(html, /Check source for missing-checkout/);
+    assert.match(html, /href="\/projects\?repo=1#source"/);
+    assert.doesNotMatch(html, /projects need attention/);
+    for (const route of ['/graph?repo=1', '/indexing?repo=1']) {
+      html = await (await fetch(web.base + route)).text();
+      assert.match(html, /aria-label="Repository filter"/);
+      assert.match(html, /missing-checkout/);
+    }
+    const redirected = await fetch(web.base + '/logs?repo=1&period=24h', { redirect: 'manual' });
+    assert.equal(redirected.status, 307);
+    assert.match(redirected.headers.get('location'), /\/activity\?repo=1&period=24h$/);
+    for (const [route, title] of [['/activity', 'Activity'], ['/memory', 'Memory']]) {
+      html = await (await fetch(web.base + route)).text();
+      assert.match(html, new RegExp(`<title>${title} · Project Brain</title>`));
+      const heading = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/)?.[1].replace(/<[^>]*>/g, '').replace(/&amp;/g, '&');
+      assert.equal(heading, title);
+      assert.match(html, new RegExp(`crumb__page">${title}</span>`));
+    }
     html = await (await fetch(web.base + "/mcp")).text();
-    assert.match(html, /1 tools slow or failing; 1 of 2 used/);
+    assert.match(html, /1 tool slow or failing; 1 of 2 used/);
     assert.doesNotMatch(html, /All agent tools are healthy/);
     html = await (await fetch(web.base + "/team/activity")).text();
     assert.match(html, /Permission required/);

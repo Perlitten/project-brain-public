@@ -1,16 +1,12 @@
 // Scheduled jobs as /settings shows them: GET /scheduler/jobs, with times
-// preformatted on the server (BRAIN_TIMEZONE) so SSR and hydration agree.
+// formatted in UTC so SSR and hydration agree.
 import "server-only";
+import { utcTime } from "./time";
 import { brainFetch } from "./api";
 
 type Json = Record<string, unknown>;
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
-const whenFmt = new Intl.DateTimeFormat("en-GB", { timeZone: process.env.BRAIN_TIMEZONE || "UTC", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-const when = (iso: string) => {
-  if (!iso) return undefined;
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : whenFmt.format(d);
-};
+const when = (iso: string) => iso ? utcTime(iso) : undefined;
 
 export type ScheduleStatus = "ok" | "stale" | "degraded" | "pending" | "disabled";
 

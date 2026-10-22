@@ -10,6 +10,7 @@ import * as mock from "./mock";
 import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./list-query";
 import { shortRevision } from "./revision";
 import { SLOW_TOOL_MS } from "./tool-health";
+import { utcTime } from "./time";
 import { uncommittedCount } from "./repository-status";
 import type {
   AccessKey,
@@ -72,34 +73,14 @@ const list = (v: unknown, key: string): Json[] => (Array.isArray(v) ? v : arr(ob
 // ---------------------------------------------------------------------------
 // Formatting (plain words, same shapes as the demo strings)
 
-const tz = process.env.BRAIN_TIMEZONE || "UTC";
-const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, month: "short", day: "numeric" });
-const clockFmt = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-const hmFmt = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false });
-
 function parseDate(v: unknown): Date | null {
   if (typeof v !== "string" && typeof v !== "number") return null;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
 }
-const isToday = (d: Date) => dayFmt.format(d) === dayFmt.format(new Date());
-/** "14:02:11" today, "Oct 1 · 14:02" before. */
-const fmtClock = (v: unknown) => {
-  const d = parseDate(v);
-  if (!d) return "—";
-  return (isToday(d) ? clockFmt.format(d) : `${dayFmt.format(d)} · ${hmFmt.format(d)}`) + ` ${tz}`;
-};
-/** "13:58" today, "Oct 1" before. */
-const fmtShort = (v: unknown) => {
-  const d = parseDate(v);
-  if (!d) return "—";
-  return (isToday(d) ? hmFmt.format(d) : dayFmt.format(d)) + ` ${tz}`;
-};
-/** "Oct 2 · 14:02". */
-const fmtWhen = (v: unknown) => {
-  const d = parseDate(v);
-  return d ? `${dayFmt.format(d)} · ${hmFmt.format(d)} ${tz}` : "—";
-};
+const fmtWhen = (v: unknown) => typeof v === "string" ? utcTime(v) : typeof v === "number" && Number.isFinite(v) && parseDate(v) ? utcTime(new Date(v).toISOString()) : "—";
+const fmtClock = fmtWhen;
+const fmtShort = fmtWhen;
 function fmtDuration(seconds: number | undefined): string {
   if (seconds === undefined || seconds < 0) return "—";
   if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1).replace(/\.0$/, "") : Math.round(seconds)}s`;
@@ -1043,9 +1024,7 @@ export const getClientConfigs = async (): Promise<{ name: string; where: string;
 // Access: every principal, disabled ones included, with each key's whole life
 // (created, expires, last used, revoked) — what /admin needs to manage them.
 const SOON_MS = 14 * 86400_000;
-const yearFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, month: "short", day: "numeric", year: "numeric" });
-/** "Oct 30", or "Oct 30, 2027" outside this year. */
-const fmtDay = (d: Date) => (d.getUTCFullYear() === new Date().getUTCFullYear() ? dayFmt.format(d) : yearFmt.format(d));
+const fmtDay = (d: Date) => utcTime(d.toISOString());
 
 function summarize(identities: Identity[]): AccessView["summary"] {
   const live = identities.filter((i) => !i.disabled).flatMap((i) => i.keys.filter((k) => k.status === "active"));

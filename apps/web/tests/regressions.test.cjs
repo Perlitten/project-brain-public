@@ -1656,3 +1656,55 @@ test('reranker page explains a refused project folder instead of reporting an ou
   assert.equal(outage.available, false);
   assert.equal(outage.unavailableReason, undefined);
 });
+
+
+test('repository actions distinguish source recovery from indexing, including encoded repository IDs', () => {
+  const { repositoryAction } = load('lib/repository-status.ts');
+  const missing = repositoryAction({ slug: 'repo / one', name: 'nostia', freshness: 'source_missing', behind: 8 });
+  assert.equal(missing.href, '/projects?repo=repo%20%2F%20one#source');
+  assert.match(missing.label, /Check source/);
+  assert.doesNotMatch(missing.label, /index/i);
+  for (const freshness of ['behind', 'unindexed', 'freshness_error']) {
+    assert.equal(repositoryAction({ slug: '7', name: 'api', freshness }).href, '/indexing?repo=7');
+  }
+});
+
+test('pulse attention destinations expose their cause and respect member restrictions', () => {
+  const { pulseDestination, pulseHeadline } = load('lib/pulse-presentation.ts');
+  const warning = { reachable: true, healthy: false, down: [], warnings: ['weekly benchmark'] };
+  assert.equal(pulseHeadline(warning), 'Needs attention');
+  assert.equal(pulseDestination(warning), '/settings#scheduler');
+  assert.equal(pulseDestination(warning, true), '/help#server-status');
+  assert.equal(pulseDestination({ ...warning, down: ['postgres'] }), '/help#server-status');
+  assert.equal(pulseDestination({ ...warning, reachable: false }), '/help#server-status');
+});
+
+test('settings delivery and scheduled job observations share explicit UTC formatting', async () => {
+  const stamp = '2026-10-22T06:30:00+03:00';
+  const expected = load('lib/time.ts').utcTime(stamp);
+  const scheduler = load('lib/scheduler-view.ts', { './api': { brainFetch: async () => null } });
+  const job = scheduler.toSchedulerView({ enabled: true, jobs: [{ job_type: 'benchmark', next_run_at: stamp, last_success_at: stamp }] }).jobs[0];
+  assert.equal(job.lastSuccess, expected);
+  assert.equal(job.nextRun, expected);
+  assert.equal(job.lastFailure, undefined);
+  const settings = load('lib/settings-view.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: true, brainFetch: async path => path === '/api/web/health'
+      ? { orchestration: { diagnostics: { last_delivery: { status: 'sent', evaluated_at: stamp } } } }
+      : path === '/api/settings' ? { sections: [] } : null },
+  });
+  assert.equal((await settings.getSettingsView()).telegram.last.at, expected);
+  assert.match(expected, /03:30 UTC$/);
+});
+
+
+test('a missed health probe retains independently reported build identity', async () => {
+  const { getPulse } = load('lib/actions/pulse.ts', {
+    '../api': { apiConfigured: true, brainFetch: async path => path === '/api/version' ? { version: '0.9.2', build_sha: '4935387c685f' } : null },
+    '../data': { getRepository: async () => ({}) },
+  });
+  const pulse = await getPulse('');
+  assert.equal(pulse.reachable, false);
+  assert.equal(pulse.version, '0.9.2');
+  assert.equal(pulse.build, '4935387');
+});

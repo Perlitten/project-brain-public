@@ -10,6 +10,14 @@ export function uncommittedMessage(count: number): string {
 
 export const SOURCE_UNAVAILABLE_HELP = "The Brain server cannot read this repository folder. Check that the checkout exists inside the API and worker containers, is mounted at the registered path and is readable. Reindex after restoring access.";
 
+/** A missing checkout needs source access restored before an index run helps. */
+export function repositoryAction(repo: Repository): { href: string; label: string } {
+  const scope = `?repo=${encodeURIComponent(repo.slug)}`;
+  return repo.freshness === "source_missing"
+    ? { href: `/projects${scope}#source`, label: `Check source for ${repo.name}` }
+    : { href: `/indexing${scope}`, label: `Open index runs for ${repo.name}` };
+}
+
 export function repositorySummary(repositories: Repository[]): string {
   const missing = repositories.filter((r) => r.freshness === "source_missing").length;
   const behind = repositories.filter((r) => r.freshness !== "source_missing" && (r.freshness === "behind" || (r.behind ?? 0) > 0)).length;

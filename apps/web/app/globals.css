@@ -121,7 +121,7 @@ code, .mono { font-family: var(--mono); }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes slide-in { from { opacity: 0; transform: translateX(-6px); } }
 @keyframes word-rise { from { transform: translateY(110%); } }
-@keyframes odo-roll { from { transform: translateY(0); } }
+@keyframes odo-change { from { color: var(--teal-fg); } }
 @keyframes spine-draw { from { transform: scaleY(0); } }
 @keyframes brick-in { from { opacity: 0; transform: scaleY(0.15); } }
 @keyframes pop-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } }
@@ -250,14 +250,7 @@ code, .mono { font-family: var(--mono); }
 .rise__word { display: inline-block; animation: word-rise 760ms var(--ease-expo) backwards; animation-delay: calc(var(--rd, 0ms) + var(--w) * 45ms + 60ms); }
 
 .odo { display: inline-flex; height: 1.2em; line-height: 1.2; overflow: hidden; vertical-align: bottom; }
-.odo__col { display: block; height: 1.2em; overflow: hidden; }
-.odo__drum {
-  display: flex; flex-direction: column;
-  transform: translateY(calc((var(--n) + 10) * -1.2em));
-  animation: odo-roll 1300ms var(--ease-expo) backwards;
-  animation-delay: calc(var(--i) * 80ms + 220ms);
-}
-.odo__drum > span { height: 1.2em; }
+.odo__value--changed { animation: odo-change 320ms ease-out; }
 
 /* ---------- page head ---------- */
 .page-head { display: grid; gap: var(--s-5); }
@@ -309,7 +302,7 @@ code, .mono { font-family: var(--mono); }
   .panel { animation: reveal linear both; animation-timeline: view(); animation-range: entry 0% entry 30%; }
 }
 @media print {
-  .panel { animation: none !important; }
+  .panel, .odo__value--changed { animation: none !important; }
 }
 /* Top hairline tinted by the panel's tone — status cue without a side stripe. */
 .panel--spine::before, .verdict::before, .card::before {
@@ -487,8 +480,6 @@ code, .mono { font-family: var(--mono); }
 .map__headline { font-size: var(--fs-16); font-weight: 500; line-height: var(--lh-head); color: var(--text-2); min-height: 2.5em; }
 .map__hero { font-size: var(--fs-72); font-weight: 500; line-height: 1; letter-spacing: -0.03em; display: flex; align-items: flex-end; }
 .map__hero .odo { height: 1.05em; line-height: 1.05; }
-.map__hero .odo__col, .map__hero .odo__drum > span { height: 1.05em; }
-.map__hero .odo__drum { transform: translateY(calc((var(--n) + 10) * -1.05em)); }
 .map__hero-unit { font-size: var(--fs-28); color: var(--text-3); margin: 0 0 0.3em 4px; letter-spacing: 0; }
 .map__lede { color: var(--text-2); line-height: var(--lh-prose); min-height: 4.8em; }
 .map__key { display: grid; gap: var(--s-2); padding: var(--s-3) 0; border-block: 1px solid var(--border-subtle); }
@@ -882,7 +873,7 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
   }
   /* A short duration still follows a scroll timeline and leaves off-screen
      panels transparent. Reduced motion means immediate, visible content. */
-  .panel { animation: none !important; }
+  .panel, .odo__value--changed { animation: none !important; }
   .pulse__trace { display: none; }
 }
 

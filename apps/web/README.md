@@ -17,7 +17,6 @@ All variables are read by server code only. Copy `.env.example` to `.env.local` 
 | `WEB_OPEN_MODE` | `true` lets anyone in while no login is configured, on any address; `false` locks a loopback dashboard too. Unset: open only on loopback. |
 | `BRAIN_WEB_ACTIONS` | `0` turns dashboard actions off everywhere. `1` turns them on even without a password, so use it only behind your own SSO. |
 | `BRAIN_PUBLIC_API_URL` | Optional API URL shown in the agent setup snippets. Defaults to `BRAIN_API_URL`. |
-| `BRAIN_TIMEZONE` | Optional IANA time zone for times shown on screen. Defaults to UTC. |
 
 ## Demo and live mode
 
@@ -126,3 +125,5 @@ npm run test:production   # runtime demo/live binding regression (after build)
 Set the project root to `apps/web` and add the variables above in the Vercel project settings
 (at least `BRAIN_API_URL`, `BRAIN_API_KEY` and a sign-in). Never set `WEB_OPEN_MODE` on a
 public deployment. The region is pinned in `vercel.json`.
+
+Server observations use the shared UTC formatter and show the timezone explicitly. Timestamps without an offset are labelled as having an unknown timezone.

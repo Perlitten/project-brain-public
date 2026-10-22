@@ -25,9 +25,9 @@ export function SectionNav({ label, items }: { label: string; items: SectionNavI
 // same tabs in the same order with the same names.
 const SECTIONS = {
   projects: { label: "Project views", items: [["/projects", "Projects"], ["/indexing", "Index runs"], ["/graph", "Code map"], ["/insights", "Findings"]] },
-  memory: { label: "Memory views", items: [["/memory", "Decisions & rules"], ["/packs", "Context packs"], ["/review", "Review"]] },
+  memory: { label: "Memory views", items: [["/memory", "Memory"], ["/packs", "Context packs"], ["/review", "Review"]] },
   quality: { label: "Quality views", items: [["/quality", "Quality"]] },
-  logs: { label: "Activity views", items: [["/logs", "Requests & jobs"], ["/runs", "Agent tasks"]] },
+  logs: { label: "Activity views", items: [["/activity", "Activity"], ["/runs", "Agent tasks"]] },
   // Reranker is a switch with a measurement next to it, not a report: it
   // belongs with the other things you configure.
   settings: { label: "Settings views", items: [["/settings", "General"], ["/admin", "Access"], ["/team", "Team"], ["/team/me", "Me"], ["/team/activity", "Team activity"], ["/team/board", "Board"], ["/mcp", "Agent tools"], ["/reranker", "Reranker"]] },

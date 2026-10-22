@@ -12,6 +12,7 @@ import { ActionsProvider, LOCK_REASON, Toaster, dismissToast, report, toast } fr
 import { Ambient } from "./Ambient";
 import { BrandMark, Icon, type IconName } from "./Icon";
 import { RestrictedMemberProvider, useRestrictedMember } from "./MemberScope";
+import { PulseProvider } from "./PulseProvider";
 import { RailPulse } from "./RailPulse";
 
 export interface ShellRepo {
@@ -26,6 +27,7 @@ const isActive = (href: string, path: string) => (href === "/" ? path === "/" : 
 
 /** Team state: who this browser is signed in as (names only; the key never reaches the client). */
 export interface ShellMember {
+  id: number;
   name: string;
   admin: boolean;
 }
@@ -121,11 +123,12 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
 
   const where = locate(path);
   const current = where?.item;
-  const scoped = Boolean(current?.repoScoped) && repos.length > 0;
+  const scoped = Boolean(current?.repoScoped);
 
   return (
     <RestrictedMemberProvider value={restricted}>
     <ActionsProvider mode={mode}>
+    <PulseProvider key={`${access}:${member?.id ?? "solo"}`} enabled={!demo} repoSlug={allowsAllRepos && !repoSlug ? "" : repoSlug}>
     <div className={`shell${drawer ? " shell--drawer" : ""}${slim ? " shell--slim" : ""}`}>
       <Ambient />
       <a className="skip" href="#main">
@@ -199,13 +202,14 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
             <button
               type="button"
               className="repo__btn"
+              aria-label="Repository filter"
               aria-expanded={repoMenu}
               onClick={() => setRepoMenu((o) => !o)}
             >
               <span className={`dot tone-${repo?.tone}`} aria-hidden="true" />
               <span className="repo__label">
                 <small>Repository</small>
-                {repo?.name ?? (allowsAllRepos && !repoSlug ? "All repositories" : "Repository not found")}
+                {repo?.name ?? (!repos.length ? "No projects connected" : allowsAllRepos && !repoSlug ? "All repositories" : "Repository not found")}
               </span>
               <Icon name="arrow" size={14} className="repo__caret" />
             </button>
@@ -225,6 +229,7 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
             )}
           </div>
           )}
+          {!scoped && <span className="text-faint">Across all projects</span>}
           {access === "open" && (
             <Link className="access-chip chip chip--warn" href="/admin#sign-in" title="Anyone who opens this address gets in. Set a login and password.">
               <span className="chip__dot" aria-hidden="true" />
@@ -277,6 +282,7 @@ export function Shell({ repos, demo, mode, access, member = null, children }: { 
       )}
       <Toaster />
     </div>
+    </PulseProvider>
     </ActionsProvider>
     </RestrictedMemberProvider>
   );

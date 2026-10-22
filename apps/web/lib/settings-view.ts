@@ -3,6 +3,7 @@
 // scheduled jobs from /scheduler/jobs. Secrets never appear here,
 // only whether one is set.
 import "server-only";
+import { utcTime } from "./time";
 import { connection } from "next/server";
 import { apiConfigured, brainFetch } from "./api";
 import { demoScheduler, getSchedulerJobs, type SchedulerView } from "./scheduler-view";
@@ -10,11 +11,7 @@ import { demoScheduler, getSchedulerJobs, type SchedulerView } from "./scheduler
 type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : {});
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
-const whenFmt = new Intl.DateTimeFormat("en-GB", { timeZone: process.env.BRAIN_TIMEZONE || "UTC", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-const when = (iso: string) => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : whenFmt.format(d);
-};
+const when = (iso: string) => iso ? utcTime(iso) : undefined;
 
 export type SettingKind = "bool" | "int" | "float" | "text" | "url" | "secret";
 export type SettingValue = string | number | boolean | null;
@@ -43,7 +40,7 @@ export interface SettingsSection {
 export interface TelegramStatus {
   enabled: boolean;
   credentials: boolean;
-  /** `at` is preformatted on the server (BRAIN_TIMEZONE) so SSR and hydration agree. */
+  /** `at` is formatted in UTC so SSR and hydration agree. */
   last?: { status: string; at?: string; findings?: number };
 }
 
