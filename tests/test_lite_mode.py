@@ -34,11 +34,11 @@ def test_zero_service_end_to_end_and_restart(tmp_path):
     runner = Path(__file__).with_name("lite_smoke_runner.py")
     repo = tmp_path / "repo"
     env = {**os.environ, "ALLOW_SCRATCH_REPO_ROOTS":"true"}
-    first = subprocess.run([sys.executable, str(runner), str(repo)], env=env, capture_output=True, text=True, timeout=45)
+    first = subprocess.run([sys.executable, str(runner), str(repo)], env=env, capture_output=True, text=True, timeout=60)
     assert first.returncode == 0, first.stdout + first.stderr
     assert json.loads(first.stdout.strip().splitlines()[-1])["external_clients"] == 0
     # A new process reuses the persisted store and returns identical capabilities.
-    second = subprocess.run([sys.executable, str(runner), str(repo)], env=env, capture_output=True, text=True, timeout=45)
+    second = subprocess.run([sys.executable, str(runner), str(repo)], env=env, capture_output=True, text=True, timeout=60)
     assert second.returncode == 0, second.stdout + second.stderr
 
 

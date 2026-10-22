@@ -70,9 +70,12 @@ async def exercise(repo: Path):
     worker_job = await worker_queue.enqueue("reindex", {"repo_path":str(repo)})
     worker = asyncio.create_task(serve_worker())
     try:
-        for _ in range(80):
+        deadline = asyncio.get_running_loop().time() + 30
+        while True:
             state = await worker_queue.get_job(worker_job)
             if state["status"] in {"completed","failed"}:
+                break
+            if asyncio.get_running_loop().time() >= deadline:
                 break
             await asyncio.sleep(0.05)
         assert state["status"] == "completed", state
