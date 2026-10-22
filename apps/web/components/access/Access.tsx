@@ -12,7 +12,7 @@ import { KeyDialog } from "@/components/KeyDialog";
 import { ListFrame } from "@/components/ListFrame";
 import { Chip } from "@/components/ui";
 import { createAgentKey, disablePrincipal, enablePrincipal, mintKey, revokeCredential, type NewKey } from "@/lib/actions/admin";
-import { EXPIRY_CHOICES, KNOWN_SCOPES, SCOPE_GROUPS, SCOPE_PRESETS, TEAM_SCOPES, sameScopes } from "@/lib/scopes";
+import { EXPIRY_CHOICES, KNOWN_SCOPES, SCOPE_GROUPS, SCOPE_PRESETS, TEAM_SCOPES, sameScopes, isNamedScope } from "@/lib/scopes";
 import type { AccessKey, Identity, Tone } from "@/lib/types";
 
 type Kind = Identity["kind"];
@@ -187,7 +187,7 @@ export function NewIdentityForm({ target }: { target: AgentTarget }) {
         </div>
         <ScopePicker value={scopes} onChange={setScopes} />
         <div className="btn-row">
-          <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !name.trim() || scopes.length === 0}>
+          <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !name.trim() || scopes.length === 0 || scopes.some(scope => !isNamedScope(scope))}>
             {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="key" size={15} />}
             Create identity and key
           </button>
@@ -411,6 +411,7 @@ function MintForm({ identity, initial, onCancel, onMinted }: { identity: Identit
   const [scopes, setScopes] = useState<string[]>(() => (initial.length ? [...initial].sort() : [...presetScopes(KIND_PRESET[identity.kind])].sort()));
   const [ttl, setTtl] = useState(90);
   const { run, pending, mode } = useAction(mintKey, { title: "New key" });
+  const unsupported = scopes.filter(scope => !isNamedScope(scope));
   return (
     <form
       className="form form--wide"
@@ -420,6 +421,7 @@ function MintForm({ identity, initial, onCancel, onMinted }: { identity: Identit
         if (res.ok && res.data) onMinted(res.data);
       }}
     >
+      {!!unsupported.length && <p className="field__hint field__hint--bad" role="alert">This key includes permissions the API cannot mint: {unsupported.join(", ")}. Choose explicit replacement permissions below before creating a key. The existing key stays active.</p>}
       <p className="dialog__text">
         {initial.length ? "Starts from the selected key’s permissions." : "Starts from the usual permissions for this kind."} Its other keys keep working until you
         revoke them.
@@ -431,7 +433,7 @@ function MintForm({ identity, initial, onCancel, onMinted }: { identity: Identit
         <button type="button" className="btn btn--neutral" onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || scopes.length === 0}>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || scopes.length === 0 || scopes.some(scope => !isNamedScope(scope))}>
           {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="key" size={15} />}
           Create key
         </button>

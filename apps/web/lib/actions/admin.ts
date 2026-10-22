@@ -1,13 +1,13 @@
 "use server";
 // Access: create agent keys, mint more, revoke, disable. A new key comes back
 // exactly once in the action result and is never logged or cached.
+import { isNamedScope } from "../scopes";
 import { mutate } from "./gate";
 import type { ActionResult } from "./types";
 
 const ACCESS = ["/admin", "/setup"];
 const AGENT_SCOPES = ["core:write", "jobs:read"];
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,119}$/;
-const SCOPE_RE = /^[a-z_]+:[a-z_]+(?:\.[a-z_]+)*$/;
 
 export interface NewKey {
   apiKey: string;
@@ -18,7 +18,7 @@ export interface NewKey {
 
 function cleanScopes(scopes: string[]): string[] | null {
   const s = [...new Set(scopes.map((x) => x.trim()).filter(Boolean))];
-  return s.length && s.every((x) => SCOPE_RE.test(x)) ? s.sort() : null;
+  return s.length && s.every(isNamedScope) ? s.sort() : null;
 }
 
 function cleanTtl(days?: number): number | undefined {
