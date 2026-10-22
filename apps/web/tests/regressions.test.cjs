@@ -1804,3 +1804,20 @@ test('duplicate findings retain evidence identity rather than merging matching t
   assert.deepEqual([...groups[0].members.map(row => row.id)], ['1', '3']);
   assert.equal(groups[1].rep.id, '2');
 });
+
+
+test('finding cards retain file and line evidence when repository provenance comes first', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => ({ total: 1, insights: [{ id: 1, title: 'synthetic', severity: 'warn', insight_type: 'drift', source: 'deterministic', evidence: [
+      { label: 'repository_id', value: 2 }, { label: 'file_path', value: 'src/code.py' }, { label: 'line_number', value: 10 },
+    ], occurrence_count: 4, code_available: true, last_seen_at: '2026-10-22T00:00:00Z' }] }) },
+  });
+  const finding = (await data.getPagedInsights(null)).items[0];
+  assert.equal(finding.module, 'src/code.py');
+  assert.match(finding.evidence, /repository_id: 2/);
+  assert.match(finding.evidence, /file_path: src\/code.py/);
+  assert.match(finding.evidence, /line_number: 10/);
+  assert.equal(finding.occurrences, 4);
+  assert.equal(finding.codeAvailable, true);
+});
