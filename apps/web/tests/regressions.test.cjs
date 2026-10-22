@@ -1805,7 +1805,7 @@ test('repository registration refuses insufficient credentials before offering o
   let writes = 0;
   const projects = load('lib/actions/projects.ts', {
     '../capabilities': { getCapabilities: async () => ({ supported: ['repository_registration'] }) },
-    '../api': { brainRead: async () => ({ ok: true, data: identity }) },
+    '../api': { brainRead: async path => ({ ok: true, data: path === '/team/me' ? identity : [{ id: 'active-project', name: 'Example' }] }) },
     './gate': { mutate: async () => { writes++; return { ok: true }; } },
     './jobs': { startReindex: async () => { throw Error('must not index'); } },
   });
@@ -1814,4 +1814,8 @@ test('repository registration refuses insufficient credentials before offering o
   identity = { team_state: 'team', scopes: ['workspace:write'], is_team_admin: false };
   assert.match((await projects.projectRegistrationContext()).message, /administrator/);
   assert.equal(writes, 0);
+  identity = { team_state: 'team', scopes: ['workspace:read'], is_team_admin: true };
+  const allowed = await projects.projectRegistrationContext();
+  assert.equal(allowed.ok, true, 'existing team-admin credentials remain compatible');
+  assert.equal(allowed.data.projects[0].id, 'active-project');
 });

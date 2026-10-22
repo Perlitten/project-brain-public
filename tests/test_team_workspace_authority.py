@@ -439,6 +439,20 @@ async def test_solo_registration_is_unchanged(registration, monkeypatch):
     assert await table_ids(factory) == set()
 
 
+@pytest.mark.asyncio
+async def test_solo_registration_still_requires_explicit_write_scope(registration, monkeypatch):
+    factory, registry, client, directory = registration
+    membership_driven(monkeypatch)
+    await revoke_everyone(factory)
+    async with factory() as session, session.begin():
+        await session.execute(update(ApiCredential).where(ApiCredential.id == 4).values(scopes=["workspace:read"]))
+    response = await client.post("/workspace/repositories", headers=ADMIN, json=register_body(directory))
+    assert response.status_code == 403, response.text
+    assert registry.list_all() == []
+    assert await registry_activity(factory) == []
+    assert await table_ids(factory) == set()
+
+
 # Re-enabling and inspecting a disabled entry (team administrators, audited).
 
 
@@ -619,9 +633,12 @@ async def test_admin_adds_unindexed_source_with_atomic_project_link(registration
     factory, _, client, directory = registration
     _, project, _ = team_db
     async with factory() as session, session.begin():
+        # Normal team-admin credentials have workspace:read but deliberately do
+        # not inherit the solo registry's broad workspace:write scope.
+        scopes = member_scopes(True)
+        assert "workspace:read" in scopes and "workspace:write" not in scopes
+        await session.execute(update(ApiCredential).where(ApiCredential.id == 4).values(scopes=scopes))
         await session.execute(delete(Repository).where(Repository.id == 4))
-    async with factory() as session, session.begin():
-        await session.execute(update(ApiCredential).where(ApiCredential.id == 4).values(scopes=member_scopes(True)))
     response = await client.post("/workspace/repositories", headers=ADMIN,
                                  json=register_body(directory, project_id=str(project), create_index_record=True))
     assert response.status_code == 200, response.text
