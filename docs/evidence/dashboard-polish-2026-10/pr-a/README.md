@@ -2,7 +2,7 @@
 
 These screenshots show the public **synthetic demo**, not the private live dashboard or Contabo API. Private live access returns HTTP 401; its preview requires Vercel SSO. This evidence cannot establish live backend deployment or latency.
 
-Before: `f5e39f569a6765f1e6ab29089df3da27a00c461b` (UI identical to merged #183). After: `5a61c5bf49b8a1b8343018b94ca2a77f9501b9b7` (#185). The manifests record exact preview URLs, headings and titles. Captured at 1440 × 1100 with reduced motion and no interactions that mutate data. The browser ignored certificate errors for this session because Chromium does not trust the execution environment's HTTPS proxy CA; curl verified these public endpoints with its normal trust store.
+Before: `f5e39f569a6765f1e6ab29089df3da27a00c461b` (UI identical to merged #183). After: `8ba21148138bb75c556e6422c0d1584141965c3b` (#185). The manifests record exact preview URLs, headings and titles. Captured at 1440 × 1100 with reduced motion and no interactions that mutate data. The browser ignored certificate errors for this session because Chromium does not trust the execution environment's HTTPS proxy CA; curl verified these public endpoints with its normal trust store.
 
 | Screen | Before | After |
 | --- | --- | --- |
@@ -15,3 +15,5 @@ Before: `f5e39f569a6765f1e6ab29089df3da27a00c461b` (UI identical to merged #183)
 | code-map | [before](before/code-map.png) | [after](after/code-map.png) |
 | settings | [before](before/settings.png) | [after](after/settings.png) |
 | agent-tools | [before](before/agent-tools.png) | [after](after/agent-tools.png) |
+
+Final captures wait for the streamed page, hydrated navigation and the loading skeleton to finish.

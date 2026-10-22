@@ -1,0 +1,26 @@
+[
+  {
+    "screen": "memory",
+    "url": "https://project-brain-demo-git-fix-dashboard-91f141-perlittens-projects.vercel.app/memory",
+    "title": "Memory \u00b7 Project Brain",
+    "heading": "Memory"
+  },
+  {
+    "screen": "findings",
+    "url": "https://project-brain-demo-git-fix-dashboard-91f141-perlittens-projects.vercel.app/insights",
+    "title": "Findings \u00b7 Project Brain",
+    "heading": "Findings"
+  },
+  {
+    "screen": "activity",
+    "url": "https://project-brain-demo-git-fix-dashboard-91f141-perlittens-projects.vercel.app/activity",
+    "title": "Activity \u00b7 Project Brain",
+    "heading": "Activity"
+  },
+  {
+    "screen": "settings",
+    "url": "https://project-brain-demo-git-fix-dashboard-91f141-perlittens-projects.vercel.app/settings",
+    "title": "Settings \u00b7 Project Brain",
+    "heading": "Settings"
+  }
+]

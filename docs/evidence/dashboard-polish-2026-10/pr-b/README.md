@@ -1,6 +1,8 @@
 # PR B — Vercel preview evidence
 
-Public synthetic demo, not the private live dashboard or Contabo API. Before: #185 build `5a61c5b` (UI identical after its later CI merge). After: #186 build `7e456d5`. Capture manifests contain the exact Vercel URLs, titles and headings. The later wildcard-message fix affects the rotation dialog; local Chromium separately verifies that submitting wildcard scopes is blocked until an explicit replacement is selected, and that an older dashboard key retains its own scopes. No credential was minted or revoked by that browser check.
+Public synthetic demo, not the private live dashboard or Contabo API. Before: #185 build `8ba2114`. After: #186 build `03acca2`. Capture manifests contain the Vercel URLs, titles and headings, recorded after streamed content and navigation settle. Local Chromium additionally verifies actual credential identity, selected older-key scopes, wildcard replacement selection, add-project POST, and fail-closed legacy behavior against a synthetic loopback API. It does not mint or revoke credentials.
+
+[Own-key controls (local synthetic API)](local-own-key.png) · [Explicit rotation scopes (local synthetic API)](local-rotation-scopes.png)
 
 Screens captured at 1440 × 1100 with reduced motion. Chromium ignored HTTPS certificate errors for this browser session because it lacks the execution environment's proxy CA; curl verified the preview endpoints normally. No private live credentials or project data appear here.
 
