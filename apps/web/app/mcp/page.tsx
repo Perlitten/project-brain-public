@@ -1,4 +1,5 @@
 import { Term } from "@/components/Term";
+import { toolSummary } from "@/lib/tool-health";
 import { Chip, EmptyState, PageHead, Panel, Table, fmt } from "@/components/ui";
 import { SectionTabs } from "@/components/SectionNav";
 import { getMcpTools } from "@/lib/data";
@@ -12,7 +13,6 @@ export default async function Mcp() {
   const read = await getMcpTools();
   const tools = read ?? [];
   const tracked = tools.some((t) => t.calls24h !== undefined || t.errorRate !== undefined);
-  const troubled = tools.filter((t) => t.status === "warn" || t.status === "bad").length;
   return (
     <>
       <PageHead
@@ -20,13 +20,7 @@ export default async function Mcp() {
         status={
           read === null
             ? { tone: "warn", text: "Tool status unavailable" }
-            : tools.length === 0
-            ? { tone: "idle", text: "No agent tools reported" }
-            : troubled
-              ? { tone: "warn", text: `${troubled} tool${troubled > 1 ? "s are" : " is"} slow or failing` }
-              : tracked
-                ? { tone: "ok", text: "All agent tools are healthy" }
-                : { tone: "info", text: <>{tools.length} agent tools available<small>Their calls are not measured yet.</small></> }
+            : toolSummary(tools)
         }
         lede={
           <>
@@ -37,7 +31,7 @@ export default async function Mcp() {
         }
       />
       <SectionTabs section="settings" active="/mcp" />
-      <Panel id="tools" title="Tools" desc={tracked ? "Last 24 hours. An error rate above 5% is shown in red." : "What your agent can ask Brain for. This server doesn’t count calls yet, so usage and errors aren’t shown."} flush>
+      <Panel id="tools" title="Tools" desc={tracked ? "Last 24 hours. Errors above 5% are red; p95 responses over 2 seconds are slow. Unused tools have no verified health." : "What your agent can ask Brain for. This server doesn’t count calls yet, so usage and errors aren’t shown."} flush>
         {read === null ? (
           <EmptyState title="Tool status unavailable" body="Brain didn’t answer the agent-tool status request just now. Reload in a moment." />
         ) : tools.length === 0 ? (

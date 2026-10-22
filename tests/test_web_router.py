@@ -29,6 +29,41 @@ REPO = SimpleNamespace(id=3, name="brain", path="/repos/brain")
 CONFIG = SimpleNamespace(provider="nvidia", model="m-1", dimension=1024)
 
 
+@pytest.mark.parametrize("light", [False, True])
+def test_project_overview_can_skip_unrelated_health_probes_without_losing_counts(light):
+    health = AsyncMock(side_effect=RuntimeError("unrelated health probe stalled")) if light else AsyncMock(return_value={"postgres": {"status": "healthy"}})
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+    session = SimpleNamespace(execute=AsyncMock(return_value=result))
+
+    @asynccontextmanager
+    async def factory():
+        yield session
+
+    with (
+        patch.object(web, "check_health", health),
+        patch.object(web, "_resolve_repository", AsyncMock(return_value=REPO)),
+        patch.object(web, "get_embedding_retrieval_health", AsyncMock(return_value={})),
+        patch.object(web, "async_session_factory", factory),
+        patch.object(web, "get_db_counts", AsyncMock(return_value={"files": 7, "chunks": 12})),
+        patch.object(web, "build_coverage", return_value={"eligible_chunks": 12}),
+        patch.object(web, "_repository_freshness", AsyncMock(return_value={})),
+        patch.object(web, "get_recent_brain_jobs", AsyncMock(return_value={"jobs": []})),
+        patch("brain.embeddings.config.get_embedding_config", return_value=CONFIG),
+    ):
+        suffix = "&include_health=false" if light else ""
+        response = client.get("/api/web/overview?repository_id=3" + suffix)
+    assert response.status_code == 200, response.text
+    assert response.json()["counts"] == {"files": 7, "chunks": 12}
+    assert response.json()["coverage"]["eligible_chunks"] == 12
+    if light:
+        assert response.json()["services"] is None, "a skipped measurement must never look healthy"
+        health.assert_not_awaited()
+    else:
+        assert response.json()["services"]["postgres"]["status"] == "healthy"
+        health.assert_awaited_once()
+
+
 # ---- pure helpers ------------------------------------------------------
 
 

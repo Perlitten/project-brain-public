@@ -74,7 +74,7 @@ export default async function Admin() {
         <b>The master key</b>
         <span>
           Older integrations may still use <code>PROJECT_BRAIN_API_KEY</code>. It lives in the Brain server’s .env, can do everything and isn’t listed
-          here. Give each integration its own key above, then change the master key on the server to retire it.
+          here. Check its recent requests under Activity before rotating it: existing clients stop working until their configuration is updated. Give each active integration its own key, verify it works, then change the master key on the server.
         </span>
       </div>
     </>

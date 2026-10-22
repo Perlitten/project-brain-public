@@ -1,7 +1,6 @@
 import type { QualityEvidence as Evidence, QualityNotRun } from "@/lib/dashboard";
 import { measuredNumber, qualityNotRun } from "@/lib/dashboard";
-import { startBenchmark } from "@/lib/actions/jobs";
-import { RunButton } from "./act";
+import Link from "next/link";
 import { Chip, EmptyState } from "./ui";
 import "./quality-evidence.css";
 
@@ -9,9 +8,9 @@ export function QualityEvidence({ evidence, compact = false }: { evidence: Evide
   if (qualityNotRun(evidence)) {
     return (
       <EmptyState
-        title="No benchmark run yet"
-        body="Nothing has measured search on this install. The benchmark asks the questions in rules/golden_tasks.yaml against the indexed code and saves the result under Reports."
-        action={<RunButton action={startBenchmark} label="Run the benchmark" icon="play" title="Run search benchmark" />}
+        title="No saved reference measurements"
+        body="The reference evidence file is absent on this server. Scheduled smoke benchmarks are separate: they test golden questions and save reports, but do not populate these reference metrics. Check Reports for their results."
+        action={<Link className="btn btn--neutral" href="/reports">Open benchmark reports</Link>}
       />
     );
   }

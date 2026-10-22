@@ -111,3 +111,54 @@ test("isolated demo misconfiguration cannot read from a backend even with valid 
     await new Promise((resolve) => backend.close(resolve));
   }
 });
+
+test("production pages distinguish failure, missing source, unmeasured tools and first-admin preparation", { timeout: 60000 }, async () => {
+  let setupStatus = 503;
+  const backend = http.createServer((req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    let data = {};
+    if (req.url === "/api/web-login") data = { mode: "open", version: "0", from_env: [] };
+    else if (req.url === "/api/setup/status") {
+      if (setupStatus !== 200) { res.writeHead(setupStatus); return res.end('{}'); }
+      data = { steps: ['services', 'repo', 'provider', 'indexed', 'agent', 'first_task'].map(id => ({ id, status: 'done', detail: 'configured' })) };
+    } else if (req.url === "/repositories") data = { repositories: [{ id: 1, name: "missing-checkout", path: "/repos/example", freshness: { status: "source_missing", commits_behind: 8 } }] };
+    else if (req.url === "/api/status/mcp") data = { available: true, tools: [
+      { name: "search_code", calls_24h: 1, error_rate: 0, p95_ms: 3300 },
+      { name: "unused_tool", calls_24h: 0, error_rate: 0 },
+    ] };
+    else if (req.url.startsWith("/team/activity")) { res.writeHead(403); return res.end('{}'); }
+    else if (req.url === "/team/me") data = { principal: { id: 1, name: "dashboard", kind: "service" }, team_state: "solo", scopes: [], projects: [] };
+    res.end(JSON.stringify(data));
+  });
+  const port = await listen(backend);
+  let web;
+  try {
+    web = await startWeb({ BRAIN_API_URL: `http://127.0.0.1:${port}`, BRAIN_API_KEY: "synthetic-dashboard-key" });
+    let html = await (await fetch(web.base + "/setup")).text();
+    assert.match(html, /Brain returned HTTP 503/);
+    assert.doesNotMatch(html, /docker compose up/);
+    setupStatus = 403;
+    html = await (await fetch(web.base + "/setup")).text();
+    assert.match(html, /Permission required/);
+    setupStatus = 200;
+    html = await (await fetch(web.base + "/setup")).text();
+    assert.match(html, /Brain is fully set up/);
+    html = await (await fetch(web.base + "/projects")).text();
+    assert.match(html, /1 source unavailable/);
+    assert.match(html, /mounted at the registered path/);
+    assert.doesNotMatch(html, /1 of 1 projects are behind/);
+    html = await (await fetch(web.base + "/mcp")).text();
+    assert.match(html, /1 tools slow or failing; 1 of 2 used/);
+    assert.doesNotMatch(html, /All agent tools are healthy/);
+    html = await (await fetch(web.base + "/team/activity")).text();
+    assert.match(html, /Permission required/);
+    assert.doesNotMatch(html, /id="activity-filters"/);
+    html = await (await fetch(web.base + "/team")).text();
+    assert.match(html, /Prepare administrator key/);
+    assert.match(html, /Shared sign-in stays active until the final step/);
+    assert.ok(!html.includes("synthetic-dashboard-key"));
+  } finally {
+    if (web) await stopWeb(web);
+    await new Promise(resolve => backend.close(resolve));
+  }
+});

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RetryRead } from "@/components/RetryRead";
 import { BackgroundJobs } from "@/components/BackgroundJobs";
 import { MemoryMap } from "@/components/MemoryMap";
 import { QualityEvidence } from "@/components/QualityEvidence";
@@ -14,7 +15,7 @@ import "./dashboard.css";
 
 type Props = { searchParams: Promise<{ repo?: string; period?: string }> };
 const periodWords = { "24h": "last 24 hours", "7d": "last 7 days", "30d": "last 30 days" };
-const when = (at: string) => new Date(at).toLocaleString("en-GB", { timeZone: "UTC", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const when = (at: string) => new Date(at).toLocaleString("en-GB", { timeZone: "UTC", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) + " UTC";
 const severity: Record<Tone, number> = { bad: 3, warn: 2, info: 1, idle: 1, ok: 0 };
 
 // The home screen answers, in order: is project memory current (status line),
@@ -118,6 +119,7 @@ export default async function Dashboard({ searchParams }: Props) {
   ];
 
   return <div className="dashboard">
+    {(snapshots.some((s) => s.corpus.available === false) || jobsUnread || !feed.available) && <div className="callout tone-warn" role="status"><b>Some measurements could not be read</b><span>Timeouts describe a failed request, not a stopped server. Retry, then check API logs if the problem persists.</span><RetryRead /></div>}
     <PageHead title="Dashboard" lede="Whether your agents get current project memory, and what to fix next." status={status} />
     {mapRepository && modules.some((m) => m.chunks > 0) && <div className="dashboard__map"><MemoryMap modules={modules} repoName={mapRepository.name} scanning={snapshots.find((s) => s.repo.id === mapRepository.id)?.jobs?.some((j) => j.status === "running" && j.kind.startsWith("index")) ?? false} /></div>}
 

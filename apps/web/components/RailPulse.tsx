@@ -110,7 +110,7 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
 
   return (
     <div className={`vitals tone-${tone}`}>
-      <Link href={restricted ? withRepo("/") : pulse.workerHint ? "/setup" : withRepo(warningOnly ? "/settings" : "/")} className="vitals__line vitals__line--head" title={tip || undefined}>
+      <Link href={restricted ? withRepo("/") : pulse.workerHint ? "/setup" : warningOnly ? "/settings#scheduler" : withRepo("/")} className="vitals__line vitals__line--head" title={tip || undefined}>
         <span className="vitals__beat" aria-hidden="true" />
         <span className="vitals__text">{headline}</span>
         {pulse.reachable && pulse.latencyMs !== undefined && <span className="vitals__ms num">{pulse.latencyMs} ms</span>}

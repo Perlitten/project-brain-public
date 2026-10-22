@@ -8,6 +8,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 
 with (
     patch("sqlalchemy.ext.asyncio.create_async_engine"),
@@ -193,6 +195,28 @@ def test_revoke_unknown_credential_404():
     with _patch_session(session):
         response = client.post("/admin/credentials/999/revoke")
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize("team", [False, True], ids=["solo", "team"])
+@pytest.mark.parametrize("action", ["revoke", "disable"])
+def test_current_dashboard_credential_cannot_lock_itself_out(team, action):
+    from apps.api.routers import admin
+
+    caller = ResolvedPrincipal(id=3, name="dashboard", kind="service",
+                               scopes=frozenset({"principals:write"}), credential_id=11)
+    principal, credential = _principal(), _credential()
+    session = _FakeSession(scalars_rows=[[credential] if action == "revoke" else [principal]])
+    app.dependency_overrides[admin._caller] = lambda: caller
+    try:
+        with _patch_session(session), patch.object(admin, "_team_state_is_team", AsyncMock(return_value=team)):
+            path = "/admin/credentials/11/revoke" if action == "revoke" else "/admin/principals/3/disable"
+            response = client.post(path)
+        assert response.status_code == 409
+        assert "dashboard" in response.json()["detail"]
+        assert credential.revoked_at is None
+        assert principal.disabled_at is None
+    finally:
+        app.dependency_overrides.pop(admin._caller, None)
 
 
 def test_disable_then_enable_principal():

@@ -9,6 +9,7 @@ import { apiConfigured, brainFetch, brainRead, readFailureNote, type ReadFailure
 import * as mock from "./mock";
 import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./list-query";
 import { shortRevision } from "./revision";
+import { SLOW_TOOL_MS } from "./tool-health";
 import { uncommittedCount } from "./repository-status";
 import type {
   AccessKey,
@@ -86,18 +87,18 @@ const isToday = (d: Date) => dayFmt.format(d) === dayFmt.format(new Date());
 const fmtClock = (v: unknown) => {
   const d = parseDate(v);
   if (!d) return "—";
-  return isToday(d) ? clockFmt.format(d) : `${dayFmt.format(d)} · ${hmFmt.format(d)}`;
+  return (isToday(d) ? clockFmt.format(d) : `${dayFmt.format(d)} · ${hmFmt.format(d)}`) + ` ${tz}`;
 };
 /** "13:58" today, "Oct 1" before. */
 const fmtShort = (v: unknown) => {
   const d = parseDate(v);
   if (!d) return "—";
-  return isToday(d) ? hmFmt.format(d) : dayFmt.format(d);
+  return (isToday(d) ? hmFmt.format(d) : dayFmt.format(d)) + ` ${tz}`;
 };
 /** "Oct 2 · 14:02". */
 const fmtWhen = (v: unknown) => {
   const d = parseDate(v);
-  return d ? `${dayFmt.format(d)} · ${hmFmt.format(d)}` : "—";
+  return d ? `${dayFmt.format(d)} · ${hmFmt.format(d)} ${tz}` : "—";
 };
 function fmtDuration(seconds: number | undefined): string {
   if (seconds === undefined || seconds < 0) return "—";
@@ -245,7 +246,7 @@ type RawOverview = Json;
 // React cache deduplicates reads within the render. A failed repository never
 // suppresses another one or a new request after the backend recovers.
 const fetchOverviewResult = cache((repositoryId?: number) =>
-  brainRead<RawOverview>(`/api/web/overview${repositoryId ? `?repository_id=${repositoryId}` : ""}`,
+  brainRead<RawOverview>(`/api/web/overview?include_health=false${repositoryId ? `&repository_id=${repositoryId}` : ""}`,
     { fresh: true, timeoutMs: 2000 }),
 );
 const fetchOverview = cache(async (repositoryId?: number): Promise<RawOverview | null> => {
@@ -268,6 +269,7 @@ function toJob(j: Json, repoName: string): Job {
 async function loadJobs(repositoryId?: number, repoName = ""): Promise<Job[] | null> {
   const o = await fetchOverview(repositoryId);
   if (!o) return null;
+  if (o.jobs_error && !list(o.jobs ?? o.recent_jobs, "jobs").length) return null;
   const name = repoName || str(obj(o.repository).name);
   return list(o.jobs ?? o.recent_jobs, "jobs").map((j) => toJob(j, name));
 }
@@ -877,7 +879,7 @@ export const getMcpTools = async (): Promise<McpTool[] | null> => {
                 ? "idle"
               : errorRate !== undefined && errorRate > 0.05
                 ? "bad"
-                : errorRate !== undefined && errorRate > 0.02
+                : (errorRate !== undefined && errorRate > 0.02) || (num(t.p95_ms) ?? 0) > SLOW_TOOL_MS
                   ? "warn"
                   : "ok",
         } satisfies McpTool;
@@ -1095,6 +1097,7 @@ export const getAccessView = async (): Promise<AccessView> => {
       const created = parseDate(p.created_at);
       return {
         id: int(p.id),
+        current: typeof data.current_principal_id === "number" && p.id === data.current_principal_id,
         name: str(p.name) || `principal ${str(p.id)}`,
         kind: kind === "human" ? "human" : kind === "agent" ? "agent" : "service",
         disabled: Boolean(p.disabled_at),
@@ -1102,7 +1105,7 @@ export const getAccessView = async (): Promise<AccessView> => {
         activeKeys: active.length,
         scopes: [...new Set(active.flatMap((k) => k.scopes))].sort(),
         lastSeen: seen ? fmtShort(seen.toISOString()) : "never",
-        keys: keys.map(({ at: _at, seen: _seen, ...k }) => k),
+        keys: keys.map(({ at: _at, seen: _seen, ...k }) => ({ ...k, current: typeof data.current_credential_id === "number" && k.id === data.current_credential_id })),
       };
     });
     return { readable: true, identities, summary: summarize(identities) };

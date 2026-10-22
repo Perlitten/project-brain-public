@@ -1043,10 +1043,15 @@ def build_coverage(embedding_health: dict[str, Any], total_chunks: int | None) -
 async def web_overview(
     repository_id: int | None = None,
     jobs_limit: int = Query(10, ge=1, le=100),
+    include_health: bool = True,
 ) -> dict[str, Any]:
     from brain.embeddings.config import get_embedding_config
 
-    services = await check_health()
+    # A project overview does not need to probe every service. The dashboard
+    # already polls health separately; repeating it for every repository stalls
+    # usable counts behind unrelated slow Redis/Neo4j probes. Existing callers
+    # retain the full response by default; skipped measurements are explicit null.
+    services = await check_health() if include_health else None
 
     try:
         repository = await _resolve_repository(repository_id)

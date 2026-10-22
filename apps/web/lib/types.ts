@@ -193,6 +193,7 @@ export interface Principal {
 export type KeyStatus = "active" | "expired" | "revoked";
 
 export interface AccessKey {
+  current?: boolean;
   id: number;
   scopes: string[];
   status: KeyStatus;
@@ -207,6 +208,7 @@ export interface AccessKey {
 }
 
 export interface Identity {
+  current?: boolean;
   id: number;
   name: string;
   kind: "human" | "agent" | "service";

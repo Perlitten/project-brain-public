@@ -8,12 +8,22 @@ export function uncommittedMessage(count: number): string {
   return `${count} uncommitted change${count === 1 ? "" : "s"} not indexed yet`;
 }
 
+export const SOURCE_UNAVAILABLE_HELP = "The Brain server cannot read this repository folder. Check that the checkout exists inside the API and worker containers, is mounted at the registered path and is readable. Reindex after restoring access.";
+
+export function repositorySummary(repositories: Repository[]): string {
+  const missing = repositories.filter((r) => r.freshness === "source_missing").length;
+  const behind = repositories.filter((r) => r.freshness !== "source_missing" && (r.freshness === "behind" || (r.behind ?? 0) > 0)).length;
+  const other = repositories.filter((r) => r.freshness !== "source_missing" && r.freshness !== "behind" && !(r.behind && r.behind > 0) && repositoryStatus(r).tone !== "ok").length;
+  const notes = [missing ? `${missing} source unavailable` : "", behind ? `${behind} behind their code` : "", other ? `${other} need a freshness check or indexing` : ""].filter(Boolean);
+  return notes.length ? `${repositories.length} projects: ${notes.join("; ")}` : `All ${repositories.length} projects are up to date`;
+}
+
 export function repositoryStatus(repo: Repository, uncommitted?: number | null): { tone: Tone; status: string } {
   const status = repo.freshness ?? (repo.behind === 0 ? "current" : "behind");
   const omitted = uncommittedCount(uncommitted);
   const note = omitted !== null && omitted > 0 ? uncommittedMessage(omitted) : "";
   if (status === "current") return note ? { tone: "warn", status: note } : { tone: "ok", status: "Up to date" };
-  if (repo.behind !== null && repo.behind > 0) {
+  if (status !== "source_missing" && repo.behind !== null && repo.behind > 0) {
     return { tone: repo.behind > 20 ? "bad" : "warn", status: [`${repo.behind} changes not read yet`, note].filter(Boolean).join(" · ") };
   }
   const labels: Record<string, string> = {

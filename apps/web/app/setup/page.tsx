@@ -6,6 +6,7 @@ import { getClientConfigs, getLatestUncommittedChanges } from "@/lib/data";
 import { uncommittedMessage } from "@/lib/repository-status";
 import { stepTitle } from "@/lib/setup-copy";
 import { getSetupView } from "@/lib/setup-view";
+import { ReadProblem } from "@/components/ReadProblem";
 
 export const metadata = { title: "Set up Brain" };
 
@@ -29,14 +30,9 @@ export default async function Setup() {
           </>
         }
       />
+      {view.providersProblem && <ReadProblem problem={view.providersProblem} />}
       {view.mode === "down" ? (
-        <div className="callout tone-warn">
-          <b>Brain isn’t answering.</b>
-          <span>
-            The dashboard can’t reach the Brain API, so it can’t show or change setup. Start the server (<code>docker compose up -d</code> on the Brain
-            machine), then reload this page.
-          </span>
-        </div>
+        <ReadProblem problem={view.problem!} />
       ) : (
         <>
           {uncommitted !== null && uncommitted > 0 && <StatusLine tone="warn" text={<>{uncommittedMessage(uncommitted)}<small>Recorded at the latest index run for this repository, not a live checkout count. Commit the changes and reindex to make them available to agents.</small></>} />}

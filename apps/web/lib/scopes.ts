@@ -70,7 +70,8 @@ export const SCOPE_GROUPS: ScopeGroup[] = [
   },
 ];
 
-export const KNOWN_SCOPES = new Set(SCOPE_GROUPS.flatMap((g) => g.areas.flatMap((a) => [...(a.read ? [`${a.area}:read`] : []), ...(a.write ? [`${a.area}:write`] : [])])));
+export const TEAM_SCOPES = ["team:read", "team:knowledge.propose", "team:knowledge.approve", "team:task.create", "team:task.accept", "team:run.request", "team:admin"];
+export const KNOWN_SCOPES = new Set([...TEAM_SCOPES, ...SCOPE_GROUPS.flatMap((g) => g.areas.flatMap((a) => [...(a.read ? [`${a.area}:read`] : []), ...(a.write ? [`${a.area}:write`] : [])]))]);
 
 export interface ScopePreset {
   id: string;

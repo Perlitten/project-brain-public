@@ -12,7 +12,7 @@ import { KeyDialog } from "@/components/KeyDialog";
 import { ListFrame } from "@/components/ListFrame";
 import { Chip } from "@/components/ui";
 import { createAgentKey, disablePrincipal, enablePrincipal, mintKey, revokeCredential, type NewKey } from "@/lib/actions/admin";
-import { EXPIRY_CHOICES, KNOWN_SCOPES, SCOPE_GROUPS, SCOPE_PRESETS, sameScopes } from "@/lib/scopes";
+import { EXPIRY_CHOICES, KNOWN_SCOPES, SCOPE_GROUPS, SCOPE_PRESETS, TEAM_SCOPES, sameScopes } from "@/lib/scopes";
 import type { AccessKey, Identity, Tone } from "@/lib/types";
 
 type Kind = Identity["kind"];
@@ -20,7 +20,7 @@ type Kind = Identity["kind"];
 export const KIND_WORD: Record<Kind, string> = { agent: "AI agent", service: "integration", human: "person" };
 const KIND_PRESET: Record<Kind, string> = { agent: "agent", service: "integration", human: "read" };
 const presetScopes = (id: string) => SCOPE_PRESETS.find((p) => p.id === id)?.scopes ?? [];
-const VALID = /^[a-z_]+:[a-z_]+$/;
+const VALID = /^[a-z_]+:[a-z_]+(?:\.[a-z_]+)*$/;
 
 /** Where a new key's agent config points. */
 export interface AgentTarget {
@@ -99,6 +99,11 @@ function ScopePicker({ value, onChange }: { value: string[]; onChange: (next: st
             })}
           </fieldset>
         ))}
+        <fieldset className="scope-pick__group">
+          <legend>Team</legend>
+          <p className="field__hint">These scopes do not create membership or a project role. Brain also checks the person’s live membership and project permissions; you can only mint scopes your current credential holds.</p>
+          {TEAM_SCOPES.map((s) => <label key={s} className="check"><input type="checkbox" checked={has(s)} onChange={(e) => toggle(s, e.target.checked)} /><span className="mono">{s}</span></label>)}
+        </fieldset>
         {extra.length > 0 && (
           <fieldset className="scope-pick__group">
             <legend>Other</legend>
@@ -138,7 +143,7 @@ export function NewIdentityForm({ target }: { target: AgentTarget }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<Kind>("agent");
   const [scopes, setScopes] = useState<string[]>(() => [...presetScopes("agent")].sort());
-  const [ttl, setTtl] = useState(0);
+  const [ttl, setTtl] = useState(90);
   const [key, setKey] = useState<NewKey | null>(null);
   const { run, pending, mode } = useAction(createAgentKey, { title: "New identity" });
 
@@ -252,6 +257,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
       <button type="button" className="ident__head" aria-expanded={open} aria-controls={panel} onClick={() => setOpen((v) => !v)}>
         <span className="ident__name">
           <span className="mono">{i.name}</span>
+          {i.current && <Chip tone="info">Dashboard identity</Chip>}
           <span className="sub">
             {KIND_WORD[i.kind]} · since {i.createdAt} · last seen {i.lastSeen}
           </span>
@@ -297,6 +303,8 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
                 small
                 variant="danger"
                 action={() => disablePrincipal(i.id)}
+                disabled={i.current}
+                disabledReason="This identity serves the dashboard. Switch to another administrative identity before disabling it."
                 label="Disable"
                 title={`Disable “${i.name}”`}
                 confirm={{
@@ -332,7 +340,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
                   </tr>
                 </thead>
                 <tbody>
-                  {i.keys.map((k) => {
+              {i.keys.map((k) => {
                     const [tone, word] = keyTone(k, i.disabled);
                     return (
                       <tr key={k.id} className={k.status === "active" ? undefined : "keys__gone"}>
@@ -358,6 +366,8 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
                               small
                               variant="danger"
                               action={() => revokeCredential(k.id)}
+                               disabled={k.current}
+                               disabledReason="This key serves the dashboard. Create a replacement, switch the dashboard to it and verify access before revoking this key."
                               label="Revoke"
                               title={`Revoke key #${k.id}`}
                               confirm={{
@@ -397,7 +407,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
 // Lives inside the dialog, so every opening starts from the newest key's permissions.
 function MintForm({ identity, initial, onCancel, onMinted }: { identity: Identity; initial: string[]; onCancel: () => void; onMinted: (k: NewKey) => void }) {
   const [scopes, setScopes] = useState<string[]>(() => (initial.length ? [...initial].sort() : [...presetScopes(KIND_PRESET[identity.kind])].sort()));
-  const [ttl, setTtl] = useState(0);
+  const [ttl, setTtl] = useState(90);
   const { run, pending, mode } = useAction(mintKey, { title: "New key" });
   return (
     <form

@@ -1,4 +1,5 @@
 "use client";
+import { ReadProblem } from "@/components/ReadProblem";
 // Setup, made of controls: every step opens to the thing that finishes it —
 // start a check, save a path, pick a model, index, mint an agent key, build a
 // first context pack. Each step says why it exists and where it stands in
@@ -318,7 +319,7 @@ function Providers({ step, view }: { step: StepView; view: SetupView }) {
         })}
       </div>
 
-      {!cat ? (
+      {!cat && view.providersProblem ? <ReadProblem problem={view.providersProblem} /> : !cat ? (
         <p className="field__hint">This Brain server is older than the model picker. Set LLM_* and EMBEDDING_* in the server’s .env, restart it, then press Verify both.</p>
       ) : (
         <ProviderForm key={slot} slot={slot} presets={cat.presets} current={slot === "llm" ? cat.llm : cat.embedding} />

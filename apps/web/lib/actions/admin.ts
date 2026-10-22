@@ -7,7 +7,7 @@ import type { ActionResult } from "./types";
 const ACCESS = ["/admin", "/setup"];
 const AGENT_SCOPES = ["core:write", "jobs:read"];
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,119}$/;
-const SCOPE_RE = /^[a-z_]+:[a-z_]+$/;
+const SCOPE_RE = /^[a-z_]+:[a-z_]+(?:\.[a-z_]+)*$/;
 
 export interface NewKey {
   apiKey: string;

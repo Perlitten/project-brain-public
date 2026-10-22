@@ -3,7 +3,9 @@
 // use. Server-only; keys never appear here (only whether one is set).
 import "server-only";
 import { connection } from "next/server";
-import { apiConfigured, brainFetch } from "./api";
+import { apiConfigured, brainFetch, brainRead } from "./api";
+import { readProblem, type ReadProblem } from "./read-problem";
+import { setupDetail } from "./time";
 
 type Json = Record<string, unknown>;
 
@@ -46,6 +48,8 @@ export interface ProviderSlot {
 
 export interface SetupView {
   mode: "live" | "demo" | "down";
+  problem?: ReadProblem;
+  providersProblem?: ReadProblem;
   steps: StepView[];
   nextStep?: string;
   repoPath?: string;
@@ -109,11 +113,17 @@ export async function getAgentTarget(): Promise<{ publicApiUrl: string; repoPath
 export async function getSetupView(): Promise<SetupView> {
   if (!apiConfigured) return demoView();
   await connection();
-  const [status, providers] = await Promise.all([
-    brainFetch<Json>("/api/setup/status", { fresh: true }),
-    brainFetch<Json>("/api/setup/providers", { fresh: true }),
+  const [read, providerRead] = await Promise.all([
+    brainRead<Json>("/api/setup/status", { fresh: true }),
+    brainRead<Json>("/api/setup/providers", { fresh: true }),
   ]);
-  if (!status) return { mode: "down", steps: [], providers: null, publicApiUrl: publicUrl() };
+  if (!read.ok) return { mode: "down", problem: readProblem(read), steps: [], providers: null, publicApiUrl: publicUrl() };
+  const status = read.data;
+  const providers = providerRead.ok ? providerRead.data : null;
+  if (!status || !Array.isArray(status.steps) || status.steps.length === 0) return {
+    mode: "down", problem: readProblem({ ok: false, status: 200, reason: "invalid_response" }),
+    steps: [], providers: null, publicApiUrl: publicUrl(),
+  };
   const steps = (Array.isArray(status.steps) ? status.steps : []).map((raw): StepView => {
     const s = obj(raw);
     const { id, title, status: st, detail, hint, ...extra } = s;
@@ -122,14 +132,15 @@ export async function getSetupView(): Promise<SetupView> {
       title: str(title) || str(id),
       done: str(st) === "done",
       status: str(st) || "todo",
-      detail: str(detail),
-      hint: str(hint) || undefined,
+      detail: setupDetail(str(detail)),
+      hint: setupDetail(str(hint)) || undefined,
       extra,
     };
   });
   const current = obj(providers?.current);
   return {
     mode: "live",
+    providersProblem: !providerRead.ok && providerRead.reason !== "not_found" ? readProblem(providerRead) : undefined,
     steps,
     nextStep: str(status.next_step) || undefined,
     repoPath: str(status.repo_path) || undefined,

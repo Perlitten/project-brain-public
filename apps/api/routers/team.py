@@ -4,18 +4,19 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from sqlalchemy.exc import DBAPIError
 
 from apps.api.auth import require_principal, require_scope
-from brain.auth.principals import ResolvedPrincipal
+from brain.auth.principals import ResolvedPrincipal, hash_credential
 from brain.config.settings import settings
-from brain.database.models import Principal, Repository
+from brain.database.models import ApiCredential, Principal, Repository
+from sqlalchemy import select
 from brain.database.session import async_session_factory, redis_client
 from brain.team import execution, provisioning, store
 from brain.team.authorization import (Permission, TeamConflict, TeamDenied, administrator, fresh, require_team_storage,
-                                      team_administrator)
-from brain.team.locking import bound_team_transaction, retryable
+                                      live_credential, team_administrator, team_state)
+from brain.team.locking import advisory_xact_lock, bound_team_transaction, retryable
 from brain.team.models import TeamTaskBinding
 from brain.team.provisioning import TeamNotFound
 from brain.workers.initiator import JobInitiator
@@ -65,6 +66,13 @@ class TeamMemberRequest(BaseModel):
         if (self.principal_id is None) == (self.principal_name is None):
             raise ValueError("Provide exactly one of principal_id or principal_name")
         return self
+
+
+class BootstrapRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    team_name: str = Field(min_length=1, max_length=128)
+    # Already minted and saved by the future admin, before shared sign-in is retired.
+    credential: SecretStr = Field(min_length=8, max_length=512)
 
 
 class ProjectRoleRequest(BaseModel):
@@ -154,6 +162,40 @@ async def team_session():
 
 # Team-level administration. Declared before the ``/{project_id}`` routes so
 # the literal ``members`` segment is never parsed as a project identifier.
+
+@router.post("/bootstrap", dependencies=[Depends(require_scope("principals:write")),
+                                         Depends(require_scope("setup:write"))])
+async def bootstrap_team(body: BootstrapRequest, response: Response,
+                         caller: ResolvedPrincipal = Depends(require_principal),
+                         session=Depends(team_session, scope="function")):
+    """Activate a first administrator only after proof of their saved credential.
+
+    Preparing the human/key uses /admin/principals, whose existing scope-subset
+    check prevents a dashboard integration from minting authority it does not hold.
+    Activation needs both the existing owner's authority and the new human key;
+    losing the HTTP response cannot lose the already-saved sign-in credential.
+    """
+    if caller.id < 0 or not all(caller.has_scope(s) for s in ("team:admin", "principals:write", "setup:write")):
+        raise HTTPException(403, "Bootstrap requires an authenticated owner credential with team:admin, principals:write and setup:write; use server CLI if the dashboard credential lacks these scopes")
+    if caller.id > 0:
+        caller = await live_credential(session, caller.id, caller.credential_id)
+        if not all(caller.has_scope(s) for s in ("team:admin", "principals:write", "setup:write")):
+            raise HTTPException(403, "The owner credential no longer holds the bootstrap scopes")
+    await advisory_xact_lock(session, "team-bootstrap")
+    saved = (await session.execute(select(ApiCredential.principal_id, ApiCredential.id).where(
+        ApiCredential.key_hash == hash_credential(body.credential.get_secret_value())))).one_or_none()
+    incoming = await live_credential(session, saved.principal_id, saved.id) if saved else None
+    if incoming is None or incoming.kind != "human" or not all(incoming.has_scope(s) for s in ("team:admin", "team:read", "principals:write", "setup:write")):
+        raise HTTPException(403, "The saved credential must be a live human administrator credential")
+    team = await provisioning.init_team(session, body.team_name)
+    if await team_state(session) != "solo":
+        raise TeamConflict("This Brain already has team members; sign in with your member credential")
+    principal = await provisioning.resolve_principal(session, incoming.id)
+    member = await provisioning.add_member(session, principal=principal, issuer=provisioning.CREDENTIAL_ISSUER,
+                                           subject=principal.name, is_admin=True, team_id=team.id,
+                                           actor_id=caller.author_id)
+    response.headers["Cache-Control"] = "no-store"
+    return {"member": provisioning.member_dict(member, principal)}
 
 @router.get("/")
 async def list_projects(caller: ResolvedPrincipal = Depends(require_principal), session=Depends(team_session, scope="function")):

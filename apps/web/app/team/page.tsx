@@ -1,4 +1,6 @@
 import { CodeBlock } from "@/components/act";
+import { Bootstrap } from "@/components/team/Bootstrap";
+import { RetryRead } from "@/components/RetryRead";
 import { InvitationTable, InviteForm } from "@/components/team/Invitations";
 import { AddMemberForm, MemberTable } from "@/components/team/Team";
 import { SectionTabs } from "@/components/SectionNav";
@@ -13,7 +15,8 @@ export const metadata = { title: "Team" };
 const LEDE = "Experimental preview (main only, not in v0.9.2). Everyone on the team signs in to this dashboard with their own key. Brain checks that key on every request, so revoking a member locks them out of the dashboard at once; revoke their key under Access to stop their agents too.";
 
 export default async function Team() {
-  const [mode, member] = await Promise.all([signInMode(), currentMember()]);
+  const [observedMode, member] = await Promise.all([signInMode(), currentMember()]);
+  const mode = member ? "team" : observedMode;
   const head = (
     <>
       <PageHead title="Team" lede={LEDE} />
@@ -21,11 +24,14 @@ export default async function Team() {
     </>
   );
 
+  if (mode === "unknown") return <>{head}<Panel id="team-status" title="Team status unavailable"><p>Brain did not return the sign-in state. Retry before changing team membership or server configuration.</p><RetryRead /></Panel></>;
+
   if (mode !== "team") {
     return (
       <>
         {head}
-        <Panel id="team-setup" title="No team yet" desc="This Brain has one owner: the dashboard opens with the owner’s sign-in and the server key.">
+        <Panel id="team-bootstrap" title="Enable team" desc="Prepare and save your own administrator key before changing how this dashboard signs you in."><Bootstrap /></Panel>
+        <Panel id="team-setup" title="Server setup and recovery" desc="Use this route when the dashboard credential cannot issue administrator scopes, or when you need to recover access.">
           <div className="form form--wide">
             <p className="field__hint">
               A team is set up on the Brain server, so the first admin is created by someone who can run commands there. Once the team has a member,
@@ -39,6 +45,7 @@ brain team member add --principal alice --admin --mint-key`}
             <p className="field__hint">
               Keep the printed key: it is the first admin’s dashboard sign-in. Admins then add or invite everyone else here, on the Team page.
             </p>
+            <div className="callout tone-warn"><b>Keep a working way back in</b><span>Use the invitation route below to become the first admin in this browser. Save the member key before closing the invitation result. If you lose access, a server operator can run <code>brain team invite create --admin</code> to issue a recovery invitation for a new administrator. Changing the dashboard’s integration key does not recover a human account.</span></div>
             <p className="field__hint">
               Or bootstrap with an invitation: run <code>brain team invite create --admin --name you</code> on the server, then open{" "}
               <code>/invite</code> on this dashboard and paste the printed token. You become the first admin and are signed in with your own key.

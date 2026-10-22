@@ -52,8 +52,6 @@ export function Decode({ text, delay = 0 }: { text: string; delay?: number }) {
   }, [text, delay]);
 
   return (
-    <span ref={ref} className="decode">
-      {text}
-    </span>
+    <span><span className="sr-only">{text}</span><span ref={ref} className="decode" aria-hidden="true">{text}</span></span>
   );
 }
