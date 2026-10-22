@@ -18,11 +18,12 @@ export function repositoryAction(repo: Repository): { href: string; label: strin
     : { href: `/indexing${scope}`, label: `Open index runs for ${repo.name}` };
 }
 
-export function repositorySummary(repositories: Repository[]): string {
+export function repositorySummary(repositories: Repository[], uncommitted: ReadonlyMap<number, number | null> = new Map()): string {
   const missing = repositories.filter((r) => r.freshness === "source_missing").length;
   const behind = repositories.filter((r) => r.freshness !== "source_missing" && (r.freshness === "behind" || (r.behind ?? 0) > 0)).length;
+  const omitted = repositories.filter(r => r.freshness === "current" && (uncommittedCount(uncommitted.get(r.id)) ?? 0) > 0).length;
   const other = repositories.filter((r) => r.freshness !== "source_missing" && r.freshness !== "behind" && !(r.behind && r.behind > 0) && repositoryStatus(r).tone !== "ok").length;
-  const notes = [missing ? `${missing} source unavailable` : "", behind ? `${behind} behind their code` : "", other ? `${other} need a freshness check or indexing` : ""].filter(Boolean);
+  const notes = [omitted ? `${omitted} with uncommitted changes omitted by the last index` : "", missing ? `${missing} source unavailable` : "", behind ? `${behind} behind their code` : "", other ? `${other} need a freshness check or indexing` : ""].filter(Boolean);
   return notes.length ? `${repositories.length} projects: ${notes.join("; ")}` : `All ${repositories.length} projects are up to date`;
 }
 

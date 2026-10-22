@@ -1708,3 +1708,20 @@ test('a missed health probe retains independently reported build identity', asyn
   assert.equal(pulse.version, '0.9.2');
   assert.equal(pulse.build, '4935387');
 });
+
+
+test('repository summary never calls known omitted working-tree edits up to date', () => {
+  const { repositorySummary } = load('lib/repository-status.ts');
+  const repos = [{ id: 1, freshness: 'current', behind: 0 }];
+  const summary = repositorySummary(repos, new Map([[1, 3]]));
+  assert.match(summary, /1 with uncommitted changes omitted by the last index/);
+  assert.doesNotMatch(summary, /up to date/);
+  assert.match(repositorySummary(repos, new Map([[1, 0]])), /up to date/);
+  assert.match(repositorySummary(repos, new Map([[1, null]])), /up to date/);
+});
+
+test('diagnostic UTC timestamps distinguish attempts within the same minute', () => {
+  const { utcTime } = load('lib/time.ts');
+  assert.match(utcTime('2026-10-22T06:30:01+03:00', true), /03:30:01 UTC$/);
+  assert.notEqual(utcTime('2026-10-22T03:30:01Z', true), utcTime('2026-10-22T03:30:02Z', true));
+});

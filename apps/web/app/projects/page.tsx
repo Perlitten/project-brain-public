@@ -16,7 +16,7 @@ export default async function Projects({ searchParams }: { searchParams: Promise
   const detail = current && current.id > 0 ? current : null;
   const scope = detail ? `?repo=${encodeURIComponent(detail.slug)}` : "";
   const [corpus, history] = detail ? await Promise.all([getCorpus(detail.slug), getPagedIndexRuns(detail.slug, { size: 5 })]) : [null, null];
-  const state = detail ? repositoryStatus(detail) : null;
+  const state = detail ? repositoryStatus(detail, corpus?.uncommitted) : null;
   const action = detail ? repositoryAction(detail) : null;
   const stale = repositories.filter((r) => repositoryStatus(r).tone !== "ok").length;
   return (

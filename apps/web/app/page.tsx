@@ -63,6 +63,7 @@ export default async function Dashboard({ searchParams }: Props) {
   const total = telemetry?.total;
   const contextRate = telemetry?.context_total ? telemetry.context_success / telemetry.context_total * 100 : null;
 
+  const observations = new Map(snapshots.map(s => [s.repo.id, s.corpus.uncommitted ?? null]));
   const first = attention[0];
   const nextAction = first ? repositoryAction(first.repo) : null;
   const status: PageStatus = !feed.available
@@ -74,10 +75,10 @@ export default async function Dashboard({ searchParams }: Props) {
       : first
         ? {
           tone: first.tone,
-          text: <>{repositorySummary(projects)}<small>{first.repo.freshness === "source_missing" ? SOURCE_UNAVAILABLE_HELP : attention.map((a) => `${a.repo.name} — ${a.status.toLowerCase()}`).join(" · ")}</small></>,
+          text: <>{repositorySummary(projects, observations)}<small>{first.repo.freshness === "source_missing" ? SOURCE_UNAVAILABLE_HELP : attention.map((a) => `${a.repo.name} — ${a.status.toLowerCase()}`).join(" · ")}</small></>,
           action: nextAction ? <Link className="btn btn--neutral" href={nextAction.href}>{nextAction.label}</Link> : undefined,
         }
-        : { tone: "ok", text: <>{repositorySummary(projects)}<small>{coverage !== null ? `${measuredNumber(coverage, "%")} of eligible code is searchable. ` : ""}Agents get context from the latest indexed revision. {snapshots.some((s) => s.corpus.uncommitted == null) ? "Working-tree changes were not reported by the latest run." : "The latest run recorded no uncommitted changes; later edits may not be detected."}</small></> };
+        : { tone: "ok", text: <>{repositorySummary(projects, observations)}<small>{coverage !== null ? `${measuredNumber(coverage, "%")} of eligible code is searchable. ` : ""}Agents get context from the latest indexed revision. {snapshots.some((s) => s.corpus.uncommitted == null) ? "Working-tree changes were not reported by the latest run." : "The latest run recorded no uncommitted changes; later edits may not be detected."}</small></> };
 
   const packs = worthData?.packs;
   const ruleUse = worthData?.rules;
