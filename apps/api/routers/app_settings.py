@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field as PydanticField
 from apps.api.auth import require_api_key, require_scope
 from apps.api.team_access import team_administrator_access
 from brain.config.settings import settings
+from brain.telemetry.query_capture import current_query_capture, set_query_capture
 from brain.onboarding.envfile import check_endpoint_host, setup_env_path, update_env_file
 
 router = APIRouter(prefix="/api/settings", tags=["settings"],
@@ -84,7 +85,7 @@ def _public(f: SettingField) -> Dict[str, Any]:
         "clearable": f.clearable,
         # Also passed in the process environment (e.g. docker compose): that
         # value wins over .env on the next restart.
-        "from_env": f.key in os.environ,
+        "from_env": f.key in os.environ and f.key != "REQUEST_TELEMETRY_CAPTURE_QUERY",
     }
     if f.min is not None:
         out["min"] = f.min
@@ -110,10 +111,15 @@ def _safe_url(url: Optional[str]) -> Optional[str]:
 
 @router.get("", dependencies=[Depends(require_scope("setup:read"))])
 async def get_settings() -> Dict[str, Any]:
-    sections = [
+    sections: List[Dict[str, Any]] = [
         {"id": sid, "title": title, "fields": [_public(f) for f in FIELDS if f.section == sid]}
         for sid, title in SECTIONS.items()
     ]
+    capture = await current_query_capture()
+    for section in sections:
+        for field in section["fields"]:
+            if field["key"] == "REQUEST_TELEMETRY_CAPTURE_QUERY":
+                field["value"] = capture
     return {
         "sections": sections,
         # Shown, edited on /setup.
@@ -208,10 +214,17 @@ async def patch_settings(body: SettingsPatch) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"could not write .env: {type(exc).__name__}") from exc
+    if "REQUEST_TELEMETRY_CAPTURE_QUERY" in live:
+        try:
+            await set_query_capture(live["REQUEST_TELEMETRY_CAPTURE_QUERY"])
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Query capture policy was not saved. Retry; do not assume capture has changed.") from exc
     for key, value in live.items():
         setattr(settings, key, value)
     notes = ["Saved to the server’s .env and applied to the API. Restart the workers and scheduler so background jobs use it too."]
-    overridden = sorted(k for k in updates if k in os.environ)
+    if "REQUEST_TELEMETRY_CAPTURE_QUERY" in live:
+        notes.append("Query capture is stored centrally and checked before each recording in API and MCP processes; no MCP restart is needed for this preference.")
+    overridden = sorted(k for k in updates if k in os.environ and k != "REQUEST_TELEMETRY_CAPTURE_QUERY")
     if overridden:
         notes.append(
             "Also set in the server’s process environment (e.g. docker compose): "

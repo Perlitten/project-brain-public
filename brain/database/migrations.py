@@ -418,6 +418,21 @@ async def _backfill_non_current_knowledge_authority(
     )
 
 
+async def upgrade_lite_content_history(conn: AsyncConnection) -> None:
+    """Upgrade existing SQLite tables; create_all only creates missing tables."""
+    additions = {
+        "insights": (("dismissed_evidence", "JSON"), ("dismissed_last_seen_at", "DATETIME"),
+                     ("dismissed_reason", "TEXT"), ("dismissed_by", "VARCHAR(128)"), ("dismissed_at", "DATETIME")),
+        "brain_request_telemetry": (("query_text", "VARCHAR(500)"),
+                                    ("surface", "VARCHAR(16) NOT NULL DEFAULT 'http'")),
+    }
+    for table, columns in additions.items():
+        existing = {row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).fetchall()}
+        for column, kind in columns:
+            if column not in existing:
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {kind}"))
+
+
 async def _ensure_insights_table(conn: AsyncConnection) -> None:
     """Create the proactive insight inbox on existing installs.
 

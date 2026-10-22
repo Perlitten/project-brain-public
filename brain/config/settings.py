@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     # 0 disables the application-level cap.
     # Off by default: query text can contain source or secrets. Metadata-only
     # history remains available without this opt-in; old queries cannot be recovered.
+    # Seeds the persisted installation-wide capture preference only once.
     REQUEST_TELEMETRY_CAPTURE_QUERY: bool = False
     API_MAX_REQUEST_BODY_BYTES: int = 25 * 1024 * 1024
     WORKER_REDIS_PREFIX: str = "brain:worker"

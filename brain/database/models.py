@@ -689,6 +689,15 @@ class AuditEvent(Base):
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
+class BrainQueryCapturePolicy(Base):
+    """Explicit installation-wide privacy preference, never a process-local cache."""
+
+    __tablename__ = "brain_query_capture_policy"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
 class BrainRequestTelemetry(Base):
     """Durable request measurements; optional query capture requires operator opt-in."""
     __tablename__ = "brain_request_telemetry"

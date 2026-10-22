@@ -80,9 +80,11 @@ Finding dismissal requires operator/team-administrator authority, `core:write`, 
 
 Open code reads bounded chunks from the index using the repository and file explicitly named in the finding evidence. It never reads an arbitrary server file or guesses a repository from a module name. Project source permissions are checked separately from operator access to global findings. Historical module-only findings do not gain file identity retroactively.
 
-Request telemetry remains metadata-only by default. A team administrator may explicitly enable **Settings → Activity history → Record query text** (`REQUEST_TELEMETRY_CAPTURE_QUERY`) for future HTTP and MCP requests. This stores at most 500 characters; queries may contain source or secrets. Disabling stops future capture and does not erase previously stored text. Historical queries cannot be recovered. Trace details use the same repository/admin authorization as request history.
+Request telemetry remains metadata-only by default. A team administrator may explicitly enable **Settings → Activity history → Record query text** (`REQUEST_TELEMETRY_CAPTURE_QUERY`) for future HTTP and MCP requests. This stores at most 500 characters; queries may contain source or secrets. The shared database stores this preference; API and already-running MCP processes check it before each query record. Disabling stops future capture across processes and does not erase previously stored text. The environment value seeds a new installation only once and cannot undo a later disable on restart. A missing/unreadable preference fails closed to metadata-only recording. Historical queries cannot be recovered. Trace details use the same repository/admin authorization as request history.
 
 These contracts require the updated API and its startup migrations. The dashboard does not deploy the server, change Vercel bindings, or enable query capture automatically. Existing clients keep the previous metadata-only behavior unless the operator opts in.
 
 
 Repository registration in team mode requires a live team administrator and the target project administrator checks; existing administrator credentials keep their scopes and remain compatible. Solo registration continues to require the explicit `workspace:write` credential scope. The dialog reports this permission missing before submission, without changing stored keys.
+
+Upgrades preserve existing PostgreSQL and Lite/SQLite histories. Lite startup adds the six optional content-history columns without recreating tables; repeated startup is safe.

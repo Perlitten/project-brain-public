@@ -14,6 +14,7 @@ from brain.database.migrations import apply_migrations
 from brain.database.session import async_engine, init_db
 
 EXPECTED_MIGRATED_COLUMNS = [
+    ("brain_query_capture_policy", "enabled"),
     ("brain_request_telemetry", "query_text"),
     ("insights", "dismissed_reason"),
     ("insights", "dismissed_by"),

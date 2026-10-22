@@ -8,12 +8,13 @@ from fastapi import FastAPI
 from sqlalchemy import select
 
 from apps.api import auth, team_access, telemetry
-from apps.api.routers import core_status, web
+from apps.api.routers import app_settings, core_status, web
 from brain.config.settings import settings
-from brain.database.models import BrainInsight, BrainRequestTelemetry, Decision, Embedding, File, FileChunk
+from brain.database.models import BrainInsight, BrainQueryCapturePolicy, BrainRequestTelemetry, Decision, Embedding, File, FileChunk
 from brain.insights.evidence import code_target
 from tests.test_team_foundations import team_db as team_fixture
 from tests.test_team_transport import live_team_state
+from brain.telemetry import query_capture
 
 team_db = team_fixture
 pytestmark = pytest.mark.team_state
@@ -23,17 +24,20 @@ READER = {"X-API-Key": "fixture-1"}
 
 
 @pytest_asyncio.fixture
-async def content_api(team_db, monkeypatch):
+async def content_api(team_db, monkeypatch, tmp_path):
+    monkeypatch.setenv("BRAIN_ENV_FILE", str(tmp_path / ".env"))
+    monkeypatch.setattr(settings, "REQUEST_TELEMETRY_CAPTURE_QUERY", False)
     factory, _, _ = team_db
     async with factory.kw["bind"].begin() as connection:
         await connection.run_sync(lambda sync: BrainInsight.metadata.create_all(
-            sync, tables=[BrainInsight.__table__, BrainRequestTelemetry.__table__,
+            sync, tables=[BrainInsight.__table__, BrainRequestTelemetry.__table__, BrainQueryCapturePolicy.__table__,
                           File.__table__, FileChunk.__table__, Embedding.__table__]))
-    for module in (auth, team_access, core_status, web, telemetry):
+    for module in (auth, team_access, core_status, web, telemetry, query_capture):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     async with factory() as session, session.begin():
         session.add_all([
+            BrainQueryCapturePolicy(id=1, enabled=False),
             BrainInsight(id=1, insight_type="drift", severity="warning", title="Bound finding", summary="synthetic",
                          evidence=[{"repository_id": 2, "file": "src/code.py", "line": 10}], dedupe_key="synthetic-bound",
                          status="new", last_seen_at=STAMP),
@@ -53,6 +57,7 @@ async def content_api(team_db, monkeypatch):
     app = FastAPI()
     app.include_router(core_status.router)
     app.include_router(web.router)
+    app.include_router(app_settings.router)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
         yield client, factory
 
@@ -98,12 +103,12 @@ def test_file_evidence_refuses_unsafe_paths_without_reading_the_filesystem(path)
 
 
 @pytest.mark.asyncio
-async def test_query_capture_is_opt_in_bounded_and_trace_stays_in_project_scope(content_api, monkeypatch):
+async def test_query_capture_is_opt_in_bounded_and_trace_stays_in_project_scope(content_api):
     client, factory = content_api
     common = dict(operation="search", repository_id=1, repository_path="/synthetic/A", principal_name="human-1", outcome="success", latency_ms=1)
-    monkeypatch.setattr(settings, "REQUEST_TELEMETRY_CAPTURE_QUERY", False)
     await telemetry.record_request(**common, request_id="no-capture", query_text="synthetic query must not be stored")
-    monkeypatch.setattr(settings, "REQUEST_TELEMETRY_CAPTURE_QUERY", True)
+    changed = await client.patch("/api/settings", headers=ADMIN, json={"values": {"REQUEST_TELEMETRY_CAPTURE_QUERY": True}})
+    assert changed.status_code == 200, changed.text
     await telemetry.record_request(**common, request_id="captured", query_text="q" * 900)
     async with factory() as session:
         rows = list((await session.execute(select(BrainRequestTelemetry).order_by(BrainRequestTelemetry.id))).scalars())
@@ -129,3 +134,17 @@ async def test_current_decisions_exclude_replaced_and_other_project_rows_before_
     assert statuses == {"accepted", "proposed", "validated_unmerged"}
     replaced = await client.get("/api/web/decisions?status=superseded", headers=READER)
     assert replaced.status_code == 200 and replaced.json()["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_missing_capture_policy_keeps_metadata_without_recording_query(content_api):
+    from sqlalchemy import text
+    _, factory = content_api
+    async with factory() as session, session.begin():
+        await session.execute(text("DROP TABLE brain_query_capture_policy"))
+    await telemetry.record_request(operation="search", repository_id=1, repository_path="/synthetic/A",
+                                   principal_name="human-1", request_id="policy-unavailable", outcome="success",
+                                   latency_ms=1, query_text="synthetic query must not be stored")
+    async with factory() as session:
+        row = (await session.execute(select(BrainRequestTelemetry).where(BrainRequestTelemetry.request_id == "policy-unavailable"))).scalar_one()
+        assert row.query_text is None and row.outcome == "success"
