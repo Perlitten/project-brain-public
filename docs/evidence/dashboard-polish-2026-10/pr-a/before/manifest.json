@@ -1,0 +1,56 @@
+[
+  {
+    "screen": "dashboard",
+    "url": "https://project-brain-demo-git-fix-pr183-ci-fc83b2-perlittens-projects.vercel.app/",
+    "title": "Project Brain",
+    "heading": "Dashboard"
+  },
+  {
+    "screen": "projects",
+    "url": "https://project-brain-demo-git-fix-pr183-ci-fc83b2-perlittens-projects.vercel.app/projects",
+    "title": "Projects \u00b7 Project Brain",
+    "heading": "Projects"
+  },
+  {
+    "screen": "help",
+    "url": "https://project-brain-demo-git-fix-pr183-ci-fc83b2-perlittens-projects.vercel.app/help",
+    "title": "Help \u00b7 Project Brain",
+    "heading": "Help"
+  },
+  {
+    "screen": "activity",
+    "url": "https://project-brain-demo-git-fix-pr183-ci-fc83b2-perlittens-projects.vercel.app/logs",
+    "title": "Requests & jobs \u00b7 Project Brain",
+    "heading": "Requests & jobs"
+  },
+  {
+    "screen": "memory",
+    "url": "https://project-brain-demo-git-fix-pr183-ci-fc83b2-perlittens-projects.vercel.app/memory",
+    "title": "Decisions & rules \u00b7 Project Brain",
+    "heading": "Memory"
+  },
+  {
+    "screen": "index-runs",
+    "url": "https://project-brain-demo-git-fix-pr183-ci-fc83b2-perlittens-projects.vercel.app/indexing?repo=project-brain",
+    "title": "Index runs \u00b7 Project Brain",
+    "heading": "Index runs"
+  },
+  {
+    "screen": "code-map",
+    "url": "https://project-brain-demo-git-fix-pr183-ci-fc83b2-perlittens-projects.vercel.app/graph?repo=project-brain",
+    "title": "Code map \u00b7 Project Brain",
+    "heading": "Code map"
+  },
+  {
+    "screen": "settings",
+    "url": "https://project-brain-demo-git-fix-pr183-ci-fc83b2-perlittens-projects.vercel.app/settings",
+    "title": "Settings \u00b7 Project Brain",
+    "heading": "Settings"
+  },
+  {
+    "screen": "agent-tools",
+    "url": "https://project-brain-demo-git-fix-pr183-ci-fc83b2-perlittens-projects.vercel.app/mcp",
+    "title": "Agent tools \u00b7 Project Brain",
+    "heading": "Agent tools"
+  }
+]
