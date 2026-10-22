@@ -96,3 +96,9 @@ export const EXPIRY_CHOICES: { days: number; label: string }[] = [
   { days: 90, label: "In 90 days" },
   { days: 365, label: "In a year" },
 ];
+
+
+/** The credential API accepts explicit names, never legacy wildcard scopes. */
+export function isNamedScope(value: string): boolean {
+  return /^[a-z_]+:[a-z_]+(?:\.[a-z_]+)*$/.test(value);
+}

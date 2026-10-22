@@ -1746,16 +1746,20 @@ test('capabilities require an explicit true contract and fail closed on old or u
   assert.equal((await getCapabilities()).state, 'unavailable');
 });
 
-test('an API without identity metadata leaves current credential unknown, never guessed from its name', async () => {
+test('missing or malformed identity metadata stays unknown and is never guessed from a name', async () => {
+  let metadata = {};
   const data = load('lib/data.ts', {
     'next/server': { connection: async () => {} }, react: { cache: fn => fn },
-    './api': { apiConfigured: true, brainFetch: async () => ({ principals: [
-      { id: 1, name: 'web-ui-vercel', credentials: [{ id: 11, scopes: ['principals:write'] }] },
+    './api': { apiConfigured: true, brainFetch: async () => ({ ...metadata, principals: [
+      { id: 1, name: 'synthetic-dashboard', credentials: [{ id: 11, scopes: ['principals:write'] }] },
     ] }) },
   });
-  const identity = (await data.getAccessView()).identities[0];
-  assert.equal(identity.current, undefined);
-  assert.equal(identity.keys[0].current, undefined);
+  for (const ids of [{}, { current_principal_id: '1', current_credential_id: '11' }, { current_principal_id: true, current_credential_id: -1 }]) {
+    metadata = ids;
+    const identity = (await data.getAccessView()).identities[0];
+    assert.equal(identity.current, undefined);
+    assert.equal(identity.keys[0].current, undefined);
+  }
 });
 
 test('adding a repository validates paths, preserves defaults and reports index failure without retrying registration', async () => {

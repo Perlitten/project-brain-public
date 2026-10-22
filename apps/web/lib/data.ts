@@ -1065,6 +1065,8 @@ export const getAccessView = async (): Promise<AccessView> => {
     const data = await brainFetch<Json>("/admin/principals", { fresh: true });
     if (!data) return null;
     const now = Date.now();
+    const knownId = (value: unknown) => value === null || (typeof value === "number" && Number.isSafeInteger(value) && value >= 0);
+    const principalKnown = knownId(data.current_principal_id), credentialKnown = knownId(data.current_credential_id);
     const identities = list(data, "principals").map((p): Identity => {
       const keys = arr(p.credentials)
         .map((c) => toAccessKey(obj(c), now))
@@ -1078,7 +1080,7 @@ export const getAccessView = async (): Promise<AccessView> => {
       const created = parseDate(p.created_at);
       return {
         id: int(p.id),
-        current: data.current_principal_id === undefined ? undefined : p.id === data.current_principal_id,
+        current: !principalKnown ? undefined : p.id === data.current_principal_id,
         name: str(p.name) || `principal ${str(p.id)}`,
         kind: kind === "human" ? "human" : kind === "agent" ? "agent" : "service",
         disabled: Boolean(p.disabled_at),
@@ -1086,7 +1088,7 @@ export const getAccessView = async (): Promise<AccessView> => {
         activeKeys: active.length,
         scopes: [...new Set(active.flatMap((k) => k.scopes))].sort(),
         lastSeen: seen ? fmtShort(seen.toISOString()) : "never",
-        keys: keys.map(({ at: _at, seen: _seen, ...k }) => ({ ...k, current: data.current_credential_id === undefined ? undefined : k.id === data.current_credential_id })),
+        keys: keys.map(({ at: _at, seen: _seen, ...k }) => ({ ...k, current: !credentialKnown ? undefined : k.id === data.current_credential_id })),
       };
     });
     return { readable: true, identities, summary: summarize(identities) };
