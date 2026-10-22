@@ -9,11 +9,13 @@ when:
   branch:
   - main
   - master
+  evaluate: PIPELINE_TASK != "benchmark" && PIPELINE_TASK != "codeql" && PIPELINE_TASK != "team-e2e" && PIPELINE_TASK != "lock-update"
 clone:
   git:
     image: woodpeckerci/plugin-git:2.10.1
     settings:
       depth: 0
+      partial: false
 services:
   postgres:
     image: pgvector/pgvector:pg15
@@ -52,9 +54,21 @@ steps:
     BRAIN_CI_REQUIRE_SERVICES: '1'
   commands:
   - bash scripts/ci/bootstrap.sh
-  - bash scripts/ci/test.sh
+  - apt-get install -y --no-install-recommends socat
+  - git config --global --add safe.directory "$${CI_WORKSPACE}"
+  - 'set -eu
+
+    socat TCP-LISTEN:5432,bind=127.0.0.1,reuseaddr,fork TCP:postgres:5432 &
+
+    proxy_pid=$$!
+
+    trap ''kill "$$proxy_pid" 2>/dev/null || true'' EXIT
+
+    POSTGRES_HOST=127.0.0.1 bash scripts/ci/test.sh
+
+    '
 - name: artifacts
-  image: woodpeckerci/plugin-s3
+  image: woodpeckerci/plugin-s3@sha256:bf0a088e66b991803e3b9b0401f616245c4d736674195204a7e9e343a871a9ea
   settings:
     bucket:
       from_secret: ci_artifact_bucket
@@ -65,9 +79,10 @@ steps:
     secret_key:
       from_secret: ci_artifact_secret_key
     source: coverage.xml
-    target: /project-brain/${CI_PIPELINE_NUMBER}/test
-    acl: private
+    target: test/${CI_PIPELINE_NUMBER}
     path_style: true
+    acl: private
+    region: us-east-1
   when:
   - status:
     - success

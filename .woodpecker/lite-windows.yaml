@@ -9,6 +9,7 @@ when:
   branch:
   - main
   - master
+  evaluate: PIPELINE_TASK != "benchmark" && PIPELINE_TASK != "codeql" && PIPELINE_TASK != "team-e2e" && PIPELINE_TASK != "lock-update"
 labels:
   platform: windows/amd64
   backend: local
@@ -18,8 +19,7 @@ steps:
   commands:
   - if ($env:CI_COMMIT_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Invalid commit SHA' }
   - git init .; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-  - git remote add origin https://github.com/Perlitten/project-brain-public.git; if ($LASTEXITCODE -ne 0) { exit
-    $LASTEXITCODE }
+  - git remote add origin https://github.com/Perlitten/project-brain-public.git; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   - git fetch --tags origin $env:CI_COMMIT_SHA; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   - git checkout --detach $env:CI_COMMIT_SHA; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 - name: lite-windows

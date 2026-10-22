@@ -9,11 +9,13 @@ when:
   branch:
   - main
   - master
+  evaluate: PIPELINE_TASK != "benchmark" && PIPELINE_TASK != "codeql" && PIPELINE_TASK != "team-e2e" && PIPELINE_TASK != "lock-update"
 clone:
   git:
     image: woodpeckerci/plugin-git:2.10.1
     settings:
       depth: 0
+      partial: false
 steps:
 - name: lite
   image: python:3.12-bookworm

@@ -7,8 +7,9 @@ Woodpecker. GitHub Actions have been disabled in repository settings to stop
 workflow execution; the YAML files are dormant. This does not establish
 successful replacement coverage. The current server has one Linux amd64 Docker
 agent with capacity two; Windows and the isolated local-backend capabilities
-below are not provisioned. Required artifact and release credentials still need
-live verification. Keep production publication fail-closed until every required
+below are not provisioned. Private S3 artifact credentials are provisioned and the uploader transport has
+passed a real upload/download probe. Per-workflow artifact production and release
+credentials still need live verification. Keep production publication fail-closed until every required
 Woodpecker workflow is green.
 
 Normal verification workflows also accept manual runs on main/master for
@@ -27,23 +28,23 @@ real exact-revision main push, never a manual run.
 | CI / real Docker execution isolation | `container-real-docker` | Isolated Linux local agent, `capability=brain-docker` |
 | Team proxy | `team-proxy` | Same isolated Docker-capable agent |
 | Team e2e opt-in | `team-e2e` | Same agent, deployment task `team-e2e` |
-| CodeQL Python and JavaScript | `codeql-python`, `codeql-javascript` | Isolated Linux local agent, `capability=brain-codeql`; CodeQL bundle |
+| CodeQL Python and JavaScript | `codeql-python`, `codeql-javascript` | Unprivileged Linux Docker backend, pinned locally built CodeQL 2.27.3 image |
 | Weekly harness benchmark | `benchmark` | Linux Docker backend; services; cron `benchmark` or deployment task `benchmark` |
 | Weekly lock update | `lock-update` | Linux Docker backend; cron `lock-update` or deployment task `lock-update` on main |
 | Whole-package mutation baseline | `mutation-baseline` | Linux Docker backend; services; deployment task `mutation-baseline`; 32 matrix shards |
 | Tagged release | `release` | Separate Linux local agent, `capability=brain-release`; Python 3.12, Docker, gh, Syft |
 
 Normal CI runs for PRs targeting main/master and pushes to those branches.
-Team proxy intentionally runs on every PR instead of relying on a potentially
-incomplete path list. Mutation measurement is explicit opt-in, rather than an
-expensive label webhook. Use the server's existing two execution slots as the
+Team proxy push/PR path filters match the source GitHub workflow. Mutation
+measurement is explicit opt-in through deployment task or a mutation-baseline
+label update; external PRs still require server-side approval. Use the server's existing two execution slots as the
 concurrency ceiling; each shard has its own database and 335-minute measurement
 limit. Set the server workflow timeout to at least 360 minutes for mutation runs.
 
 ## Agents and secrets
 
 Keep ordinary Python/Node workflows on the unprivileged Docker backend. The
-local backend has no isolation: Docker/CodeQL/Windows agents must be disposable,
+local backend has no isolation: Docker/Windows agents must be disposable,
 restricted to this repository, and must not run on production or alongside
 release credentials. Retain approval requirements for external PRs. Provision
 reviewed, pinned versions of native tools and record them in the server setup.
@@ -54,7 +55,9 @@ The Docker test agent needs Python 3.12, git, Docker Engine with Compose v2 and
 PostgreSQL 15 clients. Limit its concurrency to one because existing team e2e
 uses fixed container names. The release agent also needs `gh`, `syft` and a
 separate Docker configuration directory with no pre-existing credentials.
-CodeQL agents need the official CodeQL bundle with matching standard query packs.
+CodeQL now runs inside the ordinary unprivileged Docker sandbox with the official
+2.27.3 bundle and matching standard query packs, SHA-256 verified during image build.
+It needs no host Docker socket, privileged mode or new local agent.
 CodeQL runs outside Actions; successful main-push SARIF is uploaded to GitHub code
 scanning. PR analysis is stored as SARIF; automatic GitHub PR alert comparison
 still needs a credential-isolated uploader before the old CodeQL workflow is removed.
@@ -70,7 +73,7 @@ Configure these Woodpecker repository secrets; do not copy them into source:
 | `github_lock_update_token` | Main cron/deployment only; contents and PR write |
 | `github_code_scanning_token` | Main push only; security events write |
 | `ci_artifact_bucket`, `ci_artifact_endpoint` | Private S3-compatible artifact destination |
-| `ci_artifact_access_key`, `ci_artifact_secret_key` | Write-only repository prefix; restrict secret access to the approved S3 plugin image/binary |
+| `ci_artifact_access_key`, `ci_artifact_secret_key` | Separate private bucket; repository key has read/write/owner only for that bucket; secrets restricted to approved S3 plugin image/binary |
 
 Provision the S3 plugin binary `plugin-s3` on local agents. Docker agents use the
 published Woodpecker S3 plugin image. Artifacts are separated by pipeline,
@@ -106,7 +109,7 @@ this migration: validate build/checksum/SBOM steps without publishing first.
 ## Cutover acceptance
 
 1. Activate the repository using config path `.woodpecker/`, approve runner
-   restrictions, provision the missing Windows/Docker/CodeQL/release capabilities,
+   restrictions, provision the missing Windows/Docker/release capabilities,
    scoped secrets and artifact store, and register the three crons.
 2. Run the migration PR on Woodpecker. Check every required status, database
    readiness, Windows behavior and artifact retrieval. Validate opt-in benchmark,
@@ -131,3 +134,91 @@ Woodpecker CLI 3.19.0 strict lint accepts all 14 workflow files. Bash syntax,
 Python compilation, repository Ruff checks and 86 focused gate/release/deployment
 and inventory tests passed (one existing skip). These checks do not claim that
 any Woodpecker agent, secret, cron, artifact upload or publishing run has passed.
+
+## Artifact storage on Contabo — 2026-10-20
+
+Private repository-specific Garage buckets use path-style S3. The benchmark prefix
+`benchmark/` retains artifacts for 90 days, mutation prefix `mutation-baseline/`
+for one day, and test prefix `test/` for seven days. Older `project-brain/` objects
+retain the previous seven-day policy. No artifact is public. The current two-slot
+Linux agent is not a replacement for the isolated local Docker/release or
+Windows agents listed above; those capabilities remain unfinished.
+
+The first live privacy gate rejected shallow history. Clone steps explicitly set
+`partial: false` alongside `depth: 0`; zero depth alone did not request full history
+from plugin-git. The privacy check remains fail-closed and must pass on a real clone.
+
+## Containerized CodeQL toolchain — 2026-10-21
+
+On this single Docker host the administrator builds the image before enabling the
+two CodeQL workflows; it is not built from PR code and no socket is mounted into CI:
+
+```
+docker build -t localhost/woodpecker-codeql:2.27.3-node22.23.3 -f scripts/ci/images/codeql.Dockerfile scripts/ci/images
+```
+
+The Dockerfile pins the Python base digest and official CodeQL bundle checksum.
+The workflows pin the installed local manifest
+48e89e410cce721de876673c0d8c58dd931f74a046a5cbab84835b8c8f2da47f; each step
+checks CLI version 2.27.3. The digest was verified by an actual pull=never
+container run on Contabo. Rebuilding after package changes requires reviewing and
+updating the image digest in both workflows; a mutable tag is not used by CI. The localhost image name fails closed if the
+image is absent; no public-registry fallback is used. Build the same reviewed
+image on any additional Docker host before scheduling these jobs there.
+The original build-mode=none analysis script, two threads, 4096 MiB query RAM,
+exact-SHA anonymous public checkout and main-only publication command are retained.
+SARIF archives use the plugin-restricted private S3 image and codeql/ seven-day
+lifecycle. Manual diagnostic variable PIPELINE_TASK=codeql selects both languages
+on a review branch without credentials or publishing. This is not a main-push
+release attestation. Manual pipeline10 passed both language analyses on the pinned Node-enabled image;
+manual pipeline9 passed the original guarded PostgreSQL phase through the loopback
+adapter. These diagnostics do not establish a complete exact-main release gate.
+GitHub SARIF publication still needs the separately scoped credential/uploader;
+its absence must not be converted into an omitted release gate.
+
+The team PostgreSQL fixtures deliberately require a loopback URL before destructive
+database tests. The Docker runner uses a loopback-only socat listener forwarding to
+its ephemeral postgres service, so the original safety assertions remain unchanged.
+All normal test.sh phases remain mandatory; the proxy is stopped on shell exit.
+The CodeQL JavaScript extractor also requires a Node executable on PATH. The image
+copies Node22.23.3 from the pinned official Bookworm image; no npm install or host
+credential is needed by that extractor.
+
+The digest-pinned S3 binary bf0a088... exposes --acl / PLUGIN_ACL; Docker uploaders
+now set acl:private explicitly. The earlier access field was ignored and relied
+on the binary's private default. Current artifact credentials/event filters were
+read back; all four keys enable pull_request and stay plugin-restricted.
+The one-time PostgreSQL diagnostic workflow was removed after its successful run.
+All normal test.sh phases and all nine release-required workflow names are retained.
+
+Manual10 produced five Python and one JavaScript finding. They are untriaged
+scanner results, not a clean-security attestation. Analysis errors still fail;
+the source action's finding/reporting behavior is unchanged. SARIF now records
+the language category explicitly so future multi-language uploads cannot overwrite
+each other. GitHub publication/comparison remains an unfinished credentialed step.
+
+
+## Explicit manual task selection
+
+Use the Run pipeline variable PIPELINE_TASK=benchmark, codeql, team-e2e or
+lock-update to select the corresponding source workflow_dispatch family.
+The lock updater remains main-only and fail-closed without its scoped token.
+Normal main/master manual CI excludes these named families, so a benchmark or
+CodeQL run cannot accidentally launch test/native/proxy jobs. Empty/default
+manual CI behavior is retained. Push/PR/tag/cron filters and every required
+release workflow are unchanged. Legacy deployment selectors remain available
+only where deployments are enabled; Contabo currently disables that event.
+The benchmark container trusts only its exact CI workspace before indexing.
+No new deployment permission, credential or native capability is enabled.
+
+The source same-repository-only mutation restriction is enforced before bootstrap
+and measurement on PR metadata events. The public GitHub PR API is read without
+credentials and checked against the exact repository/PR number; fork, missing,
+network or rate-limit failures stop the job. Each shard checks independently;
+no mutation score, shard count, timeout or measurement command is changed.
+
+Mutation's ephemeral PostgreSQL service uses the same loopback-only adapter that
+passed the full normal test workflow. Its restricted-role fixture URL is loopback,
+matching the source runner and unchanged destructive-test assertions. Exact-path
+git trust is configured before mutation. The original mutation.sh,32 shards and
+335-minute timeout remain unchanged; a complete mutation measurement is unverified.

@@ -1,14 +1,60 @@
 when:
-- event:
-  - push
-  - pull_request
+- event: push
   branch:
   - main
   - master
+  path:
+    include:
+    - .github/workflows/team-proxy.yml
+    - scripts/team_proxy_check.py
+    - deploy/team/**
+    - deploy/team-proxy-check/**
+    - deploy/docker-compose.prod.yml
+    - Dockerfile
+    - apps/web/Dockerfile
+    - apps/web/proxy.ts
+    - apps/web/lib/client-address.ts
+    - apps/web/lib/oidc.ts
+    - apps/web/lib/web-auth.ts
+    - apps/web/lib/invitations.ts
+    - apps/web/lib/invite-*.ts
+    - apps/web/lib/login-page.ts
+    - apps/api/main.py
+    - apps/api/invitation_throttle.py
+    - apps/api/routers/team_invitations.py
+    - apps/api/routers/team_oidc.py
+    - apps/api/routers/core_status.py
+    - brain/team/oidc.py
+    - brain/config/settings.py
+- event: pull_request
+  path:
+    include:
+    - .github/workflows/team-proxy.yml
+    - scripts/team_proxy_check.py
+    - deploy/team/**
+    - deploy/team-proxy-check/**
+    - deploy/docker-compose.prod.yml
+    - Dockerfile
+    - apps/web/Dockerfile
+    - apps/web/proxy.ts
+    - apps/web/lib/client-address.ts
+    - apps/web/lib/oidc.ts
+    - apps/web/lib/web-auth.ts
+    - apps/web/lib/invitations.ts
+    - apps/web/lib/invite-*.ts
+    - apps/web/lib/login-page.ts
+    - apps/api/main.py
+    - apps/api/invitation_throttle.py
+    - apps/api/routers/team_invitations.py
+    - apps/api/routers/team_oidc.py
+    - apps/api/routers/core_status.py
+    - brain/team/oidc.py
+    - brain/config/settings.py
 - event: manual
   branch:
   - main
   - master
+  evaluate: PIPELINE_TASK != "benchmark" && PIPELINE_TASK != "codeql" && PIPELINE_TASK != "team-e2e" && PIPELINE_TASK != "lock-update"
 labels:
   platform: linux/amd64
   backend: local

@@ -3,11 +3,14 @@ when:
   cron: benchmark
 - event: deployment
   evaluate: CI_PIPELINE_DEPLOY_TASK == "benchmark"
+- event: manual
+  evaluate: PIPELINE_TASK == "benchmark"
 clone:
   git:
     image: woodpeckerci/plugin-git:2.10.1
     settings:
       depth: 0
+      partial: false
 services:
   postgres:
     image: pgvector/pgvector:pg15
@@ -48,9 +51,10 @@ steps:
     PROJECT_BRAIN_API_KEY: ci-benchmark-ephemeral-key
   commands:
   - bash scripts/ci/bootstrap.sh
+  - git config --global --add safe.directory "$${CI_WORKSPACE}"
   - bash scripts/ci/benchmark.sh
 - name: artifacts
-  image: woodpeckerci/plugin-s3
+  image: woodpeckerci/plugin-s3@sha256:bf0a088e66b991803e3b9b0401f616245c4d736674195204a7e9e343a871a9ea
   settings:
     bucket:
       from_secret: ci_artifact_bucket
@@ -61,9 +65,10 @@ steps:
     secret_key:
       from_secret: ci_artifact_secret_key
     source: eval/harness_benchmark/results/*.json
-    target: /project-brain/${CI_PIPELINE_NUMBER}/benchmark
-    acl: private
+    target: benchmark/${CI_PIPELINE_NUMBER}
     path_style: true
+    acl: private
+    region: us-east-1
   when:
   - status:
     - success

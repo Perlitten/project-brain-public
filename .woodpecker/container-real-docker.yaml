@@ -9,6 +9,7 @@ when:
   branch:
   - main
   - master
+  evaluate: PIPELINE_TASK != "benchmark" && PIPELINE_TASK != "codeql" && PIPELINE_TASK != "team-e2e" && PIPELINE_TASK != "lock-update"
 labels:
   platform: linux/amd64
   backend: local

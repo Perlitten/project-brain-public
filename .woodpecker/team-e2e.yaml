@@ -1,6 +1,8 @@
 when:
 - event: deployment
   evaluate: CI_PIPELINE_DEPLOY_TASK == "team-e2e"
+- event: manual
+  evaluate: PIPELINE_TASK == "team-e2e"
 labels:
   platform: linux/amd64
   backend: local
