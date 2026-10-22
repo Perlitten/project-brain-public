@@ -1665,7 +1665,7 @@ test('reranker page explains a refused project folder instead of reporting an ou
 
 test('repository actions distinguish source recovery from indexing, including encoded repository IDs', () => {
   const { repositoryAction } = load('lib/repository-status.ts');
-  const missing = repositoryAction({ slug: 'repo / one', name: 'nostia', freshness: 'source_missing', behind: 8 });
+  const missing = repositoryAction({ slug: 'repo / one', name: 'synthetic-missing-source', freshness: 'source_missing', behind: 8 });
   assert.equal(missing.href, '/projects?repo=repo%20%2F%20one#source');
   assert.match(missing.label, /Check source/);
   assert.doesNotMatch(missing.label, /index/i);
