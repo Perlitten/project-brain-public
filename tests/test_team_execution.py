@@ -54,7 +54,7 @@ TOOLS = {
     "hello": {"argv": [PY, "-c", "print('hello from a bounded step')"]},
     "touch": {"argv": [PY, "-c", "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('x')"], "allow_args": True},
     "leak": {"argv": [PY, "-c", "import os; print('token=' + os.environ.get('BRAIN_SECRET_TOKEN', 'missing'))"]},
-    "slow": {"argv": [PY, "-c", "import pathlib,time; time.sleep(30); pathlib.Path('late.txt').write_text('x')"]},
+    "slow": {"argv": [PY, "-c", "import pathlib,time; pathlib.Path('started.txt').write_text('ready'); time.sleep(30); pathlib.Path('late.txt').write_text('x')"]},
     "fail": {"argv": [PY, "-c", "import sys; sys.exit(3)"]},
 }
 
@@ -107,6 +107,9 @@ async def team_db(tmp_path, monkeypatch, source_repo):
             connection.execute("PRAGMA foreign_keys=ON")
 
     async with engine.begin() as conn:
+        if not postgres:
+            # Legacy SQLite DDL otherwise autocommits every table/index.
+            await conn.exec_driver_sql("BEGIN")
         await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=TABLES))
     factory = async_sessionmaker(engine, expire_on_commit=False)
     a, b = uuid.uuid4(), uuid.uuid4()
@@ -423,23 +426,35 @@ async def test_revocation_between_steps_stops_the_next_step(team_db, source_repo
 
 
 @pytest.mark.asyncio
-async def test_revocation_mid_step_terminates_the_process(team_db, source_repo, enabled, monkeypatch):
+async def test_revocation_mid_step_terminates_the_process(team_db, source_repo, enabled):
     factory, a, _ = team_db
-    monkeypatch.setattr(settings, "BRAIN_EXECUTION_LEASE_SECONDS", 1)  # checks every ~0.33 s
     task_id, run_id, _ = await make_run(factory, a, source_repo[1])
     await grant(factory, a)
     await request(factory, a, task_id, run_id, payload("slow", {"tool": "touch", "args": ["never.txt"]}))
 
-    async def revoke_soon():
-        await asyncio.sleep(1.5)
+    async def revoke_after_start():
+        # Observe the child, rather than assuming checkout preparation finished
+        # within 1.5 seconds. Keep the fixture's normal lease: startup latency
+        # must not turn this revocation test into a lease-expiry test.
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 60
+        while not list(enabled.rglob("started.txt")):
+            assert loop.time() < deadline, "The bounded child never started"
+            await asyncio.sleep(0.05)
+        revoked_at = loop.time()
         await _revoke(factory, a, "grant", run_id)
+        return revoked_at
 
-    started = asyncio.get_running_loop().time()
-    revoker = asyncio.create_task(revoke_soon())
-    state = await execution.execute_run(run_id, factory=factory)
-    await revoker
-    assert asyncio.get_running_loop().time() - started < 20
-    assert state["state"] == "revoked", state["events"]
+    revoker = asyncio.create_task(revoke_after_start())
+    try:
+        async with asyncio.timeout(90):
+            state = await execution.execute_run(run_id, factory=factory)
+            assert state["state"] == "revoked", state["events"]
+            revoked_at = await revoker
+            assert asyncio.get_running_loop().time() - revoked_at < 20
+    finally:
+        revoker.cancel()
+        await asyncio.gather(revoker, return_exceptions=True)
     in_flight = state["events"][-1]["payload"]["in_flight"]
     assert in_flight["state"] == "terminated" and in_flight["evidence"]["stopped"] == "revoked"
     assert not list(enabled.rglob("late.txt")) and not list(enabled.rglob("never.txt"))

@@ -7,6 +7,7 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -68,12 +69,17 @@ async def test_unexecuted_delivery_refunds_attempt_without_refunding_stale_owner
 @pytest.mark.asyncio
 async def test_worker_refunds_denied_fence_and_renews_short_configured_lease(tmp_path, monkeypatch):
     from brain.database import session
-    from brain.workers import db_fencing, tasks
+    from brain.workers import db_fencing, lite_queue, tasks
     from brain.workers.lite_queue import serve_worker
     cache = SQLiteCache(tmp_path)
     monkeypatch.setattr(session, "redis_client", cache)
     monkeypatch.setattr(settings, "WORKER_REDIS_PREFIX", "lease-fixture")
     monkeypatch.setattr(settings, "WORKER_JOB_LEASE_SECONDS", 1)
+    # Advance lease time with successful renewals, rather than with host I/O
+    # delays. Three renewals cross the original one-second expiry, so finishing
+    # still requires the real SQLite queue to extend ownership.
+    lease_now = 1000.0
+    monkeypatch.setattr(lite_queue, "time", SimpleNamespace(time=lambda: lease_now))
 
     class FakeSession:
         @asynccontextmanager
@@ -89,6 +95,8 @@ async def test_worker_refunds_denied_fence_and_renews_short_configured_lease(tmp
     renewed = asyncio.Event()
 
     async def renew_lease(*args, **kwargs):
+        nonlocal lease_now
+        lease_now += 0.4
         if renew.await_count >= 3:
             renewed.set()
         return True
@@ -99,7 +107,7 @@ async def test_worker_refunds_denied_fence_and_renews_short_configured_lease(tmp
     monkeypatch.setattr(db_fencing, "release_db_lease", AsyncMock())
 
     async def execute(*args):
-        await asyncio.wait_for(renewed.wait(), timeout=5)
+        await asyncio.wait_for(renewed.wait(), timeout=20)
         return {"ok": True}
 
     executor = AsyncMock(side_effect=execute)
@@ -108,12 +116,20 @@ async def test_worker_refunds_denied_fence_and_renews_short_configured_lease(tmp
     job_id = await queue.enqueue("health_check", max_attempts=1)
     worker = asyncio.create_task(serve_worker())
     try:
-        for _ in range(100):
+        deadline = asyncio.get_running_loop().time() + 30
+        while True:
             job = await queue.get_job(job_id)
             if job["status"] in {"completed", "failed"}:
                 break
+            if worker.done():
+                worker.result()
+                pytest.fail("Lite worker stopped before completing the job")
+            if asyncio.get_running_loop().time() >= deadline:
+                break
             await asyncio.sleep(.04)
-        assert job["status"] == "completed" and job["attempt"] == 1
+        assert job["status"] == "completed" and job["attempt"] == 1, job
+        assert job["result"] == {"ok": True}
+        assert lease_now > 1001.0
         executor.assert_awaited_once()
         assert claim.await_count == 2 and renew.await_count >= 3
         assert all(call.kwargs["ttl_seconds"] == 1 for call in claim.await_args_list + renew.await_args_list)

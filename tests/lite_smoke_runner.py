@@ -66,7 +66,13 @@ async def exercise(repo: Path):
     assert (await queue.get_job(job_id))["result"]["ok"]
     # Actual background worker and SQL fence, with no Redis lease emulation.
     from brain.config.settings import settings
+    # MCP freshness may have queued its own auto-reindex for this non-Git
+    # fixture. Give the worker acceptance check its own queue so its deadline
+    # measures this job, rather than an unrelated backlog from earlier phases.
+    settings.WORKER_REDIS_PREFIX = "lite-smoke-worker"
     worker_queue = JobQueue(redis_client, settings.WORKER_REDIS_PREFIX)
+    capacity = await worker_queue.get_capacity_stats()
+    assert capacity["queued"] == 0 and capacity["processing"] == 0, capacity
     worker_job = await worker_queue.enqueue("reindex", {"repo_path":str(repo)})
     worker = asyncio.create_task(serve_worker())
     try:
@@ -75,6 +81,9 @@ async def exercise(repo: Path):
             state = await worker_queue.get_job(worker_job)
             if state["status"] in {"completed","failed"}:
                 break
+            if worker.done():
+                worker.result()
+                raise AssertionError("Lite worker exited before completing its job")
             if asyncio.get_running_loop().time() >= deadline:
                 break
             await asyncio.sleep(0.05)
