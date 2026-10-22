@@ -1826,6 +1826,28 @@ test('finding cards retain file and line evidence when repository provenance com
   assert.equal(finding.codeAvailable, true);
 });
 
+
+test('activity entries retain seconds while decision calendar dates stay timezone-free', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async path => path.startsWith('/ledger/events')
+      ? { events: [
+          { id: 1, event_type: 'job.started', timestamp_utc: '2026-10-22T03:30:01Z' },
+          { id: 2, event_type: 'job.started', timestamp_utc: '2026-10-22T03:30:02Z' },
+        ], total: 2 }
+      : path.startsWith('/api/web/decisions')
+        ? { decisions: [{ id: 1, title: 'Calendar decision', date: '2026-10-22' }], total: 1 }
+        : null },
+  });
+  const events = (await data.getPagedEvents(undefined)).items;
+  assert.notEqual(events[0].at, events[1].at);
+  assert.match(events[0].at, /03:30:01 UTC$/);
+  const decision = (await data.getPagedDecisions(undefined)).items[0];
+  assert.equal(decision.recordedAt, '22 Oct 2026');
+  assert.doesNotMatch(decision.recordedAt, /timezone|UTC/i);
+});
+
+
 test('shared pulse never forwards other project identifiers from global liveness', async () => {
   const { getPulse } = load('lib/actions/pulse.ts', {
     '../api': { apiConfigured: true, brainFetch: async path => path === '/health' ? { status: 'degraded', details: {}, freshness: { exceeded: ['/synthetic/A', '/synthetic/B'] } } : null },
