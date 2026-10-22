@@ -61,6 +61,10 @@ async def team_db(tmp_path, monkeypatch):
             connection.execute("PRAGMA foreign_keys=ON")
 
     async with engine.begin() as conn:
+        if not postgres:
+            # SQLite's legacy driver does not BEGIN for DDL. Group fixture
+            # creation into one atomic commit instead of syncing every table.
+            await conn.exec_driver_sql("BEGIN")
         await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=TABLES))
     factory = async_sessionmaker(engine, expire_on_commit=False)
     a, b = uuid.uuid4(), uuid.uuid4()
