@@ -20,7 +20,6 @@ type Kind = Identity["kind"];
 export const KIND_WORD: Record<Kind, string> = { agent: "AI agent", service: "integration", human: "person" };
 const KIND_PRESET: Record<Kind, string> = { agent: "agent", service: "integration", human: "read" };
 const presetScopes = (id: string) => SCOPE_PRESETS.find((p) => p.id === id)?.scopes ?? [];
-const VALID = /^[a-z_]+:[a-z_]+(?:\.[a-z_]+)*$/;
 
 /** Where a new key's agent config points. */
 export interface AgentTarget {
@@ -249,7 +248,7 @@ function keyTone(k: AccessKey, disabled: boolean): [Tone, string] {
 
 function IdentityRow({ identity: i, index, target }: { identity: Identity; index: number; target: AgentTarget }) {
   const [open, setOpen] = useState(false);
-  const [minting, setMinting] = useState(false);
+  const [minting, setMinting] = useState<AccessKey | "new" | null>(null);
   const [key, setKey] = useState<NewKey | null>(null);
   const newest = i.keys.find((k) => k.status === "active");
   const panel = `ident-${i.id}`;
@@ -283,7 +282,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
       {open && (
         <div className="ident__panel" id={panel}>
           <div className="btn-row">
-            <button type="button" className="btn btn--primary btn--sm" onClick={() => setMinting(true)} disabled={i.disabled}>
+            <button type="button" className="btn btn--primary btn--sm" onClick={() => setMinting(i.current ? i.keys.find(k => k.current) ?? "new" : "new")} disabled={i.disabled}>
               <Icon name="key" size={15} />
               {i.current ? "Rotate dashboard key" : "New key"}
             </button>
@@ -363,7 +362,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
                           <Chip tone={tone}>{word}</Chip>
                         </td>
                         <td className="r">
-                          {k.status === "active" && (k.current ? <button type="button" className="btn btn--neutral btn--sm" onClick={() => setMinting(true)} disabled={i.disabled}>Rotate</button> : (
+                          {k.status === "active" && (k.current ? <button type="button" className="btn btn--neutral btn--sm" onClick={() => setMinting(k)} disabled={i.disabled}>Rotate</button> : (
                             <RunButton
                               small
                               variant="danger"
@@ -390,13 +389,14 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
         </div>
       )}
 
-      <Dialog open={minting} onClose={() => setMinting(false)} title={`${i.current ? "Rotate dashboard key" : "New key"} for “${i.name}”`}>
+      <Dialog open={minting !== null} onClose={() => setMinting(null)} title={`${i.current ? "Rotate dashboard key" : "New key"} for “${i.name}”`}>
         <MintForm
           identity={i}
-          initial={newest?.scopes.filter((s) => VALID.test(s)) ?? []}
-          onCancel={() => setMinting(false)}
+          key={typeof minting === "object" && minting ? minting.id : "new"}
+          initial={(typeof minting === "object" && minting ? minting : newest)?.scopes ?? []}
+          onCancel={() => setMinting(null)}
           onMinted={(k) => {
-            setMinting(false);
+            setMinting(null);
             setKey({ ...k, name: i.name });
           }}
         />
@@ -421,7 +421,7 @@ function MintForm({ identity, initial, onCancel, onMinted }: { identity: Identit
       }}
     >
       <p className="dialog__text">
-        {initial.length ? "Starts from the permissions of its newest key." : "Starts from the usual permissions for this kind."} Its other keys keep working until you
+        {initial.length ? "Starts from the selected key’s permissions." : "Starts from the usual permissions for this kind."} Its other keys keep working until you
         revoke them.
       </p>
       <ScopePicker value={scopes} onChange={setScopes} />
