@@ -129,6 +129,8 @@ async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal
 
     canonical = str(resolved)
     normalized = PathSandbox.get_normalized_identity(resolved)
+    if len(canonical) > 1024 or len(normalized) > 1024:
+        raise HTTPException(status_code=422, detail="Canonical repository path exceeds the 1024-character storage limit")
     repo_id = _generate_repository_id(canonical)
 
     revision = PathSandbox.get_git_revision(resolved) if require_git else "none"
