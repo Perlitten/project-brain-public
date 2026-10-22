@@ -188,7 +188,8 @@ async def api_version() -> dict[str, Any]:
         "capabilities": {
             "team": True, "team_bootstrap": True, "team_activity": True,
             "team_board": True, "knowledge_review": True,
-            "repository_registration": True,
+            "repository_registration": True, "finding_actions": True, "request_traces": True,
+            "request_query_history": True, "memory_current": True,
         },
     }
 

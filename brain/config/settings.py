@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     # Mirrors nginx `client_max_body_size 25m` for deployments that expose
     # uvicorn directly (docker compose publishes 8000 without the proxy).
     # 0 disables the application-level cap.
+    # Off by default: query text can contain source or secrets. Metadata-only
+    # history remains available without this opt-in; old queries cannot be recovered.
+    REQUEST_TELEMETRY_CAPTURE_QUERY: bool = False
     API_MAX_REQUEST_BODY_BYTES: int = 25 * 1024 * 1024
     WORKER_REDIS_PREFIX: str = "brain:worker"
     # Minimum seconds between automatic reindexes of one repo triggered by stale_blocked context.

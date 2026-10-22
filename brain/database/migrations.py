@@ -450,6 +450,8 @@ async def _ensure_insights_table(conn: AsyncConnection) -> None:
                 """
             )
         )
+        for column, kind in (("dismissed_evidence", "JSON"), ("dismissed_last_seen_at", "TIMESTAMPTZ"), ("dismissed_reason", "TEXT"), ("dismissed_by", "VARCHAR(128)"), ("dismissed_at", "TIMESTAMPTZ")):
+            await conn.execute(text(f"ALTER TABLE insights ADD COLUMN IF NOT EXISTS {column} {kind}"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_insights_id ON insights (id)"))
         await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_insights_dedupe_key ON insights (dedupe_key)"))
         await conn.execute(
@@ -861,6 +863,7 @@ async def _ensure_request_telemetry_table(conn: AsyncConnection) -> None:
     await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brain_request_telemetry_operation ON brain_request_telemetry (operation)"))
 
 
+    await conn.execute(text("ALTER TABLE brain_request_telemetry ADD COLUMN IF NOT EXISTS query_text VARCHAR(500) NULL"))
     await conn.execute(text("ALTER TABLE brain_request_telemetry ADD COLUMN IF NOT EXISTS surface VARCHAR(16) NOT NULL DEFAULT 'http'"))
     await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_brain_request_telemetry_repo_time ON brain_request_telemetry (repository_id, created_at)"))
 

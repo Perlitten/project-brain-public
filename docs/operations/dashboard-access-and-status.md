@@ -70,3 +70,16 @@ not assigned one silently.
 
 The UI changes do not diagnose a running installation's missing mount or API
 latency, change deployment settings, or rotate live credentials automatically.
+
+
+## Content history and finding actions
+
+Current memory contains agreed, proposed and verified decisions. Replaced decisions have their own view. The API advertises `memory_current`; an older API cannot silently substitute an unfiltered or empty decision list for that view.
+
+Finding dismissal requires operator/team-administrator authority, `core:write`, a reason and the observed evidence timestamp. A changed finding returns 409. A retry preserves the first reason and verified caller. The evidence shown at dismissal is saved separately from later scan updates. Dismissed findings are not revived automatically. Findings remain global in the current data model: repository-scoped listing still fails closed. Duplicate grouping covers the loaded page and uses evidence identity and recorded recurrence counts.
+
+Open code reads bounded chunks from the index using the repository and file explicitly named in the finding evidence. It never reads an arbitrary server file or guesses a repository from a module name. Project source permissions are checked separately from operator access to global findings. Historical module-only findings do not gain file identity retroactively.
+
+Request telemetry remains metadata-only by default. A team administrator may explicitly enable **Settings → Activity history → Record query text** (`REQUEST_TELEMETRY_CAPTURE_QUERY`) for future HTTP and MCP requests. This stores at most 500 characters; queries may contain source or secrets. Disabling stops future capture and does not erase previously stored text. Historical queries cannot be recovered. Trace details use the same repository/admin authorization as request history.
+
+These contracts require the updated API and its startup migrations. The dashboard does not deploy the server, change Vercel bindings, or enable query capture automatically. Existing clients keep the previous metadata-only behavior unless the operator opts in.

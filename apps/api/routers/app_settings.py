@@ -45,10 +45,12 @@ SECTIONS: Dict[str, str] = {
     "telegram": "Telegram alerts",
     "automation": "Background checks",
     "search": "Search & context packs",
+    "activity": "Activity history",
     "indexing": "Indexing & workers",
 }
 
 FIELDS: List[SettingField] = [
+    SettingField("REQUEST_TELEMETRY_CAPTURE_QUERY", "activity", "Record query text", "bool", "Off by default. Stores up to 500 characters of future search/context queries in Activity, visible under the same project/admin permissions as request history. Queries may contain source or secrets. Disabling stops future capture; it does not erase previously captured text."),
     SettingField("TELEGRAM_ALERTS_ENABLED", "telegram", "Send alerts", "bool", "Self-diagnosis, maintenance and deep-context findings go to the chat below."),
     SettingField("TELEGRAM_ALERT_BOT_TOKEN", "telegram", "Bot token", "secret", "From @BotFather → /newbot. Write-only.", clearable=True),
     SettingField("TELEGRAM_ALERT_CHAT_ID", "telegram", "Chat ID", "text", "Numeric id of the chat or channel (e.g. -1001234567890) or @channel.", pattern=r"-?\d{1,20}|@[A-Za-z0-9_]{4,64}", clearable=True),

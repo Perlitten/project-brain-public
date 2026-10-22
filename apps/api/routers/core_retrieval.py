@@ -686,7 +686,7 @@ async def build_task_context(body: ContextRequest, request: Request = cast(Reque
     finally:
         if request is not None:
             await observe_http_request(request, operation="context", result=result, repo_path=repo_path,
-                                       outcome=outcome, started=started)
+                                       outcome=outcome, started=started, query_text=body.task_description)
 
 
 @router.post("/impact", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
@@ -860,7 +860,7 @@ async def search_code_endpoint(body: SearchRequest, request: Request, principal:
     finally:
         await observe_http_request(request, operation="search", result=result,
                                    repo_path=_agent_repo_path(body.repo_path) if _agent_v2_mode() == "on" and body.response_mode == "locator" else body.repo_path,
-                                   outcome=outcome, started=started)
+                                   outcome=outcome, started=started, query_text=body.query)
 
 
 @router.get("/repositories", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])

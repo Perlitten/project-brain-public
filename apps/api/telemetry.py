@@ -1,4 +1,4 @@
-"""Durable, payload-free request telemetry for operator dashboard metrics."""
+"""Request measurements with optional, explicitly enabled bounded query capture."""
 from __future__ import annotations
 
 import math
@@ -8,18 +8,20 @@ from typing import Any
 from sqlalchemy import select, text
 from loguru import logger
 
-from brain.database.models import BrainRequestTelemetry
+from brain.config.settings import settings
+from brain.database.models import BrainRequestTelemetry, Repository
 from brain.database.session import async_session_factory
 
 
 async def record_request(*, operation: str, repository_id: int | None, repository_path: str | None,
                          principal_name: str, request_id: str | None, outcome: str, latency_ms: float,
-                         surface: str = "http") -> None:
+                         surface: str = "http", query_text: str | None = None) -> None:
     try:
         async with async_session_factory() as session:
             session.add(BrainRequestTelemetry(operation=operation, surface=surface, repository_id=repository_id,
                                               repository_path=repository_path, principal_name=principal_name,
                                               request_id=request_id, outcome=outcome,
+                                              query_text=query_text[:500] if settings.REQUEST_TELEMETRY_CAPTURE_QUERY and isinstance(query_text, str) else None,
                                               latency_ms=max(0.0, float(latency_ms))))
             await session.commit()
     except Exception as exc:
@@ -71,7 +73,8 @@ async def dashboard_metrics(*, period_days: int, repository_id: int | None = Non
             BrainRequestTelemetry.latency_ms, BrainRequestTelemetry.created_at,
             BrainRequestTelemetry.principal_name, BrainRequestTelemetry.repository_id,
             BrainRequestTelemetry.request_id, BrainRequestTelemetry.surface,
-        ).where(*filters).limit(100_001))).all()
+            BrainRequestTelemetry.query_text, Repository.name.label("repository_name"),
+        ).outerjoin(Repository, Repository.id == BrainRequestTelemetry.repository_id).where(*filters).limit(100_001))).all()
     if len(rows) > 100_000:
         raise RuntimeError("Request dashboard exceeds its aggregation capacity")
 
@@ -109,13 +112,14 @@ async def dashboard_metrics(*, period_days: int, repository_id: int | None = Non
                        "p95_ms": None if unmeasured else value["latency_ms"]["p95"],
                        "partial": unmeasured or cursor < max(start, collector_started) or cursor + delta > now})
         cursor += delta
-    return {"collection": {"collection_started_at": collector_started.isoformat(), "started_at": start.isoformat(),
+    return {"query_capture_enabled": settings.REQUEST_TELEMETRY_CAPTURE_QUERY, "collection": {"collection_started_at": collector_started.isoformat(), "started_at": start.isoformat(),
                             "until": now.isoformat(), "sample_count": len(rows), "status": "measured",
                             "partial": collector_started > start},
             "requests": requests, "search": operations["search"], "context": operations["context"], "series": series,
             "recent_requests": [
                 {"operation": row[0], "outcome": row[1], "latency_ms": round(float(row[2]), 2),
                  "recorded_at": _utc(row[3]).isoformat(), "repository_id": row[5], "request_id": row[6],
-                 "surface": row[7], "identity": row[4]}
+                 "surface": row[7], "identity": row[4],
+                 "query_text": getattr(row, "query_text", None), "repository_name": getattr(row, "repository_name", None)}
                 for row in sorted(rows, key=lambda item: _utc(item[3]), reverse=True)[:20]
             ]}

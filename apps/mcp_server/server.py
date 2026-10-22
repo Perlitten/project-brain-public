@@ -181,7 +181,8 @@ def _mcp_telemetry(operation: str):
                         await record_request(operation=operation, surface="mcp", repository_id=repository_id,
                                              repository_path=repository_path,
                                              principal_name=_mcp_principal(), request_id=request_id,
-                                             outcome=outcome, latency_ms=latency_ms)
+                                             outcome=outcome, latency_ms=latency_ms,
+                                             query_text=bound.arguments.get("query") or bound.arguments.get("task_description"))
                     await asyncio.wait_for(persist(), timeout=0.5)
                 except BaseException:
                     # Observability must never break an MCP tool or mask its error.

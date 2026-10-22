@@ -1665,7 +1665,7 @@ test('reranker page explains a refused project folder instead of reporting an ou
 
 test('repository actions distinguish source recovery from indexing, including encoded repository IDs', () => {
   const { repositoryAction } = load('lib/repository-status.ts');
-  const missing = repositoryAction({ slug: 'repo / one', name: 'nostia', freshness: 'source_missing', behind: 8 });
+  const missing = repositoryAction({ slug: 'repo / one', name: 'synthetic-missing-source', freshness: 'source_missing', behind: 8 });
   assert.equal(missing.href, '/projects?repo=repo%20%2F%20one#source');
   assert.match(missing.label, /Check source/);
   assert.doesNotMatch(missing.label, /index/i);
@@ -1779,4 +1779,28 @@ test('adding a repository validates paths, preserves defaults and reports index 
   assert.equal(writes[0].path, '/workspace/repositories');
   assert.equal(writes[0].body.path, '/repos/example');
   assert.ok(!('target_repo_path' in writes[0].body), 'the default repository must not change');
+});
+
+
+test('Current memory excludes replaced decisions and keeps each view count honest', async () => {
+  const data = load('lib/data.ts', { 'next/server': { connection: async () => {} }, react: { cache: fn => fn }, './api': { apiConfigured: false } });
+  const current = await data.getPagedDecisions(null, { status: 'current', size: 100 });
+  assert.ok(current.items.length > 0);
+  assert.ok(current.items.every(row => ['accepted', 'proposed', 'validated_unmerged'].includes(row.status)));
+  const replaced = await data.getPagedDecisions(null, { status: 'superseded', size: 100 });
+  assert.ok(replaced.items.length > 0 && replaced.items.every(row => row.status === 'superseded'));
+  assert.equal(current.paging.total + replaced.paging.total, (await data.getPagedDecisions(null, { size: 100 })).paging.total);
+});
+
+test('duplicate findings retain evidence identity rather than merging matching titles across modules', () => {
+  const { groupFindings } = load('lib/finding-groups.ts');
+  const first = { id: '1', title: 'same title', kind: 'drift', module: 'a', evidence: 'same evidence', tone: 'warn', occurrences: 3 };
+  const otherModule = { ...first, id: '2', module: 'b' };
+  const duplicate = { ...first, id: '3', tone: 'bad', occurrences: 2 };
+  const groups = groupFindings([first, otherModule, duplicate]);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].count, 5);
+  assert.equal(groups[0].rep.id, '3');
+  assert.deepEqual([...groups[0].members.map(row => row.id)], ['1', '3']);
+  assert.equal(groups[1].rep.id, '2');
 });
