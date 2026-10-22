@@ -1,0 +1,1 @@
+{"own_key_badge_and_rotate": true, "rotation_preserves_selected_older_key_scopes": true, "wildcard_requires_explicit_selection_before_submit": true, "no_self_destructive_controls": true, "team_separate_from_settings": true, "add_project_post_preserves_default": true, "index_now_opt_in": true, "legacy_unknown_identity_safe": true, "legacy_team_hidden_and_direct_route_gated": true}

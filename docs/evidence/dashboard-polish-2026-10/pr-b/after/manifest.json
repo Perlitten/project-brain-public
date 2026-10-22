@@ -1,0 +1,80 @@
+[
+  {
+    "screen": "dashboard",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/",
+    "title": "Dashboard",
+    "heading": "Dashboard"
+  },
+  {
+    "screen": "projects",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/projects",
+    "title": "Projects \u00b7 Project Brain",
+    "heading": "Projects"
+  },
+  {
+    "screen": "help",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/help",
+    "title": "Help \u00b7 Project Brain",
+    "heading": "Help"
+  },
+  {
+    "screen": "activity",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/activity",
+    "title": "Activity \u00b7 Project Brain",
+    "heading": "Activity"
+  },
+  {
+    "screen": "quality",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/quality",
+    "title": "Quality \u00b7 Project Brain",
+    "heading": "Quality"
+  },
+  {
+    "screen": "settings",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/settings",
+    "title": "Settings \u00b7 Project Brain",
+    "heading": "Settings"
+  },
+  {
+    "screen": "team",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/team",
+    "title": "Team \u00b7 Project Brain",
+    "heading": "Team"
+  },
+  {
+    "screen": "me",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/team/me",
+    "title": "Me \u00b7 Project Brain",
+    "heading": "Me"
+  },
+  {
+    "screen": "team-activity",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/team/activity",
+    "title": "Team activity \u00b7 Project Brain",
+    "heading": "Team activity"
+  },
+  {
+    "screen": "board",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/team/board",
+    "title": "Board \u00b7 Project Brain",
+    "heading": "Board"
+  },
+  {
+    "screen": "access",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/admin",
+    "title": "Access \u00b7 Project Brain",
+    "heading": "Access"
+  },
+  {
+    "screen": "setup",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/setup",
+    "title": "Set up Brain \u00b7 Project Brain",
+    "heading": "Set up Brain"
+  },
+  {
+    "screen": "review",
+    "url": "https://project-brain-demo-git-fix-dashboard-df60df-perlittens-projects.vercel.app/review",
+    "title": "Review \u00b7 Project Brain",
+    "heading": "Review"
+  }
+]
