@@ -52,6 +52,164 @@ function withEnv(values, run) {
   } catch (error) { restore(); throw error; }
 }
 
+test('setup preserves timeout and authorization failures, then recovers without a restart', async () => {
+  let reply = { ok: false, status: 0, reason: 'timeout' };
+  const view = load('lib/setup-view.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: true, brainRead: async () => reply, brainFetch: async () => null },
+  });
+  const timeout = await view.getSetupView();
+  assert.equal(timeout.mode, 'down');
+  assert.match(timeout.problem.title, /taking too long/);
+  assert.equal(timeout.problem.retry, true);
+  assert.doesNotMatch(timeout.problem.detail, /docker compose/);
+  reply = { ok: false, status: 403, reason: 'http_error' };
+  const denied = await view.getSetupView();
+  assert.match(denied.problem.title, /Permission/);
+  assert.equal(denied.problem.retry, false);
+  reply = { ok: true, status: 200, data: { steps: [] } };
+  assert.match((await view.getSetupView()).problem.title, /Unreadable/, 'an empty status cannot imply completed setup');
+  reply = { ok: true, status: 200, data: { steps: [{ id: 'provider', status: 'done', detail: 'llm: verified at 2026-10-19T14:30:00+03:00' }] } };
+  const recovered = await view.getSetupView();
+  assert.equal(recovered.mode, 'live');
+  assert.equal(recovered.steps[0].done, true);
+  assert.match(recovered.steps[0].detail, /Language model: verified at .*11:30 UTC/);
+});
+
+test('read errors distinguish expired sign-in, permission, network and server errors', () => {
+  const { readProblem } = load('lib/read-problem.ts');
+  assert.match(readProblem({ ok: false, status: 401, reason: 'http_error' }).title, /Sign-in/);
+  assert.match(readProblem({ ok: false, status: 403, reason: 'http_error' }).title, /Permission/);
+  assert.match(readProblem({ ok: false, status: 0, reason: 'network' }).title, /Connection/);
+  const unavailable = readProblem({ ok: false, status: 503, reason: 'http_error' });
+  assert.match(unavailable.title, /503/);
+  assert.equal(unavailable.retry, true);
+});
+
+test('a failed provider catalogue never masquerades as an old API or resets completed setup', async () => {
+  const view = load('lib/setup-view.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: true, brainRead: async path => path.endsWith('/providers')
+      ? { ok: false, status: 0, reason: 'timeout' }
+      : { ok: true, status: 200, data: { steps: [{ id: 'provider', status: 'done' }] } } },
+  });
+  const result = await view.getSetupView();
+  assert.equal(result.mode, 'live');
+  assert.equal(result.steps[0].done, true);
+  assert.equal(result.providers, null);
+  assert.match(result.providersProblem.title, /taking too long/);
+});
+
+test('repository summaries never call a missing source or unverified freshness behind', () => {
+  const { repositorySummary, repositoryStatus } = load('lib/repository-status.ts');
+  const repos = [
+    { freshness: 'source_missing', behind: 8 },
+    { freshness: 'behind', behind: 2 },
+    { freshness: 'freshness_error', behind: null },
+    { freshness: 'current', behind: 0 },
+  ];
+  assert.match(repositoryStatus(repos[0]).status, /Source unavailable/);
+  assert.equal(repositorySummary(repos), '4 projects: 1 source unavailable; 1 behind their code; 1 need a freshness check or indexing');
+  assert.match(repositorySummary([repos[3]]), /up to date/);
+});
+
+test('tool health does not extrapolate one successful tool to unused tools, and flags slow responses', async () => {
+  const { toolSummary } = load('lib/tool-health.ts');
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => ({ available: true, tools: [
+      { name: 'search_code', calls_24h: 1, error_rate: 0, p95_ms: 3300 },
+      { name: 'prepare_task_context', calls_24h: 0, error_rate: 0 },
+    ] }) },
+  });
+  const tools = await data.getMcpTools();
+  assert.equal(tools[0].status, 'warn');
+  assert.equal(tools[1].status, 'idle');
+  assert.equal(toolSummary(tools).tone, 'warn');
+  const oneFast = [{ ...tools[0], status: 'ok' }, tools[1]];
+  assert.equal(toolSummary(oneFast).tone, 'info');
+  assert.match(toolSummary(oneFast).text, /1 of 2.*remaining tools unverified/);
+  assert.equal(toolSummary([{ ...tools[0], status: 'ok' }]).tone, 'ok');
+});
+
+test('access marks the request identity and key without guessing from an integration name', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => ({ current_principal_id: 3, current_credential_id: 11, principals: [
+      { id: 3, name: 'any-name', kind: 'service', credentials: [{ id: 11, scopes: ['principals:write'] }, { id: 12, scopes: ['principals:read'] }] },
+      { id: 4, name: 'web-ui-vercel', kind: 'service', credentials: [{ id: 13, scopes: ['core:read'] }] },
+    ] }) },
+  });
+  const { identities } = await data.getAccessView();
+  assert.equal(identities[0].current, true);
+  assert.equal(identities[0].keys.find(k => k.id === 11).current, true);
+  assert.equal(identities[0].keys.find(k => k.id === 12).current, false);
+  assert.equal(identities[1].current, false);
+});
+
+test('key rotation preserves dotted team scopes and passes them to Brain for authorization', async () => {
+  const requests = [];
+  const admin = load('lib/actions/admin.ts', { './gate': { mutate: async (path, opts) => {
+    requests.push({ path, ...opts });
+    return { ok: true, message: '', data: { api_key: 'synthetic-member-key' } };
+  } } });
+  const rotated = await admin.mintKey(3, ['team:knowledge.propose', 'team:read'], 90);
+  assert.equal(rotated.ok, true);
+  assert.deepEqual([...requests[0].body.scopes], ['team:knowledge.propose', 'team:read']);
+  assert.equal(requests[0].body.ttl_days, 90);
+  for (const scope of ['*', 'team:.admin', 'team:admin.', 'team:knowledge..approve']) {
+    assert.equal((await admin.mintKey(3, [scope], 90)).ok, false);
+  }
+  assert.equal(requests.length, 1, 'invalid scopes never reach the mutation boundary');
+});
+
+test('timestamps normalize offsets to UTC and never invent a timezone', () => {
+  const { utcTime } = load('lib/time.ts');
+  assert.equal(utcTime('2026-10-19T14:30:00+03:00'), utcTime('2026-10-19T11:30:00Z'));
+  assert.match(utcTime('2026-10-19T11:30:00'), /timezone unknown/);
+  assert.equal(utcTime('invalidZ'), 'unknown time');
+});
+
+test('team bootstrap saves a human key before activation, and never switches sign-in on refusal', async () => {
+  const requests = [], cookies = [];
+  let permitted = false, forgotten = 0;
+  const bootstrap = load('lib/actions/bootstrap.ts', {
+    'next/headers': { cookies: async () => ({ set: (...args) => cookies.push(args) }), headers: async () => new Map([['x-forwarded-proto', 'https']]) },
+    'next/cache': { revalidatePath: () => {} },
+    '../web-auth': { MEMBER_COOKIE: 'pb_member', MEMBER_MAX_AGE: 604800, sealMember: () => 'sealed-cookie', forgetLoginState: () => { forgotten++; } },
+    './admin': { createAgentKey: async (name, scopes, opts) => {
+      requests.push({ name, scopes, opts });
+      return { ok: true, message: '', data: { apiKey: 'saved-human-key', name } };
+    } },
+    './gate': { mutate: async (path, opts) => {
+      requests.push({ path, ...opts });
+      return { ok: permitted, message: permitted ? 'Enabled' : 'Owner permission required' };
+    } },
+  });
+  const prepared = await bootstrap.prepareFirstAdmin('alice');
+  assert.equal(prepared.ok, true);
+  assert.equal(requests[0].opts.kind, 'human');
+  assert.equal(requests[0].opts.ttlDays, 90);
+  assert.ok(requests[0].scopes.includes('team:admin'));
+  assert.equal(requests.some(r => r.path), false, 'preparing never activates membership');
+  assert.equal((await bootstrap.activateFirstAdmin({ teamName: 'Team', credential: prepared.data.apiKey, saved: false })).ok, false);
+  assert.equal(requests.length, 1, 'acknowledgement is required before sending activation');
+  const input = { teamName: 'Team', credential: prepared.data.apiKey, saved: true };
+  assert.equal((await bootstrap.activateFirstAdmin(input)).ok, false);
+  assert.equal(cookies.length, 0);
+  assert.equal(forgotten, 0);
+  permitted = true;
+  const activated = await bootstrap.activateFirstAdmin(input);
+  assert.equal(activated.ok, true);
+  assert.doesNotMatch(JSON.stringify(activated), /saved-human-key/);
+  assert.equal(cookies.length, 1);
+  assert.equal(cookies[0][1], 'sealed-cookie');
+  assert.equal(cookies[0][2].httpOnly, true);
+  assert.equal(cookies[0][2].secure, true);
+  assert.equal(cookies[0][2].sameSite, 'lax');
+  assert.equal(forgotten, 1);
+});
+
 const basic = value => `Basic ${Buffer.from(value).toString('base64')}`;
 
 test('overview failures cannot suppress another repository or a recovered request', async () => {
@@ -74,7 +232,7 @@ test('overview failures cannot suppress another repository or a recovered reques
   assert.equal((await data.getCorpus('4')).files, 8);
   recovered = true;
   assert.equal((await data.getCorpus('1')).available, true);
-  assert.ok(calls.includes('/api/web/overview?repository_id=4'));
+  assert.ok(calls.includes('/api/web/overview?include_health=false&repository_id=4'));
 });
 
 test('repository feed distinguishes empty success, malformed payload and an outage', async () => {
@@ -91,6 +249,19 @@ test('repository feed distinguishes empty success, malformed payload and an outa
   const invalid = await data.getRepositoryFeed();
   assert.equal(invalid.available, false);
   assert.match(invalid.note, /unreadable/);
+});
+
+test('failed jobs collection is unavailable, while an empty successful collection stays empty', async () => {
+  let failed = true;
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async path => path === '/repositories'
+      ? { repositories: [{ id: 1, name: 'repo' }] }
+      : { jobs: [], jobs_error: failed ? 'collection timed out' : null } },
+  });
+  assert.equal(await data.getJobs('1'), null);
+  failed = false;
+  assert.equal((await data.getJobs('1')).length, 0);
 });
 
 test('API reads preserve missing, HTTP failure, invalid JSON and timeout reasons and recover immediately', async () => {
@@ -872,10 +1043,10 @@ test('dashboard and setup read the latest observation for the right repository, 
   });
   assert.equal((await data.getCorpus('7')).uncommitted, 3);
   assert.equal(await data.getLatestUncommittedChanges('/Selected'), 3);
-  assert.ok(calls.includes('/api/web/overview?repository_id=7'));
+  assert.ok(calls.includes('/api/web/overview?include_health=false&repository_id=7'));
   assert.equal(await data.getLatestUncommittedChanges('/selected'), null);
   assert.equal(await data.getLatestUncommittedChanges(''), null);
-  assert.equal(calls.includes('/api/web/overview?repository_id=5'), false);
+  assert.equal(calls.some(path => path.includes('/api/web/overview') && path.endsWith('repository_id=5')), false);
   run = { uncommitted_changes: 0 };
   assert.equal((await data.getCorpus('7')).uncommitted, 0);
   run = {};
@@ -1053,14 +1224,15 @@ test('setup repository step offers the repositories Brain has actually indexed',
   assert.deepEqual([...indexedRepositories({ extra: {} })], []);
 });
 
-test('quality shows "Run the benchmark" on a fresh install and labels a maintainers\' reference run', () => {
+test('quality distinguishes missing reference evidence from scheduled benchmarks', () => {
   const dash = load('lib/dashboard.ts', { 'next/server': { connection: async () => {} }, './api': { apiConfigured: true, brainFetch: async () => null } });
   assert.equal(dash.qualityNotRun({ available: false, reason: 'not_run' }), true);
   assert.equal(dash.qualityNotRun(null), false);
   assert.equal(dash.qualityNotRun({ historical: true }), false);
   const view = fs.readFileSync(path.join(root, 'components/QualityEvidence.tsx'), 'utf8');
-  assert.match(view, /title="No benchmark run yet"/);
-  assert.match(view, /label="Run the benchmark"/);
+  assert.match(view, /title="No saved reference measurements"/);
+  assert.match(view, /href="\/reports"/);
+  assert.match(view, /Scheduled smoke benchmarks are separate/);
   assert.match(view, /Reference run by maintainers/);
   // The period selector lives on the overview only; /quality has none to mention.
   assert.match(view, /compact \? "; the period selector does not change it" : ""/);
@@ -1093,6 +1265,29 @@ function fakeTeamBrain(members = { pbk_alice: { id: 7, name: 'alice', admin: tru
 }
 
 const LIVE = { BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' };
+
+test('a saved member cookie rechecks a different process caching solo after bootstrap', async () => {
+  await withEnv(LIVE, async () => {
+    const previous = global.fetch;
+    try {
+      const brain = fakeTeamBrain();
+      global.fetch = brain.fetch;
+      brain.team = false;
+      const auth = load('lib/web-auth.ts');
+      const otherProcess = load('lib/web-auth.ts');
+      assert.equal((await auth.loginState()).kind, 'brain');
+      assert.equal((await otherProcess.loginState()).kind, 'brain');
+      const sealed = auth.sealMember('pbk_alice');
+      brain.team = true;
+      assert.equal((await auth.memberFor(sealed)).name, 'alice');
+      assert.equal(await otherProcess.authorizeWebRequest(null, null, 'dashboard.example', sealed), 200);
+      assert.equal(await otherProcess.brainKeyFor(sealed), 'pbk_alice');
+      assert.equal(await otherProcess.brainKeyFor(null), null, 'never fall back to the integration credential in team state');
+      delete brain.members.pbk_alice;
+      assert.equal(await otherProcess.authorizeWebRequest(null, null, 'dashboard.example', sealed), 401, 'the cookie never bypasses live revocation');
+    } finally { global.fetch = previous; }
+  });
+});
 
 test('member cookie: sealed by the server key, opaque, tamper-evident and short-lived', () => {
   const auth = load('lib/web-auth.ts');

@@ -4,6 +4,7 @@
 // every call with the admin's own key anyway.
 
 import { useState, type CSSProperties } from "react";
+import { utcTime } from "@/lib/time";
 import { CodeBlock, Dialog, LockNote, RunButton, useAction } from "@/components/act";
 import { Icon } from "@/components/Icon";
 import { Chip } from "@/components/ui";
@@ -16,7 +17,7 @@ import type { TeamProjectRow } from "@/lib/team-view";
 const MAX_PROJECTS = 16;
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 /** Brain stores UTC; minutes are enough to tell invitations apart. */
-const when = (iso: string | null) => (iso ? `${iso.slice(0, 16).replace("T", " ")} UTC` : "—");
+const when = (iso: string | null) => iso ? utcTime(iso) : "—";
 
 export function InviteForm({ projects, projectsAvailable = true }: { projects: TeamProjectRow[]; projectsAvailable?: boolean }) {
   const live = projects.filter((p) => !p.disabled);

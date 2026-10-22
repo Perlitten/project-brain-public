@@ -6,7 +6,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { publicDemoProblem } from "./public-demo";
-import { MEMBER_COOKIE, brainKeyFor, loginState } from "./web-auth";
+import { MEMBER_COOKIE, brainKeyFor, loginStateForMember } from "./web-auth";
 
 // Block reads as well as mutations if an isolated public demo is misconfigured.
 const blocked = publicDemoProblem();
@@ -71,13 +71,13 @@ function apiUrl(apiBase: string, path: string): URL | null {
  * bypasses the data cache so one member's answers never serve another request.
  */
 async function requestKey(): Promise<{ key: string | null; member: boolean }> {
-  if ((await loginState()).kind !== "team") return { key: key ?? null, member: false };
   let sealed: string | null = null;
   try {
     sealed = (await cookies()).get(MEMBER_COOKIE)?.value ?? null;
   } catch {
     sealed = null; // outside a request (build): no member, so nothing is sent
   }
+  if ((await loginStateForMember(sealed)).kind !== "team") return { key: key ?? null, member: false };
   return { key: await brainKeyFor(sealed), member: true };
 }
 

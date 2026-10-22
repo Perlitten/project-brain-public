@@ -133,7 +133,7 @@ async def _keep_an_administrator(session: AsyncSession, caller: ResolvedPrincipa
 
 
 @router.get("/principals", dependencies=[Depends(require_scope("principals:read"))])
-async def list_principals() -> dict[str, object]:
+async def list_principals(caller: ResolvedPrincipal = CALLER) -> dict[str, object]:
     """All principals with their credentials (hashes never exposed)."""
     async with async_session_factory() as session:
         principals: Sequence[Principal] = (
@@ -150,6 +150,8 @@ async def list_principals() -> dict[str, object]:
             _serialize_credential(cred)
         )
     return {
+        "current_principal_id": caller.id,
+        "current_credential_id": caller.credential_id,
         "principals": [
             {
                 **_serialize_principal(principal),
@@ -245,6 +247,8 @@ async def create_credential(
 )
 async def revoke_credential(credential_id: int, caller: ResolvedPrincipal = CALLER) -> dict[str, object]:
     """Revoke a credential — resolution denies it immediately."""
+    if caller.credential_id is not None and credential_id == caller.credential_id:
+        raise HTTPException(409, "Cannot revoke the credential you are using for this request. Create a replacement, switch the client or dashboard to it, and retry using that replacement")
     team = await _team_state_is_team()
     async with async_session_factory() as session:
         async with session.begin():
@@ -268,6 +272,8 @@ async def revoke_credential(credential_id: int, caller: ResolvedPrincipal = CALL
 )
 async def disable_principal(principal_id: int, caller: ResolvedPrincipal = CALLER) -> dict[str, object]:
     """Disable a principal — every credential on it stops resolving."""
+    if principal_id == caller.id:
+        raise HTTPException(409, "Cannot disable your own principal serving this request. Switch the client or dashboard to another administrative identity first")
     team = await _team_state_is_team()
     async with async_session_factory() as session:
         async with session.begin():

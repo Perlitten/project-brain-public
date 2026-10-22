@@ -1,4 +1,5 @@
 import { EmptyState, JobChip } from "./ui";
+import { RetryRead } from "./RetryRead";
 import type { Job } from "@/lib/types";
 
 const jobWords: Record<string, string> = {
@@ -15,7 +16,7 @@ const jobWords: Record<string, string> = {
 };
 
 export function BackgroundJobs({ jobs, unavailable = false }: { jobs: Job[]; unavailable?: boolean }) {
-  if (!jobs.length && unavailable) return <EmptyState title="Background jobs unavailable" body="Brain didn’t return its recent jobs just now. Reload in a moment." />;
+  if (!jobs.length && unavailable) return <EmptyState title="Background jobs unavailable" body="The recent-jobs request failed. This does not establish that the worker is stopped. Retry; if it persists, check Setup for worker status and the API logs." action={<RetryRead />} />;
   if (!jobs.length) return <EmptyState title="No background jobs reported" body="Recent indexing, maintenance and checks will appear here." />;
   return <ul aria-label="Recent background jobs">
     {jobs.map((job) => <li key={job.id} className="ledger__row job-row">

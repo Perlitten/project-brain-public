@@ -52,8 +52,8 @@ export default async function Quality({ searchParams }: { searchParams: Promise<
       {tab === "benchmark" ? (
         <Panel
           id="benchmark"
-          title="Search benchmark"
-          desc="The latest saved test run. Each result is tied to the Brain build it measured."
+          title="Reference search measurements"
+          desc="Historical reference evidence for a specific Brain build. Scheduled smoke benchmarks write separate saved reports; running one does not replace this snapshot."
           actions={result.paging.total ? <Link className="link" href="/quality?view=reports">All {result.paging.total} saved reports</Link> : undefined}
         >
           <QualityEvidence evidence={evidence} />

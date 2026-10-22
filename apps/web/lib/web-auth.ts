@@ -278,7 +278,7 @@ function settle(who: WhoIs): WhoIs {
 
 /** The signed-in member for a sealed cookie value, or null (not team state, not signed in, revoked). */
 export async function memberFor(cookieValue: string | null): Promise<WebMember | null> {
-  if ((await loginState()).kind !== "team") return null;
+  if ((await loginStateForMember(cookieValue)).kind !== "team") return null;
   const who = settle(await whoIs(openMember(cookieValue)));
   return who.status === 200 ? who.member : null;
 }
@@ -289,8 +289,15 @@ export async function memberFor(cookieValue: string | null): Promise<WebMember |
  * forwarded), otherwise the dashboard's server key, exactly as before.
  */
 export async function brainKeyFor(cookieValue: string | null): Promise<string | null> {
-  if ((await loginState()).kind === "team") return openMember(cookieValue);
+  if ((await loginStateForMember(cookieValue)).kind === "team") return openMember(cookieValue);
   return apiKey() ?? null;
+}
+
+/** Another web process may still cache solo after bootstrap. Only a valid
+ * server-sealed member cookie prompts a fresh probe; it never supplies authority. */
+export async function loginStateForMember(cookieValue: string | null): Promise<LoginState> {
+  const state = await loginState();
+  return state.kind !== "team" && openMember(cookieValue) ? loginState({ fresh: true }) : state;
 }
 
 /**
@@ -352,7 +359,7 @@ export const UNCONFIGURED_DETAIL =
 
 export async function authorizeWebRequest(header: string | null, session: string | null = null, host: string | null = null,
   member: string | null = null): Promise<200 | 401 | 503> {
-  const state = await loginState();
+  const state = await loginStateForMember(member);
   if (state.kind === "demo") return 200;
   if (state.kind === "team") return settle(await whoIs(openMember(member))).status;
   if (state.kind === "misconfigured" || state.kind === "unreachable") return 503;

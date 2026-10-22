@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { utcTime } from "@/lib/time";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
 import {
@@ -10,7 +11,7 @@ export const metadata = { title: "Team activity" };
 
 const LEDE = "Who changed what, newest first: decisions and rules, learnings, team membership and invitations, tasks, runs and queued jobs. You see the projects you can read; membership and invitations are shown to team admins only.";
 
-const when = (iso: string | null) => (iso ? iso.replace("T", " ").slice(0, 16) + " UTC" : "unknown time");
+const when = utcTime;
 
 export default async function TeamActivity({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const filters = activityFilters(await searchParams);
@@ -18,6 +19,15 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
   const projects = await activityProjects(me);
   const projectName = new Map(projects.map((p) => [p.id, p.name]));
   const filtered = Boolean(filters.project || filters.repository || filters.actor || filters.kind || filters.since);
+
+  if (result.kind === "denied") return <>
+    <PageHead title="Team activity" lede={LEDE} />
+    <SectionTabs section="settings" active="/team/activity" />
+    <Panel id="activity-access" title="Permission required">
+      <EmptyState title="Team activity is not available to this credential" body={`${result.reason} Check the credential under Access. Adding a scope does not create team membership or grant access to another project.`} action={<Link className="btn btn--neutral" href="/team/me">Check my identity and access</Link>} />
+      {filtered && <Link className="btn btn--neutral" href="/team/activity">Clear filters</Link>}
+    </Panel>
+  </>;
 
   return (
     <>
@@ -90,8 +100,8 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
           ) : (
             <EmptyState title={filtered ? "Nothing matches" : "No activity yet"} body={filtered ? "No events match these filters." : "Changes to memory, membership, tasks and jobs will show up here."} />
           )
-        ) : result.kind === "denied" || result.kind === "invalid" ? (
-          <EmptyState title={result.kind === "denied" ? "Not allowed" : "Filters not accepted"} body={result.reason} action={<Link className="btn btn--neutral" href="/team/activity">Clear filters</Link>} />
+        ) : result.kind === "invalid" ? (
+          <EmptyState title="Filters not accepted" body={result.reason} action={<Link className="btn btn--neutral" href="/team/activity">Clear filters</Link>} />
         ) : (
           <EmptyState title="Activity unavailable" body="Brain didn’t return team activity just now, or this server predates it. Team activity needs full storage." />
         )}

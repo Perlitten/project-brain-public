@@ -14,7 +14,7 @@ export default async function SettingsPage() {
     <>
       <PageHead
         title="Settings"
-        lede="Alerts, scheduled jobs, search and indexing. Changes are saved on the Brain server and take effect at once; background workers pick them up after a restart."
+        lede="Alerts, scheduled jobs, search and indexing. Saving updates the API immediately. Background workers use the saved settings after they restart; a save does not restart workers."
       />
       <SectionTabs section="settings" active="/settings" />
       {view.mode === "down" ? (
