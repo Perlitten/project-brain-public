@@ -1059,7 +1059,10 @@ function toAccessKey(c: Json, now: number): AccessKey & { at: number; seen: Date
 }
 
 export const getAccessView = async (): Promise<AccessView> => {
-  if (!apiConfigured) return { readable: true, identities: mock.identities, summary: summarize(mock.identities) };
+  if (!apiConfigured) {
+    const identities = mock.identities.map(identity => ({ ...identity, current: false, keys: identity.keys.map(key => ({ ...key, current: false })) }));
+    return { readable: true, identities, summary: summarize(identities) };
+  }
   const empty: AccessView = { readable: false, identities: [], summary: summarize([]) };
   return live<AccessView>(empty, async () => {
     const data = await brainFetch<Json>("/admin/principals", { fresh: true });

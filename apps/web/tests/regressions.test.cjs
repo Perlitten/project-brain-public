@@ -1825,3 +1825,17 @@ test('finding cards retain file and line evidence when repository provenance com
   assert.equal(finding.occurrences, 4);
   assert.equal(finding.codeAvailable, true);
 });
+
+test('shared pulse never forwards other project identifiers from global liveness', async () => {
+  const { getPulse } = load('lib/actions/pulse.ts', {
+    '../api': { apiConfigured: true, brainFetch: async path => path === '/health' ? { status: 'degraded', details: {}, freshness: { exceeded: ['/synthetic/A', '/synthetic/B'] } } : null },
+    '../data': { getRepository: async () => ({ id: 1, path: '/synthetic/A', name: 'Synthetic A' }) },
+  });
+  const selected = await getPulse('1');
+  assert.deepEqual([...selected.freshness], ['Synthetic A']);
+  assert.equal(selected.indexAgeWarning, true);
+  assert.doesNotMatch(JSON.stringify(selected), /synthetic\/B/);
+  const global = await getPulse('');
+  assert.equal(global.freshness.length, 0);
+  assert.doesNotMatch(JSON.stringify(global), /synthetic\/[AB]/);
+});

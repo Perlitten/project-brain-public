@@ -54,7 +54,7 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
     pulse.llm || pulse.embedding ? `Models: ${pulse.llm ?? "—"} / ${pulse.embedding ?? "—"}` : "",
     !pulse.reachable ? "Retrying every 20 s" : "",
     pulse.workerHint ?? "",
-    pulse.freshness?.length ? `Index age exceeds the configured limit: ${pulse.freshness.join(", ")}` : "",
+    pulse.freshness?.length ? `Index age exceeds the configured limit: ${pulse.freshness.join(", ")}` : pulse.indexAgeWarning ? "Brain reported an index-age warning; details are in Help" : "",
     pulse.warnings?.length ? `Overdue jobs: ${pulse.warnings.join(", ")}` : warningOnly ? "Brain reported a warning; review scheduled jobs" : "",
   ]
     .filter(Boolean)
