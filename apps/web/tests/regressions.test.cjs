@@ -1766,7 +1766,7 @@ test('adding a repository validates paths, preserves defaults and reports index 
   const writes = [];
   const projects = load('lib/actions/projects.ts', {
     '../capabilities': { getCapabilities: async () => ({ supported: ['repository_registration'] }) },
-    '../api': { brainRead: async () => ({ ok: true, data: { team_state: 'solo' } }) },
+    '../api': { brainRead: async () => ({ ok: true, data: { team_state: 'solo', scopes: ['workspace:write'] } }) },
     './gate': { mutate: async (path, opts) => { writes.push({ path, ...opts }); return { ok: true, message: 'registered' }; } },
     './jobs': { startReindex: async () => ({ ok: false, message: 'Worker unavailable' }) },
   });
@@ -1797,4 +1797,21 @@ test('shared pulse never forwards other project identifiers from global liveness
   const global = await getPulse('');
   assert.equal(global.freshness.length, 0);
   assert.doesNotMatch(JSON.stringify(global), /synthetic\/[AB]/);
+});
+
+
+test('repository registration refuses insufficient credentials before offering or submitting project choices', async () => {
+  let identity = { team_state: 'solo', scopes: ['workspace:read'] };
+  let writes = 0;
+  const projects = load('lib/actions/projects.ts', {
+    '../capabilities': { getCapabilities: async () => ({ supported: ['repository_registration'] }) },
+    '../api': { brainRead: async () => ({ ok: true, data: identity }) },
+    './gate': { mutate: async () => { writes++; return { ok: true }; } },
+    './jobs': { startReindex: async () => { throw Error('must not index'); } },
+  });
+  assert.match((await projects.projectRegistrationContext()).message, /workspace:write/);
+  assert.equal((await projects.addProject({ name: 'Example', path: '/repos/example', indexNow: false })).ok, false);
+  identity = { team_state: 'team', scopes: ['workspace:write'], is_team_admin: false };
+  assert.match((await projects.projectRegistrationContext()).message, /administrator/);
+  assert.equal(writes, 0);
 });

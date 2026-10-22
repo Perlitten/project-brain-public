@@ -46,7 +46,7 @@ MEMBER_CORE_SCOPES = frozenset({
 # Extra for team admins: run the Team page (members, roles), issue member keys, and use the
 # administrative dashboard screens (Setup, Settings, Access, job retries). Those routes also require
 # a live team administrator, so the scopes alone grant nothing to a member who is not one.
-ADMIN_EXTRA_SCOPES = frozenset({"operations:write", "principals:read", "principals:write", "setup:write", ADMIN_SCOPE})
+ADMIN_EXTRA_SCOPES = frozenset({"operations:write", "principals:read", "principals:write", "setup:write", "workspace:write", ADMIN_SCOPE})
 
 
 class TeamNotFound(LookupError):

@@ -20,14 +20,15 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import delete, event, select
+from sqlalchemy import delete, event, select, update
 
 from loguru import logger
 
 from apps.api import auth, team_access
 from apps.api.routers import workspace
-from brain.database.models import Repository
+from brain.database.models import ApiCredential, Repository
 from brain.team import registry as shared
+from brain.team.provisioning import member_scopes
 from brain.team.authorization import FULL_AUTHORITY, Permission, TeamDenied, authorize_repository
 from brain.team.models import ProjectRepository, TeamActivityEvent
 from brain.workers.initiator import JobInitiator
@@ -619,6 +620,8 @@ async def test_admin_adds_unindexed_source_with_atomic_project_link(registration
     _, project, _ = team_db
     async with factory() as session, session.begin():
         await session.execute(delete(Repository).where(Repository.id == 4))
+    async with factory() as session, session.begin():
+        await session.execute(update(ApiCredential).where(ApiCredential.id == 4).values(scopes=member_scopes(True)))
     response = await client.post("/workspace/repositories", headers=ADMIN,
                                  json=register_body(directory, project_id=str(project), create_index_record=True))
     assert response.status_code == 200, response.text
@@ -648,3 +651,18 @@ async def test_add_unindexed_source_refusals_leave_no_identity_or_link(registrat
             assert (await session.execute(select(Repository).where(Repository.path == str(directory)))).scalar_one_or_none() is None
         assert await registry_activity(factory) == []
         assert await table_ids(factory) == set()
+
+
+@pytest.mark.asyncio
+async def test_registration_rejects_invalid_display_names_before_creating_index_rows(registration, team_db):
+    factory, _, client, directory = registration
+    _, project, _ = team_db
+    async with factory() as session, session.begin():
+        await session.execute(delete(Repository).where(Repository.id == 4))
+    for name in ("", "   ", "x" * 256):
+        response = await client.post("/workspace/repositories", headers=ADMIN,
+                                     json=register_body(directory, display_name=name, project_id=str(project), create_index_record=True))
+        assert response.status_code == 422, response.text
+        async with factory() as session:
+            assert (await session.execute(select(Repository).where(Repository.path == str(directory)))).scalar_one_or_none() is None
+        assert await registry_activity(factory) == []

@@ -7,10 +7,10 @@ inspection, and capability management.
 import os
 import uuid
 from pathlib import Path
-from typing import List
+from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.registry_access import (
@@ -49,7 +49,7 @@ def _get_store() -> RegistryStore:
 
 
 class RegisterRequest(BaseModel):
-    display_name: str
+    display_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
     path: str
     trust_level: str = "trusted_internal"
     organization: str = ""
