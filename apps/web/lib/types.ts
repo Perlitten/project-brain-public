@@ -117,6 +117,8 @@ export interface ContextPack {
   /** null: Brain can't tell (the pack doesn't record which commit it was built from). */
   stale: boolean | null;
   consumer: string;
+  /** Memory the pack carried, when Brain recorded its contents (null: not recorded). */
+  memory?: { rules: number | null; decisions: number | null; learnings: number | null };
   /** Demo data only: repository slug this pack was built for. */
   repo?: string;
 }
@@ -128,6 +130,8 @@ export interface Decision {
   scope: string;
   recordedAt: string;
   summary: string;
+  /** Stored repository path; null means the decision applies to every project. */
+  repoPath?: string | null;
   /** Demo data only: repository slug this decision belongs to. */
   repo?: string;
   /** How to address the stored row when editing it; absent on history copies. */
@@ -167,6 +171,8 @@ export interface Rule {
   delivered30d?: number;
   /** Diff reviews that cited this rule over the same window: did it catch anything. */
   caught30d?: number;
+  /** Stored repository path; null means the rule applies to every project. */
+  repoPath?: string | null;
   /** Demo data only: repository slug this rule belongs to. */
   repo?: string;
   /** How to address the stored row when editing it; absent on history copies. */

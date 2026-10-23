@@ -1,30 +1,17 @@
-import type { CSSProperties } from "react";
 import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
-import { ClampText } from "@/components/ClampText";
-import { ListFrame } from "@/components/ListFrame";
-import { DecisionActions, RecordHint, RuleActions } from "@/components/MemoryActions";
-import { PageTabs, pickTab } from "@/components/PageTabs";
-import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
+import { MemoryBoard, type MemoryTab } from "@/components/atlas/MemoryBoard";
+import { PageHead } from "@/components/ui";
 import { getCapabilities } from "@/lib/capabilities";
 import { getPagedDecisions, getPagedRules, getRepositoryFeed } from "@/lib/data";
-import { getListQuery } from "@/lib/list-query";
 import { getReviewView } from "@/lib/review-view";
 import { signInMode } from "@/lib/sign-in-view";
 import { currentMember } from "@/lib/team-session";
-import type { Decision, Rule, Tone } from "@/lib/types";
 
 export const metadata = { title: "Memory" };
 
-const statusTone: Record<Decision["status"], Tone> = { accepted: "ok", proposed: "info", superseded: "idle", validated_unmerged: "info" };
-const statusWords: Record<Decision["status"], string> = { accepted: "agreed", proposed: "proposed", superseded: "retired or replaced", validated_unmerged: "verified, not merged yet" };
-const severity: Record<Rule["severity"], [Tone, string]> = {
-  block: ["bad", "blocks the change"],
-  warn: ["warn", "warns"],
-  advise: ["idle", "suggests"],
-};
-
-const VIEWS = ["current", "replaced", "rules"] as const;
+// The map draws this many records of each kind; the tabs still count every one.
+const DRAWN = 100;
 
 /** Proposals the viewer could review, counted the way /review counts them; 0 outside a team. */
 async function waitingForReview(): Promise<number> {
@@ -37,36 +24,29 @@ async function waitingForReview(): Promise<number> {
   return view.queue.filter((r) => r.authorId === null || r.authorId !== selfId).length;
 }
 
+const pickView = (view: string | undefined, status: string | undefined): MemoryTab =>
+  status === "superseded" || view === "replaced" ? "replaced" : view === "rules" ? "rules" : view === "decisions" ? "decisions" : "current";
+
+// Memory answers what agents are told besides code: the sentence counts it,
+// the map shows where each decision and rule applies, the inspector edits one.
 export default async function Memory({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
-  const view = typeof params.view === "string" ? params.view : undefined;
-  const tab = params.status === "superseded" ? "replaced" : pickTab(VIEWS, view);
-  const query = getListQuery(params);
-  const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
-  const repo = typeof params.repo === "string" ? params.repo : undefined;
-  const [decisionsResult, rulesResult, waiting, feed] = await Promise.all([
-    getPagedDecisions(repo, { ...query, status: tab === "replaced" ? "superseded" : ["accepted", "proposed", "validated_unmerged"].includes(query.status) ? query.status : "current" }),
-    getPagedRules(repo, tab === "rules" ? query : {}),
+  const one = (k: string) => (typeof params[k] === "string" ? (params[k] as string) : undefined);
+  const repo = one("repo");
+  const [current, replaced, rules, waiting, feed] = await Promise.all([
+    getPagedDecisions(repo, { size: DRAWN, status: "current" }),
+    getPagedDecisions(repo, { size: DRAWN, status: "superseded" }),
+    getPagedRules(repo, { size: DRAWN }),
     waitingForReview(),
     getRepositoryFeed(),
   ]);
-  const repoPath = repo ? feed.repositories.find((r) => r.slug === repo)?.path : undefined;
-  const decisions = decisionsResult.items;
-  const decisionPaging = { ...decisionsResult.paging, facets: Object.fromEntries(Object.entries(decisionsResult.paging.facets).filter(([status]) => tab === "replaced" ? status === "superseded" : ["accepted", "proposed", "validated_unmerged"].includes(status))) };
-  const rules = rulesResult.items;
-  // Usage is reported per page of rules, and only once something has been
-  // recorded. Before that the columns are hidden rather than filled with
-  // zeros: "0 delivered" and "never counted" are not the same claim.
-  const usageTracked = rules.some((r) => r.delivered30d !== undefined);
-  const unusedCount = rules.filter((r) => r.delivered30d === 0).length;
-  const blocking = rules.filter((r) => r.severity === "block").length;
+  const scoped = repo ? feed.repositories.find((r) => r.slug === repo) : undefined;
+  const projects = (scoped ? [scoped] : feed.repositories).map((r) => ({ slug: r.slug, name: r.name, path: r.path }));
+  const rest = (p: { items: unknown[]; paging: { total: number } }) => Math.max(0, p.paging.total - p.items.length);
   return (
     <>
       <SectionTabs section="memory" active="/memory" />
-      <PageHead
-        title="Memory"
-        lede={`Decisions and rules you and your agents recorded${repo ? " for this project" : " across all projects"}. Agents get the relevant ones with their context.`}
-      />
+      <PageHead eyebrow={scoped ? scoped.name : "All projects"} title="Memory" />
       {waiting > 0 && (
         <p className="callout tone-info review-waiting" role="status">
           <span>
@@ -80,124 +60,18 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           </Link>
         </p>
       )}
-        <PageTabs
-        label="Memory views"
-        path="/memory"
-          current={tab}
-          params={{ repo }}
-        tabs={[
-          { id: "current", label: "Current", badge: tab === "current" ? decisionsResult.available === false ? "—" : decisionsResult.paging.total : undefined },
-          { id: "replaced", label: "Replaced", badge: tab === "replaced" ? decisionsResult.available === false ? "—" : decisionsResult.paging.total : undefined },
-          { id: "rules", label: "Rules", badge: tab === "rules" ? rulesResult.available === false ? "—" : rulesResult.paging.total : undefined },
-        ]}
+      <MemoryBoard
+        decisions={current.available === false ? [] : current.items}
+        replaced={replaced.available === false ? [] : replaced.items}
+        rules={rules.available === false ? [] : rules.items}
+        projects={projects}
+        scoped={Boolean(scoped)}
+        tab={pickView(one("view"), one("status"))}
+        pick={one("q")}
+        notDrawn={{ decisions: rest(current), rules: rest(rules), replaced: rest(replaced) }}
+        repoPath={scoped?.path}
+        unavailable={{ decisions: current.available === false, rules: rules.available === false, replaced: replaced.available === false }}
       />
-      {tab !== "rules" ? (
-        <section aria-label="Decisions">
-          {decisionsResult.available === false ? (
-            <EmptyState title="Decisions unavailable" body="Brain did not return this decision view. The Current view requires an API that advertises current-memory filtering; older servers still support Rules and Replaced." />
-          ) : decisions.length === 0 && !hasQuery ? (
-            <EmptyState title={tab === "replaced" ? "No replaced decisions" : "No current decisions"} body={tab === "replaced" ? "Decisions replaced by a newer version appear here." : "Agreed, proposed and verified decisions appear here. Older versions remain in Replaced."} action={tab === "replaced" ? undefined : <RecordHint kind="decision" />} />
-          ) : (
-          <ListFrame
-            listTag="div"
-            listClass="cards cards--grid"
-            noun={["decision", "decisions"]}
-            meta={decisions.map((d) => ({ q: `${d.title} ${d.summary} ${d.scope} ${d.id}`.toLowerCase(), f: d.status }))}
-            facet={{ label: "Status", values: (tab === "replaced" ? ["superseded"] as const : ["accepted", "proposed", "validated_unmerged"] as const).map((v) => ({ value: v, label: statusWords[v] })) }}
-            pageSize={20}
-            paging={decisionPaging}
-            rows={decisions.map((d, i) => (
-            <article key={d.id} className={`card tone-${statusTone[d.status]}`} style={{ "--i": Math.min(i, 12) } as CSSProperties}>
-              <div className="card__top">
-                <Chip tone={statusTone[d.status]}>{statusWords[d.status]}</Chip>
-                <span className="mono text-faint">{d.id}</span>
-              </div>
-              <h2 className="card__title">{d.title}</h2>
-              <ClampText text={d.summary} label="decision" />
-              <p className="card__meta">
-                <span className="mono">{d.scope}</span>
-                <span>recorded {d.recordedAt}</span>
-              </p>
-              <DecisionActions decision={d} />
-            </article>
-          ))}
-          />
-          )}
-          {decisions.length > 0 && <MoreHint kind="decision" />}
-        </section>
-      ) : (
-        <Panel id="rules" title="Rules agents must follow" desc={rulesResult.available === false ? undefined : `${blocking} blocking rule${blocking === 1 ? "" : "s"} on this page. ${usageTracked ? `Last 30 days: “Reached” counts the context packs a rule went into, “Caught” the reviews that cited it${unusedCount ? `; ${unusedCount} reached no agent at all` : ""}.` : "Nothing is recorded yet, so this page can’t say which rules reach agents."}`}
-          flush
-        >
-          {rulesResult.available === false ? (
-            <EmptyState title="Rules unavailable" body="Brain didn’t return the recorded rules just now. Reload in a moment." />
-          ) : rules.length === 0 && !hasQuery ? (
-            <EmptyState title="No rules yet" body="No active rules are recorded. Add one so agents’ changes are checked against it." action={<RecordHint kind="rule" repoPath={repoPath} />} />
-          ) : (
-          <Table
-            caption="Rules"
-            rows={rules}
-            paging={rulesResult.paging}
-            rowKey={(r) => r.id}
-            filter={{
-              search: (r) => `${r.rule} ${r.id} ${r.scope}`,
-              facet: { label: "If broken", of: (r) => r.severity, values: (["block", "warn", "advise"] as const).map((v) => ({ value: v, label: severity[v][1] })) },
-              noun: ["rule", "rules"],
-            }}
-            columns={[
-              {
-                head: "Rule",
-                cell: (r) => (
-                  <>
-                    <span>{r.rule}</span>
-                    <span className="sub mono">
-                      {r.id} · {r.scope}
-                    </span>
-                  </>
-                ),
-              },
-              { head: "If broken", cell: (r) => <Chip tone={severity[r.severity][0]}>{severity[r.severity][1]}</Chip> },
-              // A rule that reached nobody is the actionable case, so zero is
-              // shown as such and never as a dash — the dash is reserved for
-              // "not counted", which is a different problem.
-              ...(usageTracked
-                ? [
-                    {
-                      head: "Reached",
-                      cell: (r: Rule) =>
-                        r.delivered30d === undefined ? (
-                          "—"
-                        ) : r.delivered30d === 0 ? (
-                          <Chip tone="warn">never</Chip>
-                        ) : (
-                          r.delivered30d.toLocaleString("en")
-                        ),
-                      align: "right" as const,
-                    },
-                    {
-                      head: "Caught",
-                      cell: (r: Rule) => (r.caught30d === undefined ? "—" : r.caught30d.toLocaleString("en")),
-                      align: "right" as const,
-                    },
-                  ]
-                : []),
-              { head: <span className="sr-only">Actions</span>, cell: (r: Rule) => <RuleActions rule={r} />, align: "right" as const },
-            ]}
-          />
-          )}
-          {rules.length > 0 && <MoreHint kind="rule" repoPath={repoPath} />}
-        </Panel>
-      )}
     </>
-  );
-}
-
-/** Below a filled list: where new entries come from, folded away. */
-function MoreHint({ kind, repoPath }: { kind: "decision" | "rule"; repoPath?: string }) {
-  return (
-    <details className="record-more">
-      <summary>Record a new {kind}</summary>
-      <RecordHint kind={kind} repoPath={repoPath} />
-    </details>
   );
 }

@@ -737,10 +737,10 @@ export const getIndexRuns = async (slug?: string | null): Promise<IndexRun[]> =>
   });
 };
 
-export const getContextPacks = async (): Promise<ContextPack[]> => {
-  if (!apiConfigured) return mock.contextPacks;
+export const getContextPacks = async (limit = 200): Promise<ContextPack[]> => {
+  if (!apiConfigured) return mock.contextPacks.slice(0, limit);
   return live<ContextPack[]>([], async () => {
-    const data = await brainFetch<Json>("/api/web/context-packs?limit=200", { fresh: true });
+    const data = await brainFetch<Json>(`/api/web/context-packs?limit=${limit}`, { fresh: true });
     if (!data) return null;
     return list(data, "packs").map((p) => {
       const budget = str(p.budget).toLowerCase();
@@ -753,10 +753,14 @@ export const getContextPacks = async (): Promise<ContextPack[]> => {
         createdAt: fmtShort(p.created_at),
         stale: typeof p.stale === "boolean" ? p.stale : null,
         consumer: str(p.consumer) || "an agent",
+        ...(p.memory && typeof p.memory === "object" ? { memory: packMemory(obj(p.memory)) } : {}),
       };
     });
   });
 };
+
+// Counts stay null when the pack predates content recording: unknown is not zero.
+const packMemory = (m: Json): NonNullable<ContextPack["memory"]> => ({ rules: num(m.rules) ?? null, decisions: num(m.decisions) ?? null, learnings: num(m.learnings) ?? null });
 
 function decisionStatus(v: unknown): Decision["status"] {
   const s = str(v).toLowerCase();
@@ -982,7 +986,7 @@ export const getPagedDecisions = async (slug: string | null | undefined, input: 
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
     const scope = repo ? `&repository_id=${repo.id}` : "";
     const data = await brainFetch<Json>(`/api/web/decisions?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${q.status ? `&status=${q.status}` : ""}${scope}`, { fresh: true });
-    return data ? pageResult(data, "decisions", q, (d) => ({ id: `D-${str(d.id)}`, title: str(d.title) || "Untitled decision", status: decisionStatus(d.status), scope: str(d.repo_path).split(/[\\/]/).filter(Boolean).pop() || "whole project", recordedAt: fmtShort(d.date ?? d.created_at), summary: str(d.description) || str(d.reason) || "", write: decisionWrite(d) })) : null;
+    return data ? pageResult(data, "decisions", q, (d) => ({ id: `D-${str(d.id)}`, title: str(d.title) || "Untitled decision", status: decisionStatus(d.status), scope: str(d.repo_path).split(/[\\/]/).filter(Boolean).pop() || "whole project", recordedAt: fmtShort(d.date ?? d.created_at), summary: str(d.description) || str(d.reason) || "", repoPath: str(d.repo_path) || null, write: decisionWrite(d) })) : null;
   });
 };
 
@@ -997,7 +1001,7 @@ export const getPagedRules = async (slug: string | null | undefined, input: Part
     const scope = repo ? `&repository_id=${repo.id}` : "";
     const severity = q.status && ["block", "warn", "advise"].includes(q.status) ? `&severity=${q.status}` : "";
     const data = await brainFetch<Json>(`/api/web/rules?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${scope}${severity}`, { fresh: true });
-    return data ? pageResult(data, "rules", q, (r) => ({ id: str(r.id), rule: str(r.description) || str(r.name) || str(r.id), severity: ruleSeverity(r.severity), scope: ruleScope(r.applies_to, str(r.type)), delivered30d: num(r.delivered_30d), caught30d: num(r.flagged_30d), write: ruleWrite(r) })) : null;
+    return data ? pageResult(data, "rules", q, (r) => ({ id: str(r.id), rule: str(r.description) || str(r.name) || str(r.id), severity: ruleSeverity(r.severity), scope: ruleScope(r.applies_to, str(r.type)), delivered30d: num(r.delivered_30d), caught30d: num(r.flagged_30d), repoPath: str(r.repo_path) || null, write: ruleWrite(r) })) : null;
   });
 };
 
