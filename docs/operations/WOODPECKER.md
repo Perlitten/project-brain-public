@@ -35,7 +35,9 @@ real exact-revision main push, never a manual run.
 | Tagged release | `release` | Separate Linux local agent, `capability=brain-release`; Python 3.12, Docker, gh, Syft |
 
 Normal CI runs for PRs targeting main/master and pushes to those branches.
-Team proxy push/PR path filters match the source GitHub workflow. Mutation
+Team proxy runs on every main/master push because the exact-revision release
+gate requires its result even for documentation-only merges. PR path filters
+retain the focused source GitHub workflow paths. Mutation
 measurement is explicit opt-in through deployment task or a mutation-baseline
 label update; external PRs still require server-side approval. Use the server's existing two execution slots as the
 concurrency ceiling; each shard has its own database and 335-minute measurement
