@@ -104,6 +104,7 @@ function RuleForm({ rule, onDone }: { rule: Rule; onDone: () => void }) {
 // New decisions and rules come from agents and the CLI; this page edits what
 // they recorded. The hint names the exact tool and command for each.
 export function RecordHint({ kind, repoPath }: { kind: "decision" | "rule"; repoPath?: string }) {
+  const scopedDecision = kind === "decision" && Boolean(repoPath);
   const command =
     kind === "decision"
       ? `brain decision add "<title>" --desc "<what was decided>" --reason "<why>"`
@@ -111,9 +112,11 @@ export function RecordHint({ kind, repoPath }: { kind: "decision" | "rule"; repo
   return (
     <div className="record-hint">
       <p className="record-hint__text">
-        Agents call the <code className="mono">{kind === "decision" ? "record_decision" : "record_rule"}</code> tool. From a terminal:
+        Agents call the <code className="mono">{kind === "decision" ? "record_decision" : "record_rule"}</code> tool.{scopedDecision ? " Use it for this project." : " From a terminal:"}
       </p>
-      <CopyCommand command={command} />
+      {scopedDecision
+        ? <p className="field__hint">Use the agent tool on this project; the CLI does not currently accept a repository scope for decisions.</p>
+        : <CopyCommand command={command} />}
     </div>
   );
 }

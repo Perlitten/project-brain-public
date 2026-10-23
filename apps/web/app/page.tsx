@@ -24,16 +24,13 @@ type Props = { searchParams: Promise<{ repo?: string; period?: string; map?: str
 const periodWords = { "24h": "last 24 hours", "7d": "last 7 days", "30d": "last 30 days" };
 const when = utcTime;
 const severity: Record<Tone, number> = { bad: 3, warn: 2, info: 1, idle: 1, ok: 0 };
-// How many repositories the map tries before it gives up on finding indexed code.
-const MAP_TRIES = 3;
-
 // The map always shows one repository: the one asked for, else the one most in
 // need of attention that has indexed code. A repository with nothing indexed
 // yet would draw an empty map, so the next candidate is tried instead.
 async function mapTarget(repositories: Repository[], asked?: Repository): Promise<{ repo: Repository; modules: CodeModule[] } | null> {
   const ranked = [...repositories].sort((a, b) => severity[repositoryStatus(b).tone] - severity[repositoryStatus(a).tone] || (b.behind ?? 0) - (a.behind ?? 0));
   const order = asked ? [asked, ...ranked.filter((r) => r.id !== asked.id)] : ranked;
-  for (const repo of order.slice(0, MAP_TRIES)) {
+  for (const repo of order) {
     const modules = await getCodeModules(repo.slug);
     if (modules.some((m) => m.chunks > 0)) return { repo, modules };
   }

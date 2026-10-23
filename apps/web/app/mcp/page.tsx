@@ -8,14 +8,16 @@ import { SectionTabs } from "@/components/SectionNav";
 import { getMcpTools } from "@/lib/data";
 import { getAgentTarget } from "@/lib/setup-view";
 import type { McpTool } from "@/lib/types";
+import { getCapabilities } from "@/lib/capabilities";
 
 export const metadata = { title: "Agent tools" };
 
 const health = { ok: "healthy", warn: "slow", bad: "failing", info: "not measured", idle: "unused" } as const;
 
 export default async function Mcp() {
-  const [read, agent] = await Promise.all([getMcpTools(), getAgentTarget()]);
+  const [read, agent, capabilities] = await Promise.all([getMcpTools(), getAgentTarget(), getCapabilities()]);
   const tools = read ?? [];
+  const httpMcp = capabilities.supported.includes("mcp_http");
   const tracked = tools.some((t) => t.calls24h !== undefined || t.errorRate !== undefined);
   return (
     <>
@@ -41,7 +43,9 @@ export default async function Mcp() {
         desc="Agents reach these tools at one address, each with its own key. Keys are created and revoked in Access."
         actions={<Link className="btn btn--primary btn--sm" href="/admin?new=agent#new-identity">Create an agent key</Link>}
       >
-        <CodeBlock label="MCP address" code={mcpUrl(agent.publicApiUrl)} />
+        {httpMcp
+          ? <CodeBlock label="MCP address" code={mcpUrl(agent.publicApiUrl)} />
+          : <EmptyState title="HTTP MCP is disabled" body="This Brain server does not expose /mcp. Use the local stdio bridge configuration in Setup instead." action={<Link className="btn btn--neutral" href="/setup#agent">Open agent setup</Link>} />}
       </Panel>
       <Panel id="tools" title="Tools" desc={tracked ? "Last 24 hours. Errors above 5% are red; p95 responses over 2 seconds are slow. Unused tools have no verified health." : "What your agent can ask Brain for. This server doesn’t count calls yet, so usage and errors aren’t shown."} flush>
         {read === null ? (

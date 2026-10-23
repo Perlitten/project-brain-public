@@ -491,16 +491,30 @@ test('checked but unmerged decisions are not shown as agreed', async () => {
         decisions: [
           { id: 1, title: 'Pending merge', status: 'validated_unmerged' },
           { id: 2, title: 'Approved', status: 'accepted' },
+          { id: 3, title: 'Proposed', status: 'proposed', raw_status: 'proposed', version: 3, current: true },
         ],
-        total: 2, page: 1, page_size: 20,
-        facets: { status: { validated_unmerged: 1, accepted: 1 } },
+        total: 3, page: 1, page_size: 20,
+        facets: { status: { validated_unmerged: 1, accepted: 1, proposed: 1 } },
       } : null,
     },
   });
   const result = await data.getPagedDecisions(undefined);
   assert.equal(result.items[0].status, 'validated_unmerged');
   assert.equal(result.items[1].status, 'accepted');
+  assert.equal(result.items[2].write.status, 'proposed');
   assert.equal(result.paging.facets.validated_unmerged, 1);
+});
+
+test('editing a proposed decision preserves its status until Accept is used', async () => {
+  const calls = [];
+  const memory = load('lib/actions/memory.ts', {
+    './gate': { mutate: async (path, options) => { calls.push({ path, options }); return { ok: true, message: 'saved', data: {} }; } },
+  });
+  const target = { title: 'Use one queue', repoPath: '/repo', description: 'old', reason: '', status: 'proposed', version: 4 };
+  assert.equal((await memory.saveDecision(target, { description: 'new', reason: 'because' })).ok, true);
+  assert.equal(calls[0].options.body.status, 'proposed');
+  await memory.acceptDecision(target);
+  assert.equal(calls[1].options.body.status, 'active');
 });
 
 test('reindex refuses an explicitly empty repository path but permits a scoped path', async () => {

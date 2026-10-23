@@ -55,7 +55,7 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
               </select>
             </label>
             <IdPicker name="repository" label="Repository" all="All repositories" options={repositories} value={filters.repository} />
-            <IdPicker name="actor" label="Who" all="Anyone" options={actors} value={filters.actor} />
+            <IdPicker name="actor" label="Who" all="Anyone" options={actors} value={filters.actor} manual={me.kind === "ok" && !me.teamAdmin && !me.allRepositories} />
             <label className="field">
               <span className="field__label">Kind</span>
               <select className="select" name="kind" defaultValue={filters.kind ?? ""}>
@@ -115,11 +115,12 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
 }
 
 /** Pick by name; the value Brain filters on stays the numeric id. Without a list to offer, the id is typed. */
-function IdPicker({ name, label, all, options, value }: { name: string; label: string; all: string; options: FilterOption[]; value?: number }) {
-  if (!options.length) return (
+function IdPicker({ name, label, all, options, value, manual = false }: { name: string; label: string; all: string; options: FilterOption[]; value?: number; manual?: boolean }) {
+  if (!options.length || manual) return (
     <label className="field">
       <span className="field__label">{label} <em>id</em></span>
-      <input className="input input--mono" name={name} inputMode="numeric" pattern="[0-9]*" defaultValue={value ?? ""} />
+      <input className="input input--mono" name={name} inputMode="numeric" pattern="[0-9]*" list={options.length ? `${name}-options` : undefined} placeholder={all} defaultValue={value ?? ""} />
+      {options.length > 0 && <datalist id={`${name}-options`}>{options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</datalist>}
     </label>
   );
   const listed = value === undefined || options.some((o) => o.id === value);

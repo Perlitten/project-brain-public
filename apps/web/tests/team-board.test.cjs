@@ -143,9 +143,14 @@ test('the integrate dialog offers the newest integrated head in the repository, 
   const view = loadView();
   const board = view.assembleProject(demo.project, demo.raw);
   const [rebase] = board.queue;
-  const head = (id, sha, repositoryId = rebase.repositoryId) => ({ ...rebase, id, status: 'integrated', headSha: sha, repositoryId });
-  const tasks = [{ entry: head(1, 'a'.repeat(40)) }, { entry: head(7, 'b'.repeat(40)) }, { entry: head(9, 'c'.repeat(40), 99) }, { entry: null }];
-  eq(view.knownBase({ tasks, queue: board.queue }, rebase), { sha: 'b'.repeat(40), source: 'integrated' }, 'newest wins; another repository never counts');
+  const head = (id, sha, decidedAt, repositoryId = rebase.repositoryId) => ({ ...rebase, id, status: 'integrated', headSha: sha, decidedAt, repositoryId });
+  const tasks = [
+    { entry: head(7, 'a'.repeat(40), '2026-10-23T12:00:00Z') },
+    { entry: head(1, 'b'.repeat(40), '2026-10-23T13:00:00Z') },
+    { entry: head(9, 'c'.repeat(40), '2026-10-23T14:00:00Z', 99) },
+    { entry: null },
+  ];
+  eq(view.knownBase({ tasks, queue: board.queue }, rebase), { sha: 'b'.repeat(40), source: 'integrated' }, 'latest decision wins even at an older ID; another repository never counts');
   eq(view.knownBase({ tasks: [], queue: [] }, { ...rebase, checkedBaseSha: 'd'.repeat(40) }), { sha: 'd'.repeat(40), source: 'checked' });
   assert.equal(view.knownBase({ tasks: [], queue: [] }, { ...rebase, checkedBaseSha: null }), null);
 });

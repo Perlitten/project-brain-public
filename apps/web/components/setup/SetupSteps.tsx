@@ -25,7 +25,7 @@ const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const sentence = (s: string) => (s ? cap(s.trim()).replace(/[.\s]*$/, ".") : s);
 
-export function SetupSteps({ view, clients = [] }: { view: SetupView; clients?: ClientConfig[] }) {
+export function SetupSteps({ view, clients = [], httpMcp = false }: { view: SetupView; clients?: ClientConfig[]; httpMcp?: boolean }) {
   // One step open at a time — the next one — so the page reads as a checklist.
   const [open, setOpen] = useState<string | null>(view.nextStep ?? null);
   const show = (id: string) => {
@@ -51,7 +51,7 @@ export function SetupSteps({ view, clients = [] }: { view: SetupView; clients?: 
           {s.id === "repo" && <Repo step={s} repoPath={view.repoPath} />}
           {s.id === "provider" && <Providers step={s} view={view} />}
           {s.id === "indexed" && <Index step={s} repoPath={view.repoPath} />}
-          {s.id === "agent" && <Agent step={s} apiUrl={view.publicApiUrl} repoPath={view.repoPath} clients={clients} />}
+          {s.id === "agent" && <Agent step={s} apiUrl={view.publicApiUrl} repoPath={view.repoPath} clients={clients} httpMcp={httpMcp} />}
           {s.id === "first_task" && <FirstTask step={s} repoPath={view.repoPath} />}
         </Step>
       ))}
@@ -547,7 +547,7 @@ function Index({ step, repoPath }: { step: StepView; repoPath?: string }) {
 // ---------------------------------------------------------------------------
 // 5. Agent
 
-function Agent({ step, apiUrl, repoPath, clients }: { step: StepView; apiUrl: string; repoPath?: string; clients: ClientConfig[] }) {
+function Agent({ step, apiUrl, repoPath, clients, httpMcp }: { step: StepView; apiUrl: string; repoPath?: string; clients: ClientConfig[]; httpMcp: boolean }) {
   const ext = obj(step.extra.external_client);
   const check = obj(step.extra.self_check);
 
@@ -563,7 +563,9 @@ function Agent({ step, apiUrl, repoPath, clients }: { step: StepView; apiUrl: st
         <dd>{checked}</dd>
       </dl>
 
-      <CodeBlock label="Brain’s MCP address" code={mcpUrl(apiUrl)} />
+      {httpMcp
+        ? <CodeBlock label="Brain’s MCP address" code={mcpUrl(apiUrl)} />
+        : <div className="callout tone-warn"><b>HTTP MCP is disabled</b><span>Use the local-process configuration below from a Project Brain checkout.</span></div>}
       {/* Keys are made and revoked in one place, Access; its dialog carries the agent config. */}
       <div className="btn-row">
         <Link className="btn btn--primary" href="/admin?new=agent#new-identity">
@@ -573,12 +575,12 @@ function Agent({ step, apiUrl, repoPath, clients }: { step: StepView; apiUrl: st
         <RunButton action={verifyAgent} label="Run self-check" icon="check" title="Agent self-check" />
       </div>
       <p className="field__hint">
-        Agents connect to this address with a key of their own. Create one in Access — it shows the key once, with a command to paste into your agent
+        {httpMcp ? "Agents connect to this address with a key of their own." : "Agents connect through the local stdio bridge."} Create a key in Access — it shows the key once, with a command to paste into your agent
         {repoPath ? <> (tools work on <code>{repoPath}</code> by default)</> : null}. Self-check calls the same tools from the server to prove they work.
       </p>
       <LockNote />
       {clients.length > 0 && (
-        <details className="disclosure">
+        <details className="disclosure" open={!httpMcp}>
           <summary>Agent runs on the Brain server itself?</summary>
           <p>Then it can start Brain’s tools directly, without a key. The paths below are the server’s, not your laptop’s.</p>
           <AgentConfigurations clients={clients} />

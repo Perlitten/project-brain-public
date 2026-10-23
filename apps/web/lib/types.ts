@@ -154,6 +154,8 @@ export interface DecisionWrite {
   repoPath: string | null;
   description: string;
   reason: string;
+  /** As stored (for example proposed); edits must not implicitly accept it. */
+  status: string;
   /** Compare-and-swap: the version this page read. */
   version: number;
 }

@@ -96,7 +96,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           {decisionsResult.available === false ? (
             <EmptyState title="Decisions unavailable" body="Brain did not return this decision view. The Current view requires an API that advertises current-memory filtering; older servers still support Rules and Replaced." />
           ) : decisions.length === 0 && !hasQuery ? (
-            <EmptyState title={tab === "replaced" ? "No replaced decisions" : "No current decisions"} body={tab === "replaced" ? "Decisions replaced by a newer version appear here." : "Agreed, proposed and verified decisions appear here. Older versions remain in Replaced."} action={tab === "replaced" ? undefined : <RecordHint kind="decision" />} />
+            <EmptyState title={tab === "replaced" ? "No replaced decisions" : "No current decisions"} body={tab === "replaced" ? "Decisions replaced by a newer version appear here." : "Agreed, proposed and verified decisions appear here. Older versions remain in Replaced."} action={tab === "replaced" ? undefined : <RecordHint kind="decision" repoPath={repoPath} />} />
           ) : (
           <ListFrame
             listTag="div"
@@ -123,7 +123,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           ))}
           />
           )}
-          {decisions.length > 0 && <MoreHint kind="decision" />}
+          {decisions.length > 0 && <MoreHint kind="decision" repoPath={repoPath} />}
         </section>
       ) : (
         <Panel id="rules" title="Rules agents must follow" desc={rulesResult.available === false ? undefined : `${blocking} blocking rule${blocking === 1 ? "" : "s"} on this page. ${usageTracked ? `Last 30 days: “Reached” counts the context packs a rule went into, “Caught” the reviews that cited it${unusedCount ? `; ${unusedCount} reached no agent at all` : ""}.` : "Nothing is recorded yet, so this page can’t say which rules reach agents."}`}

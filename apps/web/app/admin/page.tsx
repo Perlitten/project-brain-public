@@ -9,17 +9,18 @@ import { getAccessView } from "@/lib/data";
 import { getAgentTarget } from "@/lib/setup-view";
 import { getSignInView } from "@/lib/sign-in-view";
 import { currentMember } from "@/lib/team-session";
+import { getCapabilities } from "@/lib/capabilities";
 
 export const metadata = { title: "Access" };
 
 export default async function Admin({ searchParams }: { searchParams: Promise<{ new?: string }> }) {
   const gate = await adminOnlyPage("Access");
   if (gate) return gate;
-  const [view, agent, signIn] = await Promise.all([getAccessView(), getAgentTarget(), getSignInView()]);
+  const [view, agent, signIn, capabilities] = await Promise.all([getAccessView(), getAgentTarget(), getSignInView(), getCapabilities()]);
   const { summary: s, identities } = view;
   // Setup and Agent tools link here with ?new=agent: keys are created in this one place.
   const asked = (await searchParams).new === "agent";
-  const target = { apiUrl: agent.publicApiUrl, repoPath: agent.repoPath };
+  const target = { apiUrl: agent.publicApiUrl, repoPath: agent.repoPath, httpMcp: capabilities.supported.includes("mcp_http") };
   // In team state only a team admin is offered new identities; Brain still checks the call.
   const canCreate = signIn.mode !== "team" || (await currentMember())?.admin === true;
   return (

@@ -13,12 +13,14 @@ export function KeyDialog({
   k,
   apiUrl,
   repoPath,
+  httpMcp,
   onClose,
   hint,
 }: {
   k: NewKey | null;
   apiUrl: string;
   repoPath?: string;
+  httpMcp: boolean;
   onClose: () => void;
   hint?: ReactNode;
 }) {
@@ -45,13 +47,14 @@ export function KeyDialog({
             <span>Lost it? Revoke it in Access and create a new one.</span>
           </div>
           <CodeBlock label="API key" code={k.apiKey} secret />
-          <CodeBlock label="Claude Code — one command" code={configs.cli} secret />
-          <CodeBlock label="Any MCP client — .mcp.json / mcp.json" code={configs.json} secret />
+          <CodeBlock label="Claude Code — one command" code={httpMcp ? configs.cli : configs.stdioCli} secret />
+          <CodeBlock label="Any MCP client — .mcp.json / mcp.json" code={httpMcp ? configs.json : configs.stdioJson} secret />
           <p className="field__hint">
             {hint ?? (
-              <>
-                Nothing to install: the agent talks to <code>{configs.url}</code> directly. Ask it to use any Brain tool — Setup turns the agent step green when
-                Brain sees the call.
+              httpMcp ? <>
+                Nothing to install: the agent talks to <code>{configs.url}</code> directly. Ask it to use any Brain tool — Setup turns the agent step green when Brain sees the call.
+              </> : <>
+                Native HTTP MCP is disabled on this Brain server. Run the local stdio bridge from a Project Brain checkout, then ask the agent to use any Brain tool.
               </>
             )}
             {repoPath && (
@@ -61,12 +64,12 @@ export function KeyDialog({
               </>
             )}
           </p>
-          <details className="disclosure">
+          {httpMcp && <details className="disclosure">
             <summary>Client can’t connect by URL?</summary>
             <p>Run Brain’s tools as a local process instead. This needs a Project Brain checkout on the agent’s machine, started from its root.</p>
             <CodeBlock label="Claude Code — local process" code={configs.stdioCli} secret />
             <CodeBlock label="Any MCP client — local process" code={configs.stdioJson} secret />
-          </details>
+          </details>}
           <div className="dialog__actions">
             <button type="button" className="btn btn--primary" onClick={onClose}>
               I’ve copied it
