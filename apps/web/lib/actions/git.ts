@@ -64,7 +64,7 @@ export async function connectRepository(input: {
   const selectedProject = context.data.team ? context.data.projects.find(p => p.id === input.projectId) : undefined;
   if (context.data.team && !selectedProject) return { ok: false, message: "Choose an active team project for this repository." };
   const canIndex = context.data.team ? selectedProject?.canIndex === true : context.data.canIndex;
-  if (input.indexNow && !canIndex) return { ok: false, message: "Your role and this project’s policy do not grant run.request. Connect the repository without indexing, then ask a Contributor or Reviewer with run permission to start its first index." };
+  if (!canIndex) return { ok: false, message: "Cloning runs as a background job and requires run.request on this project, even without initial indexing." };
 
   return mutate<GitConnectData>("/git/connect", {
     body: {

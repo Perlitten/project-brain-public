@@ -6,8 +6,8 @@ directory, makes sure the ``repositories`` row exists, records the origin
 so the poller follows it from now on, and queues the first reindex.
 
 A token the user typed in the UI is never in the job params: the API writes
-it to a one-time hand-off file under the managed root (see
-:mod:`brain.indexers.git_connect`) and this job reads and deletes it. The
+it to a private expiring hand-off file under the managed root (see
+:mod:`brain.indexers.git_connect`), retained only across transient clone retries. The
 clone keeps the credential in its own ``.git/config`` (``remote.origin.url``)
 so the origin poller can fetch private repositories; everything the job
 stores or returns is redacted.
@@ -31,7 +31,7 @@ from brain.indexers.git_connect import (
     managed_root,
     parse_remote_url,
     read_handoff,
-    with_token,
+    transport_url,
 )
 from brain.indexers.source_mirror import redact_url
 from brain.indexers.source_sync import SourceSyncError, SourceSyncTransientError
@@ -112,15 +112,21 @@ async def run_git_connect(params: Dict[str, Any]) -> Dict[str, Any]:
     except GitUrlError as exc:
         raise PermanentJobError(f"Invalid git URL: {exc}") from exc
 
-    # One-time read: the file is deleted whether or not the clone succeeds, so a
-    # retry of this job runs without the token (a token is only needed once; the
-    # clone keeps its own copy for later fetches).
-    token: Optional[str] = read_handoff(params.get("handoff"))
+    # A failed first network attempt may not create .git/config. Retain the
+    # private URL until cloning succeeds or fails permanently, so retries keep
+    # the same access without putting credentials in Redis.
+    handoff = params.get("handoff")
+    credential_url: Optional[str] = read_handoff(handoff, consume=False)
+    if handoff and credential_url is None and not (dest / ".git").exists():
+        raise PermanentJobError("Stored clone credentials expired; connect the repository again")
     try:
-        clone_url = with_token(info, token)
+        clone_url = parse_remote_url(credential_url).url if credential_url else info.url
+        if credential_url and transport_url(parse_remote_url(credential_url)) != transport_url(info):
+            raise GitUrlError("Stored clone credentials do not match this repository")
     except GitUrlError as exc:
+        read_handoff(handoff)
         raise PermanentJobError(str(exc)) from exc
-    del token
+    del credential_url
 
     await init_db()
     started = datetime.now(timezone.utc)
@@ -129,6 +135,7 @@ async def run_git_connect(params: Dict[str, Any]) -> Dict[str, Any]:
     except SourceSyncTransientError:
         raise  # the queue retries within max_attempts
     except SourceSyncError as exc:
+        read_handoff(handoff)
         _remove_if_empty(dest)
         message = redact_url(str(exc))
         repo = await get_repository_by_path(dest)
@@ -140,6 +147,8 @@ async def run_git_connect(params: Dict[str, Any]) -> Dict[str, Any]:
         raise PermanentJobError(message) from exc
     finally:
         del clone_url
+
+    read_handoff(handoff)
 
     repo = await _ensure_repository_row(clone.path, display_name or info.name)
     now = datetime.now(timezone.utc)

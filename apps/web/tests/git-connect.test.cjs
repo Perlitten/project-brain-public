@@ -100,3 +100,32 @@ test('the capability contract advertises git_connect to the dashboard', () => {
   assert.ok(CAPABILITY_NAMES.includes('git_connect'));
   assert.ok(CAPABILITY_NAMES.includes('repository_registration'));
 });
+
+test('cloning needs run permission even when initial indexing is disabled', async () => {
+  let mutations = 0;
+  const { connectRepository } = load('lib/actions/git.ts', {
+    './gate': { mutate: async () => { mutations++; return { ok: true }; } },
+    './projects': { projectRegistrationContext: async () => ({ ok: true, data: {
+      team: true, projects: [{ id: 'selected', canIndex: false }],
+    } }) },
+  });
+  for (const indexNow of [false, true]) {
+    const result = await connectRepository({ url: 'https://github.com/o/r.git', projectId: 'selected', indexNow });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /run.request/);
+  }
+  assert.equal(mutations, 0);
+});
+
+test('an authorized clone can still omit initial indexing', async () => {
+  let submitted;
+  const { connectRepository } = load('lib/actions/git.ts', {
+    './gate': { mutate: async (route, options) => { submitted = { route, body: options.body }; return { ok: true }; } },
+    './projects': { projectRegistrationContext: async () => ({ ok: true, data: {
+      team: true, projects: [{ id: 'selected', canIndex: true }],
+    } }) },
+  });
+  assert.equal((await connectRepository({ url: 'https://github.com/o/r.git', projectId: 'selected', indexNow: false })).ok, true);
+  assert.equal(submitted.route, '/git/connect');
+  assert.equal(submitted.body.index_now, false);
+});

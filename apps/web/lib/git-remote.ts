@@ -80,6 +80,7 @@ export function parseGitRemote(input: string): GitRemoteGuess {
     try { url = new URL(raw); } catch { return invalid("That is not a complete URL."); }
     const host = url.hostname.toLowerCase();
     if (!host) return invalid("The URL has no host.");
+    if (url.protocol === "ssh:" && url.password) return invalid("SSH addresses use the server’s SSH key; use HTTPS for a password or token.");
     const path = url.pathname;
     if (["", ".", ".."].includes(path.replace(/^\/+|\/+$/g, ""))) return invalid("The URL has no repository path.");
     const embedded = Boolean(url.username || url.password);

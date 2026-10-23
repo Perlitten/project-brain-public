@@ -82,8 +82,14 @@ says whether a token is required), then `POST /git/connect` queues a `git_connec
 job that clones the chosen branch into `<clones directory>/<name>-<hash>`,
 registers it and, when asked, indexes it. A token for a private repository is sent
 only in the request body; the API hands it to the worker through a one-time file
-and neither job params nor logs contain it. Without a writable clones directory
-the dialog explains what to set and the API answers 409.
+and neither job params nor logs contain it. Transient clone retries retain the
+private hand-off until cloning succeeds, fails permanently or the file expires;
+the clone keeps its origin credentials for later fetches. Queue URLs preserve SSH
+logins and never contain HTTPS credentials. Fresh production clone volumes are
+owned by the non-root runtime user. Without a writable clones directory the
+dialog explains what to set and the API answers 409. Cloning requires `jobs:write`
+and, in team mode, `run.request` in the selected project even when initial
+indexing is disabled; admission checks precede registration and queueing.
 
 The UI changes do not diagnose a running installation's missing mount or API
 latency, change deployment settings, or rotate live credentials automatically.

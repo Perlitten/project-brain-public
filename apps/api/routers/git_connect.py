@@ -21,10 +21,10 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from apps.api import activity_log
+from apps.api import activity_log, team_access
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.registry_access import register_for_team, workspace_registry
-from apps.api.routers.jobs import _enqueue_response, _initiator, _queue
+from apps.api.routers.jobs import _authorize_job, _enqueue_response, _initiator, _queue
 from apps.api.routers.workspace import _get_store, _require_registration_write
 from apps.api.schemas import GitConnectRequest, GitProbeRequest
 from apps.api.team_access import team_administrator_access
@@ -38,11 +38,13 @@ from brain.indexers.git_connect import (
     parse_remote_url,
     probe_remote,
     read_handoff,
+    transport_url,
     with_token,
     write_handoff,
 )
 from brain.indexers.source_mirror import redact_url
 from brain.lab.laboratory import BUILTIN_PROFILES
+from brain.team.authorization import Permission, TeamDenied, authorize
 from brain.workspace.capabilities import CapabilitiesManager
 from brain.workspace.models import RepositoryRecord, TrustLevel, _generate_repository_id
 from brain.workspace.path_sandbox import PathSandbox
@@ -123,7 +125,20 @@ def _project_id(raw: Optional[str]) -> Optional[uuid.UUID]:
         raise HTTPException(status_code=422, detail="project_id must be a UUID")
 
 
-@router.post("/connect")
+async def _authorize_clone(principal: ResolvedPrincipal, project_id: Optional[uuid.UUID], path: str) -> None:
+    # Cloning is a queued run even when initial indexing is disabled. Check the
+    # selected project before registration, so a refusal leaves no empty record.
+    if project_id is not None and await team_access.current_team_state() != "solo":
+        try:
+            async with team_access.async_session_factory() as session:
+                await authorize(session, principal, project_id, Permission.REQUEST_RUN)
+        except TeamDenied as exc:
+            raise HTTPException(status_code=403, detail=f"Cloning requires run.request: {exc}") from exc
+    else:
+        await _authorize_job(principal, path)
+
+
+@router.post("/connect", dependencies=[Depends(require_scope("jobs:write"))])
 async def connect(body: GitConnectRequest, principal: ResolvedPrincipal = Depends(require_principal)) -> Dict[str, Any]:
     """Register a repository by URL and queue its clone and first index."""
     root = managed_root()
@@ -133,15 +148,14 @@ async def connect(body: GitConnectRequest, principal: ResolvedPrincipal = Depend
         raise HTTPException(status_code=409, detail=(
             f"The clones directory {root} does not exist or is not writable by the server"))
     info = _parse(body.url)
+    clone_url = _with_token(info, body.token)
     project_id = _project_id(body.project_id)
 
     branch = (body.branch or "").strip()
     probed_head: Optional[str] = None
     if not branch:
         # The caller skipped the probe: find the default branch ourselves (with the token, if any).
-        url = _with_token(info, body.token)
-        result = await asyncio.to_thread(probe_remote, url)
-        del url
+        result = await asyncio.to_thread(probe_remote, clone_url)
         if not result.reachable:
             status = 401 if result.needs_auth else 400
             raise HTTPException(status_code=status, detail=_safe_error(result.error, body.token))
@@ -158,6 +172,7 @@ async def connect(body: GitConnectRequest, principal: ResolvedPrincipal = Depend
     normalized = PathSandbox.get_normalized_identity(Path(canonical))
     if len(canonical) > 1024 or len(normalized) > 1024:
         raise HTTPException(status_code=422, detail="Clone path exceeds the 1024-character storage limit")
+    await _authorize_clone(principal, project_id, canonical)
     display_name = (body.display_name or "").strip() or info.name
 
     existing = [
@@ -196,7 +211,7 @@ async def connect(body: GitConnectRequest, principal: ResolvedPrincipal = Depend
             raise HTTPException(status_code=409, detail=str(exc))
 
     params: Dict[str, Any] = {
-        "url": info.display_url,
+        "url": transport_url(info),
         "branch": branch,
         "dest": canonical,
         "repo_path": canonical,
@@ -205,12 +220,13 @@ async def connect(body: GitConnectRequest, principal: ResolvedPrincipal = Depend
         "provider": info.provider,
     }
     handoff: Optional[str] = None
-    if body.token:
+    if clone_url != params["url"]:
         try:
-            handoff = write_handoff(body.token)
+            handoff = write_handoff(clone_url)
         except OSError as exc:
             raise HTTPException(status_code=503, detail=f"Could not stage the token for the worker: {exc}")
         params["handoff"] = handoff
+    del clone_url
     try:
         job_id = await _queue("git_connect").enqueue(
             "git_connect", params, initiator=_initiator(principal), max_attempts=2, timeout_seconds=1800,

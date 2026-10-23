@@ -10,6 +10,8 @@ import json
 import os
 import subprocess
 import time
+import traceback
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -25,9 +27,11 @@ with (
 ):
     from apps.api.main import app
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from brain.config.settings import settings
+from brain.auth.principals import ResolvedPrincipal
 from brain.database.models import RepositoryOriginState
 from brain.indexers import git_connect as gc
 from brain.indexers.git_connect import (
@@ -42,6 +46,7 @@ from brain.indexers.git_connect import (
     probe_remote,
     purge_handoffs,
     read_handoff,
+    transport_url,
     with_token,
     write_handoff,
 )
@@ -151,6 +156,17 @@ def test_remote_url_redacts_embedded_credentials_everywhere_but_the_raw_url():
     assert "ghp_secret" not in json.dumps(info.to_dict())
 
 
+def test_queue_transport_preserves_ssh_login_and_excludes_https_credentials():
+    ssh = parse_remote_url("ssh://git@github.com/owner/repo.git")
+    assert transport_url(ssh) == ssh.url and "***" not in transport_url(ssh)
+    assert "git@" not in ssh.display_url
+    https = parse_remote_url(f"https://me:{SECRET}@github.com/o/r.git?token=hidden#secret")
+    assert transport_url(https) == "https://github.com/o/r.git"
+    for bad in ("https://host:abc/o/r", "https://host:70000/o/r", "https://[broken/r", "ssh://me:secret@host/r"):
+        with pytest.raises(GitUrlError):
+            parse_remote_url(bad)
+
+
 def test_token_is_embedded_with_the_provider_username_and_never_for_ssh():
     gh = parse_remote_url("https://github.com/o/r.git")
     assert with_token(gh, SECRET) == f"https://x-access-token:{SECRET}@github.com/o/r.git"
@@ -233,6 +249,10 @@ def test_clone_path_is_stable_per_url_and_branch_and_lives_under_the_root(manage
     ssh = parse_remote_url("git@github.com:Perlitten/project-brain-public.git")
     assert clone_path(a, "main") == clone_path(b, "main") == clone_path(with_creds, "main") == clone_path(ssh, "main")
     assert clone_path(a, "main") != clone_path(a, "dev")
+    assert clone_path(parse_remote_url("https://git.example/Org/Repo"), "main") != clone_path(
+        parse_remote_url("https://git.example/Org/repo"), "main")
+    assert clone_path(parse_remote_url("https://git.example:8443/Org/repo"), "main") != clone_path(
+        parse_remote_url("https://git.example:9443/Org/repo"), "main")
     path = clone_path(a, "main")
     assert path is not None and path.parent == managed and path.name.startswith("project-brain-public-")
     weird = RemoteInfo(url="u", display_url="u", kind="https", host="h", provider="other", name="../../etc/passwd",
@@ -254,6 +274,8 @@ def test_handoff_is_read_once_and_expires(managed):
     name = write_handoff(SECRET)
     path = managed / ".handoff" / name
     assert path.exists() and path.read_text(encoding="utf-8") == SECRET
+    assert read_handoff(name, consume=False) == SECRET
+    assert read_handoff(name, consume=False) == SECRET
     assert read_handoff(name) == SECRET
     assert not path.exists()
     assert read_handoff(name) is None
@@ -263,7 +285,7 @@ def test_handoff_is_read_once_and_expires(managed):
     stale = write_handoff("old-token")
     old = time.time() - HANDOFF_TTL_S - 60
     os.utime(managed / ".handoff" / stale, (old, old))
-    assert read_handoff(stale) is None
+    assert read_handoff(stale, consume=False) is None
     assert not (managed / ".handoff" / stale).exists()
 
     stale2 = write_handoff("old-token-2")
@@ -285,7 +307,7 @@ def _info_for(origin_path: Path) -> RemoteInfo:
 @pytest.mark.asyncio
 async def test_git_connect_job_clones_records_origin_and_queues_the_reindex(origin, managed, origin_db):
     dest = managed / "thing-0123456789ab"
-    handoff = write_handoff(SECRET)
+    handoff = write_handoff(origin.bare.as_posix())
     repo = SimpleNamespace(id=7)
     enqueue = AsyncMock(return_value="job-reindex-1")
     with (
@@ -311,6 +333,35 @@ async def test_git_connect_job_clones_records_origin_and_queues_the_reindex(orig
     assert state["remote_url"] == "https://github.com/acme/thing.git" and state["tracked_branch"] == "main"
     assert state["remote_head"] == origin.main and state["poll_status"] == "ok"
     assert state["last_reindex_job_id"] == "job-reindex-1" and state["last_reindex_head"] == origin.main
+
+
+@pytest.mark.asyncio
+async def test_private_clone_retry_retains_credentials_until_clone_succeeds(managed, origin_db):
+    url = "https://github.com/acme/private.git"
+    credential_url = with_token(parse_remote_url(url), SECRET)
+    handoff = write_handoff(credential_url)
+    dest = managed / "private"
+    params = {"url": url, "branch": "main", "dest": str(dest), "index_now": False, "handoff": handoff}
+    clone = gc.CloneResult(path=dest, branch="main", head="a" * 40, fresh=True)
+    with (
+        patch.object(worker, "init_db", AsyncMock()),
+        patch.object(worker, "clone_repository", side_effect=[SourceSyncTransientError("network"), clone]) as cloning,
+        patch.object(worker, "_ensure_repository_row", AsyncMock(return_value=SimpleNamespace(id=7))),
+    ):
+        with pytest.raises(SourceSyncTransientError):
+            await worker.run_git_connect(params)
+        assert read_handoff(handoff, consume=False) == credential_url
+        result = await worker.run_git_connect(params)
+    assert [call.args[0] for call in cloning.call_args_list] == [credential_url, credential_url]
+    assert read_handoff(handoff) is None and SECRET not in json.dumps(result)
+
+
+def test_clone_timeout_traceback_never_contains_authenticated_argv(managed):
+    url = f"https://me:{SECRET}@github.com/o/private.git"
+    with patch.object(gc, "_git", side_effect=subprocess.TimeoutExpired(["git", "clone", url], 1)):
+        with pytest.raises(SourceSyncTransientError) as error:
+            clone_repository(url, "main", managed / "private", timeout=1)
+    assert SECRET not in "".join(traceback.format_exception(error.value))
 
 
 @pytest.mark.asyncio
@@ -437,8 +488,9 @@ def test_connect_endpoint_registers_queues_and_hands_the_token_over_privately(ap
     assert params["dest"] == params["repo_path"] == body["path"] and params["index_now"] is True
     assert kwargs["max_attempts"] == 2 and kwargs["timeout_seconds"] == 1800
     handoff = params["handoff"]
-    assert (managed / ".handoff" / handoff).read_text(encoding="utf-8") == SECRET
-    assert read_handoff(handoff) == SECRET
+    authenticated_url = f"https://x-access-token:{SECRET}@github.com/acme/thing.git"
+    assert (managed / ".handoff" / handoff).read_text(encoding="utf-8") == authenticated_url
+    assert read_handoff(handoff) == authenticated_url
 
     # The registry knows it; connecting the same URL again before the clone exists re-queues the job,
     # once the clone exists it is a conflict that points at Sync.
@@ -472,6 +524,61 @@ def test_connect_endpoint_validates_branch_and_surfaces_probe_failures(api, mana
     assert not handoff_dir.exists() or not [p for p in handoff_dir.iterdir() if p.is_file()]
     assert client.post("/git/connect", json={"url": "https://github.com/a/b.git", "branch": "main",
                                              "project_id": "not-a-uuid"}).status_code == 422
+
+
+@pytest.mark.parametrize("url,queued_url", [
+    ("ssh://git@github.com/acme/thing.git", "ssh://git@github.com/acme/thing.git"),
+    (f"https://me:{SECRET}@github.com/acme/thing.git?access_token={SECRET}",
+     "https://github.com/acme/thing.git"),
+])
+def test_connect_queue_uses_routable_urls_and_stages_embedded_credentials(api, managed, url, queued_url):
+    response = client.post("/git/connect", json={"url": url, "branch": "main", "index_now": False})
+    assert response.status_code == 200, response.text
+    params = api.queue.calls[-1][1]
+    assert params["url"] == queued_url and "***" not in params["url"]
+    assert SECRET not in json.dumps(params) and SECRET not in response.text
+    if "handoff" in params:
+        assert read_handoff(params["handoff"]) == url
+
+
+def test_clone_permission_denial_precedes_registration_even_without_indexing(api, managed):
+    with (
+        patch("apps.api.routers.git_connect._authorize_clone", AsyncMock(
+            side_effect=HTTPException(status_code=403, detail="run.request required"))),
+        patch("apps.api.routers.git_connect.workspace_registry", AsyncMock()) as registry,
+    ):
+        response = client.post("/git/connect", json={"url": "https://github.com/acme/thing.git",
+                                                    "branch": "main", "index_now": False})
+    assert response.status_code == 403 and api.queue.calls == []
+    registry.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_clone_checks_selected_project_run_permission_before_it_exists():
+    from apps.api.routers.git_connect import _authorize_clone
+    from brain.team.authorization import Permission, TeamDenied
+
+    principal = ResolvedPrincipal(1, "human", "Owner", scopes=frozenset({"team:admin"}), credential_id=2)
+    project = uuid.uuid4()
+    context = AsyncMock()
+    with (
+        patch("apps.api.team_access.current_team_state", AsyncMock(return_value="team")),
+        patch("apps.api.team_access.async_session_factory", return_value=context),
+        patch("apps.api.routers.git_connect.authorize", AsyncMock(side_effect=TeamDenied("Policy denied"))) as authorize,
+    ):
+        with pytest.raises(HTTPException) as denied:
+            await _authorize_clone(principal, project, "/managed/new-clone")
+    assert denied.value.status_code == 403
+    assert authorize.await_args.args[1:] == (principal, project, Permission.REQUEST_RUN)
+
+
+def test_connect_requires_job_scope_in_addition_to_registration_scope(api, managed):
+    principal = ResolvedPrincipal(1, "human", "Registrar",
+                                  scopes=frozenset({"workspace:read", "workspace:write"}), credential_id=2)
+    with patch("apps.api.auth.resolve_api_key", AsyncMock(return_value=principal)):
+        response = client.post("/git/connect", headers={"X-API-Key": "registrar-only"},
+                               json={"url": "https://github.com/acme/thing.git", "branch": "main"})
+    assert response.status_code == 403 and api.queue.calls == []
 
 
 def test_connect_endpoint_releases_the_token_when_the_queue_is_down(api, managed):

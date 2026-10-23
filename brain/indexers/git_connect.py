@@ -6,9 +6,9 @@ to list branches, and clones the chosen branch into ``BRAIN_MANAGED_REPOS_DIR`` 
 the clone can be registered, indexed and polled like any other attached
 repository (``brain/indexers/source_mirror.py`` reads its ``origin``).
 
-Credentials never leave the git command line. An access token typed in the UI is
-embedded in the URL only for the ``git`` process; every value stored or returned
-goes through :func:`redact_url`. ``GIT_TERMINAL_PROMPT=0`` and
+Authenticated clone URLs stay in private hand-off files and the clone's own git
+configuration for subsequent fetches. Queue metadata uses :func:`transport_url`;
+displayed values use :func:`redact_url`. ``GIT_TERMINAL_PROMPT=0`` and
 ``protocol.ext.allow=never`` are inherited from :func:`brain.indexers.source_mirror._git`.
 """
 from __future__ import annotations
@@ -131,8 +131,14 @@ def parse_remote_url(url: str) -> RemoteInfo:
         raise GitUrlError("Remote helper syntax is not allowed")
     scheme_match = _SCHEME.match(raw)
     if scheme_match:
-        parts = urlsplit(raw)
+        try:
+            parts = urlsplit(raw)
+            parts.port  # Validate malformed/out-of-range ports before calling git.
+        except ValueError:
+            raise GitUrlError("Repository URL has an invalid host or port") from None
         kind = "ssh" if parts.scheme.lower() == "ssh" else "https"
+        if kind == "ssh" and parts.password is not None:
+            raise GitUrlError("SSH URLs use a server key; put HTTPS credentials in the token field")
         host = (parts.hostname or "").lower()
         if not host:
             raise GitUrlError("Repository URL has no host")
@@ -153,6 +159,19 @@ def parse_remote_url(url: str) -> RemoteInfo:
         return RemoteInfo(url=raw, display_url=redact_url(raw), kind="ssh", host=host, provider=_provider_for(host),
                           name=_name_from_path(path), path=path.strip("/").removesuffix(".git"))
     raise GitUrlError("Only https://, ssh:// and git@host:path URLs are supported")
+
+
+def transport_url(info: RemoteInfo) -> str:
+    """Credential-free queue URL, preserving the SSH login required by git.
+
+    Display redaction replaces userinfo with *** and is never a transport URL.
+    Authentication-bearing URLs travel through the private hand-off instead.
+    """
+    if not _SCHEME.match(info.url):
+        return info.url  # scp-style SSH login is routing information, not a token.
+    parts = urlsplit(info.url)
+    netloc = parts.netloc if info.kind == "ssh" else parts.netloc.rsplit("@", 1)[-1]
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
 
 
 def with_token(info: RemoteInfo, token: Optional[str]) -> str:
@@ -273,8 +292,13 @@ def clone_path(info: RemoteInfo, branch: str) -> Optional[Path]:
     root = managed_root()
     if root is None:
         return None
-    repo_path = info.path.strip("/").removesuffix(".git").lower()
-    key = f"{info.host.lower()}/{repo_path}\n{branch}"
+    repo_path = info.path.strip("/").removesuffix(".git")
+    parts = urlsplit(info.url) if _SCHEME.match(info.url) else None
+    port = parts.port if parts else None
+    endpoint = info.host.lower()
+    if port and parts and port != {"http": 80, "https": 443, "ssh": 22}[parts.scheme.lower()]:
+        endpoint += f":{port}"
+    key = f"{endpoint}/{repo_path}\n{branch}"
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
     return root / f"{_slug(info.name)}-{digest}"
 
@@ -317,8 +341,9 @@ def clone_repository(url: str, branch: str, dest: Path, *, timeout: Optional[flo
             dest.parent.mkdir(parents=True, exist_ok=True)
             result = _git(None, ["clone", "--branch", branch, "--single-branch", "--", url, str(dest)],
                           timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        raise SourceSyncTransientError(f"git clone {display} did not finish within {int(timeout)}s") from exc
+    except subprocess.TimeoutExpired:
+        # TimeoutExpired includes argv: its traceback would disclose URL credentials.
+        raise SourceSyncTransientError(f"git clone {display} did not finish within {int(timeout)}s") from None
     if result.returncode != 0:
         stderr = redact_url((result.stderr or "").strip())[:500]
         low = stderr.lower()
@@ -345,7 +370,8 @@ def clone_repository(url: str, branch: str, dest: Path, *, timeout: Optional[flo
 #
 # A job's params are stored in Redis and returned by GET /jobs/{id}, so a token
 # never goes there. The API writes it to a private file under the managed root
-# that only the worker reads, once, and deletes. The managed root is a volume
+# that only the worker reads and deletes after the clone's final outcome. A
+# transient retry retains it until success or expiry. The managed root is a volume
 # both containers mount.
 
 _HANDOFF_NAME = re.compile(r"[A-Za-z0-9_-]{8,64}")
@@ -376,26 +402,29 @@ def write_handoff(token: str) -> str:
     return name
 
 
-def read_handoff(name: Optional[str]) -> Optional[str]:
-    """The token stored by :func:`write_handoff`, deleted on read. None when absent or expired."""
+def read_handoff(name: Optional[str], *, consume: bool = True) -> Optional[str]:
+    """Read private clone credentials; retain them for a transient clone retry when requested."""
     if not name or not _HANDOFF_NAME.fullmatch(name):
         return None
     root = managed_root()
     if root is None:
         return None
     path = root / ".handoff" / name
+    expired = False
     try:
         stat = path.stat()
+        expired = time.time() - stat.st_mtime > HANDOFF_TTL_S
+        if expired:
+            return None
         token = path.read_text(encoding="utf-8")
     except OSError:
         return None
     finally:
-        try:
-            path.unlink()
-        except OSError:
-            pass
-    if time.time() - stat.st_mtime > HANDOFF_TTL_S:
-        return None
+        if consume or expired:
+            try:
+                path.unlink()
+            except OSError:
+                pass
     return token.strip() or None
 
 

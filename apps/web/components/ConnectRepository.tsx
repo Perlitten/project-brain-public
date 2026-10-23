@@ -144,13 +144,13 @@ function UrlForm() {
     </label>}
 
     <label className="check"><input type="checkbox" checked={indexNow} disabled={!canIndex} onChange={e => setIndexNow(e.target.checked)} />Index right after cloning (uses the configured embedding and summary providers)</label>
-    {context?.data?.team && project && !canIndex && <p className="text-dim">Your role or this project’s policy does not grant run.request. A Contributor or Reviewer with run permission can index it after it is connected.</p>}
+    {context?.data?.team && project && !canIndex && <p className="text-dim">Cloning runs as a background job and requires run.request on this project, even without initial indexing.</p>}
     {!context ? <p role="status">Checking server capabilities and project access…</p> : !context.ok && <p role="alert">{context.message}</p>}
     {result && !result.ok && <p role="alert">{result.message}</p>}
 
     <LockNote />
     <div className="dialog__actions">
-      <button type="submit" className="btn btn--primary" disabled={!guess.valid || connect.pending || connect.mode !== "on" || !context?.ok || rootMissing || rootReadOnly}>{connect.pending ? "Connecting…" : "Connect"}</button>
+      <button type="submit" className="btn btn--primary" disabled={!guess.valid || connect.pending || connect.mode !== "on" || !context?.ok || !canIndex || rootMissing || rootReadOnly}>{connect.pending ? "Connecting…" : "Connect"}</button>
     </div>
   </form>;
 }
