@@ -177,6 +177,7 @@ def test_registry_endpoints(client, portfolio):
     listing = client.get("/workspace/repositories")
     assert listing.status_code == 200
     assert listing.json()["total"] == 1
+    assert listing.json()["repositories"][0]["indexed_repository_id"] is None
 
     detail = client.get(f"/workspace/repositories/{repo_id}")
     assert detail.status_code == 200
