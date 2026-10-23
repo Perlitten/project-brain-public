@@ -125,6 +125,17 @@ function GitInfo({ g, webhookRef }: { g: GitIntegration; webhookRef: unknown }) 
           Replace its <code>on:</code> block with this one, built from “Branch that triggers a reindex”; pushes to any other branch are ignored:
           <pre className="git-info__trigger" tabIndex={0} aria-label="Workflow trigger"><code>{trigger}</code></pre>
         </dd>
+        {g.managedRepos && <>
+          <dt>Clones directory</dt>
+          <dd>
+            {g.managedRepos.dir ? <>
+              <code>{g.managedRepos.dir}</code>
+              {g.managedRepos.writable === false
+                ? <p className="field__hint field__hint--bad">The API cannot write there, so “Connect repository → Git URL” is off until its permissions are fixed.</p>
+                : <span className="muted"> — where Projects → Connect repository clones repositories added by URL.</span>}
+            </> : <span className="muted">Not set. Set “Clones directory” below to connect repositories by URL from Projects; the folder must be shared by the API and worker containers.</span>}
+          </dd>
+        </>}
         <dt>Polled origins</dt>
         <dd>
           {remotes.length ? (

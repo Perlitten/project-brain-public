@@ -60,6 +60,8 @@ export interface GitIntegration {
   webhookUrl?: string;
   workflowExample: string;
   originRemotes: { remotes: OriginRemote[]; skipped: number; error?: string };
+  /** Where "Connect repository → Git URL" clones to; absent on a server without that feature. */
+  managedRepos?: { dir?: string; writable?: boolean };
 }
 
 export interface SettingsView {
@@ -99,7 +101,9 @@ export function toGitIntegration(raw: unknown): GitIntegration | null {
   const g = obj(raw);
   if (!str(g.webhook_path)) return null;
   const remotes = obj(g.origin_remotes);
+  const managed = g.managed_repos === undefined ? undefined : obj(g.managed_repos);
   return {
+    ...(managed ? { managedRepos: { dir: str(managed.dir) || undefined, writable: typeof managed.writable === "boolean" ? managed.writable : undefined } } : {}),
     webhookPath: str(g.webhook_path),
     webhookUrl: str(g.webhook_url) || undefined,
     workflowExample: str(g.workflow_example) || "docs/examples/reindex-on-push.yml",

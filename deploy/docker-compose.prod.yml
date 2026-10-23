@@ -123,6 +123,7 @@ services:
       # saved in the web UI are stored in the database and win over these
       # defaults in every container (brain/config/shared_settings.py).
       BRAIN_SOURCE_MIRROR_DIR: ${BRAIN_SOURCE_MIRROR_DIR-/var/lib/brain/mirrors}
+      BRAIN_MANAGED_REPOS_DIR: ${BRAIN_MANAGED_REPOS_DIR-/var/lib/brain/repos}
       BRAIN_ORIGIN_REMOTES: ${BRAIN_ORIGIN_REMOTES:-}
       BRAIN_ORIGIN_POLL_INTERVAL_S: ${BRAIN_ORIGIN_POLL_INTERVAL_S:-300}
       ENVIRONMENT: production
@@ -132,6 +133,7 @@ services:
       - ${BRAIN_INDEXED_PROJECTS_DIR:-./indexed-projects}:/indexed:ro
       - ${BRAIN_TARGET_REPO_DIR:-./target-repo}:/repo:ro
       - source_mirrors:/var/lib/brain/mirrors
+      - managed_repos:/var/lib/brain/repos
     depends_on:
       postgres:
         condition: service_healthy
@@ -196,6 +198,7 @@ services:
       # saved in the web UI are stored in the database and win over these
       # defaults in every container (brain/config/shared_settings.py).
       BRAIN_SOURCE_MIRROR_DIR: ${BRAIN_SOURCE_MIRROR_DIR-/var/lib/brain/mirrors}
+      BRAIN_MANAGED_REPOS_DIR: ${BRAIN_MANAGED_REPOS_DIR-/var/lib/brain/repos}
       BRAIN_ORIGIN_REMOTES: ${BRAIN_ORIGIN_REMOTES:-}
       BRAIN_ORIGIN_POLL_INTERVAL_S: ${BRAIN_ORIGIN_POLL_INTERVAL_S:-300}
       ENVIRONMENT: production
@@ -206,6 +209,7 @@ services:
       - ${BRAIN_INDEXED_PROJECTS_DIR:-./indexed-projects}:/indexed:ro
       - ${BRAIN_TARGET_REPO_DIR:-./target-repo}:/repo:ro
       - source_mirrors:/var/lib/brain/mirrors
+      - managed_repos:/var/lib/brain/repos
     depends_on:
       postgres:
         condition: service_healthy
@@ -252,6 +256,7 @@ services:
 volumes:
   postgres_data:
   source_mirrors:
+  managed_repos:
   redis_data:
   neo4j_data:
   neo4j_logs:

@@ -27,6 +27,7 @@ SHARED_KEYS: Dict[str, type] = {
     "BRAIN_ORIGIN_POLL_INTERVAL_S": int,
     "BRAIN_ORIGIN_POLL_TIMEOUT_S": int,
     "BRAIN_SOURCE_MIRROR_DIR": str,
+    "BRAIN_MANAGED_REPOS_DIR": str,
 }
 REFRESH_INTERVAL_S = 15.0
 _last_refresh = 0.0
@@ -36,8 +37,8 @@ def _valid(key: str, value: Any) -> bool:
     expected = SHARED_KEYS.get(key)
     if expected is None:
         return False
-    if key == "BRAIN_SOURCE_MIRROR_DIR" and value is None:
-        return True  # cleared: mirrors off
+    if key in ("BRAIN_SOURCE_MIRROR_DIR", "BRAIN_MANAGED_REPOS_DIR") and value is None:
+        return True  # cleared: mirrors off / connecting by URL off
     return type(value) is expected  # bool is an int subclass: exact match only
 
 

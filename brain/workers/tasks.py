@@ -50,6 +50,7 @@ from brain.memory.harness_store import HarnessStore
 from brain.memory.origin_state_store import get_origin_state, upsert_origin_state
 from brain.memory.repo_freshness import assess_repository_freshness
 from brain.memory.source_manifest import revision_matches
+from brain.workers.git_connect import run_git_connect
 from brain.workers.origin_poll import run_origin_poll
 from brain.workers.runtime import current_job, check_job_lease
 from brain.workers.db_fencing import (
@@ -1161,6 +1162,7 @@ async def execute_job(
         "memory_consolidation": run_memory_consolidation,
         "self_diagnosis": run_self_diagnosis,
         "origin_poll": run_origin_poll,
+        "git_connect": run_git_connect,
         "nightly_maintenance": run_nightly_maintenance,
         "deep_context": run_deep_context,
         "team_run_execution": run_team_run_execution,

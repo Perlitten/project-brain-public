@@ -88,6 +88,7 @@ FIELDS: List[SettingField] = [
     SettingField("BRAIN_ORIGIN_POLL_INTERVAL_S", "git", "Origin poll interval, s", "int", "How often each attached repository's origin is checked for new commits. Off stops polling.", min=0, max=24 * 3600, choices=ORIGIN_POLL_INTERVALS_S),
     SettingField("BRAIN_ORIGIN_POLL_TIMEOUT_S", "git", "Origin poll timeout, s", "int", "Per-repository limit for one git ls-remote or mirror fetch.", min=5, max=600),
     SettingField("BRAIN_SOURCE_MIRROR_DIR", "git", "Mirror directory", "text", "Absolute path of a writable directory on the server. Read-only or non-git sources are indexed from a bare mirror kept here. Blank turns mirrors off.", pattern=r"(/|[A-Za-z]:[\\/])[^\x00-\x1f]*", clearable=True),
+    SettingField("BRAIN_MANAGED_REPOS_DIR", "git", "Clones directory", "text", "Absolute path of a writable directory on the server. Repositories connected by URL from the Projects page are cloned here, then indexed and polled like any other. Blank turns connecting by URL off.", pattern=r"(/|[A-Za-z]:[\\/])[^\x00-\x1f]*", clearable=True),
 ]
 BY_KEY: Dict[str, SettingField] = {f.key: f for f in FIELDS}
 SETTINGS_KEYS = frozenset(BY_KEY)
@@ -183,7 +184,19 @@ def _git_integration() -> Dict[str, Any]:
         "webhook_url": f"{base}{WEBHOOK_PATH}" if base else None,
         "workflow_example": WEBHOOK_EXAMPLE,
         "origin_remotes": _origin_remotes(),
+        # Where repositories connected by URL are cloned; the web offers "Connect by URL" only when set.
+        "managed_repos": _managed_repos(),
     }
+
+
+def _managed_repos() -> Dict[str, Any]:
+    from brain.indexers.git_connect import managed_root
+
+    root = managed_root()
+    out: Dict[str, Any] = {"dir": str(root) if root else None, "writable": None}
+    if root is not None:
+        out["writable"] = root.is_dir() and os.access(str(root), os.W_OK)
+    return out
 
 
 @router.get("", dependencies=[Depends(require_scope("setup:read"))])

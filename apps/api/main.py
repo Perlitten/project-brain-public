@@ -17,7 +17,7 @@ from apps.api.request_size_middleware import RequestSizeLimitMiddleware
 from brain.team.authorization import TeamDenied
 from brain.team.write_fence import WriteFenceMiddleware
 from apps.api.team_access import team_denied_response
-from apps.api.routers import telegram_bridge, core, harness, jobs, scheduler, setup, drift, graph_v2, coupling, impact, remediation, workspace, portfolio, freshness, lab, experiments, ledger, control, execution, routing, shadow, operations, improvement, audit, admin, web, quality, app_settings, web_login
+from apps.api.routers import telegram_bridge, core, harness, jobs, scheduler, setup, drift, graph_v2, coupling, impact, remediation, workspace, portfolio, freshness, lab, experiments, ledger, control, execution, routing, shadow, operations, improvement, audit, admin, web, quality, app_settings, web_login, git_connect
 from brain.config.paths import allowed_repo_roots
 from brain.config.settings import settings
 from brain.config.shared_settings import apply_shared_settings
@@ -244,6 +244,7 @@ app.include_router(impact.router)
 app.include_router(remediation.router)
 # v0.5.0 multi-repository intelligence: registry, portfolio graph, freshness.
 app.include_router(workspace.router)
+app.include_router(git_connect.router)
 app.include_router(portfolio.router)
 app.include_router(freshness.router)
 # v0.5.0 change laboratory: disposable workspaces for candidate patch validation.

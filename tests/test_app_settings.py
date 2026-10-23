@@ -178,6 +178,7 @@ def test_git_section_lists_only_allowlisted_keys():
         "BRAIN_ORIGIN_POLL_INTERVAL_S",
         "BRAIN_ORIGIN_POLL_TIMEOUT_S",
         "BRAIN_SOURCE_MIRROR_DIR",
+        "BRAIN_MANAGED_REPOS_DIR",
     ]
     assert _field(response.json(), "BRAIN_ORIGIN_POLL_INTERVAL_S")["min"] == 0
 

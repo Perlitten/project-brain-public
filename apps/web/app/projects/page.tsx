@@ -2,19 +2,20 @@ import { Suspense } from "react";
 import { getRegisteredSources } from "@/lib/project-sources";
 import { RunButton } from "@/components/act";
 import { startReindex } from "@/lib/actions/jobs";
-import { AddProject } from "@/components/AddProject";
+import { syncRepository } from "@/lib/actions/git";
+import { ConnectRepository } from "@/components/ConnectRepository";
 import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, StatusLine, Table, type PageStatus } from "@/components/ui";
 import { getCorpus, getPagedIndexRuns, getRepositoryFeed } from "@/lib/data";
 import { redactRemote, repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
 import { restrictedMember } from "@/lib/team-session";
-import type { OriginPoll } from "@/lib/types";
+import type { OriginPoll, Repository } from "@/lib/types";
 
 export const metadata = { title: "Projects" };
 
 export default function Projects(props: { searchParams: Promise<{ repo?: string }> }) {
-  return <><PageHead title="Projects" lede="Repositories Brain has indexed for your agents, and how current each one is." actions={<AddProject />} /><SectionTabs section="projects" active="/projects" /><Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><ProjectsData {...props} /></Suspense></>;
+  return <><PageHead title="Projects" lede="Repositories Brain has indexed for your agents, and how current each one is." actions={<ConnectRepository />} /><SectionTabs section="projects" active="/projects" /><Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><ProjectsData {...props} /></Suspense></>;
 }
 async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
   const { repo: selected } = await searchParams;
@@ -57,12 +58,28 @@ async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: s
             { head: "Project", cell: (r) => <><Link className="link" href={`/projects?repo=${encodeURIComponent(r.slug)}`}>{r.name}</Link><span className="sub mono">{r.path || "path unavailable"}</span></> },
             { head: "Freshness", cell: (r) => <Chip tone={repositoryStatus(r).tone}>{repositoryStatus(r).status}</Chip> },
             { head: "Branch", cell: (r) => <span className="mono">{r.branch || "—"}</span> },
+            { head: "Origin", cell: (r) => <OriginCell r={r} canSync={!member} /> },
             { head: "Indexed revision", cell: (r) => r.head || "—", align: "right" },
           ]} />
         )}
       </Panel>}
     </>
   );
+}
+
+// One table cell: how far behind origin a repository is, and a Sync button that
+// fetches now (the same job the scheduled origin check runs).
+function OriginCell({ r, canSync }: { r: Repository; canSync: boolean }) {
+  const p = r.originPoll;
+  const chip = !p ? <span className="text-faint">not checked</span>
+    : p.status === "ok" ? (p.behind ? <Chip tone="warn">{p.behind} behind</Chip> : p.behind === 0 ? <Chip tone="ok">Up to date</Chip> : <Chip tone="idle">Checked</Chip>)
+    : p.status === "unconfigured" ? <span className="text-faint">no origin</span>
+    : <Chip tone="bad">Check failed</Chip>;
+  return <span className="origin-cell">
+    {chip}
+    {canSync && r.path && <RunButton small action={async () => { "use server"; return syncRepository(r.path); }} label="Sync" title={`Sync ${r.name}`} />}
+    {p?.error && <span className="sub text-bad">{redactRemote(p.error)}</span>}
+  </span>;
 }
 
 // What the scheduled origin check last saw; set up in Settings → Git & origin sync.

@@ -75,6 +75,16 @@ deployment configuration when the Settings page identifies an override. Displaye
 server times use the shared UTC formatter; values without timezone information are
 not assigned one silently.
 
+**Connect repository by URL** (Projects → Connect repository → Git URL) needs the
+**Clones directory** (`BRAIN_MANAGED_REPOS_DIR`, also editable under Git & origin
+sync): the dialog checks the address first (`POST /git/probe` lists branches and
+says whether a token is required), then `POST /git/connect` queues a `git_connect`
+job that clones the chosen branch into `<clones directory>/<name>-<hash>`,
+registers it and, when asked, indexes it. A token for a private repository is sent
+only in the request body; the API hands it to the worker through a one-time file
+and neither job params nor logs contain it. Without a writable clones directory
+the dialog explains what to set and the API answers 409.
+
 The UI changes do not diagnose a running installation's missing mount or API
 latency, change deployment settings, or rotate live credentials automatically.
 

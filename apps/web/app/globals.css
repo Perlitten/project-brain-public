@@ -902,9 +902,9 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 
 /* Period switch: a segmented control that scopes one panel to a time window. */
 .segmented { display: flex; padding: 2px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-rail); }
-.segmented a { padding: var(--s-1) var(--s-2); border-radius: 2px; font: 500 var(--fs-12) / 1.35 var(--mono); color: var(--text-3); transition: color var(--dur-control), background-color var(--dur-control); }
-.segmented a:hover { color: var(--text-1); }
-.segmented a[aria-current] { background: var(--surface-raise); color: var(--text-1); }
+.segmented a, .segmented button { border: 0; background: transparent; cursor: pointer; padding: var(--s-1) var(--s-2); border-radius: 2px; font: 500 var(--fs-12) / 1.35 var(--mono); color: var(--text-3); transition: color var(--dur-control), background-color var(--dur-control); }
+.segmented a:hover, .segmented button:hover { color: var(--text-1); }
+.segmented a[aria-current], .segmented button[aria-pressed="true"] { background: var(--surface-raise); color: var(--text-1); }
 
 /* Project detail: stats, coverage meters, then the caveat, each with breathing room. */
 .project-detail { display: grid; gap: var(--s-6); }
