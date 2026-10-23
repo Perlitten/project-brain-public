@@ -74,7 +74,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         <Boot lines={bootLines} />
         <Suspense>
-          <Shell repos={repos} demo={dataSource === "demo"} mode={mode} access={access} member={member ? { name: member.name, admin: member.admin } : null}>
+          <Shell repos={repos} demo={dataSource === "demo"} mode={mode} access={access} member={member ? { id: member.id, name: member.name, admin: member.admin } : null}>
             {children}
           </Shell>
         </Suspense>

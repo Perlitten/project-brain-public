@@ -13,7 +13,7 @@ export const navGroups: { label: string; hint: string; items: NavItem[] }[] = [{
     { key: "projects", href: "/projects", label: "Projects", icon: "database", hint: "Connected repositories, indexing and code maps", repoScoped: true },
     { key: "memory", href: "/memory", label: "Memory", icon: "layers", hint: "Decisions, rules and saved context packs", repoScoped: true },
     { key: "quality", href: "/quality", label: "Quality", icon: "vectors", hint: "Whether Brain finds the right code, and the saved reports behind it" },
-    { key: "logs", href: "/logs", label: "Activity", icon: "activity", hint: "Background jobs, requests and agent work", repoScoped: true },
+    { key: "logs", href: "/activity", label: "Activity", icon: "activity", hint: "Background jobs, requests and agent work", repoScoped: true },
     { key: "settings", href: "/settings", label: "Settings", icon: "gear", hint: "Notifications, models, integrations and access" },
     { key: "setup", href: "/setup", label: "Setup", icon: "flag", hint: "Six steps from an empty server to an agent using Brain" },
   ],

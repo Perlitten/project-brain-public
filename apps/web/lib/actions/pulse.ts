@@ -18,6 +18,9 @@ export interface Pulse {
   workerHint?: string;
   /** Scheduled jobs reported overdue by Brain, distinct from a service outage. */
   warnings?: string[];
+  /** Names only for the selected repository, resolved through its authorized feed. */
+  freshness?: string[];
+  indexAgeWarning?: boolean;
   version?: string;
   build?: string;
   llm?: string;
@@ -36,14 +39,17 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
   // and waiting for /health first only added a round trip.
   const t0 = performance.now();
   let latencyMs = 0;
+  const scope: { repository?: { path: string; name: string } } = {};
   const [health, version, indexing, setup, providers] = await Promise.all([
     brainFetch<Json>("/health", { fresh: true }).then((h) => ((latencyMs = Math.round(performance.now() - t0)), h)),
     brainFetch<Json>("/api/version", { revalidate: 300 }),
-    repoSlug === "" ? Promise.resolve(null) : getRepository(repoSlug).then(repo => repo.id ? brainFetch<Json>(`/api/web/index-runs?repository_id=${repo.id}&page_size=1`, { fresh: true }) : null),
+    repoSlug === "" ? Promise.resolve(null) : getRepository(repoSlug).then(repo => { scope.repository = repo; return repo.id ? brainFetch<Json>(`/api/web/index-runs?repository_id=${repo.id}&page_size=1`, { fresh: true }) : null; }),
     brainFetch<Json>("/api/setup/status", { fresh: true }),
     brainFetch<Json>("/api/setup/providers", { fresh: true }),
   ]);
-  if (!health) return { at: Date.now(), reachable: false, down: [] };
+  const sha = s(o(version).build_sha);
+  const identity = { version: s(o(version).version), build: sha && sha !== "unknown" ? sha.slice(0, 7) : undefined };
+  if (!health) return { at: Date.now(), reachable: false, down: [], ...identity };
   const details = o(health.details);
   const down = Object.entries(details)
     .filter(([, v]) => o(v).status !== "healthy")
@@ -63,7 +69,7 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
     const model = s(selected.model);
     return [name, model].filter(Boolean).join(" / ") || undefined;
   };
-  const sha = s(o(version).build_sha);
+  const exceeded = o(health.freshness).exceeded;
   return {
     at: Date.now(),
     reachable: true,
@@ -73,7 +79,11 @@ export async function getPulse(repoSlug?: string): Promise<Pulse | null> {
     workerHint: workerDown ? s(worker.hint) ?? "Worker is not running." : undefined,
     warnings: Array.isArray(stale) ? stale.filter((job): job is string => typeof job === "string") : [],
     version: s(o(version).version) ?? s(health.version),
-    build: sha && sha !== "unknown" ? sha.slice(0, 7) : undefined,
+    build: identity.build,
+    freshness: Array.isArray(exceeded) && scope.repository?.path && exceeded.includes(scope.repository.path) ? [scope.repository.name] : [],
+    // Global liveness may report an age warning, but must not forward paths
+    // from projects outside this request's authorized repository context.
+    indexAgeWarning: Array.isArray(exceeded) && exceeded.some(path => typeof path === "string"),
     llm: modelLabel(current.llm, provider.llm),
     embedding: modelLabel(current.embedding, provider.embedding),
     index: run.status ? { status: String(run.status), at: s(run.completed_at) ?? s(run.started_at), uncommitted: uncommittedCount(run.uncommitted_changes) ?? undefined } : undefined,

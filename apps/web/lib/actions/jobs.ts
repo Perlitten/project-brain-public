@@ -79,7 +79,7 @@ export async function startInsights(): Promise<ActionResult> {
 }
 
 export async function startSelfDiagnosis(): Promise<ActionResult> {
-  return mutate("/jobs/self-diagnosis", { body: {}, success: "Self-diagnosis queued.", revalidate: ["/", "/logs"] });
+  return mutate("/jobs/self-diagnosis", { body: {}, success: "Self-diagnosis queued.", revalidate: ["/", "/activity"] });
 }
 
 export async function startBenchmark(): Promise<ActionResult> {

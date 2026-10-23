@@ -9,10 +9,10 @@ import { RequestHistory } from "@/components/RequestHistory";
 import { dashboardPeriod, getRequestTelemetry } from "@/lib/dashboard";
 import { getRepositories } from "@/lib/data";
 
-export const metadata = { title: "Requests & jobs" };
+export const metadata = { title: "Activity" };
 
 export default async function Activity({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const gate = await adminOnlyPage("Requests & jobs");
+  const gate = await adminOnlyPage("Activity");
   if (gate) return gate;
   const params = await searchParams;
   const repo = typeof params.repo === "string" ? params.repo : undefined;
@@ -25,9 +25,9 @@ export default async function Activity({ searchParams }: { searchParams: Promise
   const events = result.items;
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
   return <>
-    <PageHead title="Requests & jobs" lede="What agents asked Brain, and what Brain ran in the background on its own. Newest first." />
-    <SectionTabs section="logs" active="/logs" />
-    <Panel id="requests" title="Agent requests" desc="The latest search and context calls, retries included. Handling time is measured on the server only." actions={<nav className="segmented" aria-label="Request period">{(["24h", "7d", "30d"] as const).map((p) => <Link key={p} scroll={false} aria-current={p === period ? "page" : undefined} href={`/logs?${new URLSearchParams({ ...(repo ? { repo } : {}), period: p })}`}>{p}</Link>)}</nav>} flush>
+    <PageHead title="Activity" lede="What agents asked Brain, and what Brain ran in the background on its own. Newest first." />
+    <SectionTabs section="logs" active="/activity" />
+    <Panel id="requests" title="Agent requests" desc="The latest search and context calls, retries included. Handling time is measured on the server only." actions={<nav className="segmented" aria-label="Request period">{(["24h", "7d", "30d"] as const).map((p) => <Link key={p} scroll={false} aria-current={p === period ? "page" : undefined} href={`/activity?${new URLSearchParams({ ...(repo ? { repo } : {}), period: p })}`}>{p}</Link>)}</nav>} flush>
       <RequestHistory telemetry={telemetry} />
     </Panel>
     <Panel id="jobs" title="Background jobs" desc="Indexing and checks Brain ran recently. A failed job shows its recorded error." flush>

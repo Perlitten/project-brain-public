@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
       { source: "/agents", destination: "/runs", permanent: false },
       { source: "/decisions", destination: "/memory", permanent: false },
       { source: "/rules", destination: "/memory?view=rules", permanent: false },
-      { source: "/activity", destination: "/logs", permanent: false },
+      { source: "/logs", destination: "/activity", permanent: false },
     ];
   },
 };

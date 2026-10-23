@@ -2,7 +2,7 @@ import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, Table } from "@/components/ui";
 import { getCorpus, getPagedIndexRuns, getRepositoryFeed } from "@/lib/data";
-import { repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
+import { repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
 import { restrictedMember } from "@/lib/team-session";
 
 export const metadata = { title: "Projects" };
@@ -16,20 +16,21 @@ export default async function Projects({ searchParams }: { searchParams: Promise
   const detail = current && current.id > 0 ? current : null;
   const scope = detail ? `?repo=${encodeURIComponent(detail.slug)}` : "";
   const [corpus, history] = detail ? await Promise.all([getCorpus(detail.slug), getPagedIndexRuns(detail.slug, { size: 5 })]) : [null, null];
-  const state = detail ? repositoryStatus(detail) : null;
+  const state = detail ? repositoryStatus(detail, corpus?.uncommitted) : null;
+  const action = detail ? repositoryAction(detail) : null;
   const stale = repositories.filter((r) => repositoryStatus(r).tone !== "ok").length;
   return (
     <>
       <PageHead
         title={detail?.name ?? "Projects"}
         lede={detail ? "What Brain holds for this repository and how current it is." : "Repositories Brain has indexed for your agents, and how current each one is."}
-        status={state ? { tone: state.tone, text: state.tone === "ok" ? "Index matches the latest revision" : state.status, action: state.tone === "ok" ? undefined : <Link className="btn btn--neutral" href={`/indexing${scope}`}>Open index runs</Link> } : selected ? undefined : repositories.length ? { tone: stale ? "warn" : "ok", text: repositorySummary(repositories) } : undefined}
+        status={state ? { tone: state.tone, text: state.tone === "ok" ? "Index matches the latest revision" : state.status, action: state.tone === "ok" || !action ? undefined : <Link className="btn btn--neutral" href={action.href}>{action.label}</Link> } : selected ? undefined : repositories.length ? { tone: stale ? "warn" : "ok", text: repositorySummary(repositories) } : undefined}
         actions={<>{detail && <Link className="btn btn--neutral" href="/projects">All projects</Link>}{!member && <Link className="btn btn--primary" href="/setup#repo">Add project</Link>}</>}
       />
       <SectionTabs section="projects" active="/projects" />
       {repositories.some((r) => r.freshness === "source_missing") && <div className="callout tone-warn"><b>Source unavailable</b><span>{SOURCE_UNAVAILABLE_HELP}</span></div>}
       {!feed.available ? <Panel id="projects" title="Connected repositories"><EmptyState title="Projects unavailable" body={`${feed.note ?? "Brain didn’t return its project list"}. Reload in a moment.`} /></Panel> : selected && !detail ? <Panel id="unknown-project" title="Project not found"><EmptyState title="That project is unavailable" body="Choose a connected project from the list. Brain did not fall back to another repository." /></Panel> : detail ? (
-        <Panel id="project-detail" title="Index" desc={detail.path || "Repository path unavailable"} actions={<Link className="link" href={`/indexing${scope}`}>Index runs</Link>}>
+        <Panel id="source" title="Index" desc={detail.path || "Repository path unavailable"} actions={<Link className="link" href={`/indexing${scope}`}>Index runs</Link>}>
           <div className="project-detail">
             <dl className="stats">
               <div className="stat"><dt className="stat__label">Indexed pieces</dt><dd className="stat__value num">{corpus?.available === false || !corpus ? "—" : corpus.chunks.toLocaleString("en-US")}</dd></div>

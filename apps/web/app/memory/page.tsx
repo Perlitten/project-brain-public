@@ -8,7 +8,7 @@ import { getPagedDecisions, getPagedRules } from "@/lib/data";
 import { getListQuery } from "@/lib/list-query";
 import type { Decision, Rule, Tone } from "@/lib/types";
 
-export const metadata = { title: "Decisions & rules" };
+export const metadata = { title: "Memory" };
 
 const statusTone: Record<Decision["status"], Tone> = { accepted: "ok", proposed: "info", superseded: "idle", validated_unmerged: "info" };
 const statusWords: Record<Decision["status"], string> = { accepted: "agreed", proposed: "proposed", superseded: "replaced by a newer one", validated_unmerged: "verified, not merged yet" };

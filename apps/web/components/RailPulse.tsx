@@ -4,23 +4,11 @@
 // way back to it. The build and models sit in the tooltip.
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { getPulse, type Pulse } from "@/lib/actions/pulse";
-import { pulseHeadline } from "@/lib/pulse-presentation";
+import { usePulse } from "./PulseProvider";
+import { pulseDestination, pulseHeadline } from "@/lib/pulse-presentation";
 import { stepTitle } from "@/lib/setup-copy";
 import { uncommittedMessage } from "@/lib/repository-status";
 import { useRestrictedMember } from "./MemberScope";
-
-const POLL_MS = 20_000;
-// One failed /health read is usually a busy server, not an outage: the
-// dashboard fires a dozen API calls at once and the probe can lose. Say
-// "Not answering" only after two misses in a row, re-checking quickly between.
-const RETRY_MS = 3_000;
-const MISSES_TO_ALARM = 2;
-// The last reading, so a reload shows it at once instead of "Checking…"
-// while the first poll is in flight. Per tab; optional.
-const MEMO = "pb:pulse";
-const MEMO_MAX_AGE = 5 * 60_000;
 
 function ago(iso?: string): string {
   if (!iso) return "";
@@ -36,45 +24,7 @@ function ago(iso?: string): string {
 
 export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => string; repoSlug?: string }) {
   const restricted = useRestrictedMember();
-  const [pulse, setPulse] = useState<Pulse | null>(null);
-
-  useEffect(() => {
-    setPulse(null);
-    const memoKey = `${MEMO}:${repoSlug ?? "default"}`;
-    let stop = false;
-    let h: ReturnType<typeof setTimeout>;
-    let misses = 0;
-    try {
-      const memo = JSON.parse(sessionStorage.getItem(memoKey) ?? "null") as Pulse | null;
-      if (memo && Date.now() - memo.at < MEMO_MAX_AGE) setPulse(memo);
-    } catch {}
-    const tick = async () => {
-      if (document.visibilityState === "visible") {
-        const p = await getPulse(repoSlug).catch(() => null);
-        if (stop) return;
-        misses = p && !p.reachable ? misses + 1 : 0;
-        if (misses > 0 && misses < MISSES_TO_ALARM) {
-          h = setTimeout(tick, RETRY_MS);
-          return;
-        }
-        if (p) {
-          setPulse(p);
-          try {
-            sessionStorage.setItem(memoKey, JSON.stringify(p));
-          } catch {}
-        }
-      }
-      h = setTimeout(tick, POLL_MS);
-    };
-    tick();
-    const wake = () => document.visibilityState === "visible" && (clearTimeout(h), tick());
-    document.addEventListener("visibilitychange", wake);
-    return () => {
-      stop = true;
-      clearTimeout(h);
-      document.removeEventListener("visibilitychange", wake);
-    };
-  }, [repoSlug]);
+  const { pulse } = usePulse();
 
   if (!pulse) {
     return (
@@ -99,10 +49,12 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
   const omitted = pulse.index?.uncommitted;
   const omittedNote = omitted !== undefined && omitted > 0 ? uncommittedMessage(omitted) : "";
   const tip = [
+    pulse.latencyMs !== undefined ? `API round trip: ${pulse.latencyMs} ms` : "",
     pulse.version ? `Brain v${pulse.version}${pulse.build ? ` (${pulse.build})` : ""}` : "",
     pulse.llm || pulse.embedding ? `Models: ${pulse.llm ?? "—"} / ${pulse.embedding ?? "—"}` : "",
     !pulse.reachable ? "Retrying every 20 s" : "",
     pulse.workerHint ?? "",
+    pulse.freshness?.length ? `Index age exceeds the configured limit: ${pulse.freshness.join(", ")}` : pulse.indexAgeWarning ? "Brain reported an index-age warning; details are in Help" : "",
     pulse.warnings?.length ? `Overdue jobs: ${pulse.warnings.join(", ")}` : warningOnly ? "Brain reported a warning; review scheduled jobs" : "",
   ]
     .filter(Boolean)
@@ -110,10 +62,9 @@ export function RailPulse({ withRepo, repoSlug }: { withRepo: (href: string) => 
 
   return (
     <div className={`vitals tone-${tone}`}>
-      <Link href={restricted ? withRepo("/") : pulse.workerHint ? "/setup" : warningOnly ? "/settings#scheduler" : withRepo("/")} className="vitals__line vitals__line--head" title={tip || undefined}>
+      <Link href={pulseDestination(pulse, restricted)} className="vitals__line vitals__line--head" title={tip || undefined}>
         <span className="vitals__beat" aria-hidden="true" />
         <span className="vitals__text">{headline}</span>
-        {pulse.reachable && pulse.latencyMs !== undefined && <span className="vitals__ms num">{pulse.latencyMs} ms</span>}
       </Link>
       {pulse.reachable && repoSlug !== "" && (
         <Link href={withRepo("/indexing")} className={`vitals__line${omittedNote ? " vitals__line--warning tone-warn" : ""}`} title={omittedNote ? `${memory} · Recorded at the latest index run, not a live checkout count` : "Indexing history"}>

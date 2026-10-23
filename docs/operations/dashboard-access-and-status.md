@@ -65,7 +65,7 @@ unavailable, distinct from a successful empty job history.
 Saving Settings updates the API immediately. Workers need a restart to use those
 changes. Environment/deployment overrides can return after restart; update the
 deployment configuration when the Settings page identifies an override. Displayed
-server times name their timezone (UTC by default, or `BRAIN_TIMEZONE` where configured); values without timezone information are
+server times use the shared UTC formatter; values without timezone information are
 not assigned one silently.
 
 The UI changes do not diagnose a running installation's missing mount or API

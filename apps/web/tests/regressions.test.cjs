@@ -1656,3 +1656,107 @@ test('reranker page explains a refused project folder instead of reporting an ou
   assert.equal(outage.available, false);
   assert.equal(outage.unavailableReason, undefined);
 });
+
+
+test('repository actions distinguish source recovery from indexing, including encoded repository IDs', () => {
+  const { repositoryAction } = load('lib/repository-status.ts');
+  const missing = repositoryAction({ slug: 'repo / one', name: 'synthetic-missing-source', freshness: 'source_missing', behind: 8 });
+  assert.equal(missing.href, '/projects?repo=repo%20%2F%20one#source');
+  assert.match(missing.label, /Check source/);
+  assert.doesNotMatch(missing.label, /index/i);
+  for (const freshness of ['behind', 'unindexed', 'freshness_error']) {
+    assert.equal(repositoryAction({ slug: '7', name: 'api', freshness }).href, '/indexing?repo=7');
+  }
+});
+
+test('pulse attention destinations expose their cause and respect member restrictions', () => {
+  const { pulseDestination, pulseHeadline } = load('lib/pulse-presentation.ts');
+  const warning = { reachable: true, healthy: false, down: [], warnings: ['weekly benchmark'] };
+  assert.equal(pulseHeadline(warning), 'Needs attention');
+  assert.equal(pulseDestination(warning), '/settings#scheduler');
+  assert.equal(pulseDestination(warning, true), '/help#server-status');
+  assert.equal(pulseDestination({ ...warning, down: ['postgres'] }), '/help#server-status');
+  assert.equal(pulseDestination({ ...warning, reachable: false }), '/help#server-status');
+});
+
+test('settings delivery and scheduled job observations share explicit UTC formatting', async () => {
+  const stamp = '2026-10-22T06:30:00+03:00';
+  const expected = load('lib/time.ts').utcTime(stamp);
+  const scheduler = load('lib/scheduler-view.ts', { './api': { brainFetch: async () => null } });
+  const job = scheduler.toSchedulerView({ enabled: true, jobs: [{ job_type: 'benchmark', next_run_at: stamp, last_success_at: stamp }] }).jobs[0];
+  assert.equal(job.lastSuccess, expected);
+  assert.equal(job.nextRun, expected);
+  assert.equal(job.lastFailure, undefined);
+  const settings = load('lib/settings-view.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: true, brainFetch: async path => path === '/api/web/health'
+      ? { orchestration: { diagnostics: { last_delivery: { status: 'sent', evaluated_at: stamp } } } }
+      : path === '/api/settings' ? { sections: [] } : null },
+  });
+  assert.equal((await settings.getSettingsView()).telegram.last.at, expected);
+  assert.match(expected, /03:30 UTC$/);
+});
+
+
+test('a missed health probe retains independently reported build identity', async () => {
+  const { getPulse } = load('lib/actions/pulse.ts', {
+    '../api': { apiConfigured: true, brainFetch: async path => path === '/api/version' ? { version: '0.9.2', build_sha: '4935387c685f' } : null },
+    '../data': { getRepository: async () => ({}) },
+  });
+  const pulse = await getPulse('');
+  assert.equal(pulse.reachable, false);
+  assert.equal(pulse.version, '0.9.2');
+  assert.equal(pulse.build, '4935387');
+});
+
+
+test('repository summary never calls known omitted working-tree edits up to date', () => {
+  const { repositorySummary } = load('lib/repository-status.ts');
+  const repos = [{ id: 1, freshness: 'current', behind: 0 }];
+  const summary = repositorySummary(repos, new Map([[1, 3]]));
+  assert.match(summary, /1 with uncommitted changes omitted by the last index/);
+  assert.doesNotMatch(summary, /up to date/);
+  assert.match(repositorySummary(repos, new Map([[1, 0]])), /up to date/);
+  assert.match(repositorySummary(repos, new Map([[1, null]])), /up to date/);
+});
+
+test('diagnostic UTC timestamps distinguish attempts within the same minute', () => {
+  const { utcTime } = load('lib/time.ts');
+  assert.match(utcTime('2026-10-22T06:30:01+03:00', true), /03:30:01 UTC$/);
+  assert.notEqual(utcTime('2026-10-22T03:30:01Z', true), utcTime('2026-10-22T03:30:02Z', true));
+});
+
+test('activity entries retain seconds while decision calendar dates stay timezone-free', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async path => path.startsWith('/ledger/events')
+      ? { events: [
+          { id: 1, event_type: 'job.started', timestamp_utc: '2026-10-22T03:30:01Z' },
+          { id: 2, event_type: 'job.started', timestamp_utc: '2026-10-22T03:30:02Z' },
+        ], total: 2 }
+      : path.startsWith('/api/web/decisions')
+        ? { decisions: [{ id: 1, title: 'Calendar decision', date: '2026-10-22' }], total: 1 }
+        : null },
+  });
+  const events = (await data.getPagedEvents(undefined)).items;
+  assert.notEqual(events[0].at, events[1].at);
+  assert.match(events[0].at, /03:30:01 UTC$/);
+  const decision = (await data.getPagedDecisions(undefined)).items[0];
+  assert.equal(decision.recordedAt, '22 Oct 2026');
+  assert.doesNotMatch(decision.recordedAt, /timezone|UTC/i);
+});
+
+
+test('shared pulse never forwards other project identifiers from global liveness', async () => {
+  const { getPulse } = load('lib/actions/pulse.ts', {
+    '../api': { apiConfigured: true, brainFetch: async path => path === '/health' ? { status: 'degraded', details: {}, freshness: { exceeded: ['/synthetic/A', '/synthetic/B'] } } : null },
+    '../data': { getRepository: async () => ({ id: 1, path: '/synthetic/A', name: 'Synthetic A' }) },
+  });
+  const selected = await getPulse('1');
+  assert.deepEqual([...selected.freshness], ['Synthetic A']);
+  assert.equal(selected.indexAgeWarning, true);
+  assert.doesNotMatch(JSON.stringify(selected), /synthetic\/B/);
+  const global = await getPulse('');
+  assert.equal(global.freshness.length, 0);
+  assert.doesNotMatch(JSON.stringify(global), /synthetic\/[AB]/);
+});
