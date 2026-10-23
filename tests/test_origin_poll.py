@@ -163,6 +163,20 @@ def test_redact_url_hides_scheme_less_credentials_and_keeps_scp_remotes():
     assert OriginSpec("oauth2:TOKEN@gitlab.com/acme/repo.git", "main", True).display_url == "***@gitlab.com/acme/repo.git"
 
 
+@pytest.mark.parametrize("text, expected", [
+    ("https://user:SECRET@host/repo?token=SECRET#private", "https://***@host/repo"),
+    ("(oauth2:SECRET@host/repo)", "(***@host/repo)"),
+    ("https://host/path@revision", "https://host/path@revision"),
+    ("git@host:org/repo", "git@host:org/repo"),
+    ("x" * 100_000, "x" * 100_000),
+    ("https://" + "x" * 100_000, "https://" + "x" * 100_000),
+    ("https://" + "x" * 100_000 + "@host/repo", "https://***@host/repo"),
+])
+def test_redact_url_linear_token_parsing(text, expected):
+    assert redact_url(text) == expected
+    assert redact_url(expected) == expected
+
+
 @pytest.mark.parametrize("url", ["https://oauth2:TOKEN@gitlab.com/acme/repo.git", "oauth2:TOKEN@gitlab.com/acme/repo.git"])
 def test_remote_head_error_never_carries_the_token(monkeypatch, url):
     failed = subprocess.CompletedProcess([], 128, "", f"fatal: unable to access '{url}/': The requested URL returned 403")
