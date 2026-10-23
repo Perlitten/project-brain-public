@@ -16,6 +16,7 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
   const later = off ? "shown once it is on" : undefined;
   return (
     <>
+      <SectionTabs section="settings" active="/reranker" />
       <PageHead
         title="Reranker"
         status={off && !r.notSetUp ? { tone: "warn", text: <>The second search pass is turned off<small>Search still works; results are ranked by the first pass only.</small></> } : undefined}
@@ -32,7 +33,6 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
           </>
         }
       />
-      <SectionTabs section="settings" active="/reranker" />
       {r.notSetUp ? (
         <Panel id="optional" title="Optional, and not set up on this server">
           <p className="text-dim">

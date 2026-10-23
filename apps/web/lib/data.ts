@@ -751,10 +751,10 @@ export const getIndexRuns = async (slug?: string | null): Promise<IndexRun[]> =>
   });
 };
 
-export const getContextPacks = async (): Promise<ContextPack[]> => {
-  if (!apiConfigured) return mock.contextPacks;
+export const getContextPacks = async (limit = 200): Promise<ContextPack[]> => {
+  if (!apiConfigured) return mock.contextPacks.slice(0, limit);
   return live<ContextPack[]>([], async () => {
-    const data = await brainFetch<Json>("/api/web/context-packs?limit=200", { fresh: true });
+    const data = await brainFetch<Json>(`/api/web/context-packs?limit=${limit}`, { fresh: true });
     if (!data) return null;
     return list(data, "packs").map((p) => {
       const budget = str(p.budget).toLowerCase();
@@ -767,10 +767,15 @@ export const getContextPacks = async (): Promise<ContextPack[]> => {
         createdAt: fmtShort(p.created_at),
         stale: typeof p.stale === "boolean" ? p.stale : null,
         consumer: str(p.consumer) || "an agent",
+        ...(num(p.repository_id) !== undefined ? { repo: String(num(p.repository_id)) } : {}),
+        ...(p.memory && typeof p.memory === "object" ? { memory: packMemory(obj(p.memory)) } : {}),
       };
     });
   });
 };
+
+// Counts stay null when the pack predates content recording: unknown is not zero.
+const packMemory = (m: Json): NonNullable<ContextPack["memory"]> => ({ rules: num(m.rules) ?? null, decisions: num(m.decisions) ?? null, learnings: num(m.learnings) ?? null });
 
 function decisionStatus(v: unknown): Decision["status"] {
   const s = str(v).toLowerCase();
@@ -798,6 +803,20 @@ export const getDecisions = async (): Promise<Decision[]> => {
     });
   });
 };
+
+// Only the current row of an item is editable, and only when Brain sent its
+// version: an older API without one gets no write controls rather than blind overwrites.
+function decisionWrite(d: Json): Decision["write"] {
+  const version = num(d.version);
+  if (!version || d.current === false || decisionStatus(d.raw_status ?? d.status) === "superseded" || !str(d.title)) return undefined;
+  return { title: str(d.title), repoPath: str(d.repo_path) || null, description: str(d.description), reason: str(d.reason), status: str(d.raw_status ?? d.status) || "active", version };
+}
+function ruleWrite(r: Json): Rule["write"] {
+  const version = num(r.version);
+  if (!version || r.current === false || !str(r.id) || !str(r.name) || /^superseded$/i.test(str(r.status))) return undefined;
+  const applies = r.applies_to && typeof r.applies_to === "object" && !Array.isArray(r.applies_to) ? (r.applies_to as Record<string, unknown>) : null;
+  return { ruleId: str(r.id), name: str(r.name), repoPath: str(r.repo_path) || null, description: str(r.description), type: str(r.type) || "architecture", severity: str(r.raw_severity) || "medium", status: str(r.status) || "active", appliesTo: applies, version };
+}
 
 function ruleSeverity(v: unknown): Rule["severity"] {
   const s = str(v).toLowerCase();
@@ -970,7 +989,10 @@ export const getPagedInsights = async (slug: string | null | undefined, input: P
 export const getPagedDecisions = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<Decision>> => {
   const q = getListQuery(input);
   if (!apiConfigured) {
-    const rows = mock.decisions.filter((d) => (!slug || d.repo === slug) && (q.status !== "current" || ["accepted", "proposed", "validated_unmerged"].includes(d.status)));
+    // Demo rows carry a write target too, so the page shows its (locked) controls.
+    const rows = mock.decisions
+      .filter((d) => (!slug || d.repo === slug) && (q.status !== "current" || ["accepted", "proposed", "validated_unmerged"].includes(d.status)))
+      .map((d) => d.status === "superseded" ? d : { ...d, write: { title: d.title, repoPath: null, description: d.summary, reason: "", status: d.status === "proposed" ? "proposed" : "active", version: 1 } });
     if (q.status === "current") return demoPage(rows, { ...q, status: "" }, (d) => `${d.title} ${d.summary} ${d.scope} ${d.id}`, (d) => d.status);
     return demoPage(rows, q, (d) => `${d.title} ${d.summary} ${d.scope} ${d.id}`, (d) => d.status);
   }
@@ -979,14 +1001,14 @@ export const getPagedDecisions = async (slug: string | null | undefined, input: 
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
     const scope = repo ? `&repository_id=${repo.id}` : "";
     const data = await brainFetch<Json>(`/api/web/decisions?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${q.status ? `&status=${q.status}` : ""}${scope}`, { fresh: true });
-    return data ? pageResult(data, "decisions", q, (d) => ({ id: `D-${str(d.id)}`, title: str(d.title) || "Untitled decision", status: decisionStatus(d.status), scope: str(d.repo_path).split(/[\\/]/).filter(Boolean).pop() || "whole project", recordedAt: fmtShort(d.date ?? d.created_at), summary: str(d.description) || str(d.reason) || "" })) : null;
+    return data ? pageResult(data, "decisions", q, (d) => ({ id: `D-${str(d.id)}`, title: str(d.title) || "Untitled decision", status: decisionStatus(d.status), scope: str(d.repo_path).split(/[\\/]/).filter(Boolean).pop() || "whole project", recordedAt: fmtShort(d.date ?? d.created_at), summary: str(d.description) || str(d.reason) || "", repoPath: str(d.repo_path) || null, write: decisionWrite(d) })) : null;
   });
 };
 
 export const getPagedRules = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<Rule>> => {
   const q = getListQuery(input);
   if (!apiConfigured) {
-    const rows = mock.rules.filter((r) => !slug || r.repo === slug);
+    const rows = mock.rules.filter((r) => !slug || r.repo === slug).map((r) => ({ ...r, write: { ruleId: r.id, name: r.id, repoPath: null, description: r.rule, type: "architecture", severity: r.severity === "block" ? "high" : r.severity === "warn" ? "medium" : "low", status: "active", appliesTo: null, version: 1 } }));
     return demoPage(rows, q, (r) => `${r.rule} ${r.id} ${r.scope}`, (r) => r.severity);
   }
   return live(unread(q), async () => {
@@ -994,7 +1016,7 @@ export const getPagedRules = async (slug: string | null | undefined, input: Part
     const scope = repo ? `&repository_id=${repo.id}` : "";
     const severity = q.status && ["block", "warn", "advise"].includes(q.status) ? `&severity=${q.status}` : "";
     const data = await brainFetch<Json>(`/api/web/rules?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${scope}${severity}`, { fresh: true });
-    return data ? pageResult(data, "rules", q, (r) => ({ id: str(r.id), rule: str(r.description) || str(r.name) || str(r.id), severity: ruleSeverity(r.severity), scope: ruleScope(r.applies_to, str(r.type)), delivered30d: num(r.delivered_30d), caught30d: num(r.flagged_30d) })) : null;
+    return data ? pageResult(data, "rules", q, (r) => ({ id: str(r.id), rule: str(r.description) || str(r.name) || str(r.id), severity: ruleSeverity(r.severity), scope: ruleScope(r.applies_to, str(r.type)), delivered30d: num(r.delivered_30d), caught30d: num(r.flagged_30d), repoPath: str(r.repo_path) || null, write: ruleWrite(r) })) : null;
   });
 };
 

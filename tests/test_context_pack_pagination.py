@@ -112,8 +112,11 @@ def test_memory_filters_normalize_legacy_statuses_before_filtering():
             assert result["facets"]["status"] == {"superseded": 2}
             accepted = asyncio.run(web.web_decisions(page=1, page_size=20, q=None, status="accepted"))
             assert [row["id"] for row in accepted["decisions"]] == [3]
+            # The web UI edits with compare-and-swap, so each row carries its version.
+            assert (accepted["decisions"][0]["version"], accepted["decisions"][0]["current"]) == (1, True)
             assert accepted["facets"]["status"] == {"superseded": 2, "accepted": 1}
             rules = asyncio.run(web.web_rules(page=1, page_size=20, q=None, status=None, severity="block"))
             assert [row["id"] for row in rules["rules"]] == ["rule-1"]
+            assert (rules["rules"][0]["version"], rules["rules"][0]["current"]) == (1, True)
             assert rules["facets"]["severity"] == {"block": 1, "warn": 1}
     engine.dispose()

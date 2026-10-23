@@ -103,6 +103,9 @@
 .inline-link { color: var(--teal-fg); text-decoration: underline; text-decoration-color: var(--teal-line); text-underline-offset: 3px; }
 .inline-link:hover { text-decoration-color: var(--teal-fg); }
 .row-actions { display: flex; gap: var(--s-1); justify-content: flex-end; flex-wrap: wrap; }
+.row-actions--inline { flex-wrap: nowrap; }
+/* Memory card controls sit under the meta line, pushed to the card's foot. */
+.card__actions { display: flex; gap: var(--s-1); flex-wrap: wrap; margin-top: auto; padding-top: var(--s-2); }
 
 /* ---------- rail vital-signs card ---------- */
 
@@ -160,7 +163,7 @@ a.vitals__line:hover .vitals__text { text-decoration: underline; text-underline-
   .shell--slim { grid-template-columns: 60px minmax(0, 1fr); }
   .shell--slim .rail__word, .shell--slim .nav__text, .shell--slim .nav__label,
   .shell--slim .vitals__text, .shell--slim .vitals__ms, .shell--slim .vitals__line:not(.vitals__line--head),
-  .shell--slim .rail__toggle-text, .shell--slim .rail__help-text, .shell--slim .rail__note { display: none; }
+  .shell--slim .rail__toggle-text, .shell--slim .rail__help-text, .shell--slim .rail__note, .shell--slim .nav__progress { display: none; }
   .shell--slim .rail__help { justify-content: center; width: auto; padding: 6px; }
   .shell--slim .rail__brand { justify-content: center; padding: 0; }
   .shell--slim .nav { padding: var(--s-3) 6px; gap: var(--s-2); }
@@ -177,7 +180,7 @@ a.vitals__line:hover .vitals__text { text-decoration: underline; text-underline-
   .shell { grid-template-columns: 60px minmax(0, 1fr); }
   .rail { position: sticky; width: auto; height: 100dvh; transform: none; box-shadow: none; transition: none; }
   .scrim, .mast__menu, .rail__toggle { display: none !important; }
-  .rail__word, .nav__text, .nav__label, .vitals__text, .vitals__ms, .vitals__line:not(.vitals__line--head), .rail__note, .rail__help-text { display: none; }
+  .rail__word, .nav__text, .nav__label, .vitals__text, .vitals__ms, .vitals__line:not(.vitals__line--head), .rail__note, .rail__help-text, .nav__progress { display: none; }
   .rail__help { justify-content: center; width: auto; padding: 6px; }
   .rail__brand { justify-content: center; padding: 0; }
   .nav { padding: var(--s-3) 6px; gap: var(--s-2); }

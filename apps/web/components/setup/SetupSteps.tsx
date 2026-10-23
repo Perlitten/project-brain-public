@@ -1,7 +1,7 @@
 "use client";
 import { ReadProblem } from "@/components/ReadProblem";
 // Setup, made of controls: every step opens to the thing that finishes it —
-// start a check, save a path, pick a model, index, mint an agent key, build a
+// start a check, save a path, pick a model, index, connect an agent, build a
 // first context pack. Each step says why it exists and where it stands in
 // plain text; nothing important hides behind a hover.
 
@@ -10,9 +10,8 @@ import "./setup.css";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { CodeBlock, LockNote, RunButton, useAction } from "@/components/act";
 import { Icon } from "@/components/Icon";
-import { KeyDialog } from "@/components/KeyDialog";
+import { mcpUrl } from "@/lib/mcp-address";
 import { AgentConfigurations } from "@/components/setup/AgentConfigurations";
-import { createAgentKey, type NewKey } from "@/lib/actions/admin";
 import { startHealthCheck, startReindex } from "@/lib/actions/jobs";
 import { buildFirstPack, saveProvider, saveRepoPath, verifyAgent, verifyProviders, type ProviderInput } from "@/lib/actions/setup";
 import { shortRevision } from "@/lib/revision";
@@ -26,7 +25,7 @@ const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const sentence = (s: string) => (s ? cap(s.trim()).replace(/[.\s]*$/, ".") : s);
 
-export function SetupSteps({ view, clients = [] }: { view: SetupView; clients?: ClientConfig[] }) {
+export function SetupSteps({ view, clients = [], httpMcp = false }: { view: SetupView; clients?: ClientConfig[]; httpMcp?: boolean }) {
   // One step open at a time — the next one — so the page reads as a checklist.
   const [open, setOpen] = useState<string | null>(view.nextStep ?? null);
   const show = (id: string) => {
@@ -52,7 +51,7 @@ export function SetupSteps({ view, clients = [] }: { view: SetupView; clients?: 
           {s.id === "repo" && <Repo step={s} repoPath={view.repoPath} />}
           {s.id === "provider" && <Providers step={s} view={view} />}
           {s.id === "indexed" && <Index step={s} repoPath={view.repoPath} />}
-          {s.id === "agent" && <Agent step={s} apiUrl={view.publicApiUrl} repoPath={view.repoPath} clients={clients} />}
+          {s.id === "agent" && <Agent step={s} apiUrl={view.publicApiUrl} repoPath={view.repoPath} clients={clients} httpMcp={httpMcp} />}
           {s.id === "first_task" && <FirstTask step={s} repoPath={view.repoPath} />}
         </Step>
       ))}
@@ -548,12 +547,9 @@ function Index({ step, repoPath }: { step: StepView; repoPath?: string }) {
 // ---------------------------------------------------------------------------
 // 5. Agent
 
-function Agent({ step, apiUrl, repoPath, clients }: { step: StepView; apiUrl: string; repoPath?: string; clients: ClientConfig[] }) {
+function Agent({ step, apiUrl, repoPath, clients, httpMcp }: { step: StepView; apiUrl: string; repoPath?: string; clients: ClientConfig[]; httpMcp: boolean }) {
   const ext = obj(step.extra.external_client);
   const check = obj(step.extra.self_check);
-  const [name, setName] = useState("my-agent");
-  const [key, setKey] = useState<NewKey | null>(null);
-  const { run, pending, mode } = useAction(createAgentKey, { title: "Agent key" });
 
   const seen = ext.connected ? `${str(ext.client) || "a client"}${ext.at ? ` · ${str(ext.at)}` : ""}` : "none yet — an agent shows up here after its first call to Brain";
   const checked = Object.keys(check).length ? `${str(check.status)}${step.extra.self_check_fresh === false ? " (outdated — run it again)" : ""}` : "not run";
@@ -567,39 +563,29 @@ function Agent({ step, apiUrl, repoPath, clients }: { step: StepView; apiUrl: st
         <dd>{checked}</dd>
       </dl>
 
-      <form
-        className="inline-form"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const res = await run(name, undefined, undefined);
-          if (res.ok && res.data) setKey(res.data);
-        }}
-      >
-        <input className="input" value={name} onChange={(e) => setName(e.target.value)} aria-label="Key name" placeholder="e.g. claude-laptop" maxLength={120} />
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !name.trim()}>
-          {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="key" size={15} />}
-          Create agent key
-        </button>
-        <RunButton action={verifyAgent} label="Run self-check" icon="check" title="Agent self-check" />
-      </form>
-      <p className="field__hint">
-        Name the key after the machine or agent that will use it. You get a separate key that can be revoked, limited to agent permissions, plus a config to
-        paste into your agent. Self-check calls the same tools from the server to prove they work. Every key is listed in{" "}
-        <Link className="inline-link" href="/admin">
-          Access
+      {httpMcp
+        ? <CodeBlock label="Brain’s MCP address" code={mcpUrl(apiUrl)} />
+        : <div className="callout tone-warn"><b>HTTP MCP is disabled</b><span>Use the local-process configuration below from a Project Brain checkout.</span></div>}
+      {/* Keys are made and revoked in one place, Access; its dialog carries the agent config. */}
+      <div className="btn-row">
+        <Link className="btn btn--primary" href="/admin?new=agent#new-identity">
+          <Icon name="key" size={15} />
+          Create an agent key
         </Link>
-        .
+        <RunButton action={verifyAgent} label="Run self-check" icon="check" title="Agent self-check" />
+      </div>
+      <p className="field__hint">
+        {httpMcp ? "Agents connect to this address with a key of their own." : "Agents connect through the local stdio bridge."} Create a key in Access — it shows the key once, with a command to paste into your agent
+        {repoPath ? <> (tools work on <code>{repoPath}</code> by default)</> : null}. Self-check calls the same tools from the server to prove they work.
       </p>
       <LockNote />
       {clients.length > 0 && (
-        <details className="disclosure">
+        <details className="disclosure" open={!httpMcp}>
           <summary>Agent runs on the Brain server itself?</summary>
           <p>Then it can start Brain’s tools directly, without a key. The paths below are the server’s, not your laptop’s.</p>
           <AgentConfigurations clients={clients} />
         </details>
       )}
-
-      <KeyDialog k={key} apiUrl={apiUrl} repoPath={repoPath} onClose={() => setKey(null)} />
     </div>
   );
 }

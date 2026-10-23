@@ -8,14 +8,14 @@ import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, StatusLine, Table, type PageStatus } from "@/components/ui";
 import { getCorpus, getPagedIndexRuns, getRepositoryFeed } from "@/lib/data";
-import { redactRemote, repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
+import { canReindex, redactRemote, repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
 import { restrictedMember } from "@/lib/team-session";
 import type { OriginPoll, Repository } from "@/lib/types";
 
 export const metadata = { title: "Projects" };
 
 export default function Projects(props: { searchParams: Promise<{ repo?: string }> }) {
-  return <><PageHead title="Projects" lede="Repositories Brain has indexed for your agents, and how current each one is." actions={<ConnectRepository />} /><SectionTabs section="projects" active="/projects" /><Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><ProjectsData {...props} /></Suspense></>;
+  return <><SectionTabs section="projects" active="/projects" /><PageHead title="Projects" lede="Repositories Brain has indexed for your agents, and how current each one is." actions={<ConnectRepository />} /><Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><ProjectsData {...props} /></Suspense></>;
 }
 async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
   const { repo: selected } = await searchParams;
@@ -31,13 +31,25 @@ async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: s
   const state = detail ? repositoryStatus(detail, corpus?.uncommitted) : null;
   const action = detail ? repositoryAction(detail) : null;
   const stale = repositories.filter((r) => repositoryStatus(r).tone !== "ok").length;
-  const summary: PageStatus | undefined = state ? { tone: state.tone, text: state.tone === "ok" ? "Index matches the latest revision" : state.status, action: state.tone === "ok" || !action ? undefined : <Link className="btn btn--neutral" href={action.href}>{action.label}</Link> } : selected ? undefined : repositories.length ? { tone: stale ? "warn" : "ok", text: repositorySummary(repositories) } : undefined;
+  const summary: PageStatus | undefined = state ? { tone: state.tone, text: state.tone === "ok" ? "Index matches the latest revision" : state.status, action: state.tone === "ok" || !action ? undefined : !member && canReindex(detail!) ? <RunButton variant="primary" action={async () => { "use server"; return startReindex({ repoPath: detail!.path }); }} label={`Re-index ${detail!.name}`} title={`Re-index ${detail!.name}`} /> : <Link className="btn btn--neutral" href={action.href}>{action.label}</Link> } : selected ? undefined : repositories.length ? { tone: stale ? "warn" : "ok", text: repositorySummary(repositories) } : undefined;
   return (
     <>
+      {detail && (
+        <nav className="project-switch" aria-label="Project">
+          <Link className="project-switch__back" href="/projects">← All projects</Link>
+          {repositories.length > 1 && (
+            <span className="project-switch__list">
+              {repositories.filter((r) => r.id > 0).map((r) => (
+                <Link key={r.slug} href={`/projects?repo=${encodeURIComponent(r.slug)}`} aria-current={r.slug === detail.slug ? "page" : undefined}>{r.name}</Link>
+              ))}
+            </span>
+          )}
+          {repositories.length <= 1 && <span className="project-switch__current">{detail.name}</span>}
+        </nav>
+      )}
       {summary && <StatusLine {...summary} />}
       {registered === null && <p role="status">Registered source folders could not be read; indexed repositories are listed below.</p>}
       {!!pendingSources.length && <Panel id="registered-sources" title="Registered sources awaiting their first index"><ul>{pendingSources.map(source => <li key={source.path}><b>{source.name}</b><p className="mono">{source.path}</p><RunButton action={async () => { "use server"; return startReindex({ repoPath: source.path }); }} label="Index now" title={`Index ${source.name}`} /></li>)}</ul></Panel>}
-      {detail && <Link className="btn btn--neutral" href="/projects">All projects</Link>}
       {repositories.some((r) => r.freshness === "source_missing") && <div className="callout tone-warn"><b>Source unavailable</b><span>{SOURCE_UNAVAILABLE_HELP}</span></div>}
       {!feed.available ? <Panel id="projects" title="Connected repositories"><EmptyState title="Projects unavailable" body={`${feed.note ?? "Brain didn’t return its project list"}. Reload in a moment.`} /></Panel> : selected && !detail ? <Panel id="unknown-project" title="Project not found"><EmptyState title="That project is unavailable" body="Choose a connected project from the list. Brain did not fall back to another repository." /></Panel> : detail ? (
         <Panel id="source" title="Index" desc={detail.path || "Repository path unavailable"} actions={<Link className="link" href={`/indexing${scope}`}>Index runs</Link>}>
@@ -60,6 +72,8 @@ async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: s
             { head: "Branch", cell: (r) => <span className="mono">{r.branch || "—"}</span> },
             { head: "Origin", cell: (r) => <OriginCell r={r} canSync={!member} /> },
             { head: "Indexed revision", cell: (r) => r.head || "—", align: "right" },
+            // Members index through their role on the project page; the owner re-indexes from the row.
+            ...(member ? [] : [{ head: <span className="sr-only">Actions</span>, cell: (r: (typeof repositories)[number]) => canReindex(r) ? <RunButton small variant={repositoryStatus(r).tone === "ok" ? "neutral" : "primary"} action={async () => { "use server"; return startReindex({ repoPath: r.path }); }} label="Re-index" title={`Re-index ${r.name}`} /> : null, align: "right" as const }]),
           ]} />
         )}
       </Panel>}

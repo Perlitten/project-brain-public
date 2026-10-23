@@ -3,9 +3,10 @@ import Link from "next/link";
 import { utcTime } from "@/lib/time";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
+import { getRepositoryFeed } from "@/lib/data";
 import {
-  ACTIVITY_KINDS, ACTIVITY_PAGE_SIZE, activityFilters, activityHref, activityLabel, activityProjects, getActivity, getMeView,
-  type ActivityRow,
+  ACTIVITY_KINDS, ACTIVITY_PAGE_SIZE, activityActors, activityFilters, activityHref, activityLabel, activityProjects, activityRepositories,
+  getActivity, getMeView, type ActivityRow, type FilterOption,
 } from "@/lib/team-activity-view";
 
 export const metadata = { title: "Team activity" };
@@ -19,13 +20,19 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
   if (unsupported) return unsupported;
   const filters = activityFilters(await searchParams);
   const [result, me] = await Promise.all([getActivity(filters), getMeView()]);
-  const projects = await activityProjects(me);
+  const [projects, feed, actors] = await Promise.all([
+    activityProjects(me),
+    me.kind === "ok" && me.allRepositories ? getRepositoryFeed() : null,
+    activityActors(me, result.kind === "ok" ? result.rows : []),
+  ]);
+  const repositories = activityRepositories(me, feed?.available ? feed.repositories.filter((r) => r.id > 0) : []);
   const projectName = new Map(projects.map((p) => [p.id, p.name]));
+  const repositoryName = new Map(repositories.map((r) => [r.id, r.name]));
   const filtered = Boolean(filters.project || filters.repository || filters.actor || filters.kind || filters.since);
 
   if (result.kind === "denied") return <>
-    <PageHead title="Team activity" lede={LEDE} />
     <SectionTabs section="team" active="/team/activity" />
+    <PageHead title="Team activity" lede={LEDE} />
     <Panel id="activity-access" title="Permission required">
       <EmptyState title="Team activity is not available to this credential" body={`${result.reason} Check the credential under Access. Adding a scope does not create team membership or grant access to another project.`} action={<Link className="btn btn--neutral" href="/team/me">Check my identity and access</Link>} />
       {filtered && <Link className="btn btn--neutral" href="/team/activity">Clear filters</Link>}
@@ -34,8 +41,8 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <PageHead title="Team activity" lede={LEDE} />
       <SectionTabs section="team" active="/team/activity" />
+      <PageHead title="Team activity" lede={LEDE} />
 
       <Panel id="activity-filters" title="Filters">
         <form className="form form--wide" method="get" action="/team/activity">
@@ -47,14 +54,8 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
-            <label className="field">
-              <span className="field__label">Repository <em>id</em></span>
-              <input className="input input--mono" name="repository" inputMode="numeric" pattern="[0-9]*" defaultValue={filters.repository ?? ""} />
-            </label>
-            <label className="field">
-              <span className="field__label">Actor <em>principal id</em></span>
-              <input className="input input--mono" name="actor" inputMode="numeric" pattern="[0-9]*" defaultValue={filters.actor ?? ""} />
-            </label>
+            <IdPicker name="repository" label="Repository" all="All repositories" options={repositories} value={filters.repository} />
+            <IdPicker name="actor" label="Who" all="Anyone" options={actors} value={filters.actor} manual={me.kind === "ok" && !me.teamAdmin && !me.allRepositories} />
             <label className="field">
               <span className="field__label">Kind</span>
               <select className="select" name="kind" defaultValue={filters.kind ?? ""}>
@@ -92,7 +93,7 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
                   { head: "Who", cell: (r) => r.actor },
                   { head: "Kind", cell: (r) => <span title={r.kind}><Chip tone="idle" dot={false}>{activityLabel(r.kind)}</Chip></span> },
                   { head: "What", cell: (r) => (r.detail ? <>{r.summary}<br /><span className="text-faint">{r.detail}</span></> : r.summary) },
-                  { head: "Where", cell: (r) => (r.projectId ? projectName.get(r.projectId) ?? "a project" : r.repositoryId ? `repository ${r.repositoryId}` : "global") },
+                  { head: "Where", cell: (r) => (r.projectId ? projectName.get(r.projectId) ?? "a project" : r.repositoryId ? repositoryName.get(r.repositoryId) ?? `repository ${r.repositoryId}` : "global") },
                 ]}
               />
               <nav className="btn-row" aria-label="Activity pages">
@@ -110,5 +111,27 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
         )}
       </Panel>
     </>
+  );
+}
+
+/** Pick by name; the value Brain filters on stays the numeric id. Without a list to offer, the id is typed. */
+function IdPicker({ name, label, all, options, value, manual = false }: { name: string; label: string; all: string; options: FilterOption[]; value?: number; manual?: boolean }) {
+  if (!options.length || manual) return (
+    <label className="field">
+      <span className="field__label">{label} <em>id</em></span>
+      <input className="input input--mono" name={name} inputMode="numeric" pattern="[0-9]*" list={options.length ? `${name}-options` : undefined} placeholder={all} defaultValue={value ?? ""} />
+      {options.length > 0 && <datalist id={`${name}-options`}>{options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</datalist>}
+    </label>
+  );
+  const listed = value === undefined || options.some((o) => o.id === value);
+  return (
+    <label className="field">
+      <span className="field__label">{label}</span>
+      <select className="select" name={name} defaultValue={value ?? ""}>
+        <option value="">{all}</option>
+        {!listed && <option value={value}>#{value}</option>}
+        {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+      </select>
+    </label>
   );
 }

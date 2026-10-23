@@ -12,11 +12,11 @@ export default async function SettingsPage() {
   const gate = await adminOnlyPage("Settings");
   if (gate) return gate;
   return <>
+      <SectionTabs section="settings" active="/settings" />
       <PageHead
         title="Settings"
-        lede="Alerts, scheduled jobs, search and indexing. Saving updates the API immediately. Background workers use the saved settings after they restart; a save does not restart workers."
+        lede={<span title="A save does not restart workers.">Models, alerts, jobs, search and indexing. Saves reach the API at once; workers pick them up on their next restart.</span>}
       />
-      <SectionTabs section="settings" active="/settings" />
     <Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><SettingsPageData  /></Suspense>
   </>;
 }

@@ -612,10 +612,9 @@ async def test_timeout_kills_and_removes_the_step_container(team_db, source_repo
 
 
 @pytest.mark.asyncio
-async def test_revocation_kills_the_step_container(team_db, source_repo, container, enabled, monkeypatch):
+async def test_revocation_kills_the_step_container(team_db, source_repo, container, enabled):
     factory, a, _ = team_db
     backend, log = container
-    monkeypatch.setattr(settings, "BRAIN_EXECUTION_LEASE_SECONDS", 1)
     task_id, run_id, _ = await make_run(factory, a, source_repo[1])
     await grant(factory, a)
     await request(factory, a, task_id, run_id, payload("slow", "hello", environment="py"), backend=backend())

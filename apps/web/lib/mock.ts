@@ -165,12 +165,12 @@ export const indexRuns: IndexRun[] = [
 ];
 
 export const contextPacks: ContextPack[] = [
-  { id: "1042", task: "Fix lease renewal in worker queue", budget: "medium", tokens: 6120, files: 9, createdAt: "13:58", stale: true, consumer: "claude-code", repo: "billing-service" },
-  { id: "1041", task: "Split invoice PDF renderer per locale", budget: "large", tokens: 14880, files: 21, createdAt: "12:57", stale: true, consumer: "codex", repo: "billing-service" },
-  { id: "1038", task: "Explain drift in sync engine", budget: "small", tokens: 2410, files: 4, createdAt: "11:06", stale: false, consumer: "claude-code", repo: "mobile-app" },
-  { id: "1037", task: "Offline queue replay ordering", budget: "medium", tokens: 7330, files: 11, createdAt: "10:54", stale: false, consumer: "devin", repo: "mobile-app" },
-  { id: "1031", task: "Versioned docs layout for v2", budget: "large", tokens: 15990, files: 26, createdAt: "Oct 1", stale: false, consumer: "codex", repo: "docs-site" },
-  { id: "1029", task: "Retry policy capped at three attempts", budget: "small", tokens: 3102, files: 5, createdAt: "Oct 1", stale: false, consumer: "claude-code", repo: "billing-service" },
+  { id: "1042", task: "Fix lease renewal in worker queue", budget: "medium", tokens: 6120, files: 9, createdAt: "13:58", stale: true, consumer: "claude-code", memory: { rules: 2, decisions: 2, learnings: 0 }, repo: "billing-service" },
+  { id: "1041", task: "Split invoice PDF renderer per locale", budget: "large", tokens: 14880, files: 21, createdAt: "12:57", stale: true, consumer: "codex", memory: { rules: 1, decisions: 0, learnings: 0 }, repo: "billing-service" },
+  { id: "1038", task: "Explain drift in sync engine", budget: "small", tokens: 2410, files: 4, createdAt: "11:06", stale: false, consumer: "claude-code", memory: { rules: 0, decisions: 0, learnings: 0 }, repo: "mobile-app" },
+  { id: "1037", task: "Offline queue replay ordering", budget: "medium", tokens: 7330, files: 11, createdAt: "10:54", stale: false, consumer: "devin", memory: { rules: 0, decisions: 1, learnings: 0 }, repo: "mobile-app" },
+  { id: "1031", task: "Versioned docs layout for v2", budget: "large", tokens: 15990, files: 26, createdAt: "Oct 1", stale: false, consumer: "codex", memory: { rules: 0, decisions: 1, learnings: 0 }, repo: "docs-site" },
+  { id: "1029", task: "Retry policy capped at three attempts", budget: "small", tokens: 3102, files: 5, createdAt: "Oct 1", stale: false, consumer: "claude-code", memory: { rules: 0, decisions: 1, learnings: 0 }, repo: "billing-service" },
 ];
 
 // Demo pack bodies, keyed by pack id above.

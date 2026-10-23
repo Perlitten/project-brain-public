@@ -16,8 +16,8 @@ export default async function Me() {
   const [me, inbox, telegram] = await Promise.all([getMeView(), getNotifications(), getTelegramLink()]);
   const head = (
     <>
-      <PageHead title="Me" lede={LEDE} />
       <SectionTabs section="team" active="/team/me" />
+      <PageHead title="Me" lede={LEDE} />
     </>
   );
   if (me.kind !== "ok") {

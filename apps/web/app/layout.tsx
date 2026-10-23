@@ -11,6 +11,7 @@ import { signInMode } from "@/lib/sign-in-view";
 import { currentMember } from "@/lib/team-session";
 import { dataSource, getRepositoryFeed } from "@/lib/data";
 import { repositoryStatus } from "@/lib/repository-status";
+import { getSetupProgress } from "@/lib/setup-view";
 import "./globals.css";
 import "./actions.css";
 
@@ -81,5 +82,7 @@ async function Configuration() {
     path: r.path,
     ...repositoryStatus(r),
   }));
-  return <ApplyShellConfiguration value={{ repos, mode, access, capabilities, member: member ? { id: member.id, name: member.name, admin: member.admin } : null }} />;
+  // Members never see Setup, so the rail only asks for progress on behalf of an owner or team admin.
+  const setup = member && !member.admin ? null : await getSetupProgress();
+  return <ApplyShellConfiguration value={{ repos, mode, access, capabilities, setup, member: member ? { id: member.id, name: member.name, admin: member.admin } : null }} />;
 }

@@ -131,7 +131,9 @@ export interface ContextPack {
   /** null: Brain can't tell (the pack doesn't record which commit it was built from). */
   stale: boolean | null;
   consumer: string;
-  /** Demo data only: repository slug this pack was built for. */
+  /** Memory the pack carried, when Brain recorded its contents (null: not recorded). */
+  memory?: { rules: number | null; decisions: number | null; learnings: number | null };
+  /** Repository slug this pack was built for; absent on legacy/global packs. */
   repo?: string;
 }
 
@@ -142,8 +144,38 @@ export interface Decision {
   scope: string;
   recordedAt: string;
   summary: string;
+  /** Stored repository path; null means the decision applies to every project. */
+  repoPath?: string | null;
   /** Demo data only: repository slug this decision belongs to. */
   repo?: string;
+  /** How to address the stored row when editing it; absent on history copies. */
+  write?: DecisionWrite;
+}
+
+/** The stored decision a write replaces: Brain keys decisions by title and scope. */
+export interface DecisionWrite {
+  title: string;
+  repoPath: string | null;
+  description: string;
+  reason: string;
+  /** As stored (for example proposed); edits must not implicitly accept it. */
+  status: string;
+  /** Compare-and-swap: the version this page read. */
+  version: number;
+}
+
+/** The stored rule a write replaces. A rule write sends every field, so all of them travel. */
+export interface RuleWrite {
+  ruleId: string;
+  name: string;
+  repoPath: string | null;
+  description: string;
+  type: string;
+  /** As stored (e.g. "critical"); the page groups it into block/warn/advise. */
+  severity: string;
+  status: string;
+  appliesTo: Record<string, unknown> | null;
+  version: number;
 }
 
 export interface Rule {
@@ -155,8 +187,12 @@ export interface Rule {
   delivered30d?: number;
   /** Diff reviews that cited this rule over the same window: did it catch anything. */
   caught30d?: number;
+  /** Stored repository path; null means the rule applies to every project. */
+  repoPath?: string | null;
   /** Demo data only: repository slug this rule belongs to. */
   repo?: string;
+  /** How to address the stored row when editing it; absent on history copies. */
+  write?: RuleWrite;
 }
 
 export interface Insight {

@@ -191,6 +191,7 @@ async def api_version() -> dict[str, Any]:
             "team_board": full, "knowledge_review": full,
             "repository_registration": full, "finding_actions": full, "request_traces": full,
             "request_query_history": full, "memory_current": full, "git_connect": full,
+            "mcp_http": settings.BRAIN_MCP_HTTP_ENABLED,
         },
     }
 

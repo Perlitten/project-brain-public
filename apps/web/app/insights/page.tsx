@@ -8,6 +8,7 @@ import { Term } from "@/components/Term";
 import { ClampText } from "@/components/ClampText";
 import { ListFrame } from "@/components/ListFrame";
 import { Chip, EmptyState, PageHead } from "@/components/ui";
+import { moduleOf } from "@/lib/code-graph";
 import { getPagedInsights } from "@/lib/data";
 import { getListQuery } from "@/lib/list-query";
 import type { Insight } from "@/lib/types";
@@ -29,15 +30,21 @@ export default async function Insights({ searchParams }: { searchParams: Promise
   const [result, member] = await Promise.all([getPagedInsights(typeof params.repo === "string" ? params.repo : undefined, getListQuery(params)), restrictedMember()]);
   const insights = result.items;
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
+  const repo = typeof params.repo === "string" ? params.repo : undefined;
+  // A finding's module opens the code map focused on it.
+  const mapLink = (name: string) => {
+    const module = moduleOf(name);
+    return module ? `/graph?${new URLSearchParams({ ...(repo ? { repo } : {}), module })}` : null;
+  };
 
   const groups = groupFindings(insights);
   return (
     <>
+      <SectionTabs section="projects" active="/insights" />
       <PageHead
         title="Findings"
         lede={typeof params.repo === "string" ? "Places in this project’s code that are getting harder to change." : "Places in connected repositories that are getting harder to change, across every project."}
       />
-      <SectionTabs section="projects" active="/insights" />
       <p className="text-faint">Duplicates are grouped on this page using evidence identity; × counts recorded occurrences. Code opens only for file evidence with an explicit repository identity.</p>
       {result.available === false && (
         <EmptyState title="Findings unavailable" body="Brain didn’t return its findings just now. Reload in a moment; nothing here means the code is clean." />
@@ -63,7 +70,11 @@ export default async function Insights({ searchParams }: { searchParams: Promise
             <h2 className="card__title">{g.rep.title}</h2>
             <ClampText text={g.rep.evidence} className="card__body mono" lines={6} label="evidence" />
             <p className="card__meta">
-              <span className="mono">{g.rep.module}</span>
+              {mapLink(g.rep.module) ? (
+                <Link className="mono link" href={mapLink(g.rep.module)!} title="Show this module on the code map">{g.rep.module}</Link>
+              ) : (
+                <span className="mono">{g.rep.module}</span>
+              )}
               <span>found {g.rep.detectedAt}{g.count > 1 ? ` · seen ${g.count} times` : ""}</span>
             </p>
             {!member && <FindingActions id={g.rep.id} codeAvailable={g.rep.codeAvailable === true} targets={g.members.filter(f => f.lastSeenAt && /^\d+$/.test(f.id)).map(f => ({ id: f.id, lastSeenAt: f.lastSeenAt! }))} />}

@@ -1,35 +1,43 @@
 "use client";
 // A newly minted key, shown exactly once: the key itself plus ready-to-paste
-// agent configs. Used by Setup (agent step) and Access.
+// agent configs. Agents connect to Brain's own MCP endpoint (<api>/mcp) by URL;
+// the stdio bridge (python -m apps.mcp_server.remote_server) stays as the
+// fallback for clients without HTTP transport. Used by Access.
 
 import { useMemo, type ReactNode } from "react";
 import { CodeBlock, Dialog } from "@/components/act";
 import type { NewKey } from "@/lib/actions/admin";
+import { mcpUrl } from "@/lib/mcp-address";
 
 export function KeyDialog({
   k,
   apiUrl,
   repoPath,
+  httpMcp,
   onClose,
   hint,
 }: {
   k: NewKey | null;
   apiUrl: string;
   repoPath?: string;
+  httpMcp: boolean;
   onClose: () => void;
-  /** Replaces the closing hint under the configs. */
   hint?: ReactNode;
 }) {
   const configs = useMemo(() => {
     if (!k) return null;
+    const url = mcpUrl(apiUrl);
+    const auth = `Bearer ${k.apiKey}`;
+    const cli = `claude mcp add --transport http brain ${url} --header "Authorization: ${auth}"`;
+    const json = JSON.stringify({ mcpServers: { brain: { type: "http", url, headers: { Authorization: auth } } } }, null, 2);
+    // The stdio bridge reads its repository from env; over HTTP the server's default applies.
     const env: Record<string, string> = { BRAIN_API_URL: apiUrl, BRAIN_API_KEY: k.apiKey };
     if (repoPath) env.BRAIN_REPO = repoPath;
-    const json = JSON.stringify({ mcpServers: { brain: { command: "python", args: ["-m", "apps.mcp_server.remote_server"], env } } }, null, 2);
-    const cli = `claude mcp add brain ${Object.entries(env)
-      .map(([a, b]) => `-e ${a}=${b}`)
-      .join(" ")} -- python -m apps.mcp_server.remote_server`;
-    return { json, cli };
+    const stdioJson = JSON.stringify({ mcpServers: { brain: { command: "python", args: ["-m", "apps.mcp_server.remote_server"], env } } }, null, 2);
+    const stdioCli = `claude mcp add brain ${Object.entries(env).map(([a, b]) => `-e ${a}=${b}`).join(" ")} -- python -m apps.mcp_server.remote_server`;
+    return { url, cli, json, stdioJson, stdioCli };
   }, [k, apiUrl, repoPath]);
+
   return (
     <Dialog open={Boolean(k)} onClose={onClose} title={`Key for “${k?.name ?? "agent"}”`} wide>
       {k && configs && (
@@ -39,16 +47,29 @@ export function KeyDialog({
             <span>Lost it? Revoke it in Access and create a new one.</span>
           </div>
           <CodeBlock label="API key" code={k.apiKey} secret />
-          <CodeBlock label="Claude Code — one command" code={configs.cli} secret />
-          <CodeBlock label="Any MCP client — .mcp.json / mcp.json" code={configs.json} secret />
+          <CodeBlock label="Claude Code — one command" code={httpMcp ? configs.cli : configs.stdioCli} secret />
+          <CodeBlock label="Any MCP client — .mcp.json / mcp.json" code={httpMcp ? configs.json : configs.stdioJson} secret />
           <p className="field__hint">
             {hint ?? (
+              httpMcp ? <>
+                Nothing to install: the agent talks to <code>{configs.url}</code> directly. Ask it to use any Brain tool — Setup turns the agent step green when Brain sees the call.
+              </> : <>
+                Native HTTP MCP is disabled on this Brain server. Run the local stdio bridge from a Project Brain checkout, then ask the agent to use any Brain tool.
+              </>
+            )}
+            {repoPath && (
               <>
-                Run it from a Project Brain checkout (the agent machine needs one for <code>apps.mcp_server</code>), then ask the agent to use any Brain tool —
-                this step turns green when Brain sees it.
+                {" "}
+                Tools work on <code>{repoPath}</code> unless the agent passes another <code>repo_path</code>.
               </>
             )}
           </p>
+          {httpMcp && <details className="disclosure">
+            <summary>Client can’t connect by URL?</summary>
+            <p>Run Brain’s tools as a local process instead. This needs a Project Brain checkout on the agent’s machine, started from its root.</p>
+            <CodeBlock label="Claude Code — local process" code={configs.stdioCli} secret />
+            <CodeBlock label="Any MCP client — local process" code={configs.stdioJson} secret />
+          </details>}
           <div className="dialog__actions">
             <button type="button" className="btn btn--primary" onClick={onClose}>
               I’ve copied it

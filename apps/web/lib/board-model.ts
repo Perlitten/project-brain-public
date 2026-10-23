@@ -38,6 +38,7 @@ export interface QueueEntry {
   enqueuedAt: string | null;
   initiatorId: number | null;
   requestedBy: number | null;
+  decidedAt: string | null;
   version: number;
 }
 
@@ -158,6 +159,7 @@ export function toEntry(raw: unknown): QueueEntry | null {
     enqueuedAt: text(e.enqueued_at),
     initiatorId: int(e.initiator_id),
     requestedBy: int(e.requested_by),
+    decidedAt: text(e.decided_at),
   };
 }
 
@@ -356,6 +358,19 @@ export function queuePosition(entries: QueueEntry[], target: QueueEntry): number
   if (target.status !== "queued") return null;
   return entries.filter((entry) => entry.status === "queued"
     && entry.repositoryId === target.repositoryId && entry.id <= target.id).length;
+}
+
+/**
+ * The base the board can vouch for when integrating `entry`: the newest integrated head in its
+ * repository (what Brain defaults to), else the base Brain last checked the entry against.
+ */
+export function knownBase(board: Pick<ProjectBoard, "tasks" | "queue">, entry: QueueEntry): { sha: string; source: "integrated" | "checked" } | null {
+  const integrated = [...board.tasks.map((t) => t.entry), ...board.queue]
+    .filter((e): e is QueueEntry => Boolean(e) && e!.status === "integrated" && e!.repositoryId === entry.repositoryId && Boolean(e!.headSha))
+    // Match Brain's authoritative ordering: decision time first, then ID.
+    .sort((a, b) => (Date.parse(b.decidedAt ?? "") || 0) - (Date.parse(a.decidedAt ?? "") || 0) || b.id - a.id)[0];
+  if (integrated) return { sha: integrated.headSha, source: "integrated" };
+  return entry.checkedBaseSha ? { sha: entry.checkedBaseSha, source: "checked" } : null;
 }
 
 export interface LeaseActions { release: boolean; renew: boolean }

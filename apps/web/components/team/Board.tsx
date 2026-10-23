@@ -1,5 +1,5 @@
 "use client";
-// Board controls: columns of tasks by state, live leases, overlap warnings and
+// Board controls: a kanban of tasks by stage, live leases, overlap warnings and
 // the integration queue, with a conflict view that says what conflicts and what
 // the signed-in member may do about it. Controls appear only where Brain would
 // allow them (lib/board-model.ts); Brain still checks every call with the
@@ -10,8 +10,8 @@ import { CodeBlock, Dialog, LockNote, RunButton, useAction } from "@/components/
 import { Chip, Table } from "@/components/ui";
 import { integrateEntry, rejectEntry, releaseLease, renewLease, requestRun, type NewRun } from "@/lib/actions/board";
 import {
-  BOARD_COLUMNS, entryActions, instructionHref, leaseActions, queuePosition,
-  type BoardTask, type Lease, type Overlap, type ProjectBoard, type QueueEntry, type QueueStatus, type SupersededInstruction,
+  BOARD_COLUMNS, entryActions, instructionHref, knownBase, leaseActions, queuePosition,
+  type BoardColumn, type BoardTask, type Lease, type Overlap, type ProjectBoard, type QueueEntry, type QueueStatus, type SupersededInstruction,
 } from "@/lib/board-model";
 import type { Tone } from "@/lib/types";
 import "./board.css";
@@ -110,8 +110,9 @@ function RequestRunButton({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
 }
 
 function IntegrateButton({ entry, ctx }: { entry: QueueEntry; ctx: Ctx }) {
+  const known = knownBase(ctx.board, entry);
   const [open, setOpen] = useState(false);
-  const [base, setBase] = useState("");
+  const [base, setBase] = useState(known?.source === "integrated" ? known.sha : "");
   const { run, pending, mode } = useAction(integrateEntry, { title: "Integrate" });
   return (
     <>
@@ -126,6 +127,7 @@ function IntegrateButton({ entry, ctx }: { entry: QueueEntry; ctx: Ctx }) {
           <input className="input input--mono" value={base} onChange={(e) => setBase(e.target.value)} placeholder="Defaults to the last integrated head" maxLength={40} />
           <span className="field__hint">Required until something has been integrated in this repository.</span>
         </label>
+        <KnownShas entry={entry} known={known} onUse={setBase} />
         <div className="dialog__actions">
           <button type="button" className="btn btn--neutral" onClick={() => setOpen(false)}>Cancel</button>
           <button
@@ -142,6 +144,28 @@ function IntegrateButton({ entry, ctx }: { entry: QueueEntry; ctx: Ctx }) {
         </div>
       </Dialog>
     </>
+  );
+}
+
+/** The SHAs a reviewer would otherwise hunt for: the base the board knows and the one the run started from. */
+function KnownShas({ entry, known, onUse }: { entry: QueueEntry; known: ReturnType<typeof knownBase>; onUse: (sha: string) => void }) {
+  const rows: [string, string][] = [];
+  if (known) rows.push([known.source === "integrated" ? "Last integrated head" : "Base last checked", known.sha]);
+  if (entry.baseSha && entry.baseSha !== known?.sha) rows.push(["Run started from", entry.baseSha]);
+  if (!rows.length) return null;
+  return (
+    <dl className="board-shas">
+      {rows.map(([label, sha]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>
+            <code className="mono" title={sha}>{short(sha)}</code>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => onUse(sha)}>Use</button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => navigator.clipboard?.writeText(sha).catch(() => undefined)}>Copy</button>
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -288,11 +312,11 @@ export function ConflictView({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
   );
 }
 
-function ConflictButton({ task, ctx, label = "See conflict" }: { task: BoardTask; ctx: Ctx; label?: string }) {
+function ConflictButton({ task, ctx, label = "See conflict", className = "btn btn--ghost btn--sm" }: { task: BoardTask; ctx: Ctx; label?: string; className?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className="btn btn--ghost btn--sm" onClick={() => setOpen(true)}>{label}</button>
+      <button type="button" className={className} onClick={() => setOpen(true)}>{label}</button>
       <Dialog open={open} onClose={() => setOpen(false)} title={`Conflict: ${task.title}`} wide>
         <ConflictView task={task} ctx={ctx} />
       </Dialog>
@@ -303,35 +327,40 @@ function ConflictButton({ task, ctx, label = "See conflict" }: { task: BoardTask
 // ---------------------------------------------------------------------------
 // Board
 
+// Columns run left to right as work moves; a column's tone says whether it needs a person.
+type StageTone = Tone | "teal";
+const STAGE_TONE: Record<BoardColumn, StageTone> = {
+  blocked: "idle", ready: "info", running: "teal", awaiting: "info", needs_rebase: "warn", stale_instructions: "warn", integrated: "ok",
+};
+const STAGE_SHORT: Record<BoardColumn, string> = {
+  blocked: "Blocked", ready: "Ready", running: "Running", awaiting: "To integrate", needs_rebase: "Needs rebase", stale_instructions: "Stale", integrated: "Done",
+};
+
+// A card says only what a reviewer acts on: what it waits for, its queue place, a conflict.
+// Scope paths sit in the tooltip; leases and overlaps in full are in the panels below.
 function Card({ task, ctx, position }: { task: BoardTask; ctx: Ctx; position: number | null }) {
   const overlaps = ctx.board.overlaps.filter((o) => o.taskId === task.id || o.otherTaskId === task.id).length;
-  const leases = ctx.board.leases.filter((l) => l.taskId === task.id);
   const conflicted = overlaps > 0 || task.column === "needs_rebase" || task.column === "stale_instructions";
+  const waiting = task.waitingOn;
   return (
-    <li className={`board-card${conflicted ? " board-card--warn" : ""}`} id={anchor(task.id)}>
-      <span className="board-card__title">{task.title}</span>
-      {task.parentId && <span className="sub">in <TaskLink id={task.parentId} ctx={ctx} /></span>}
-      <div className="chips">
-        {task.waitingOn.length > 0 && <Chip tone="warn" dot={false}>waiting on {task.waitingOn.length}</Chip>}
-        {task.dependsOn.length > 0 && task.waitingOn.length === 0 && <Chip tone="ok" dot={false}>{task.dependsOn.length} dependencies done</Chip>}
-        {position !== null && <Chip tone="info" dot={false}>#{position} in queue</Chip>}
-        {overlaps > 0 && <Chip tone="warn" dot={false}>{overlaps === 1 ? "1 overlap" : `${overlaps} overlaps`}</Chip>}
-        {leases.length > 0 && <Chip tone="idle" dot={false}>{leases.length === 1 ? "1 lease" : `${leases.length} leases`}</Chip>}
-      </div>
-      {task.dependsOn.length > 0 && (
-        <span className="sub board-card__deps">
-          Depends on{" "}
-          {task.dependsOn.map((d, i) => (
-            <span key={d}>
-              {i > 0 && ", "}
-              <TaskLink id={d} ctx={ctx} />
-              {task.waitingOn.includes(d) ? " (not done)" : ""}
-            </span>
-          ))}
-        </span>
+    <li className={`kcard${conflicted ? " kcard--warn" : ""}`} id={anchor(task.id)} title={task.scopePaths.length ? `Scope:\n${task.scopePaths.join("\n")}` : undefined}>
+      <span className="kcard__title">{task.title}</span>
+      {task.parentId && <span className="kcard__sub">in <TaskLink id={task.parentId} ctx={ctx} /></span>}
+      {waiting.length > 0 && (
+        <p className="kcard__wait">
+          <span>Waiting on</span>{" "}
+          {waiting.map((d, i) => <span key={d}>{i > 0 && ", "}<TaskLink id={d} ctx={ctx} /></span>)}
+        </p>
       )}
-      {task.scopePaths.length > 0 && <span className="sub mono board-card__scope" title={task.scopePaths.join("\n")}>{task.scopePaths.slice(0, 2).join(", ")}{task.scopePaths.length > 2 ? ` +${task.scopePaths.length - 2}` : ""}</span>}
-      {conflicted && <ConflictButton task={task} ctx={ctx} />}
+      {(position !== null || conflicted) && (
+        <div className="kcard__foot">
+          {position !== null && <span className="kpill tone-info" title="Position in the integration queue">Queue #{position}</span>}
+          {conflicted && (
+            <ConflictButton task={task} ctx={ctx} className="kpill kpill--btn tone-warn"
+              label={overlaps > 1 ? `${overlaps} overlaps` : overlaps === 1 ? "Overlap" : "Conflict"} />
+          )}
+        </div>
+      )}
     </li>
   );
 }
@@ -339,22 +368,24 @@ function Card({ task, ctx, position }: { task: BoardTask; ctx: Ctx; position: nu
 export function BoardColumns({ board, selfId }: { board: ProjectBoard; selfId: number | null }) {
   const ctx = context(board, selfId);
   const position = new Map(board.queue.map((e, i) => [e.taskId, i + 1]));
+  if (!board.tasks.length) return <p className="kanban__empty">No tasks in this project yet.</p>;
   return (
-    <div className="board" role="list" aria-label={`Tasks in ${board.name} by state`}>
+    <div className="kanban" aria-label={`Tasks in ${board.name} by stage`}>
       {BOARD_COLUMNS.map((col) => {
         const tasks = board.tasks.filter((t) => t.column === col.id);
         return (
-          <section key={col.id} className={`board-col board-col--${col.id}`} role="listitem" aria-label={col.label}>
-            <header className="board-col__head" title={col.hint}>
-              <span>{col.label}</span>
-              <span className="num">{tasks.length}</span>
-            </header>
+          <section key={col.id} className={`kcol kcol--${col.id} tone-${STAGE_TONE[col.id]}`} aria-label={col.label}>
+            <h3 className="kcol__head" title={`${col.label}: ${col.hint}`}>
+              <span className="dot" aria-hidden />
+              {STAGE_SHORT[col.id]}
+              <span className="kcol__count num">{tasks.length}</span>
+            </h3>
             {tasks.length ? (
-              <ul className="board-col__cards">
+              <ul className="kcol__cards">
                 {tasks.map((t) => <Card key={t.id} task={t} ctx={ctx} position={position.get(t.id) ?? null} />)}
               </ul>
             ) : (
-              <p className="board-col__empty">None</p>
+              <p className="kcol__none">No tasks</p>
             )}
           </section>
         );
@@ -380,8 +411,7 @@ export function LeasesTable({ board, selfId }: { board: ProjectBoard; selfId: nu
           { head: "Path", cell: (l) => <span className="mono">{l.resource}</span> },
           { head: "Holder", cell: (l) => who(l.holderId, selfId) },
           { head: "Task", cell: (l) => (l.taskId ? <TaskLink id={l.taskId} ctx={ctx} /> : <span className="text-faint">none</span>) },
-          { head: "Expires", cell: (l) => <span className="num">{when(l.expiresAt)}</span> },
-          { head: "Fencing token", cell: (l) => <span className="num mono">{l.fencingToken}</span> },
+          { head: "Expires", cell: (l) => <><span className="num">{when(l.expiresAt)}</span><br /><span className="text-faint num" title="Fencing token: Brain refuses writes made under an older one">token {l.fencingToken}</span></> },
           { head: "", cell: (l) => <LeaseControls lease={l} ctx={ctx} /> },
         ]}
       />

@@ -27,16 +27,29 @@ export function Settings({ view }: { view: SettingsView }) {
     <div className="settings">
       <nav className="settings__toc" aria-label="Sections">
         {[
+          ["models", "Models"],
           ["telegram", "Telegram"],
           ["scheduler", "Scheduler"],
           ...view.sections.filter((s) => s.id !== "telegram").map((s) => [s.id, s.title]),
-          ["models", "Models"],
         ].map(([id, label]) => (
           <a key={id} href={`#${id}`}>
             {label}
           </a>
         ))}
       </nav>
+
+      <Panel
+        id="models"
+        title="Models"
+        desc="Chosen and verified in Setup, which brings you back here."
+        actions={
+          <Link className="btn btn--neutral btn--sm" href="/setup?from=settings#provider">
+            Change models <Icon name="arrow" size={13} />
+          </Link>
+        }
+      >
+        {view.models ? <Models m={view.models} /> : <p className="field__hint">Shown once the server is updated.</p>}
+      </Panel>
 
       <Panel
         id="telegram"
@@ -65,24 +78,13 @@ export function Settings({ view }: { view: SettingsView }) {
               {s.id === "automation" && view.llmError && (
                 <p className="field__hint field__hint--bad settings__warn">
                   Last diagnosis LLM call failed: {view.llmError}. Fix the language model in{" "}
-                  <Link href="/setup#provider">Setup → Connect AI models</Link>, or turn off “Summarize diagnosis with the LLM”.
+                  <Link href="/setup?from=settings#provider">Setup → Choose the AI models</Link>, or turn off “Summarize diagnosis with the LLM”.
                 </p>
               )}
               <SectionForm section={s} />
             </Panel>
           ))}
 
-        <Panel
-          id="models"
-          title="Models"
-          actions={
-            <Link className="btn btn--neutral btn--sm" href="/setup#provider">
-              Change <Icon name="arrow" size={13} />
-            </Link>
-          }
-        >
-          {view.models ? <Models m={view.models} /> : <p className="field__hint">Shown once the server is updated.</p>}
-        </Panel>
       </div>
       <LockNote />
     </div>

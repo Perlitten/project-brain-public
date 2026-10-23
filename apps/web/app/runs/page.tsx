@@ -23,6 +23,7 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
   const timedOut = runs.filter((r) => r.status === "timed_out").length;
   return (
     <>
+      <SectionTabs section="logs" active="/runs" />
       <PageHead
         title="Agent tasks"
         lede={
@@ -32,7 +33,6 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
           </>
         }
       />
-      <SectionTabs section="logs" active="/runs" />
       {result.available !== false && <div className="stats">
         <Stat label="Tasks" value={fmt(result.paging.total)} note={hasQuery ? "matching the filters" : "all recorded"} />
         <div className="tone-ok">

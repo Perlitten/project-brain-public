@@ -1,29 +1,64 @@
-/* Board: task columns by state, overlap warnings and the conflict view. */
+/* Board: the kanban of tasks by stage, overlap warnings and the conflict view. */
 
-.board {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: var(--s-3);
-  overflow-x: auto; padding: var(--s-4) var(--s-5); scroll-snap-type: x proximity;
+/* Kanban: one row of equal stage lanes, left to right, scrolling sideways when they don't fit. */
+.kanban {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); align-items: start;
+  gap: var(--s-3); padding: var(--s-4) var(--s-5) var(--s-5);
+  overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: var(--s-5);
 }
-.board-col { display: grid; align-content: start; gap: var(--s-2); min-width: 0; scroll-snap-align: start; }
-.board-col__head {
-  display: flex; justify-content: space-between; gap: var(--s-2); padding-bottom: var(--s-1);
-  border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-12); font-weight: 600; color: var(--text-2);
-}
-.board-col--needs_rebase .board-col__head, .board-col--stale_instructions .board-col__head { color: var(--warn-fg); }
-.board-col__cards { display: grid; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
-.board-col__empty { margin: 0; font-size: var(--fs-12); color: var(--text-3); }
+.kanban__empty { margin: 0; padding: var(--s-4) var(--s-5) var(--s-5); font-size: var(--fs-14); color: var(--text-3); }
+.tone-teal { --tone: var(--teal-fg); --tone-soft: var(--teal-soft); --tone-line: var(--teal-line); }
 
-.board-card {
-  display: grid; gap: var(--s-1); padding: var(--s-3); min-width: 0;
-  border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-inset);
-  scroll-margin-top: var(--s-6);
+.kcol {
+  display: grid; align-content: start; gap: var(--s-3); min-width: 0; min-height: 168px; padding: var(--s-3);
+  background: var(--surface-inset); border-radius: var(--r-md); scroll-snap-align: start;
 }
-.board-card:target { outline: 2px solid var(--teal-fg); outline-offset: 2px; }
-.board-card--warn { border-color: var(--warn-line); background: var(--warn-soft); }
-.board-card__title { font-size: var(--fs-14); font-weight: 500; overflow-wrap: anywhere; }
-.board-card__deps, .board-card__scope { overflow-wrap: anywhere; }
-.board-card .chips { flex-wrap: wrap; }
-.board-card .btn { justify-self: start; }
+.kcol__head {
+  display: flex; align-items: center; gap: var(--s-2); margin: 0; padding: 2px 2px 0;
+  font-size: var(--fs-14); font-weight: 600; color: var(--text-1); white-space: nowrap;
+}
+.kcol__count {
+  margin-left: auto; min-width: 24px; padding: 1px 8px; border-radius: var(--r-pill);
+  background: var(--surface-raise); font-size: var(--fs-12); font-weight: 500; color: var(--text-2); text-align: center;
+}
+.kcol__none {
+  display: grid; place-items: center; min-height: 96px; margin: 0;
+  border: 1px dashed var(--border-subtle); border-radius: var(--r-sm); font-size: var(--fs-12); color: var(--text-3);
+}
+.kcol__cards { display: grid; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+
+.kcard {
+  display: grid; gap: var(--s-1); min-width: 0; padding: var(--s-3) var(--s-3) var(--s-3) 14px;
+  background: var(--surface-raise); border: 1px solid var(--border-subtle); border-radius: var(--r-md);
+  box-shadow: 0 1px 2px rgb(0 0 0 / .16); font-size: var(--fs-12); color: var(--text-3); scroll-margin: var(--s-10);
+  transition: border-color .12s ease;
+}
+.kcard:hover { border-color: var(--border-default); }
+.kcard--warn { border-color: var(--warn-line); }
+.kcard:target { border-color: var(--teal-fg); }
+.kcard__title {
+  font-size: var(--fs-14); font-weight: 500; line-height: 1.4; color: var(--text-1); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.kcol--integrated .kcard__title { color: var(--text-2); font-weight: 400; }
+.kcard__sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kcard a { color: inherit; text-decoration: underline; text-decoration-color: var(--border-default); text-underline-offset: 2px; }
+.kcard a:hover { color: var(--text-1); }
+.kcard__wait { margin: var(--s-1) 0 0; line-height: 1.45; color: var(--warn-fg); }
+.kcard__wait > span:first-child { color: var(--text-3); }
+.kcard__wait a { text-decoration-color: var(--warn-line); }
+.kcard__foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2);
+  margin-top: var(--s-2); padding-top: var(--s-2); border-top: 1px solid var(--border-subtle);
+}
+.kpill {
+  display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border: 0; border-radius: var(--r-pill);
+  background: var(--tone-soft); color: var(--tone); font: inherit; font-size: var(--fs-12); font-weight: 600; white-space: nowrap;
+}
+/* The conflict flag is itself the button: one warn pill on the right that opens the conflict. */
+.kpill--btn { margin-left: auto; cursor: pointer; box-shadow: inset 0 0 0 1px var(--tone-line); }
+.kpill--btn:hover { box-shadow: inset 0 0 0 1px var(--tone); }
+.kpill--btn::after { content: "\203A"; margin-left: 5px; font-size: var(--fs-14); line-height: 1; }
 
 .board-list { display: grid; gap: var(--s-1); margin: var(--s-1) 0 0; padding-left: var(--s-4); font-size: var(--fs-14); overflow-wrap: anywhere; }
 
@@ -45,6 +80,12 @@
 .board-notes { display: grid; gap: var(--s-2); padding: var(--s-3) var(--s-5) 0; }
 
 @media (max-width: 720px) {
-  .board { grid-auto-columns: minmax(200px, 80%); padding: var(--s-3) var(--s-4); }
+  .kanban { grid-auto-columns: 82vw; padding: var(--s-3) var(--s-4) var(--s-4); scroll-padding-inline: var(--s-4); }
   .board-overlap { flex-direction: column; padding: var(--s-3) var(--s-4); }
 }
+
+/* Integrate dialog: the SHAs the reviewer can use or copy instead of hunting for them. */
+.board-shas { display: grid; gap: var(--s-1); margin: 0 0 var(--s-3); font-size: var(--fs-12); }
+.board-shas > div { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.board-shas dt { min-width: 11em; color: var(--text-3); }
+.board-shas dd { display: flex; align-items: center; gap: var(--s-1); margin: 0; }
