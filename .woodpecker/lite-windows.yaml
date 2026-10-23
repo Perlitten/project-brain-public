@@ -26,8 +26,10 @@ steps:
     import io, os, pathlib, re, stat, urllib.request, zipfile
     revision = os.environ['CI_COMMIT_SHA']
     assert re.fullmatch(r'[0-9a-f]{40}', revision), 'Invalid commit SHA'
-    prefix = 'project-brain-public-' + revision + '/'
-    url = 'https://codeload.github.com/Perlitten/project-brain-public/zip/' + revision
+    repository = os.environ['CI_REPO']
+    assert re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository), 'Invalid repository'
+    prefix = repository.rsplit('/', 1)[1] + '-' + revision + '/'
+    url = 'https://codeload.github.com/' + repository + '/zip/' + revision
     with urllib.request.urlopen(url, timeout=120) as response:
         archive = zipfile.ZipFile(io.BytesIO(response.read()))
     assert archive.testzip() is None, 'Corrupt source archive'
