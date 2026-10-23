@@ -27,12 +27,12 @@ function load(file, overrides = {}) {
 const { parseGitRemote, probeSummary, PROVIDER_LABEL, TOKEN_HINT } = load('lib/git-remote.ts');
 
 test('git URL guess recognises the hosting provider and repository name', () => {
-  const gh = parseGitRemote(' https://github.com/Perlitten/project-brain-public.git ');
+  const gh = parseGitRemote(' https://github.com/example/sample-repo.git ');
   assert.equal(gh.valid, true);
   assert.equal(gh.kind, 'https');
   assert.equal(gh.provider, 'github');
-  assert.equal(gh.name, 'project-brain-public');
-  assert.equal(gh.display, 'https://github.com/Perlitten/project-brain-public.git');
+  assert.equal(gh.name, 'sample-repo');
+  assert.equal(gh.display, 'https://github.com/example/sample-repo.git');
   assert.equal(gh.embeddedCredentials, false);
 
   const scp = parseGitRemote('git@gitlab.com:group/sub/repo.git');

@@ -121,10 +121,10 @@ async def origin_db(tmp_path: Path, monkeypatch):
 
 
 def test_remote_url_accepts_https_ssh_and_scp_forms_and_names_the_provider():
-    gh = parse_remote_url("  https://github.com/Perlitten/project-brain-public.git ")
-    assert (gh.kind, gh.host, gh.provider, gh.name) == ("https", "github.com", "github", "project-brain-public")
-    assert gh.path == "Perlitten/project-brain-public"
-    assert gh.display_url == "https://github.com/Perlitten/project-brain-public.git"
+    gh = parse_remote_url("  https://github.com/example/sample-repo.git ")
+    assert (gh.kind, gh.host, gh.provider, gh.name) == ("https", "github.com", "github", "sample-repo")
+    assert gh.path == "example/sample-repo"
+    assert gh.display_url == "https://github.com/example/sample-repo.git"
     assert "url" not in gh.to_dict()
 
     scp = parse_remote_url("git@gitlab.com:group/sub/repo.git")
@@ -243,10 +243,10 @@ def test_clone_of_an_unknown_branch_is_a_permanent_redacted_error(origin, manage
 
 
 def test_clone_path_is_stable_per_url_and_branch_and_lives_under_the_root(managed):
-    a = parse_remote_url("https://github.com/Perlitten/project-brain-public.git")
-    b = parse_remote_url("https://GitHub.com/Perlitten/project-brain-public")
-    with_creds = parse_remote_url("https://me:tok@github.com/Perlitten/project-brain-public.git")
-    ssh = parse_remote_url("git@github.com:Perlitten/project-brain-public.git")
+    a = parse_remote_url("https://github.com/example/sample-repo.git")
+    b = parse_remote_url("https://GitHub.com/example/sample-repo")
+    with_creds = parse_remote_url("https://me:tok@github.com/example/sample-repo.git")
+    ssh = parse_remote_url("git@github.com:example/sample-repo.git")
     assert clone_path(a, "main") == clone_path(b, "main") == clone_path(with_creds, "main") == clone_path(ssh, "main")
     assert clone_path(a, "main") != clone_path(a, "dev")
     assert clone_path(parse_remote_url("https://git.example/Org/Repo"), "main") != clone_path(
@@ -254,7 +254,7 @@ def test_clone_path_is_stable_per_url_and_branch_and_lives_under_the_root(manage
     assert clone_path(parse_remote_url("https://git.example:8443/Org/repo"), "main") != clone_path(
         parse_remote_url("https://git.example:9443/Org/repo"), "main")
     path = clone_path(a, "main")
-    assert path is not None and path.parent == managed and path.name.startswith("project-brain-public-")
+    assert path is not None and path.parent == managed and path.name.startswith("sample-repo-")
     weird = RemoteInfo(url="u", display_url="u", kind="https", host="h", provider="other", name="../../etc/passwd",
                        path="p")
     assert clone_path(weird, "main").parent == managed  # type: ignore[union-attr]

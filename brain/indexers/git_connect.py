@@ -82,8 +82,8 @@ class RemoteInfo:
     kind: str         # https | ssh
     host: str
     provider: str     # github | gitlab | bitbucket | azure | other
-    name: str         # repository name derived from the path, e.g. "project-brain-public"
-    path: str         # the path part, e.g. "Perlitten/project-brain-public"
+    name: str         # repository name derived from the path, e.g. "sample-repo"
+    path: str         # the path part, e.g. "owner/sample-repo"
 
     def to_dict(self) -> Dict[str, Any]:
         out = asdict(self)
