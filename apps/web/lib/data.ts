@@ -4,6 +4,7 @@
 // show demo data. In live mode an unavailable endpoint yields an honest empty
 // value — never demo numbers. Components never import mock.ts directly.
 import { connection } from "next/server";
+import { getCapabilities } from "./capabilities";
 import { cache } from "react";
 import { apiConfigured, brainFetch, brainRead, readFailureNote, type ReadFailure } from "./api";
 import * as mock from "./mock";
@@ -468,7 +469,21 @@ function evidenceText(e: unknown): string {
   const o = obj(e);
   const where = [str(o.file) || str(o.path), str(o.line)].filter(Boolean).join(":");
   const what = str(o.detail) || str(o.summary) || str(o.message) || str(o.text);
-  return [where, what].filter(Boolean).join(" — ");
+  const pair = str(o.label) && o.value != null ? `${str(o.label)}: ${typeof o.value === "object" ? JSON.stringify(o.value) : String(o.value)}` : "";
+  return [where, what, pair].filter(Boolean).join(" — ");
+}
+
+function toInsight(i: Json): Insight {
+  const evidence = arr(i.evidence).slice(0, 100);
+  const entries = evidence.map(obj), first = entries[0] ?? {};
+  const labels = Object.fromEntries(entries.filter(e => typeof e.label === "string").map(e => [str(e.label), e.value]));
+  return {
+    id: str(i.id), tone: severityTone(i.severity), kind: insightKind(str(i.insight_type)),
+    title: str(i.title, "Untitled finding"), evidence: evidence.map(evidenceText).filter(Boolean).join("\n").slice(0, 20000) || str(i.summary),
+    module: str(labels.file_path) || str(first.module) || str(first.file) || str(first.path) || str(i.source) || "—",
+    detectedAt: fmtShort(i.last_seen_at ?? i.created_at), lastSeenAt: str(i.last_seen_at) || undefined,
+    occurrences: num(i.occurrence_count), dedupeKey: str(i.dedupe_key) || undefined, codeAvailable: i.code_available === true,
+  };
 }
 
 async function loadInsights(): Promise<Insight[] | null> {
@@ -476,19 +491,7 @@ async function loadInsights(): Promise<Insight[] | null> {
   if (!data) return null;
   return list(data, "insights")
     .filter((i) => !["resolved", "dismissed", "closed", "archived"].includes(str(i.status).toLowerCase()))
-    .map((i) => {
-      const evidence = arr(i.evidence);
-      const first = obj(evidence[0]);
-      return {
-        id: str(i.id),
-        tone: severityTone(i.severity),
-        kind: insightKind(str(i.insight_type)),
-        title: str(i.title, "Untitled finding"),
-        evidence: evidenceText(evidence[0]) || str(i.summary),
-        module: str(first.module) || str(first.file) || str(first.path) || str(i.source) || "—",
-        detectedAt: fmtShort(i.last_seen_at ?? i.created_at),
-      };
-    });
+    .map(toInsight);
 }
 
 // ---------------------------------------------------------------------------
@@ -960,10 +963,7 @@ export const getPagedInsights = async (slug: string | null | undefined, input: P
       params.set("repository_id", String(repo.id));
     }
     const data = await brainFetch<Json>(`/insights?${params}`, { fresh: true });
-    return data ? pageResult(data, "insights", q, (i) => {
-      const evidence = arr(i.evidence), first = obj(evidence[0]);
-      return { id: str(i.id), tone: severityTone(i.severity), kind: insightKind(str(i.insight_type)), title: str(i.title, "Untitled finding"), evidence: evidenceText(evidence[0]) || str(i.summary), module: str(first.module) || str(first.file) || str(first.path) || str(i.source) || "—", detectedAt: fmtShort(i.last_seen_at ?? i.created_at) };
-    }) : null;
+    return data ? pageResult(data, "insights", q, toInsight) : null;
   });
 };
 
@@ -971,9 +971,13 @@ export const getPagedDecisions = async (slug: string | null | undefined, input: 
   const q = getListQuery(input);
   if (!apiConfigured) {
     // Demo rows carry a write target too, so the page shows its (locked) controls.
-    const rows = mock.decisions.filter((d) => !slug || d.repo === slug).map((d) => d.status === "superseded" ? d : { ...d, write: { title: d.title, repoPath: null, description: d.summary, reason: "", version: 1 } });
+    const rows = mock.decisions
+      .filter((d) => (!slug || d.repo === slug) && (q.status !== "current" || ["accepted", "proposed", "validated_unmerged"].includes(d.status)))
+      .map((d) => d.status === "superseded" ? d : { ...d, write: { title: d.title, repoPath: null, description: d.summary, reason: "", version: 1 } });
+    if (q.status === "current") return demoPage(rows, { ...q, status: "" }, (d) => `${d.title} ${d.summary} ${d.scope} ${d.id}`, (d) => d.status);
     return demoPage(rows, q, (d) => `${d.title} ${d.summary} ${d.scope} ${d.id}`, (d) => d.status);
   }
+  if (q.status === "current" && !(await getCapabilities()).supported.includes("memory_current")) return unread(q);
   return live(unread(q), async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
     const scope = repo ? `&repository_id=${repo.id}` : "";

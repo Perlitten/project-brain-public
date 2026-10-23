@@ -953,3 +953,5 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 .access-chip:hover { background: color-mix(in oklab, var(--tone-soft) 70%, var(--tone)); color: var(--text-1); }
 .access-chip .chip__dot { animation: heartbeat 2.4s var(--ease) infinite; }
 @media (max-width: 560px) { .access-chip__more { display: none; } }
+
+.request-query { min-width: 12rem; max-width: 28rem; overflow-wrap: anywhere; white-space: pre-wrap; }

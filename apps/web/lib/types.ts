@@ -181,6 +181,10 @@ export interface Insight {
   evidence: string;
   module: string;
   detectedAt: string;
+  lastSeenAt?: string;
+  occurrences?: number;
+  dedupeKey?: string;
+  codeAvailable?: boolean;
 }
 
 export interface ModuleEdge {

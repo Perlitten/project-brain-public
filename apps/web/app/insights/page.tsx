@@ -1,3 +1,5 @@
+import { groupFindings } from "@/lib/finding-groups";
+import { FindingActions } from "@/components/FindingActions";
 import { scopeMemberToProject } from "@/lib/member-scope";
 import { restrictedMember } from "@/lib/team-session";
 import type { CSSProperties, ReactNode } from "react";
@@ -35,24 +37,7 @@ export default async function Insights({ searchParams }: { searchParams: Promise
     return module ? `/graph?${new URLSearchParams({ ...(repo ? { repo } : {}), module })}` : null;
   };
 
-  // The same finding recurs dozens of times in a live Brain — one card per
-  // distinct finding with a recurrence count reads better than a wall of
-  // identical "Worth a look" cards. The card keeps the newest occurrence.
-  const rank: Record<string, number> = { bad: 0, warn: 1, info: 2, ok: 3, idle: 4 };
-  const groups: { rep: Insight; count: number }[] = [];
-  const byKey = new Map<string, (typeof groups)[number]>();
-  for (const f of insights) {
-    const key = `${f.kind}\u0000${f.title}`;
-    const g = byKey.get(key);
-    if (!g) {
-      const fresh = { rep: f, count: 1 };
-      byKey.set(key, fresh);
-      groups.push(fresh);
-    } else {
-      g.count++;
-      if ((rank[f.tone] ?? 9) < (rank[g.rep.tone] ?? 9)) g.rep = { ...g.rep, tone: f.tone };
-    }
-  }
+  const groups = groupFindings(insights);
   return (
     <>
       <SectionTabs section="projects" active="/insights" />
@@ -60,6 +45,7 @@ export default async function Insights({ searchParams }: { searchParams: Promise
         title="Findings"
         lede={typeof params.repo === "string" ? "Places in this project’s code that are getting harder to change." : "Places in connected repositories that are getting harder to change, across every project."}
       />
+      <p className="text-faint">Duplicates are grouped on this page using evidence identity; × counts recorded occurrences. Code opens only for file evidence with an explicit repository identity.</p>
       {result.available === false && (
         <EmptyState title="Findings unavailable" body="Brain didn’t return its findings just now. Reload in a moment; nothing here means the code is clean." />
       )}
@@ -91,6 +77,7 @@ export default async function Insights({ searchParams }: { searchParams: Promise
               )}
               <span>found {g.rep.detectedAt}{g.count > 1 ? ` · seen ${g.count} times` : ""}</span>
             </p>
+            {!member && <FindingActions id={g.rep.id} codeAvailable={g.rep.codeAvailable === true} targets={g.members.filter(f => f.lastSeenAt && /^\d+$/.test(f.id)).map(f => ({ id: f.id, lastSeenAt: f.lastSeenAt! }))} />}
           </article>
         ))}
       />

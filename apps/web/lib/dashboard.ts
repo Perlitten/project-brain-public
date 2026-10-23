@@ -21,10 +21,11 @@ export interface RequestTelemetry {
   latency: { search: Latency; context: Latency };
   buckets: RequestBucket[];
   recent_requests: RequestObservation[];
+  query_capture_enabled?: boolean;
 }
 export interface Latency { samples: number; p50_ms: number | null; p95_ms: number | null }
 export interface RequestBucket { at: string; total: number | null; failed: number | null; p95_ms: number | null; partial?: boolean }
-export interface RequestObservation { operation: string; outcome: string; latency_ms: number; recorded_at: string; repository_id: number | null; request_id: string | null; identity: string; surface: string }
+export interface RequestObservation { operation: string; outcome: string; latency_ms: number; recorded_at: string; repository_id: number | null; request_id: string | null; query_text?: string | null; repository_name?: string | null; identity: string; surface: string }
 
 // Demo-mode payloads: shown only when no API is configured. The shapes are
 // the same the live endpoints return, so the UI renders identically.

@@ -35,7 +35,9 @@ real exact-revision main push, never a manual run.
 | Tagged release | `release` | Separate Linux local agent, `capability=brain-release`; Python 3.12, Docker, gh, Syft |
 
 Normal CI runs for PRs targeting main/master and pushes to those branches.
-Team proxy push/PR path filters match the source GitHub workflow. Mutation
+Team proxy runs on every main/master push because the exact-revision release
+gate requires its result even for documentation-only merges. PR path filters
+retain the focused source GitHub workflow paths. Mutation
 measurement is explicit opt-in through deployment task or a mutation-baseline
 label update; external PRs still require server-side approval. Use the server's existing two execution slots as the
 concurrency ceiling; each shard has its own database and 335-minute measurement
@@ -222,3 +224,60 @@ passed the full normal test workflow. Its restricted-role fixture URL is loopbac
 matching the source runner and unchanged destructive-test assertions. Exact-path
 git trust is configured before mutation. The original mutation.sh,32 shards and
 335-minute timeout remain unchanged; a complete mutation measurement is unverified.
+
+## Isolated native agents — 2026-10-23
+
+The Windows local backend may run inside a credential-isolated AppContainer.
+Provision Python 3.12, PATHEXT and an explicit tool PATH before starting it. The
+optional BRAIN_CI_WINDOWS_PATH restores that provisioned PATH in both steps.
+Windows Lite downloads the public GitHub source archive for CI_COMMIT_SHA over
+verified HTTPS. It validates the exact revision prefix and archive paths before
+extracting, then runs the unchanged hash-locked dependencies and native acceptance
+commands. These tests do not consume Git history; the separate privacy workflow
+still performs its mandatory full-history Git checkout.
+
+Agent labels for native local backends must use mandatory matching, for example
+!platform=windows/amd64,!backend=local, and additionally !capability=brain-docker
+on Linux. Optional labels alone allow unrelated unlabelled workflows to run on
+the wrong operating system. Restrict both agents to this repository. They receive
+only their own agent credentials, never release or host credentials.
+
+A Docker-capable local agent must own an isolated daemon, without the workstation
+or production Docker socket mounted into its jobs. Nested Docker needs delegated
+cgroup v2 controllers before starting its daemon; verify an actual container with
+CPU and memory limits. Where nested overlay mounts are unavailable, use vfs.
+Keep its network isolated from host/private services and persist those rules.
+The workstation must be running for workstation-hosted native agents to accept
+jobs; their availability is not supplied by the ordinary Contabo Docker agent.
+
+## Credentialed CodeQL publishing plugin — 2026-10-23
+
+Image-filtered Woodpecker secrets are available only to plugin steps with no
+custom commands. Both language workflows now use a fixed-purpose, static Go
+publisher from scripts/ci/codeql-publish. It executes no shell or repository code,
+uses the image's fixed CA bundle and GitHub API origin, accepts only this public
+repository's exact main-push metadata, and preserves the SARIF findings. A green
+publication requires GitHub's processing receipt to reach complete; API errors,
+failed processing and missing reports fail the workflow.
+
+Build the reviewed source on the administrator's Docker host:
+
+```
+docker build -t localhost/brain-codeql-publish:20261023 scripts/ci/codeql-publish
+```
+
+The Dockerfile pins the official Go compiler image, runs HTTP upload/processing
+regression tests, and emits a non-root scratch image with only the binary and CA
+bundle. The tested local manifest is
+5cfb507368419fe8c823969384d68f30b19b26160a2664fe3eb552ce6e0dd88b.
+Verify it with an actual pull=never run before updating either workflow's digest.
+A source change requires an administrator rebuild and a reviewed digest update;
+PR code never builds an image that receives this credential.
+
+Restrict github_code_scanning_token to this exact publisher image and push events.
+The plugin and workflow both require refs/heads/main. The GitHub fine-grained
+credential needs Code scanning alerts read/write and automatic metadata read,
+selected for Perlitten/project-brain-public only. Keep its expiry in the secret
+note and rotate it before expiry; it is never a production runtime credential.
+The separate analysis toolchain, query suites, language categories and private
+SARIF artifact uploads are unchanged.

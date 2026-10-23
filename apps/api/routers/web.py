@@ -92,6 +92,27 @@ async def web_dashboard(period: str = Query("24h"), repository_id: int | None = 
     return result
 
 
+@router.get("/requests/{request_id}", dependencies=[REPOSITORY_READ])
+async def web_request_trace(request_id: str, repository_id: int | None = Query(None, ge=1)) -> dict[str, Any]:
+    from brain.database.models import BrainRequestTelemetry
+    if not request_id or len(request_id) > 64:
+        raise HTTPException(status_code=400, detail="Invalid request ID")
+    if repository_id is not None:
+        await _resolve_repository(repository_id)
+    async with async_session_factory() as session:
+        statement = select(BrainRequestTelemetry).where(BrainRequestTelemetry.request_id == request_id)
+        if repository_id is not None:
+            statement = statement.where(BrainRequestTelemetry.repository_id == repository_id)
+        rows = (await session.execute(statement.order_by(BrainRequestTelemetry.created_at).limit(50))).scalars().all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Request trace not found in this project scope")
+    return {"request_id": request_id, "observations": [{
+        "operation": row.operation, "surface": row.surface, "outcome": row.outcome,
+        "recorded_at": row.created_at.isoformat(), "repository_id": row.repository_id,
+        "identity": row.principal_name, "latency_ms": row.latency_ms, "query_text": row.query_text,
+    } for row in rows]}
+
+
 @router.get("/agent-value", dependencies=[REPOSITORY_READ])
 async def web_agent_value(period: str = Query("30d"), repository_id: int | None = Query(None, ge=1)) -> dict[str, Any]:
     """Is Brain useful to the agents using it — adoption, pack economy, memory reach.
@@ -562,7 +583,10 @@ async def web_decisions(page: int = Query(1, ge=1), page_size: int = Query(50, g
     facets: dict[str, int] = defaultdict(int)
     for row in readable:
         facets[_decision_status(row.status)] += 1
-    filtered = [row for row in readable if not status or _decision_status(row.status) == _decision_status(status)]
+    filtered = [row for row in readable if (
+        _decision_status(row.status) in {"accepted", "proposed", "validated_unmerged"} if status == "current"
+        else not status or _decision_status(row.status) == _decision_status(status)
+    )]
     total = len(filtered)
     rows = filtered[(page - 1) * page_size:page * page_size]
     return {"total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),
