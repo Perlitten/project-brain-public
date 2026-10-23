@@ -612,7 +612,7 @@ async def test_timeout_kills_and_removes_the_step_container(team_db, source_repo
 
 
 @pytest.mark.asyncio
-async def test_revocation_kills_the_step_container(team_db, source_repo, container, monkeypatch):
+async def test_revocation_kills_the_step_container(team_db, source_repo, container, enabled, monkeypatch):
     factory, a, _ = team_db
     backend, log = container
     monkeypatch.setattr(settings, "BRAIN_EXECUTION_LEASE_SECONDS", 1)
@@ -620,12 +620,16 @@ async def test_revocation_kills_the_step_container(team_db, source_repo, contain
     await grant(factory, a)
     await request(factory, a, task_id, run_id, payload("slow", "hello", environment="py"), backend=backend())
 
-    async def revoke_soon():
-        await asyncio.sleep(1.5)
+    async def revoke_after_start():
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 60
+        while not list(enabled.rglob("started.txt")):
+            assert loop.time() < deadline, "The bounded child never started"
+            await asyncio.sleep(0.05)
         async with factory() as session, session.begin():
             await execution.revoke_grant(session, a, 2, "operator:test")
 
-    revoker = asyncio.create_task(revoke_soon())
+    revoker = asyncio.create_task(revoke_after_start())
     state = await execution.execute_run(run_id, factory=factory, backend=backend())
     await revoker
     assert state["state"] == "revoked", state["events"]

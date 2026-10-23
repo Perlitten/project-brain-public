@@ -26,6 +26,8 @@ export interface SettingField {
   set?: boolean;
   min?: number;
   max?: number;
+  /** The only values the server accepts (e.g. poll intervals cron can repeat). */
+  choices?: number[];
   clearable: boolean;
   /** Also passed in the server's process environment, which wins on restart. */
   fromEnv: boolean;
@@ -44,6 +46,24 @@ export interface TelegramStatus {
   last?: { status: string; at?: string; findings?: number };
 }
 
+export interface OriginRemote {
+  path: string;
+  /** Credentials already masked by the server. */
+  url: string;
+  branch?: string;
+}
+
+/** Read-only facts about the git integration; the editable keys are in the "git" section. */
+export interface GitIntegration {
+  webhookPath: string;
+  /** Absent until the API's public address is configured. */
+  webhookUrl?: string;
+  workflowExample: string;
+  originRemotes: { remotes: OriginRemote[]; skipped: number; error?: string };
+  /** Where "Connect repository → Git URL" clones to; absent on a server without that feature. */
+  managedRepos?: { dir?: string; writable?: boolean };
+}
+
 export interface SettingsView {
   /** live: editable · legacy: server too old to edit here · demo · down */
   mode: "live" | "legacy" | "demo" | "down";
@@ -52,6 +72,8 @@ export interface SettingsView {
   repoPath?: string;
   telegram: TelegramStatus | null;
   scheduler: SchedulerView | null;
+  /** Null when the server predates the git section. */
+  git?: GitIntegration | null;
   /** Self-diagnosis LLM stage, when it failed. */
   llmError?: string;
   version?: string;
@@ -69,8 +91,29 @@ function toField(raw: unknown): SettingField {
     set: typeof f.set === "boolean" ? f.set : undefined,
     min: typeof f.min === "number" ? f.min : undefined,
     max: typeof f.max === "number" ? f.max : undefined,
+    choices: Array.isArray(f.choices) ? f.choices.filter((c): c is number => typeof c === "number") : undefined,
     clearable: Boolean(f.clearable),
     fromEnv: Boolean(f.from_env),
+  };
+}
+
+export function toGitIntegration(raw: unknown): GitIntegration | null {
+  const g = obj(raw);
+  if (!str(g.webhook_path)) return null;
+  const remotes = obj(g.origin_remotes);
+  const managed = g.managed_repos === undefined ? undefined : obj(g.managed_repos);
+  return {
+    ...(managed ? { managedRepos: { dir: str(managed.dir) || undefined, writable: typeof managed.writable === "boolean" ? managed.writable : undefined } } : {}),
+    webhookPath: str(g.webhook_path),
+    webhookUrl: str(g.webhook_url) || undefined,
+    workflowExample: str(g.workflow_example) || "docs/examples/reindex-on-push.yml",
+    originRemotes: {
+      remotes: (Array.isArray(remotes.remotes) ? remotes.remotes : [])
+        .map((r) => ({ path: str(obj(r).path), url: str(obj(r).url), branch: str(obj(r).branch) || undefined }))
+        .filter((r) => r.path && r.url),
+      skipped: typeof remotes.skipped === "number" ? remotes.skipped : 0,
+      error: str(remotes.error) || undefined,
+    },
   };
 }
 
@@ -109,6 +152,7 @@ export async function getSettingsView(): Promise<SettingsView> {
     repoPath: str(settings?.repo_path) || undefined,
     telegram,
     scheduler,
+    git: settings ? toGitIntegration(settings.git) : null,
     llmError: str(llm.status) === "failed" ? str(llm.error).split(" For more information")[0] : undefined,
     version: str(obj(diag.build).version) || undefined,
   };
@@ -168,10 +212,29 @@ function demo(): SettingsView {
           f("WORKER_JOB_TIMEOUT_SECONDS", "Job timeout, s", "int", 3600, "A background job is stopped after this long.", { min: 60, max: 21600 }),
         ],
       },
+      {
+        id: "git",
+        title: "Git & origin sync",
+        fields: [
+          f("PROJECT_BRAIN_WEBHOOK_TOKEN", "Webhook secret", "secret", null, "Shared secret the push workflow signs its request with (X-Hub-Signature-256).", { set: true }),
+          f("PROJECT_BRAIN_WEBHOOK_REF", "Branch that triggers a reindex", "text", "refs/heads/main", "Full ref; pushes to other branches are ignored."),
+          f("BRAIN_WEBHOOK_FETCH_SOURCE", "Fetch the pushed revision", "bool", true, "Fetch the pushed commit into a mirror before indexing."),
+          f("BRAIN_WEBHOOK_FETCH_TIMEOUT_S", "Fetch timeout, s", "int", 120, "", { min: 10, max: 1800 }),
+          f("BRAIN_ORIGIN_POLL_INTERVAL_S", "Origin poll interval, s", "int", 300, "0 turns polling off.", { min: 0, max: 86400 }),
+          f("BRAIN_ORIGIN_POLL_TIMEOUT_S", "Origin poll timeout, s", "int", 30, "", { min: 5, max: 600 }),
+          f("BRAIN_SOURCE_MIRROR_DIR", "Mirror directory", "text", "/data/source-mirrors", "Absolute path where fetched revisions are kept.", { clearable: true }),
+        ],
+      },
     ],
     models: { llm_provider: "openai", llm_model: "gpt-4.1-mini", embedding_provider: "openai", embedding_model: "text-embedding-3-small", embedding_dimension: 1536 },
     repoPath: "/home/you/code/project-brain",
     telegram: { enabled: true, credentials: true, last: { status: "sent", at: when("2026-10-02T03:30:04Z"), findings: 4 } },
     scheduler: demoScheduler(),
+    git: {
+      webhookPath: "/webhooks/git-merge",
+      webhookUrl: "https://brain.example.com/webhooks/git-merge",
+      workflowExample: "docs/examples/reindex-on-push.yml",
+      originRemotes: { remotes: [{ path: "/home/you/code/project-brain", url: "https://***@github.com/you/project-brain.git", branch: "main" }], skipped: 0 },
+    },
   };
 }

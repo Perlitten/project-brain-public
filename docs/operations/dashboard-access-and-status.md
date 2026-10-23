@@ -63,11 +63,33 @@ probe is `null`, never a fabricated healthy result. Failed jobs collection is
 unavailable, distinct from a successful empty job history.
 
 Saving Settings updates the API immediately. Worker and scheduler settings need a
-restart in those processes. The shared query-capture preference is the exception:
-API and MCP recorders read it before every query record. Environment/deployment overrides can return after restart; update the
+restart in those processes, with two exceptions. The shared query-capture preference:
+API and MCP recorders read it before every query record. And **Git & origin sync**
+(webhook ref, source fetch and timeout, origin poll interval and timeout, mirror
+directory): these are also stored in the `brain_runtime_settings` table, which the
+API applies at start-up and the worker and scheduler re-read every 15 seconds, so a
+save reaches polling and webhook jobs within a minute without a restart. A saved
+value wins over the deployment's environment until it is saved again; the webhook
+secret and `BRAIN_ORIGIN_REMOTES` stay in the API's `.env`. Environment/deployment overrides can return after restart; update the
 deployment configuration when the Settings page identifies an override. Displayed
 server times use the shared UTC formatter; values without timezone information are
 not assigned one silently.
+
+**Connect repository by URL** (Projects → Connect repository → Git URL) needs the
+**Clones directory** (`BRAIN_MANAGED_REPOS_DIR`, also editable under Git & origin
+sync): the dialog checks the address first (`POST /git/probe` lists branches and
+says whether a token is required), then `POST /git/connect` queues a `git_connect`
+job that clones the chosen branch into `<clones directory>/<name>-<hash>`,
+registers it and, when asked, indexes it. A token for a private repository is sent
+only in the request body; the API hands it to the worker through a one-time file
+and neither job params nor logs contain it. Transient clone retries retain the
+private hand-off until cloning succeeds, fails permanently or the file expires;
+the clone keeps its origin credentials for later fetches. Queue URLs preserve SSH
+logins and never contain HTTPS credentials. Fresh production clone volumes are
+owned by the non-root runtime user. Without a writable clones directory the
+dialog explains what to set and the API answers 409. Cloning requires `jobs:write`
+and, in team mode, `run.request` in the selected project even when initial
+indexing is disabled; admission checks precede registration and queueing.
 
 The UI changes do not diagnose a running installation's missing mount or API
 latency, change deployment settings, or rotate live credentials automatically.
