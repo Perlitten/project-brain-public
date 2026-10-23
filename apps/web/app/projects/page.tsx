@@ -42,12 +42,12 @@ async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: s
               ))}
             </span>
           )}
-      {summary && <StatusLine {...summary} />}
-      {registered === null && <p role="status">Registered source folders could not be read; indexed repositories are listed below.</p>}
-      {!!pendingSources.length && <Panel id="registered-sources" title="Registered sources awaiting their first index"><ul>{pendingSources.map(source => <li key={source.path}><b>{source.name}</b><p className="mono">{source.path}</p><RunButton action={async () => { "use server"; return startReindex({ repoPath: source.path }); }} label="Index now" title={`Index ${source.name}`} /></li>)}</ul></Panel>}
           {repositories.length <= 1 && <span className="project-switch__current">{detail.name}</span>}
         </nav>
       )}
+      {summary && <StatusLine {...summary} />}
+      {registered === null && <p role="status">Registered source folders could not be read; indexed repositories are listed below.</p>}
+      {!!pendingSources.length && <Panel id="registered-sources" title="Registered sources awaiting their first index"><ul>{pendingSources.map(source => <li key={source.path}><b>{source.name}</b><p className="mono">{source.path}</p><RunButton action={async () => { "use server"; return startReindex({ repoPath: source.path }); }} label="Index now" title={`Index ${source.name}`} /></li>)}</ul></Panel>}
       {repositories.some((r) => r.freshness === "source_missing") && <div className="callout tone-warn"><b>Source unavailable</b><span>{SOURCE_UNAVAILABLE_HELP}</span></div>}
       {!feed.available ? <Panel id="projects" title="Connected repositories"><EmptyState title="Projects unavailable" body={`${feed.note ?? "Brain didn’t return its project list"}. Reload in a moment.`} /></Panel> : selected && !detail ? <Panel id="unknown-project" title="Project not found"><EmptyState title="That project is unavailable" body="Choose a connected project from the list. Brain did not fall back to another repository." /></Panel> : detail ? (
         <Panel id="source" title="Index" desc={detail.path || "Repository path unavailable"} actions={<Link className="link" href={`/indexing${scope}`}>Index runs</Link>}>
