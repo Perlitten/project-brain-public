@@ -53,6 +53,8 @@ steps:
   image: powershell
   commands:
   - if ($env:BRAIN_CI_WINDOWS_PATH) { $env:Path = $env:BRAIN_CI_WINDOWS_PATH }
+  - python -m venv .venv; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  - $env:Path = "$(Get-Location)\.venv\Scripts;$env:Path"
   - python scripts/run_lite_ci.py --install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   - python scripts/run_lite_ci.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   - python -m pytest tests/test_team_memory_load_e2e.py -q; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
