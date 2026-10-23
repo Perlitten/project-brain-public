@@ -12,7 +12,7 @@ export interface MemoryProject { slug: string; name: string; path: string }
 const statusWords: Record<Decision["status"], string> = { accepted: "agreed", proposed: "proposed", superseded: "retired or replaced", validated_unmerged: "verified, not merged yet" };
 const severityWords: Record<Rule["severity"], string> = { block: "blocks the change", warn: "warns", advise: "suggests" };
 const TABS: { id: MemoryTab; label: string }[] = [
-  { id: "current", label: "In use" },
+  { id: "current", label: "Current" },
   { id: "decisions", label: "Decisions" },
   { id: "rules", label: "Rules" },
   { id: "replaced", label: "Replaced" },

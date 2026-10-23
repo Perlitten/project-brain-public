@@ -146,9 +146,11 @@ export function worstRule(rules: Rule[]): Rule | null {
 
 /** Rule usage is counted per rule; decisions have no usage record at all. */
 export function memoryVerdict({ decisions, rules }: { decisions: Decision[]; rules: Rule[] }): Segment[] {
-  const inUse = decisions.filter((d) => d.status !== "superseded").length;
-  if (!inUse && !rules.length) return ["Nothing is recorded yet. Agents get only code until a decision or rule exists."];
-  const out: Segment[] = [`${cap(numberWord(inUse))} ${plural(inUse, "decision")} and ${numberWord(rules.length)} ${plural(rules.length, "rule")} are in use.`];
+  const accepted = decisions.filter((d) => d.status === "accepted").length;
+  const pending = decisions.filter((d) => d.status === "proposed" || d.status === "validated_unmerged").length;
+  if (!accepted && !pending && !rules.length) return ["Nothing is recorded yet. Agents get only code until a decision or rule exists."];
+  const out: Segment[] = [`${cap(numberWord(accepted))} accepted ${plural(accepted, "decision")} and ${numberWord(rules.length)} current ${plural(rules.length, "rule")} are recorded.`];
+  if (pending) out.push(` ${cap(numberWord(pending))} ${plural(pending, "decision")} ${plural(pending, "is", "are")} not active yet.`);
   const tracked = rules.some((r) => r.delivered30d !== undefined);
   if (!tracked) return out;
   const given = rules.reduce((n, r) => n + (r.delivered30d ?? 0), 0);

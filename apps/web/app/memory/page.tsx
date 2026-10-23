@@ -40,7 +40,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
     waitingForReview(),
     getRepositoryFeed(),
   ]);
-  const scoped = repo ? feed.repositories.find((r) => r.slug === repo) : undefined;
+  const scoped = repo ? feed.repositories.find((r) => r.slug === repo || r.name.toLowerCase() === repo.toLowerCase()) : undefined;
   const projects = (scoped ? [scoped] : feed.repositories).map((r) => ({ slug: r.slug, name: r.name, path: r.path }));
   const rest = (p: { items: unknown[]; paging: { total: number } }) => Math.max(0, p.paging.total - p.items.length);
   return (

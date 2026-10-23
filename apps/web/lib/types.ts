@@ -133,7 +133,7 @@ export interface ContextPack {
   consumer: string;
   /** Memory the pack carried, when Brain recorded its contents (null: not recorded). */
   memory?: { rules: number | null; decisions: number | null; learnings: number | null };
-  /** Demo data only: repository slug this pack was built for. */
+  /** Repository slug this pack was built for; absent on legacy/global packs. */
   repo?: string;
 }
 

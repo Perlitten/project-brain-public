@@ -351,6 +351,9 @@ def shape_context_pack(pack: Any, resolved: Path | None, index_commit: str | Non
         "files": files,
         "created_at": _iso(created),
         "stale": stale,
+        # Lets the dashboard correlate a pack with its project without
+        # exposing any repository beyond the rows this caller may already read.
+        "repository_id": getattr(pack, "repository_id", None),
         # Null when the transport that asked did not identify itself, or when
         # the pack predates attribution — in neither case is it "nobody".
         "consumer": getattr(pack, "consumer", None),

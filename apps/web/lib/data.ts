@@ -767,6 +767,7 @@ export const getContextPacks = async (limit = 200): Promise<ContextPack[]> => {
         createdAt: fmtShort(p.created_at),
         stale: typeof p.stale === "boolean" ? p.stale : null,
         consumer: str(p.consumer) || "an agent",
+        ...(num(p.repository_id) !== undefined ? { repo: String(num(p.repository_id)) } : {}),
         ...(p.memory && typeof p.memory === "object" ? { memory: packMemory(obj(p.memory)) } : {}),
       };
     });

@@ -70,9 +70,9 @@ test('memory verdict counts what is in use and names a rule only when the eviden
   const d = (status) => ({ id: 'D', title: '', status, scope: '', recordedAt: '', summary: '' });
   const r = (id, delivered, caught) => ({ id, rule: '', severity: 'warn', scope: '', delivered30d: delivered, caught30d: caught });
   const decisions = [d('accepted'), d('accepted'), d('proposed'), d('superseded')];
-  assert.equal(read(atlas.memoryVerdict({ decisions, rules: [r('R-1', 18, 2), r('R-9', 9, 3)] })), 'Three decisions and two rules are in use. Agents got the rules 27 times in 30 days. R-9 was caught broken three times in the 9 tasks it reached.');
-  assert.equal(read(atlas.memoryVerdict({ decisions, rules: [r('R-1', 18, 2), r('R-2', 0, 0), r('R-3', 3, 2)] })), 'Three decisions and three rules are in use. Agents got the rules 21 times in 30 days. One rule reached no agent.');
-  assert.equal(read(atlas.memoryVerdict({ decisions, rules: [{ id: 'R', rule: '', severity: 'warn', scope: '' }] })), 'Three decisions and one rule are in use.');
+  assert.equal(read(atlas.memoryVerdict({ decisions, rules: [r('R-1', 18, 2), r('R-9', 9, 3)] })), 'Two accepted decisions and two current rules are recorded. One decision is not active yet. Agents got the rules 27 times in 30 days. R-9 was caught broken three times in the 9 tasks it reached.');
+  assert.equal(read(atlas.memoryVerdict({ decisions, rules: [r('R-1', 18, 2), r('R-2', 0, 0), r('R-3', 3, 2)] })), 'Two accepted decisions and three current rules are recorded. One decision is not active yet. Agents got the rules 21 times in 30 days. One rule reached no agent.');
+  assert.equal(read(atlas.memoryVerdict({ decisions, rules: [{ id: 'R', rule: '', severity: 'warn', scope: '' }] })), 'Two accepted decisions and one current rule are recorded. One decision is not active yet.');
   assert.match(read(atlas.memoryVerdict({ decisions: [], rules: [] })), /^Nothing is recorded yet/);
   assert.equal(atlas.decisionState('validated_unmerged'), 'chg');
   assert.equal(atlas.decisionState('superseded'), 'miss');

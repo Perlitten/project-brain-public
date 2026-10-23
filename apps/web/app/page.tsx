@@ -37,14 +37,25 @@ async function DashboardData({ searchParams }: Props) {
   const repositories = feed.repositories;
   const selected = slug ? repositories.find((r) => r.slug === slug || r.name.toLowerCase() === slug.toLowerCase()) : undefined;
   const projects = slug ? selected ? [selected] : [] : repositories;
-  const [snapshots, packs, member] = await Promise.all([
-    Promise.all(projects.map(async (repo, i) => {
-      const [corpus, modules] = await Promise.all([getCorpus(repo.slug), i < MAP_PROJECTS ? getCodeModules(repo.slug) : Promise.resolve(null)]);
-      return { repo, corpus, modules, ...repositoryStatus(repo, corpus.uncommitted) };
+  const [baseSnapshots, packs, member] = await Promise.all([
+    Promise.all(projects.map(async (repo) => {
+      const corpus = await getCorpus(repo.slug);
+      return { repo, corpus, ...repositoryStatus(repo, corpus.uncommitted) };
     })),
     getContextPacks(PACKS),
     restrictedMember(),
   ]);
+  // The verdict names the projects needing attention first. Draw those same
+  // projects so every mention can focus a real region even when there are
+  // more repositories than the map's visual limit.
+  const drawn = new Set([...baseSnapshots]
+    .sort((a, b) => severity[b.tone] - severity[a.tone] || (b.repo.behind ?? 0) - (a.repo.behind ?? 0))
+    .slice(0, MAP_PROJECTS)
+    .map((s) => s.repo.id));
+  const snapshots = await Promise.all(baseSnapshots.map(async (s) => ({
+    ...s,
+    modules: drawn.has(s.repo.id) ? await getCodeModules(s.repo.slug) : null,
+  })));
   // Activity and Quality cover the whole server: only team admins get links to them.
   const admin = member === null;
   const attention = snapshots.filter((s) => s.tone !== "ok").sort((a, b) => severity[b.tone] - severity[a.tone] || (b.repo.behind ?? 0) - (a.repo.behind ?? 0));

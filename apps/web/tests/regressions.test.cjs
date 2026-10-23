@@ -481,6 +481,22 @@ test('agent value reports absence as absence rather than as a zero score', async
   assert.equal(dashboard.measuredShare(undefined), '—');
 });
 
+test('context-pack feed retains repository identity for project filtering', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async request => request.startsWith('/api/web/context-packs') ? {
+        packs: [{ id: 9, task: 'Fix queue', budget: 'small', tokens: 120, files: 2, created_at: '2026-10-23T12:00:00Z', stale: false, consumer: 'codex', repository_id: 7, memory: { rules: 1, decisions: 2, learnings: 0 } }],
+      } : null,
+    },
+  });
+  const [pack] = await data.getContextPacks(12);
+  assert.equal(pack.repo, '7');
+  assert.deepEqual(JSON.parse(JSON.stringify(pack.memory)), { rules: 1, decisions: 2, learnings: 0 });
+});
+
 test('checked but unmerged decisions are not shown as agreed', async () => {
   const data = load('lib/data.ts', {
     'next/server': { connection: async () => {} },
