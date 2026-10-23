@@ -49,7 +49,7 @@ def observed_repository_path(result: Any, fallback: str | None) -> str | None:
 
 
 async def observe_http_request(request: Any, *, operation: str, result: Any, repo_path: str | None,
-                               outcome: str, started: float) -> None:
+                               outcome: str, started: float, query_text: str | None = None) -> None:
     latency_ms = (time.perf_counter() - started) * 1000
     state = getattr(request, "state", None)
     principal = getattr(state, "principal", None)
@@ -60,7 +60,7 @@ async def observe_http_request(request: Any, *, operation: str, result: Any, rep
         await record_request(operation=operation, repository_id=await repository_id_for_path(path),
                              repository_path=path, principal_name=getattr(principal, "name", None) or "api:unattributed",
                              request_id=getattr(state, "request_id", None), outcome=outcome,
-                             latency_ms=latency_ms)
+                             latency_ms=latency_ms, query_text=query_text)
     try:
         await asyncio.wait_for(persist(), timeout=0.5)
     except Exception as exc:

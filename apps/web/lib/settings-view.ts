@@ -165,6 +165,7 @@ function demo(): SettingsView {
   return {
     mode: "demo",
     sections: [
+      { id: "activity", title: "Activity history", fields: [{ key: "REQUEST_TELEMETRY_CAPTURE_QUERY", label: "Record query text", kind: "bool", value: false, clearable: false, fromEnv: false, help: "Off by default. Capture up to 500 characters of future queries. Queries can contain source or secrets; disabling does not erase previously captured text." }] },
       {
         id: "telegram",
         title: "Telegram alerts",

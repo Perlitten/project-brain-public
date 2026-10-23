@@ -18,20 +18,21 @@ const severity: Record<Rule["severity"], [Tone, string]> = {
   advise: ["idle", "suggests"],
 };
 
-const VIEWS = ["decisions", "rules"] as const;
+const VIEWS = ["current", "replaced", "rules"] as const;
 
 export default async function Memory({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const view = typeof params.view === "string" ? params.view : undefined;
-  const tab = pickTab(VIEWS, view);
+  const tab = params.status === "superseded" ? "replaced" : pickTab(VIEWS, view);
   const query = getListQuery(params);
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
   const repo = typeof params.repo === "string" ? params.repo : undefined;
   const [decisionsResult, rulesResult] = await Promise.all([
-    getPagedDecisions(repo, tab === "decisions" ? query : {}),
+    getPagedDecisions(repo, { ...query, status: tab === "replaced" ? "superseded" : ["accepted", "proposed", "validated_unmerged"].includes(query.status) ? query.status : "current" }),
     getPagedRules(repo, tab === "rules" ? query : {}),
   ]);
   const decisions = decisionsResult.items;
+  const decisionPaging = { ...decisionsResult.paging, facets: Object.fromEntries(Object.entries(decisionsResult.paging.facets).filter(([status]) => tab === "replaced" ? status === "superseded" : ["accepted", "proposed", "validated_unmerged"].includes(status))) };
   const rules = rulesResult.items;
   // Usage is reported per page of rules, and only once something has been
   // recorded. Before that the columns are hidden rather than filled with
@@ -47,30 +48,31 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
       />
       <SectionTabs section="memory" active="/memory" />
         <PageTabs
-        label="Decisions or rules"
+        label="Memory views"
         path="/memory"
           current={tab}
           params={{ repo }}
         tabs={[
-          { id: "decisions", label: "Decisions", badge: decisionsResult.available === false ? "—" : decisionsResult.paging.total },
-          { id: "rules", label: "Rules", badge: rulesResult.available === false ? "—" : rulesResult.paging.total },
+          { id: "current", label: "Current", badge: tab === "current" ? decisionsResult.available === false ? "—" : decisionsResult.paging.total : undefined },
+          { id: "replaced", label: "Replaced", badge: tab === "replaced" ? decisionsResult.available === false ? "—" : decisionsResult.paging.total : undefined },
+          { id: "rules", label: "Rules", badge: tab === "rules" ? rulesResult.available === false ? "—" : rulesResult.paging.total : undefined },
         ]}
       />
-      {tab === "decisions" ? (
+      {tab !== "rules" ? (
         <section aria-label="Decisions">
           {decisionsResult.available === false ? (
-            <EmptyState title="Decisions unavailable" body="Brain didn’t return the recorded decisions just now. Reload in a moment." />
+            <EmptyState title="Decisions unavailable" body="Brain did not return this decision view. The Current view requires an API that advertises current-memory filtering; older servers still support Rules and Replaced." />
           ) : decisions.length === 0 && !hasQuery ? (
-            <EmptyState title="No decisions recorded" body="Nobody has recorded a decision yet. Agents and people can record one through Brain." />
+            <EmptyState title={tab === "replaced" ? "No replaced decisions" : "No current decisions"} body={tab === "replaced" ? "Decisions replaced by a newer version appear here." : "Agreed, proposed and verified decisions appear here. Older versions remain in Replaced."} />
           ) : (
           <ListFrame
             listTag="div"
             listClass="cards cards--grid"
             noun={["decision", "decisions"]}
             meta={decisions.map((d) => ({ q: `${d.title} ${d.summary} ${d.scope} ${d.id}`.toLowerCase(), f: d.status }))}
-            facet={{ label: "Status", values: (["accepted", "proposed", "superseded", "validated_unmerged"] as const).map((v) => ({ value: v, label: statusWords[v] })) }}
+            facet={{ label: "Status", values: (tab === "replaced" ? ["superseded"] as const : ["accepted", "proposed", "validated_unmerged"] as const).map((v) => ({ value: v, label: statusWords[v] })) }}
             pageSize={20}
-            paging={decisionsResult.paging}
+            paging={decisionPaging}
             rows={decisions.map((d, i) => (
             <article key={d.id} className={`card tone-${statusTone[d.status]}`} style={{ "--i": Math.min(i, 12) } as CSSProperties}>
               <div className="card__top">

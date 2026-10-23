@@ -22,6 +22,7 @@ from apps.api.auth import require_api_key, require_scope
 from apps.api.team_access import team_administrator_access
 from brain.config.settings import settings
 from brain.indexers.source_mirror import redact_url
+from brain.telemetry.query_capture import current_query_capture, set_query_capture
 from brain.onboarding.envfile import check_endpoint_host, setup_env_path, update_env_file
 
 router = APIRouter(prefix="/api/settings", tags=["settings"],
@@ -47,11 +48,13 @@ SECTIONS: Dict[str, str] = {
     "telegram": "Telegram alerts",
     "automation": "Background checks",
     "search": "Search & context packs",
+    "activity": "Activity history",
     "indexing": "Indexing & workers",
     "git": "Git & origin sync",
 }
 
 FIELDS: List[SettingField] = [
+    SettingField("REQUEST_TELEMETRY_CAPTURE_QUERY", "activity", "Record query text", "bool", "Off by default. Stores up to 500 characters of future search/context queries in Activity, visible under the same project/admin permissions as request history. Queries may contain source or secrets. Disabling stops future capture; it does not erase previously captured text."),
     SettingField("TELEGRAM_ALERTS_ENABLED", "telegram", "Send alerts", "bool", "Self-diagnosis, maintenance and deep-context findings go to the chat below."),
     SettingField("TELEGRAM_ALERT_BOT_TOKEN", "telegram", "Bot token", "secret", "From @BotFather → /newbot. Write-only.", clearable=True),
     SettingField("TELEGRAM_ALERT_CHAT_ID", "telegram", "Chat ID", "text", "Numeric id of the chat or channel (e.g. -1001234567890) or @channel.", pattern=r"-?\d{1,20}|@[A-Za-z0-9_]{4,64}", clearable=True),
@@ -92,7 +95,7 @@ def _public(f: SettingField) -> Dict[str, Any]:
         "clearable": f.clearable,
         # Also passed in the process environment (e.g. docker compose): that
         # value wins over .env on the next restart.
-        "from_env": f.key in os.environ,
+        "from_env": f.key in os.environ and f.key != "REQUEST_TELEMETRY_CAPTURE_QUERY",
     }
     if f.min is not None:
         out["min"] = f.min
@@ -175,10 +178,15 @@ def _git_integration() -> Dict[str, Any]:
 
 @router.get("", dependencies=[Depends(require_scope("setup:read"))])
 async def get_settings() -> Dict[str, Any]:
-    sections = [
+    sections: List[Dict[str, Any]] = [
         {"id": sid, "title": title, "fields": [_public(f) for f in FIELDS if f.section == sid]}
         for sid, title in SECTIONS.items()
     ]
+    capture = await current_query_capture()
+    for section in sections:
+        for field in section["fields"]:
+            if field["key"] == "REQUEST_TELEMETRY_CAPTURE_QUERY":
+                field["value"] = capture
     return {
         "sections": sections,
         # Shown, edited on /setup.
@@ -274,10 +282,19 @@ async def patch_settings(body: SettingsPatch) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"could not write .env: {type(exc).__name__}") from exc
+    if "REQUEST_TELEMETRY_CAPTURE_QUERY" in live:
+        try:
+            await set_query_capture(live["REQUEST_TELEMETRY_CAPTURE_QUERY"])
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Query capture policy was not saved. Retry; do not assume capture has changed.") from exc
     for key, value in live.items():
         setattr(settings, key, value)
-    notes = ["Saved to the server’s .env and applied to the API. Restart the workers and scheduler so background jobs use it too."]
-    overridden = sorted(k for k in updates if k in os.environ)
+    notes = ["Saved to the server’s .env and applied to the API."]
+    if set(live) - {"REQUEST_TELEMETRY_CAPTURE_QUERY"}:
+        notes.append("Restart the workers and scheduler so background jobs use the changed settings too.")
+    if "REQUEST_TELEMETRY_CAPTURE_QUERY" in live:
+        notes.append("Query capture is stored centrally and checked before each recording in API and MCP processes; no MCP restart is needed for this preference.")
+    overridden = sorted(k for k in updates if k in os.environ and k != "REQUEST_TELEMETRY_CAPTURE_QUERY")
     if overridden:
         notes.append(
             "Also set in the server’s process environment (e.g. docker compose): "
