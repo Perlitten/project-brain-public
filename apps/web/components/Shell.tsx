@@ -41,10 +41,12 @@ export interface ShellConfiguration {
   access: SignInMode;
   member: ShellMember | null;
   capabilities: Capabilities;
+  /** Setup steps done; null when unknown or not this browser's business (members). */
+  setup?: { done: number; total: number } | null;
 }
 export function Shell({ demo, children }: { demo: boolean; children: ReactNode }) {
   const [configuration, setConfiguration] = useState<ShellConfiguration | null>(null);
-  const { repos, mode, access, member, capabilities } = configuration ?? {
+  const { repos, mode, access, member, capabilities, setup } = configuration ?? {
     repos: [], mode: demo ? "demo" : "locked", access: "unknown", member: null,
     capabilities: { state: "unavailable", supported: [] },
   } as ShellConfiguration;
@@ -159,7 +161,7 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
             <small>memory for your AI agents</small>
           </span>
         </Link>
-        <RailNav path={path} withRepo={withRepo} slim={slim} />
+        <RailNav path={path} withRepo={withRepo} slim={slim} setup={setup} />
         {mobile && drawer && <button type="button" className="btn btn--neutral rail__close" onClick={() => setDrawer(false)}>Close menu</button>}
         <div className="rail__foot">
           {demo && process.env.NEXT_PUBLIC_DEMO_SITE === "1" && (
@@ -247,7 +249,17 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
             )}
           </div>
           )}
-          {!scoped && <span className="text-faint">Across all projects</span>}
+          {!scoped && (
+            <div className="repo" title="This screen covers the whole Brain server; the repository filter does not apply here.">
+              <span className="repo__btn repo__btn--static">
+                <Icon name="layers" size={14} />
+                <span className="repo__label">
+                  <small>Scope</small>
+                  Server-wide
+                </span>
+              </span>
+            </div>
+          )}
           {access === "open" && (
             <Link className="access-chip chip chip--warn" href="/admin#sign-in" title="Anyone who opens this address gets in. Set a login and password.">
               <span className="chip__dot" aria-hidden="true" />
@@ -310,12 +322,13 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
 
 // The active marker is one element that travels between items, so a route
 // change reads as movement from where you were to where you are.
-function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: string) => string; slim: boolean }) {
+function RailNav({ path, withRepo, slim, setup }: { path: string; withRepo: (href: string) => string; slim: boolean; setup?: { done: number; total: number } | null }) {
   const restricted = useRestrictedMember();
   const capabilities = useCapabilities();
   const ref = useRef<HTMLElement>(null);
   const [mark, setMark] = useState<{ y: number; h: number } | null>(null);
   const [ready, setReady] = useState(false);
+  const unfinished = !restricted && !!setup && setup.done < setup.total;
 
   useLayoutEffect(() => {
     const place = () => {
@@ -327,7 +340,7 @@ function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: stri
     const ro = new ResizeObserver(place);
     if (ref.current) ro.observe(ref.current);
     return () => ro.disconnect();
-  }, [path, slim]);
+  }, [path, slim, setup?.done]);
   useEffect(() => {
     const t = requestAnimationFrame(() => setReady(true));
     return () => cancelAnimationFrame(t);
@@ -336,12 +349,23 @@ function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: stri
   return (
     <nav className={`nav${ready ? " nav--ready" : ""}`} ref={ref}>
       {mark && <span className="nav__mark" style={{ "--y": `${mark.y}px`, "--h": `${mark.h}px` } as CSSProperties} aria-hidden="true" />}
+      {/* An unfinished server leads with the way to finish it; once every step is done, Setup sits with the other configuration. */}
+      {unfinished && (
+        <div className="nav__group">
+          <Link href={withRepo("/setup")} className={`nav__item nav__item--setup${activeSection(path) === "setup" ? " is-on" : ""}`} aria-current={activeSection(path) === "setup" ? "page" : undefined} title={`Finish setup — ${setup!.done} of ${setup!.total} steps done`}>
+            <Icon name="flag" />
+            <span className="nav__text">Finish setup</span>
+            <span className="nav__progress num" aria-label={`${setup!.done} of ${setup!.total} steps done`}>{setup!.done}/{setup!.total}</span>
+          </Link>
+        </div>
+      )}
       {navGroups.map((g) => (
         <div className="nav__group" key={g.label}>
           <p className="nav__label">{g.label}</p>
           {g.items.map((item) => {
             if (item.capability && !capabilities.supported.includes(item.capability)) return null;
             if (restricted && adminOnly(item.href)) return null;
+            if (unfinished && item.key === "setup") return null;
             const href = item.href;
             const on = activeSection(path) === item.key;
             return (

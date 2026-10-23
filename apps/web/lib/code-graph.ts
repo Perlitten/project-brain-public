@@ -99,3 +99,27 @@ export function graphLayout(nodes: GraphNode[], width: number) {
   }
   return { positions, width: w, height: Math.max(144, y), nodeWidth, nodeHeight };
 }
+
+/**
+ * The map's module for a finding's module or file path: its first two
+ * directories, the same grouping the API uses for the module graph. A trailing
+ * file name is dropped; null when there is nothing to point at.
+ */
+export function moduleOf(name: string): string | null {
+  const parts = name.trim().replace(/\\/g, "/").split("/").filter(Boolean);
+  if (parts.length === 0 || name.trim() === "—") return null;
+  const directories = /\.[a-z0-9]+$/i.test(parts[parts.length - 1]) ? parts.slice(0, -1) : parts;
+  return directories.length ? directories.slice(0, 2).join("/") : null;
+}
+
+/**
+ * Controls for a map opened on one module (/graph?module=…): focused when the
+ * module is on the map, otherwise searched for. Every edge weight is kept so a
+ * lightly connected module is not filtered out before it can be shown.
+ */
+export function startingView(edges: ModuleEdge[], module?: string | null): Pick<GraphOptions, "minWeight" | "includeTests" | "query" | "focus"> {
+  const name = module?.trim();
+  if (!name) return { minWeight: 2, includeTests: false, query: "", focus: null };
+  const known = edges.some((edge) => edge.from === name || edge.to === name);
+  return { minWeight: 1, includeTests: areaOf(name) === "tests", query: known ? "" : name, focus: known ? name : null };
+}

@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { CodeModule } from "@/lib/types";
+import { RunButton } from "./act";
 import { Term } from "./Term";
 import { Odometer } from "./motion";
 
@@ -66,16 +69,38 @@ interface Live {
   pointer: { x: number; y: number } | null;
 }
 
+// A repository the map can show; the rest of the dashboard keeps its own scope.
+export interface MapRepo {
+  slug: string;
+  name: string;
+  href: string;
+}
+
+// Past this many repositories the inline switcher becomes a menu.
+const INLINE_REPOS = 6;
+
 export function MemoryMap({
   modules,
   repoName,
+  repoSlug,
   scanning,
+  repos = [],
+  reindex,
 }: {
   modules: CodeModule[];
   repoName: string;
+  repoSlug: string;
   scanning: boolean;
+  /** Every repository the map can switch to, the shown one included; fewer than two hides the switcher. */
+  repos?: MapRepo[];
+  /** Bound on the server, and only passed to someone allowed to re-index this repository. */
+  reindex?: Parameters<typeof RunButton>[0]["action"];
 }) {
+  const router = useRouter();
   const [active, setActive] = useState<number | null>(null);
+  // A clicked module stays selected (hover only previews), so its actions can be reached.
+  const [pinned, setPinned] = useState<number | null>(null);
+  const pinnedRef = useRef<number | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -99,6 +124,20 @@ export function MemoryMap({
     });
     return list;
   }, [modules]);
+
+  // Another repository's modules: the old selection means nothing there.
+  useEffect(() => {
+    pinnedRef.current = null;
+    setPinned(null);
+    focusOn(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modules]);
+
+  const pin = (module: number | null) => {
+    pinnedRef.current = module;
+    setPinned(module);
+    focusOn(module);
+  };
 
   const focusOn = (module: number | null, cell?: number) => {
     const l = live.current;
@@ -328,12 +367,22 @@ export function MemoryMap({
     };
     const onLeave = () => {
       live.current.pointer = null;
-      focusOn(null);
+      focusOn(pinnedRef.current);
       if (tipRef.current) delete tipRef.current.dataset.on;
       kick();
     };
+    const onClick = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const i = cellAt(e.clientX - rect.left, e.clientY - rect.top);
+      if (i < 0) return;
+      const module = cells[i].module;
+      pinnedRef.current = pinnedRef.current === module ? null : module;
+      setPinned(pinnedRef.current);
+      focusOn(module, i);
+    };
     canvas.addEventListener("pointermove", onMove);
     canvas.addEventListener("pointerleave", onLeave);
+    canvas.addEventListener("click", onClick);
 
     return () => {
       redraw.current = null;
@@ -343,6 +392,7 @@ export function MemoryMap({
       document.removeEventListener("visibilitychange", onVis);
       canvas.removeEventListener("pointermove", onMove);
       canvas.removeEventListener("pointerleave", onLeave);
+      canvas.removeEventListener("click", onClick);
     };
     // focusOn only touches refs and a state setter; cells/modules drive the scene.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -365,11 +415,35 @@ export function MemoryMap({
   const pct = relevant ? totals.current === relevant ? 100 : Math.min(99.9, Math.floor(totals.current / relevant * 1000) / 10) : 0;
   const focus = active === null ? null : modules[active];
   const focusRelevant = focus ? focus.current + focus.outdated + focus.missing : 0;
+  const chosen = pinned === null ? null : modules[pinned] ?? null;
+  const chosenBad = chosen ? chosen.outdated + chosen.missing : 0;
+  const repoQuery = encodeURIComponent(repoSlug);
 
   return (
     <section className="map" aria-labelledby="map-title">
       <div className="map__readout" key={active ?? "all"}>
-        <p className="eyebrow">Memory map · {repoName}</p>
+        <div className="map__head">
+          <p className="eyebrow">Memory map · {repoName}</p>
+          {repos.length > 1 && (repos.length <= INLINE_REPOS ? (
+            <nav className="map__repos" aria-label="Repository shown in the memory map">
+              {repos.map((r) => (
+                <Link key={r.slug} href={r.href} scroll={false} aria-current={r.slug === repoSlug ? "true" : undefined}>{r.name}</Link>
+              ))}
+            </nav>
+          ) : (
+            <select
+              className="map__repos-menu"
+              aria-label="Repository shown in the memory map"
+              value={repoSlug}
+              onChange={(e) => {
+                const to = repos.find((r) => r.slug === e.target.value);
+                if (to) router.push(to.href, { scroll: false });
+              }}
+            >
+              {repos.map((r) => <option key={r.slug} value={r.slug}>{r.name}</option>)}
+            </select>
+          ))}
+        </div>
         {focus ? (
           <>
             <h2 className="map__headline" id="map-title">
@@ -395,7 +469,7 @@ export function MemoryMap({
               <span className="map__hero-unit">%</span>
             </p>
             <p className="map__lede">
-              Each square represents indexed code. Point at a square or select a module to inspect its coverage.
+              Each square represents indexed code. Point at a square to preview a module; click it, or a module below, for its next steps.
             </p>
           </>
         )}
@@ -425,20 +499,21 @@ export function MemoryMap({
           />
           <div className="map__tip" ref={tipRef} aria-hidden="true" />
         </div>
-        <div className="map__modules" role="group" aria-label="Parts of the code">
+        <div className="map__modules" role="group" aria-label="Parts of the code" onKeyDown={(e) => { if (e.key === "Escape" && pinnedRef.current !== null) pin(null); }}>
           {modules.map((m, i) => {
             const bad = m.outdated + m.missing;
             return (
               <button
                 key={m.name}
                 type="button"
-                className={`map__module${active === i ? " is-on" : ""}`}
+                className={`map__module${active === i || pinned === i ? " is-on" : ""}`}
                 style={{ "--i": Math.min(i, 24) } as CSSProperties}
                 onMouseEnter={() => focusOn(i)}
-                onMouseLeave={() => focusOn(null)}
+                onMouseLeave={() => focusOn(pinnedRef.current)}
                 onFocus={() => focusOn(i)}
-                onBlur={() => focusOn(null)}
-                aria-pressed={active === i}
+                onBlur={() => focusOn(pinnedRef.current)}
+                onClick={() => pin(pinned === i ? null : i)}
+                aria-pressed={pinned === i}
               >
                 <span className={`map__module-dot ${bad ? "tone-warn" : "tone-ok"}`} aria-hidden="true" />
                 {m.name}
@@ -446,6 +521,20 @@ export function MemoryMap({
             );
           })}
         </div>
+        {chosen && (
+          <div className="map__drill" role="group" aria-label={`${chosen.name}: next steps`}>
+            <p className="map__drill-name">
+              <span className="mono">{chosen.name}</span>
+              <span className="sub">{chosenBad ? `${fmt(chosenBad)} pieces need a refresh` : "All indexed pieces are current"}</span>
+            </p>
+            <div className="map__drill-actions">
+              <Link className="btn btn--neutral btn--sm" href={`/graph?repo=${repoQuery}&module=${encodeURIComponent(chosen.name)}`}>Open in Code map</Link>
+              <Link className="btn btn--neutral btn--sm" href={`/insights?repo=${repoQuery}&q=${encodeURIComponent(chosen.name)}`}>Findings</Link>
+              {reindex && chosenBad > 0 && <RunButton small variant="primary" action={reindex} label={`Re-index ${repoName}`} title={`Re-index ${repoName}: Brain reads the whole repository again`} />}
+              <button type="button" className="btn btn--neutral btn--sm" onClick={() => pin(null)}>Clear</button>
+            </div>
+          </div>
+        )}
         {scanning && (
           <p className="map__status">
             <span className="live-dot" aria-hidden="true" /> Brain is reading the latest changes right now

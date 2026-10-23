@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { adminOnlyPage } from "@/components/AdminOnly";
 import { IdentityList, NewIdentityForm } from "@/components/access/Access";
 import { SignIn } from "@/components/access/SignIn";
@@ -23,6 +24,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
   const canCreate = signIn.mode !== "team" || (await currentMember())?.admin === true;
   return (
     <>
+      <SectionTabs section="settings" active="/admin" />
       <PageHead
         title="Access"
         lede={
@@ -32,7 +34,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           </>
         }
       />
-      <SectionTabs section="settings" active="/admin" />
+      <p className="access-crosslink">Access is API identities and agent or service keys. People and their project roles are under <Link href="/team">Team</Link>.</p>
 
       <SignIn view={signIn} />
 

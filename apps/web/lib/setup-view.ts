@@ -155,6 +155,18 @@ export async function getSetupView(): Promise<SetupView> {
   };
 }
 
+/** Steps done out of all, for the rail: a cached read, null when it can't be read. */
+export async function getSetupProgress(): Promise<{ done: number; total: number } | null> {
+  if (!apiConfigured) {
+    const steps = demoView().steps;
+    return { done: steps.filter((s) => s.done).length, total: steps.length };
+  }
+  const read = await brainRead<Json>("/api/setup/status", { revalidate: 60 });
+  const steps = read.ok && Array.isArray(read.data?.steps) ? read.data.steps : [];
+  if (!steps.length) return null;
+  return { done: steps.filter((s) => str(obj(s).status) === "done").length, total: steps.length };
+}
+
 // Demo: the same six steps with believable state, so the controls can be seen
 // (they are locked — nothing runs without an API).
 function demoView(): SetupView {

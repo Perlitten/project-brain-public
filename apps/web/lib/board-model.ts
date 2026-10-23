@@ -358,6 +358,18 @@ export function queuePosition(entries: QueueEntry[], target: QueueEntry): number
     && entry.repositoryId === target.repositoryId && entry.id <= target.id).length;
 }
 
+/**
+ * The base the board can vouch for when integrating `entry`: the newest integrated head in its
+ * repository (what Brain defaults to), else the base Brain last checked the entry against.
+ */
+export function knownBase(board: Pick<ProjectBoard, "tasks" | "queue">, entry: QueueEntry): { sha: string; source: "integrated" | "checked" } | null {
+  const integrated = [...board.tasks.map((t) => t.entry), ...board.queue]
+    .filter((e): e is QueueEntry => Boolean(e) && e!.status === "integrated" && e!.repositoryId === entry.repositoryId && Boolean(e!.headSha))
+    .sort((a, b) => b.id - a.id)[0];
+  if (integrated) return { sha: integrated.headSha, source: "integrated" };
+  return entry.checkedBaseSha ? { sha: entry.checkedBaseSha, source: "checked" } : null;
+}
+
 export interface LeaseActions { release: boolean; renew: boolean }
 
 export function leaseActions(lease: Lease, permissions: string[], selfId: number | null): LeaseActions {

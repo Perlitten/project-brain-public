@@ -1,0 +1,15 @@
+/* Memory and context packs: where new memory comes from, review waiting, test packs. */
+.record-hint { display: grid; gap: var(--s-2); width: min(100%, 560px); text-align: left; }
+.record-hint__text { margin: 0; font-size: var(--fs-12); color: var(--text-3); line-height: var(--lh-ui); }
+.record-hint__text code { color: var(--text-1); }
+.record-hint .cmd { min-width: 0; }
+
+.record-more { margin-top: var(--s-4); font-size: var(--fs-14); }
+.panel .record-more { margin: 0; padding: var(--s-3) var(--s-5); border-top: 1px solid var(--border-subtle); }
+.record-more summary { cursor: pointer; color: var(--text-3); width: fit-content; }
+.record-more summary:hover { color: var(--text-1); }
+.record-more[open] summary { margin-bottom: var(--s-2); }
+
+.callout.review-waiting { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-2) var(--s-4); margin: 0 0 var(--s-4); }
+
+.pack-test__files { max-height: 240px; overflow: auto; }

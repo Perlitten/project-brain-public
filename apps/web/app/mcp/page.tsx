@@ -19,6 +19,7 @@ export default async function Mcp() {
   const tracked = tools.some((t) => t.calls24h !== undefined || t.errorRate !== undefined);
   return (
     <>
+      <SectionTabs section="settings" active="/mcp" />
       <PageHead
         title="Agent tools"
         status={
@@ -34,7 +35,6 @@ export default async function Mcp() {
           </>
         }
       />
-      <SectionTabs section="settings" active="/mcp" />
       <Panel
         id="connect"
         title="Connect an agent"

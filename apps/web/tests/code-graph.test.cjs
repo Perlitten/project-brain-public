@@ -90,3 +90,27 @@ test('all collapsed and expanded node bounds fit desktop and mobile viewboxes', 
     }
   }
 });
+
+test('finding modules and file paths map to the module the graph draws', () => {
+  const { moduleOf } = moduleExports.exports;
+  assert.equal(moduleOf('brain/search'), 'brain/search');
+  assert.equal(moduleOf('brain/search/code_search.py'), 'brain/search');
+  assert.equal(moduleOf('apps\\api\\routers\\web.py'), 'apps/api');
+  assert.equal(moduleOf('billing-service/payments/retry.py'), 'billing-service/payments');
+  assert.equal(moduleOf('README.md'), null);
+  assert.equal(moduleOf('—'), null);
+  assert.equal(moduleOf('  '), null);
+});
+
+test('a map opened on a module focuses it when drawn and searches for it otherwise', () => {
+  const { startingView } = moduleExports.exports;
+  assert.deepEqual({ ...startingView(edges, null) }, { minWeight: 2, includeTests: false, query: '', focus: null });
+  const known = startingView(edges, 'scripts/cli');
+  assert.deepEqual({ ...known }, { minWeight: 1, includeTests: false, query: '', focus: 'scripts/cli' });
+  // The weight-one edge stays on the map, so the focused module is really shown.
+  assert.equal(graphView(edges, options(known)).focus, 'scripts/cli');
+  assert.equal(startingView(edges, 'tests/api').includeTests, true);
+  const unknown = startingView(edges, 'brain');
+  assert.deepEqual({ ...unknown }, { minWeight: 1, includeTests: false, query: 'brain', focus: null });
+  assert.ok(graphView(edges, options(unknown)).matches > 0);
+});

@@ -3,6 +3,8 @@
 // Each write sends the version the page showed (lib/actions/memory.ts).
 import { useState } from "react";
 import { Dialog, LOCK_REASON, LockNote, RunButton, useAction, useActionsMode } from "./act";
+import { CopyCommand } from "./CopyCommand";
+import "./memory-ux.css";
 import { acceptDecision, retireDecision, retireRule, saveDecision, saveRule } from "@/lib/actions/memory";
 import type { Decision, Rule } from "@/lib/types";
 
@@ -96,5 +98,22 @@ function RuleForm({ rule, onDone }: { rule: Rule; onDone: () => void }) {
         <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !description.trim()}>{pending ? "Saving…" : "Save rule"}</button>
       </div>
     </form>
+  );
+}
+
+// New decisions and rules come from agents and the CLI; this page edits what
+// they recorded. The hint names the exact tool and command for each.
+export function RecordHint({ kind, repoPath }: { kind: "decision" | "rule"; repoPath?: string }) {
+  const command =
+    kind === "decision"
+      ? `brain decision add "<title>" --desc "<what was decided>" --reason "<why>"`
+      : `brain rules add "<name>"${repoPath ? ` --repo ${repoPath.includes(" ") ? `"${repoPath}"` : repoPath}` : ""} --desc "<the rule>" --severity high`;
+  return (
+    <div className="record-hint">
+      <p className="record-hint__text">
+        Agents call the <code className="mono">{kind === "decision" ? "record_decision" : "record_rule"}</code> tool. From a terminal:
+      </p>
+      <CopyCommand command={command} />
+    </div>
   );
 }

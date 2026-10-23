@@ -170,6 +170,9 @@ code, .mono { font-family: var(--mono); }
 .nav__item:hover svg { transform: translateX(2px); }
 .nav__item.is-on { color: var(--text-1); background: transparent; }
 .nav__item.is-on svg { color: var(--teal-fg); }
+.nav__item--setup { color: var(--text-1); background: color-mix(in oklab, var(--warn-soft, var(--surface-inset)) 70%, transparent); box-shadow: inset 0 0 0 1px var(--warn-line, var(--border-subtle)); }
+.nav__item--setup svg { color: var(--warn-fg, var(--teal-fg)); }
+.nav__progress { margin-left: auto; font: 500 var(--fs-12) / 1 var(--mono); color: var(--warn-fg, var(--text-2)); }
 .nav__mark {
   position: absolute; left: var(--s-2); right: var(--s-2); top: 0;
   height: var(--h); transform: translateY(var(--y));
@@ -210,6 +213,10 @@ code, .mono { font-family: var(--mono); }
 .repo__label small { font-size: var(--fs-11); color: var(--text-3); font-weight: 400; }
 .repo__caret { transform: rotate(90deg); color: var(--text-3); transition: transform 320ms var(--ease-expo); }
 .repo__btn[aria-expanded="true"] .repo__caret { transform: rotate(-90deg); }
+/* Server-wide screens keep the filter's footprint, so moving between tabs swaps a value, not the layout. */
+.repo__btn--static { cursor: default; color: var(--text-2); background: transparent; border-style: dashed; }
+.repo__btn--static:hover { border-color: var(--border-subtle); background: transparent; }
+.repo__btn--static svg { color: var(--text-3); }
 .pop {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
   min-width: 300px; padding: var(--s-1);
@@ -273,19 +280,35 @@ code, .mono { font-family: var(--mono); }
 .status-line__text small { display: block; margin-top: var(--s-1); font-size: var(--fs-14); font-weight: 400; color: var(--text-2); line-height: var(--lh-ui); }
 .status-line__action { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 
-/* Page tabs: one page split into full screens (Code map, Decisions & rules). */
-.page-tabs { display: flex; gap: var(--s-1); border-bottom: 1px solid var(--border-subtle); overflow-x: auto; scrollbar-width: none; }
+/* Three levels, three looks, so a click never seems to change the wrong thing:
+   1. Section nav: the routes of one section, a bar above the page title. It
+      stays put while you move between those routes; the title below changes.
+   2. Page tabs: views inside one page, a segmented control under the title.
+   3. Filter pills: inside the list's own search bar (list-frame.css). */
+.page-tabs { display: flex; gap: var(--s-1); overflow-x: auto; scrollbar-width: none; }
 .page-tabs__tab {
   display: inline-flex; align-items: center; gap: var(--s-2); flex: none;
-  height: 40px; padding: 0 var(--s-4); margin-bottom: -1px;
-  border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; text-decoration: none;
-  transition: color 150ms, border-color 150ms;
+  color: var(--text-2); font-weight: 500; text-decoration: none;
+  transition: color 150ms, border-color 150ms, background-color 150ms;
 }
 .page-tabs__tab:hover { color: var(--text-1); }
-.page-tabs__tab[aria-current="page"] { color: var(--text-1); border-bottom-color: var(--teal-fg); }
 .page-tabs__badge { padding: 1px 7px; border-radius: 999px; background: var(--gray-1); border: 1px solid var(--border-subtle); color: var(--text-3); font: 500 var(--fs-12) / 1.4 var(--mono); }
 .page-tabs__tab[aria-current="page"] .page-tabs__badge { color: var(--teal-fg); border-color: var(--teal-line); background: var(--teal-soft); }
 .page-tabs__badge--bad { color: var(--bad-fg) !important; border-color: var(--bad-line) !important; background: var(--bad-soft) !important; }
+
+.page-tabs:not(.section-nav) {
+  justify-self: start; max-width: 100%; padding: 3px;
+  background: var(--surface-rail); border: 1px solid var(--border-subtle); border-radius: var(--r-md);
+}
+.page-tabs:not(.section-nav) .page-tabs__tab { height: 32px; padding: 0 var(--s-4); border-radius: var(--r-sm); }
+.page-tabs:not(.section-nav) .page-tabs__tab[aria-current="page"] { color: var(--text-1); background: var(--surface-raise); box-shadow: inset 0 0 0 1px var(--border-subtle); }
+
+.section-nav { border-bottom: 1px solid var(--border-subtle); }
+.section-nav .page-tabs__tab { height: 36px; padding: 0 var(--s-3); margin-bottom: -1px; border-bottom: 2px solid transparent; font-size: var(--fs-14); }
+.section-nav .page-tabs__tab:first-child { padding-left: 0; }
+.section-nav .page-tabs__tab[aria-current="page"] { color: var(--text-1); border-bottom-color: var(--teal-fg); }
+/* The bar is the same on every route of its section: it does not re-enter. */
+.route > .section-nav { animation: none; margin-top: calc(var(--s-3) * -1); margin-bottom: calc(var(--s-6) * -1 + var(--s-4)); }
 
 /* ---------- panel ---------- */
 .panel {
@@ -908,6 +931,14 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 
 /* Project detail: stats, coverage meters, then the caveat, each with breathing room. */
 .project-detail { display: grid; gap: var(--s-6); }
+/* Master-detail: the way back and the sibling projects sit together above the detail. */
+.project-switch { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
+.project-switch__back { font-size: var(--fs-14); color: var(--text-2); }
+.project-switch__back:hover { color: var(--text-1); }
+.project-switch__list { display: flex; flex-wrap: wrap; gap: var(--s-1); }
+.project-switch__list a, .project-switch__current { padding: 3px var(--s-2); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); font-size: var(--fs-12); color: var(--text-2); }
+.project-switch__list a:hover { color: var(--text-1); border-color: var(--border-default); }
+.project-switch__list a[aria-current], .project-switch__current { color: var(--text-1); border-color: var(--teal-line); background: var(--teal-soft); }
 .project-detail__note { margin: 0; font-size: var(--fs-12); }
 
 /* ---------- disclosure: secondary detail, closed by default ---------- */

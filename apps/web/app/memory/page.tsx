@@ -1,12 +1,17 @@
 import type { CSSProperties } from "react";
+import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { ClampText } from "@/components/ClampText";
 import { ListFrame } from "@/components/ListFrame";
-import { DecisionActions, RuleActions } from "@/components/MemoryActions";
+import { DecisionActions, RecordHint, RuleActions } from "@/components/MemoryActions";
 import { PageTabs, pickTab } from "@/components/PageTabs";
 import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
-import { getPagedDecisions, getPagedRules } from "@/lib/data";
+import { getCapabilities } from "@/lib/capabilities";
+import { getPagedDecisions, getPagedRules, getRepositoryFeed } from "@/lib/data";
 import { getListQuery } from "@/lib/list-query";
+import { getReviewView } from "@/lib/review-view";
+import { signInMode } from "@/lib/sign-in-view";
+import { currentMember } from "@/lib/team-session";
 import type { Decision, Rule, Tone } from "@/lib/types";
 
 export const metadata = { title: "Memory" };
@@ -21,6 +26,17 @@ const severity: Record<Rule["severity"], [Tone, string]> = {
 
 const VIEWS = ["decisions", "rules"] as const;
 
+/** Proposals the viewer could review, counted the way /review counts them; 0 outside a team. */
+async function waitingForReview(): Promise<number> {
+  const [features, mode] = await Promise.all([getCapabilities(), signInMode()]);
+  if (mode !== "team" || !features.supported.includes("knowledge_review")) return 0;
+  const member = await currentMember();
+  const view = await getReviewView(Boolean(member?.admin));
+  if (view.kind !== "ok") return 0;
+  const selfId = member?.id ?? null;
+  return view.queue.filter((r) => r.authorId === null || r.authorId !== selfId).length;
+}
+
 export default async function Memory({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const view = typeof params.view === "string" ? params.view : undefined;
@@ -28,10 +44,13 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
   const query = getListQuery(params);
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
   const repo = typeof params.repo === "string" ? params.repo : undefined;
-  const [decisionsResult, rulesResult] = await Promise.all([
+  const [decisionsResult, rulesResult, waiting, feed] = await Promise.all([
     getPagedDecisions(repo, tab === "decisions" ? query : {}),
     getPagedRules(repo, tab === "rules" ? query : {}),
+    waitingForReview(),
+    getRepositoryFeed(),
   ]);
+  const repoPath = repo ? feed.repositories.find((r) => r.slug === repo)?.path : undefined;
   const decisions = decisionsResult.items;
   const rules = rulesResult.items;
   // Usage is reported per page of rules, and only once something has been
@@ -42,11 +61,24 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
   const blocking = rules.filter((r) => r.severity === "block").length;
   return (
     <>
+      <SectionTabs section="memory" active="/memory" />
       <PageHead
         title="Memory"
         lede={`Decisions and rules you and your agents recorded${repo ? " for this project" : " across all projects"}. Agents get the relevant ones with their context.`}
       />
-      <SectionTabs section="memory" active="/memory" />
+      {waiting > 0 && (
+        <p className="callout tone-info review-waiting" role="status">
+          <span>
+            <b>
+              {waiting.toLocaleString("en")} proposal{waiting === 1 ? "" : "s"} waiting for review.
+            </b>{" "}
+            Agents don’t receive them until a Reviewer approves.
+          </span>
+          <Link className="btn btn--neutral" href="/review">
+            Open Review
+          </Link>
+        </p>
+      )}
         <PageTabs
         label="Decisions or rules"
         path="/memory"
@@ -62,7 +94,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           {decisionsResult.available === false ? (
             <EmptyState title="Decisions unavailable" body="Brain didn’t return the recorded decisions just now. Reload in a moment." />
           ) : decisions.length === 0 && !hasQuery ? (
-            <EmptyState title="No decisions recorded" body="Nobody has recorded a decision yet. Agents and people can record one through Brain." />
+            <EmptyState title="No decisions recorded" body="Nobody has recorded a decision yet. Agents and people can record one through Brain." action={<RecordHint kind="decision" />} />
           ) : (
           <ListFrame
             listTag="div"
@@ -89,6 +121,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           ))}
           />
           )}
+          {decisions.length > 0 && <MoreHint kind="decision" />}
         </section>
       ) : (
         <Panel id="rules" title="Rules agents must follow" desc={rulesResult.available === false ? undefined : `${blocking} blocking rule${blocking === 1 ? "" : "s"} on this page. ${usageTracked ? `Last 30 days: “Reached” counts the context packs a rule went into, “Caught” the reviews that cited it${unusedCount ? `; ${unusedCount} reached no agent at all` : ""}.` : "Nothing is recorded yet, so this page can’t say which rules reach agents."}`}
@@ -97,7 +130,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
           {rulesResult.available === false ? (
             <EmptyState title="Rules unavailable" body="Brain didn’t return the recorded rules just now. Reload in a moment." />
           ) : rules.length === 0 && !hasQuery ? (
-            <EmptyState title="No rules yet" body="No active rules are recorded. Add one so agents’ changes are checked against it." />
+            <EmptyState title="No rules yet" body="No active rules are recorded. Add one so agents’ changes are checked against it." action={<RecordHint kind="rule" repoPath={repoPath} />} />
           ) : (
           <Table
             caption="Rules"
@@ -150,8 +183,19 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
             ]}
           />
           )}
+          {rules.length > 0 && <MoreHint kind="rule" repoPath={repoPath} />}
         </Panel>
       )}
     </>
+  );
+}
+
+/** Below a filled list: where new entries come from, folded away. */
+function MoreHint({ kind, repoPath }: { kind: "decision" | "rule"; repoPath?: string }) {
+  return (
+    <details className="record-more">
+      <summary>Record a new {kind}</summary>
+      <RecordHint kind={kind} repoPath={repoPath} />
+    </details>
   );
 }

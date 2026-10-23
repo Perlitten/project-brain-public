@@ -296,3 +296,34 @@ export async function activityProjects(me: MeResult): Promise<{ id: string; name
   }
   return me.projects.map((p) => ({ id: p.id, name: p.name }));
 }
+
+export interface FilterOption { id: number; name: string }
+const byName = (a: FilterOption, b: FilterOption) => a.name.localeCompare(b.name) || a.id - b.id;
+function unique(options: FilterOption[]): FilterOption[] {
+  const seen = new Map<number, FilterOption>();
+  for (const o of options) if (o.id > 0 && (!seen.has(o.id) || seen.get(o.id)!.name.startsWith("#"))) seen.set(o.id, o);
+  return [...seen.values()].sort(byName);
+}
+
+/** Repositories to offer by name: the caller's own, plus every indexed one for a caller who reads all of them. */
+export function activityRepositories(me: MeResult, indexed: { id: number; name: string }[] = []): FilterOption[] {
+  if (me.kind !== "ok") return [];
+  const own = me.projects.flatMap((p) => p.repositories.map((r) => ({ id: r.id, name: r.name || r.path || `#${r.id}` })));
+  return unique([...own, ...(me.allRepositories ? indexed : [])]);
+}
+
+/** People to offer by name: the team's members for a team admin, the caller, and anyone already named in the feed. */
+export async function activityActors(me: MeResult, rows: ActivityRow[] = []): Promise<FilterOption[]> {
+  if (me.kind !== "ok") return [];
+  const seen = rows.filter((r) => r.actorId !== null).map((r) => ({ id: r.actorId!, name: r.actor }));
+  let members: FilterOption[] = [];
+  if (me.teamAdmin || me.allRepositories) {
+    const res = await brainRead<unknown>("/team/projects/members", { fresh: true });
+    if (res.ok && Array.isArray(res.data)) {
+      members = res.data
+        .filter((m): m is Record<string, unknown> => Boolean(m) && typeof m === "object" && typeof (m as { principal_id?: unknown }).principal_id === "number")
+        .map((m) => ({ id: m.principal_id as number, name: str(m.principal_name) || `#${m.principal_id}` }));
+    }
+  }
+  return unique([...members, { id: me.principal.id, name: me.principal.name }, ...seen]);
+}

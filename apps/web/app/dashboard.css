@@ -25,8 +25,6 @@
 .usage dd { margin: 0; }
 .usage dd.num { margin-top: var(--s-1); font-size: var(--fs-20); font-weight: 500; }
 .usage__note { margin-top: var(--s-1); font-size: var(--fs-11); color: var(--text-3); line-height: var(--lh-ui); }
-.usage-off { display: grid; gap: var(--s-2); max-width: 56ch; padding: var(--s-2) 0; color: var(--text-2); line-height: var(--lh-prose); }
-.usage-off__title { color: var(--text-1); font-size: var(--fs-16); font-weight: 500; }
 .dashboard__legend { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-3); color: var(--text-3); font-size: var(--fs-12); }
 .dashboard__legend .dot:nth-of-type(2) { margin-left: var(--s-3); }
 .dashboard__legend .link { margin-left: auto; }
@@ -78,4 +76,38 @@
   .agents__row > [data-num] { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; }
   .agents__row > [data-num]::before { content: attr(data-num); text-align: left; font-size: var(--fs-12); color: var(--text-3); }
   .usage { grid-template-columns: 1fr 1fr; }
+}
+
+/* Panels with nothing measured on this server: one quiet row, reasons on demand. */
+.unmeasured { display: grid; gap: var(--s-1); padding: var(--s-3) var(--s-4); border: 1px dashed var(--border-default); border-radius: var(--r-sm); color: var(--text-2); font-size: var(--fs-14); }
+.unmeasured__title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-2); color: var(--text-1); }
+.unmeasured__title b { font-weight: 500; }
+.unmeasured__note { color: var(--text-3); font-size: var(--fs-12); }
+.unmeasured__why summary { cursor: pointer; width: max-content; color: var(--text-3); font-size: var(--fs-12); }
+.unmeasured__why dl { display: grid; gap: var(--s-2); margin-top: var(--s-2); max-width: 72ch; line-height: var(--lh-prose); }
+.unmeasured__why dt { color: var(--text-1); font-weight: 500; }
+.unmeasured__why dd { margin: 0; }
+.dashboard__lower--single { grid-template-columns: minmax(0, 1fr); }
+.dashboard__lower--single > .stack { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: var(--s-6); align-items: start; }
+
+/* Memory map: which repository it shows, and what to do with a selected module. */
+.map__head { display: grid; gap: var(--s-2); }
+.map__repos { display: flex; flex-wrap: wrap; gap: var(--s-1); }
+.map__repos a { padding: 2px var(--s-2); border: 1px solid var(--border-subtle); border-radius: var(--r-pill); color: var(--text-2); font-size: var(--fs-12); }
+.map__repos a:hover { color: var(--text-1); border-color: var(--border-default); }
+.map__repos a[aria-current] { color: var(--text-1); border-color: var(--teal-line); background: var(--teal-soft); }
+.map__repos-menu { justify-self: start; max-width: 100%; padding: var(--s-1) var(--s-2); border: 1px solid var(--border-default); border-radius: var(--r-sm); background: var(--surface-inset); color: var(--text-1); font: inherit; font-size: var(--fs-12); }
+.map__drill { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-2) var(--s-4); padding: var(--s-3); border: 1px solid var(--teal-line); border-radius: var(--r-sm); background: var(--surface-inset); }
+.map__drill-name { display: grid; gap: 2px; min-width: 0; }
+.map__drill-name .mono { overflow-wrap: anywhere; }
+.map__drill-name .sub { font-size: var(--fs-12); color: var(--text-3); }
+.map__drill-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+
+/* Phones: each agent is a name over a compact grid of its numbers. */
+@media (max-width: 560px) {
+  .agents__row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2) var(--s-3); padding-block: var(--s-3); }
+  .agents__name { grid-column: 1 / -1; }
+  .agents__row > [data-num] { grid-column: auto; grid-template-columns: none; gap: 2px; text-align: left; }
+  .agents__row > [data-num]::before { font-size: var(--fs-11); }
+  .agents__row > [data-num="Last seen"] { grid-column: span 2; }
 }

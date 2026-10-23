@@ -40,6 +40,7 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
     : runs.filter((r) => r.status === "failed" || r.status === "degraded").length;
   return (
     <>
+      <SectionTabs section="projects" active="/indexing" />
       <PageHead
         title="Index runs"
         actions={reindex}
@@ -50,7 +51,6 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
           </>
         }
       />
-      <SectionTabs section="projects" active="/indexing" />
       <div className="stats">
         <Stat label="Files in the last good run" value={last ? fmt(last.files) : "—"} note={result.available === false ? "index history unavailable" : last ? `${last.startedAt} · took ${last.duration}` : "no completed run in this list"} />
         <Stat label="Pieces stored" value={corpus.available === false ? "—" : fmt(corpus.chunks)} note={corpus.available === false ? "indexing totals unavailable" : "searchable pieces of code Brain holds"} />

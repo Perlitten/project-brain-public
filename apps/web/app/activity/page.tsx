@@ -16,8 +16,8 @@ export default async function Activity({ searchParams }: { searchParams: Promise
   const gate = await adminOnlyPage("Activity");
   if (gate) return gate;
   return <>
-    <PageHead title="Activity" lede="What agents asked Brain, and what Brain ran in the background on its own. Newest first." />
     <SectionTabs section="logs" active="/activity" />
+    <PageHead title="Activity" lede="What agents asked Brain, and what Brain ran in the background on its own. Newest first." />
     <Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><ActivityData searchParams={searchParams} /></Suspense>
   </>;
 }

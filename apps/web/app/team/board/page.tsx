@@ -50,8 +50,8 @@ export default async function Board() {
   const view = await getBoardView();
   const head = (status?: Parameters<typeof PageHead>[0]["status"]) => (
     <>
-      <PageHead title="Board" lede={LEDE} status={status} />
       <SectionTabs section="team" active="/team/board" />
+      <PageHead title="Board" lede={LEDE} status={status} />
     </>
   );
 

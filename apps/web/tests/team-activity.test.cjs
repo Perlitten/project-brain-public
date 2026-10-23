@@ -139,3 +139,27 @@ test('the Me view reads solo and member answers from /team/me', async () => {
   const options = await view.activityProjects(member);
   assert.deepEqual(options.map((o) => o.name), ['Alpha'], 'a member is offered only their own projects');
 });
+
+test('activity pickers offer repositories and people by name, keeping numeric ids', async () => {
+  const me = (over = {}) => ({
+    kind: 'ok', principal: { id: 4, name: 'alice', kind: 'human' }, teamState: 'team', teamAdmin: false, allRepositories: false,
+    accessReason: '', scopes: [], effectiveScopes: [], canReadActivity: true,
+    projects: [{ id: 'p', name: 'P', role: 'maintainer', repositories: [{ id: 2, name: 'web', path: '/w' }, { id: 1, name: '', path: '/api' }] }], ...over,
+  });
+  const calls = [];
+  const view = loadView(async (p) => {
+    calls.push(p);
+    return { ok: true, data: [{ principal_id: 9, principal_name: 'bob' }, { principal_id: 4, principal_name: 'alice' }, { principal_id: 'x' }, null] };
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(view.activityRepositories(me()))), [{ id: 1, name: '/api' }, { id: 2, name: 'web' }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(view.activityRepositories(me(), [{ id: 5, name: 'docs' }]))).map((r) => r.id), [1, 2], 'only callers who read everything see every indexed repository');
+  assert.deepEqual(JSON.parse(JSON.stringify(view.activityRepositories(me({ allRepositories: true }), [{ id: 5, name: 'docs' }, { id: 2, name: 'web' }]))).map((r) => r.id), [1, 5, 2]);
+  assert.equal(view.activityRepositories({ kind: 'unavailable' }).length, 0);
+
+  const rows = [{ actorId: 7, actor: 'carol' }, { actorId: null, actor: 'system' }];
+  assert.deepEqual(JSON.parse(JSON.stringify(await view.activityActors(me(), rows))), [{ id: 4, name: 'alice' }, { id: 7, name: 'carol' }]);
+  assert.equal(calls.length, 0, 'members are read for team admins only');
+  assert.deepEqual(JSON.parse(JSON.stringify(await view.activityActors(me({ teamAdmin: true }), rows))).map((a) => a.name), ['alice', 'bob', 'carol']);
+  assert.deepEqual(calls, ['/team/projects/members']);
+  assert.equal((await view.activityActors({ kind: 'unavailable' })).length, 0);
+});

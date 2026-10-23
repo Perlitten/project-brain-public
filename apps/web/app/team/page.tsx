@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getCapabilities } from "@/lib/capabilities";
 import { capabilityGate } from "@/components/CapabilityGate";
 import { CodeBlock } from "@/components/act";
@@ -23,8 +24,9 @@ export default async function Team() {
   const mode = member ? "team" : observedMode;
   const head = (
     <>
-      <PageHead title="Team" lede={LEDE} />
       <SectionTabs section="team" active="/team" />
+      <PageHead title="Team" lede={LEDE} />
+      <p className="team-crosslink">Team is people and their project roles. API identities and agent or service keys are under <Link href="/admin">Access</Link>.</p>
     </>
   );
 

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { CodeGraph } from "@/components/CodeGraph";
 import { SectionTabs } from "@/components/SectionNav";
 import { PageTabs, pickTab } from "@/components/PageTabs";
@@ -10,22 +11,37 @@ export const metadata = { title: "Code map" };
 
 const VIEWS = ["map", "connections"] as const;
 
-export default async function Graph({ searchParams }: { searchParams: Promise<{ repo?: string; view?: string }> }) {
-  const { repo, view } = await searchParams;
+export default async function Graph({ searchParams }: { searchParams: Promise<{ repo?: string; view?: string; module?: string }> }) {
+  const { repo, view, module } = await searchParams;
   const tab = pickTab(VIEWS, view);
   const read = await getModuleEdges(repo);
   const edges = read ?? [];
   const violations = edges.filter((e) => e.violation).length;
   const sorted = [...edges].sort((a, b) => Number(b.violation) - Number(a.violation) || b.weight - a.weight);
   // Rule breaks and the strongest links up front; the long tail is paged.
+  // A red line is an architecture boundary check, reported as a drift finding;
+  // the edge does not say which check, so the link opens those findings.
+  const drift = `/insights?${new URLSearchParams({ ...(repo ? { repo } : {}), q: "Drift" })}`;
   const columns: Column<ModuleEdge>[] = [
     { head: "This part", cell: (e) => <span className="mono">{e.from}</span> },
     { head: "uses", cell: (e) => <span className="mono">{e.to}</span> },
     { head: "Connections", cell: (e) => e.weight, align: "right" },
-    { head: "Status", cell: (e) => (e.violation ? <Chip tone="bad">breaks a rule</Chip> : <Chip tone="ok">fine</Chip>) },
+    {
+      head: "Status",
+      cell: (e) =>
+        e.violation ? (
+          <>
+            <Chip tone="bad">breaks a rule</Chip>
+            <Link className="sub link" href={drift}>See rule-break findings</Link>
+          </>
+        ) : (
+          <Chip tone="ok">fine</Chip>
+        ),
+    },
   ];
   return (
     <>
+      <SectionTabs section="projects" active="/graph" />
       <PageHead
         title="Code map"
         lede={
@@ -35,7 +51,6 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
           </>
         }
       />
-      <SectionTabs section="projects" active="/graph" />
       {read === null ? (
         <Panel id="map" title="Module map">
           <EmptyState title="Code map unavailable" body="Brain didn’t return the module graph just now — its graph store may be down. Reload in a moment." />
@@ -52,7 +67,7 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
           <PageTabs
             label="Code map views"
             path="/graph"
-            params={{ repo }}
+            params={{ repo, module }}
             current={tab}
             tabs={[
               { id: "map", label: "Map" },
@@ -62,7 +77,7 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
           {tab === "map" ? (
             <Panel id="map" title="Module map" desc="Start with areas, then expand or focus the connections you need." flush>
               <div className="code-map-wrap">
-                <CodeGraph edges={edges} />
+                <CodeGraph key={module ?? ""} edges={edges} module={module} />
               </div>
               <p className="graph-legend">
                 <span>
@@ -71,6 +86,7 @@ export default async function Graph({ searchParams }: { searchParams: Promise<{ 
                 <span>
                   <i className="bad" aria-hidden="true" /> breaks a rule
                 </span>
+                {violations > 0 && <Link className="link" href={drift}>See rule-break findings</Link>}
               </p>
             </Panel>
           ) : (
