@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+- Connect a git repository by URL from the dashboard: Projects → Connect
+  repository takes a GitHub, GitLab, Bitbucket, Azure DevOps or any https/ssh
+  git address, checks it (`POST /git/probe`: reachability, branches, default
+  branch, whether a token is needed) and queues a `git_connect` job
+  (`POST /git/connect`) that clones into the new "Clones directory"
+  (`BRAIN_MANAGED_REPOS_DIR`, Settings → Git & origin sync), registers the
+  clone and optionally indexes it; the origin poll then follows the branch.
+  A read-only token travels only in the request body, is handed to the worker
+  through a one-time file and is never stored in job params or logs. The
+  older server-folder registration stays as the second tab (#189).
 - Fix two harness artefacts in the multi-user memory load e2e: on Windows,
   `--api-workers N` starts one API process per port instead of
   `uvicorn --workers`, whose lost `accept()` race froze a worker for 120 s; and

@@ -159,6 +159,22 @@ class ReindexJobRequest(BaseModel):
     idempotency_key: Optional[str] = Field(default=None, max_length=255)
 
 
+class GitProbeRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=1000)
+    # Write-only: used for this request's git command line and never stored or echoed.
+    token: Optional[str] = Field(default=None, max_length=512)
+
+
+class GitConnectRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=1000)
+    branch: Optional[str] = Field(default=None, max_length=200)
+    token: Optional[str] = Field(default=None, max_length=512)
+    display_name: Optional[str] = Field(default=None, max_length=255)
+    # Team state only: the team project whose members may use the repository.
+    project_id: Optional[str] = Field(default=None, max_length=64)
+    index_now: bool = True
+
+
 class EmbeddingVerifyRequest(BaseModel):
     repo_path: Optional[str] = None
 

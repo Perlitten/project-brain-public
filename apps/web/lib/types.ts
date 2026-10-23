@@ -22,6 +22,20 @@ export interface Repository {
   head: string;
   behind: number | null;
   freshness?: string;
+  /** The scheduled origin check (git ls-remote), when it has run for this repository. */
+  originPoll?: OriginPoll;
+}
+
+export interface OriginPoll {
+  /** ok · error · unconfigured */
+  status: string;
+  /** Formatted in UTC. */
+  at?: string;
+  error?: string;
+  /** Credentials already masked by the server. */
+  remote?: string;
+  /** Commits on origin that the index does not have yet. */
+  behind: number | null;
 }
 
 export interface ConditionTile {
@@ -144,6 +158,8 @@ export interface DecisionWrite {
   repoPath: string | null;
   description: string;
   reason: string;
+  /** As stored (for example proposed); edits must not implicitly accept it. */
+  status: string;
   /** Compare-and-swap: the version this page read. */
   version: number;
 }

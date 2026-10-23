@@ -698,6 +698,18 @@ class BrainQueryCapturePolicy(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
+class BrainRuntimeSetting(Base):
+    """A setting saved from the web UI that API, worker and scheduler all apply (brain.config.shared_settings)."""
+
+    __tablename__ = "brain_runtime_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)  # JSON-encoded
+    updated_at: Mapped[datetime] = mapped_column(
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class BrainRequestTelemetry(Base):
     """Durable request measurements; optional query capture requires operator opt-in."""
     __tablename__ = "brain_request_telemetry"

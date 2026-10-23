@@ -13,7 +13,7 @@ export function AddProject() {
   if (capabilities.state === "demo" || !capabilities.supported.includes("repository_registration") || restricted) return null;
   return <><button className="btn btn--primary" type="button" onClick={() => setOpen(true)}>Add project</button><Dialog open={open} onClose={() => setOpen(false)} title="Add project">{open && <AddProjectForm />}</Dialog></>;
 }
-function AddProjectForm() {
+export function AddProjectForm() {
   const [name, setName] = useState(""); const [path, setPath] = useState(""); const [project, setProject] = useState(""); const [indexNow, setIndexNow] = useState(false);
   const [context, setContext] = useState<Awaited<ReturnType<typeof projectRegistrationContext>> | null>(null);
   const [result, setResult] = useState<Awaited<ReturnType<typeof addProject>> | null>(null);

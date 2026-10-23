@@ -17,6 +17,7 @@ from loguru import logger
 from redis.asyncio import Redis
 
 from brain.config.settings import settings
+from brain.config.shared_settings import refresh_shared_settings
 from brain.workers.initiator import JobInitiator
 from brain.workers.queue import queue_for_job, worker_pool_for_job
 
@@ -69,20 +70,30 @@ MEMORY_SCHEDULE = ScheduledJob("memory_consolidation", "15 * * * *", "Hourly mem
 SCHEDULES_BY_TYPE[MEMORY_SCHEDULE.job_type] = MEMORY_SCHEDULE
 
 
+# The intervals cron repeats evenly: */N minutes restarts every hour and */N hours
+# every day, so N must divide 60 or 24 (*/7 would also fire at :00, 7 minutes after :56).
+ORIGIN_POLL_INTERVALS_S = (
+    (0,)
+    + tuple(m * 60 for m in (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30))
+    + tuple(h * 3600 for h in (1, 2, 3, 4, 6, 8, 12, 24))
+)
+
+
 def origin_poll_cron(interval_seconds: int) -> Optional[str]:
     """Cron for ``BRAIN_ORIGIN_POLL_INTERVAL_S``; None when the poll is disabled (0 or less).
 
-    The scheduler has minute resolution: intervals round up to whole minutes,
-    and to whole hours from 60 minutes on.
+    Settings only accepts :data:`ORIGIN_POLL_INTERVALS_S`; any other value (from
+    the environment) rounds up to the next of them, capped at once a day.
     """
     seconds = int(interval_seconds or 0)
     if seconds <= 0:
         return None
-    minutes = max(1, -(-seconds // 60))
+    seconds = next((s for s in ORIGIN_POLL_INTERVALS_S if s >= seconds), ORIGIN_POLL_INTERVALS_S[-1])
+    minutes = seconds // 60
     if minutes < 60:
         return "* * * * *" if minutes == 1 else f"*/{minutes} * * * *"
-    hours = min(24, -(-minutes // 60))
-    return "0 * * * *" if hours == 1 else ("0 0 * * *" if hours >= 24 else f"0 */{hours} * * *")
+    hours = minutes // 60
+    return "0 * * * *" if hours == 1 else ("0 0 * * *" if hours == 24 else f"0 */{hours} * * *")
 
 
 def origin_poll_schedule() -> Optional[ScheduledJob]:
@@ -267,6 +278,8 @@ async def run_scheduler(redis: Redis, stop: asyncio.Event) -> None:
     interval = max(5, int(settings.SCHEDULER_TICK_SECONDS))
     while not stop.is_set():
         try:
+            # The origin poll interval can change from the web UI; a long job must not delay it.
+            await refresh_shared_settings()
             await tick(redis)
         except Exception as exc:
             logger.warning("Scheduler tick failed: {}: {}", type(exc).__name__, exc)

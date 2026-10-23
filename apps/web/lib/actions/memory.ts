@@ -22,7 +22,7 @@ async function writeDecision(target: DecisionWrite, fields: { description?: stri
   const title = text(target?.title, 500);
   if (!title || !goodVersion(target?.version)) return { ok: false, message: STALE };
   const res = await mutate("/decisions", {
-    body: { title, repo_path: scope(target.repoPath), expected_version: target.version, ...fields },
+    body: { title, repo_path: scope(target.repoPath), expected_version: target.version, status: text(target.status, 50) || "active", ...fields },
     success: success(done),
     revalidate: MEMORY,
   });

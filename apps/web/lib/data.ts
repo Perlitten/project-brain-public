@@ -12,7 +12,7 @@ import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./lis
 import { shortRevision } from "./revision";
 import { SLOW_TOOL_MS } from "./tool-health";
 import { utcTime } from "./time";
-import { uncommittedCount } from "./repository-status";
+import { redactRemote, uncommittedCount } from "./repository-status";
 import type {
   AccessKey,
   AccessView,
@@ -154,6 +154,11 @@ type RawFreshness = {
   status?: string | null;
   age_seconds?: number | null;
   note?: string | null;
+  origin_poll_status?: string | null;
+  origin_polled_at?: string | null;
+  origin_poll_error?: string | null;
+  origin_remote?: string | null;
+  commits_behind_origin?: number | null;
 };
 type RawRepo = {
   id: number;
@@ -187,6 +192,15 @@ function toRepository(r: RawRepo): Repository {
     head: shortRevision(commit),
     behind: num(f.commits_behind) ?? null,
     freshness: str(f.status) || "unknown",
+    ...(str(f.origin_poll_status) ? {
+      originPoll: {
+        status: str(f.origin_poll_status),
+        at: str(f.origin_polled_at) ? utcTime(str(f.origin_polled_at)) : undefined,
+        error: redactRemote(str(f.origin_poll_error)) || undefined,
+        remote: redactRemote(str(f.origin_remote)) || undefined,
+        behind: num(f.commits_behind_origin) ?? null,
+      },
+    } : {}),
   };
 }
 
@@ -794,7 +808,7 @@ export const getDecisions = async (): Promise<Decision[]> => {
 function decisionWrite(d: Json): Decision["write"] {
   const version = num(d.version);
   if (!version || d.current === false || decisionStatus(d.raw_status ?? d.status) === "superseded" || !str(d.title)) return undefined;
-  return { title: str(d.title), repoPath: str(d.repo_path) || null, description: str(d.description), reason: str(d.reason), version };
+  return { title: str(d.title), repoPath: str(d.repo_path) || null, description: str(d.description), reason: str(d.reason), status: str(d.raw_status ?? d.status) || "active", version };
 }
 function ruleWrite(r: Json): Rule["write"] {
   const version = num(r.version);
@@ -977,7 +991,7 @@ export const getPagedDecisions = async (slug: string | null | undefined, input: 
     // Demo rows carry a write target too, so the page shows its (locked) controls.
     const rows = mock.decisions
       .filter((d) => (!slug || d.repo === slug) && (q.status !== "current" || ["accepted", "proposed", "validated_unmerged"].includes(d.status)))
-      .map((d) => d.status === "superseded" ? d : { ...d, write: { title: d.title, repoPath: null, description: d.summary, reason: "", version: 1 } });
+      .map((d) => d.status === "superseded" ? d : { ...d, write: { title: d.title, repoPath: null, description: d.summary, reason: "", status: d.status === "proposed" ? "proposed" : "active", version: 1 } });
     if (q.status === "current") return demoPage(rows, { ...q, status: "" }, (d) => `${d.title} ${d.summary} ${d.scope} ${d.id}`, (d) => d.status);
     return demoPage(rows, q, (d) => `${d.title} ${d.summary} ${d.scope} ${d.id}`, (d) => d.status);
   }

@@ -491,16 +491,30 @@ test('checked but unmerged decisions are not shown as agreed', async () => {
         decisions: [
           { id: 1, title: 'Pending merge', status: 'validated_unmerged' },
           { id: 2, title: 'Approved', status: 'accepted' },
+          { id: 3, title: 'Proposed', status: 'proposed', raw_status: 'proposed', version: 3, current: true },
         ],
-        total: 2, page: 1, page_size: 20,
-        facets: { status: { validated_unmerged: 1, accepted: 1 } },
+        total: 3, page: 1, page_size: 20,
+        facets: { status: { validated_unmerged: 1, accepted: 1, proposed: 1 } },
       } : null,
     },
   });
   const result = await data.getPagedDecisions(undefined);
   assert.equal(result.items[0].status, 'validated_unmerged');
   assert.equal(result.items[1].status, 'accepted');
+  assert.equal(result.items[2].write.status, 'proposed');
   assert.equal(result.paging.facets.validated_unmerged, 1);
+});
+
+test('editing a proposed decision preserves its status until Accept is used', async () => {
+  const calls = [];
+  const memory = load('lib/actions/memory.ts', {
+    './gate': { mutate: async (path, options) => { calls.push({ path, options }); return { ok: true, message: 'saved', data: {} }; } },
+  });
+  const target = { title: 'Use one queue', repoPath: '/repo', description: 'old', reason: '', status: 'proposed', version: 4 };
+  assert.equal((await memory.saveDecision(target, { description: 'new', reason: 'because' })).ok, true);
+  assert.equal(calls[0].options.body.status, 'proposed');
+  await memory.acceptDecision(target);
+  assert.equal(calls[1].options.body.status, 'active');
 });
 
 test('reindex refuses an explicitly empty repository path but permits a scoped path', async () => {
@@ -1008,6 +1022,35 @@ test('selected repository scopes indexing and graph requests, and unknown freshn
   for (const status of ['unknown', 'source_missing', 'stale', 'freshness_error']) {
     assert.notEqual(repositoryStatus({ ...repo, freshness: status }).tone, 'ok');
   }
+});
+
+test('origin remotes and poll errors never render credentials, with or without a scheme', async () => {
+  const { redactRemote } = load('lib/repository-status.ts');
+  assert.equal(redactRemote('https://bot:s3cret@github.com/acme/app.git'), 'https://***@github.com/acme/app.git');
+  assert.equal(redactRemote('oauth2:glpat-TOKEN@gitlab.com/acme/app.git'), '***@gitlab.com/acme/app.git');
+  assert.equal(redactRemote('ghp_TOKEN@github.com/acme/app'), '***@github.com/acme/app');
+  assert.equal(redactRemote('https://github.com/acme/app.git?token=SECRET#private'), 'https://github.com/acme/app.git');
+  assert.equal(redactRemote('oauth2:TOKEN@gitlab.com/acme/app.git?access_token=SECRET'), '***@gitlab.com/acme/app.git');
+  assert.equal(redactRemote('git@github.com:acme/app.git'), 'git@github.com:acme/app.git');
+  assert.equal(redactRemote("fatal: unable to access 'oauth2:TOKEN@gitlab.com/acme/app.git/': 403"),
+    "fatal: unable to access '***@gitlab.com/acme/app.git/': 403");
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, 'react': { cache: fn => fn },
+    './mock': {}, './api': { apiConfigured: true, brainFetch: async endpoint => {
+      if (endpoint === '/repositories') return { repositories: [{ id: 7, name: 'app', freshness: {
+        status: 'current', commits_behind: 0, origin_poll_status: 'error',
+        origin_remote: 'oauth2:TOKEN@gitlab.com/acme/app.git',
+        origin_poll_error: 'git ls-remote https://u:TOKEN@gitlab.com/acme/app.git failed: oauth2:TOKEN@gitlab.com/acme/app.git',
+      } }] };
+      throw new Error(endpoint);
+    } },
+  });
+  const repo = await data.getRepository('7');
+  assert.equal(repo.originPoll.remote, '***@gitlab.com/acme/app.git');
+  assert.doesNotMatch(repo.originPoll.error, /TOKEN/);
+  const page = fs.readFileSync(path.join(root, 'app/projects/page.tsx'), 'utf8');
+  assert.match(page, /\{redactRemote\(p\.remote\)\}/);
+  assert.match(page, /\{redactRemote\(p\.error\)\}/);
 });
 
 test('uncommitted observations preserve known zero, unknown and invalid counts', () => {
@@ -1700,6 +1743,55 @@ test('settings delivery and scheduled job observations share explicit UTC format
   });
   assert.equal((await settings.getSettingsView()).telegram.last.at, expected);
   assert.match(expected, /03:30 UTC$/);
+});
+
+test('workflow trigger snippet follows the configured webhook branch', () => {
+  const { workflowTrigger, webhookBranch } = load('lib/git-workflow.ts');
+  assert.equal(workflowTrigger('refs/heads/release/1.x'), "on:\n  push:\n    branches: ['release/1.x']");
+  assert.equal(webhookBranch('refs/heads/main'), 'main');
+  // Anything that is not a branch ref falls back to the server default.
+  for (const ref of [undefined, '', 'refs/heads/', 'refs/tags/v1', 'main']) assert.equal(webhookBranch(ref), 'main');
+  // Glob characters are escaped and quotes doubled, so the filter matches exactly that branch.
+  assert.equal(workflowTrigger("refs/heads/a+b!c'd"), "on:\n  push:\n    branches: ['a\\+b\\!c''d']");
+});
+
+test('settings git integration keeps masked remotes and drops malformed entries', async () => {
+  let git = {
+    webhook_path: '/webhooks/git-merge',
+    webhook_url: null,
+    workflow_example: 'docs/examples/reindex-on-push.yml',
+    origin_remotes: { remotes: [{ path: '/app', url: 'https://***@github.com/o/r.git', branch: 'main' }, { path: '/x' }, 'junk'], skipped: 2, error: null },
+  };
+  const settings = load('lib/settings-view.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: true, brainFetch: async path => path === '/api/settings' ? { sections: [], git } : null },
+  });
+  const view = (await settings.getSettingsView()).git;
+  assert.equal(view.webhookPath, '/webhooks/git-merge');
+  assert.equal(view.webhookUrl, undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(view.originRemotes)), {
+    remotes: [{ path: '/app', url: 'https://***@github.com/o/r.git', branch: 'main' }],
+    skipped: 2,
+  });
+  git = undefined; // a server without the git section
+  assert.equal((await settings.getSettingsView()).git, null);
+});
+
+test('repository origin poll status is read from freshness only when the poll has run', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => ({ repositories: [
+      { id: 1, name: 'a', freshness: { origin_poll_status: 'error', origin_polled_at: '2026-10-22T06:30:00Z', origin_poll_error: 'timed out', origin_remote: 'https://***@h/r.git', commits_behind_origin: null } },
+      { id: 2, name: 'b', freshness: { status: 'current' } },
+    ] }) },
+  });
+  const [polled, never] = (await data.getRepositoryFeed()).repositories;
+  assert.equal(polled.originPoll.status, 'error');
+  assert.equal(polled.originPoll.error, 'timed out');
+  assert.equal(polled.originPoll.remote, 'https://***@h/r.git');
+  assert.equal(polled.originPoll.behind, null);
+  assert.match(polled.originPoll.at, /06:30 UTC$/);
+  assert.equal(never.originPoll, undefined);
 });
 
 

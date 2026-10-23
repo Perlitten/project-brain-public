@@ -38,6 +38,7 @@ export interface QueueEntry {
   enqueuedAt: string | null;
   initiatorId: number | null;
   requestedBy: number | null;
+  decidedAt: string | null;
   version: number;
 }
 
@@ -158,6 +159,7 @@ export function toEntry(raw: unknown): QueueEntry | null {
     enqueuedAt: text(e.enqueued_at),
     initiatorId: int(e.initiator_id),
     requestedBy: int(e.requested_by),
+    decidedAt: text(e.decided_at),
   };
 }
 
@@ -365,7 +367,8 @@ export function queuePosition(entries: QueueEntry[], target: QueueEntry): number
 export function knownBase(board: Pick<ProjectBoard, "tasks" | "queue">, entry: QueueEntry): { sha: string; source: "integrated" | "checked" } | null {
   const integrated = [...board.tasks.map((t) => t.entry), ...board.queue]
     .filter((e): e is QueueEntry => Boolean(e) && e!.status === "integrated" && e!.repositoryId === entry.repositoryId && Boolean(e!.headSha))
-    .sort((a, b) => b.id - a.id)[0];
+    // Match Brain's authoritative ordering: decision time first, then ID.
+    .sort((a, b) => (Date.parse(b.decidedAt ?? "") || 0) - (Date.parse(a.decidedAt ?? "") || 0) || b.id - a.id)[0];
   if (integrated) return { sha: integrated.headSha, source: "integrated" };
   return entry.checkedBaseSha ? { sha: entry.checkedBaseSha, source: "checked" } : null;
 }

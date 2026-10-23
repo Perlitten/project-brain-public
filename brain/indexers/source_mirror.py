@@ -10,8 +10,8 @@ mounted source stays untouched.
 Credentials stay server-held: the origin URL (which may embed a token, from
 ``BRAIN_ORIGIN_REMOTES`` or the checkout's ``remote.origin.url``) is passed on
 the git command line only. It is never written to the mirror's config, and
-:func:`redact_url` removes userinfo from every value that is stored, logged
-or returned.
+:func:`redact_url` removes userinfo, query strings and fragments from every
+value that is stored, logged or returned.
 """
 
 from __future__ import annotations
@@ -32,13 +32,24 @@ from brain.config.settings import settings
 from brain.indexers.source_sync import SourceSyncError, SourceSyncTransientError
 
 _USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)[^/@\s]+@")
+# Scheme-less remotes keep their credentials in front of the host too:
+# "oauth2:TOKEN@gitlab.com/org/repo" (user:secret) or "TOKEN@github.com/org/repo"
+# (a bare token, recognised by the "/" after the host). scp-style
+# "git@github.com:org/repo" has neither shape and stays readable.
+_BARE_USERINFO = re.compile(
+    r"(?<![^\s'\"(<=,;])(?:[^\s/@:'\"]+:[^\s/@'\"]*|[^\s/@:'\"]+(?=@[^\s/@:'\"]+/))@"
+)
+# Query strings and fragments can carry access tokens too. Match URL-shaped
+# tokens after userinfo has been masked, then discard their non-routing suffix.
+_REMOTE_TOKEN = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.\-]*://|\*\*\*@)[^\s'\"]+")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _MISSING_REF_MARKERS = ("couldn't find remote ref", "could not find remote ref")
 
 
 def redact_url(text: str | None) -> str:
-    """Drop ``user:password@`` from every URL in ``text``."""
-    return _USERINFO.sub(r"\g<scheme>***@", str(text or ""))
+    """Drop credentials and URL query/fragment data, with or without a scheme."""
+    masked = _BARE_USERINFO.sub("***@", _USERINFO.sub(r"\g<scheme>***@", str(text or "")))
+    return _REMOTE_TOKEN.sub(lambda match: match.group(0).split("?", 1)[0].split("#", 1)[0], masked)
 
 
 @dataclass(frozen=True)
@@ -105,9 +116,21 @@ def _path_key(path: str | Path) -> str:
     return os.path.normcase(os.path.normpath(str(Path(path).resolve())))
 
 
+# What git check-ref-format forbids anywhere in a ref name.
+_REF_FORBIDDEN = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{")
+
+
+def valid_branch_ref(ref: str) -> bool:
+    """``git check-ref-format`` rules for a ``refs/heads/<branch>`` ref."""
+    if not ref.startswith("refs/heads/") or _REF_FORBIDDEN.search(ref) or ref.endswith("."):
+        return False
+    # No empty component (``//``, a trailing ``/``), none starting with ``.`` or ending with ``.lock``.
+    return all(part and not part.startswith(".") and not part.endswith(".lock") for part in ref.split("/"))
+
+
 def _default_branch() -> str:
     ref = str(settings.PROJECT_BRAIN_WEBHOOK_REF or "").strip()
-    if ref.startswith("refs/heads/") and len(ref) > len("refs/heads/"):
+    if valid_branch_ref(ref):
         return ref[len("refs/heads/"):]
     return "main"
 

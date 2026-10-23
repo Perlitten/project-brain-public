@@ -138,7 +138,7 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
         onPick={(ref) => { setSelected(`r:${ref}`); setPulse(`r:${ref}`); setTab((t) => (t === "decisions" || t === "replaced" ? "current" : t)); }}
       />
       {recording && <div className="atlas-record">
-        <RecordHint kind="decision" />
+        <RecordHint kind="decision" repoPath={repoPath} />
         <RecordHint kind="rule" repoPath={repoPath} />
       </div>}
 

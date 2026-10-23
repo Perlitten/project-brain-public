@@ -15,7 +15,9 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
   const repo = typeof params.repo === "string" ? params.repo : undefined;
   const [result, member, feed] = await Promise.all([getPagedContextPacks(query, repo), restrictedMember(), getRepositoryFeed()]);
   // A test pack is built for the selected project; without one, Brain uses its default repository.
-  const repoPath = repo ? feed.repositories.find((r) => r.slug === repo)?.path : undefined;
+  const selectedRepo = repo ? feed.repositories.find((r) => r.slug === repo || String(r.id) === repo || r.name.toLowerCase() === repo.toLowerCase()) : undefined;
+  const repoPath = selectedRepo?.path;
+  const canTest = !repo || Boolean(selectedRepo);
   const listParams = new URLSearchParams(listQueryParams(query));
   if (repo) listParams.set("repo", repo);
   const back = `/packs${listParams.size ? `?${listParams}` : ""}`;
@@ -32,7 +34,7 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
       <PageHead
         title="Context packs"
         // Building a pack is the Setup action, which is for team admins; members' agents ask Brain directly.
-        actions={member ? undefined : <PackTester repoPath={repoPath} />}
+        actions={member || !canTest ? undefined : <PackTester repoPath={repoPath} />}
         lede={
           <>
             Agents can request a <Term k="pack">context pack</Term> with selected files, decisions and
@@ -59,7 +61,7 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
             // Setup is for team admins; a member's packs appear once their agent asks Brain for context.
             <EmptyState title="No context packs yet" body="Brain hasn’t prepared a context pack in your projects recently. One appears here each time an agent asks Brain for context on a task." />
           ) : (
-            <EmptyState title="No context packs yet" body="Brain hasn’t prepared a context pack for any agent recently. Build one for a real task to see what an agent would get." action={<PackTester repoPath={repoPath} label="Build one" />} />
+            <EmptyState title="No context packs yet" body="Brain hasn’t prepared a context pack for any agent recently. Build one for a real task to see what an agent would get." action={canTest ? <PackTester repoPath={repoPath} label="Build one" /> : undefined} />
           )
         ) : (
         <Table

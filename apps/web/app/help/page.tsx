@@ -92,8 +92,9 @@ function faq(repo?: string): { q: string; a: ReactNode }[] {
           </p>
           <p>
             For local-only operation, point both model roles and their endpoints at local models in{" "}
-            <Link className="link" href={link("/settings")}>Settings</Link>, disable external notifications, webhooks and remote integrations, and use a
-            local agent connection. Details are in the <a className="link" href={doc("docs/FAQ.md#where-does-my-data-go")}>FAQ</a>.
+            <Link className="link" href={link("/setup#provider")}>Setup</Link>, turn off Telegram alerts in{" "}
+            <Link className="link" href={link("/settings#telegram")}>Settings</Link>, remove the webhook secret and set the origin poll interval to 0 in{" "}
+            <Link className="link" href={link("/settings#git")}>Settings → Git &amp; origin sync</Link>, and use a local agent connection. Details are in the <a className="link" href={doc("docs/FAQ.md#where-does-my-data-go")}>FAQ</a>.
           </p>
         </>
       ),

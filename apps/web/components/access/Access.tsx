@@ -25,6 +25,7 @@ const presetScopes = (id: string) => SCOPE_PRESETS.find((p) => p.id === id)?.sco
 export interface AgentTarget {
   apiUrl: string;
   repoPath?: string;
+  httpMcp: boolean;
 }
 
 const KEY_HINT = (
@@ -194,7 +195,7 @@ export function NewIdentityForm({ target }: { target: AgentTarget }) {
         </div>
         <LockNote />
       </form>
-      <KeyDialog k={key} apiUrl={target.apiUrl} repoPath={target.repoPath} onClose={() => setKey(null)} hint={KEY_HINT} />
+      <KeyDialog k={key} apiUrl={target.apiUrl} repoPath={target.repoPath} httpMcp={target.httpMcp} onClose={() => setKey(null)} hint={target.httpMcp ? KEY_HINT : undefined} />
     </>
   );
 }
@@ -401,7 +402,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
           }}
         />
       </Dialog>
-      <KeyDialog k={key} apiUrl={target.apiUrl} repoPath={target.repoPath} onClose={() => setKey(null)} hint={KEY_HINT} />
+      <KeyDialog k={key} apiUrl={target.apiUrl} repoPath={target.repoPath} httpMcp={target.httpMcp} onClose={() => setKey(null)} hint={target.httpMcp ? KEY_HINT : undefined} />
     </li>
   );
 }
