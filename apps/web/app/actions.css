@@ -192,3 +192,11 @@ a.vitals__line:hover .vitals__text { text-decoration: underline; text-underline-
 }
 .mast__menu.btn { display: none; }
 @media (max-width: 560px) { .mast__menu.btn { display: inline-flex; } }
+
+/* Connect repository dialog (components/ConnectRepository.tsx) */
+.connect { display: grid; gap: var(--s-4); }
+.connect__modes { justify-self: start; }
+.connect__check { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; font-size: var(--fs-14); }
+.connect__done { display: grid; gap: var(--s-3); line-height: var(--lh-prose); }
+.origin-cell { display: inline-flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.origin-cell .sub { flex-basis: 100%; }

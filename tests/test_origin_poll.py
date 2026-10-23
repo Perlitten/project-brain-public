@@ -107,6 +107,14 @@ def test_poll_interval_maps_to_a_cron_and_zero_disables_it(monkeypatch):
     assert scheduler.origin_poll_cron(3600) == "0 * * * *"
     assert scheduler.origin_poll_cron(7200) == "0 */2 * * *"
     assert scheduler.origin_poll_cron(86400 * 2) == "0 0 * * *"
+    # Values from the environment that cron cannot repeat evenly round up to one it can.
+    assert scheduler.origin_poll_cron(420) == "*/10 * * * *"
+    assert scheduler.origin_poll_cron(2700) == "0 * * * *"
+    assert scheduler.origin_poll_cron(5400) == "0 */2 * * *"
+    assert scheduler.origin_poll_cron(5 * 3600) == "0 */6 * * *"
+    for seconds in scheduler.ORIGIN_POLL_INTERVALS_S[1:]:
+        step = seconds // 60 if seconds < 3600 else seconds // 3600
+        assert (60 if seconds < 3600 else 24) % step == 0, seconds
 
     monkeypatch.setattr(settings, "BRAIN_ORIGIN_POLL_INTERVAL_S", 0)
     assert "origin_poll" not in {job.job_type for job in scheduler.active_schedules()}
@@ -140,6 +148,60 @@ def test_redact_url_hides_credentials():
     assert "s3cret" not in redacted and "bot:" not in redacted
     assert "github.com/acme/repo.git" in redacted
     assert OriginSpec("https://x:tok@example.com/r.git", "main", True).display_url.count("tok") == 0
+
+
+def test_redact_url_hides_scheme_less_credentials_and_keeps_scp_remotes():
+    assert redact_url("oauth2:glpat-TOKEN@gitlab.com/acme/repo.git") == "***@gitlab.com/acme/repo.git"
+    assert redact_url("ghp_TOKEN@github.com/acme/repo") == "***@github.com/acme/repo"
+    assert redact_url("https://github.com/acme/repo.git?token=SECRET#private") == "https://github.com/acme/repo.git"
+    assert redact_url("oauth2:TOKEN@gitlab.com/acme/repo.git?access_token=SECRET") == "***@gitlab.com/acme/repo.git"
+    assert redact_url("git@github.com:acme/repo.git") == "git@github.com:acme/repo.git"
+    assert redact_url("fatal: unable to access 'oauth2:TOKEN@gitlab.com/acme/repo.git/': 403") == (
+        "fatal: unable to access '***@gitlab.com/acme/repo.git/': 403"
+    )
+    assert redact_url(redact_url("https://u:TOKEN@x.io/r oauth2:TOKEN@x.io/r")) == "https://***@x.io/r ***@x.io/r"
+    assert OriginSpec("oauth2:TOKEN@gitlab.com/acme/repo.git", "main", True).display_url == "***@gitlab.com/acme/repo.git"
+
+
+@pytest.mark.parametrize("url", ["https://oauth2:TOKEN@gitlab.com/acme/repo.git", "oauth2:TOKEN@gitlab.com/acme/repo.git"])
+def test_remote_head_error_never_carries_the_token(monkeypatch, url):
+    failed = subprocess.CompletedProcess([], 128, "", f"fatal: unable to access '{url}/': The requested URL returned 403")
+    monkeypatch.setattr(source_mirror, "_git", lambda *a, **k: failed)
+    with pytest.raises(SourceSyncTransientError) as raised:
+        remote_head(OriginSpec(url, "main", True))
+    assert "TOKEN" not in str(raised.value) and "gitlab.com/acme/repo.git" in str(raised.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["https://oauth2:TOKEN@gitlab.com/acme/repo.git", "oauth2:TOKEN@gitlab.com/acme/repo.git"])
+async def test_poll_stores_and_shows_the_remote_and_error_without_the_token(tmp_path, origin_db, monkeypatch, url):
+    monkeypatch.setattr(origin_poll, "resolve_origin_spec", lambda path: OriginSpec(url, "main", True))
+    # A caller that forgets to redact: the store still never keeps the credential.
+    monkeypatch.setattr(origin_poll, "remote_head", MagicMock(side_effect=SourceSyncTransientError(f"git ls-remote {url} failed")))
+    report = await origin_poll.poll_repository(SimpleNamespace(id=6, path=tmp_path.as_posix(), last_indexed_commit=None))
+    assert report["status"] == "error" and "TOKEN" not in report["error"]
+    state = await origin_state_store.get_origin_state(6)
+    assert state["remote_url"].endswith("***@gitlab.com/acme/repo.git") and "TOKEN" not in state["poll_error"]
+
+    await origin_state_store.upsert_origin_state(6, remote_url=url, poll_error=f"fetch {url} failed")
+    stored = await origin_state_store.get_origin_state(6)
+    assert "TOKEN" not in stored["remote_url"] and "TOKEN" not in stored["poll_error"]
+
+    shown = apply_origin_state({}, {"poll_status": "error", "remote_url": url, "poll_error": f"fetch {url} failed"})
+    assert "TOKEN" not in shown["origin_remote"] and "TOKEN" not in shown["origin_poll_error"]
+
+
+@pytest.mark.asyncio
+async def test_poll_never_stores_query_or_fragment_credentials(tmp_path, origin_db, monkeypatch):
+    url = "https://github.com/acme/repo.git?token=QUERY_SECRET#FRAGMENT_SECRET"
+    monkeypatch.setattr(source_mirror, "_git", lambda *a, **k: subprocess.CompletedProcess([], 128, "", f"fetch {url} failed"))
+    monkeypatch.setattr(origin_poll, "resolve_origin_spec", lambda path: OriginSpec(url, "main", True))
+
+    report = await origin_poll.poll_repository(SimpleNamespace(id=7, path=tmp_path.as_posix(), last_indexed_commit=None))
+    state = await origin_state_store.get_origin_state(7)
+
+    assert "SECRET" not in str(report)
+    assert "SECRET" not in state["remote_url"] and "SECRET" not in state["poll_error"]
 
 
 def test_origin_spec_from_checkout_and_from_configuration(repos, tmp_path, monkeypatch):

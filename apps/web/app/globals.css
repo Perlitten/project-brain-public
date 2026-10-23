@@ -902,13 +902,16 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 
 /* Period switch: a segmented control that scopes one panel to a time window. */
 .segmented { display: flex; padding: 2px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-rail); }
-.segmented a { padding: var(--s-1) var(--s-2); border-radius: 2px; font: 500 var(--fs-12) / 1.35 var(--mono); color: var(--text-3); transition: color var(--dur-control), background-color var(--dur-control); }
-.segmented a:hover { color: var(--text-1); }
-.segmented a[aria-current] { background: var(--surface-raise); color: var(--text-1); }
+.segmented a, .segmented button { border: 0; background: transparent; cursor: pointer; padding: var(--s-1) var(--s-2); border-radius: 2px; font: 500 var(--fs-12) / 1.35 var(--mono); color: var(--text-3); transition: color var(--dur-control), background-color var(--dur-control); }
+.segmented a:hover, .segmented button:hover { color: var(--text-1); }
+.segmented a[aria-current], .segmented button[aria-pressed="true"] { background: var(--surface-raise); color: var(--text-1); }
 
 /* Project detail: stats, coverage meters, then the caveat, each with breathing room. */
 .project-detail { display: grid; gap: var(--s-6); }
 .project-detail__note { margin: 0; font-size: var(--fs-12); }
+.project-detail .stat { min-width: 0; }
+.project-detail .stat__note { overflow-wrap: anywhere; }
+.project-detail .stat__note.text-bad { color: var(--bad-fg); }
 
 /* ---------- disclosure: secondary detail, closed by default ---------- */
 .disclosure { border-top: 1px solid var(--border-subtle); padding-top: var(--s-4); color: var(--text-2); font-size: var(--fs-12); line-height: var(--lh-prose); }

@@ -4,6 +4,8 @@ on:
   push:
     # Merges land on `main`; the posted ref is the real pushed ref
     # ($GITHUB_REF), so it can never drift from this trigger again.
+    # This branch must match Settings → Git & origin sync → "Branch that
+    # triggers a reindex"; Settings shows this block for the configured ref.
     branches: [main]
 
 permissions:

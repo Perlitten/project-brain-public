@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from brain.database.models import RepositoryOriginState
 from brain.database.session import async_session_factory
+from brain.indexers.source_mirror import redact_url
 
 _FIELDS = (
     "remote_url",
@@ -77,6 +78,10 @@ async def upsert_origin_state(repository_id: int, **values: Any) -> bool:
     unknown = set(values) - set(_FIELDS)
     if unknown:
         raise ValueError(f"Unknown origin state field(s): {', '.join(sorted(unknown))}")
+    # Both are shown in the UI: whatever the caller passed, no credential is stored.
+    for name in ("remote_url", "poll_error"):
+        if values.get(name):
+            values[name] = redact_url(values[name])
     for attempt in range(2):
         try:
             await _write(repository_id, values)

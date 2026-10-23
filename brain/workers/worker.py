@@ -11,6 +11,7 @@ from loguru import logger
 
 from brain.config.paths import allowed_repo_roots
 from brain.config.settings import settings
+from brain.config.shared_settings import refresh_shared_settings
 from brain.database.session import close_database_connections, init_db, redis_client
 from brain.late_interaction.client import (
     LateInteractionReleaseUnavailableError,
@@ -414,6 +415,8 @@ async def run_worker() -> None:
 
     try:
         while not stop.is_set():
+            # Git settings saved from the web UI apply to the next job without a restart.
+            await refresh_shared_settings()
             await queue.recover_stale()
             await process_one(queue)
     finally:
