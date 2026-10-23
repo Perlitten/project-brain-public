@@ -1,0 +1,21 @@
+{
+  "observed_at": "2026-10-23T04:44:01.501714+00:00",
+  "url": "https://brain.167.86.91.77.nip.io/api/version",
+  "status": 200,
+  "headers": {
+    "Date": "Fri, 23 Oct 2026 04:44:01 GMT",
+    "Cache-Control": null,
+    "Age": null,
+    "Server": "envoy"
+  },
+  "response": {
+    "name": "Project Brain",
+    "version": "0.9.2",
+    "release_channel": "self-hosted",
+    "release_codename": "productization-v0.9.2",
+    "build_sha": "b2e9be03b9b090352395a7abc8bce5d757025dff",
+    "build_time": "2026-10-18T15:16:21Z",
+    "source_digest": "ce6a14889f09cb13957c2f86421a5cb6c1f3de1aa75c6bc389271ced2e9d754d"
+  },
+  "github_main": "d3726712e1c44f10427d4740a372dfec442c961a"
+}
