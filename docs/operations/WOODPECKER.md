@@ -224,3 +224,28 @@ passed the full normal test workflow. Its restricted-role fixture URL is loopbac
 matching the source runner and unchanged destructive-test assertions. Exact-path
 git trust is configured before mutation. The original mutation.sh,32 shards and
 335-minute timeout remain unchanged; a complete mutation measurement is unverified.
+
+## Isolated native agents — 2026-10-23
+
+The Windows local backend may run inside a credential-isolated AppContainer.
+Provision Python 3.12, PATHEXT and an explicit tool PATH before starting it. The
+optional BRAIN_CI_WINDOWS_PATH restores that provisioned PATH in both steps.
+Windows Lite downloads the public GitHub source archive for CI_COMMIT_SHA over
+verified HTTPS. It validates the exact revision prefix and archive paths before
+extracting, then runs the unchanged hash-locked dependencies and native acceptance
+commands. These tests do not consume Git history; the separate privacy workflow
+still performs its mandatory full-history Git checkout.
+
+Agent labels for native local backends must use mandatory matching, for example
+!platform=windows/amd64,!backend=local, and additionally !capability=brain-docker
+on Linux. Optional labels alone allow unrelated unlabelled workflows to run on
+the wrong operating system. Restrict both agents to this repository. They receive
+only their own agent credentials, never release or host credentials.
+
+A Docker-capable local agent must own an isolated daemon, without the workstation
+or production Docker socket mounted into its jobs. Nested Docker needs delegated
+cgroup v2 controllers before starting its daemon; verify an actual container with
+CPU and memory limits. Where nested overlay mounts are unavailable, use vfs.
+Keep its network isolated from host/private services and persist those rules.
+The workstation must be running for workstation-hosted native agents to accept
+jobs; their availability is not supplied by the ordinary Contabo Docker agent.

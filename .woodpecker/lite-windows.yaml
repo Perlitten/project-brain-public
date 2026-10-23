@@ -19,10 +19,36 @@ steps:
   commands:
   - if ($env:BRAIN_CI_WINDOWS_PATH) { $env:Path = $env:BRAIN_CI_WINDOWS_PATH }
   - if ($env:CI_COMMIT_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Invalid commit SHA' }
-  - git init .; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-  - git remote add origin https://github.com/Perlitten/project-brain-public.git; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-  - git fetch --tags origin $env:CI_COMMIT_SHA; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-  - git checkout --detach $env:CI_COMMIT_SHA; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  # Windows Lite does not consume Git history. Use GitHub's immutable source
+  # archive so AppContainer need not inspect directories above its workspace.
+  - |
+    python -c @'
+    import io, os, pathlib, re, stat, urllib.request, zipfile
+    revision = os.environ['CI_COMMIT_SHA']
+    assert re.fullmatch(r'[0-9a-f]{40}', revision), 'Invalid commit SHA'
+    prefix = 'project-brain-public-' + revision + '/'
+    url = 'https://codeload.github.com/Perlitten/project-brain-public/zip/' + revision
+    with urllib.request.urlopen(url, timeout=120) as response:
+        archive = zipfile.ZipFile(io.BytesIO(response.read()))
+    assert archive.testzip() is None, 'Corrupt source archive'
+    entries = archive.infolist()
+    assert entries, 'Empty source archive'
+    for entry in entries:
+        assert entry.filename.startswith(prefix), 'Unexpected source revision'
+        relative = pathlib.PurePosixPath(entry.filename[len(prefix):])
+        assert not relative.is_absolute() and '..' not in relative.parts, 'Unsafe archive path'
+        assert not stat.S_ISLNK(entry.external_attr >> 16), 'Unexpected source symlink'
+    for entry in entries:
+        relative = pathlib.PurePosixPath(entry.filename[len(prefix):])
+        target = pathlib.Path(*relative.parts)
+        if entry.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(archive.read(entry))
+    print('Checked out immutable source archive at ' + revision)
+    '@
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 - name: lite-windows
   image: powershell
   commands:
