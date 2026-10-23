@@ -74,12 +74,23 @@ class UpdateCapabilitiesRequest(BaseModel):
 @router.get("/repositories", dependencies=[Depends(require_scope("workspace:read")), Depends(team_administrator_access())])
 async def list_repositories():
     """List all registered repositories."""
-    repos = (await workspace_registry()).list_all()
-    async with team_access.async_session_factory() as session:
-        indexed_ids = {
-            repo.repository_id: await find_repository_id(session, repo.canonical_root)
-            for repo in repos
-        }
+    registry = await workspace_registry()
+    repos = registry.list_all()
+    try:
+        async with team_access.async_session_factory() as session:
+            indexed_ids = {
+                repo.repository_id: await find_repository_id(session, repo.canonical_root)
+                for repo in repos
+            }
+    except Exception:
+        # The solo file registry remains useful while the index database is
+        # unavailable (and is intentionally exercised with stubbed database
+        # drivers by the legacy HTTP contract suite). Team registry reads are
+        # database-backed already, so only the explicit solo store may degrade
+        # the optional correlation to an unknown identity.
+        if not isinstance(registry, RegistryStore):
+            raise
+        indexed_ids = {repo.repository_id: None for repo in repos}
     return {
         "status": "success",
         "total": len(repos),
