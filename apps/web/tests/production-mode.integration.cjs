@@ -165,8 +165,9 @@ test("production pages distinguish failure, missing source, unmeasured tools and
     for (const [route, title] of [['/activity', 'Activity'], ['/memory', 'Memory']]) {
       html = await (await fetch(web.base + route)).text();
       assert.match(html, new RegExp(`<title>${title} · Project Brain</title>`));
-      const heading = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/)?.[1].replace(/<[^>]*>/g, '').replace(/&amp;/g, '&');
-      assert.equal(heading, title);
+      const heading = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/)?.[1];
+      assert.ok(heading, "Page must include an h1");
+      assert.match(heading, new RegExp(`aria-label="${title}"`));
       assert.match(html, new RegExp(`crumb__page">${title}</span>`));
     }
     html = await (await fetch(web.base + "/mcp")).text();
