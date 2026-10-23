@@ -3,8 +3,10 @@
 Only the fields in :data:`FIELDS` are readable or writable here, each with its
 own type and range. Secrets (bot token, webhook secret) are write-only: GET says
 whether one is set, never what it is. Writes land in the checkout's ``.env``
-(through ``brain.onboarding.envfile``) and on the live API settings; workers
-and the scheduler read ``.env`` when they start.
+(through ``brain.onboarding.envfile``) and on the live API settings. Git &
+origin sync keys are also stored in the database (``brain.config.shared_settings``),
+which the worker and scheduler apply without a restart; the other keys reach
+them when they restart with this ``.env``.
 """
 from __future__ import annotations
 
@@ -12,7 +14,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,9 +23,11 @@ from pydantic import BaseModel, Field as PydanticField
 from apps.api.auth import require_api_key, require_scope
 from apps.api.team_access import team_administrator_access
 from brain.config.settings import settings
-from brain.indexers.source_mirror import redact_url
+from brain.config.shared_settings import SHARED_KEYS, save_shared_settings
+from brain.indexers.source_mirror import redact_url, valid_branch_ref
 from brain.telemetry.query_capture import current_query_capture, set_query_capture
 from brain.onboarding.envfile import check_endpoint_host, setup_env_path, update_env_file
+from brain.workers.scheduler import ORIGIN_POLL_INTERVALS_S
 
 router = APIRouter(prefix="/api/settings", tags=["settings"],
                    dependencies=[Depends(require_api_key), Depends(team_administrator_access())])
@@ -42,6 +46,10 @@ class SettingField:
     max: Optional[float] = None
     pattern: Optional[str] = None
     clearable: bool = False
+    # Numbers: the only values accepted. Text: a further check after ``pattern``.
+    choices: Optional[Tuple[int, ...]] = None
+    check: Optional[Callable[[str], bool]] = None
+    check_hint: str = ""
 
 
 SECTIONS: Dict[str, str] = {
@@ -74,15 +82,17 @@ FIELDS: List[SettingField] = [
     SettingField("INDEX_EMBEDDING_BATCH_SIZE", "indexing", "Embedding batch size", "int", "Texts per embeddings request.", min=1, max=256),
     SettingField("WORKER_JOB_TIMEOUT_SECONDS", "indexing", "Job timeout, s", "int", "A background job is stopped after this long.", min=60, max=6 * 3600),
     SettingField("PROJECT_BRAIN_WEBHOOK_TOKEN", "git", "Webhook secret", "secret", "HMAC secret the merge webhook checks (X-Hub-Signature-256). Store the same value as the PROJECT_BRAIN_WEBHOOK_TOKEN secret in GitHub. Write-only.", clearable=True),
-    SettingField("PROJECT_BRAIN_WEBHOOK_REF", "git", "Branch that triggers a reindex", "text", "Full ref, e.g. refs/heads/main. Pushes to any other ref are ignored.", pattern=r"refs/heads/[A-Za-z0-9._/-]{1,200}"),
+    SettingField("PROJECT_BRAIN_WEBHOOK_REF", "git", "Branch that triggers a reindex", "text", "Full ref, e.g. refs/heads/main. Pushes to any other ref are ignored.", pattern=r"refs/heads/[A-Za-z0-9._/-]{1,200}", check=valid_branch_ref, check_hint="not a valid branch name (see git check-ref-format)"),
     SettingField("BRAIN_WEBHOOK_FETCH_SOURCE", "git", "Fetch the pushed revision", "bool", "Fetch origin and check out the merged revision before indexing. Off: the reindex fails unless the checkout is already there."),
     SettingField("BRAIN_WEBHOOK_FETCH_TIMEOUT_S", "git", "Fetch timeout, s", "int", "How long a reindex may spend fetching origin.", min=10, max=1800),
-    SettingField("BRAIN_ORIGIN_POLL_INTERVAL_S", "git", "Origin poll interval, s", "int", "How often each attached repository's origin is checked for new commits. 0 turns polling off. Rounded up to whole minutes, and to whole hours from 1 hour on.", min=0, max=24 * 3600),
+    SettingField("BRAIN_ORIGIN_POLL_INTERVAL_S", "git", "Origin poll interval, s", "int", "How often each attached repository's origin is checked for new commits. Off stops polling.", min=0, max=24 * 3600, choices=ORIGIN_POLL_INTERVALS_S),
     SettingField("BRAIN_ORIGIN_POLL_TIMEOUT_S", "git", "Origin poll timeout, s", "int", "Per-repository limit for one git ls-remote or mirror fetch.", min=5, max=600),
     SettingField("BRAIN_SOURCE_MIRROR_DIR", "git", "Mirror directory", "text", "Absolute path of a writable directory on the server. Read-only or non-git sources are indexed from a bare mirror kept here. Blank turns mirrors off.", pattern=r"(/|[A-Za-z]:[\\/])[^\x00-\x1f]*", clearable=True),
 ]
 BY_KEY: Dict[str, SettingField] = {f.key: f for f in FIELDS}
 SETTINGS_KEYS = frozenset(BY_KEY)
+# Stored in the database and applied by every process: no restart, and the process environment does not win.
+_CENTRAL = frozenset(SHARED_KEYS) | {"REQUEST_TELEMETRY_CAPTURE_QUERY"}
 
 
 def _public(f: SettingField) -> Dict[str, Any]:
@@ -94,11 +104,13 @@ def _public(f: SettingField) -> Dict[str, Any]:
         "help": f.help,
         "clearable": f.clearable,
         # Also passed in the process environment (e.g. docker compose): that
-        # value wins over .env on the next restart.
-        "from_env": f.key in os.environ and f.key != "REQUEST_TELEMETRY_CAPTURE_QUERY",
+        # value wins over .env on the next restart. Centrally stored keys win over it.
+        "from_env": f.key in os.environ and f.key not in _CENTRAL,
     }
     if f.min is not None:
         out["min"] = f.min
+    if f.choices is not None:
+        out["choices"] = list(f.choices)
     if f.max is not None:
         out["max"] = f.max
     if f.kind == "secret":
@@ -125,9 +137,7 @@ WEBHOOK_EXAMPLE = "docs/examples/reindex-on-push.yml"
 
 def _display_remote(url: str) -> str:
     """An origin URL without userinfo, query or fragment: tokens never leave the server."""
-    text = redact_url(url.strip()).split("?", 1)[0].split("#", 1)[0]
-    # No scheme: "user:token@host/..." still carries a secret; scp-style "git@host:org/repo" does not.
-    return text if "://" in text else re.sub(r"^[^@/\s]*:[^@/\s]*@", "***@", text)
+    return redact_url(url.strip()).split("?", 1)[0].split("#", 1)[0]
 
 
 def _origin_remotes() -> Dict[str, Any]:
@@ -235,6 +245,8 @@ def _coerce(f: SettingField, value: Value) -> tuple[str, Any]:
             raise ValueError(f"{f.label}: a whole number")
         if (f.min is not None and n < f.min) or (f.max is not None and n > f.max):
             raise ValueError(f"{f.label}: between {f.min:g} and {f.max:g}")
+        if f.choices is not None and n not in f.choices:
+            raise ValueError(f"{f.label}: one of {', '.join(str(c) for c in f.choices)}")
         return str(n), n
     if not isinstance(value, str):
         raise ValueError(f"{f.label}: text")
@@ -255,6 +267,8 @@ def _coerce(f: SettingField, value: Value) -> tuple[str, Any]:
         text = text.rstrip("/")
     if f.pattern and not re.fullmatch(f.pattern, text):
         raise ValueError(f"{f.label}: unexpected format")
+    if f.check and not f.check(text):
+        raise ValueError(f"{f.label}: {f.check_hint or 'unexpected format'}")
     return text, text
 
 
@@ -287,14 +301,22 @@ async def patch_settings(body: SettingsPatch) -> Dict[str, Any]:
             await set_query_capture(live["REQUEST_TELEMETRY_CAPTURE_QUERY"])
         except Exception as exc:
             raise HTTPException(status_code=503, detail="Query capture policy was not saved. Retry; do not assume capture has changed.") from exc
+    shared = {k: v for k, v in live.items() if k in SHARED_KEYS}
+    if shared:
+        try:
+            await save_shared_settings(shared)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Git settings were not shared with the workers. Retry; background jobs still use the previous values.") from exc
     for key, value in live.items():
         setattr(settings, key, value)
     notes = ["Saved to the server’s .env and applied to the API."]
-    if set(live) - {"REQUEST_TELEMETRY_CAPTURE_QUERY"}:
+    if set(live) - _CENTRAL:
         notes.append("Restart the workers and scheduler so background jobs use the changed settings too.")
+    if shared:
+        notes.append("Git & origin sync settings are stored centrally: the worker and scheduler apply them within a minute, no restart needed.")
     if "REQUEST_TELEMETRY_CAPTURE_QUERY" in live:
         notes.append("Query capture is stored centrally and checked before each recording in API and MCP processes; no MCP restart is needed for this preference.")
-    overridden = sorted(k for k in updates if k in os.environ and k != "REQUEST_TELEMETRY_CAPTURE_QUERY")
+    overridden = sorted(k for k in updates if k in os.environ and k not in _CENTRAL)
     if overridden:
         notes.append(
             "Also set in the server’s process environment (e.g. docker compose): "

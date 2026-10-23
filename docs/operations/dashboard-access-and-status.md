@@ -63,8 +63,14 @@ probe is `null`, never a fabricated healthy result. Failed jobs collection is
 unavailable, distinct from a successful empty job history.
 
 Saving Settings updates the API immediately. Worker and scheduler settings need a
-restart in those processes. The shared query-capture preference is the exception:
-API and MCP recorders read it before every query record. Environment/deployment overrides can return after restart; update the
+restart in those processes, with two exceptions. The shared query-capture preference:
+API and MCP recorders read it before every query record. And **Git & origin sync**
+(webhook ref, source fetch and timeout, origin poll interval and timeout, mirror
+directory): these are also stored in the `brain_runtime_settings` table, which the
+API applies at start-up and the worker and scheduler re-read every 15 seconds, so a
+save reaches polling and webhook jobs within a minute without a restart. A saved
+value wins over the deployment's environment until it is saved again; the webhook
+secret and `BRAIN_ORIGIN_REMOTES` stay in the API's `.env`. Environment/deployment overrides can return after restart; update the
 deployment configuration when the Settings page identifies an override. Displayed
 server times use the shared UTC formatter; values without timezone information are
 not assigned one silently.

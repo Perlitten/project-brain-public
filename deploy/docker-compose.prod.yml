@@ -118,7 +118,10 @@ services:
       # Brain-owned bare mirrors: a read-only or origin-less source follows its
       # origin through them (set BRAIN_SOURCE_MIRROR_DIR= in .env to turn this
       # off). BRAIN_ORIGIN_REMOTES names the origin of a source that has none,
-      # e.g. {"/app": "https://github.com/<owner>/<repo>.git"}.
+      # e.g. {"/app": "https://github.com/<owner>/<repo>.git"}. The mirror
+      # directory, poll interval and other Settings → Git & origin sync values
+      # saved in the web UI are stored in the database and win over these
+      # defaults in every container (brain/config/shared_settings.py).
       BRAIN_SOURCE_MIRROR_DIR: ${BRAIN_SOURCE_MIRROR_DIR-/var/lib/brain/mirrors}
       BRAIN_ORIGIN_REMOTES: ${BRAIN_ORIGIN_REMOTES:-}
       BRAIN_ORIGIN_POLL_INTERVAL_S: ${BRAIN_ORIGIN_POLL_INTERVAL_S:-300}
@@ -188,7 +191,10 @@ services:
       # Brain-owned bare mirrors: a read-only or origin-less source follows its
       # origin through them (set BRAIN_SOURCE_MIRROR_DIR= in .env to turn this
       # off). BRAIN_ORIGIN_REMOTES names the origin of a source that has none,
-      # e.g. {"/app": "https://github.com/<owner>/<repo>.git"}.
+      # e.g. {"/app": "https://github.com/<owner>/<repo>.git"}. The mirror
+      # directory, poll interval and other Settings → Git & origin sync values
+      # saved in the web UI are stored in the database and win over these
+      # defaults in every container (brain/config/shared_settings.py).
       BRAIN_SOURCE_MIRROR_DIR: ${BRAIN_SOURCE_MIRROR_DIR-/var/lib/brain/mirrors}
       BRAIN_ORIGIN_REMOTES: ${BRAIN_ORIGIN_REMOTES:-}
       BRAIN_ORIGIN_POLL_INTERVAL_S: ${BRAIN_ORIGIN_POLL_INTERVAL_S:-300}

@@ -20,6 +20,7 @@ from apps.api.team_access import team_denied_response
 from apps.api.routers import telegram_bridge, core, harness, jobs, scheduler, setup, drift, graph_v2, coupling, impact, remediation, workspace, portfolio, freshness, lab, experiments, ledger, control, execution, routing, shadow, operations, improvement, audit, admin, web, quality, app_settings, web_login
 from brain.config.paths import allowed_repo_roots
 from brain.config.settings import settings
+from brain.config.shared_settings import apply_shared_settings
 from brain.database.session import close_database_connections, init_db
 from brain.workers.queue import QueueDepthExceeded
 from brain.late_interaction.client import (
@@ -52,6 +53,8 @@ async def lifespan(app: FastAPI):
         # Keep serving health and diagnostics; readiness remains red until
         # schema initialization succeeds on a later worker task or restart.
         logger.error(f"Startup schema initialization deferred: {type(exc).__name__}: {exc}")
+    # Git settings saved from the web UI win over the environment (never raises).
+    await apply_shared_settings()
     try:
         from apps.api.registry_access import import_registry_file_at_startup
 

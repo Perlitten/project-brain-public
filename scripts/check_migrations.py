@@ -15,6 +15,8 @@ from brain.database.session import async_engine, init_db
 
 EXPECTED_MIGRATED_COLUMNS = [
     ("brain_query_capture_policy", "enabled"),
+    # Git settings saved in the web UI reach the worker through this table (brain.config.shared_settings).
+    ("brain_runtime_settings", "value"),
     ("brain_request_telemetry", "query_text"),
     ("insights", "dismissed_reason"),
     ("insights", "dismissed_by"),

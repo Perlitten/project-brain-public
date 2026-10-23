@@ -1,6 +1,6 @@
 """/api/settings: typed, allowlisted .env writes; secrets are write-only."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 with (
     patch("sqlalchemy.ext.asyncio.create_async_engine"),
@@ -110,7 +110,16 @@ def test_patch_clear_removes_a_secret(tmp_path):
         {"values": {"PROJECT_BRAIN_GIT_REPO_PATH": "/app"}},  # not exposed
         {"values": {"PROJECT_BRAIN_WEBHOOK_REF": "main"}},  # must be a full ref
         {"values": {"PROJECT_BRAIN_WEBHOOK_REF": "refs/heads/main\nOTHER=1"}},
+        # git check-ref-format: no empty component, "..", ".lock" suffix, leading or trailing dot.
+        {"values": {"PROJECT_BRAIN_WEBHOOK_REF": "refs/heads//"}},
+        {"values": {"PROJECT_BRAIN_WEBHOOK_REF": "refs/heads/feature//x"}},
+        {"values": {"PROJECT_BRAIN_WEBHOOK_REF": "refs/heads/foo..bar"}},
+        {"values": {"PROJECT_BRAIN_WEBHOOK_REF": "refs/heads/main.lock"}},
+        {"values": {"PROJECT_BRAIN_WEBHOOK_REF": "refs/heads/.hidden"}},
+        {"values": {"PROJECT_BRAIN_WEBHOOK_REF": "refs/heads/main."}},
         {"values": {"BRAIN_ORIGIN_POLL_INTERVAL_S": -1}},
+        {"values": {"BRAIN_ORIGIN_POLL_INTERVAL_S": 420}},  # cron cannot repeat every 7 minutes
+        {"values": {"BRAIN_ORIGIN_POLL_INTERVAL_S": 5400}},
         {"values": {"BRAIN_SOURCE_MIRROR_DIR": "relative/dir"}},
         {"clear": ["PROJECT_BRAIN_WEBHOOK_REF"]},  # not clearable
         {},
@@ -120,6 +129,21 @@ def test_patch_rejects_bad_input_without_writing(tmp_path, payload):
     response = client.patch("/api/settings", json=payload)
     assert response.status_code in (400, 422), response.text
     assert not (tmp_path / ".env").exists()
+
+
+def test_poll_interval_offers_only_intervals_cron_can_repeat():
+    field = _field(client.get("/api/settings").json(), "BRAIN_ORIGIN_POLL_INTERVAL_S")
+    assert field["choices"][0] == 0 and 300 in field["choices"] and 420 not in field["choices"]
+    for seconds in field["choices"]:
+        assert seconds == 0 or 3600 % seconds == 0 or 86400 % seconds == 0
+
+
+@pytest.mark.parametrize("ref", ["refs/heads/main", "refs/heads/release/1.x", "refs/heads/feat/a-b_c"])
+def test_patch_accepts_valid_branch_refs(tmp_path, ref):
+    with patch("apps.api.routers.app_settings.save_shared_settings", new_callable=AsyncMock):
+        response = client.patch("/api/settings", json={"values": {"PROJECT_BRAIN_WEBHOOK_REF": ref}})
+    assert response.status_code == 200, response.text
+    assert settings.PROJECT_BRAIN_WEBHOOK_REF == ref
 
 
 def test_patch_preserves_other_env_lines(tmp_path):
@@ -171,24 +195,48 @@ def test_webhook_secret_is_write_only():
     assert settings.PROJECT_BRAIN_WEBHOOK_TOKEN == "whsec-new-secret"
 
 
-def test_patch_git_settings(tmp_path):
-    response = client.patch(
-        "/api/settings",
-        json={
-            "values": {
-                "PROJECT_BRAIN_WEBHOOK_REF": "refs/heads/release/1.x",
-                "BRAIN_ORIGIN_POLL_INTERVAL_S": 0,
-                "BRAIN_SOURCE_MIRROR_DIR": "/var/lib/brain/mirrors",
-            }
-        },
-    )
+GIT_VALUES = {
+    "PROJECT_BRAIN_WEBHOOK_REF": "refs/heads/release/1.x",
+    "BRAIN_ORIGIN_POLL_INTERVAL_S": 0,
+    "BRAIN_SOURCE_MIRROR_DIR": "/var/lib/brain/mirrors",
+}
+
+
+def test_patch_git_settings_are_shared_with_the_workers(tmp_path, monkeypatch):
+    # The worker container never reads the API's .env: these keys must reach the database too.
+    monkeypatch.setenv("BRAIN_ORIGIN_POLL_INTERVAL_S", "300")
+    with patch("apps.api.routers.app_settings.save_shared_settings", new_callable=AsyncMock) as save:
+        response = client.patch("/api/settings", json={"values": {**GIT_VALUES, "TELEGRAM_ALERTS_ENABLED": True}})
     assert response.status_code == 200, response.text
+    save.assert_awaited_once_with(GIT_VALUES)
     env = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "PROJECT_BRAIN_WEBHOOK_REF=refs/heads/release/1.x" in env
     assert "BRAIN_ORIGIN_POLL_INTERVAL_S=0" in env
     assert settings.BRAIN_ORIGIN_POLL_INTERVAL_S == 0
     assert settings.BRAIN_SOURCE_MIRROR_DIR == "/var/lib/brain/mirrors"
-    assert any("Restart the workers and scheduler" in note for note in response.json()["notes"])
+    body = response.json()
+    assert any("apply them within a minute, no restart" in note for note in body["notes"])
+    # The alert toggle is not shared, so the restart note stays for it.
+    assert any("Restart the workers and scheduler" in note for note in body["notes"])
+    # A stored value wins over the process environment: not reported as overridden.
+    assert not any("process environment" in note for note in body["notes"])
+    assert _field(client.get("/api/settings").json(), "BRAIN_ORIGIN_POLL_INTERVAL_S")["from_env"] is False
+
+
+def test_patch_git_settings_alone_needs_no_restart():
+    with patch("apps.api.routers.app_settings.save_shared_settings", new_callable=AsyncMock):
+        response = client.patch("/api/settings", json={"values": {"BRAIN_ORIGIN_POLL_INTERVAL_S": 600}})
+    assert response.status_code == 200, response.text
+    assert not any("Restart the workers" in note for note in response.json()["notes"])
+
+
+def test_patch_git_settings_fails_loudly_when_they_cannot_be_shared():
+    before = settings.PROJECT_BRAIN_WEBHOOK_REF
+    with patch("apps.api.routers.app_settings.save_shared_settings", AsyncMock(side_effect=RuntimeError("db down"))):
+        response = client.patch("/api/settings", json={"values": {"PROJECT_BRAIN_WEBHOOK_REF": "refs/heads/next"}})
+    assert response.status_code == 503
+    assert "not shared with the workers" in response.json()["detail"]
+    assert settings.PROJECT_BRAIN_WEBHOOK_REF == before
 
 
 def test_origin_remotes_are_listed_with_credentials_masked():
