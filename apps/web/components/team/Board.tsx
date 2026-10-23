@@ -1,6 +1,6 @@
 "use client";
 // The team Board: a sentence on what can't land and what is next, the plan by
-// stage, who is changing which path, the integration queue, and a side column
+// attention, who is changing which path, the integration queue, and a side column
 // with what needs a person or one task in full. Controls appear only where
 // Brain would allow them (lib/board-model.ts); Brain still checks every call
 // with the member's own key, the lease's fencing token and the entry's version.
@@ -59,15 +59,15 @@ function LeaseControls({ lease, ctx }: { lease: Lease; ctx: Ctx }) {
   );
 }
 
-function RequestRunButton({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
+function RequestRunButton({ task, ctx, label = "Request a fresh run", primary = false }: { task: BoardTask; ctx: Ctx; label?: string; primary?: boolean }) {
   const [run, setRun] = useState<NewRun | null>(null);
   const { run: go, pending, mode } = useAction(requestRun, { title: "Request run" });
   const [asking, setAsking] = useState(false);
   return (
     <>
-      <button type="button" className="btn btn--neutral btn--sm" disabled={pending || mode !== "on" || !task.branch} onClick={() => setAsking(true)}>
+      <button type="button" className={`btn ${primary ? "btn--primary" : "btn--neutral"} btn--sm`} disabled={pending || mode !== "on" || !task.branch} onClick={() => setAsking(true)}>
         {pending ? <span className="spin" aria-hidden="true" /> : null}
-        Request a fresh run
+        {label}
       </button>
       <Dialog open={asking} onClose={() => setAsking(false)} title={`Request a fresh run of “${task.title}”?`}>
         <p className="dialog__text">
@@ -328,7 +328,7 @@ function ConflictButton({ task, ctx, label = "See conflict", className = "btn bt
 }
 
 // ---------------------------------------------------------------------------
-// Board: a sentence, the plan by stage, who changes which path, the queue, and
+// Board: a sentence, the plan by attention, who changes which path, the queue, and
 // a side column that lists what needs a person or inspects one task.
 
 // Stages run left to right as work moves; a stage's tone says whether it needs a person.
@@ -339,7 +339,6 @@ const STAGE_TONE: Record<BoardColumn, StageTone> = {
 const STAGE_SHORT: Record<BoardColumn, string> = {
   blocked: "Blocked", ready: "Ready", running: "Running", awaiting: "To integrate", needs_rebase: "Needs rebase", stale_instructions: "Stale", integrated: "Done",
 };
-const STAGE_INDEX = new Map(BOARD_COLUMNS.map((c, i) => [c.id, i]));
 const REFRESH_MS = 30_000;
 
 function context(board: ProjectBoard, selfId: number | null): Ctx {
@@ -422,106 +421,148 @@ function Section({ title, note, children }: { title: string; note?: ReactNode; c
   );
 }
 
-// ---------- plan: every task in flight, one row each, its marker in the stage it has reached
+// ---------- plan: every task in flight, what needs a person first, each row saying why and what to do
 
-function planRows(board: ProjectBoard) {
-  const shown = board.tasks.filter((t) => t.column !== null);
-  const ids = new Set(shown.map((t) => t.id));
-  const children = (id: string) => shown.filter((t) => t.parentId === id);
-  const rows: { task: BoardTask; kids: BoardTask[]; child: boolean }[] = [];
-  for (const t of shown) {
-    if (t.parentId && ids.has(t.parentId)) continue;
-    const kids = children(t.id);
-    rows.push({ task: t, kids, child: false });
-    for (const k of kids) rows.push({ task: k, kids: [], child: true });
-  }
-  return rows;
+// Groups top to bottom by who moves the task next; within a group, the stages that block most come first.
+const PLAN_GROUPS: { id: string; title: string; columns: BoardColumn[] }[] = [
+  { id: "act", title: "Needs a person", columns: ["needs_rebase", "stale_instructions", "awaiting", "ready"] },
+  { id: "running", title: "Agents working", columns: ["running"] },
+  { id: "blocked", title: "Waiting on dependencies", columns: ["blocked"] },
+];
+
+/** Tasks that do work: a task that only groups subtasks shows through them. */
+function planTasks(board: ProjectBoard) {
+  const groups = new Set(board.tasks.map((t) => t.parentId).filter((id): id is string => id !== null));
+  return board.tasks.filter((t) => t.column !== null && !groups.has(t.id));
 }
 
-function PlanRow({ task, kids, child, ctx, position }: { task: BoardTask; kids: BoardTask[]; child: boolean; ctx: Ctx; position: number | null }) {
+function planOrder(board: ProjectBoard, columns: BoardColumn[]) {
+  const rank = (t: BoardTask) => columns.indexOf(t.column as BoardColumn);
+  const pos = (t: BoardTask) => (t.entry && t.entry.status === "queued" ? queuePosition(board.queue, t.entry) ?? 99 : 99);
+  return (a: BoardTask, b: BoardTask) => rank(a) - rank(b) || pos(a) - pos(b);
+}
+
+/** Why the task is where it is, in one line. */
+function PlanWhy({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
+  const { board, selfId } = ctx;
+  const e = task.entry;
+  switch (task.column) {
+    case "needs_rebase":
+      return e
+        ? <>Started from <span className="mono">{short(e.baseSha)}</span>; the base is now <span className="mono">{short(e.checkedBaseSha)}</span>. Rebase and run again.</>
+        : <>The run&apos;s base is not the current base.</>;
+    case "stale_instructions": {
+      const reason = e?.reason || "A decision or rule changed since the run started.";
+      return <>{/[.!?]$/.test(reason) ? reason : `${reason}.`} A fresh run picks up the current versions.</>;
+    }
+    case "awaiting": {
+      const pos = e ? queuePosition(board.queue, e) : null;
+      const by = e ? ` · queued by ${who(e.enqueuedBy, selfId)}` : "";
+      return <>{pos === 1 ? "First in the integration queue" : pos ? `#${pos} in the integration queue; the entries ahead land first` : "In the integration queue"}{by}</>;
+    }
+    case "ready":
+      return <>Dependencies are done; nobody has requested a run yet.</>;
+    case "running":
+      return <>A run is in progress{task.branch ? <> on <span className="mono">{task.branch}</span></> : null}; it joins the queue when the agent finishes.</>;
+    case "blocked":
+      return task.waitingOn.length
+        ? <>Waits for {task.waitingOn.map((d, i) => <span key={d}>{i > 0 && ", "}<TaskRef id={d} ctx={ctx} /></span>)}.</>
+        : <>A dependency was cancelled.</>;
+    case "integrated":
+      return e?.headSha ? <>Integrated at <span className="mono">{short(e.headSha)}</span>{e.decidedAt ? ` · ${when(e.decidedAt)}` : ""}</> : <>Completed.</>;
+    default:
+      return null;
+  }
+}
+
+/** The one thing to do next, when the signed-in member may do it. */
+function PlanAction({ task, ctx, overlapped }: { task: BoardTask; ctx: Ctx; overlapped: boolean }) {
+  const { board, selfId } = ctx;
+  const e = task.entry;
+  if (task.column === "needs_rebase" || task.column === "stale_instructions") {
+    return <ConflictButton task={task} ctx={ctx} label="Resolve" className="btn btn--neutral btn--sm" />;
+  }
+  if (task.column === "awaiting" && e) {
+    const can = entryActions(e, board.permissions, selfId);
+    if (can.integrate && queuePosition(board.queue, e) === 1) return <IntegrateButton entry={e} ctx={ctx} />;
+    if (can.withdraw) return <RejectButton entry={e} ctx={ctx} withdraw />;
+  }
+  if (task.column === "ready" && board.permissions.includes("run.request")) return <RequestRunButton task={task} ctx={ctx} label="Request run" primary />;
+  if (overlapped) return <ConflictButton task={task} ctx={ctx} label="What can I do?" className="btn btn--ghost btn--sm" />;
+  return null;
+}
+
+function PlanItem({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
   const f = useContext(FocusContext);
+  const { board, selfId } = ctx;
   const column = task.column as BoardColumn;
-  const at = STAGE_INDEX.get(column) ?? 0;
-  const overlaps = ctx.board.overlaps.filter((o) => o.taskId === task.id || o.otherTaskId === task.id).length;
-  const conflicted = overlaps > 0 || column === "needs_rebase" || column === "stale_instructions";
-  const lit = useLit([task.id, ...kids.map((k) => k.id)]);
-  const done = kids.filter((k) => k.column === "integrated").length;
+  const lit = useLit([task.id]);
+  const overlaps = board.overlaps.filter((o) => o.taskId === task.id || o.otherTaskId === task.id);
+  const parent = task.parentId ? ctx.title(task.parentId) : null;
+  const scope = task.scopePaths.length ? `${task.scopePaths[0]}${task.scopePaths.length > 1 ? ` +${task.scopePaths.length - 1}` : ""}` : null;
   return (
-    <li
-      id={anchor(task.id)}
-      className={`tb-row tone-${STAGE_TONE[column]}${child ? " tb-row--child" : ""}${kids.length ? " tb-row--group" : ""}`}
-      data-picked={f.picked === task.id || undefined}
-      {...lit}
-    >
-      <button
-        type="button"
-        className="tb-row__hit"
-        onClick={() => f.pick(task.id)}
-        onMouseEnter={() => f.light([task.id])}
-        onMouseLeave={() => f.light(null)}
-        onFocus={() => f.light([task.id])}
-        onBlur={() => f.light(null)}
-        aria-label={`${task.title}: ${STAGE_SHORT[column]}`}
-      />
-      <div className="tb-row__title">
-        <span className="tb-row__name">{task.title}</span>
-        <span className="tb-row__sub">
-          {kids.length ? (
-            <span>{done} of {kids.length} subtasks done</span>
-          ) : task.waitingOn.length ? (
-            <span className="tb-row__wait">waits for {task.waitingOn.map((d) => ctx.title(d)).join(", ")}</span>
-          ) : task.scopePaths.length ? (
-            <span className="mono">{task.scopePaths[0]}{task.scopePaths.length > 1 ? ` +${task.scopePaths.length - 1}` : ""}</span>
-          ) : null}
-          {conflicted && <span className="tb-row__flag">{overlaps > 1 ? `${overlaps} overlaps` : overlaps === 1 ? "overlap" : "conflict"}</span>}
-        </span>
-      </div>
-      <span className="tb-row__inline"><Stage column={column} /></span>
-      {kids.length ? (
-        BOARD_COLUMNS.map((c) => {
-          const n = kids.filter((k) => k.column === c.id).length;
+    <li id={anchor(task.id)} className={`tb-item tone-${STAGE_TONE[column]}`} data-picked={f.picked === task.id || undefined} {...lit}>
+      <span className="tb-item__stage"><Stage column={column} /></span>
+      <div className="tb-item__body">
+        <button
+          type="button"
+          className="tb-item__title"
+          onClick={() => f.pick(task.id)}
+          onMouseEnter={() => f.light([task.id])}
+          onMouseLeave={() => f.light(null)}
+          onFocus={() => f.light([task.id])}
+          onBlur={() => f.light(null)}
+        >
+          {task.title}
+        </button>
+        <p className="tb-item__why"><PlanWhy task={task} ctx={ctx} /></p>
+        {overlaps.map((o, i) => {
+          const mine = o.taskId === task.id;
+          const other = mine ? o.otherTaskId : o.taskId;
           return (
-            <span key={c.id} className={`tb-cell tone-${STAGE_TONE[c.id]}`} aria-hidden="true">
-              {n > 0 && <span className="tb-tally">{Array.from({ length: Math.min(n, 5) }, (_, i) => <i key={i} />)}{n > 5 && <b>+{n - 5}</b>}</span>}
-            </span>
+            <p key={i} className="tb-item__warn">
+              {o.kind === "lease" && mine
+                ? <>Needs <span className="mono">{o.resource}</span>, leased by {who(o.holderId, selfId)} · <Left at={o.expiresAt} /></>
+                : <>{o.kind === "dependency" ? "Imports code from" : "Changes the same paths as"} <TaskRef id={other ?? ""} ctx={ctx} fallback={mine ? o.otherTitle : null} /></>}
+            </p>
           );
-        })
-      ) : (
-        BOARD_COLUMNS.map((c, i) => (
-          <span key={c.id} className={`tb-cell${i > 0 && i < at ? " tb-cell--trail" : ""}${i === 1 && at > 1 ? " tb-cell--from" : ""}${i === at ? " tb-cell--at" : ""}${i === at && at > 1 ? " tb-cell--arrive" : ""}`} aria-hidden="true">
-            {i === at && (
-              <span className={`tb-marker${conflicted ? " tb-marker--warn" : ""}`}>{position !== null ? `#${position}` : column === "integrated" ? "✓" : ""}</span>
-            )}
-          </span>
-        ))
-      )}
+        })}
+        {(parent || scope) && (
+          <p className="tb-item__meta">
+            {parent && <>in {parent}</>}
+            {parent && scope && " · "}
+            {scope && <span className="mono" title={task.scopePaths.join("\n")}>{scope}</span>}
+          </p>
+        )}
+      </div>
+      <div className="tb-item__act"><PlanAction task={task} ctx={ctx} overlapped={overlaps.length > 0} /></div>
     </li>
   );
 }
 
 function Plan({ ctx }: { ctx: Ctx }) {
   const { board } = ctx;
-  const rows = planRows(board);
-  if (!rows.length) return <EmptyState title="No tasks yet" body="Tasks and subtasks created for this project show up here, each in the stage it has reached." />;
-  const count = (c: BoardColumn) => board.tasks.filter((t) => t.column === c && !board.tasks.some((k) => k.parentId === t.id)).length;
+  const tasks = planTasks(board);
+  if (!tasks.length) return <EmptyState title="No tasks yet" body="Tasks and subtasks created for this project show up here, what needs a person first." />;
+  const done = tasks.filter((t) => t.column === "integrated");
   return (
-    <div className="tb-plan" role="group" aria-label={`Tasks in ${board.name} by stage`}>
-      <div className="tb-plan__head" aria-hidden="true">
-        <span />
-        {BOARD_COLUMNS.map((c) => {
-          const n = count(c.id);
-          return (
-            <span key={c.id} className={`tb-plan__stage tone-${STAGE_TONE[c.id]}`} data-empty={n === 0 || undefined} title={`${c.label}: ${c.hint}`}>
-              <b className="num">{n}</b>{STAGE_SHORT[c.id]}
-            </span>
-          );
-        })}
-      </div>
-      <ol className="tb-plan__rows">
-        {rows.map((r) => (
-          <PlanRow key={r.task.id} {...r} ctx={ctx} position={r.task.entry && r.task.entry.status === "queued" ? queuePosition(board.queue, r.task.entry) : null} />
-        ))}
-      </ol>
+    <div className="tb-plan" role="group" aria-label={`Tasks in ${board.name}, what needs a person first`}>
+      {PLAN_GROUPS.map((g) => {
+        const rows = tasks.filter((t) => g.columns.includes(t.column as BoardColumn)).sort(planOrder(board, g.columns));
+        if (!rows.length) return null;
+        return (
+          <section key={g.id} className={`tb-group tb-group--${g.id}`}>
+            <h4 className="tb-group__head">{g.title} <span className="num">{rows.length}</span></h4>
+            <ul className="tb-items">{rows.map((t) => <PlanItem key={t.id} task={t} ctx={ctx} />)}</ul>
+          </section>
+        );
+      })}
+      {done.length > 0 && (
+        <details className="tb-group tb-group--done">
+          <summary className="tb-group__head">Done <span className="num">{done.length}</span></summary>
+          <ul className="tb-items">{done.map((t) => <PlanItem key={t.id} task={t} ctx={ctx} />)}</ul>
+        </details>
+      )}
     </div>
   );
 }
