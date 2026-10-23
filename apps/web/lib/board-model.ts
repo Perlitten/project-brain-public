@@ -4,6 +4,7 @@
 // do; the action flags below only hide controls Brain would refuse anyway, and
 // Brain still checks every call.
 import type { MeProject } from "./team-activity-view";
+import type { Segment } from "./atlas";
 
 export type BoardColumn = "blocked" | "ready" | "running" | "awaiting" | "needs_rebase" | "stale_instructions" | "integrated";
 
@@ -383,4 +384,98 @@ export function leaseActions(lease: Lease, permissions: string[], selfId: number
 /** A link to a superseded decision or rule on the Memory page (its search matches ids). */
 export function instructionHref(item: Pick<SupersededInstruction, "kind" | "id">): string {
   return `/memory?view=${item.kind === "rule" ? "rules" : "decisions"}&q=${item.id}`;
+}
+
+// ---------------------------------------------------------------------------
+// What the Board says first, what needs the member, and who claims which paths
+
+/** A path without its trailing glob: "db/migrations/**" and "db/migrations" are one place. */
+export const normPath = (p: string) => p.replace(/\/\*\*?$/, "").replace(/\/+$/, "") || p;
+
+const inFlight = (t: BoardTask) => t.column !== null && t.column !== "integrated";
+
+/** The opening sentence: what can't land, what is next in line, where work overlaps. Mentions are task ids. */
+export function boardVerdict(board: ProjectBoard, selfId: number | null): Segment[] {
+  const titles = new Map(board.tasks.map((t) => [t.id, t.title]));
+  const mention = (id: string): Segment => ({ ref: id, label: titles.get(id) ?? `task ${id.slice(0, 8)}` });
+  const verdict = (e: QueueEntry) => (e.status === "needs_rebase" ? " needs a rebase" : " has stale instructions");
+  const out: Segment[] = [];
+  const say = (...parts: Segment[]) => { if (out.length) out.push(" "); out.push(...parts); };
+
+  const held = board.queue.filter((e) => e.status !== "queued");
+  if (held.length === 1) say(mention(held[0].taskId), verdict(held[0]), " and can’t land yet.");
+  else if (held.length > 1) {
+    say({ num: String(held.length), tone: "warn" }, " runs can’t land yet: ");
+    held.slice(0, 2).forEach((e, i) => { if (i) out.push(" and "); out.push(mention(e.taskId), verdict(e)); });
+    out.push(held.length > 2 ? `, and ${held.length - 2} more.` : ".");
+  }
+  for (const e of board.queue.filter((q) => queuePosition(board.queue, q) === 1)) {
+    say(mention(e.taskId), entryActions(e, board.permissions, selfId).integrate ? " is next in line and waits for your review." : " is next in line to integrate.");
+  }
+  const overlaps = board.overlaps.length;
+  if (overlaps) say("Work overlaps in ", { num: String(overlaps), tone: "warn" }, overlaps === 1 ? " place." : " places.");
+  if (!out.length) {
+    const active = board.tasks.filter(inFlight).length;
+    say(active ? `Nothing on ${board.name} needs a person right now; ${active} ${active === 1 ? "task is" : "tasks are"} in flight.` : `Nothing is in flight on ${board.name}.`);
+  }
+  return out;
+}
+
+export type Attention =
+  /** A run Brain refused to integrate as it is: it needs a rebase or a fresh run. */
+  | { kind: "held"; taskId: string; entry: QueueEntry }
+  /** The first entry in a repository's queue, when the member may integrate it. */
+  | { kind: "integrate"; taskId: string; entry: QueueEntry }
+  /** A lease the member holds: renew it or let others in. */
+  | { kind: "lease"; taskId: string | null; lease: Lease }
+  | { kind: "overlap"; taskId: string; overlap: Overlap };
+
+/** What asks for a person, most blocking first. */
+export function attention(board: ProjectBoard, selfId: number | null): Attention[] {
+  const out: Attention[] = [];
+  for (const e of board.queue) if (e.status !== "queued") out.push({ kind: "held", taskId: e.taskId, entry: e });
+  for (const e of board.queue) {
+    if (queuePosition(board.queue, e) === 1 && entryActions(e, board.permissions, selfId).integrate) out.push({ kind: "integrate", taskId: e.taskId, entry: e });
+  }
+  for (const l of board.leases) if (leaseActions(l, board.permissions, selfId).release) out.push({ kind: "lease", taskId: l.taskId, lease: l });
+  for (const o of board.overlaps) out.push({ kind: "overlap", taskId: o.taskId, overlap: o });
+  return out;
+}
+
+export interface Claim {
+  path: string;
+  /** The path below its nearest claimed ancestor (the whole path at the top level). */
+  label: string;
+  depth: number;
+  /** Tasks in flight that declared the path; tasks that only group subtasks claim through them. */
+  tasks: string[];
+  leases: Lease[];
+  /** Brain reported an overlap on this path. */
+  overlap: boolean;
+}
+
+/** Every path claimed by a task in flight or a live lease, as a tree in path order. */
+export function claimMap(board: ProjectBoard): Claim[] {
+  const groups = new Set(board.tasks.map((t) => t.parentId).filter((id): id is string => id !== null));
+  const rows = new Map<string, { tasks: Set<string>; leases: Lease[] }>();
+  const at = (p: string) => {
+    const key = normPath(p);
+    let row = rows.get(key);
+    if (!row) rows.set(key, (row = { tasks: new Set(), leases: [] }));
+    return row;
+  };
+  for (const t of board.tasks) if (inFlight(t) && !groups.has(t.id)) for (const p of t.scopePaths) at(p).tasks.add(t.id);
+  for (const l of board.leases) at(l.resource).leases.push(l);
+  const hot = new Set(board.overlaps.flatMap((o) => o.paths.flat().map(normPath)));
+  // Sorting with "/" lowest keeps every path right after its ancestors ("a/b", "a/b/c", then "a/b-c").
+  const order = (p: string) => p.replace(/\//g, "\u0000");
+  const paths = [...rows.keys()].sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
+  const depth = new Map<string, number>();
+  return paths.map((path) => {
+    const parent = paths.filter((p) => path.startsWith(`${p}/`)).sort((a, b) => b.length - a.length)[0];
+    const d = parent ? (depth.get(parent) ?? 0) + 1 : 0;
+    depth.set(path, d);
+    const row = rows.get(path)!;
+    return { path, label: parent ? path.slice(parent.length + 1) : path, depth: d, tasks: [...row.tasks], leases: row.leases, overlap: hot.has(path) };
+  });
 }

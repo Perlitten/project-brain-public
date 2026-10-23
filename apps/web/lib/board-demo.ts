@@ -32,6 +32,9 @@ const subtasks = [
   subtask(S5, "Document the retry policy", "running", [S1], ["docs/PAYMENTS.md"], [RUN(5)]),
 ];
 
+/** The moment the demo is set at: lease countdowns run from here, so the demo never shows only expired leases. */
+export const DEMO_NOW = "2026-10-18T09:01:20Z";
+
 export const DEMO_BOARD = {
   selfId: 4,
   project: {
