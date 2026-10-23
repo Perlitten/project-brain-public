@@ -17,7 +17,7 @@ The Vercel dashboard still returns HTTP 401 Basic authentication. Its configured
 
 ## Owner-operated rollout
 
-This host uses archive-based source deployment. Follow [the existing source-update procedure](../../../../deploy/RUNBOOK.md#start-or-update), preserving instance configuration, runtime directories, mounts and Docker volumes; replacing only a release stamp or restarting an old image is insufficient. The source tree must contain the reviewed target commit. For the complete A/B/C feature set, that means main after those PRs land.
+This host uses archive-based source deployment. Follow [the existing source-update procedure](https://github.com/Perlitten/project-brain-public/blob/d3726712e1c44f10427d4740a372dfec442c961a/deploy/RUNBOOK.md#start-or-update), preserving instance configuration, runtime directories, mounts and Docker volumes; replacing only a release stamp or restarting an old image is insufficient. The source tree must contain the reviewed target commit. For the complete A/B/C feature set, that means main after those PRs land.
 
 After source replacement and a green exact-revision main deployment gate, the existing rollout entry point is:
 
