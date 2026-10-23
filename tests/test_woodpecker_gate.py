@@ -1,7 +1,9 @@
 """A missing, partial or stale CI result must never authorize a release."""
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts import woodpecker_gate as gate
 
@@ -20,6 +22,34 @@ def pipeline(**changes):
 
 def test_complete_main_pipeline_passes():
     gate.verified_pipeline(pipeline(), SHA)
+
+
+@pytest.mark.parametrize("language", ["python", "javascript"])
+def test_codeql_publisher_uses_plugin_secret_boundary(language):
+    """Image-filtered credentials must never move into an arbitrary-command step."""
+    root = Path(__file__).resolve().parents[1]
+    config = yaml.safe_load((root / ".woodpecker" / f"codeql-{language}.yaml").read_text(encoding="utf-8"))
+    publisher = next(step for step in config["steps"] if step["name"] == "publish-code-scanning")
+    assert not publisher.get("commands") and not publisher.get("entrypoint")
+    assert publisher["settings"]["token"] == {"from_secret": "github_code_scanning_token"}
+    assert publisher["image"].startswith("localhost/brain-codeql-publish@sha256:")
+    assert publisher["when"] == [{"event": "push", "branch": "main"}]
+
+
+@pytest.mark.parametrize("name", sorted(gate.REQUIRED_WORKFLOWS))
+def test_every_release_workflow_runs_on_unrelated_main_pushes(name):
+    """A README-only merge still needs a complete release receipt for its own SHA."""
+    root = Path(__file__).resolve().parents[1]
+    config = yaml.safe_load((root / ".woodpecker" / f"{name}.yaml").read_text(encoding="utf-8"))
+    eligible = []
+    for condition in config["when"]:
+        events = condition.get("event", [])
+        events = [events] if isinstance(events, str) else events
+        branches = condition.get("branch", [])
+        branches = [branches] if isinstance(branches, str) else branches
+        if "push" in events and (not branches or "main" in branches):
+            eligible.append(condition)
+    assert any("path" not in condition and "evaluate" not in condition for condition in eligible), name
 
 
 @pytest.mark.parametrize("changes", [
