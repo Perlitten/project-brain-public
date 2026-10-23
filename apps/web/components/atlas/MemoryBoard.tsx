@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AtlasLegend, AtlasMap, AtlasVerdict, type AtlasRegionData, type AtlasTileData } from "./Atlas";
+import Form from "next/form";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { AtlasLegend, AtlasMap, AtlasVerdict, reveal, type AtlasRegionData, type AtlasTileData } from "./Atlas";
+import { Icon } from "@/components/Icon";
 import { DecisionActions, RecordHint, RuleActions } from "@/components/MemoryActions";
 import { decisionState, EVERY_PROJECT, memoryVerdict, regionFor, ruleSpan, type TileState } from "@/lib/atlas";
 import type { Decision, Rule } from "@/lib/types";
@@ -26,6 +29,8 @@ type Item =
 const ruleState = (r: Rule): TileState => r.delivered30d === 0 ? "chg" : "ok";
 const ruleNoisy = (r: Rule) => (r.delivered30d ?? 0) >= 4 && (r.caught30d ?? 0) / (r.delivered30d || 1) >= 0.3;
 const n = (v: number) => v.toLocaleString("en-US");
+// Matches the atlas.css breakpoint where the inspector drops below the map.
+const STACKED = "(max-width: 900px)";
 
 function ruleUse(r: Rule): string {
   if (r.delivered30d === undefined) return "Brain does not count this rule's use yet.";
@@ -34,7 +39,7 @@ function ruleUse(r: Rule): string {
   return `Given to agents ${n(r.delivered30d)} ${r.delivered30d === 1 ? "time" : "times"} in 30 days${caught}.`;
 }
 
-export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab: initialTab, pick, notDrawn, repoPath, unavailable }: {
+export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab: initialTab, query, size, totals, repoPath, unavailable }: {
   decisions: Decision[];
   replaced: Decision[];
   rules: Rule[];
@@ -42,10 +47,15 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
   /** The page is filtered to one project: its region is the only one, global memory aside. */
   scoped: boolean;
   tab: MemoryTab;
-  /** Record id from the address (?q=), selected on arrival. */
-  pick?: string;
-  /** Records counted by Brain but past what the map draws. */
-  notDrawn: { decisions: number; rules: number; replaced: number };
+  /**
+   * The address: `q` searches ids, titles and text, and a record whose id it
+   * names exactly is selected on arrival; `page` steps through records past
+   * the first `size` of each kind.
+   */
+  query: { repo?: string; q: string; page: number };
+  size: number;
+  /** Every record Brain counts for the search, drawn or not. */
+  totals: { decisions: number; rules: number; replaced: number };
   repoPath?: string;
   unavailable: { decisions: boolean; rules: boolean; replaced: boolean };
 }) {
@@ -54,6 +64,8 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
   const [selected, setSelected] = useState<string | null>(null);
   const [pulse, setPulse] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
+  const inspector = useRef<HTMLElement>(null);
+  const pick = query.q;
 
   const region = (x: Decision | Rule) => regionFor(x.repoPath, x.repo, projects);
   const current: Item[] = [
@@ -71,6 +83,10 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
     if (byId) { setSelected(byId.key); if (byId.kind === "decision" && byId.record.status === "superseded") setTab("replaced"); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pick]);
+  // On a phone the inspector sits under the map: bring the chosen record up to where the reader is.
+  useEffect(() => {
+    if (selected && window.matchMedia(STACKED).matches) reveal(inspector.current);
+  }, [selected]);
   useEffect(() => {
     if (!pulse) return;
     const t = setTimeout(() => setPulse(null), 1000);
@@ -121,9 +137,25 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
         { state: "chg" as const, count: current.filter((i) => tile(i).state === "chg").length, label: "proposed, or reached no agent" },
       ];
   const shown = find(hover) ?? find(selected);
-  const segments = memoryVerdict({ decisions, rules });
-  const hidden = tab === "replaced" ? notDrawn.replaced : notDrawn.decisions + notDrawn.rules;
-  const tabCount = (t: MemoryTab) => t === "replaced" ? replaced.length + notDrawn.replaced : t === "rules" ? rules.length + notDrawn.rules : t === "decisions" ? decisions.length + notDrawn.decisions : rules.length + decisions.length + notDrawn.rules + notDrawn.decisions;
+  const tabCount = (t: MemoryTab) => t === "replaced" ? totals.replaced : t === "rules" ? totals.rules : t === "decisions" ? totals.decisions : totals.rules + totals.decisions;
+  // The sentence describes what is in view: the whole memory on its first page, otherwise the search or the page.
+  const first = (query.page - 1) * size;
+  const matches = tabCount("current") + totals.replaced;
+  const segments = query.q
+    ? [`${n(matches)} ${matches === 1 ? "record matches" : "records match"} “${query.q}”${query.page > 1 ? `, showing ${n(first + 1)}–${n(first + size)} of each kind` : ""}.`]
+    : query.page > 1 ? [`Showing records ${n(first + 1)}–${n(first + size)} of each kind.`]
+    : memoryVerdict({ decisions, rules });
+  // Each kind pages on its own; the tab decides which of them the pager steps through.
+  const shownTotal = Math.max(...(tab === "replaced" ? [totals.replaced] : tab === "rules" ? [totals.rules] : tab === "decisions" ? [totals.decisions] : [totals.rules, totals.decisions]));
+  const pages = Math.max(1, Math.ceil(shownTotal / size));
+  const href = (page: number, q = query.q) => {
+    const p = new URLSearchParams();
+    if (query.repo) p.set("repo", query.repo);
+    if (tab !== "current") p.set("view", tab);
+    if (q) p.set("q", q);
+    if (page > 1) p.set("page", String(page));
+    return `/memory${p.size ? `?${p}` : ""}`;
+  };
   const tabUnavailable = (t: MemoryTab) => t === "replaced" ? unavailable.replaced : t === "rules" ? unavailable.rules : t === "decisions" ? unavailable.decisions : unavailable.rules && unavailable.decisions;
 
   return (
@@ -144,6 +176,15 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
 
       <div className="atlas-split">
         <section aria-label="Recorded memory by project">
+          <Form action="/memory" className="atlas-search" role="search">
+            {query.repo && <input type="hidden" name="repo" value={query.repo} />}
+            {tab !== "current" && <input type="hidden" name="view" value={tab} />}
+            <label className="atlas-search__field">
+              <Icon name="search" size={15} />
+              <input className="input" type="search" name="q" defaultValue={query.q} key={query.q} placeholder="Search by id, title or text" aria-label="Search decisions and rules" />
+            </label>
+            {query.q && <Link className="atlas-search__clear" href={href(1, "")}>Clear search</Link>}
+          </Form>
           <div className="atlas-tabs" role="group" aria-label="Memory views">
             {TABS.map((t) => (
               <button key={t.id} type="button" className="atlas-tab" aria-pressed={tab === t.id} onClick={() => { setTab(t.id); setHover(null); }}>
@@ -161,16 +202,20 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
             <AtlasLegend items={counts} />
           </> : <p className="atlas-region__empty">
             {tabUnavailable(tab) ? "Brain did not return this view just now. Reload in a moment."
+              : query.q ? <>No {tab === "replaced" ? "replaced decisions" : tab === "rules" ? "rules" : tab === "decisions" ? "decisions" : "decisions or rules"} match “{query.q}”{query.page > 1 ? " on this page" : ""}. <Link href={href(1, "")}>Clear search</Link></>
+              : query.page > 1 ? <>Nothing more to show here. <Link href={href(1)}>Back to the first page</Link></>
               : tab === "replaced" ? "Decisions replaced by a newer version appear here."
               : "Nothing is recorded yet. Record a decision or rule and agents get it with their next task."}
           </p>}
-          {(hidden > 0 || silent.length > 0) && <p className="atlas-foot">
-            {hidden > 0 && `${n(hidden)} older ${hidden === 1 ? "record is" : "records are"} counted but not drawn. `}
-            {silent.length > 0 && `Nothing recorded for ${silent.map((p) => p.name).join(", ")}.`}
-          </p>}
+          {pages > 1 && <nav className="atlas-pager" aria-label="Pages of records">
+            {query.page > 1 ? <Link href={href(query.page - 1)} rel="prev">Previous {n(size)}</Link> : <span />}
+            <span className="atlas-pager__where">{n(Math.min(first + 1, shownTotal))}–{n(Math.min(first + size, shownTotal))} of {n(shownTotal)}</span>
+            {query.page < pages ? <Link href={href(query.page + 1)} rel="next">Next {n(size)}</Link> : <span />}
+          </nav>}
+          {silent.length > 0 && !query.q && query.page === 1 && <p className="atlas-foot">Nothing recorded for {silent.map((p) => p.name).join(", ")}.</p>}
         </section>
 
-        <aside aria-label="Selected record" aria-live="polite">
+        <aside ref={inspector} aria-label="Selected record" aria-live="polite">
           {shown ? <Inspector item={shown} region={projects.find((p) => p.slug === shown.region)?.name ?? "Every project"} />
             : <div className="atlas-inspector atlas-inspector--idle">
                 <p className="atlas-inspector__where">Point at a tile to read it. Click to keep it here, edit it or retire it.</p>

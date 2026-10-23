@@ -2039,3 +2039,48 @@ test('repository registration refuses insufficient credentials before offering o
   assert.equal(allowed.ok, true, 'existing team-admin credentials remain compatible');
   assert.equal(allowed.data.projects[0].id, 'active-project');
 });
+
+test('memory search and pages reach Brain, and a D- id still finds its decision', async () => {
+  const asked = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async request => { asked.push(request); return { total: 0, page: 2, page_size: 100, decisions: [], rules: [] }; } },
+  });
+  await data.getPagedDecisions(undefined, { size: 100, page: 2, q: 'queue', status: 'superseded' });
+  await data.getPagedRules(undefined, { size: 100, page: 2, q: 'queue' });
+  assert.match(asked[0], /^\/api\/web\/decisions\?page=2&page_size=100&q=queue&status=superseded/);
+  assert.match(asked[1], /^\/api\/web\/rules\?page=2&page_size=100&q=queue/);
+
+  const page = fs.readFileSync(path.join(root, 'app/memory/page.tsx'), 'utf8');
+  assert.ok(page.includes('const decisionQ = q.replace(/^D-(?=\\d+$)/i, "");'));
+  assert.equal('D-42'.replace(/^D-(?=\d+$)/i, ''), '42');
+  assert.equal('D-day plan'.replace(/^D-(?=\d+$)/i, ''), 'D-day plan');
+  for (const call of page.match(/getPaged(?:Decisions|Rules)\(repo, \{[^}]+\}\)/g)) assert.match(call, /page, q/);
+  const board = fs.readFileSync(path.join(root, 'components/atlas/MemoryBoard.tsx'), 'utf8');
+  assert.match(board, /<Form action="\/memory"[^>]*role="search"/);
+  assert.match(board, /name="q" defaultValue=\{query\.q\}/);
+  assert.match(board, /rel="next">Next/);
+  assert.doesNotMatch(board, /counted but not drawn/);
+});
+
+test('picking a record or a named project brings it into view', () => {
+  const atlas = fs.readFileSync(path.join(root, 'components/atlas/Atlas.tsx'), 'utf8');
+  assert.match(atlas, /data-region=\{g\.key\}/);
+  assert.match(atlas, /prefers-reduced-motion: reduce/);
+  const today = fs.readFileSync(path.join(root, 'components/atlas/TodayBoard.tsx'), 'utf8');
+  assert.match(today, /if \(pinned !== ref\) revealRegion\(ref\)/);
+  const board = fs.readFileSync(path.join(root, 'components/atlas/MemoryBoard.tsx'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'components/atlas/atlas.css'), 'utf8');
+  const stacked = board.match(/const STACKED = "(\(max-width: \d+px\))"/)[1];
+  assert.ok(css.includes(`@media ${stacked} { .atlas-split`), 'the reveal breakpoint must match where the inspector stacks');
+  assert.match(board, /matchMedia\(STACKED\)\.matches\) reveal\(inspector\.current\)/);
+  assert.match(board, /<aside ref=\{inspector\} aria-label="Selected record"/);
+});
+
+test('the dashboard map draws the projects needing attention, worst first', () => {
+  const page = fs.readFileSync(path.join(root, 'app/page.tsx'), 'utf8');
+  assert.match(page, /const ranked = \[\.\.\.baseSnapshots\]\.sort\(byAttention\)/);
+  assert.match(page, /ranked\.map\(async \(s, i\) => \(\{[\s\S]*?modules: i < MAP_PROJECTS \?/);
+  assert.match(page, /const byAttention = [^\n]*severity\[b\.tone\] - severity\[a\.tone\] \|\| \(b\.repo\.behind \?\? 0\) - \(a\.repo\.behind \?\? 0\)/);
+});

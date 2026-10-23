@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AtlasLegend, AtlasMap, AtlasVerdict, type AtlasRegionData } from "./Atlas";
+import { AtlasLegend, AtlasMap, AtlasVerdict, revealRegion, type AtlasRegionData } from "./Atlas";
 import { moduleNote, type ModuleTile, type ModuleTotals, type Segment } from "@/lib/atlas";
 import type { ContextPack } from "@/lib/types";
 
@@ -73,7 +73,11 @@ export function TodayBoard({ segments, sub, actions, regions, hidden, packs, liv
 
   return (
     <div className="atlas">
-      <AtlasVerdict segments={segments} sub={sub} actions={actions} onMention={(ref) => setHover({ region: ref, tile: null })} onPick={(ref) => setPinned((p) => (p === ref ? null : ref))} />
+      <AtlasVerdict segments={segments} sub={sub} actions={actions} onMention={(ref) => setHover({ region: ref, tile: null })} onPick={(ref) => {
+        // A named project jumps to its map when it is pinned; unpinning leaves the page where it is.
+        if (pinned !== ref) revealRegion(ref);
+        setPinned(pinned === ref ? null : ref);
+      }} />
       <div className="atlas-split">
         <section aria-label="What Brain remembers, by module">
           {mapRegions.length > 0 && <>

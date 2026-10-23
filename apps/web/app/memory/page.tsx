@@ -4,13 +4,14 @@ import { MemoryBoard, type MemoryTab } from "@/components/atlas/MemoryBoard";
 import { PageHead } from "@/components/ui";
 import { getCapabilities } from "@/lib/capabilities";
 import { getPagedDecisions, getPagedRules, getRepositoryFeed } from "@/lib/data";
+import { getListQuery } from "@/lib/list-query";
 import { getReviewView } from "@/lib/review-view";
 import { signInMode } from "@/lib/sign-in-view";
 import { currentMember } from "@/lib/team-session";
 
 export const metadata = { title: "Memory" };
 
-// The map draws this many records of each kind; the tabs still count every one.
+// The map draws this many records of each kind per page; the tabs still count every one.
 const DRAWN = 100;
 
 /** Proposals the viewer could review, counted the way /review counts them; 0 outside a team. */
@@ -33,16 +34,18 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
   const params = await searchParams;
   const one = (k: string) => (typeof params[k] === "string" ? (params[k] as string) : undefined);
   const repo = one("repo");
+  const { q, page } = getListQuery({ q: one("q") ?? "", page: Number(one("page")) || 1, size: DRAWN });
+  // Web ids read "D-42"; Brain matches decisions on the bare number.
+  const decisionQ = q.replace(/^D-(?=\d+$)/i, "");
   const [current, replaced, rules, waiting, feed] = await Promise.all([
-    getPagedDecisions(repo, { size: DRAWN, status: "current" }),
-    getPagedDecisions(repo, { size: DRAWN, status: "superseded" }),
-    getPagedRules(repo, { size: DRAWN }),
+    getPagedDecisions(repo, { size: DRAWN, page, q: decisionQ, status: "current" }),
+    getPagedDecisions(repo, { size: DRAWN, page, q: decisionQ, status: "superseded" }),
+    getPagedRules(repo, { size: DRAWN, page, q }),
     waitingForReview(),
     getRepositoryFeed(),
   ]);
   const scoped = repo ? feed.repositories.find((r) => r.slug === repo || r.name.toLowerCase() === repo.toLowerCase()) : undefined;
   const projects = (scoped ? [scoped] : feed.repositories).map((r) => ({ slug: r.slug, name: r.name, path: r.path }));
-  const rest = (p: { items: unknown[]; paging: { total: number } }) => Math.max(0, p.paging.total - p.items.length);
   return (
     <>
       <SectionTabs section="memory" active="/memory" />
@@ -67,8 +70,9 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
         projects={projects}
         scoped={Boolean(scoped)}
         tab={pickView(one("view"), one("status"))}
-        pick={one("q")}
-        notDrawn={{ decisions: rest(current), rules: rest(rules), replaced: rest(replaced) }}
+        query={{ repo, q, page }}
+        size={DRAWN}
+        totals={{ decisions: current.paging.total, rules: rules.paging.total, replaced: replaced.paging.total }}
         repoPath={scoped?.path}
         unavailable={{ decisions: current.available === false, rules: rules.available === false, replaced: replaced.available === false }}
       />

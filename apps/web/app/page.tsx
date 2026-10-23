@@ -20,6 +20,8 @@ const severity: Record<Tone, number> = { bad: 3, warn: 2, info: 1, idle: 1, ok: 
 // The map draws at most this many projects; the sentence still counts all of them.
 const MAP_PROJECTS = 8;
 const PACKS = 12;
+type Ranked = { repo: { behind: number | null }; tone: Tone };
+const byAttention = (a: Ranked, b: Ranked) => severity[b.tone] - severity[a.tone] || (b.repo.behind ?? 0) - (a.repo.behind ?? 0);
 
 // The home screen answers one question first, in a sentence: is the memory
 // your agents get current, and if not, where. The map shows where in the code,
@@ -46,19 +48,16 @@ async function DashboardData({ searchParams }: Props) {
     restrictedMember(),
   ]);
   // The verdict names the projects needing attention first. Draw those same
-  // projects so every mention can focus a real region even when there are
-  // more repositories than the map's visual limit.
-  const drawn = new Set([...baseSnapshots]
-    .sort((a, b) => severity[b.tone] - severity[a.tone] || (b.repo.behind ?? 0) - (a.repo.behind ?? 0))
-    .slice(0, MAP_PROJECTS)
-    .map((s) => s.repo.id));
-  const snapshots = await Promise.all(baseSnapshots.map(async (s) => ({
+  // projects, worst first, so every mention can focus a real region even when
+  // there are more repositories than the map's visual limit.
+  const ranked = [...baseSnapshots].sort(byAttention);
+  const snapshots = await Promise.all(ranked.map(async (s, i) => ({
     ...s,
-    modules: drawn.has(s.repo.id) ? await getCodeModules(s.repo.slug) : null,
+    modules: i < MAP_PROJECTS ? await getCodeModules(s.repo.slug) : null,
   })));
   // Activity and Quality cover the whole server: only team admins get links to them.
   const admin = member === null;
-  const attention = snapshots.filter((s) => s.tone !== "ok").sort((a, b) => severity[b.tone] - severity[a.tone] || (b.repo.behind ?? 0) - (a.repo.behind ?? 0));
+  const attention = snapshots.filter((s) => s.tone !== "ok");
   const first = attention[0];
   const nextAction = first ? repositoryAction(first.repo) : null;
   const observations = new Map(snapshots.map((s) => [s.repo.id, s.corpus.uncommitted ?? null]));

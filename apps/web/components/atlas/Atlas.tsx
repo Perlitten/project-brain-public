@@ -37,6 +37,21 @@ export interface AtlasRegionData {
   dim?: boolean;
 }
 
+/**
+ * Scrolls an element into view only when it is out of sight, without the
+ * smooth glide for people who asked for less motion.
+ */
+export function reveal(el: Element | null) {
+  if (!el) return;
+  const box = el.getBoundingClientRect();
+  if (box.top >= 0 && box.bottom <= window.innerHeight) return;
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ block: box.height > window.innerHeight ? "start" : "nearest", behavior: still ? "auto" : "smooth" });
+}
+
+/** Brings a project's region on the map into view. */
+export const revealRegion = (key: string) => reveal(document.querySelector(`[data-region="${CSS.escape(key)}"]`));
+
 /** The screen's opening sentence. Mentions point at their place on the map. */
 export function AtlasVerdict({ segments, sub, actions, onMention, onPick }: {
   segments: Segment[];
@@ -71,7 +86,7 @@ export function AtlasMap({ label, regions, onHover, onPick }: {
   return (
     <div className="atlas-map" role="group" aria-label={label}>
       {regions.map((g) => (
-        <section key={g.key} className="atlas-region" data-dim={g.dim || undefined} style={{ "--w": g.weight } as CSSProperties} aria-label={g.name}>
+        <section key={g.key} className="atlas-region" data-region={g.key} data-dim={g.dim || undefined} style={{ "--w": g.weight } as CSSProperties} aria-label={g.name}>
           <div className="atlas-region__head">
             {g.href ? <Link className="atlas-region__name" href={g.href}>{g.name}</Link> : <span className="atlas-region__name">{g.name}</span>}
             {g.note && <span className={`atlas-region__note${g.noteTone ? ` atlas-region__note--${g.noteTone}` : ""}`}>{g.note}</span>}
