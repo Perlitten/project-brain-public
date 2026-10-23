@@ -1010,6 +1010,33 @@ test('selected repository scopes indexing and graph requests, and unknown freshn
   }
 });
 
+test('origin remotes and poll errors never render credentials, with or without a scheme', async () => {
+  const { redactRemote } = load('lib/repository-status.ts');
+  assert.equal(redactRemote('https://bot:s3cret@github.com/acme/app.git'), 'https://***@github.com/acme/app.git');
+  assert.equal(redactRemote('oauth2:glpat-TOKEN@gitlab.com/acme/app.git'), '***@gitlab.com/acme/app.git');
+  assert.equal(redactRemote('ghp_TOKEN@github.com/acme/app'), '***@github.com/acme/app');
+  assert.equal(redactRemote('git@github.com:acme/app.git'), 'git@github.com:acme/app.git');
+  assert.equal(redactRemote("fatal: unable to access 'oauth2:TOKEN@gitlab.com/acme/app.git/': 403"),
+    "fatal: unable to access '***@gitlab.com/acme/app.git/': 403");
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, 'react': { cache: fn => fn },
+    './mock': {}, './api': { apiConfigured: true, brainFetch: async endpoint => {
+      if (endpoint === '/repositories') return { repositories: [{ id: 7, name: 'app', freshness: {
+        status: 'current', commits_behind: 0, origin_poll_status: 'error',
+        origin_remote: 'oauth2:TOKEN@gitlab.com/acme/app.git',
+        origin_poll_error: 'git ls-remote https://u:TOKEN@gitlab.com/acme/app.git failed: oauth2:TOKEN@gitlab.com/acme/app.git',
+      } }] };
+      throw new Error(endpoint);
+    } },
+  });
+  const repo = await data.getRepository('7');
+  assert.equal(repo.originPoll.remote, '***@gitlab.com/acme/app.git');
+  assert.doesNotMatch(repo.originPoll.error, /TOKEN/);
+  const page = fs.readFileSync(path.join(root, 'app/projects/page.tsx'), 'utf8');
+  assert.match(page, /\{redactRemote\(p\.remote\)\}/);
+  assert.match(page, /\{redactRemote\(p\.error\)\}/);
+});
+
 test('uncommitted observations preserve known zero, unknown and invalid counts', () => {
   const { uncommittedCount, uncommittedMessage, repositoryStatus } = load('lib/repository-status.ts');
   assert.equal(uncommittedCount(0), 0);
@@ -1700,6 +1727,16 @@ test('settings delivery and scheduled job observations share explicit UTC format
   });
   assert.equal((await settings.getSettingsView()).telegram.last.at, expected);
   assert.match(expected, /03:30 UTC$/);
+});
+
+test('workflow trigger snippet follows the configured webhook branch', () => {
+  const { workflowTrigger, webhookBranch } = load('lib/git-workflow.ts');
+  assert.equal(workflowTrigger('refs/heads/release/1.x'), "on:\n  push:\n    branches: ['release/1.x']");
+  assert.equal(webhookBranch('refs/heads/main'), 'main');
+  // Anything that is not a branch ref falls back to the server default.
+  for (const ref of [undefined, '', 'refs/heads/', 'refs/tags/v1', 'main']) assert.equal(webhookBranch(ref), 'main');
+  // Glob characters are escaped and quotes doubled, so the filter matches exactly that branch.
+  assert.equal(workflowTrigger("refs/heads/a+b!c'd"), "on:\n  push:\n    branches: ['a\\+b\\!c''d']");
 });
 
 test('settings git integration keeps masked remotes and drops malformed entries', async () => {

@@ -26,6 +26,8 @@ export interface SettingField {
   set?: boolean;
   min?: number;
   max?: number;
+  /** The only values the server accepts (e.g. poll intervals cron can repeat). */
+  choices?: number[];
   clearable: boolean;
   /** Also passed in the server's process environment, which wins on restart. */
   fromEnv: boolean;
@@ -87,6 +89,7 @@ function toField(raw: unknown): SettingField {
     set: typeof f.set === "boolean" ? f.set : undefined,
     min: typeof f.min === "number" ? f.min : undefined,
     max: typeof f.max === "number" ? f.max : undefined,
+    choices: Array.isArray(f.choices) ? f.choices.filter((c): c is number => typeof c === "number") : undefined,
     clearable: Boolean(f.clearable),
     fromEnv: Boolean(f.from_env),
   };

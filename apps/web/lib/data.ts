@@ -12,7 +12,7 @@ import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./lis
 import { shortRevision } from "./revision";
 import { SLOW_TOOL_MS } from "./tool-health";
 import { utcTime } from "./time";
-import { uncommittedCount } from "./repository-status";
+import { redactRemote, uncommittedCount } from "./repository-status";
 import type {
   AccessKey,
   AccessView,
@@ -196,8 +196,8 @@ function toRepository(r: RawRepo): Repository {
       originPoll: {
         status: str(f.origin_poll_status),
         at: str(f.origin_polled_at) ? utcTime(str(f.origin_polled_at)) : undefined,
-        error: str(f.origin_poll_error) || undefined,
-        remote: str(f.origin_remote) || undefined,
+        error: redactRemote(str(f.origin_poll_error)) || undefined,
+        remote: redactRemote(str(f.origin_remote)) || undefined,
         behind: num(f.commits_behind_origin) ?? null,
       },
     } : {}),

@@ -7,7 +7,7 @@ import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, StatusLine, Table, type PageStatus } from "@/components/ui";
 import { getCorpus, getPagedIndexRuns, getRepositoryFeed } from "@/lib/data";
-import { repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
+import { redactRemote, repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
 import { restrictedMember } from "@/lib/team-session";
 import type { OriginPoll } from "@/lib/types";
 
@@ -73,8 +73,8 @@ function OriginStat({ p }: { p: OriginPoll }) {
       <dt className="stat__label">Origin</dt>
       <dd className="stat__value">{value}</dd>
       <dd className="stat__note">{p.at ? `checked ${p.at}` : "not checked yet"}</dd>
-      {p.remote && <dd className="stat__note mono">{p.remote}</dd>}
-      {p.error && <dd className="stat__note text-bad">{p.error}</dd>}
+      {p.remote && <dd className="stat__note mono">{redactRemote(p.remote)}</dd>}
+      {p.error && <dd className="stat__note text-bad">{redactRemote(p.error)}</dd>}
     </div>
   );
 }

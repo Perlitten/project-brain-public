@@ -12,6 +12,7 @@ import { saveSettings, testTelegram } from "@/lib/actions/settings";
 import type { GitIntegration, SettingField, SettingsSection, SettingsView, TelegramStatus } from "@/lib/settings-view";
 import { SchedulerLine, SchedulerTable } from "./Scheduler";
 import { telegramConfigured } from "@/lib/telegram";
+import { workflowTrigger } from "@/lib/git-workflow";
 
 type Draft = Record<string, string | boolean>;
 
@@ -60,7 +61,7 @@ export function Settings({ view }: { view: SettingsView }) {
           .filter((s) => s.id !== "telegram")
           .map((s) => (
             <Panel key={s.id} id={s.id} title={s.title} className={s.id === "git" ? "settings__wide" : undefined}>
-              {s.id === "git" && view.git && <GitInfo g={view.git} />}
+              {s.id === "git" && view.git && <GitInfo g={view.git} webhookRef={s.fields.find((f) => f.key === "PROJECT_BRAIN_WEBHOOK_REF")?.value} />}
               {s.id === "automation" && view.llmError && (
                 <p className="field__hint field__hint--bad settings__warn">
                   Last diagnosis LLM call failed: {view.llmError}. Fix the language model in{" "}
@@ -107,8 +108,9 @@ const SOURCE = "https://github.com/Perlitten/project-brain-public/blob/main/";
 
 // Read-only: where pushes are sent and which repositories are polled. The remotes
 // map stays in the server's .env because its URLs may carry credentials.
-function GitInfo({ g }: { g: GitIntegration }) {
+function GitInfo({ g, webhookRef }: { g: GitIntegration; webhookRef: unknown }) {
   const { remotes, skipped, error } = g.originRemotes;
+  const trigger = workflowTrigger(webhookRef);
   return (
     <div className="git-info">
       <dl className="kv">
@@ -120,6 +122,8 @@ function GitInfo({ g }: { g: GitIntegration }) {
         <dd>
           Copy <a className="link" href={SOURCE + g.workflowExample} target="_blank" rel="noreferrer">{g.workflowExample}</a> into the repository, then add the
           webhook URL as the <code>PROJECT_BRAIN_WEBHOOK_URL</code> variable and the webhook secret below as the <code>PROJECT_BRAIN_WEBHOOK_TOKEN</code> secret.
+          Replace its <code>on:</code> block with this one, built from “Branch that triggers a reindex”; pushes to any other branch are ignored:
+          <pre className="git-info__trigger" tabIndex={0} aria-label="Workflow trigger"><code>{trigger}</code></pre>
         </dd>
         <dt>Polled origins</dt>
         <dd>
@@ -140,8 +144,8 @@ function GitInfo({ g }: { g: GitIntegration }) {
         </dd>
       </dl>
       <p className="field__hint">
-        Explicit origins come from BRAIN_ORIGIN_REMOTES in the server’s .env (credentials masked here). Changes below apply to the API at once;
-        restart the workers and scheduler so polling and fetches use them too.
+        Explicit origins come from BRAIN_ORIGIN_REMOTES in the server’s .env (credentials masked here). Changes below are stored centrally:
+        the API applies them at once, the workers and scheduler within a minute, with no restart.
       </p>
     </div>
   );
@@ -401,7 +405,32 @@ function CooldownInput({ f, v, onChange }: { f: SettingField; v: string; onChang
   );
 }
 
+function intervalLabel(seconds: number): string {
+  if (seconds === 0) return "Off";
+  const [n, unit] = seconds % 3600 === 0 ? [seconds / 3600, "hour"] : [seconds / 60, "minute"];
+  return `Every ${n === 1 ? "" : `${n} `}${unit}${n === 1 ? "" : "s"}`;
+}
+
+function ChoiceInput({ f, v, onChange }: { f: SettingField; v: string; onChange: (v: string) => void }) {
+  const choices = f.choices ?? [];
+  // A value set outside Settings stays selectable until it is changed.
+  const current = v !== "" && !choices.includes(Number(v)) ? Number(v) : null;
+  return (
+    <div className="field">
+      <div className="field__label">
+        <label htmlFor={`set-${f.key}`}>{f.label}</label>
+      </div>
+      <select id={`set-${f.key}`} className="select" value={v} aria-describedby={f.help ? `set-${f.key}-help` : undefined} onChange={(e) => onChange(e.target.value)}>
+        {current != null && <option value={v}>{v} s (set on the server)</option>}
+        {choices.map((c) => <option key={c} value={c}>{intervalLabel(c)}</option>)}
+      </select>
+      {f.help && <span id={`set-${f.key}-help`} className="field__hint">{f.help}</span>}
+    </div>
+  );
+}
+
 function Input({ f, v, cleared, onChange, onClear, quiet = false }: { f: SettingField; v: string; cleared: boolean; onChange: (v: string) => void; onClear: (on: boolean) => void; quiet?: boolean }) {
+  if (f.choices?.length) return <ChoiceInput f={f} v={v} onChange={onChange} />;
   const err = problem(f, v);
   const secret = f.kind === "secret";
   const num = f.kind === "int" || f.kind === "float";
