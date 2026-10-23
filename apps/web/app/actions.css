@@ -103,6 +103,9 @@
 .inline-link { color: var(--teal-fg); text-decoration: underline; text-decoration-color: var(--teal-line); text-underline-offset: 3px; }
 .inline-link:hover { text-decoration-color: var(--teal-fg); }
 .row-actions { display: flex; gap: var(--s-1); justify-content: flex-end; flex-wrap: wrap; }
+.row-actions--inline { flex-wrap: nowrap; }
+/* Memory card controls sit under the meta line, pushed to the card's foot. */
+.card__actions { display: flex; gap: var(--s-1); flex-wrap: wrap; margin-top: auto; padding-top: var(--s-2); }
 
 /* ---------- rail vital-signs card ---------- */
 

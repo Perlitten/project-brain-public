@@ -7,7 +7,7 @@ import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, Meter, PageHead, Panel, StatusLine, Table, type PageStatus } from "@/components/ui";
 import { getCorpus, getPagedIndexRuns, getRepositoryFeed } from "@/lib/data";
-import { repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
+import { canReindex, repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
 import { restrictedMember } from "@/lib/team-session";
 
 export const metadata = { title: "Projects" };
@@ -29,7 +29,7 @@ async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: s
   const state = detail ? repositoryStatus(detail, corpus?.uncommitted) : null;
   const action = detail ? repositoryAction(detail) : null;
   const stale = repositories.filter((r) => repositoryStatus(r).tone !== "ok").length;
-  const summary: PageStatus | undefined = state ? { tone: state.tone, text: state.tone === "ok" ? "Index matches the latest revision" : state.status, action: state.tone === "ok" || !action ? undefined : <Link className="btn btn--neutral" href={action.href}>{action.label}</Link> } : selected ? undefined : repositories.length ? { tone: stale ? "warn" : "ok", text: repositorySummary(repositories) } : undefined;
+  const summary: PageStatus | undefined = state ? { tone: state.tone, text: state.tone === "ok" ? "Index matches the latest revision" : state.status, action: state.tone === "ok" || !action ? undefined : !member && canReindex(detail!) ? <RunButton variant="primary" action={async () => { "use server"; return startReindex({ repoPath: detail!.path }); }} label={`Re-index ${detail!.name}`} title={`Re-index ${detail!.name}`} /> : <Link className="btn btn--neutral" href={action.href}>{action.label}</Link> } : selected ? undefined : repositories.length ? { tone: stale ? "warn" : "ok", text: repositorySummary(repositories) } : undefined;
   return (
     <>
       {summary && <StatusLine {...summary} />}
@@ -56,6 +56,8 @@ async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: s
             { head: "Freshness", cell: (r) => <Chip tone={repositoryStatus(r).tone}>{repositoryStatus(r).status}</Chip> },
             { head: "Branch", cell: (r) => <span className="mono">{r.branch || "—"}</span> },
             { head: "Indexed revision", cell: (r) => r.head || "—", align: "right" },
+            // Members index through their role on the project page; the owner re-indexes from the row.
+            ...(member ? [] : [{ head: <span className="sr-only">Actions</span>, cell: (r: (typeof repositories)[number]) => canReindex(r) ? <RunButton small variant={repositoryStatus(r).tone === "ok" ? "neutral" : "primary"} action={async () => { "use server"; return startReindex({ repoPath: r.path }); }} label="Re-index" title={`Re-index ${r.name}`} /> : null, align: "right" as const }]),
           ]} />
         )}
       </Panel>}

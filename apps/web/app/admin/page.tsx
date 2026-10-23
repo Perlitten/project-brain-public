@@ -11,11 +11,13 @@ import { currentMember } from "@/lib/team-session";
 
 export const metadata = { title: "Access" };
 
-export default async function Admin() {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ new?: string }> }) {
   const gate = await adminOnlyPage("Access");
   if (gate) return gate;
   const [view, agent, signIn] = await Promise.all([getAccessView(), getAgentTarget(), getSignInView()]);
   const { summary: s, identities } = view;
+  // Setup and Agent tools link here with ?new=agent: keys are created in this one place.
+  const asked = (await searchParams).new === "agent";
   const target = { apiUrl: agent.publicApiUrl, repoPath: agent.repoPath };
   // In team state only a team admin is offered new identities; Brain still checks the call.
   const canCreate = signIn.mode !== "team" || (await currentMember())?.admin === true;
@@ -51,7 +53,7 @@ export default async function Admin() {
           title="New identity"
           desc="Creates the identity and its first key. You’ll see the key once, right after."
           cta="+ New identity"
-          open={view.readable && identities.length === 0}
+          open={asked || (view.readable && identities.length === 0)}
         >
           <NewIdentityForm target={target} />
         </Fold>

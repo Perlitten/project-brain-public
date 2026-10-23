@@ -1,7 +1,11 @@
 import { Term } from "@/components/Term";
 import { SectionTabs } from "@/components/SectionNav";
 import { Chip, EmptyState, JobChip, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
-import { getCorpus, getPagedIndexRuns } from "@/lib/data";
+import { RunButton } from "@/components/act";
+import { startReindex } from "@/lib/actions/jobs";
+import { getCorpus, getPagedIndexRuns, getRepositoryFeed } from "@/lib/data";
+import { canReindex } from "@/lib/repository-status";
+import { restrictedMember } from "@/lib/team-session";
 import { getListQuery } from "@/lib/list-query";
 import type { IndexRun } from "@/lib/types";
 
@@ -19,7 +23,12 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
   const params = await searchParams;
   const repo = typeof params.repo === "string" ? params.repo : undefined;
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
-  const [result, corpus] = await Promise.all([getPagedIndexRuns(repo, getListQuery(params)), getCorpus(repo)]);
+  const [result, corpus, feed, member] = await Promise.all([getPagedIndexRuns(repo, getListQuery(params)), getCorpus(repo), getRepositoryFeed(), restrictedMember()]);
+  // The selected project, or the only one there is: the run this page's lede asks for.
+  const target = repo ? feed.repositories.find((r) => r.slug === repo || r.name.toLowerCase() === repo.toLowerCase()) : feed.repositories.length === 1 ? feed.repositories[0] : undefined;
+  const reindex = !member && target && canReindex(target)
+    ? <RunButton variant="primary" action={async () => { "use server"; return startReindex({ repoPath: target.path }); }} label={`Re-index ${target.name}`} title={`Re-index ${target.name}`} />
+    : undefined;
   const runs = result.items;
   const last = runs.find((r) => r.status === "completed");
   // Facets count every run, not just this page; fall back to the page only
@@ -33,6 +42,7 @@ export default async function Indexing({ searchParams }: { searchParams: Promise
     <>
       <PageHead
         title="Index runs"
+        actions={reindex}
         lede={
           <>
             Each time Brain read your code. Its <Term k="index">index</Term> is its own copy of committed source, cut into searchable pieces.

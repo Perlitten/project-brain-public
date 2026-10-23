@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { SectionTabs } from "@/components/SectionNav";
 import { ClampText } from "@/components/ClampText";
 import { ListFrame } from "@/components/ListFrame";
+import { DecisionActions, RuleActions } from "@/components/MemoryActions";
 import { PageTabs, pickTab } from "@/components/PageTabs";
 import { Chip, EmptyState, PageHead, Panel, Table } from "@/components/ui";
 import { getPagedDecisions, getPagedRules } from "@/lib/data";
@@ -11,7 +12,7 @@ import type { Decision, Rule, Tone } from "@/lib/types";
 export const metadata = { title: "Memory" };
 
 const statusTone: Record<Decision["status"], Tone> = { accepted: "ok", proposed: "info", superseded: "idle", validated_unmerged: "info" };
-const statusWords: Record<Decision["status"], string> = { accepted: "agreed", proposed: "proposed", superseded: "replaced by a newer one", validated_unmerged: "verified, not merged yet" };
+const statusWords: Record<Decision["status"], string> = { accepted: "agreed", proposed: "proposed", superseded: "retired or replaced", validated_unmerged: "verified, not merged yet" };
 const severity: Record<Rule["severity"], [Tone, string]> = {
   block: ["bad", "blocks the change"],
   warn: ["warn", "warns"],
@@ -83,6 +84,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
                 <span className="mono">{d.scope}</span>
                 <span>recorded {d.recordedAt}</span>
               </p>
+              <DecisionActions decision={d} />
             </article>
           ))}
           />
@@ -144,6 +146,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
                     },
                   ]
                 : []),
+              { head: <span className="sr-only">Actions</span>, cell: (r: Rule) => <RuleActions rule={r} />, align: "right" as const },
             ]}
           />
           )}

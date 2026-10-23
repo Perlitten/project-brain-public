@@ -10,7 +10,9 @@ import { dashboardPeriod, getAgentValue, getQualityEvidence, getRequestTelemetry
 import { dataSource, getCodeModules, getCorpus, getJobs, getRepositoryFeed } from "@/lib/data";
 import { scopeMemberToProject } from "@/lib/member-scope";
 import { restrictedMember } from "@/lib/team-session";
-import { repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
+import { canReindex, repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
+import { RunButton } from "@/components/act";
+import { startReindex } from "@/lib/actions/jobs";
 import type { Tone } from "@/lib/types";
 import { utcTime } from "@/lib/time";
 import "./dashboard.css";
@@ -80,7 +82,10 @@ async function DashboardData({ searchParams }: Props) {
         ? {
           tone: first.tone,
           text: <>{repositorySummary(projects, observations)}<small>{first.repo.freshness === "source_missing" ? SOURCE_UNAVAILABLE_HELP : attention.map((a) => `${a.repo.name} — ${a.status.toLowerCase()}`).join(" · ")}</small></>,
-          action: nextAction ? <Link className="btn btn--neutral" href={nextAction.href}>{nextAction.label}</Link> : undefined,
+          // The fix is one click when Brain can read the source; the run history stays one link away.
+          action: admin && canReindex(first.repo)
+            ? <><RunButton variant="primary" action={async () => { "use server"; return startReindex({ repoPath: first.repo.path }); }} label={`Re-index ${first.repo.name}`} title={`Re-index ${first.repo.name}`} />{nextAction && <Link className="btn btn--neutral" href={nextAction.href}>Index runs</Link>}</>
+            : nextAction ? <Link className="btn btn--neutral" href={nextAction.href}>{nextAction.label}</Link> : undefined,
         }
         : { tone: "ok", text: <>{repositorySummary(projects, observations)}<small>{coverage !== null ? `${measuredNumber(coverage, "%")} of eligible code is searchable. ` : ""}Agents get context from the latest indexed revision. {snapshots.some((s) => s.corpus.uncommitted == null) ? "Working-tree changes were not reported by the latest run." : "The latest run recorded no uncommitted changes; later edits may not be detected."}</small></> };
 

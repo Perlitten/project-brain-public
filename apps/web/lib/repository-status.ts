@@ -18,6 +18,11 @@ export function repositoryAction(repo: Repository): { href: string; label: strin
     : { href: `/indexing${scope}`, label: `Open index runs for ${repo.name}` };
 }
 
+/** An index run can only help once Brain can read the checkout at its registered path. */
+export function canReindex(repo: Repository): boolean {
+  return repo.freshness !== "source_missing" && Boolean(repo.path?.trim());
+}
+
 export function repositorySummary(repositories: Repository[], uncommitted: ReadonlyMap<number, number | null> = new Map()): string {
   const missing = repositories.filter((r) => r.freshness === "source_missing").length;
   const behind = repositories.filter((r) => r.freshness !== "source_missing" && (r.freshness === "behind" || (r.behind ?? 0) > 0)).length;

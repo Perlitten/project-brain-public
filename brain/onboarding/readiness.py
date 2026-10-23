@@ -203,7 +203,7 @@ def _agent_step() -> Dict[str, Any]:
             f"MCP server self-check passed at {check.get('checked_at')}; "
             "no external client connection observed yet"
         )
-        status, hint = _DONE, "install the config below in your agent, then run one Brain tool"
+        status, hint = _DONE, "create an agent key in Access, paste its config into your agent, then run one Brain tool"
     elif check and fresh:
         detail = f"MCP server self-check reported '{check.get('status')}' at {check.get('checked_at')}"
         status, hint = _ACTION, "fix the failing check and run it again"

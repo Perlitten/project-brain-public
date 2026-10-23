@@ -29,7 +29,7 @@ export interface AgentTarget {
 
 const KEY_HINT = (
   <>
-    For an agent, run the command from a Project Brain checkout (it needs <code>apps.mcp_server</code>). For an integration, send the key in the{" "}
+    For an agent, paste one of the configs above — it connects by URL, nothing to install. For an integration, send the key in the{" "}
     <code>X-API-Key</code> header.
   </>
 );

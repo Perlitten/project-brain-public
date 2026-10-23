@@ -130,6 +130,32 @@ export interface Decision {
   summary: string;
   /** Demo data only: repository slug this decision belongs to. */
   repo?: string;
+  /** How to address the stored row when editing it; absent on history copies. */
+  write?: DecisionWrite;
+}
+
+/** The stored decision a write replaces: Brain keys decisions by title and scope. */
+export interface DecisionWrite {
+  title: string;
+  repoPath: string | null;
+  description: string;
+  reason: string;
+  /** Compare-and-swap: the version this page read. */
+  version: number;
+}
+
+/** The stored rule a write replaces. A rule write sends every field, so all of them travel. */
+export interface RuleWrite {
+  ruleId: string;
+  name: string;
+  repoPath: string | null;
+  description: string;
+  type: string;
+  /** As stored (e.g. "critical"); the page groups it into block/warn/advise. */
+  severity: string;
+  status: string;
+  appliesTo: Record<string, unknown> | null;
+  version: number;
 }
 
 export interface Rule {
@@ -143,6 +169,8 @@ export interface Rule {
   caught30d?: number;
   /** Demo data only: repository slug this rule belongs to. */
   repo?: string;
+  /** How to address the stored row when editing it; absent on history copies. */
+  write?: RuleWrite;
 }
 
 export interface Insight {

@@ -568,7 +568,7 @@ async def web_decisions(page: int = Query(1, ge=1), page_size: int = Query(50, g
     return {"total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),
             "facets": {"status": dict(facets)}, "scope": "repository" if repository_id is not None else "global",
             "decisions": [{"id": r.id, "title": r.title, "description": r.description, "status": _decision_status(r.status), "raw_status": r.status,
-                           "repo_path": r.repo_path, "date": r.date.isoformat() if r.date else None, "reason": r.reason,
+                           "repo_path": r.repo_path, "version": r.version or 1, "current": r.superseded_by_id is None, "date": r.date.isoformat() if r.date else None, "reason": r.reason,
                            "consequences": r.consequences, "affected_features": r.affected_features, "affected_modules": r.affected_modules,
                            "affected_files": r.affected_files} for r in rows]}
 
@@ -610,7 +610,9 @@ async def web_rules(page: int = Query(1, ge=1, le=1000000), page_size: int = Que
     def shape(rule: Any) -> dict[str, Any]:
         shaped = {"id": rule.id, "name": rule.name, "description": rule.description, "status": rule.status,
                   "severity": _rule_severity(rule.severity), "raw_severity": rule.severity, "type": rule.type,
-                  "applies_to": rule.applies_to, "repo_path": rule.repo_path}
+                  "applies_to": rule.applies_to, "repo_path": rule.repo_path,
+                  # Edits compare-and-swap on this version; history copies are never edited.
+                  "version": rule.version or 1, "current": rule.superseded_by_id is None}
         if measured:
             seen = counts.get(rule.id) or {}
             shaped["delivered_30d"] = int(seen.get("delivered") or 0)
