@@ -38,6 +38,37 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _MISSING_REF_MARKERS = ("couldn't find remote ref", "could not find remote ref")
 
 
+def _redact_scheme_userinfo(text: str) -> str:
+    """Mask scheme URL userinfo before punctuation-aware tokenization."""
+    pieces: list[str] = []
+    copied = 0
+    search_from = 0
+    while (marker := text.find("://", search_from)) >= 0:
+        scheme_start = marker
+        while scheme_start and (text[scheme_start - 1].isalnum() or text[scheme_start - 1] in "+.-"):
+            scheme_start -= 1
+        if scheme_start == marker or not text[scheme_start].isalpha():
+            search_from = marker + 3
+            continue
+
+        authority_start = marker + 3
+        authority_end = authority_start
+        last_at = -1
+        while authority_end < len(text):
+            char = text[authority_end]
+            if char.isspace() or char in '/?#"':
+                break
+            if char == "@":
+                last_at = authority_end
+            authority_end += 1
+        if last_at >= authority_start:
+            pieces.extend((text[copied:authority_start], "***@"))
+            copied = last_at + 1
+        search_from = max(authority_end, marker + 3)
+    pieces.append(text[copied:])
+    return "".join(pieces)
+
+
 def _redact_remote_token(match: re.Match[str]) -> str:
     token = match.group(0)
     scheme, separator, rest = token.partition("://")
@@ -58,7 +89,7 @@ def _redact_remote_token(match: re.Match[str]) -> str:
 
 def redact_url(text: str | None) -> str:
     """Drop remote credentials and query/fragment data in linear time."""
-    return _REDACTION_TOKEN.sub(_redact_remote_token, str(text or ""))
+    return _REDACTION_TOKEN.sub(_redact_remote_token, _redact_scheme_userinfo(str(text or "")))
 
 
 @dataclass(frozen=True)

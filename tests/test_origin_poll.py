@@ -163,15 +163,22 @@ def test_redact_url_hides_scheme_less_credentials_and_keeps_scp_remotes():
     assert OriginSpec("oauth2:TOKEN@gitlab.com/acme/repo.git", "main", True).display_url == "***@gitlab.com/acme/repo.git"
 
 
-@pytest.mark.parametrize("text, expected", [
-    ("https://user:SECRET@host/repo?token=SECRET#private", "https://***@host/repo"),
-    ("(oauth2:SECRET@host/repo)", "(***@host/repo)"),
-    ("https://host/path@revision", "https://host/path@revision"),
-    ("git@host:org/repo", "git@host:org/repo"),
-    ("x" * 100_000, "x" * 100_000),
-    ("https://" + "x" * 100_000, "https://" + "x" * 100_000),
-    ("https://" + "x" * 100_000 + "@host/repo", "https://***@host/repo"),
-])
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("https://user:SECRET@host/repo?token=SECRET#private", "https://***@host/repo"),
+        ("(oauth2:SECRET@host/repo)", "(***@host/repo)"),
+        ("https://host/path@revision", "https://host/path@revision"),
+        ("https://bot:SECRET(foo)@host/repo", "https://***@host/repo"),
+        ("https://bot:SEC'RET@host/repo", "https://***@host/repo"),
+        ("git@host:org/repo", "git@host:org/repo"),
+        ("x" * 100_000, "x" * 100_000),
+        ("https://" + "x" * 100_000, "https://" + "x" * 100_000),
+        ("https://" + "x" * 100_000 + "@host/repo", "https://***@host/repo"),
+    ],
+    ids=("credential-query", "wrapped-schemeless", "path-at", "password-paren", "password-quote",
+         "scp", "long-plain", "long-host", "long-userinfo"),
+)
 def test_redact_url_linear_token_parsing(text, expected):
     assert redact_url(text) == expected
     assert redact_url(expected) == expected
