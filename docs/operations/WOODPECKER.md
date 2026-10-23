@@ -249,3 +249,35 @@ CPU and memory limits. Where nested overlay mounts are unavailable, use vfs.
 Keep its network isolated from host/private services and persist those rules.
 The workstation must be running for workstation-hosted native agents to accept
 jobs; their availability is not supplied by the ordinary Contabo Docker agent.
+
+## Credentialed CodeQL publishing plugin — 2026-10-23
+
+Image-filtered Woodpecker secrets are available only to plugin steps with no
+custom commands. Both language workflows now use a fixed-purpose, static Go
+publisher from scripts/ci/codeql-publish. It executes no shell or repository code,
+uses the image's fixed CA bundle and GitHub API origin, accepts only this public
+repository's exact main-push metadata, and preserves the SARIF findings. A green
+publication requires GitHub's processing receipt to reach complete; API errors,
+failed processing and missing reports fail the workflow.
+
+Build the reviewed source on the administrator's Docker host:
+
+```
+docker build -t localhost/brain-codeql-publish:20261023 scripts/ci/codeql-publish
+```
+
+The Dockerfile pins the official Go compiler image, runs HTTP upload/processing
+regression tests, and emits a non-root scratch image with only the binary and CA
+bundle. The tested local manifest is
+5cfb507368419fe8c823969384d68f30b19b26160a2664fe3eb552ce6e0dd88b.
+Verify it with an actual pull=never run before updating either workflow's digest.
+A source change requires an administrator rebuild and a reviewed digest update;
+PR code never builds an image that receives this credential.
+
+Restrict github_code_scanning_token to this exact publisher image and push events.
+The plugin and workflow both require refs/heads/main. The GitHub fine-grained
+credential needs Code scanning alerts read/write and automatic metadata read,
+selected for Perlitten/project-brain-public only. Keep its expiry in the secret
+note and rotate it before expiry; it is never a production runtime credential.
+The separate analysis toolchain, query suites, language categories and private
+SARIF artifact uploads are unchanged.
