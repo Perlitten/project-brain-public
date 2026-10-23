@@ -25,6 +25,7 @@ from apps.api.registry_access import (
 )
 from apps.api.team_access import team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
+from brain.database.repository_utils import find_repository_id
 from brain.lab.laboratory import BUILTIN_PROFILES
 from brain.team.authorization import Permission
 from brain.workspace.capabilities import CapabilitiesManager
@@ -74,10 +75,21 @@ class UpdateCapabilitiesRequest(BaseModel):
 async def list_repositories():
     """List all registered repositories."""
     repos = (await workspace_registry()).list_all()
+    async with team_access.async_session_factory() as session:
+        indexed_ids = {
+            repo.repository_id: await find_repository_id(session, repo.canonical_root)
+            for repo in repos
+        }
     return {
         "status": "success",
         "total": len(repos),
-        "repositories": [r.to_dict() for r in repos],
+        # Correlate registry records with the indexed repository server-side.
+        # The database lookup accepts canonical, symlink-resolved and slash
+        # variants; clients must not guess identity from display path strings.
+        "repositories": [
+            {**repo.to_dict(), "indexed_repository_id": indexed_ids[repo.repository_id]}
+            for repo in repos
+        ],
     }
 
 

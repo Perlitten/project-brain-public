@@ -21,7 +21,7 @@ async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: s
   const [feed, member] = await Promise.all([getRepositoryFeed(), restrictedMember()]);
   const registered = member ? [] : await getRegisteredSources();
   const repositories = feed.repositories;
-  const pendingSources = registered?.filter(source => !repositories.some(repo => repo.path === source.path)) ?? [];
+  const pendingSources = registered?.filter(source => source.indexedRepositoryId === null) ?? [];
   const current = selected ? repositories.find((r) => r.slug === selected || String(r.id) === selected || r.name.toLowerCase() === selected.toLowerCase()) : null;
   const detail = current && current.id > 0 ? current : null;
   const scope = detail ? `?repo=${encodeURIComponent(detail.slug)}` : "";

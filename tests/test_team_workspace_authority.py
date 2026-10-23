@@ -339,6 +339,9 @@ async def test_team_registration_links_the_repository_to_a_project(registration,
     assert await table_ids(factory) == {response.json()["repository"]["repository_id"]}
     assert registry.list_all() == []  # team state writes the shared table, not this process's file
     assert await registry_activity(factory) == [("registry.registered", 4, None, b)]
+    listed = await client.get("/workspace/repositories", headers=ADMIN)
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["repositories"][0]["indexed_repository_id"] == 4
     # The administrator is a member of B, so the newly registered repository is usable at once.
     allowed, _ = await outcome(factory, 4, 4, Permission.REQUEST_RUN)
     assert allowed

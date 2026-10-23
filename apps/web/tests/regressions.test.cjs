@@ -1785,7 +1785,6 @@ test('adding a repository validates paths, preserves defaults and reports index 
   assert.ok(!('target_repo_path' in writes[0].body), 'the default repository must not change');
 });
 
-
 test('Current memory excludes replaced decisions and keeps each view count honest', async () => {
   const data = load('lib/data.ts', { 'next/server': { connection: async () => {} }, react: { cache: fn => fn }, './api': { apiConfigured: false } });
   const current = await data.getPagedDecisions(null, { status: 'current', size: 100 });
@@ -1826,7 +1825,57 @@ test('finding cards retain file and line evidence when repository provenance com
   assert.equal(finding.codeAvailable, true);
 });
 
+test('team registration only offers indexing where the selected project grants run.request', async () => {
+  let identity = { team_state: 'team', scopes: ['workspace:read'], is_team_admin: true, projects: [] };
+  const writes = [], indexes = [];
+  const projects = load('lib/actions/projects.ts', {
+    '../capabilities': { getCapabilities: async () => ({ state: 'live', supported: ['repository_registration'] }) },
+    '../api': { brainRead: async path => ({ ok: true, data: path === '/team/me' ? identity : [{ id: 'alpha', name: 'Alpha' }] }) },
+    './gate': { mutate: async (path, opts) => { writes.push({ path, ...opts }); return { ok: true, message: 'registered' }; } },
+    './jobs': { startReindex: async opts => { indexes.push(opts); return { ok: true, message: 'queued' }; } },
+  });
+  let context = await projects.projectRegistrationContext();
+  assert.equal(context.data.projects[0].canIndex, false);
+  const denied = await projects.addProject({ name: 'Example', path: '/repos/example', projectId: 'alpha', indexNow: true });
+  assert.equal(denied.ok, false);
+  assert.match(denied.message, /run\.request/);
+  assert.equal(writes.length, 0);
 
+  const registered = await projects.addProject({ name: 'Example', path: '/repos/example', projectId: 'alpha', indexNow: false });
+  assert.equal(registered.ok, true);
+  assert.equal(registered.data.canIndex, false);
+  assert.equal(indexes.length, 0);
+
+  identity = { ...identity, projects: [{ id: 'alpha', effective_permissions: ['read', 'run.request'] }] };
+  context = await projects.projectRegistrationContext();
+  assert.equal(context.data.projects[0].canIndex, true);
+  const queued = await projects.addProject({ name: 'Example 2', path: '/repos/example-2', projectId: 'alpha', indexNow: true });
+  assert.equal(queued.ok, true);
+  assert.equal(indexes.length, 1);
+});
+
+test('registered sources use server-correlated index identities and demo mode makes no registry request', async () => {
+  let reads = 0;
+  let capabilities = { state: 'demo', supported: ['repository_registration'] };
+  const sources = load('lib/project-sources.ts', {
+    './capabilities': { getCapabilities: async () => capabilities },
+    './api': { brainRead: async () => { reads++; return { ok: true, data: { repositories: [] } }; } },
+  });
+  assert.equal((await sources.getRegisteredSources()).length, 0);
+  assert.equal(reads, 0);
+  capabilities = { state: 'live', supported: ['repository_registration'] };
+  const live = load('lib/project-sources.ts', {
+    './capabilities': { getCapabilities: async () => capabilities },
+    './api': { brainRead: async () => ({ ok: true, data: { repositories: [
+      { display_name: 'Windows spelling', canonical_root: 'C:\\repo', indexed_repository_id: 7 },
+      { display_name: 'Pending', canonical_root: '/repos/pending', indexed_repository_id: null },
+    ] } }) },
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(await live.getRegisteredSources())), [
+    { name: 'Windows spelling', path: 'C:\\repo', indexedRepositoryId: 7 },
+    { name: 'Pending', path: '/repos/pending', indexedRepositoryId: null },
+  ]);
+});
 test('activity entries retain seconds while decision calendar dates stay timezone-free', async () => {
   const data = load('lib/data.ts', {
     'next/server': { connection: async () => {} }, react: { cache: fn => fn },
