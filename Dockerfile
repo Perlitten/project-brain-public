@@ -16,7 +16,7 @@ COPY scripts/write_source_manifest.py ./scripts/write_source_manifest.py
 COPY scripts/validate_lfm_release_gate.py ./scripts/validate_lfm_release_gate.py
 COPY Dockerfile /release-inputs/
 COPY deploy/docker-compose.prod.yml deploy/server_up.sh /release-inputs/deploy/
-COPY scripts/write_source_manifest.py scripts/validate_lfm_release_gate.py /release-inputs/scripts/
+COPY scripts/woodpecker_gate.py scripts/write_source_manifest.py scripts/validate_lfm_release_gate.py /release-inputs/scripts/
 
 ARG BRAIN_BUILD_SHA=unknown
 ARG BRAIN_BUILD_TIME=unknown
