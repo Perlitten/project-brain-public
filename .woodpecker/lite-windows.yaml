@@ -17,6 +17,7 @@ steps:
 - name: checkout
   image: powershell
   commands:
+  - if ($env:BRAIN_CI_WINDOWS_PATH) { $env:Path = $env:BRAIN_CI_WINDOWS_PATH }
   - if ($env:CI_COMMIT_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Invalid commit SHA' }
   - git init .; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   - git remote add origin https://github.com/Perlitten/project-brain-public.git; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -25,6 +26,7 @@ steps:
 - name: lite-windows
   image: powershell
   commands:
+  - if ($env:BRAIN_CI_WINDOWS_PATH) { $env:Path = $env:BRAIN_CI_WINDOWS_PATH }
   - python scripts/run_lite_ci.py --install; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   - python scripts/run_lite_ci.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   - python -m pytest tests/test_team_memory_load_e2e.py -q; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
