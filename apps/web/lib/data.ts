@@ -153,6 +153,11 @@ type RawFreshness = {
   status?: string | null;
   age_seconds?: number | null;
   note?: string | null;
+  origin_poll_status?: string | null;
+  origin_polled_at?: string | null;
+  origin_poll_error?: string | null;
+  origin_remote?: string | null;
+  commits_behind_origin?: number | null;
 };
 type RawRepo = {
   id: number;
@@ -186,6 +191,15 @@ function toRepository(r: RawRepo): Repository {
     head: shortRevision(commit),
     behind: num(f.commits_behind) ?? null,
     freshness: str(f.status) || "unknown",
+    ...(str(f.origin_poll_status) ? {
+      originPoll: {
+        status: str(f.origin_poll_status),
+        at: str(f.origin_polled_at) ? utcTime(str(f.origin_polled_at)) : undefined,
+        error: str(f.origin_poll_error) || undefined,
+        remote: str(f.origin_remote) || undefined,
+        behind: num(f.commits_behind_origin) ?? null,
+      },
+    } : {}),
   };
 }
 

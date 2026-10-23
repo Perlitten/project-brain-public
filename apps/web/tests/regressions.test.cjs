@@ -1702,6 +1702,45 @@ test('settings delivery and scheduled job observations share explicit UTC format
   assert.match(expected, /03:30 UTC$/);
 });
 
+test('settings git integration keeps masked remotes and drops malformed entries', async () => {
+  let git = {
+    webhook_path: '/webhooks/git-merge',
+    webhook_url: null,
+    workflow_example: 'docs/examples/reindex-on-push.yml',
+    origin_remotes: { remotes: [{ path: '/app', url: 'https://***@github.com/o/r.git', branch: 'main' }, { path: '/x' }, 'junk'], skipped: 2, error: null },
+  };
+  const settings = load('lib/settings-view.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: true, brainFetch: async path => path === '/api/settings' ? { sections: [], git } : null },
+  });
+  const view = (await settings.getSettingsView()).git;
+  assert.equal(view.webhookPath, '/webhooks/git-merge');
+  assert.equal(view.webhookUrl, undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(view.originRemotes)), {
+    remotes: [{ path: '/app', url: 'https://***@github.com/o/r.git', branch: 'main' }],
+    skipped: 2,
+  });
+  git = undefined; // a server without the git section
+  assert.equal((await settings.getSettingsView()).git, null);
+});
+
+test('repository origin poll status is read from freshness only when the poll has run', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => ({ repositories: [
+      { id: 1, name: 'a', freshness: { origin_poll_status: 'error', origin_polled_at: '2026-10-22T06:30:00Z', origin_poll_error: 'timed out', origin_remote: 'https://***@h/r.git', commits_behind_origin: null } },
+      { id: 2, name: 'b', freshness: { status: 'current' } },
+    ] }) },
+  });
+  const [polled, never] = (await data.getRepositoryFeed()).repositories;
+  assert.equal(polled.originPoll.status, 'error');
+  assert.equal(polled.originPoll.error, 'timed out');
+  assert.equal(polled.originPoll.remote, 'https://***@h/r.git');
+  assert.equal(polled.originPoll.behind, null);
+  assert.match(polled.originPoll.at, /06:30 UTC$/);
+  assert.equal(never.originPoll, undefined);
+});
+
 
 test('a missed health probe retains independently reported build identity', async () => {
   const { getPulse } = load('lib/actions/pulse.ts', {

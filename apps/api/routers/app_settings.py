@@ -1,13 +1,14 @@
 """Operator settings: alerts, automation, search and indexing knobs.
 
 Only the fields in :data:`FIELDS` are readable or writable here, each with its
-own type and range. Secrets (bot token) are write-only: GET says
+own type and range. Secrets (bot token, webhook secret) are write-only: GET says
 whether one is set, never what it is. Writes land in the checkout's ``.env``
 (through ``brain.onboarding.envfile``) and on the live API settings; workers
 and the scheduler read ``.env`` when they start.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from pydantic import BaseModel, Field as PydanticField
 from apps.api.auth import require_api_key, require_scope
 from apps.api.team_access import team_administrator_access
 from brain.config.settings import settings
+from brain.indexers.source_mirror import redact_url
 from brain.onboarding.envfile import check_endpoint_host, setup_env_path, update_env_file
 
 router = APIRouter(prefix="/api/settings", tags=["settings"],
@@ -46,6 +48,7 @@ SECTIONS: Dict[str, str] = {
     "automation": "Background checks",
     "search": "Search & context packs",
     "indexing": "Indexing & workers",
+    "git": "Git & origin sync",
 }
 
 FIELDS: List[SettingField] = [
@@ -67,6 +70,13 @@ FIELDS: List[SettingField] = [
     SettingField("INDEX_PROVIDER_CONCURRENCY", "indexing", "Model calls in parallel", "int", "Keep low on rate-limited providers.", min=1, max=16),
     SettingField("INDEX_EMBEDDING_BATCH_SIZE", "indexing", "Embedding batch size", "int", "Texts per embeddings request.", min=1, max=256),
     SettingField("WORKER_JOB_TIMEOUT_SECONDS", "indexing", "Job timeout, s", "int", "A background job is stopped after this long.", min=60, max=6 * 3600),
+    SettingField("PROJECT_BRAIN_WEBHOOK_TOKEN", "git", "Webhook secret", "secret", "HMAC secret the merge webhook checks (X-Hub-Signature-256). Store the same value as the PROJECT_BRAIN_WEBHOOK_TOKEN secret in GitHub. Write-only.", clearable=True),
+    SettingField("PROJECT_BRAIN_WEBHOOK_REF", "git", "Branch that triggers a reindex", "text", "Full ref, e.g. refs/heads/main. Pushes to any other ref are ignored.", pattern=r"refs/heads/[A-Za-z0-9._/-]{1,200}"),
+    SettingField("BRAIN_WEBHOOK_FETCH_SOURCE", "git", "Fetch the pushed revision", "bool", "Fetch origin and check out the merged revision before indexing. Off: the reindex fails unless the checkout is already there."),
+    SettingField("BRAIN_WEBHOOK_FETCH_TIMEOUT_S", "git", "Fetch timeout, s", "int", "How long a reindex may spend fetching origin.", min=10, max=1800),
+    SettingField("BRAIN_ORIGIN_POLL_INTERVAL_S", "git", "Origin poll interval, s", "int", "How often each attached repository's origin is checked for new commits. 0 turns polling off. Rounded up to whole minutes, and to whole hours from 1 hour on.", min=0, max=24 * 3600),
+    SettingField("BRAIN_ORIGIN_POLL_TIMEOUT_S", "git", "Origin poll timeout, s", "int", "Per-repository limit for one git ls-remote or mirror fetch.", min=5, max=600),
+    SettingField("BRAIN_SOURCE_MIRROR_DIR", "git", "Mirror directory", "text", "Absolute path of a writable directory on the server. Read-only or non-git sources are indexed from a bare mirror kept here. Blank turns mirrors off.", pattern=r"(/|[A-Za-z]:[\\/])[^\x00-\x1f]*", clearable=True),
 ]
 BY_KEY: Dict[str, SettingField] = {f.key: f for f in FIELDS}
 SETTINGS_KEYS = frozenset(BY_KEY)
@@ -106,6 +116,63 @@ def _safe_url(url: Optional[str]) -> Optional[str]:
     return f"{p.scheme}://{host}{p.path}"
 
 
+WEBHOOK_PATH = "/webhooks/git-merge"
+WEBHOOK_EXAMPLE = "docs/examples/reindex-on-push.yml"
+
+
+def _display_remote(url: str) -> str:
+    """An origin URL without userinfo, query or fragment: tokens never leave the server."""
+    text = redact_url(url.strip()).split("?", 1)[0].split("#", 1)[0]
+    # No scheme: "user:token@host/..." still carries a secret; scp-style "git@host:org/repo" does not.
+    return text if "://" in text else re.sub(r"^[^@/\s]*:[^@/\s]*@", "***@", text)
+
+
+def _origin_remotes() -> Dict[str, Any]:
+    """Which repositories ``BRAIN_ORIGIN_REMOTES`` covers, read-only and with credentials masked.
+
+    Mirrors ``brain.indexers.source_mirror.configured_remotes``: entries it
+    would skip are counted, not shown. The raw JSON is never returned.
+    """
+    raw = str(settings.BRAIN_ORIGIN_REMOTES or "").strip()
+    out: Dict[str, Any] = {"remotes": [], "skipped": 0, "error": None}
+    if not raw:
+        return out
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        out["error"] = "not valid JSON; ignored"
+        return out
+    if not isinstance(data, dict):
+        out["error"] = "not a JSON object; ignored"
+        return out
+    for path, value in data.items():
+        url = value if isinstance(value, str) else value.get("url") if isinstance(value, dict) else None
+        if not isinstance(url, str) or not url.strip():
+            out["skipped"] += 1
+            continue
+        branch = value.get("branch") if isinstance(value, dict) else None
+        out["remotes"].append({
+            "path": str(path),
+            "url": _display_remote(url),
+            "branch": branch.strip() if isinstance(branch, str) and branch.strip() else None,
+        })
+    return out
+
+
+def _git_integration() -> Dict[str, Any]:
+    # Same rule as apps.api.mcp_http.public_base_url.
+    public_url = (settings.BRAIN_PUBLIC_URL or "").strip().rstrip("/")
+    public_host = (settings.BRAIN_PUBLIC_HOST or "").strip().rstrip("/")
+    base = public_url or (f"https://{public_host}" if public_host else "")
+    return {
+        "webhook_path": WEBHOOK_PATH,
+        # Only when the API knows its public address; otherwise the web shows the path.
+        "webhook_url": f"{base}{WEBHOOK_PATH}" if base else None,
+        "workflow_example": WEBHOOK_EXAMPLE,
+        "origin_remotes": _origin_remotes(),
+    }
+
+
 @router.get("", dependencies=[Depends(require_scope("setup:read"))])
 async def get_settings() -> Dict[str, Any]:
     sections = [
@@ -126,6 +193,7 @@ async def get_settings() -> Dict[str, Any]:
             "embedding_base_url": _safe_url(getattr(settings, "EMBEDDING_BASE_URL", None)),
         },
         "repo_path": settings.TARGET_REPO_PATH,
+        "git": _git_integration(),
         "env_file": {"exists": setup_env_path().exists()},
     }
 

@@ -24,10 +24,12 @@ import type {
 } from "./types";
 
 export const repositories: Repository[] = [
-  { id: 1, slug: "project-brain", name: "project-brain", path: "/srv/repos/project-brain", branch: "master", head: "d57f014", behind: 3 },
+  { id: 1, slug: "project-brain", name: "project-brain", path: "/srv/repos/project-brain", branch: "master", head: "d57f014", behind: 3,
+    originPoll: { status: "ok", at: "02 Oct 2026, 03:25 UTC", remote: "https://***@github.com/you/project-brain.git", behind: 3 } },
   { id: 2, slug: "docs-site", name: "docs-site", path: "/srv/repos/docs-site", branch: "main", head: "b113aca", behind: 0 },
   { id: 3, slug: "mobile-app", name: "mobile-app", path: "/srv/repos/mobile-app", branch: "master", head: "bec759d", behind: 0 },
-  { id: 4, slug: "billing-service", name: "billing-service", path: "/srv/repos/billing-service", branch: "main", head: "9f949e9", behind: 41 },
+  { id: 4, slug: "billing-service", name: "billing-service", path: "/srv/repos/billing-service", branch: "main", head: "9f949e9", behind: 41,
+    originPoll: { status: "error", at: "02 Oct 2026, 03:25 UTC", remote: "git@github.com:you/billing-service.git", error: "git ls-remote timed out after 30s", behind: null } },
 ];
 
 export function findRepository(slug?: string | null): Repository {

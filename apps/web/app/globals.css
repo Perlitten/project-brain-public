@@ -909,6 +909,9 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 /* Project detail: stats, coverage meters, then the caveat, each with breathing room. */
 .project-detail { display: grid; gap: var(--s-6); }
 .project-detail__note { margin: 0; font-size: var(--fs-12); }
+.project-detail .stat { min-width: 0; }
+.project-detail .stat__note { overflow-wrap: anywhere; }
+.project-detail .stat__note.text-bad { color: var(--bad-fg); }
 
 /* ---------- disclosure: secondary detail, closed by default ---------- */
 .disclosure { border-top: 1px solid var(--border-subtle); padding-top: var(--s-4); color: var(--text-2); font-size: var(--fs-12); line-height: var(--lh-prose); }

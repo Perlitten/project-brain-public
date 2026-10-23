@@ -9,7 +9,7 @@ import { LockNote, RunButton, useAction } from "@/components/act";
 import { Icon } from "@/components/Icon";
 import { Panel } from "@/components/ui";
 import { saveSettings, testTelegram } from "@/lib/actions/settings";
-import type { SettingField, SettingsSection, SettingsView, TelegramStatus } from "@/lib/settings-view";
+import type { GitIntegration, SettingField, SettingsSection, SettingsView, TelegramStatus } from "@/lib/settings-view";
 import { SchedulerLine, SchedulerTable } from "./Scheduler";
 import { telegramConfigured } from "@/lib/telegram";
 
@@ -59,7 +59,8 @@ export function Settings({ view }: { view: SettingsView }) {
         {view.sections
           .filter((s) => s.id !== "telegram")
           .map((s) => (
-            <Panel key={s.id} id={s.id} title={s.title}>
+            <Panel key={s.id} id={s.id} title={s.title} className={s.id === "git" ? "settings__wide" : undefined}>
+              {s.id === "git" && view.git && <GitInfo g={view.git} />}
               {s.id === "automation" && view.llmError && (
                 <p className="field__hint field__hint--bad settings__warn">
                   Last diagnosis LLM call failed: {view.llmError}. Fix the language model in{" "}
@@ -98,6 +99,50 @@ function TelegramLine({ t }: { t: TelegramStatus | null }) {
       <span className="telegram-delivery__label">Last message</span>
       <p>{sent ? "Delivered" : t.last ? t.last.status.replaceAll("_", " ") : "No messages yet"}{t.last?.at && ` on ${t.last.at}`}</p>
       {t.last?.findings != null && <span className="field__hint">{t.last.findings} finding{t.last.findings === 1 ? "" : "s"}</span>}
+    </div>
+  );
+}
+
+const SOURCE = "https://github.com/Perlitten/project-brain-public/blob/main/";
+
+// Read-only: where pushes are sent and which repositories are polled. The remotes
+// map stays in the server's .env because its URLs may carry credentials.
+function GitInfo({ g }: { g: GitIntegration }) {
+  const { remotes, skipped, error } = g.originRemotes;
+  return (
+    <div className="git-info">
+      <dl className="kv">
+        <dt>Webhook URL</dt>
+        <dd>
+          {g.webhookUrl ? <code>{g.webhookUrl}</code> : <><code>{g.webhookPath}</code> <span className="muted">on the API’s public address (set BRAIN_PUBLIC_URL to show it in full)</span></>}
+        </dd>
+        <dt>GitHub setup</dt>
+        <dd>
+          Copy <a className="link" href={SOURCE + g.workflowExample} target="_blank" rel="noreferrer">{g.workflowExample}</a> into the repository, then add the
+          webhook URL as the <code>PROJECT_BRAIN_WEBHOOK_URL</code> variable and the webhook secret below as the <code>PROJECT_BRAIN_WEBHOOK_TOKEN</code> secret.
+        </dd>
+        <dt>Polled origins</dt>
+        <dd>
+          {remotes.length ? (
+            <ul className="git-info__remotes">
+              {remotes.map((r) => (
+                <li key={r.path}>
+                  <code>{r.path}</code> <span className="muted">←</span> <code>{r.url}</code>
+                  {r.branch && <span className="muted"> · {r.branch}</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span className="muted">Each attached repository’s own origin remote.</span>
+          )}
+          {error && <p className="field__hint field__hint--bad">BRAIN_ORIGIN_REMOTES is {error}.</p>}
+          {skipped > 0 && <p className="field__hint">{skipped} entr{skipped === 1 ? "y" : "ies"} without a URL skipped.</p>}
+        </dd>
+      </dl>
+      <p className="field__hint">
+        Explicit origins come from BRAIN_ORIGIN_REMOTES in the server’s .env (credentials masked here). Changes below apply to the API at once;
+        restart the workers and scheduler so polling and fetches use them too.
+      </p>
     </div>
   );
 }

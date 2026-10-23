@@ -9,6 +9,7 @@ import { Chip, EmptyState, Meter, PageHead, Panel, StatusLine, Table, type PageS
 import { getCorpus, getPagedIndexRuns, getRepositoryFeed } from "@/lib/data";
 import { repositoryAction, repositoryStatus, repositorySummary, SOURCE_UNAVAILABLE_HELP } from "@/lib/repository-status";
 import { restrictedMember } from "@/lib/team-session";
+import type { OriginPoll } from "@/lib/types";
 
 export const metadata = { title: "Projects" };
 
@@ -43,6 +44,7 @@ async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: s
             <dl className="stats">
               <div className="stat"><dt className="stat__label">Indexed pieces</dt><dd className="stat__value num">{corpus?.available === false || !corpus ? "—" : corpus.chunks.toLocaleString("en-US")}</dd></div>
               <div className="stat"><dt className="stat__label">Latest revision</dt><dd className="stat__value num">{detail.head || "—"}</dd><dd className="stat__note">{detail.branch ? `branch ${detail.branch}` : "branch not recorded"}</dd></div>
+              {detail.originPoll && <OriginStat p={detail.originPoll} />}
               <div className="stat"><dt className="stat__label">Latest index run</dt><dd className="stat__value num">{history?.available === false ? "—" : history?.items[0]?.startedAt ?? "None"}</dd><dd className="stat__note">{history?.items[0]?.status ?? (history?.available === false ? "History unavailable" : "Nothing recorded")}</dd></div>
             </dl>
             {corpus?.meters.length ? <div className="meters">{corpus.meters.map((m) => <Meter key={m.label} meter={m} />)}</div> : <p className="text-dim">Coverage unavailable</p>}
@@ -60,5 +62,19 @@ async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: s
         )}
       </Panel>}
     </>
+  );
+}
+
+// What the scheduled origin check last saw; set up in Settings → Git & origin sync.
+function OriginStat({ p }: { p: OriginPoll }) {
+  const value = p.status === "ok" ? (p.behind ? `${p.behind} new commit${p.behind === 1 ? "" : "s"}` : p.behind === 0 ? "Up to date" : "Checked") : p.status === "unconfigured" ? "No origin" : "Check failed";
+  return (
+    <div className="stat">
+      <dt className="stat__label">Origin</dt>
+      <dd className="stat__value">{value}</dd>
+      <dd className="stat__note">{p.at ? `checked ${p.at}` : "not checked yet"}</dd>
+      {p.remote && <dd className="stat__note mono">{p.remote}</dd>}
+      {p.error && <dd className="stat__note text-bad">{p.error}</dd>}
+    </div>
   );
 }

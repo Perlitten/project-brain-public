@@ -73,6 +73,11 @@
 .check--sm { font-size: var(--fs-12); }
 .settings-form .field__label { align-items: center; }
 .settings-form .form__row { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.settings__wide { grid-column: 1 / -1; }
+.git-info { display: grid; gap: var(--s-2); margin-bottom: var(--s-4); padding-bottom: var(--s-4); border-bottom: 1px solid var(--border-subtle); }
+.git-info p { margin: 0; }
+.git-info__remotes { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); }
+.git-info__remotes li { overflow-wrap: anywhere; }
 .settings__warn { margin-bottom: var(--s-3); }
 .settings__pad { padding: var(--s-4) var(--s-4) 0; }
 .settings__pad .sched-line { margin-bottom: var(--s-3); }
