@@ -31,25 +31,34 @@ from loguru import logger
 from brain.config.settings import settings
 from brain.indexers.source_sync import SourceSyncError, SourceSyncTransientError
 
-_USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)[^/@\s]+@")
-# Scheme-less remotes keep their credentials in front of the host too:
-# "oauth2:TOKEN@gitlab.com/org/repo" (user:secret) or "TOKEN@github.com/org/repo"
-# (a bare token, recognised by the "/" after the host). scp-style
-# "git@github.com:org/repo" has neither shape and stays readable.
-_BARE_USERINFO = re.compile(
-    r"(?<![^\s'\"(<=,;])(?:[^\s/@:'\"]+:[^\s/@'\"]*|[^\s/@:'\"]+(?=@[^\s/@:'\"]+/))@"
-)
-# Query strings and fragments can carry access tokens too. Match URL-shaped
-# tokens after userinfo has been masked, then discard their non-routing suffix.
-_REMOTE_TOKEN = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.\-]*://|\*\*\*@)[^\s'\"]+")
+# Each match consumes a whole token; URL parsing below never retries a suffix.
+_REDACTION_TOKEN = re.compile(r"[^\s'\"(<]+")
+_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _MISSING_REF_MARKERS = ("couldn't find remote ref", "could not find remote ref")
 
 
+def _redact_remote_token(match: re.Match[str]) -> str:
+    token = match.group(0)
+    scheme, separator, rest = token.partition("://")
+    has_scheme = bool(separator and _SCHEME.fullmatch(scheme))
+    prefix = scheme + separator if has_scheme else ""
+    remote = rest if has_scheme else token
+    # Only the authority can contain userinfo; @ in a path is ordinary data.
+    routing = remote.split("?", 1)[0].split("#", 1)[0]
+    authority, slash, path = routing.partition("/")
+    userinfo, at, host = authority.rpartition("@")
+    bare_credentials = bool(at and (":" in userinfo or (slash and ":" not in host)))
+    if at and (has_scheme or bare_credentials):
+        return prefix + "***@" + host + slash + path
+    if has_scheme:
+        return prefix + routing
+    return token
+
+
 def redact_url(text: str | None) -> str:
-    """Drop credentials and URL query/fragment data, with or without a scheme."""
-    masked = _BARE_USERINFO.sub("***@", _USERINFO.sub(r"\g<scheme>***@", str(text or "")))
-    return _REMOTE_TOKEN.sub(lambda match: match.group(0).split("?", 1)[0].split("#", 1)[0], masked)
+    """Drop remote credentials and query/fragment data in linear time."""
+    return _REDACTION_TOKEN.sub(_redact_remote_token, str(text or ""))
 
 
 @dataclass(frozen=True)
