@@ -1785,6 +1785,46 @@ test('adding a repository validates paths, preserves defaults and reports index 
   assert.ok(!('target_repo_path' in writes[0].body), 'the default repository must not change');
 });
 
+test('Current memory excludes replaced decisions and keeps each view count honest', async () => {
+  const data = load('lib/data.ts', { 'next/server': { connection: async () => {} }, react: { cache: fn => fn }, './api': { apiConfigured: false } });
+  const current = await data.getPagedDecisions(null, { status: 'current', size: 100 });
+  assert.ok(current.items.length > 0);
+  assert.ok(current.items.every(row => ['accepted', 'proposed', 'validated_unmerged'].includes(row.status)));
+  const replaced = await data.getPagedDecisions(null, { status: 'superseded', size: 100 });
+  assert.ok(replaced.items.length > 0 && replaced.items.every(row => row.status === 'superseded'));
+  assert.equal(current.paging.total + replaced.paging.total, (await data.getPagedDecisions(null, { size: 100 })).paging.total);
+});
+
+test('duplicate findings retain evidence identity rather than merging matching titles across modules', () => {
+  const { groupFindings } = load('lib/finding-groups.ts');
+  const first = { id: '1', title: 'same title', kind: 'drift', module: 'a', evidence: 'same evidence', tone: 'warn', occurrences: 3 };
+  const otherModule = { ...first, id: '2', module: 'b' };
+  const duplicate = { ...first, id: '3', tone: 'bad', occurrences: 2 };
+  const groups = groupFindings([first, otherModule, duplicate]);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].count, 5);
+  assert.equal(groups[0].rep.id, '3');
+  assert.deepEqual([...groups[0].members.map(row => row.id)], ['1', '3']);
+  assert.equal(groups[1].rep.id, '2');
+});
+
+
+test('finding cards retain file and line evidence when repository provenance comes first', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => ({ total: 1, insights: [{ id: 1, title: 'synthetic', severity: 'warn', insight_type: 'drift', source: 'deterministic', evidence: [
+      { label: 'repository_id', value: 2 }, { label: 'file_path', value: 'src/code.py' }, { label: 'line_number', value: 10 },
+    ], occurrence_count: 4, code_available: true, last_seen_at: '2026-10-22T00:00:00Z' }] }) },
+  });
+  const finding = (await data.getPagedInsights(null)).items[0];
+  assert.equal(finding.module, 'src/code.py');
+  assert.match(finding.evidence, /repository_id: 2/);
+  assert.match(finding.evidence, /file_path: src\/code.py/);
+  assert.match(finding.evidence, /line_number: 10/);
+  assert.equal(finding.occurrences, 4);
+  assert.equal(finding.codeAvailable, true);
+});
+
 test('team registration only offers indexing where the selected project grants run.request', async () => {
   let identity = { team_state: 'team', scopes: ['workspace:read'], is_team_admin: true, projects: [] };
   const writes = [], indexes = [];
@@ -1836,7 +1876,6 @@ test('registered sources use server-correlated index identities and demo mode ma
     { name: 'Pending', path: '/repos/pending', indexedRepositoryId: null },
   ]);
 });
-
 test('activity entries retain seconds while decision calendar dates stay timezone-free', async () => {
   const data = load('lib/data.ts', {
     'next/server': { connection: async () => {} }, react: { cache: fn => fn },

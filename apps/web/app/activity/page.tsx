@@ -36,7 +36,8 @@ async function ActivityData({ searchParams }: { searchParams: Promise<Record<str
   return <>
 
     <Panel id="requests" title="Agent requests" desc="The latest search and context calls, retries included. Handling time is measured on the server only." actions={<nav className="segmented" aria-label="Request period">{(["24h", "7d", "30d"] as const).map((p) => <Link key={p} scroll={false} aria-current={p === period ? "page" : undefined} href={`/activity?${new URLSearchParams({ ...(repo ? { repo } : {}), period: p })}`}>{p}</Link>)}</nav>} flush>
-      <RequestHistory telemetry={telemetry} />
+      <p className="text-faint">Query capture is {telemetry?.query_capture_enabled ? "enabled for future attempts" : "off unless enabled by the operator"}. Older queries cannot be recovered. Configure it in <Link className="link" href="/settings#activity">Settings → Activity history</Link>.</p>
+      <RequestHistory telemetry={telemetry} projects={repositories} repositoryId={selected?.id} />
     </Panel>
     <Panel id="jobs" title="Background jobs" desc="Indexing and checks Brain ran recently. A failed job shows its recorded error." flush>
       <BackgroundJobs jobs={jobs} unavailable={jobLists.some((list) => list === null)} />

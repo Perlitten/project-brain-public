@@ -57,9 +57,9 @@ _MAX_LLM_INSIGHTS = 4
 # The complete status vocabulary this engine writes. persist_insights() creates
 # every row as "new", stales anything still active whose dedupe key stops
 # recurring, and revives a "stale" or "actioned" row back to "new" when the same
-# finding returns. Those four values are therefore the whole lifecycle — an
-# operator transition may not introduce a fifth.
-INSIGHT_STATUSES: tuple[str, ...] = ("new", "accepted", "actioned", "stale")
+# finding returns. An explicit, reasoned dismissal is terminal and is never
+# revived automatically; its evidence and authorship remain available.
+INSIGHT_STATUSES: tuple[str, ...] = ("new", "accepted", "actioned", "stale", "dismissed")
 
 # Legal operator moves, read straight off the engine's own semantics:
 #   new       a fresh finding; it can be acknowledged, closed out, or dismissed.
@@ -70,10 +70,11 @@ INSIGHT_STATUSES: tuple[str, ...] = ("new", "accepted", "actioned", "stale")
 #   stale     the finding is no longer observed. Nothing leads out of it by hand:
 #             persist_insights() alone revives it, and only by seeing it again.
 INSIGHT_STATUS_TRANSITIONS: dict[str, tuple[str, ...]] = {
-    "new": ("accepted", "actioned", "stale"),
-    "accepted": ("actioned", "stale"),
-    "actioned": ("stale",),
-    "stale": (),
+    "new": ("accepted", "actioned", "stale", "dismissed"),
+    "accepted": ("actioned", "stale", "dismissed"),
+    "actioned": ("stale", "dismissed"),
+    "stale": ("dismissed",),
+    "dismissed": (),
 }
 
 
@@ -110,6 +111,8 @@ async def set_insight_status(insight_id: int, status: str) -> dict[str, Any]:
     row — neither is a server fault, so neither may surface as a 500.
     """
     target = _safe_token(status, fallback="")
+    if target == "dismissed":
+        raise InsightTransitionError("Use the reasoned dismissal API; a status-only write cannot dismiss a finding")
     if target not in INSIGHT_STATUSES:
         raise InsightTransitionError(
             f"Unknown insight status '{_clean_text(status, limit=50)}'. Known statuses: {', '.join(INSIGHT_STATUSES)}."
@@ -201,6 +204,8 @@ async def collect_proactive_snapshot(repo_path: str | Path | None = None) -> dic
 
     try:
         record = await get_repository_by_path(target_repo)
+        if record is not None:
+            snapshot["repo"]["id"] = record.id
         inventory = await collect_embedding_inventory(
             record.id if record else None,
             record.path if record else target_repo.as_posix(),
@@ -472,6 +477,7 @@ def _drift_insights(snapshot: dict[str, Any]) -> list[InsightCandidate]:
                     title=f"Resolved Architectural Drift: {finding.rule_name}",
                     summary=f"Previous architectural drift violation in {finding.file_path} is now resolved.",
                     evidence=[
+                        {"label": "repository_id", "value": repo_info.get("id")},
                         {"label": "file_path", "value": finding.file_path},
                         {"label": "fingerprint", "value": finding.fingerprint},
                         {"label": "delta_state", "value": "resolved"},
@@ -489,6 +495,7 @@ def _drift_insights(snapshot: dict[str, Any]) -> list[InsightCandidate]:
                     title=f"Architectural Boundary Drift ({delta.upper()}): {finding.rule_name}",
                     summary=finding.description,
                     evidence=[
+                        {"label": "repository_id", "value": repo_info.get("id")},
                         {"label": "file_path", "value": finding.file_path},
                         {"label": "line_number", "value": finding.line_number},
                         {"label": "containing_symbol", "value": finding.containing_symbol},
