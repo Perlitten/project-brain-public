@@ -1015,6 +1015,8 @@ test('origin remotes and poll errors never render credentials, with or without a
   assert.equal(redactRemote('https://bot:s3cret@github.com/acme/app.git'), 'https://***@github.com/acme/app.git');
   assert.equal(redactRemote('oauth2:glpat-TOKEN@gitlab.com/acme/app.git'), '***@gitlab.com/acme/app.git');
   assert.equal(redactRemote('ghp_TOKEN@github.com/acme/app'), '***@github.com/acme/app');
+  assert.equal(redactRemote('https://github.com/acme/app.git?token=SECRET#private'), 'https://github.com/acme/app.git');
+  assert.equal(redactRemote('oauth2:TOKEN@gitlab.com/acme/app.git?access_token=SECRET'), '***@gitlab.com/acme/app.git');
   assert.equal(redactRemote('git@github.com:acme/app.git'), 'git@github.com:acme/app.git');
   assert.equal(redactRemote("fatal: unable to access 'oauth2:TOKEN@gitlab.com/acme/app.git/': 403"),
     "fatal: unable to access '***@gitlab.com/acme/app.git/': 403");

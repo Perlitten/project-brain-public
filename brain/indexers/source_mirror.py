@@ -10,8 +10,8 @@ mounted source stays untouched.
 Credentials stay server-held: the origin URL (which may embed a token, from
 ``BRAIN_ORIGIN_REMOTES`` or the checkout's ``remote.origin.url``) is passed on
 the git command line only. It is never written to the mirror's config, and
-:func:`redact_url` removes userinfo from every value that is stored, logged
-or returned.
+:func:`redact_url` removes userinfo, query strings and fragments from every
+value that is stored, logged or returned.
 """
 
 from __future__ import annotations
@@ -39,13 +39,17 @@ _USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)[^/@\s]+@")
 _BARE_USERINFO = re.compile(
     r"(?<![^\s'\"(<=,;])(?:[^\s/@:'\"]+:[^\s/@'\"]*|[^\s/@:'\"]+(?=@[^\s/@:'\"]+/))@"
 )
+# Query strings and fragments can carry access tokens too. Match URL-shaped
+# tokens after userinfo has been masked, then discard their non-routing suffix.
+_REMOTE_TOKEN = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.\-]*://|\*\*\*@)[^\s'\"]+")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _MISSING_REF_MARKERS = ("couldn't find remote ref", "could not find remote ref")
 
 
 def redact_url(text: str | None) -> str:
-    """Drop ``user:password@`` from every URL in ``text``, with or without a scheme."""
-    return _BARE_USERINFO.sub("***@", _USERINFO.sub(r"\g<scheme>***@", str(text or "")))
+    """Drop credentials and URL query/fragment data, with or without a scheme."""
+    masked = _BARE_USERINFO.sub("***@", _USERINFO.sub(r"\g<scheme>***@", str(text or "")))
+    return _REMOTE_TOKEN.sub(lambda match: match.group(0).split("?", 1)[0].split("#", 1)[0], masked)
 
 
 @dataclass(frozen=True)
