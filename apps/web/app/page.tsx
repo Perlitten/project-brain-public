@@ -1,10 +1,11 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { RetryRead } from "@/components/RetryRead";
 import { BackgroundJobs } from "@/components/BackgroundJobs";
 import { MemoryMap } from "@/components/MemoryMap";
 import { QualityEvidence } from "@/components/QualityEvidence";
 import { RequestChart } from "@/components/RequestCharts";
-import { Chip, EmptyState, Meter, PageHead, Panel, type PageStatus } from "@/components/ui";
+import { Chip, EmptyState, Meter, PageHead, Panel, StatusLine, type PageStatus } from "@/components/ui";
 import { dashboardPeriod, getAgentValue, getQualityEvidence, getRequestTelemetry, measuredNumber, measuredShare } from "@/lib/dashboard";
 import { dataSource, getCodeModules, getCorpus, getJobs, getRepositoryFeed } from "@/lib/data";
 import { scopeMemberToProject } from "@/lib/member-scope";
@@ -24,7 +25,10 @@ const severity: Record<Tone, number> = { bad: 3, warn: 2, info: 1, idle: 1, ok: 
 // The home screen answers, in order: is project memory current (status line),
 // what each project holds (memory rows), whether agents are using it (requests),
 // and what ran recently. Measurement caveats live in one disclosure at the end.
-export default async function Dashboard({ searchParams }: Props) {
+export default function Dashboard(props: Props) {
+  return <><PageHead title="Dashboard" lede="Whether your agents get current project memory, and what to fix next." /><Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><DashboardData {...props} /></Suspense></>;
+}
+async function DashboardData({ searchParams }: Props) {
   const query = await searchParams;
   await scopeMemberToProject("/", query);
   const { repo: slug, period: inputPeriod } = query;
@@ -125,7 +129,7 @@ export default async function Dashboard({ searchParams }: Props) {
 
   return <div className="dashboard">
     {(snapshots.some((s) => s.corpus.available === false) || jobsUnread || !feed.available) && <div className="callout tone-warn" role="status"><b>Some measurements could not be read</b><span>Timeouts describe a failed request, not a stopped server. Retry, then check API logs if the problem persists.</span><RetryRead /></div>}
-    <PageHead title="Dashboard" lede="Whether your agents get current project memory, and what to fix next." status={status} />
+    <StatusLine {...status} />
     {mapRepository && modules.some((m) => m.chunks > 0) && <div className="dashboard__map"><MemoryMap modules={modules} repoName={mapRepository.name} scanning={snapshots.find((s) => s.repo.id === mapRepository.id)?.jobs?.some((j) => j.status === "running" && j.kind.startsWith("index")) ?? false} /></div>}
 
     {projects.length > 0 && <Panel id="projects" title="Project memory" desc="How much of each project's code Brain can hand to agents right now." actions={<Link className="link" href={withRepo("/projects")}>Projects</Link>} flush>

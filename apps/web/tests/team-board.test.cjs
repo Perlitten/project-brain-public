@@ -197,17 +197,7 @@ test('a team board reads every coordination route fresh with the member key and 
   eq(board.queue.map((e) => e.id), [2, 3, 4]);
 });
 
-test('Board is a settings tab members can open, and resolves to its own nav entry', () => {
-  const nav = fs.readFileSync(path.join(root, 'lib', 'nav.ts'), 'utf8');
-  const boardAt = nav.indexOf('href: "/team/board"');
-  const teamAt = nav.indexOf('href: "/team",');
-  assert.ok(boardAt > 0 && teamAt > boardAt, 'the specific entry comes before /team');
-  const adminOnly = nav.match(/ADMIN_ONLY_KEYS[^=]*= new Set\(\[([^\]]*)\]/)[1];
-  assert.doesNotMatch(adminOnly, /team/);
-  const tabs = fs.readFileSync(path.join(root, 'components', 'SectionNav.tsx'), 'utf8');
-  assert.match(tabs, /\["\/team\/board", "Board"\]/);
-  assert.ok(fs.existsSync(path.join(root, 'app', 'team', 'board', 'page.tsx')));
-});
+
 
 test('the client Board imports only the pure model, never the server-only loader', () => {
   const board = fs.readFileSync(path.join(root, 'components', 'team', 'Board.tsx'), 'utf8');

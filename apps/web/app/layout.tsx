@@ -3,6 +3,8 @@ import localFont from "next/font/local";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { BOOT_SCRIPT, Boot } from "@/components/Boot";
+import { getCapabilities } from "@/lib/capabilities";
+import { ApplyShellConfiguration } from "@/components/ShellConfiguration";
 import { Shell, type ShellRepo } from "@/components/Shell";
 import { actionsMode } from "@/lib/actions/gate";
 import { signInMode } from "@/lib/sign-in-view";
@@ -51,21 +53,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // API bindings are runtime configuration (including pre-built containers).
   // Do not persist a build-time demo shell as the live dashboard's HTML.
   await connection();
-  const [feed, mode, access, member] = await Promise.all([getRepositoryFeed(), actionsMode(), signInMode(), currentMember()]);
-  const repos: ShellRepo[] = feed.repositories.map((r) => ({
-    slug: r.slug,
-    name: r.name,
-    path: r.path,
-    ...repositoryStatus(r),
-  }));
-  const live = dataSource !== "demo";
-  const first = repos[0];
-  const bootLines = [
-    "› waking up project brain",
-    live ? feed.available ? `› repositories connected · ${repos.length} repositor${repos.length === 1 ? "y" : "ies"}` : "› repository data unavailable" : "› demo data · api not connected",
-    first ? `› ${first.name} · ${first.status.toLowerCase()}` : feed.available ? "› no repositories yet" : "› check the Brain connection",
-    "› ready",
-  ];
+  const bootLines = ["› opening Project Brain", dataSource === "demo" ? "› synthetic demo" : "› connecting to your Brain server", "› loading workspace"];
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
@@ -74,11 +62,24 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         <Boot lines={bootLines} />
         <Suspense>
-          <Shell repos={repos} demo={dataSource === "demo"} mode={mode} access={access} member={member ? { id: member.id, name: member.name, admin: member.admin } : null}>
+          <Shell demo={dataSource === "demo"}>
+            <Suspense fallback={null}><Configuration /></Suspense>
             {children}
           </Shell>
         </Suspense>
       </body>
     </html>
   );
+}
+
+
+async function Configuration() {
+  const [feed, mode, access, member, capabilities] = await Promise.all([getRepositoryFeed(), actionsMode(), signInMode(), currentMember(), getCapabilities()]);
+  const repos: ShellRepo[] = feed.repositories.map((r) => ({
+    slug: r.slug,
+    name: r.name,
+    path: r.path,
+    ...repositoryStatus(r),
+  }));
+  return <ApplyShellConfiguration value={{ repos, mode, access, capabilities, member: member ? { id: member.id, name: member.name, admin: member.admin } : null }} />;
 }

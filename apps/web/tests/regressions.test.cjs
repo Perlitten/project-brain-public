@@ -355,9 +355,14 @@ test('scheduler degradation is a warning rather than an empty service outage', (
   assert.equal(pulseHeadline({ reachable: true, healthy: true, down: [] }), 'Healthy');
 });
 
-test('owner navigation has seven destinations and nested deep links activate their parent', () => {
+test('owner navigation keeps Team separate and nested deep links activate their parent', () => {
   const nav = load('lib/nav.ts');
-  assert.equal(nav.primaryNavItems.length, 7);
+  assert.ok(nav.primaryNavItems.some(item => item.href === '/team' && item.capability === 'team'));
+  for (const [url, label] of [['/team/me', 'Me'], ['/team/activity', 'Team activity'], ['/team/board', 'Board']]) {
+    assert.equal(nav.locate(url).item.label, label);
+    assert.equal(nav.activeSection(url), 'team');
+    assert.equal(nav.adminOnly(url), false);
+  }
   assert.equal(nav.activeSection('/indexing'), 'projects');
   assert.equal(nav.activeSection('/packs/1504'), 'memory');
   assert.equal(nav.activeSection('/review'), 'memory');
@@ -1726,6 +1731,112 @@ test('diagnostic UTC timestamps distinguish attempts within the same minute', ()
   assert.notEqual(utcTime('2026-10-22T03:30:01Z', true), utcTime('2026-10-22T03:30:02Z', true));
 });
 
+test('capabilities require an explicit true contract and fail closed on old or unavailable APIs', async () => {
+  let reply = { ok: true, data: { version: '0.9.2' } };
+  const { getCapabilities } = load('lib/capabilities.ts', {
+    react: { cache: fn => fn }, './api': { apiConfigured: true, brainRead: async () => reply },
+  });
+  assert.equal((await getCapabilities()).state, 'legacy');
+  assert.equal((await getCapabilities()).supported.length, 0);
+  reply = { ok: false, status: 503, reason: 'http_error' };
+  assert.equal((await getCapabilities()).state, 'unavailable');
+  reply = { ok: true, data: { capabilities: { team: true, team_board: 'true', repository_registration: false } } };
+  assert.deepEqual([...(await getCapabilities()).supported], ['team']);
+  reply = { ok: true, data: null };
+  assert.equal((await getCapabilities()).state, 'unavailable');
+});
+
+test('missing or malformed identity metadata stays unknown and is never guessed from a name', async () => {
+  let metadata = {};
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => ({ ...metadata, principals: [
+      { id: 1, name: 'synthetic-dashboard', credentials: [{ id: 11, scopes: ['principals:write'] }] },
+    ] }) },
+  });
+  for (const ids of [{}, { current_principal_id: '1', current_credential_id: '11' }, { current_principal_id: true, current_credential_id: -1 }]) {
+    metadata = ids;
+    const identity = (await data.getAccessView()).identities[0];
+    assert.equal(identity.current, undefined);
+    assert.equal(identity.keys[0].current, undefined);
+  }
+});
+
+test('adding a repository validates paths, preserves defaults and reports index failure without retrying registration', async () => {
+  const writes = [];
+  const projects = load('lib/actions/projects.ts', {
+    '../capabilities': { getCapabilities: async () => ({ supported: ['repository_registration'] }) },
+    '../api': { brainRead: async () => ({ ok: true, data: { team_state: 'solo', scopes: ['workspace:write'] } }) },
+    './gate': { mutate: async (path, opts) => { writes.push({ path, ...opts }); return { ok: true, message: 'registered' }; } },
+    './jobs': { startReindex: async () => ({ ok: false, message: 'Worker unavailable' }) },
+  });
+  for (const path of ['', 'relative/path', '/repo/../other', '/repo\nother']) {
+    assert.equal((await projects.addProject({ name: 'example', path, indexNow: true })).ok, false);
+  }
+  assert.equal(writes.length, 0);
+  const registered = await projects.addProject({ name: 'example', path: '/repos/example', indexNow: true });
+  assert.equal(registered.ok, true);
+  assert.equal(registered.data.registered, true);
+  assert.equal(registered.data.indexed, false);
+  assert.match(registered.message, /registered.*Worker unavailable/);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].path, '/workspace/repositories');
+  assert.equal(writes[0].body.path, '/repos/example');
+  assert.ok(!('target_repo_path' in writes[0].body), 'the default repository must not change');
+});
+
+test('team registration only offers indexing where the selected project grants run.request', async () => {
+  let identity = { team_state: 'team', scopes: ['workspace:read'], is_team_admin: true, projects: [] };
+  const writes = [], indexes = [];
+  const projects = load('lib/actions/projects.ts', {
+    '../capabilities': { getCapabilities: async () => ({ state: 'live', supported: ['repository_registration'] }) },
+    '../api': { brainRead: async path => ({ ok: true, data: path === '/team/me' ? identity : [{ id: 'alpha', name: 'Alpha' }] }) },
+    './gate': { mutate: async (path, opts) => { writes.push({ path, ...opts }); return { ok: true, message: 'registered' }; } },
+    './jobs': { startReindex: async opts => { indexes.push(opts); return { ok: true, message: 'queued' }; } },
+  });
+  let context = await projects.projectRegistrationContext();
+  assert.equal(context.data.projects[0].canIndex, false);
+  const denied = await projects.addProject({ name: 'Example', path: '/repos/example', projectId: 'alpha', indexNow: true });
+  assert.equal(denied.ok, false);
+  assert.match(denied.message, /run\.request/);
+  assert.equal(writes.length, 0);
+
+  const registered = await projects.addProject({ name: 'Example', path: '/repos/example', projectId: 'alpha', indexNow: false });
+  assert.equal(registered.ok, true);
+  assert.equal(registered.data.canIndex, false);
+  assert.equal(indexes.length, 0);
+
+  identity = { ...identity, projects: [{ id: 'alpha', effective_permissions: ['read', 'run.request'] }] };
+  context = await projects.projectRegistrationContext();
+  assert.equal(context.data.projects[0].canIndex, true);
+  const queued = await projects.addProject({ name: 'Example 2', path: '/repos/example-2', projectId: 'alpha', indexNow: true });
+  assert.equal(queued.ok, true);
+  assert.equal(indexes.length, 1);
+});
+
+test('registered sources use server-correlated index identities and demo mode makes no registry request', async () => {
+  let reads = 0;
+  let capabilities = { state: 'demo', supported: ['repository_registration'] };
+  const sources = load('lib/project-sources.ts', {
+    './capabilities': { getCapabilities: async () => capabilities },
+    './api': { brainRead: async () => { reads++; return { ok: true, data: { repositories: [] } }; } },
+  });
+  assert.equal((await sources.getRegisteredSources()).length, 0);
+  assert.equal(reads, 0);
+  capabilities = { state: 'live', supported: ['repository_registration'] };
+  const live = load('lib/project-sources.ts', {
+    './capabilities': { getCapabilities: async () => capabilities },
+    './api': { brainRead: async () => ({ ok: true, data: { repositories: [
+      { display_name: 'Windows spelling', canonical_root: 'C:\\repo', indexed_repository_id: 7 },
+      { display_name: 'Pending', canonical_root: '/repos/pending', indexed_repository_id: null },
+    ] } }) },
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(await live.getRegisteredSources())), [
+    { name: 'Windows spelling', path: 'C:\\repo', indexedRepositoryId: 7 },
+    { name: 'Pending', path: '/repos/pending', indexedRepositoryId: null },
+  ]);
+});
+
 test('activity entries retain seconds while decision calendar dates stay timezone-free', async () => {
   const data = load('lib/data.ts', {
     'next/server': { connection: async () => {} }, react: { cache: fn => fn },
@@ -1759,4 +1870,25 @@ test('shared pulse never forwards other project identifiers from global liveness
   const global = await getPulse('');
   assert.equal(global.freshness.length, 0);
   assert.doesNotMatch(JSON.stringify(global), /synthetic\/[AB]/);
+});
+
+
+test('repository registration refuses insufficient credentials before offering or submitting project choices', async () => {
+  let identity = { team_state: 'solo', scopes: ['workspace:read'] };
+  let writes = 0;
+  const projects = load('lib/actions/projects.ts', {
+    '../capabilities': { getCapabilities: async () => ({ supported: ['repository_registration'] }) },
+    '../api': { brainRead: async path => ({ ok: true, data: path === '/team/me' ? identity : [{ id: 'active-project', name: 'Example' }] }) },
+    './gate': { mutate: async () => { writes++; return { ok: true }; } },
+    './jobs': { startReindex: async () => { throw Error('must not index'); } },
+  });
+  assert.match((await projects.projectRegistrationContext()).message, /workspace:write/);
+  assert.equal((await projects.addProject({ name: 'Example', path: '/repos/example', indexNow: false })).ok, false);
+  identity = { team_state: 'team', scopes: ['workspace:write'], is_team_admin: false };
+  assert.match((await projects.projectRegistrationContext()).message, /administrator/);
+  assert.equal(writes, 0);
+  identity = { team_state: 'team', scopes: ['workspace:read'], is_team_admin: true };
+  const allowed = await projects.projectRegistrationContext();
+  assert.equal(allowed.ok, true, 'existing team-admin credentials remain compatible');
+  assert.equal(allowed.data.projects[0].id, 'active-project');
 });

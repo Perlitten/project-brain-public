@@ -20,14 +20,15 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import event, select
+from sqlalchemy import delete, event, select, update
 
 from loguru import logger
 
 from apps.api import auth, team_access
 from apps.api.routers import workspace
-from brain.database.models import Repository
+from brain.database.models import ApiCredential, Repository
 from brain.team import registry as shared
+from brain.team.provisioning import member_scopes
 from brain.team.authorization import FULL_AUTHORITY, Permission, TeamDenied, authorize_repository
 from brain.team.models import ProjectRepository, TeamActivityEvent
 from brain.workers.initiator import JobInitiator
@@ -338,6 +339,9 @@ async def test_team_registration_links_the_repository_to_a_project(registration,
     assert await table_ids(factory) == {response.json()["repository"]["repository_id"]}
     assert registry.list_all() == []  # team state writes the shared table, not this process's file
     assert await registry_activity(factory) == [("registry.registered", 4, None, b)]
+    listed = await client.get("/workspace/repositories", headers=ADMIN)
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["repositories"][0]["indexed_repository_id"] == 4
     # The administrator is a member of B, so the newly registered repository is usable at once.
     allowed, _ = await outcome(factory, 4, 4, Permission.REQUEST_RUN)
     assert allowed
@@ -435,6 +439,20 @@ async def test_solo_registration_is_unchanged(registration, monkeypatch):
     assert response.status_code == 200, response.text
     assert "project_id" not in response.json()
     assert len(registry.list_all()) == 1 and await link_of(factory, 4) is None
+    assert await table_ids(factory) == set()
+
+
+@pytest.mark.asyncio
+async def test_solo_registration_still_requires_explicit_write_scope(registration, monkeypatch):
+    factory, registry, client, directory = registration
+    membership_driven(monkeypatch)
+    await revoke_everyone(factory)
+    async with factory() as session, session.begin():
+        await session.execute(update(ApiCredential).where(ApiCredential.id == 4).values(scopes=["workspace:read"]))
+    response = await client.post("/workspace/repositories", headers=ADMIN, json=register_body(directory))
+    assert response.status_code == 403, response.text
+    assert registry.list_all() == []
+    assert await registry_activity(factory) == []
     assert await table_ids(factory) == set()
 
 
@@ -611,3 +629,82 @@ async def test_cli_keeps_the_local_file_in_solo_state(team_cli, monkeypatch):
     membership_driven(monkeypatch)
     await revoke_everyone(factory)
     assert await workspace_cli.run_team(cli_args("repositories", "list")) is False
+
+
+@pytest.mark.asyncio
+async def test_admin_adds_unindexed_source_with_atomic_project_link(registration, team_db):
+    factory, _, client, directory = registration
+    _, project, _ = team_db
+    async with factory() as session, session.begin():
+        # Normal team-admin credentials have workspace:read but deliberately do
+        # not inherit the solo registry's broad workspace:write scope.
+        scopes = member_scopes(True)
+        assert "workspace:read" in scopes and "workspace:write" not in scopes
+        await session.execute(update(ApiCredential).where(ApiCredential.id == 4).values(scopes=scopes))
+        await session.execute(delete(Repository).where(Repository.id == 4))
+    response = await client.post("/workspace/repositories", headers=ADMIN,
+                                 json=register_body(directory, project_id=str(project), create_index_record=True))
+    assert response.status_code == 200, response.text
+    async with factory() as session:
+        repository = (await session.execute(select(Repository).where(Repository.path == str(directory)))).scalar_one()
+        assert repository.indexing_status == "pending" and repository.last_indexed_commit is None
+        repository_id = repository.id
+    assert await link_of(factory, repository_id) == project
+    assert len(await registry_activity(factory)) == 1
+    again = await client.post("/workspace/repositories", headers=ADMIN,
+                              json=register_body(directory, project_id=str(project), create_index_record=True))
+    assert again.status_code in {400, 409}
+    assert len(await registry_activity(factory)) == 1
+
+
+@pytest.mark.asyncio
+async def test_add_unindexed_source_refusals_leave_no_identity_or_link(registration, team_db):
+    factory, _, client, directory = registration
+    _, project, _ = team_db
+    async with factory() as session, session.begin():
+        await session.execute(delete(Repository).where(Repository.id == 4))
+    for headers, target, expected in [(CONTRIBUTOR, project, 403), (ADMIN, uuid.uuid4(), 404)]:
+        response = await client.post("/workspace/repositories", headers=headers,
+                                     json=register_body(directory, project_id=str(target), create_index_record=True))
+        assert response.status_code == expected, response.text
+        async with factory() as session:
+            assert (await session.execute(select(Repository).where(Repository.path == str(directory)))).scalar_one_or_none() is None
+        assert await registry_activity(factory) == []
+        assert await table_ids(factory) == set()
+
+
+@pytest.mark.asyncio
+async def test_registration_rejects_invalid_display_names_before_creating_index_rows(registration, team_db):
+    factory, _, client, directory = registration
+    _, project, _ = team_db
+    async with factory() as session, session.begin():
+        await session.execute(delete(Repository).where(Repository.id == 4))
+    for name in ("", "   ", "x" * 256):
+        response = await client.post("/workspace/repositories", headers=ADMIN,
+                                     json=register_body(directory, display_name=name, project_id=str(project), create_index_record=True))
+        assert response.status_code == 422, response.text
+        async with factory() as session:
+            assert (await session.execute(select(Repository).where(Repository.path == str(directory)))).scalar_one_or_none() is None
+        assert await registry_activity(factory) == []
+
+
+@pytest.mark.asyncio
+async def test_registration_rejects_overlong_canonical_paths_before_creating_index_rows(
+        registration, team_db, monkeypatch):
+    factory, _, client, directory = registration
+    _, project, _ = team_db
+    async with factory() as session, session.begin():
+        await session.execute(delete(Repository).where(Repository.id == 4))
+    monkeypatch.setattr(workspace.PathSandbox, "validate", lambda *_args, **_kwargs: Path("x" * 1025))
+    response = await client.post(
+        "/workspace/repositories", headers=ADMIN,
+        json=register_body(directory, project_id=str(project), create_index_record=True),
+    )
+    assert response.status_code == 422, response.text
+    assert "1024-character" in response.json()["detail"]
+    async with factory() as session:
+        assert (await session.execute(
+            select(Repository).where(Repository.path == "x" * 1025)
+        )).scalar_one_or_none() is None
+    assert await registry_activity(factory) == []
+    assert await table_ids(factory) == set()

@@ -13,8 +13,8 @@ export const STEP_COPY: Record<string, StepCopy> = {
     why: "Brain keeps its memory in a database, a search index and a code graph, and runs background workers. All of them must be running before anything else works.",
   },
   repo: {
-    title: "Choose the code to read",
-    why: "The folder on the Brain server that holds your repository. Brain reads it in place; it never copies or changes your files.",
+    title: "Default repository for agents",
+    why: "The folder used when an agent does not specify a repository. Add other repositories from Projects; changing this default does not add a project. Brain reads committed source in place.",
   },
   provider: {
     title: "Connect AI models",

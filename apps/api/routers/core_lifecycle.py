@@ -180,8 +180,18 @@ async def readiness_check():
 
 
 @router.get("/api/version")
-async def api_version():
-    return build_info()
+async def api_version() -> dict[str, Any]:
+    full = settings.BRAIN_STORAGE_MODE == "full"
+    return {
+        **build_info(),
+        # Supported server contracts, not the caller's authorization. Every
+        # operation still checks its scopes, membership and project role.
+        "capabilities": {
+            "team": full, "team_bootstrap": full, "team_activity": full,
+            "team_board": full, "knowledge_review": full,
+            "repository_registration": full,
+        },
+    }
 
 
 @router.get("/late-interaction/status", dependencies=[Depends(require_api_key), Depends(require_scope("core:read")),

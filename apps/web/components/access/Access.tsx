@@ -12,7 +12,7 @@ import { KeyDialog } from "@/components/KeyDialog";
 import { ListFrame } from "@/components/ListFrame";
 import { Chip } from "@/components/ui";
 import { createAgentKey, disablePrincipal, enablePrincipal, mintKey, revokeCredential, type NewKey } from "@/lib/actions/admin";
-import { EXPIRY_CHOICES, KNOWN_SCOPES, SCOPE_GROUPS, SCOPE_PRESETS, TEAM_SCOPES, sameScopes } from "@/lib/scopes";
+import { EXPIRY_CHOICES, KNOWN_SCOPES, SCOPE_GROUPS, SCOPE_PRESETS, TEAM_SCOPES, sameScopes, isNamedScope } from "@/lib/scopes";
 import type { AccessKey, Identity, Tone } from "@/lib/types";
 
 type Kind = Identity["kind"];
@@ -20,7 +20,6 @@ type Kind = Identity["kind"];
 export const KIND_WORD: Record<Kind, string> = { agent: "AI agent", service: "integration", human: "person" };
 const KIND_PRESET: Record<Kind, string> = { agent: "agent", service: "integration", human: "read" };
 const presetScopes = (id: string) => SCOPE_PRESETS.find((p) => p.id === id)?.scopes ?? [];
-const VALID = /^[a-z_]+:[a-z_]+(?:\.[a-z_]+)*$/;
 
 /** Where a new key's agent config points. */
 export interface AgentTarget {
@@ -188,7 +187,7 @@ export function NewIdentityForm({ target }: { target: AgentTarget }) {
         </div>
         <ScopePicker value={scopes} onChange={setScopes} />
         <div className="btn-row">
-          <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !name.trim() || scopes.length === 0}>
+          <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !name.trim() || scopes.length === 0 || scopes.some(scope => !isNamedScope(scope))}>
             {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="key" size={15} />}
             Create identity and key
           </button>
@@ -211,6 +210,7 @@ export function IdentityList({ identities, target }: { identities: Identity[]; t
   const shown = useMemo(() => identities.filter((i) => status === "all" || (status === "disabled") === i.disabled), [identities, status]);
   return (
     <div className="access-list">
+      {identities.some(i => i.current === undefined) && <div className="callout tone-warn"><b>Dashboard credential not identified</b><span>This API does not report which identity and key serve this dashboard. Destructive controls are disabled until the server supports credential identification; names are not proof of identity.</span></div>}
       {counts.disabled > 0 && (
         <div className="access-list__status">
           <div className="seg" role="group" aria-label="Filter by status">
@@ -248,7 +248,7 @@ function keyTone(k: AccessKey, disabled: boolean): [Tone, string] {
 
 function IdentityRow({ identity: i, index, target }: { identity: Identity; index: number; target: AgentTarget }) {
   const [open, setOpen] = useState(false);
-  const [minting, setMinting] = useState(false);
+  const [minting, setMinting] = useState<AccessKey | "new" | null>(null);
   const [key, setKey] = useState<NewKey | null>(null);
   const newest = i.keys.find((k) => k.status === "active");
   const panel = `ident-${i.id}`;
@@ -257,7 +257,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
       <button type="button" className="ident__head" aria-expanded={open} aria-controls={panel} onClick={() => setOpen((v) => !v)}>
         <span className="ident__name">
           <span className="mono">{i.name}</span>
-          {i.current && <Chip tone="info">Dashboard identity</Chip>}
+          {i.current && <Chip tone="info">This dashboard</Chip>}
           <span className="sub">
             {KIND_WORD[i.kind]} · since {i.createdAt} · last seen {i.lastSeen}
           </span>
@@ -282,9 +282,9 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
       {open && (
         <div className="ident__panel" id={panel}>
           <div className="btn-row">
-            <button type="button" className="btn btn--primary btn--sm" onClick={() => setMinting(true)} disabled={i.disabled}>
+            <button type="button" className="btn btn--primary btn--sm" onClick={() => setMinting(i.current ? i.keys.find(k => k.current) ?? "new" : "new")} disabled={i.disabled}>
               <Icon name="key" size={15} />
-              New key
+              {i.current ? "Rotate dashboard key" : "New key"}
             </button>
             {i.disabled ? (
               <RunButton
@@ -298,12 +298,12 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
                   yes: "Enable",
                 }}
               />
-            ) : (
+            ) : !i.current && (
               <RunButton
                 small
                 variant="danger"
                 action={() => disablePrincipal(i.id)}
-                disabled={i.current}
+                disabled={i.current !== false}
                 disabledReason="This identity serves the dashboard. Switch to another administrative identity before disabling it."
                 label="Disable"
                 title={`Disable “${i.name}”`}
@@ -315,6 +315,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
               />
             )}
           </div>
+          {i.current && <div className="callout tone-warn"><b>This dashboard uses this identity</b><span>Rotation creates a replacement without revoking the current key. Save the new key, ask the deployment owner to update BRAIN_API_KEY in Vercel and redeploy, then verify sign-in with another administrative credential before revoking the old one. This page does not change deployment settings.</span></div>}
           <p className="field__hint">
             <b>New key</b> adds a key with the permissions you pick — to rotate, create one, switch the agent to it, then revoke the old one.{" "}
             <b>Revoke</b> stops one key for good. <b>Disable</b> pauses every key of this identity until you enable it again.
@@ -344,7 +345,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
                     const [tone, word] = keyTone(k, i.disabled);
                     return (
                       <tr key={k.id} className={k.status === "active" ? undefined : "keys__gone"}>
-                        <td className="num">#{k.id}</td>
+                        <td className="num">#{k.id} {k.current && <Chip tone="info">This dashboard</Chip>}</td>
                         <td>
                           <span className="chips">
                             {k.scopes.map((s) => (
@@ -361,13 +362,13 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
                           <Chip tone={tone}>{word}</Chip>
                         </td>
                         <td className="r">
-                          {k.status === "active" && (
+                          {k.status === "active" && (k.current ? <button type="button" className="btn btn--neutral btn--sm" onClick={() => setMinting(k)} disabled={i.disabled}>Rotate</button> : (
                             <RunButton
                               small
                               variant="danger"
                               action={() => revokeCredential(k.id)}
-                               disabled={k.current}
-                               disabledReason="This key serves the dashboard. Create a replacement, switch the dashboard to it and verify access before revoking this key."
+                               disabled={k.current !== false}
+                               disabledReason="The API has not identified the dashboard key. Update the server before revoking credentials. Create a replacement, switch the dashboard to it and verify access before revoking this key."
                               label="Revoke"
                               title={`Revoke key #${k.id}`}
                               confirm={{
@@ -376,7 +377,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
                                 yes: "Revoke key",
                               }}
                             />
-                          )}
+                          ))}
                         </td>
                       </tr>
                     );
@@ -388,13 +389,14 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
         </div>
       )}
 
-      <Dialog open={minting} onClose={() => setMinting(false)} title={`New key for “${i.name}”`}>
+      <Dialog open={minting !== null} onClose={() => setMinting(null)} title={`${i.current ? "Rotate dashboard key" : "New key"} for “${i.name}”`}>
         <MintForm
           identity={i}
-          initial={newest?.scopes.filter((s) => VALID.test(s)) ?? []}
-          onCancel={() => setMinting(false)}
+          key={typeof minting === "object" && minting ? minting.id : "new"}
+          initial={(typeof minting === "object" && minting ? minting : newest)?.scopes ?? []}
+          onCancel={() => setMinting(null)}
           onMinted={(k) => {
-            setMinting(false);
+            setMinting(null);
             setKey({ ...k, name: i.name });
           }}
         />
@@ -409,6 +411,7 @@ function MintForm({ identity, initial, onCancel, onMinted }: { identity: Identit
   const [scopes, setScopes] = useState<string[]>(() => (initial.length ? [...initial].sort() : [...presetScopes(KIND_PRESET[identity.kind])].sort()));
   const [ttl, setTtl] = useState(90);
   const { run, pending, mode } = useAction(mintKey, { title: "New key" });
+  const unsupported = scopes.filter(scope => !isNamedScope(scope));
   return (
     <form
       className="form form--wide"
@@ -418,8 +421,9 @@ function MintForm({ identity, initial, onCancel, onMinted }: { identity: Identit
         if (res.ok && res.data) onMinted(res.data);
       }}
     >
+      {!!unsupported.length && <p className="field__hint field__hint--bad" role="alert">This key includes permissions the API cannot mint: {unsupported.join(", ")}. Choose explicit replacement permissions below before creating a key. The existing key stays active.</p>}
       <p className="dialog__text">
-        {initial.length ? "Starts from the permissions of its newest key." : "Starts from the usual permissions for this kind."} Its other keys keep working until you
+        {initial.length ? "Starts from the selected key’s permissions." : "Starts from the usual permissions for this kind."} Its other keys keep working until you
         revoke them.
       </p>
       <ScopePicker value={scopes} onChange={setScopes} />
@@ -429,7 +433,7 @@ function MintForm({ identity, initial, onCancel, onMinted }: { identity: Identit
         <button type="button" className="btn btn--neutral" onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || scopes.length === 0}>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || scopes.length === 0 || scopes.some(scope => !isNamedScope(scope))}>
           {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="key" size={15} />}
           Create key
         </button>

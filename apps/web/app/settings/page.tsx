@@ -1,3 +1,5 @@
+import { RetryRead } from "@/components/RetryRead";
+import { Suspense } from "react";
 import { adminOnlyPage } from "@/components/AdminOnly";
 import { Settings } from "@/components/settings/Settings";
 import { PageHead } from "@/components/ui";
@@ -9,18 +11,25 @@ export const metadata = { title: "Settings" };
 export default async function SettingsPage() {
   const gate = await adminOnlyPage("Settings");
   if (gate) return gate;
-  const view = await getSettingsView();
-  return (
-    <>
+  return <>
       <PageHead
         title="Settings"
         lede="Alerts, scheduled jobs, search and indexing. Saving updates the API immediately. Background workers use the saved settings after they restart; a save does not restart workers."
       />
       <SectionTabs section="settings" active="/settings" />
+    <Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><SettingsPageData  /></Suspense>
+  </>;
+}
+
+async function SettingsPageData() {
+  const view = await getSettingsView();
+  return (
+    <>
+
       {view.mode === "down" ? (
         <div className="callout tone-warn">
-          <b>Brain isn’t answering.</b>
-          <span>Start the server (docker compose up -d on the Brain machine), then reload this page.</span>
+          <b>Settings measurements unavailable</b>
+          <span>The settings and health requests failed. Retry, then check API connectivity and logs; this does not establish that the server stopped.</span><RetryRead />
         </div>
       ) : (
         <>

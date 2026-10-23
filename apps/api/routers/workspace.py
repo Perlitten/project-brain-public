@@ -7,11 +7,12 @@ inspection, and capability management.
 import os
 import uuid
 from pathlib import Path
-from typing import List
+from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 
+from apps.api import team_access
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.registry_access import (
     disable_registered,
@@ -24,6 +25,7 @@ from apps.api.registry_access import (
 )
 from apps.api.team_access import team_administrator_access
 from brain.auth.principals import ResolvedPrincipal
+from brain.database.repository_utils import find_repository_id
 from brain.lab.laboratory import BUILTIN_PROFILES
 from brain.team.authorization import Permission
 from brain.workspace.capabilities import CapabilitiesManager
@@ -49,7 +51,7 @@ def _get_store() -> RegistryStore:
 
 
 class RegisterRequest(BaseModel):
-    display_name: str
+    display_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
     path: str
     trust_level: str = "trusted_internal"
     organization: str = ""
@@ -57,6 +59,8 @@ class RegisterRequest(BaseModel):
     allowed_roots: List[str] = []
     # Team state only: the team project whose members may use the repository. Ignored in solo state.
     project_id: uuid.UUID | None = None
+    # Explicitly provision an empty index identity when adding a new team source.
+    create_index_record: bool = False
 
 
 class UpdateCapabilitiesRequest(BaseModel):
@@ -70,15 +74,46 @@ class UpdateCapabilitiesRequest(BaseModel):
 @router.get("/repositories", dependencies=[Depends(require_scope("workspace:read")), Depends(team_administrator_access())])
 async def list_repositories():
     """List all registered repositories."""
-    repos = (await workspace_registry()).list_all()
+    registry = await workspace_registry()
+    repos = registry.list_all()
+    try:
+        async with team_access.async_session_factory() as session:
+            indexed_ids = {
+                repo.repository_id: await find_repository_id(session, repo.canonical_root)
+                for repo in repos
+            }
+    except Exception:
+        # The solo file registry remains useful while the index database is
+        # unavailable (and is intentionally exercised with stubbed database
+        # drivers by the legacy HTTP contract suite). Team registry reads are
+        # database-backed already, so only the explicit solo store may degrade
+        # the optional correlation to an unknown identity.
+        if not isinstance(registry, RegistryStore):
+            raise
+        indexed_ids = {repo.repository_id: None for repo in repos}
     return {
         "status": "success",
         "total": len(repos),
-        "repositories": [r.to_dict() for r in repos],
+        # Correlate registry records with the indexed repository server-side.
+        # The database lookup accepts canonical, symlink-resolved and slash
+        # variants; clients must not guess identity from display path strings.
+        "repositories": [
+            {**repo.to_dict(), "indexed_repository_id": indexed_ids[repo.repository_id]}
+            for repo in repos
+        ],
     }
 
 
-@router.post("/repositories", dependencies=[Depends(require_scope("workspace:write")), Depends(team_administrator_access())])
+async def _require_registration_write(principal: ResolvedPrincipal = Depends(require_principal)) -> None:
+    # Existing team-administrator credentials intentionally carry workspace:read,
+    # not the solo registry's workspace:write scope. Team membership and the
+    # project-level administrator check below authorize this team-only operation;
+    # solo callers keep the original explicit write-scope requirement.
+    if await team_access.current_team_state() == "solo" and not principal.has_scope("workspace:write"):
+        raise HTTPException(status_code=403, detail="Missing required scope: workspace:write")
+
+
+@router.post("/repositories", dependencies=[Depends(team_administrator_access()), Depends(_require_registration_write)])
 async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal = Depends(require_principal)):
     """Register a new repository.
 
@@ -117,6 +152,8 @@ async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal
 
     canonical = str(resolved)
     normalized = PathSandbox.get_normalized_identity(resolved)
+    if len(canonical) > 1024 or len(normalized) > 1024:
+        raise HTTPException(status_code=422, detail="Canonical repository path exceeds the 1024-character storage limit")
     repo_id = _generate_repository_id(canonical)
 
     revision = PathSandbox.get_git_revision(resolved) if require_git else "none"
@@ -146,7 +183,8 @@ async def register_repository(req: RegisterRequest, principal: ResolvedPrincipal
     try:
         saved, project_id = await register_for_team(
             principal, canonical, req.project_id, record,
-            lambda: _get_store().register(record, actor="api", source="api"))
+            lambda: _get_store().register(record, actor="api", source="api"),
+            create_index_record=req.create_index_record)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     response = {"status": "success", "repository": saved.to_dict()}

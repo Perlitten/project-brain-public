@@ -70,3 +70,5 @@ not assigned one silently.
 
 The UI changes do not diagnose a running installation's missing mount or API
 latency, change deployment settings, or rotate live credentials automatically.
+
+Repository registration in team mode requires a live team administrator and the target project administrator checks; existing administrator credentials keep their scopes and remain compatible. Solo registration continues to require the explicit `workspace:write` credential scope. The dialog reports this permission missing before submission, without changing stored keys.

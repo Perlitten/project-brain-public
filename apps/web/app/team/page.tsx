@@ -1,3 +1,5 @@
+import { getCapabilities } from "@/lib/capabilities";
+import { capabilityGate } from "@/components/CapabilityGate";
 import { CodeBlock } from "@/components/act";
 import { Bootstrap } from "@/components/team/Bootstrap";
 import { RetryRead } from "@/components/RetryRead";
@@ -12,25 +14,28 @@ import { getTeamView } from "@/lib/team-view";
 
 export const metadata = { title: "Team" };
 
-const LEDE = "Experimental preview (main only, not in v0.9.2). Everyone on the team signs in to this dashboard with their own key. Brain checks that key on every request, so revoking a member locks them out of the dashboard at once; revoke their key under Access to stop their agents too.";
+const LEDE = "Everyone on the team signs in to this dashboard with their own key. Brain checks that key on every request, so revoking a member locks them out of the dashboard at once; revoke their key under Access to stop their agents too.";
 
 export default async function Team() {
+  const unsupported = await capabilityGate("team", "Team");
+  if (unsupported) return unsupported;
   const [observedMode, member] = await Promise.all([signInMode(), currentMember()]);
   const mode = member ? "team" : observedMode;
   const head = (
     <>
       <PageHead title="Team" lede={LEDE} />
-      <SectionTabs section="settings" active="/team" />
+      <SectionTabs section="team" active="/team" />
     </>
   );
 
   if (mode === "unknown") return <>{head}<Panel id="team-status" title="Team status unavailable"><p>Brain did not return the sign-in state. Retry before changing team membership or server configuration.</p><RetryRead /></Panel></>;
 
   if (mode !== "team") {
+    const bootstrap = (await getCapabilities()).supported.includes("team_bootstrap");
     return (
       <>
         {head}
-        <Panel id="team-bootstrap" title="Enable team" desc="Prepare and save your own administrator key before changing how this dashboard signs you in."><Bootstrap /></Panel>
+        <Panel id="team-bootstrap" title="Enable team" desc="Prepare and save your own administrator key before changing how this dashboard signs you in.">{bootstrap ? <Bootstrap /> : <p>This server supports team membership but not dashboard bootstrap. Use the server setup below.</p>}</Panel>
         <Panel id="team-setup" title="Server setup and recovery" desc="Use this route when the dashboard credential cannot issue administrator scopes, or when you need to recover access.">
           <div className="form form--wide">
             <p className="field__hint">

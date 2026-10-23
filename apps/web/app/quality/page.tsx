@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { adminOnlyPage } from "@/components/AdminOnly";
 import Link from "next/link";
 import { SectionTabs } from "@/components/SectionNav";
@@ -21,6 +22,18 @@ const VIEWS = ["benchmark", "reports"] as const;
 export default async function Quality({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const gate = await adminOnlyPage("Quality");
   if (gate) return gate;
+  return <>
+      <PageHead
+        title="Quality"
+        lede="Whether Brain finds the right code. Measured by asking questions whose right answers are known, not from live traffic — live request success is on Activity."
+        actions={<RunButton action={startBenchmark} label="Run the benchmark" icon="play" title="Run search benchmark" />}
+      />
+      <SectionTabs section="quality" active="/quality" />
+    <Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><QualityData searchParams={searchParams} /></Suspense>
+  </>;
+}
+
+async function QualityData({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const tab = pickTab(VIEWS, typeof params.view === "string" ? params.view : undefined);
   const query = getListQuery(params);
@@ -34,12 +47,7 @@ export default async function Quality({ searchParams }: { searchParams: Promise<
   const back = `/quality?view=reports${listParams ? `&${listParams}` : ""}`;
   return (
     <>
-      <PageHead
-        title="Quality"
-        lede="Whether Brain finds the right code. Measured by asking questions whose right answers are known, not from live traffic — live request success is on Activity."
-        actions={<RunButton action={startBenchmark} label="Run the benchmark" icon="play" title="Run search benchmark" />}
-      />
-      <SectionTabs section="quality" active="/quality" />
+
       <PageTabs
         label="Benchmark or saved reports"
         path="/quality"

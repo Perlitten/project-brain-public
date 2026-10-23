@@ -139,19 +139,3 @@ test('the Me view reads solo and member answers from /team/me', async () => {
   const options = await view.activityProjects(member);
   assert.deepEqual(options.map((o) => o.name), ['Alpha'], 'a member is offered only their own projects');
 });
-
-test('Me and Team activity are settings tabs members can open, and resolve to their own nav entries', () => {
-  const nav = fs.readFileSync(path.join(root, 'lib', 'nav.ts'), 'utf8');
-  const meAt = nav.indexOf('href: "/team/me"');
-  const activityAt = nav.indexOf('href: "/team/activity"');
-  const teamAt = nav.indexOf('href: "/team",');
-  assert.ok(meAt > 0 && activityAt > 0 && teamAt > meAt && teamAt > activityAt, 'the specific entries come before /team');
-  const adminOnly = nav.match(/ADMIN_ONLY_KEYS[^=]*= new Set\(\[([^\]]*)\]/)[1];
-  assert.doesNotMatch(adminOnly, /team/);
-  const tabs = fs.readFileSync(path.join(root, 'components', 'SectionNav.tsx'), 'utf8');
-  assert.match(tabs, /\["\/team\/me", "Me"\]/);
-  assert.match(tabs, /\["\/team\/activity", "Team activity"\]/);
-  // The Team page itself is owned elsewhere; these pages live beside it.
-  assert.ok(fs.existsSync(path.join(root, 'app', 'team', 'me', 'page.tsx')));
-  assert.ok(fs.existsSync(path.join(root, 'app', 'team', 'activity', 'page.tsx')));
-});

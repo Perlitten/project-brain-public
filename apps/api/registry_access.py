@@ -29,6 +29,7 @@ from typing import Awaitable, Callable
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api import team_access
@@ -95,11 +96,13 @@ def _actor(principal: ResolvedPrincipal) -> str:
 
 async def register_for_team(principal: ResolvedPrincipal, canonical_root: str, project_id: uuid.UUID | None,
                             record: RepositoryRecord,
-                            register: Callable[[], RepositoryRecord]) -> tuple[RepositoryRecord, uuid.UUID | None]:
+                            register: Callable[[], RepositoryRecord], *,
+                            create_index_record: bool = False) -> tuple[RepositoryRecord, uuid.UUID | None]:
     """Register a repository in the workspace registry; in team state, also link it to a team project.
 
     Solo state calls ``register`` (the file store) and returns no project. In
-    team state the repository must already be indexed; it is attached to
+    team state the repository must already have an index identity (or the explicit
+    create_index_record option provisions an empty one for an active project); it is attached to
     ``project_id`` (or must already be attached to a project when
     ``project_id`` is omitted), the caller must administer that project, and
     ``record`` is inserted into the shared registry table in the same database
@@ -113,6 +116,21 @@ async def register_for_team(principal: ResolvedPrincipal, canonical_root: str, p
     try:
         async with team_access.async_session_factory() as session, session.begin():
             repository_id = await find_repository_id(session, canonical_root)
+            if repository_id is None and create_index_record and project_id is not None:
+                # Provisioning is an explicit admin-only operation. The empty
+                # index identity, project link, registry entry and audit event
+                # commit together; no source is indexed or made globally visible.
+                project = await fresh(session, TeamProject, TeamProject.id == project_id)
+                if project is None:
+                    raise HTTPException(status_code=404, detail="Project not found")
+                if project.disabled_at:
+                    raise HTTPException(status_code=409, detail="Project is disabled")
+                await administrator(session, principal, project_id)
+                repository = Repository(name=record.display_name, path=canonical_root,
+                                        type=record.repository_type, indexing_status="pending")
+                session.add(repository)
+                await session.flush()
+                repository_id = repository.id
             if repository_id is None:
                 raise HTTPException(status_code=409, detail=(
                     "In team state, a repository must be indexed before it is registered, so it can be "
@@ -140,6 +158,13 @@ async def register_for_team(principal: ResolvedPrincipal, canonical_root: str, p
                                f"Registered repository {saved.display_name} ({saved.trust_level})",
                                actor_principal_id=principal.id, project_id=project_id)
             return saved, project_id
+    except IntegrityError as exc:
+        # Two administrators can add the same canonical path concurrently.
+        # The database uniqueness constraint picks the winner; the loser must
+        # not become a 500 or leave an unattached empty index record behind.
+        if getattr(exc.orig, "sqlstate", None) == "23505" or getattr(exc.orig, "sqlite_errorcode", None) in {1555, 2067}:
+            raise HTTPException(status_code=409, detail="Repository is already registered or linked; refresh Projects before retrying") from exc
+        raise
     except TeamDenied as exc:
         raise HTTPException(status_code=403, detail=f"Team administrator required: {exc}") from exc
     except provisioning.TeamNotFound as exc:
