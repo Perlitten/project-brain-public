@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import { TabStrip } from "./TabStrip";
 import { useSearchParams } from "next/navigation";
 import { adminOnly, locate, withProject } from "@/lib/nav";
 import { useCapabilities } from "./Capabilities";
@@ -11,14 +11,14 @@ export type SectionNavItem = { href: string; label: string; active?: boolean };
 export function SectionNav({ label, items }: { label: string; items: SectionNavItem[] }) {
   const params = useSearchParams();
   const repo = params.get("repo") ?? undefined;
+  const current = items.find((i) => i.active)?.href ?? "";
   return (
-    <nav className="page-tabs section-nav" aria-label={label}>
-      {items.map((item) => (
-        <Link key={item.href} href={withProject(item.href, repo)} className="page-tabs__tab" aria-current={item.active ? "page" : undefined} scroll={false}>
-          {item.label}
-        </Link>
-      ))}
-    </nav>
+    <TabStrip
+      variant="section"
+      label={label}
+      current={current}
+      items={items.map((item) => ({ id: item.href, href: withProject(item.href, repo), label: item.label }))}
+    />
   );
 }
 
@@ -28,11 +28,11 @@ const SECTIONS = {
   projects: { label: "Project views", items: [["/projects", "Projects"], ["/indexing", "Index runs"], ["/graph", "Code map"], ["/insights", "Findings"]] },
   memory: { label: "Memory views", items: [["/memory", "Memory"], ["/packs", "Context packs"], ["/review", "Review"]] },
   quality: { label: "Quality views", items: [["/quality", "Quality"]] },
-  logs: { label: "Activity views", items: [["/activity", "Activity"], ["/runs", "Agent tasks"]] },
+  logs: { label: "Activity views", items: [["/activity", "Activity"], ["/agents", "Agents"], ["/runs", "Agent tasks"], ["/mcp", "Agent tools"]] },
   // Reranker is a switch with a measurement next to it, not a report: it
   // belongs with the other things you configure.
   team: { label: "Team views", items: [["/team", "Team"], ["/team/me", "Me"], ["/team/activity", "Team activity"], ["/team/board", "Board"]] },
-  settings: { label: "Settings views", items: [["/settings", "General"], ["/admin", "Access"], ["/mcp", "Agent tools"], ["/reranker", "Reranker"]] },
+  settings: { label: "Settings views", items: [["/settings", "General"], ["/admin", "Access"], ["/reranker", "Reranker"]] },
 } as const;
 
 export function SectionTabs({ section, active }: { section: keyof typeof SECTIONS; active: string }) {

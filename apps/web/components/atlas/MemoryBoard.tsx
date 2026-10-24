@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { AtlasLegend, AtlasMap, AtlasVerdict, reveal, type AtlasRegionData, type AtlasTileData } from "./Atlas";
 import { Icon } from "@/components/Icon";
 import { DecisionActions, RecordHint, RuleActions } from "@/components/MemoryActions";
+import { NewMemoryForm, type MemoryPrefill } from "@/components/NewMemory";
 import { decisionState, EVERY_PROJECT, memoryVerdict, regionFor, ruleSpan, type TileState } from "@/lib/atlas";
 import type { Decision, Rule } from "@/lib/types";
 
@@ -39,7 +40,7 @@ function ruleUse(r: Rule): string {
   return `Given to agents ${n(r.delivered30d)} ${r.delivered30d === 1 ? "time" : "times"} in 30 days${caught}.`;
 }
 
-export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab: initialTab, query, size, totals, repoPath, unavailable }: {
+export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab: initialTab, query, size, totals, repoPath, unavailable, prefill }: {
   decisions: Decision[];
   replaced: Decision[];
   rules: Rule[];
@@ -58,12 +59,14 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
   totals: { decisions: number; rules: number; replaced: number };
   repoPath?: string;
   unavailable: { decisions: boolean; rules: boolean; replaced: boolean };
+  /** Opens the record panel filled in, e.g. a finding turned into a rule. */
+  prefill?: MemoryPrefill;
 }) {
   const [tab, setTab] = useState<MemoryTab>(initialTab);
   const [hover, setHover] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [pulse, setPulse] = useState<string | null>(null);
-  const [recording, setRecording] = useState(false);
+  const [recording, setRecording] = useState(Boolean(prefill));
   const inspector = useRef<HTMLElement>(null);
   const pick = query.q;
 
@@ -159,7 +162,7 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
   const tabUnavailable = (t: MemoryTab) => t === "replaced" ? unavailable.replaced : t === "rules" ? unavailable.rules : t === "decisions" ? unavailable.decisions : unavailable.rules && unavailable.decisions;
 
   return (
-    <div className="atlas">
+    <div className="atlas atlas--fill">
       <AtlasVerdict
         segments={segments}
         sub={unavailable.decisions || unavailable.rules
@@ -169,9 +172,15 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
         onMention={(ref) => setHover(ref ? `r:${ref}` : null)}
         onPick={(ref) => { setSelected(`r:${ref}`); setPulse(`r:${ref}`); setTab((t) => (t === "decisions" || t === "replaced" ? "current" : t)); }}
       />
-      {recording && <div className="atlas-record">
-        <RecordHint kind="decision" repoPath={repoPath} />
-        <RecordHint kind="rule" repoPath={repoPath} />
+      {recording && <div className="atlas-record" id="record">
+        <section className="atlas-record__form" aria-label="Record a decision or rule">
+          <NewMemoryForm projects={projects} repoPath={repoPath} prefill={prefill} onDone={() => setRecording(false)} />
+        </section>
+        <aside className="atlas-record__aside">
+          <p className="atlas-record__lead">Agents record memory themselves, too:</p>
+          <RecordHint kind="decision" repoPath={repoPath} />
+          <RecordHint kind="rule" repoPath={repoPath} />
+        </aside>
       </div>}
 
       <div className="atlas-split">

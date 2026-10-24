@@ -149,7 +149,7 @@ test("production pages distinguish failure, missing source, unmeasured tools and
     assert.match(html, /1 source unavailable/);
     assert.match(html, /mounted at the registered path/);
     assert.doesNotMatch(html, /1 of 1 projects are behind/);
-    html = await (await fetch(web.base + "/")).text();
+    html = await (await fetch(web.base + "/?view=freshness")).text();
     assert.match(html, /1 projects: 1 source unavailable/);
     assert.match(html, /Check source for missing-checkout/);
     assert.match(html, /href="\/projects\?repo=1#source"/);

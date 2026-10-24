@@ -39,8 +39,10 @@ const nested: NavItem[] = [
   // and the word "Reports" keeps working in the command palette.
   { key: "reports", href: "/reports", label: "Reports", icon: "file", hint: "Every saved evaluation and check", section: "quality" },
   { key: "reranker", href: "/reranker", label: "Reranker", icon: "vectors", hint: "Optional second pass that re-orders search results", repoScoped: true, section: "settings" },
+  { key: "agents", href: "/agents", label: "Agents", icon: "automation", hint: "Each agent: its identity, keys, tasks and packs", section: "logs" },
   { key: "runs", href: "/runs", label: "Agent tasks", icon: "automation", hint: "Tasks agents ran with Brain's help", repoScoped: true, section: "logs" },
-  { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "The tools agents can call and how they perform", section: "settings" },
+  // Tool health is something you watch, next to tasks and agents; the address agents connect to is one panel on it.
+  { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "The tools agents can call and how they perform", section: "logs" },
   { key: "admin", href: "/admin", label: "Access", icon: "key", hint: "API keys and what each one may do", section: "settings" },
   // Before "team" so /team/me, /team/activity and /team/board resolve to their own entries; members can open all three.
   { key: "team-me", href: "/team/me", label: "Me", icon: "key", hint: "Your team role, project roles and key permissions", section: "team", capability: "team" },
@@ -75,7 +77,7 @@ export function withProject(href: string, slug?: string): string {
 }
 
 /** Pages that cover the whole server: in team state Brain serves them to team admins only. */
-const ADMIN_ONLY_KEYS: ReadonlySet<string> = new Set(["quality", "reports", "logs", "runs", "settings", "reranker", "admin", "setup"]);
+const ADMIN_ONLY_KEYS: ReadonlySet<string> = new Set(["quality", "reports", "logs", "runs", "agents", "mcp", "settings", "reranker", "admin", "setup"]);
 export function adminOnly(href: string): boolean {
   const key = locate(href.split(/[?#]/)[0])?.item.key;
   return key !== undefined && ADMIN_ONLY_KEYS.has(key);

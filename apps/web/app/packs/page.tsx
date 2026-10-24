@@ -3,7 +3,9 @@ import { PackTester } from "@/components/PackTester";
 import { SectionTabs } from "@/components/SectionNav";
 import { Term } from "@/components/Term";
 import { Chip, EmptyState, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
-import { getPagedContextPacks, getRepositoryFeed } from "@/lib/data";
+import { getAgentRuns, getPagedContextPacks, getRepositoryFeed } from "@/lib/data";
+import { runForPack } from "@/lib/task-links";
+import { agentHref } from "@/lib/agent-link";
 import { getListQuery, listQueryParams } from "@/lib/list-query";
 import { restrictedMember } from "@/lib/team-session";
 
@@ -13,7 +15,7 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
   const params = await searchParams;
   const query = getListQuery(params);
   const repo = typeof params.repo === "string" ? params.repo : undefined;
-  const [result, member, feed] = await Promise.all([getPagedContextPacks(query, repo), restrictedMember(), getRepositoryFeed()]);
+  const [result, member, feed, runs] = await Promise.all([getPagedContextPacks(query, repo), restrictedMember(), getRepositoryFeed(), getAgentRuns()]);
   // A test pack is built for the selected project; without one, Brain uses its default repository.
   const selectedRepo = repo ? feed.repositories.find((r) => r.slug === repo || String(r.id) === repo || r.name.toLowerCase() === repo.toLowerCase()) : undefined;
   const repoPath = selectedRepo?.path;
@@ -82,7 +84,8 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
                   <Link className="link" href={`/packs/${encodeURIComponent(p.id)}?${repo ? `repo=${encodeURIComponent(repo)}&` : ""}back=${encodeURIComponent(back)}`}>{p.task}</Link>
                   <span className="sub mono">
                     #{p.id}
-                    {p.consumer !== "an agent" ? ` · for ${p.consumer}` : ""}
+                    {p.consumer !== "an agent" ? <> · for {agentHref(p.consumer) ? <Link className="link" href={agentHref(p.consumer)!}>{p.consumer}</Link> : p.consumer}</> : ""}
+                    {(() => { const run = runForPack(p, runs); return run ? <> · task <Link className="link" href={`/runs?q=${encodeURIComponent(run.id)}`}>{run.id.length > 12 ? run.id.slice(0, 8) : run.id}</Link></> : null; })()}
                   </span>
                 </>
               ),

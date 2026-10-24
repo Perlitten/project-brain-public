@@ -2,7 +2,8 @@
 // fresh on every render: membership changes must show at once, and Brain
 // answers team admins only — anyone else gets the read-only view.
 import "server-only";
-import { brainRead } from "./api";
+import { apiConfigured, brainRead } from "./api";
+import { DEMO_TEAM } from "./team-demo";
 import { PROJECT_ROLES, type ProjectRole } from "./team-scopes";
 
 export interface TeamMemberRow {
@@ -50,6 +51,7 @@ interface RawProjectMember {
 const day = (v: unknown) => (typeof v === "string" && v ? v.slice(0, 10) : null);
 
 export async function getTeamView(): Promise<TeamView> {
+  if (!apiConfigured) return DEMO_TEAM;
   const [members, projects] = await Promise.all([
     brainRead<RawMember[]>("/team/projects/members", { fresh: true }),
     brainRead<RawProject[]>("/team/projects/", { fresh: true }),

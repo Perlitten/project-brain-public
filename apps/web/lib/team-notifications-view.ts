@@ -2,7 +2,8 @@
 // signed-in member's own key (lib/api.ts): Brain returns only the caller's own
 // notifications and link, so nothing here filters other members out.
 import "server-only";
-import { brainRead } from "./api";
+import { apiConfigured, brainRead } from "./api";
+import { DEMO_NOTIFICATIONS, DEMO_TELEGRAM } from "./team-demo";
 
 export interface NotificationRow {
   id: number;
@@ -82,11 +83,13 @@ export function toTelegramLink(raw: unknown): TelegramLinkResult {
 }
 
 export async function getNotifications(): Promise<NotificationsResult> {
+  if (!apiConfigured) return { kind: "ok", teamState: "team", unread: DEMO_NOTIFICATIONS.filter((n) => !n.readAt).length, rows: DEMO_NOTIFICATIONS };
   const res = await brainRead<unknown>("/team/me/notifications?limit=50", { fresh: true });
   return res.ok ? toNotifications(res.data) : { kind: "unavailable" };
 }
 
 export async function getTelegramLink(): Promise<TelegramLinkResult> {
+  if (!apiConfigured) return DEMO_TELEGRAM;
   const res = await brainRead<unknown>("/team/me/telegram", { fresh: true });
   return res.ok ? toTelegramLink(res.data) : { kind: "unavailable" };
 }

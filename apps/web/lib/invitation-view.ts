@@ -3,7 +3,8 @@
 // empty list: an admin must not conclude nobody is invited because Brain
 // didn't answer.
 import "server-only";
-import { brainRead } from "./api";
+import { apiConfigured, brainRead } from "./api";
+import { DEMO_INVITATIONS } from "./team-demo";
 import { INVITATION_STATES, type InvitationState } from "./invitations";
 import { PROJECT_ROLES, type ProjectRole } from "./team-scopes";
 
@@ -59,6 +60,7 @@ export function invitationRows(data: unknown): InvitationRow[] | null {
 }
 
 export async function getInvitationsView(): Promise<InvitationsView> {
+  if (!apiConfigured) return DEMO_INVITATIONS;
   const res = await brainRead<unknown>("/team/invitations", { fresh: true });
   if (!res.ok) return { kind: res.status === 401 || res.status === 403 ? "denied" : "unavailable" };
   const rows = invitationRows(res.data);

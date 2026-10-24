@@ -8,7 +8,9 @@ import { getSettingsView } from "@/lib/settings-view";
 
 export const metadata = { title: "Settings" };
 
-export default async function SettingsPage() {
+type Props = { searchParams: Promise<{ view?: string }> };
+
+export default async function SettingsPage({ searchParams }: Props) {
   const gate = await adminOnlyPage("Settings");
   if (gate) return gate;
   return <>
@@ -17,12 +19,12 @@ export default async function SettingsPage() {
         title="Settings"
         lede={<span title="A save does not restart workers.">Models, alerts, jobs, search and indexing. Saves reach the API at once; workers pick them up on their next restart.</span>}
       />
-    <Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><SettingsPageData  /></Suspense>
+    <Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><SettingsPageData searchParams={searchParams} /></Suspense>
   </>;
 }
 
-async function SettingsPageData() {
-  const view = await getSettingsView();
+async function SettingsPageData({ searchParams }: Props) {
+  const [view, query] = await Promise.all([getSettingsView(), searchParams]);
   return (
     <>
 
@@ -39,7 +41,7 @@ async function SettingsPageData() {
               <span>Status is live; editing turns on after the server is updated.</span>
             </div>
           )}
-          <Settings view={view} />
+          <Settings view={view} requested={query.view} />
         </>
       )}
     </>

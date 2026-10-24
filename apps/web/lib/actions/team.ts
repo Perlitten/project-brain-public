@@ -8,7 +8,7 @@ import type { ActionResult } from "./types";
 import type { NewKey } from "./admin";
 import { PROJECT_ROLES, memberKeyScopes, type ProjectRole } from "../team-scopes";
 
-const TEAM = ["/team"];
+const TEAM = ["/team", "/agents"];
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,119}$/;
 const PROJECT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

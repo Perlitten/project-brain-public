@@ -300,7 +300,8 @@ test('the Team page pauses invitation creation when projects are unavailable', (
   const form = fs.readFileSync(path.join(root, 'components/team/Invitations.tsx'), 'utf8');
   assert.match(page, /projectsAvailable=\{view\.kind === "ok"\}/);
   assert.match(form, /invitation creation is paused/);
-  assert.match(form, /disabled=\{!projectsAvailable \|\| pending \|\| mode !== "on"\}/);
+  // Demo keeps the button clickable (it previews what would happen); only a locked dashboard disables it.
+  assert.match(form, /disabled=\{!projectsAvailable \|\| pending \|\| mode === "locked"\}/);
 });
 
 test('/invite explains itself on demo data, when misconfigured and when dashboard changes are switched off', async () => {
@@ -351,7 +352,7 @@ test('the invite page keeps a slot for other ways to join (e.g. single sign-on)'
 
 test('invitation list: denied, unavailable and empty are three different answers', async () => {
   let answer;
-  const view = load('lib/invitation-view.ts', { './api': { brainRead: async (p, opts) => {
+  const view = load('lib/invitation-view.ts', { './api': { apiConfigured: true, brainRead: async (p, opts) => {
     assert.equal(p, '/team/invitations');
     assert.equal(opts.fresh, true);
     return answer;

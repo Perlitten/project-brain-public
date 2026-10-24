@@ -112,7 +112,7 @@ function UrlForm() {
     {!showToken && url && guess.valid && <p className="field__hint">SSH addresses use the SSH key of the Brain server’s worker. Without one, use the https address with a token.</p>}
 
     <div className="connect__check">
-      <button type="button" className="btn btn--neutral" disabled={!guess.valid || check.pending || check.mode !== "on"} onClick={runCheck}>{check.pending ? "Checking…" : probe ? "Check again" : "Check"}</button>
+      <button type="button" className="btn btn--neutral" disabled={!guess.valid || check.pending || check.mode === "locked"} onClick={runCheck}>{check.pending ? "Checking…" : probe ? "Check again" : "Check"}</button>
       {probeMessage && <span role="status" className={probe?.reachable ? "text-dim" : "text-bad"}>{probe ? probeSummary(probe) : probeMessage}</span>}
     </div>
     {rootMissing && <div className="callout tone-warn"><b>Clones directory not set</b><span>Connecting by URL needs a folder on the server where Brain keeps its clones. Set “Clones directory” in <Link className="link" href="/settings#git">Settings → Git &amp; origin sync</Link> first.</span></div>}
@@ -150,7 +150,7 @@ function UrlForm() {
 
     <LockNote />
     <div className="dialog__actions">
-      <button type="submit" className="btn btn--primary" disabled={!guess.valid || connect.pending || connect.mode !== "on" || !context?.ok || !canIndex || rootMissing || rootReadOnly}>{connect.pending ? "Connecting…" : "Connect"}</button>
+      <button type="submit" className="btn btn--primary" disabled={!guess.valid || connect.pending || connect.mode === "locked" || !context?.ok || !canIndex || rootMissing || rootReadOnly}>{connect.pending ? "Connecting…" : "Connect"}</button>
     </div>
   </form>;
 }

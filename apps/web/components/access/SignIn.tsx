@@ -12,21 +12,14 @@ import { Chip, Panel } from "@/components/ui";
 import { disableWebLogin, setWebLogin } from "@/lib/actions/login";
 import type { ActionResult } from "@/lib/actions/types";
 import type { SignInView } from "@/lib/sign-in-view";
+import { SIGN_IN_STATUS } from "./sign-in-status";
 
 const USER = /^[A-Za-z0-9._@+-]{1,64}$/;
 const MIN = 8;
 
-const STATUS: Record<SignInView["mode"], { tone: "ok" | "warn" | "info" | "idle" | "bad"; chip: string; title: string }> = {
-  open: { tone: "warn", chip: "No password", title: "Open mode: anyone who opens this address gets in" },
-  password: { tone: "ok", chip: "Password set", title: "Only people with the password get in" },
-  env: { tone: "info", chip: "Set by the server", title: "Sign-in is fixed by the deployment" },
-  demo: { tone: "idle", chip: "Demo data", title: "Nothing to protect yet" },
-  team: { tone: "ok", chip: "Team members", title: "Every member signs in with their own key" },
-  unknown: { tone: "bad", chip: "Can’t check", title: "Brain isn’t answering" },
-};
 
 export function SignIn({ view }: { view: SignInView }) {
-  const s = STATUS[view.mode];
+  const s = SIGN_IN_STATUS[view.mode];
   const editable = view.mode === "open" || view.mode === "password";
   return (
     <Panel id="sign-in" title="Dashboard sign-in" desc="The login and password for this web dashboard. Agents and integrations use their own keys below." spine={s.tone}>

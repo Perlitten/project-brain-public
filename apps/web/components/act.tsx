@@ -35,10 +35,16 @@ export function ActionsProvider({ mode, children }: { mode: ActionsMode; childre
 export const useActionsMode = () => useContext(ModeContext);
 
 export const LOCK_REASON: Record<ActionsMode, string> = {
-  demo: "Connect the Brain API to run actions — this is demo data.",
+  demo: "Demo data — every control works, nothing is saved. Connect the Brain API to run actions for real.",
   locked: "Actions are locked until the dashboard has a password — set one in Settings → Access → Dashboard sign-in.",
   on: "",
 };
+
+/** What a click says in demo mode: the control works, nothing changes. */
+export function demoPreview(title?: string): string {
+  const verb = title ? title.charAt(0).toLowerCase() + title.slice(1) : "do this";
+  return `Demo — nothing changed. Connected to Brain, this would ${verb}.`;
+}
 
 // ---------------------------------------------------------------------------
 // Toasts
@@ -185,6 +191,13 @@ export function useAction<A extends unknown[], T>(
   const run = useCallback(
     (...args: A) =>
       new Promise<ActionResult<T>>((resolve) => {
+        if (mode === "demo") {
+          // The control works end to end; the write is the only thing missing.
+          const res = { ok: false, message: demoPreview(opts.title) } as ActionResult<T>;
+          toast({ tone: "info", message: res.message, title: opts.title });
+          setLast(res);
+          return resolve(res);
+        }
         if (mode !== "on") {
           const res = { ok: false, message: LOCK_REASON[mode] } as ActionResult<T>;
           report(res, opts.title);
@@ -241,13 +254,14 @@ export function RunButton({
 }) {
   const { run, pending, mode } = useAction(action, { title: title ?? label });
   const [asking, setAsking] = useState(false);
+  // Demo mode keeps the button live (the click previews what would happen); only "locked" disables it.
+  const locked = mode === "locked";
   const go = async () => {
-    if (disabled || pending || mode !== "on") return;
+    if (disabled || pending || locked) return;
     setAsking(false);
     const res = await run();
     onDone?.(res);
   };
-  const locked = mode !== "on";
   return (
     <>
       <button

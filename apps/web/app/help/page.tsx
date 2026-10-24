@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { PageHead, Panel } from "@/components/ui";
 import { ServerPulse } from "@/components/ServerPulse";
+import { PageTabs, ViewPane, pickTab } from "@/components/PageTabs";
+import { HashView } from "@/components/settings/HashView";
 import { glossary, type GlossaryKey } from "@/lib/glossary";
 import { withProject } from "@/lib/nav";
 
@@ -33,7 +35,7 @@ function faq(repo?: string): { q: string; a: ReactNode }[] {
         <>
           <p>
             Connecting Brain makes its tools available; it doesn’t make an agent call them. Check that the agent is connected in{" "}
-            <Link className="link" href={link("/setup#agent")}>Setup</Link>, then ask it in its instructions to call <code>prepare_task_context</code> before
+            <Link className="link" href={link("/setup?view=agent")}>Setup</Link>, then ask it in its instructions to call <code>prepare_task_context</code> before
             planning a change and <code>review_diff</code> before finishing.
           </p>
           <p>
@@ -50,7 +52,7 @@ function faq(repo?: string): { q: string; a: ReactNode }[] {
         <>
           <p>
             Brain answers from the last commit it read. Press <kbd>Ctrl</kbd> <kbd>K</kbd> and choose “Re-index the repository” (on a team this needs a Contributor or Reviewer role on the project), or{" "}
-            use the index step in <Link className="link" href="/setup#indexed">Setup</Link> (team admins). Later runs only re-read what changed.
+            use the index step in <Link className="link" href="/setup?view=indexed">Setup</Link> (team admins). Later runs only re-read what changed.
           </p>
           <p>
             Brain reads committed source only. If a re-index refuses the repository, commit your source edits first; ignored build output such as{" "}
@@ -92,9 +94,9 @@ function faq(repo?: string): { q: string; a: ReactNode }[] {
           </p>
           <p>
             For local-only operation, point both model roles and their endpoints at local models in{" "}
-            <Link className="link" href={link("/setup#provider")}>Setup</Link>, turn off Telegram alerts in{" "}
-            <Link className="link" href={link("/settings#telegram")}>Settings</Link>, remove the webhook secret and set the origin poll interval to 0 in{" "}
-            <Link className="link" href={link("/settings#git")}>Settings → Git &amp; origin sync</Link>, and use a local agent connection. Details are in the <a className="link" href={doc("docs/FAQ.md#where-does-my-data-go")}>FAQ</a>.
+            <Link className="link" href={link("/setup?view=provider")}>Setup</Link>, turn off Telegram alerts in{" "}
+            <Link className="link" href={link("/settings?view=alerts")}>Settings</Link>, remove the webhook secret and set the origin poll interval to 0 in{" "}
+            <Link className="link" href={link("/settings?view=git")}>Settings → Git &amp; origin sync</Link>, and use a local agent connection. Details are in the <a className="link" href={doc("docs/FAQ.md#where-does-my-data-go")}>FAQ</a>.
           </p>
         </>
       ),
@@ -124,8 +126,13 @@ function faq(repo?: string): { q: string; a: ReactNode }[] {
   ];
 }
 
-export default async function Help({ searchParams }: { searchParams: Promise<{ repo?: string }> }) {
-  const { repo } = await searchParams;
+const VIEWS = ["about", "faq", "glossary", "docs"] as const;
+
+export default async function Help({ searchParams }: { searchParams: Promise<{ repo?: string; view?: string }> }) {
+  const { repo, view } = await searchParams;
+  const tab = pickTab(VIEWS, view);
+  const questions = faq(repo);
+  const terms = Object.keys(glossary) as GlossaryKey[];
   const docs: { label: string; path: string; note: string }[] = [
     { label: "Getting started", path: "docs/GETTING_STARTED.md", note: "Install, index a repository and run a first task" },
     { label: "Connect agents (MCP)", path: "docs/MCP.md", note: "Client configs and every tool an agent can call" },
@@ -146,52 +153,72 @@ export default async function Help({ searchParams }: { searchParams: Promise<{ r
         }
       />
 
-      <Panel id="about" title="About Brain">
-        <p className="help__about">
-          Project Brain reads the committed source of your repositories and gives your coding agents context through MCP: the relevant code, the
-          decisions and rules you recorded, and what a change may affect. It runs on your own server, for one operator or a small team whose members
-          each see only the projects they have a role on. It is early software; run it for people you trust.
-        </p>
-        <dl className="kv">
-          <ServerPulse />
-          <dt>Source</dt>
-          <dd>
-            <a className="link" href={REPO}>GitHub</a> · <a className="link" href={`${REPO}/releases`}>Releases</a> ·{" "}
-            <a className="link" href={`${REPO}/issues`}>Report a problem</a> · MIT License
-          </dd>
-        </dl>
-      </Panel>
-
-      <Panel id="faq" title="Common questions" desc="Problems people run into first, and where to fix them." flush>
-        {faq(repo).map((item) => (
-          <details className="more help__item" key={item.q}>
-            <summary>{item.q}</summary>
-            <div className="help__answer">{item.a}</div>
-          </details>
-        ))}
-      </Panel>
-
-      <Panel id="glossary" title="Glossary" desc="The same explanations appear when you hover a dotted-underlined word.">
-        <dl className="kv help__terms">
-          {(Object.keys(glossary) as GlossaryKey[]).map((k) => (
-            <div className="help__term" key={k}>
-              <dt>{termName(k)}</dt>
-              <dd>{glossary[k]}</dd>
-            </div>
-          ))}
-        </dl>
-      </Panel>
-
-      <Panel id="docs" title="Guides" desc="The latest documentation on GitHub.">
-        <ul className="help__docs">
-          {docs.map((d) => (
-            <li key={d.path}>
-              <a className="link" href={doc(d.path)}>{d.label}</a>
-              <span className="muted"> — {d.note}</span>
-            </li>
-          ))}
-        </ul>
-      </Panel>
+      <HashView views={{ about: "about", "server-status": "about", faq: "faq", glossary: "glossary", docs: "docs" }} current={tab} first="about" />
+      <PageTabs
+        label="Help topics"
+        path="/help"
+        params={{ repo }}
+        current={tab}
+        tabs={[
+          { id: "about", label: "About" },
+          { id: "faq", label: "Questions", badge: questions.length },
+          { id: "glossary", label: "Glossary", badge: terms.length },
+          { id: "docs", label: "Guides", badge: docs.length },
+        ]}
+      />
+      <ViewPane id={tab}>
+        {tab === "about" && (
+          <Panel id="about" title="About Brain">
+            <p className="help__about">
+              Project Brain reads the committed source of your repositories and gives your coding agents context through MCP: the relevant code, the
+              decisions and rules you recorded, and what a change may affect. It runs on your own server, for one operator or a small team whose members
+              each see only the projects they have a role on. It is early software; run it for people you trust.
+            </p>
+            <dl className="kv">
+              <ServerPulse />
+              <dt>Source</dt>
+              <dd>
+                <a className="link" href={REPO}>GitHub</a> · <a className="link" href={`${REPO}/releases`}>Releases</a> ·{" "}
+                <a className="link" href={`${REPO}/issues`}>Report a problem</a> · MIT License
+              </dd>
+            </dl>
+          </Panel>
+        )}
+        {tab === "faq" && (
+          <Panel id="faq" title="Common questions" desc="Problems people run into first, and where to fix them." flush>
+            {questions.map((item) => (
+              <details className="more help__item" key={item.q}>
+                <summary>{item.q}</summary>
+                <div className="help__answer">{item.a}</div>
+              </details>
+            ))}
+          </Panel>
+        )}
+        {tab === "glossary" && (
+          <Panel id="glossary" title="Glossary" desc="The same explanations appear when you hover a dotted-underlined word.">
+            <dl className="kv help__terms">
+              {terms.map((k) => (
+                <div className="help__term" key={k}>
+                  <dt>{termName(k)}</dt>
+                  <dd>{glossary[k]}</dd>
+                </div>
+              ))}
+            </dl>
+          </Panel>
+        )}
+        {tab === "docs" && (
+          <Panel id="docs" title="Guides" desc="The latest documentation on GitHub.">
+            <ul className="help__docs">
+              {docs.map((d) => (
+                <li key={d.path}>
+                  <a className="link" href={doc(d.path)}>{d.label}</a>
+                  <span className="muted"> — {d.note}</span>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        )}
+      </ViewPane>
     </>
   );
 }

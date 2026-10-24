@@ -95,6 +95,14 @@ export interface AgentRun {
   duration: string;
   /** Demo data only: repository slug this task ran on. */
   repo?: string;
+  /** The full task id, when the source has one (the row's `id` may be shortened). */
+  taskId?: string;
+  /** Compare-and-swap version a cancel must send; absent when the source has none. */
+  version?: number;
+  /** Brain's own status word (e.g. "validating"), finer than `status`. */
+  rawStatus?: string;
+  /** Someone already asked Brain to stop this task. */
+  cancelRequested?: boolean;
 }
 
 export interface LedgerEvent {
@@ -103,6 +111,8 @@ export interface LedgerEvent {
   source: string;
   text: string;
   ref?: string;
+  /** Where the ref leads, when Brain named the entity. */
+  href?: string;
 }
 
 export interface IndexRun {

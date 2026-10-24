@@ -15,7 +15,9 @@ function loadView(brainRead) {
   const module = { exports: {} };
   const requireModule = (name) => {
     if (name === 'server-only') return {};
-    if (name === './api') return { brainRead };
+    // These tests cover the live mapping, so the API counts as configured and the demo data is not loaded.
+    if (name === './api') return { brainRead, apiConfigured: true };
+    if (name === './team-demo') return {};
     return require(name);
   };
   vm.runInNewContext(output, { module, exports: module.exports, require: requireModule, URLSearchParams, Date, Number }, { filename });

@@ -9,6 +9,7 @@ import { cache } from "react";
 import { apiConfigured, brainFetch, brainRead, readFailureNote, type ReadFailure } from "./api";
 import * as mock from "./mock";
 import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./list-query";
+import { eventHref } from "./event-link";
 import { shortRevision } from "./revision";
 import { SLOW_TOOL_MS } from "./tool-health";
 import { utcTime } from "./time";
@@ -171,7 +172,8 @@ type RawRepo = {
 };
 
 const fetchRepositoryFeed = cache(async (): Promise<{ repos: RawRepo[] | null; reason?: ReadFailure }> => {
-  const result = await brainRead<unknown>("/repositories", { fresh: true, timeoutMs: 2000 });
+  // A loaded Brain answers in 2–4 s; a shorter wait reads as "no projects connected".
+  const result = await brainRead<unknown>("/repositories", { fresh: true, timeoutMs: 6000 });
   if (!result.ok) return { repos: null, reason: result.reason };
   if (!Array.isArray(result.data) && !Array.isArray(obj(result.data).repositories)) {
     return { repos: null, reason: "invalid_response" };
@@ -532,6 +534,7 @@ function toEvent(e: Json): LedgerEvent {
     source: type.split(".")[0] || words(str(e.entity_type)) || str(e.actor_type) || "brain",
     text: `${what}${subject && !str(e.action) ? "" : subject ? ` — ${subject}` : ""}${transition}${reason ? `: ${reason}` : ""}`,
     ref: ref ? (ref.length > 18 ? `${ref.slice(0, 16)}…` : ref) : undefined,
+    href: eventHref(ref, str(e.entity_type), ref) ?? undefined,
   };
 }
 
@@ -630,28 +633,38 @@ export const getJobs = async (slug?: string | null): Promise<Job[] | null> => {
 export const getAgentRuns = async (slug?: string | null): Promise<AgentRun[]> => {
   if (!apiConfigured) return mock.agentRuns;
   return live<AgentRun[]>([], async () => {
-    const repo = pickRepo(await fetchRepos(), slug);
+    const repos = await fetchRepos();
+    const repo = pickRepo(repos, slug);
     if (slug && !repo) return [];
     const params = new URLSearchParams({ page: "1", page_size: "100" });
     if (repo?.path) params.set("repo_path", repo.path);
     const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
     if (!data) return null;
-    return list(data, "tasks").map((t) => {
-      const status = jobStatus(t.status);
-      const finished = !["running", "queued", "retrying"].includes(status);
-      return {
-        id: str(t.id).slice(0, 8),
-        agent: str(t.target_agent) || str(t.owner_agent) || "agent",
-        task: str(t.title) || str(t.goal) || "Untitled task",
-        status,
-        tokens: num(t.tokens),
-        packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined,
-        startedAt: fmtShort(t.created_at),
-        duration: finished ? between(t.created_at, t.updated_at) : "—",
-      };
-    });
+    return list(data, "tasks").map((t) => toRun(t, true, repos?.find((r) => r.path === str(t.repo_path))));
   });
 };
+
+/** One harness task as a row; `short` trims the id to what the lists show. */
+function toRun(t: Json, short: boolean, repo?: RawRepo): AgentRun {
+  const status = jobStatus(t.status);
+  const finished = !["running", "queued", "retrying"].includes(status);
+  const version = num(t.version);
+  return {
+    id: short ? str(t.id).slice(0, 8) : str(t.id),
+    agent: str(t.target_agent) || str(t.owner_agent) || "agent",
+    task: str(t.title) || str(t.goal) || "Untitled task",
+    status,
+    tokens: num(t.tokens),
+    packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined,
+    startedAt: fmtShort(t.created_at),
+    duration: finished ? between(t.created_at, t.updated_at) : "—",
+    ...(repo ? { repo: String(repo.id) } : {}),
+    taskId: str(t.id) || undefined,
+    version: version !== undefined && Number.isInteger(version) && version >= 0 ? version : undefined,
+    rawStatus: str(t.status) || undefined,
+    cancelRequested: Boolean(t.cancellation_requested_at),
+  };
+}
 
 export const getEvents = async (limit = 50, slug?: string | null): Promise<LedgerEvent[]> => {
   if (!apiConfigured) return mock.events;
@@ -669,7 +682,8 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
     return demoPage(rows, q, (r) => `${r.task} ${r.id} ${r.agent}`, (r) => r.status);
   }
   return live(unread(q), async () => {
-    const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
+    const repos = await fetchRepos();
+    const repo = slug ? pickRepo(repos, slug) : null;
     if (slug && !repo) return null;
     const params = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
     if (repo?.path) params.set("repo_path", repo.path);
@@ -677,10 +691,7 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
     if (q.status) params.set("display_status", q.status);
     const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
     if (!data) return null;
-    const result = pageResult(data, "tasks", q, (t) => {
-      const status = jobStatus(t.status), finished = !["running", "queued", "retrying"].includes(status);
-      return { id: str(t.id), agent: str(t.target_agent) || str(t.owner_agent) || "agent", task: str(t.title) || str(t.goal) || "Untitled task", status, tokens: num(t.tokens), packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined, startedAt: fmtShort(t.created_at), duration: finished ? between(t.created_at, t.updated_at) : "—" };
-    });
+    const result = pageResult(data, "tasks", q, (t) => toRun(t, false, repos?.find((r) => r.path === str(t.repo_path))));
     result.paging.facets = Object.entries(result.paging.facets).reduce<Record<string, number>>((acc, [key, value]) => {
       const normalized = jobStatus(key);
       acc[normalized] = (acc[normalized] || 0) + Number(value);
@@ -692,6 +703,7 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
 
 export const getPagedEvents = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<LedgerEvent>> => {
   const q = getListQuery(input);
+  if (!apiConfigured) return demoPage(mock.events, q, (e) => `${e.source} ${e.text} ${e.ref ?? ""} ${e.at}`, (e) => e.tone);
   return live(unread(q), async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
     if (slug && !repo) return null;

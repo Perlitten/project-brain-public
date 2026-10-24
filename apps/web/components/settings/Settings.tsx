@@ -1,13 +1,17 @@
 "use client";
 // Everyday controls first; connection details and deployment overrides are
 // disclosed separately. Only changed settings are sent to the server.
+// One view tab per block: models, alerts, scheduled jobs, the short tuning
+// forms together, and git.
 
 import Link from "next/link";
 import "./settings.css";
 import { useState, type ReactNode } from "react";
 import { LockNote, RunButton, useAction } from "@/components/act";
 import { Icon } from "@/components/Icon";
+import { PageTabs, ViewPane, pickTab, type PageTab } from "@/components/PageTabs";
 import { Panel } from "@/components/ui";
+import { HashView } from "./HashView";
 import { saveSettings, testTelegram } from "@/lib/actions/settings";
 import type { GitIntegration, SettingField, SettingsSection, SettingsView, TelegramStatus } from "@/lib/settings-view";
 import { SchedulerLine, SchedulerTable } from "./Scheduler";
@@ -18,77 +22,137 @@ type Draft = Record<string, string | boolean>;
 
 const initial = (f: SettingField): string | boolean => (f.kind === "bool" ? f.value === true : f.kind === "secret" || f.value == null ? "" : String(f.value));
 
-export function Settings({ view }: { view: SettingsView }) {
+type SettingsTab = "models" | "alerts" | "jobs" | "tuning" | "git";
+
+/** Which view tab holds a section's block (also the anchor each old #link names). */
+const sectionTab = (id: string): SettingsTab => (id === "telegram" ? "alerts" : id === "git" ? "git" : "tuning");
+
+export function Settings({ view, requested }: { view: SettingsView; requested?: string }) {
   const live = view.mode === "live" || view.mode === "demo";
   const section = (id: string) => view.sections.find((s) => s.id === id);
   const canTestTelegram = telegramConfigured(section("telegram"));
+  const tuning = view.sections.filter((s) => sectionTab(s.id) === "tuning");
+  const git = section("git");
+
+  const ids: SettingsTab[] = ["models", "alerts", "jobs", ...(tuning.length ? ["tuning" as const] : []), ...(git ? ["git" as const] : [])];
+  const tab = pickTab(ids, requested);
+  const anchors: Record<string, string> = { models: "models", telegram: "alerts", scheduler: "jobs", ...Object.fromEntries(view.sections.map((s) => [s.id, sectionTab(s.id)])) };
+
+  // Every view stays mounted and only the chosen one shows, so a half-edited
+  // form survives a look at another tab; the shown pane replays its entrance.
+  const pane = (id: SettingsTab, body: ReactNode) => ids.includes(id) && (
+    <div hidden={tab !== id}>
+      <ViewPane id={id}>{body}</ViewPane>
+    </div>
+  );
 
   return (
     <div className="settings">
-      <nav className="settings__toc" aria-label="Sections">
-        {[
-          ["models", "Models"],
-          ["telegram", "Telegram"],
-          ["scheduler", "Scheduler"],
-          ...view.sections.filter((s) => s.id !== "telegram").map((s) => [s.id, s.title]),
-        ].map(([id, label]) => (
-          <a key={id} href={`#${id}`}>
-            {label}
-          </a>
-        ))}
-      </nav>
+      <HashView views={anchors} current={tab} first={ids[0]} />
+      <PageTabs label="Settings views" path="/settings" current={tab} tabs={settingsTabs(view, ids, tuning)} />
 
-      <Panel
-        id="models"
-        title="Models"
-        desc="Chosen and verified in Setup, which brings you back here."
-        actions={
-          <Link className="btn btn--neutral btn--sm" href="/setup?from=settings#provider">
-            Change models <Icon name="arrow" size={13} />
-          </Link>
-        }
-      >
-        {view.models ? <Models m={view.models} /> : <p className="field__hint">Shown once the server is updated.</p>}
-      </Panel>
+      {pane("models", (
+        <Panel
+          id="models"
+          title="Models"
+          desc="Chosen and verified in Setup, which brings you back here."
+          actions={
+            <Link className="btn btn--neutral btn--sm" href="/setup?from=settings&view=provider">
+              Change models <Icon name="arrow" size={13} />
+            </Link>
+          }
+        >
+          {view.models ? <Models m={view.models} /> : <p className="field__hint">Shown once the server is updated.</p>}
+        </Panel>
+      ))}
 
-      <Panel
-        id="telegram"
-        title="Telegram alerts"
-        actions={live && <RunButton action={testTelegram} label="Send test message" icon="play" small title="Telegram" disabled={!canTestTelegram} disabledReason="Add a bot token and chat ID first" />}
-      >
-        {live ? <SectionForm section={section("telegram")} telegram={view.telegram} /> : (
-          <><TelegramLine t={view.telegram} /><EnvHint keys={["TELEGRAM_ALERTS_ENABLED", "TELEGRAM_ALERT_BOT_TOKEN", "TELEGRAM_ALERT_CHAT_ID"]} /></>
-        )}
-      </Panel>
+      {pane("alerts", (
+        <Panel
+          id="telegram"
+          title="Telegram alerts"
+          actions={live && <RunButton action={testTelegram} label="Send test message" icon="play" small title="Telegram" disabled={!canTestTelegram} disabledReason="Add a bot token and chat ID first" />}
+        >
+          {live ? <SectionForm section={section("telegram")} telegram={view.telegram} /> : (
+            <><TelegramLine t={view.telegram} /><EnvHint keys={["TELEGRAM_ALERTS_ENABLED", "TELEGRAM_ALERT_BOT_TOKEN", "TELEGRAM_ALERT_CHAT_ID"]} /></>
+          )}
+        </Panel>
+      ))}
 
-      <Panel id="scheduler" title="Scheduled jobs" flush>
-        <div className="settings__pad">
-          <SchedulerLine s={view.scheduler} />
-        </div>
-        {view.scheduler && <SchedulerTable s={view.scheduler} />}
-      </Panel>
+      {pane("jobs", (
+        <Panel id="scheduler" title="Scheduled jobs" flush>
+          <div className="settings__pad">
+            <SchedulerLine s={view.scheduler} />
+          </div>
+          {view.scheduler && <SchedulerTable s={view.scheduler} />}
+        </Panel>
+      ))}
 
-      {/* Short forms side by side: the page reads as one screen of cards, not a long column. */}
-      <div className="settings__grid">
-        {view.sections
-          .filter((s) => s.id !== "telegram")
-          .map((s) => (
-            <Panel key={s.id} id={s.id} title={s.title} className={s.id === "git" ? "settings__wide" : undefined}>
-              {s.id === "git" && view.git && <GitInfo g={view.git} webhookRef={s.fields.find((f) => f.key === "PROJECT_BRAIN_WEBHOOK_REF")?.value} />}
+      {/* Short forms side by side: the view reads as one screen of cards, not a long column. */}
+      {pane("tuning", (
+        <div className="settings__grid">
+          {tuning.map((s) => (
+            <Panel key={s.id} id={s.id} title={s.title}>
               {s.id === "automation" && view.llmError && (
                 <p className="field__hint field__hint--bad settings__warn">
                   Last diagnosis LLM call failed: {view.llmError}. Fix the language model in{" "}
-                  <Link href="/setup?from=settings#provider">Setup → Choose the AI models</Link>, or turn off “Summarize diagnosis with the LLM”.
+                  <Link href="/setup?from=settings&view=provider">Setup → Choose the AI models</Link>, or turn off “Summarize diagnosis with the LLM”.
                 </p>
               )}
               <SectionForm section={s} />
             </Panel>
           ))}
+        </div>
+      ))}
 
-      </div>
+      {git && pane("git", (
+        <Panel id="git" title={git.title}>
+          {view.git && <GitInfo g={view.git} webhookRef={git.fields.find((f) => f.key === "PROJECT_BRAIN_WEBHOOK_REF")?.value} />}
+          <SectionForm section={git} />
+        </Panel>
+      ))}
       <LockNote />
     </div>
   );
+}
+
+// What each view holds, read off data the page already has.
+function settingsTabs(view: SettingsView, ids: SettingsTab[], tuning: SettingsSection[]): PageTab[] {
+  const t = view.telegram;
+  const s = view.scheduler;
+  const g = view.git;
+  const stale = s?.jobs.filter((j) => j.status === "stale").length ?? 0;
+  const failed = s?.jobs.filter((j) => j.status === "degraded").length ?? 0;
+  const llm = view.models?.llm_provider;
+  const all: Record<SettingsTab, PageTab> = {
+    models: { id: "models", label: "Models", badge: llm ? String(llm) : undefined, tone: llm ? "info" : undefined },
+    alerts: {
+      id: "alerts",
+      label: "Alerts",
+      ...(!t ? {} : t.last && t.last.status !== "sent" ? { badge: "not delivered", tone: "bad" as const }
+        : t.enabled && !t.credentials ? { badge: "no bot", tone: "warn" as const }
+        : t.enabled ? { badge: "on", tone: "ok" as const } : { badge: "off" }),
+    },
+    jobs: {
+      id: "jobs",
+      label: "Jobs",
+      ...(!s ? {} : !s.enabled ? { badge: "off", tone: "warn" as const }
+        : stale ? { badge: `${stale} overdue`, tone: "bad" as const }
+        : failed ? { badge: `${failed} failed`, tone: "warn" as const }
+        : { badge: s.jobs.length, tone: "ok" as const }),
+    },
+    tuning: {
+      id: "tuning",
+      label: "Tuning",
+      ...(view.llmError ? { badge: "LLM failing", tone: "bad" as const } : { badge: tuning.reduce((n, x) => n + x.fields.length, 0) }),
+    },
+    git: {
+      id: "git",
+      label: "Git",
+      ...(!g ? {} : g.originRemotes.error || g.managedRepos?.writable === false ? { badge: "check", tone: "bad" as const }
+        : { badge: `${g.originRemotes.remotes.length} origin${g.originRemotes.remotes.length === 1 ? "" : "s"}`, tone: "info" as const }),
+    },
+  };
+  return ids.map((id) => all[id]);
 }
 
 // ---------------------------------------------------------------------------
@@ -244,7 +308,7 @@ function SectionForm({ section, telegram }: { section?: SettingsSection; telegra
   const bad = fields.some((f) => problem(f, d[f.key] ?? initial(f)));
 
   const submit = async () => {
-    if (pending || mode !== "on" || !dirty || bad) return;
+    if (pending || mode === "locked" || !dirty || bad) return;
     const res = await run(values, clears);
     if (res.ok) {
       setD((x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, fields.find((f) => f.key === k)?.kind === "secret" ? "" : v])));
@@ -332,7 +396,7 @@ function SectionForm({ section, telegram }: { section?: SettingsSection; telegra
       )}
 
       {(dirty > 0 || pending) && <div className="btn-row settings-actions" role="group" aria-label="Unsaved changes">
-        <button type="submit" className="btn btn--primary btn--sm" disabled={pending || mode !== "on" || !dirty || bad}>
+        <button type="submit" className="btn btn--primary btn--sm" disabled={pending || mode === "locked" || !dirty || bad}>
           {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="check" size={14} />}
           {pending ? "Saving…" : "Save changes"}
         </button>
