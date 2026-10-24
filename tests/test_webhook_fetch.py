@@ -214,7 +214,9 @@ async def test_run_reindex_fetches_origin_when_the_webhook_sha_is_new(repos, mon
 async def test_run_reindex_at_head_does_not_touch_the_checkout(repos, monkeypatch):
     monkeypatch.setattr(tasks.settings, "BRAIN_WEBHOOK_FETCH_SOURCE", True)
     monkeypatch.setattr(
-        tasks, "sync_checkout_to_revision", lambda *a, **k: pytest.fail("no sync when HEAD already matches")
+        tasks._source_plan,
+        "sync_checkout_to_revision",
+        lambda *a, **k: pytest.fail("no sync when HEAD already matches"),
     )
     indexer = _indexer_returning(repos.server)
     with (
