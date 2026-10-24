@@ -538,12 +538,23 @@ async def get_recent_brain_jobs(
             try:
                 if await queue.ensure_scope_index():
                     keys = queue.scope_index_keys(repository_id=repository_id, repository_path=repository_path)
-                    job_ids = await queue.recent_scoped_job_ids(keys, limit=max(limit * 2, 20))
-                    for job_id, job in zip(job_ids, await queue.get_jobs(job_ids)):
-                        if job and belongs_to_scope(job):
-                            if not job.get("id"):
-                                job["id"] = job_id
-                            jobs.append(job)
+                    page_size = max(limit * 2, 20)
+                    offset = 0
+                    seen_job_ids: set[str] = set()
+                    while len(jobs) < limit:
+                        page_job_ids = await queue.recent_scoped_job_ids(keys, limit=page_size, offset=offset)
+                        if not page_job_ids:
+                            break
+                        offset += page_size
+                        job_ids = [job_id for job_id in page_job_ids if job_id not in seen_job_ids]
+                        if not job_ids:
+                            continue
+                        seen_job_ids.update(job_ids)
+                        for job_id, job in zip(job_ids, await queue.get_jobs(job_ids)):
+                            if job and belongs_to_scope(job):
+                                if not job.get("id"):
+                                    job["id"] = job_id
+                                jobs.append(job)
                     jobs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
                     return {"jobs": jobs[:limit], "error": None}
             except Exception as exc:

@@ -847,3 +847,14 @@ async def test_scope_index_backfills_jobs_queued_before_it_existed():
     assert await queue.recent_scoped_job_ids(queue.scope_index_keys(repository_id=7), limit=10) == ["legacy-7"]
     assert await queue.ensure_scope_index() is True
 
+
+@pytest.mark.asyncio
+async def test_scope_index_stays_unready_without_the_global_index():
+    redis = _FakeRedis()
+    queue = JobQueue(redis)
+    redis.hashes[queue._job_key("legacy-7")] = {"id": "legacy-7", "params": '{"repository_id": 7}'}
+
+    assert await queue.ensure_scope_index() is False
+    assert await redis.get(f"{queue.index_key}:scopes-ready") is None
+    assert await redis.get(f"{queue.index_key}:scopes-backfill") is None
+

@@ -99,3 +99,34 @@ def test_recent_brain_jobs_reads_the_repository_index_instead_of_the_global_scan
 
     assert result["error"] is None
     assert [job["id"] for job in result["jobs"]] == [wanted]
+
+
+def test_recent_brain_jobs_pages_past_expired_scoped_payloads():
+    from apps.api import helpers
+    from brain.workers.queue import JobQueue
+    from tests.test_worker_queue import _FakeRedis
+
+    redis = _FakeRedis()
+
+    async def scenario():
+        queue = JobQueue(redis, prefix="brain:worker")
+        wanted = await queue.enqueue("reindex", {"repository_id": 7})
+        expired = [await queue.enqueue("reindex", {"repository_id": 7}) for _ in range(20)]
+        for job_id in expired:
+            await redis.delete(queue._job_key(job_id))
+
+        async def no_global_scan(*_args, **_kwargs):
+            raise AssertionError("scoped read walked the global index")
+
+        with (
+            patch("brain.database.session.redis_client", redis),
+            patch.object(helpers, "settings", SimpleNamespace(WORKER_REDIS_PREFIX="brain:worker")),
+            patch.object(JobQueue, "recent_job_ids", no_global_scan),
+        ):
+            result = await helpers.get_recent_brain_jobs(limit=1, repository_id=7)
+        return wanted, result
+
+    wanted, result = asyncio.run(scenario())
+
+    assert result["error"] is None
+    assert [job["id"] for job in result["jobs"]] == [wanted]

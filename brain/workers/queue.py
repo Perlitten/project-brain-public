@@ -708,12 +708,19 @@ class JobQueue:
         ready_key = f"{self.index_key}:scopes-ready"
         if await self.redis.get(ready_key):
             return True
-        if not await self.redis.set(f"{self.index_key}:scopes-backfill", "1", nx=True, ex=300):
+        backfill_key = f"{self.index_key}:scopes-backfill"
+        if not await self.redis.set(backfill_key, "1", nx=True, ex=300):
             return False
         start = 0
         while True:
             entries = await self.redis.zrange(self.index_key, start, start + 999, withscores=True)
             if not entries:
+                if start == 0:
+                    # An empty global index may be an upgraded installation
+                    # whose jobs predate that index. Keep the scoped fast path
+                    # disabled so the dashboard's legacy SCAN fallback runs.
+                    await self.redis.delete(backfill_key)
+                    return False
                 break
             pipe = self.redis.pipeline()
             for job_id, _score in entries:
@@ -738,13 +745,15 @@ class JobQueue:
         await self.redis.set(ready_key, "1")
         return True
 
-    async def recent_scoped_job_ids(self, keys: list[str], limit: int) -> list[str]:
-        """Newest ids across the given scope indexes, at most ``limit`` from each."""
+    async def recent_scoped_job_ids(self, keys: list[str], limit: int, *, offset: int = 0) -> list[str]:
+        """One newest-first page across the scope indexes."""
         if not keys:
             return []
+        page_size = max(1, int(limit))
+        start = max(0, int(offset))
         pipe = self.redis.pipeline()
         for key in keys:
-            pipe.zrevrange(key, 0, max(1, int(limit)) - 1, withscores=True)
+            pipe.zrevrange(key, start, start + page_size - 1, withscores=True)
         scores: Dict[str, float] = {}
         for entries in await pipe.execute():
             for value, score in entries:
