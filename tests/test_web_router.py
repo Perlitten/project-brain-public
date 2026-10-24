@@ -180,6 +180,7 @@ def test_shape_context_pack_marks_stale_against_latest_index(tmp_path):
     assert shaped["files"] == 1
     assert shaped["tokens"] and shaped["tokens"] > 0
     assert shaped["consumer"] is None
+    assert shaped["repository_id"] is None
     assert shaped["available"] is True
 
     missing = web.shape_context_pack(pack, None, None)
@@ -446,7 +447,7 @@ def test_module_graph_endpoint():
     with (
         patch.object(web.modules, "_resolve_repository", AsyncMock(return_value=REPO)),
         patch.object(
-            web,
+            web.modules,
             "load_file_import_edges",
             AsyncMock(
                 return_value=[

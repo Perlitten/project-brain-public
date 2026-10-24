@@ -21,7 +21,8 @@ _NIGHTLY_QUALITY_PROBES = (
             {
                 "brain/workers/queue.py",
                 "brain/workers/worker.py",
-                "brain/workers/tasks.py",
+                "brain/workers/tasks/dispatch.py",
+                "brain/workers/tasks/jobs.py",
             }
         ),
     ),
@@ -31,7 +32,7 @@ _NIGHTLY_QUALITY_PROBES = (
             {
                 "brain/embeddings/backfill.py",
                 "brain/embeddings/integrity.py",
-                "brain/workers/tasks.py",
+                "brain/workers/tasks/jobs.py",
             }
         ),
     ),
@@ -41,7 +42,8 @@ _NIGHTLY_QUALITY_PROBES = (
             {
                 "brain/late_interaction/application.py",
                 "brain/late_interaction/remote_sync.py",
-                "brain/workers/tasks.py",
+                "brain/workers/tasks/_deep.py",
+                "brain/workers/tasks/jobs.py",
             }
         ),
     ),

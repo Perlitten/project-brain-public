@@ -50,3 +50,24 @@ async def test_graph_enrichment_preserves_order_and_failure_boundaries(case, tmp
 
     assert {"calls": normalized_calls(graph.calls, tmp_path), "progress": indexer.progress,
             "failures": failures, "published": published, "error": error} == case["expected"]
+
+
+@pytest.mark.asyncio
+async def test_graph_enrichment_skips_nul_byte_binary_ts_file_without_degrading_run(tmp_path, monkeypatch):
+    binary_ts = tmp_path / "src" / "recordingPaintState.ts"
+    binary_ts.parent.mkdir(parents=True, exist_ok=True)
+    binary_ts.write_bytes(b"export const x = 1;\x00\x00binary")
+    indexer = module.FileIndexer()
+    indexer.graph_client = RecordingGraph(None, False)
+    indexer.progress = {"graph": {"discovered": 0, "processed": 0, "failed": 0}}
+    failures = []
+
+    async def publish():
+        pass
+
+    monkeypatch.setattr(indexer, "_failure", lambda phase, exc, path="", chunk_index=None: failures.append((phase, path, type(exc).__name__)))
+    monkeypatch.setattr(indexer, "_publish_progress", publish)
+    await indexer._post_process_graph("fixture", tmp_path, [binary_ts])
+    assert indexer.progress["graph"]["failed"] == 0
+    assert failures == []
+    assert indexer.progress["graph"]["processed"] == 1

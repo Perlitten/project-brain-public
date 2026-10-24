@@ -108,7 +108,7 @@ export function TelegramLinkForm({ link }: { link: TelegramLinkView }) {
         </label>
         <div className="field">
           <span className="field__label">&nbsp;</span>
-          <button type="submit" className="btn btn--neutral" disabled={start.pending || start.mode !== "on" || !chat.trim()}>
+          <button type="submit" className="btn btn--neutral" disabled={start.pending || start.mode === "locked" || !chat.trim()}>
             Send code
           </button>
         </div>
@@ -129,7 +129,7 @@ export function TelegramLinkForm({ link }: { link: TelegramLinkView }) {
           </label>
           <div className="field">
             <span className="field__label">&nbsp;</span>
-            <button type="submit" className="btn btn--primary" disabled={verify.pending || verify.mode !== "on" || !code.trim()}>
+            <button type="submit" className="btn btn--primary" disabled={verify.pending || verify.mode === "locked" || !code.trim()}>
               Link chat
             </button>
           </div>

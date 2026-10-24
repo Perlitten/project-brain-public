@@ -9,10 +9,11 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       { source: "/access", destination: "/admin", permanent: false },
-      { source: "/agents", destination: "/runs", permanent: false },
       { source: "/decisions", destination: "/memory", permanent: false },
       { source: "/rules", destination: "/memory?view=rules", permanent: false },
       { source: "/logs", destination: "/activity", permanent: false },
+      { source: "/activity/tasks", destination: "/runs", permanent: false },
+      { source: "/settings/access", destination: "/admin", permanent: false },
     ];
   },
 };

@@ -628,9 +628,9 @@ async def test_persistence_outage_keeps_diagnostic_candidates_for_alerting():
 @pytest.mark.asyncio
 async def test_scheduled_worker_job_skips_when_disabled():
     with (
-        patch("brain.workers.tasks.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.jobs.init_db", new=AsyncMock()),
         patch(
-            "brain.workers.tasks.settings.PROACTIVE_INSIGHTS_ENABLED",
+            "brain.workers.tasks.jobs.settings.PROACTIVE_INSIGHTS_ENABLED",
             False,
         ),
     ):
@@ -698,9 +698,9 @@ def _fake_insight_row(status: str):
 
 
 def test_insight_status_vocabulary_is_the_one_the_engine_writes():
-    """No invented status: the lifecycle is exactly the active pair plus the two
-    terminal values persist_insights() sets and revives from."""
-    assert set(INSIGHT_STATUSES) == set(proactive._ACTIVE_STATUSES) | {"actioned", "stale"}
+    """No invented status: the engine can revive stale/actioned findings; explicit
+    dismissals are terminal until an operator chooses otherwise."""
+    assert set(INSIGHT_STATUSES) == set(proactive._ACTIVE_STATUSES) | {"actioned", "stale", "dismissed"}
     assert set(INSIGHT_STATUS_TRANSITIONS) == set(INSIGHT_STATUSES)
     for targets in INSIGHT_STATUS_TRANSITIONS.values():
         assert set(targets).issubset(set(INSIGHT_STATUSES))
@@ -771,7 +771,17 @@ async def test_set_insight_status_rejects_unknown_status():
 
 
 def test_allowed_status_transitions_matches_the_table():
-    assert allowed_status_transitions("new") == ("accepted", "actioned", "stale")
-    assert allowed_status_transitions("accepted") == ("actioned", "stale")
-    assert allowed_status_transitions("stale") == ()
+    assert allowed_status_transitions("new") == ("accepted", "actioned", "stale", "dismissed")
+    assert allowed_status_transitions("accepted") == ("actioned", "stale", "dismissed")
+    assert allowed_status_transitions("stale") == ("dismissed",)
     assert allowed_status_transitions("not-a-status") == ()
+
+
+@pytest.mark.asyncio
+async def test_status_only_writes_cannot_bypass_reasoned_dismissal():
+    row = _fake_insight_row("new")
+    with patch.object(proactive, "async_session_factory", new=_session_factory_for(row)):
+        with pytest.raises(InsightTransitionError, match="reasoned dismissal"):
+            await set_insight_status(7, "dismissed")
+    assert row.status == "new"
+    assert allowed_status_transitions("dismissed") == ()

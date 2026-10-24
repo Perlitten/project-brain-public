@@ -1,8 +1,11 @@
 import Link from "next/link";
+import { PackTester } from "@/components/PackTester";
 import { SectionTabs } from "@/components/SectionNav";
 import { Term } from "@/components/Term";
 import { Chip, EmptyState, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
-import { getPagedContextPacks } from "@/lib/data";
+import { getAgentRuns, getPagedContextPacks, getRepositoryFeed } from "@/lib/data";
+import { runForPack } from "@/lib/task-links";
+import { agentHref } from "@/lib/agent-link";
 import { getListQuery, listQueryParams } from "@/lib/list-query";
 import { restrictedMember } from "@/lib/team-session";
 
@@ -12,7 +15,11 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
   const params = await searchParams;
   const query = getListQuery(params);
   const repo = typeof params.repo === "string" ? params.repo : undefined;
-  const [result, member] = await Promise.all([getPagedContextPacks(query, repo), restrictedMember()]);
+  const [result, member, feed, runs] = await Promise.all([getPagedContextPacks(query, repo), restrictedMember(), getRepositoryFeed(), getAgentRuns()]);
+  // A test pack is built for the selected project; without one, Brain uses its default repository.
+  const selectedRepo = repo ? feed.repositories.find((r) => r.slug === repo || String(r.id) === repo || r.name.toLowerCase() === repo.toLowerCase()) : undefined;
+  const repoPath = selectedRepo?.path;
+  const canTest = !repo || Boolean(selectedRepo);
   const listParams = new URLSearchParams(listQueryParams(query));
   if (repo) listParams.set("repo", repo);
   const back = `/packs${listParams.size ? `?${listParams}` : ""}`;
@@ -25,8 +32,11 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
   const avg = packs.length ? Math.round(packs.reduce((s, p) => s + p.tokens, 0) / packs.length) : 0;
   return (
     <>
+      <SectionTabs section="memory" active="/packs" />
       <PageHead
         title="Context packs"
+        // Building a pack is the Setup action, which is for team admins; members' agents ask Brain directly.
+        actions={member || !canTest ? undefined : <PackTester repoPath={repoPath} />}
         lede={
           <>
             Agents can request a <Term k="pack">context pack</Term> with selected files, decisions and
@@ -34,7 +44,6 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
           </>
         }
       />
-      <SectionTabs section="memory" active="/packs" />
       {result.available !== false && <div className="stats">
         <Stat label="Context packs" value={fmt(result.paging.total)} note={hasQuery ? "matching the filters" : repo ? "for this project" : "across all projects"} />
         <Stat label="Average size on this page" value={packs.length ? fmt(avg) : "—"} note="tokens, about ¾ of a word each" />
@@ -54,7 +63,7 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
             // Setup is for team admins; a member's packs appear once their agent asks Brain for context.
             <EmptyState title="No context packs yet" body="Brain hasn’t prepared a context pack in your projects recently. One appears here each time an agent asks Brain for context on a task." />
           ) : (
-            <EmptyState title="No context packs yet" body="Brain hasn’t prepared a context pack for any agent recently. Try one from Setup, step 6." action={<Link className="btn btn--neutral" href="/setup#first_task">Build one</Link>} />
+            <EmptyState title="No context packs yet" body="Brain hasn’t prepared a context pack for any agent recently. Build one for a real task to see what an agent would get." action={canTest ? <PackTester repoPath={repoPath} label="Build one" /> : undefined} />
           )
         ) : (
         <Table
@@ -75,7 +84,8 @@ export default async function Packs({ searchParams }: { searchParams: Promise<Re
                   <Link className="link" href={`/packs/${encodeURIComponent(p.id)}?${repo ? `repo=${encodeURIComponent(repo)}&` : ""}back=${encodeURIComponent(back)}`}>{p.task}</Link>
                   <span className="sub mono">
                     #{p.id}
-                    {p.consumer !== "an agent" ? ` · for ${p.consumer}` : ""}
+                    {p.consumer !== "an agent" ? <> · for {agentHref(p.consumer) ? <Link className="link" href={agentHref(p.consumer)!}>{p.consumer}</Link> : p.consumer}</> : ""}
+                    {(() => { const run = runForPack(p, runs); return run ? <> · task <Link className="link" href={`/runs?q=${encodeURIComponent(run.id)}`}>{run.id.length > 12 ? run.id.slice(0, 8) : run.id}</Link></> : null; })()}
                   </span>
                 </>
               ),

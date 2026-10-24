@@ -1,10 +1,13 @@
 """Operational status endpoints: /api/status*, /insights and
 /api/status/recent-activity."""
 
+from typing import Any
 from pathlib import Path
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import case, func, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import case, func, or_, select, update
 
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.helpers import (
@@ -22,11 +25,12 @@ from apps.api.helpers import (
     get_self_diagnosis_status,
     get_top_connected_nodes,
 )
-from apps.api.team_access import is_team_administrator, repository_access, team_administrator_access
+from apps.api.team_access import repository_authority, is_team_administrator, repository_access, team_administrator_access
 from brain import __version__
 from brain.auth.principals import ResolvedPrincipal
 from brain.config.paths import get_repo_root
-from brain.database.models import BrainInsight
+from brain.database.models import BrainInsight, File, FileChunk, Repository
+from brain.insights.evidence import code_target
 from brain.database.session import async_session_factory, check_health
 from brain.indexers.repo_indexer import get_git_commit_hash
 from brain.team.authorization import Permission
@@ -120,7 +124,11 @@ async def list_insights(
         if status:
             stmt = stmt.where(BrainInsight.status == status)
         else:
-            stmt = stmt.where(BrainInsight.status.not_in(("resolved", "dismissed", "closed", "archived")))
+            stmt = stmt.where(
+                BrainInsight.status.not_in(
+                    ("resolved", "dismissed", "closed", "archived", "stale", "actioned")
+                )
+            )
         if q:
             needle = f"%{q.strip()}%"
             stmt = stmt.where(BrainInsight.title.ilike(needle) | BrainInsight.summary.ilike(needle))
@@ -172,6 +180,11 @@ async def list_insights(
                     "source_model": row.source_model,
                     "engine_version": row.engine_version,
                     "occurrence_count": row.occurrence_count,
+                    "dedupe_key": getattr(row, "dedupe_key", None),
+                    "code_available": code_target(row.evidence or []) is not None,
+                    "dismissal": {"reason": getattr(row, "dismissed_reason", None), "by": getattr(row, "dismissed_by", None),
+                                  "at": format_datetime_utc(getattr(row, "dismissed_at", None)),
+                                  "evidence": getattr(row, "dismissed_evidence", None)},
                     "created_at": format_datetime_utc(row.created_at),
                     "last_seen_at": format_datetime_utc(row.last_seen_at),
                 }
@@ -184,6 +197,71 @@ async def list_insights(
             "facets": {"severity": facets},
             "scope": "global",
         }
+
+
+class DismissInsightRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
+    expected_last_seen_at: datetime
+
+
+@router.post("/insights/{insight_id}/dismiss", dependencies=[Depends(require_api_key),
+             Depends(require_scope("core:write")), Depends(team_administrator_access())])
+async def dismiss_insight(insight_id: int, body: DismissInsightRequest,
+                          principal: ResolvedPrincipal = Depends(require_principal)) -> dict[str, Any]:
+    # Findings currently have global ownership. Only an operator/team admin
+    # can triage them; do not infer a project from a module or a client actor.
+    reason = body.reason.strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="A dismissal reason is required")
+    if body.expected_last_seen_at.tzinfo is None:
+        raise HTTPException(status_code=400, detail="The finding version must include a timezone")
+    async with async_session_factory() as session, session.begin():
+        row = await session.get(BrainInsight, insight_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Finding not found")
+        if row.status == "dismissed":
+            return {"status": "dismissed", "id": insight_id, "already_dismissed": True}
+        from brain.insights.proactive import is_legal_status_transition
+        if not is_legal_status_transition(row.status, "dismissed"):
+            raise HTTPException(status_code=409, detail="This finding is no longer open for dismissal")
+        changed = await session.execute(update(BrainInsight).where(
+            BrainInsight.id == insight_id,
+            BrainInsight.last_seen_at == body.expected_last_seen_at,
+            BrainInsight.status.not_in(("dismissed", "resolved", "closed", "archived")),
+        ).values(status="dismissed", dismissed_reason=reason, dismissed_by=principal.name,
+                 dismissed_at=datetime.now(timezone.utc), dismissed_evidence=row.evidence,
+                 dismissed_last_seen_at=row.last_seen_at).returning(BrainInsight.id))
+        if changed.scalar_one_or_none() is None:
+            raise HTTPException(status_code=409, detail="Finding changed; refresh and review its latest evidence before dismissing")
+    return {"status": "dismissed", "id": insight_id, "already_dismissed": False}
+
+
+@router.get("/insights/{insight_id}/code", dependencies=[Depends(require_api_key),
+            Depends(require_scope("core:read")), Depends(team_administrator_access())])
+async def insight_code(insight_id: int, principal: ResolvedPrincipal = Depends(require_principal)) -> dict[str, Any]:
+    async with async_session_factory() as session:
+        row = await session.get(BrainInsight, insight_id)
+        target = code_target(row.evidence or []) if row else None
+        if target is None:
+            raise HTTPException(status_code=404, detail="Finding has no repository-bound file evidence")
+        repository_id, path, line = target
+        # Operator access to global findings does not grant source access to
+        # a project where this person has no live role.
+        await repository_authority(principal, Permission.READ, repository_id=repository_id)
+        repository = await session.get(Repository, repository_id)
+        file = (await session.execute(select(File).where(File.repository_id == repository_id, File.path == path))).scalar_one_or_none()
+        if repository is None or file is None:
+            raise HTTPException(status_code=404, detail="Evidence file is not in the repository index")
+        chunks = (await session.execute(select(
+            FileChunk.start_line, FileChunk.end_line, func.substr(FileChunk.content, 1, 12000).label("content"),
+        ).where(FileChunk.file_id == file.id, or_(FileChunk.start_line.is_(None),
+            (FileChunk.start_line <= line + 40) & (FileChunk.end_line >= max(1, line - 20))))
+          .order_by(FileChunk.chunk_index).limit(3))).all()
+    if not chunks:
+        raise HTTPException(status_code=404, detail="No indexed code covers this evidence location")
+    return {"repository": repository.name, "repository_id": repository_id, "path": path, "line": line,
+            "revision": repository.last_indexed_commit, "snapshot": True,
+            "chunks": [{"start_line": chunk.start_line, "end_line": chunk.end_line, "content": chunk.content} for chunk in chunks]}
 
 
 @router.get("/api/status/services", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])

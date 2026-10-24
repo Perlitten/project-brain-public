@@ -46,6 +46,12 @@ def allowed_repo_roots() -> list[Path]:
         allowed_bases.append(Path.cwd().resolve())
         allowed_bases.append(Path(tempfile.gettempdir()).resolve())
 
+    # Repositories connected by URL from the web UI are cloned under this
+    # Brain-owned directory, so it is a repository root whenever it is set.
+    managed = str(getattr(settings, "BRAIN_MANAGED_REPOS_DIR", "") or "").strip()
+    if managed:
+        allowed_bases.append(Path(managed).resolve())
+
     # Explicit user configured extra roots if present
     extra_roots = getattr(settings, "ALLOWED_REPO_ROOTS", None)
     if extra_roots:

@@ -182,6 +182,7 @@ async def _init_db_unlocked() -> None:
     from sqlalchemy import text
     from brain.database import Base
     from brain.database.migrations import apply_migrations
+    from brain.telemetry.query_capture import initialize_query_capture
 
     if _lite:
         from brain.database import harness_models  # noqa: F401
@@ -190,9 +191,12 @@ async def _init_db_unlocked() -> None:
             from brain.database.migrations import (
                 _ensure_decision_title_uniqueness,
                 _ensure_memory_authorship_columns,
+                upgrade_lite_content_history,
             )
             await _ensure_decision_title_uniqueness(conn)
             await _ensure_memory_authorship_columns(conn)
+            await upgrade_lite_content_history(conn)
+            await initialize_query_capture(conn, settings.REQUEST_TELEMETRY_CAPTURE_QUERY)
         return
 
     # The `embeddings` table declares a pgvector column, so the `vector` extension
@@ -225,6 +229,7 @@ async def _init_db_unlocked() -> None:
 
     async with async_engine.begin() as conn:
         await apply_migrations(conn, acquire_lock=False)
+        await initialize_query_capture(conn, settings.REQUEST_TELEMETRY_CAPTURE_QUERY)
 
 
 async def _initialize_graph_schema() -> bool:

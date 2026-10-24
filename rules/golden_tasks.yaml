@@ -153,3 +153,22 @@ golden_tasks:
       - "proposals"
     required_surfaces: []
     must_include_tests: true
+
+  - id: task_11
+    description: "Connect a git repository by URL from the dashboard: probe, clone, token hand-off"
+    expected_files:
+      - "apps/api/routers/git_connect.py"
+      - "brain/indexers/git_connect.py"
+      - "brain/workers/git_connect.py"
+      - "apps/web/components/ConnectRepository.tsx"
+      - "tests/test_git_connect.py"
+    expected_modules:
+      - "brain/indexers"
+      - "brain/workers"
+      - "apps/api"
+    expected_features:
+      - "git"
+      - "clone"
+      - "repository registration"
+    required_surfaces: []
+    must_include_tests: true

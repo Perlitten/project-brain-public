@@ -75,3 +75,10 @@
 }
 .secret__eye:hover { color: var(--text-1); background: var(--gray-5); }
 .secret__eye:focus-visible { outline: 2px solid var(--teal-fg); outline-offset: 1px; }
+
+/* One-line pointer between Access (credentials) and Team (people). */
+.access-crosslink { margin: 0 0 var(--s-4); font-size: var(--fs-12); color: var(--text-3); }
+
+/* One-click verbs for keys that need attention, shown without opening the row. */
+.ident__quick { padding: 0 var(--s-4) var(--s-3); gap: 8px; }
+.ident__count .sub { white-space: normal; }

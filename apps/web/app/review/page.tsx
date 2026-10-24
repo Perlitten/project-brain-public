@@ -17,8 +17,8 @@ export default async function Review() {
   const [mode, member] = await Promise.all([signInMode(), currentMember()]);
   const head = (
     <>
-      <PageHead title="Review" lede={LEDE} />
       <SectionTabs section="memory" active="/review" />
+      <PageHead title="Review" lede={LEDE} />
     </>
   );
 

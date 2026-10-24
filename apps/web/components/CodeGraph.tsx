@@ -2,16 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ModuleEdge } from "@/lib/types";
-import { graphLayout, graphView } from "@/lib/code-graph";
+import { graphLayout, graphView, startingView } from "@/lib/code-graph";
 import { EmptyState } from "./ui";
 
-export function CodeGraph({ edges }: { edges: ModuleEdge[] }) {
+/** `module` opens the map on one module, e.g. from a finding (/graph?module=brain/search). */
+export function CodeGraph({ edges, module }: { edges: ModuleEdge[]; module?: string }) {
   const container = useRef<HTMLDivElement>(null);
+  const [start] = useState(() => startingView(edges, module));
   const [width, setWidth] = useState(960);
-  const [minWeight, setMinWeight] = useState(2);
-  const [includeTests, setIncludeTests] = useState(false);
-  const [query, setQuery] = useState("");
-  const [focus, setFocus] = useState<string | null>(null);
+  const [minWeight, setMinWeight] = useState(start.minWeight);
+  const [includeTests, setIncludeTests] = useState(start.includeTests);
+  const [query, setQuery] = useState(start.query);
+  const [focus, setFocus] = useState<string | null>(start.focus);
   const [hops, setHops] = useState<1 | 2>(1);
   const [expanded, setExpanded] = useState(new Set<string>());
   useEffect(() => {

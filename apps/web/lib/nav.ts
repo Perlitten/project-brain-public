@@ -8,15 +8,22 @@ export interface NavItem {
   capability?: Capability;
 }
 
-// Daily owner tasks. Diagnostics stay searchable in the command palette.
+// Grouped by what a supervisor came to do: watch and step in, dig into the
+// evidence, or change how Brain runs. Diagnostics stay searchable in the palette.
 export const navGroups: { label: string; hint: string; items: NavItem[] }[] = [{
-  label: "Workspace", hint: "Memory, usage and quality across your projects", items: [
+  label: "Supervise", hint: "What agents know and do, and where a human should step in", items: [
     { key: "command", href: "/", label: "Dashboard", icon: "zap", hint: "Usage, memory health and what needs attention", repoScoped: true },
     { key: "projects", href: "/projects", label: "Projects", icon: "database", hint: "Connected repositories, indexing and code maps", repoScoped: true },
     { key: "memory", href: "/memory", label: "Memory", icon: "layers", hint: "Decisions, rules and saved context packs", repoScoped: true },
-    { key: "quality", href: "/quality", label: "Quality", icon: "vectors", hint: "Whether Brain finds the right code, and the saved reports behind it" },
-    { key: "logs", href: "/activity", label: "Activity", icon: "activity", hint: "Background jobs, requests and agent work", repoScoped: true },
     { key: "team", href: "/team", label: "Team", icon: "key", hint: "Members, roles, team activity and board", capability: "team" },
+  ],
+}, {
+  label: "Diagnose", hint: "Evidence behind what Brain served and how well it searched", items: [
+    { key: "logs", href: "/activity", label: "Activity", icon: "activity", hint: "Background jobs, requests and agent work", repoScoped: true },
+    { key: "quality", href: "/quality", label: "Quality", icon: "vectors", hint: "Whether Brain finds the right code, and the saved reports behind it" },
+  ],
+}, {
+  label: "Configure", hint: "Models, schedules, alerts, access and first-time setup", items: [
     { key: "settings", href: "/settings", label: "Settings", icon: "gear", hint: "Notifications, models, integrations and access" },
     { key: "setup", href: "/setup", label: "Setup", icon: "flag", hint: "Six steps from an empty server to an agent using Brain" },
   ],
@@ -32,8 +39,10 @@ const nested: NavItem[] = [
   // and the word "Reports" keeps working in the command palette.
   { key: "reports", href: "/reports", label: "Reports", icon: "file", hint: "Every saved evaluation and check", section: "quality" },
   { key: "reranker", href: "/reranker", label: "Reranker", icon: "vectors", hint: "Optional second pass that re-orders search results", repoScoped: true, section: "settings" },
+  { key: "agents", href: "/agents", label: "Agents", icon: "automation", hint: "Each agent: its identity, keys, tasks and packs", section: "logs" },
   { key: "runs", href: "/runs", label: "Agent tasks", icon: "automation", hint: "Tasks agents ran with Brain's help", repoScoped: true, section: "logs" },
-  { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "The tools agents can call and how they perform", section: "settings" },
+  // Tool health is something you watch, next to tasks and agents; the address agents connect to is one panel on it.
+  { key: "mcp", href: "/mcp", label: "Agent tools", icon: "chip", hint: "The tools agents can call and how they perform", section: "logs" },
   { key: "admin", href: "/admin", label: "Access", icon: "key", hint: "API keys and what each one may do", section: "settings" },
   // Before "team" so /team/me, /team/activity and /team/board resolve to their own entries; members can open all three.
   { key: "team-me", href: "/team/me", label: "Me", icon: "key", hint: "Your team role, project roles and key permissions", section: "team", capability: "team" },
@@ -49,7 +58,7 @@ export function locate(path: string): { item: NavItem; group: string } | null {
   const item = [...allNavItems].sort((a, b) => b.href.length - a.href.length).find((i) => i.href === "/" ? path === "/" : path === i.href || path.startsWith(`${i.href}/`));
   if (!item) return null;
   const parent = primaryNavItems.find((i) => i.key === item.section);
-  return { item, group: parent?.label ?? "Workspace" };
+  return { item, group: parent?.label ?? navGroups.find((g) => g.items.includes(item))?.label ?? "Workspace" };
 }
 export function activeSection(path: string): string | undefined {
   const item = locate(path)?.item;
@@ -68,7 +77,7 @@ export function withProject(href: string, slug?: string): string {
 }
 
 /** Pages that cover the whole server: in team state Brain serves them to team admins only. */
-const ADMIN_ONLY_KEYS: ReadonlySet<string> = new Set(["quality", "reports", "logs", "runs", "settings", "reranker", "admin", "setup"]);
+const ADMIN_ONLY_KEYS: ReadonlySet<string> = new Set(["quality", "reports", "logs", "runs", "agents", "mcp", "settings", "reranker", "admin", "setup"]);
 export function adminOnly(href: string): boolean {
   const key = locate(href.split(/[?#]/)[0])?.item.key;
   return key !== undefined && ADMIN_ONLY_KEYS.has(key);

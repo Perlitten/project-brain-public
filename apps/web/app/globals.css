@@ -170,6 +170,10 @@ code, .mono { font-family: var(--mono); }
 .nav__item:hover svg { transform: translateX(2px); }
 .nav__item.is-on { color: var(--text-1); background: transparent; }
 .nav__item.is-on svg { color: var(--teal-fg); }
+.nav__item--setup { color: var(--text-1); background: color-mix(in oklab, var(--warn-soft, var(--surface-inset)) 70%, transparent); box-shadow: inset 0 0 0 1px var(--warn-line, var(--border-subtle)); }
+.nav__item--setup svg { color: var(--warn-fg, var(--teal-fg)); }
+.nav__badge { margin-left: auto; min-width: 1.25rem; padding: 2px 6px; border-radius: 999px; text-align: center; font: 600 var(--fs-11, 11px) / 1.2 var(--mono); color: var(--bad-fg, #fff); background: var(--bad-soft, color-mix(in oklab, var(--bad-fg) 18%, transparent)); box-shadow: inset 0 0 0 1px var(--bad-line, transparent); }
+.nav__progress { margin-left: auto; font: 500 var(--fs-12) / 1 var(--mono); color: var(--warn-fg, var(--text-2)); }
 .nav__mark {
   position: absolute; left: var(--s-2); right: var(--s-2); top: 0;
   height: var(--h); transform: translateY(var(--y));
@@ -210,6 +214,10 @@ code, .mono { font-family: var(--mono); }
 .repo__label small { font-size: var(--fs-11); color: var(--text-3); font-weight: 400; }
 .repo__caret { transform: rotate(90deg); color: var(--text-3); transition: transform 320ms var(--ease-expo); }
 .repo__btn[aria-expanded="true"] .repo__caret { transform: rotate(-90deg); }
+/* Server-wide screens keep the filter's footprint, so moving between tabs swaps a value, not the layout. */
+.repo__btn--static { cursor: default; color: var(--text-2); background: transparent; border-style: dashed; }
+.repo__btn--static:hover { border-color: var(--border-subtle); background: transparent; }
+.repo__btn--static svg { color: var(--text-3); }
 .pop {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
   min-width: 300px; padding: var(--s-1);
@@ -239,6 +247,47 @@ code, .mono { font-family: var(--mono); }
 
 .main { padding: var(--s-6) var(--gutter) var(--s-10); min-width: 0; }
 .scrim { display: none; }
+
+/* ---------- app frame ----------
+   On a desktop screen the window is the frame: rail, masthead, page head and
+   tabs stay put and the page itself never scrolls. The rest of the window
+   goes to one area: a tabbed page's view, or else the page's last block, and
+   that area scrolls on its own. When it holds a paged list (ListFrame, or any
+   list marked .fill-list), the list scrolls inside its frame instead, with its
+   search bar and pager in sight. Small tables are not squeezed: their area
+   scrolls as one block. Narrow or very short screens keep document scroll. */
+@media (min-width: 901px) and (min-height: 600px) {
+  .shell { height: 100dvh; min-height: 0; overflow: hidden; }
+  .main { display: flex; flex-direction: column; min-height: 0; overflow: hidden; padding-bottom: var(--s-5); }
+  .main > .demo-notice { flex: none; margin-bottom: var(--s-4); }
+  .main > .route { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .route > * { flex: none; }
+  .route .lf__bar { top: 0; }
+  /* The area that takes the rest of the window. */
+  .route > .view-pane,
+  .route:not(:has(> .view-pane)) > :last-child { flex: 0 1 auto; min-height: 220px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .route > .view-pane { flex-grow: 1; display: flex; flex-direction: column; align-content: normal; }
+  .route > .view-pane > * { flex: none; }
+  /* Down to the list, every box on the way shrinks with the window... */
+  :is(.route > .view-pane, .route:not(:has(> .view-pane)) > :last-child):has(.lf, .fill-list),
+  :is(.route > .view-pane, .route:not(:has(> .view-pane)) > :last-child) :has(.lf, .fill-list),
+  :is(.route > .view-pane, .route:not(:has(> .view-pane)) > :last-child) :is(.lf, .fill-list) { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
+  /* ...the boxes beside it keep their size... */
+  :is(.route > .view-pane, .route:not(:has(> .view-pane)) > :last-child):has(.lf, .fill-list) > :not(:has(.lf, .fill-list), .lf, .fill-list),
+  :is(.route > .view-pane, .route:not(:has(> .view-pane)) > :last-child) :has(.lf, .fill-list) > :not(:has(.lf, .fill-list), .lf, .fill-list),
+  .route .lf > :is(.lf__bar, .lf__pager) { flex: none; }
+  /* ...and the list itself scrolls. */
+  :is(.route > .view-pane, .route:not(:has(> .view-pane)) > :last-child) :is(.lf > :not(.lf__bar, .lf__pager), .fill-list) { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .view-pane--fill { overflow: hidden; }
+  /* A panel that ends the page reaches the bottom of the frame, so short pages keep the same edge as full ones. */
+  .route > .view-pane > .panel:last-child,
+  .route:not(:has(> .view-pane)) > .panel:last-child { flex-grow: 1; }
+  /* A list cut by its frame fades at the bottom edge, so a half-shown row reads as "more below"; the fade lifts at the end. */
+  :is(.route > .view-pane, .route:not(:has(> .view-pane)) > :last-child) :is(.lf > :not(.lf__bar, .lf__pager), .fill-list),
+  .atlas--fill .atlas-map { mask-image: linear-gradient(to bottom, #000 calc(100% - var(--more)), transparent); animation: more-below linear both; animation-timeline: scroll(self); }
+}
+@property --more { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes more-below { from, 94% { --more: 36px; } to { --more: 0px; } }
 
 /* ---------- route choreography ---------- */
 .route { display: grid; gap: var(--s-6); max-width: 1320px; }
@@ -273,19 +322,86 @@ code, .mono { font-family: var(--mono); }
 .status-line__text small { display: block; margin-top: var(--s-1); font-size: var(--fs-14); font-weight: 400; color: var(--text-2); line-height: var(--lh-ui); }
 .status-line__action { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 
-/* Page tabs: one page split into full screens (Code map, Decisions & rules). */
-.page-tabs { display: flex; gap: var(--s-1); border-bottom: 1px solid var(--border-subtle); overflow-x: auto; scrollbar-width: none; }
-.page-tabs__tab {
+/* Three levels, three looks, so a click never seems to change the wrong thing:
+   1. Section tabs (.tabs--section): the routes of one section, an underlined
+      bar above the page title. It stays put while you move between routes.
+   2. View tabs (.tabs--view): views inside one page, a segmented control
+      under the title. Each view fits one screen.
+   3. Filter pills: inside the list's own search bar (list-frame.css).
+   Both tab weights share one component (TabStrip): the indicator slides to a
+   clicked tab before the server answers, and badges carry the state of what
+   is behind each tab (bad / warn / ok / info), so you can see where to look
+   without opening every view. */
+.tabs { position: relative; display: flex; gap: var(--s-1); max-width: 100%; overflow-x: auto; scrollbar-width: none; isolation: isolate; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs__tab {
+  position: relative; z-index: 1;
   display: inline-flex; align-items: center; gap: var(--s-2); flex: none;
-  height: 40px; padding: 0 var(--s-4); margin-bottom: -1px;
-  border-bottom: 2px solid transparent; color: var(--text-2); font-weight: 500; text-decoration: none;
-  transition: color 150ms, border-color 150ms;
+  color: var(--text-2); font-weight: 500; text-decoration: none; white-space: nowrap;
+  transition: color 200ms var(--ease);
 }
-.page-tabs__tab:hover { color: var(--text-1); }
-.page-tabs__tab[aria-current="page"] { color: var(--text-1); border-bottom-color: var(--teal-fg); }
-.page-tabs__badge { padding: 1px 7px; border-radius: 999px; background: var(--gray-1); border: 1px solid var(--border-subtle); color: var(--text-3); font: 500 var(--fs-12) / 1.4 var(--mono); }
-.page-tabs__tab[aria-current="page"] .page-tabs__badge { color: var(--teal-fg); border-color: var(--teal-line); background: var(--teal-soft); }
-.page-tabs__badge--bad { color: var(--bad-fg) !important; border-color: var(--bad-line) !important; background: var(--bad-soft) !important; }
+.tabs__tab:hover { color: var(--text-1); }
+.tabs__tab[aria-current="page"] { color: var(--text-1); }
+.tabs__tab:focus-visible { outline: 2px solid var(--teal-fg); outline-offset: -2px; }
+.tabs__ind {
+  position: absolute; z-index: 0; left: 0; pointer-events: none;
+  width: var(--ind-w, 0); transform: translateX(var(--ind-x, 0));
+  opacity: 0;
+  transition: transform 420ms var(--ease-expo), width 420ms var(--ease-expo), opacity 200ms var(--ease);
+}
+.tabs--placed .tabs__ind { opacity: 1; }
+.tabs[data-still] .tabs__ind { transition: opacity 200ms var(--ease); }
+
+.tabs__badge {
+  padding: 1px 7px; border-radius: 999px;
+  background: var(--gray-1); border: 1px solid var(--border-subtle); color: var(--text-3);
+  font: 500 var(--fs-12) / 1.4 var(--mono);
+  transition: color 200ms var(--ease), background-color 200ms var(--ease), border-color 200ms var(--ease);
+}
+.tabs__tab[aria-current="page"] .tabs__badge { color: var(--teal-fg); border-color: var(--teal-line); background: var(--teal-soft); }
+.tabs__badge--bad, .tabs__tab[aria-current="page"] .tabs__badge--bad { color: var(--bad-fg); border-color: var(--bad-line); background: var(--bad-soft); }
+.tabs__badge--warn, .tabs__tab[aria-current="page"] .tabs__badge--warn { color: var(--warn-fg); border-color: var(--warn-line); background: var(--warn-soft); }
+.tabs__badge--ok, .tabs__tab[aria-current="page"] .tabs__badge--ok { color: var(--ok-fg); border-color: var(--ok-line); background: var(--ok-soft); }
+.tabs__badge--info, .tabs__tab[aria-current="page"] .tabs__badge--info { color: var(--info-fg); border-color: var(--info-line); background: var(--info-soft); }
+/* A broken tab you are not on pulses once, so the eye finds it. */
+.tabs__tab:not([aria-current="page"]) .tabs__badge--bad { animation: badge-call 1.6s var(--ease) 600ms 2; }
+@keyframes badge-call { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 40% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--bad-fg) 22%, transparent); } }
+
+/* Loading: a thin light runs under the strip while the next view renders. */
+.tabs__loading { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; opacity: 0; pointer-events: none; transition: opacity 160ms var(--ease) 120ms; }
+.tabs__loading::after { content: ""; position: absolute; inset: 0; width: 40%; background: linear-gradient(90deg, transparent, var(--teal-fg), transparent); transform: translateX(-100%); }
+.tabs[aria-busy="true"] .tabs__loading { opacity: 1; }
+.tabs[aria-busy="true"] .tabs__loading::after { animation: tabs-sweep 900ms var(--ease) infinite; }
+@keyframes tabs-sweep { to { transform: translateX(250%); } }
+
+/* View weight: a segmented control; the indicator is the raised segment. */
+.tabs--view {
+  justify-self: start; padding: 3px;
+  background: var(--surface-rail); border: 1px solid var(--border-subtle); border-radius: var(--r-md);
+}
+.tabs--view .tabs__tab { height: 32px; padding: 0 var(--s-4); border-radius: var(--r-sm); }
+.tabs--view .tabs__ind { top: 3px; bottom: 3px; border-radius: var(--r-sm); background: var(--surface-raise); box-shadow: inset 0 0 0 1px var(--border-subtle), 0 1px 2px rgb(0 0 0 / 0.25); }
+.tabs--view:not(.tabs--placed) .tabs__tab[aria-current="page"] { background: var(--surface-raise); box-shadow: inset 0 0 0 1px var(--border-subtle); }
+.tabs--view .tabs__loading { left: 8px; right: 8px; bottom: 0; }
+
+/* Section weight: an underline that glides between the section's pages. */
+.tabs--section { border-bottom: 1px solid var(--border-subtle); }
+.tabs--section .tabs__tab { height: 36px; padding: 0 var(--s-3); font-size: var(--fs-14); }
+.tabs--section .tabs__tab:first-of-type { padding-left: 0; }
+.tabs--section .tabs__ind { bottom: 0; height: 2px; border-radius: 2px; background: var(--teal-fg); box-shadow: 0 0 10px color-mix(in oklab, var(--teal-fg) 45%, transparent); }
+.tabs--section:not(.tabs--placed) .tabs__tab[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--teal-fg); }
+.tabs--section .tabs__loading { bottom: -1px; }
+/* The bar is the same on every route of its section: it does not re-enter. */
+.route > .tabs--section { animation: none; margin-top: calc(var(--s-3) * -1); margin-bottom: calc(var(--s-6) * -1 + var(--s-4)); }
+
+/* The selected view enters softly; the rest of the page holds still. */
+.view-pane { display: grid; gap: var(--s-5); min-width: 0; animation: view-in 460ms var(--ease-expo) both; }
+@keyframes view-in { from { opacity: 0; transform: translateY(8px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+.view-pane > * { animation: fade-up 520ms var(--ease-expo) backwards; }
+.view-pane > :nth-child(2) { animation-delay: 50ms; } .view-pane > :nth-child(3) { animation-delay: 100ms; } .view-pane > :nth-child(n + 4) { animation-delay: 150ms; }
+/* A two-column view: main content and a side rail, both within one screen. */
+.view-split { display: grid; gap: var(--s-5); grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1100px) { .view-split { grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); } }
 
 /* ---------- panel ---------- */
 .panel {
@@ -429,6 +545,8 @@ code, .mono { font-family: var(--mono); }
 .ledger__source { font: 500 var(--fs-12) / 1.35 var(--mono); color: var(--text-2); }
 .ledger__text { line-height: var(--lh-ui); }
 .ledger__ref { font-size: var(--fs-12); color: var(--text-3); white-space: nowrap; }
+a.ledger__ref { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line-2, var(--text-3)); text-underline-offset: 2px; }
+a.ledger__ref:hover { color: var(--text-1); }
 .ledger--compact .ledger__row { grid-template-columns: 56px 10px minmax(0, 1fr); padding: var(--s-2) var(--s-4); }
 .ledger--compact .ledger__source, .ledger--compact .ledger__ref { display: none; }
 
@@ -902,13 +1020,24 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 
 /* Period switch: a segmented control that scopes one panel to a time window. */
 .segmented { display: flex; padding: 2px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--surface-rail); }
-.segmented a { padding: var(--s-1) var(--s-2); border-radius: 2px; font: 500 var(--fs-12) / 1.35 var(--mono); color: var(--text-3); transition: color var(--dur-control), background-color var(--dur-control); }
-.segmented a:hover { color: var(--text-1); }
-.segmented a[aria-current] { background: var(--surface-raise); color: var(--text-1); }
+.segmented a, .segmented button { border: 0; background: transparent; cursor: pointer; padding: var(--s-1) var(--s-2); border-radius: 2px; font: 500 var(--fs-12) / 1.35 var(--mono); color: var(--text-3); transition: color var(--dur-control), background-color var(--dur-control); }
+.segmented a:hover, .segmented button:hover { color: var(--text-1); }
+.segmented a[aria-current], .segmented button[aria-pressed="true"] { background: var(--surface-raise); color: var(--text-1); }
 
 /* Project detail: stats, coverage meters, then the caveat, each with breathing room. */
 .project-detail { display: grid; gap: var(--s-6); }
+/* Master-detail: the way back and the sibling projects sit together above the detail. */
+.project-switch { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-4); }
+.project-switch__back { font-size: var(--fs-14); color: var(--text-2); }
+.project-switch__back:hover { color: var(--text-1); }
+.project-switch__list { display: flex; flex-wrap: wrap; gap: var(--s-1); }
+.project-switch__list a, .project-switch__current { padding: 3px var(--s-2); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); font-size: var(--fs-12); color: var(--text-2); }
+.project-switch__list a:hover { color: var(--text-1); border-color: var(--border-default); }
+.project-switch__list a[aria-current], .project-switch__current { color: var(--text-1); border-color: var(--teal-line); background: var(--teal-soft); }
 .project-detail__note { margin: 0; font-size: var(--fs-12); }
+.project-detail .stat { min-width: 0; }
+.project-detail .stat__note { overflow-wrap: anywhere; }
+.project-detail .stat__note.text-bad { color: var(--bad-fg); }
 
 /* ---------- disclosure: secondary detail, closed by default ---------- */
 .disclosure { border-top: 1px solid var(--border-subtle); padding-top: var(--s-4); color: var(--text-2); font-size: var(--fs-12); line-height: var(--lh-prose); }
@@ -922,3 +1051,16 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 .access-chip:hover { background: color-mix(in oklab, var(--tone-soft) 70%, var(--tone)); color: var(--text-1); }
 .access-chip .chip__dot { animation: heartbeat 2.4s var(--ease) infinite; }
 @media (max-width: 560px) { .access-chip__more { display: none; } }
+
+.request-query { min-width: 12rem; max-width: 28rem; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+/* Result cell of an agent task: status chip + the one verb next to it. */
+.task-result { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.task-result .link.sub { font-size: inherit; }
+
+/* ---------- reduced motion ----------
+   Everything still appears in its final place; it just does not travel. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+  .view-pane { filter: none !important; }
+}

@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import Any
 from fastapi import HTTPException, Query
 from loguru import logger
+from sqlalchemy import select
+from brain.database.session import async_session_factory
 from ._common import REPOSITORY_READ, _resolve_repository, router
 
 
@@ -44,6 +46,53 @@ async def web_dashboard(period: str = Query("24h"), repository_id: int | None = 
     result["buckets"] = [{"at": item["bucket"], "total": item["requests"], "failed": item["failures"], "p95_ms": item.get("p95_ms"), "partial": item["partial"]} for item in result["series"]]
     result["recent_requests"] = result.get("recent_requests", [])
     return result
+
+
+@router.get("/requests/{request_id}", dependencies=[REPOSITORY_READ])
+async def web_request_trace(
+    request_id: str,
+    repository_id: int | None = Query(None, ge=1),
+) -> dict[str, Any]:
+    from brain.database.models import BrainRequestTelemetry
+
+    if not request_id or len(request_id) > 64:
+        raise HTTPException(status_code=400, detail="Invalid request ID")
+    if repository_id is not None:
+        await _resolve_repository(repository_id)
+    async with async_session_factory() as session:
+        statement = select(BrainRequestTelemetry).where(
+            BrainRequestTelemetry.request_id == request_id
+        )
+        if repository_id is not None:
+            statement = statement.where(
+                BrainRequestTelemetry.repository_id == repository_id
+            )
+        rows = (
+            await session.execute(
+                statement.order_by(BrainRequestTelemetry.created_at).limit(50)
+            )
+        ).scalars().all()
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail="Request trace not found in this project scope",
+        )
+    return {
+        "request_id": request_id,
+        "observations": [
+            {
+                "operation": row.operation,
+                "surface": row.surface,
+                "outcome": row.outcome,
+                "recorded_at": row.created_at.isoformat(),
+                "repository_id": row.repository_id,
+                "identity": row.principal_name,
+                "latency_ms": row.latency_ms,
+                "query_text": row.query_text,
+            }
+            for row in rows
+        ],
+    }
 
 
 @router.get("/agent-value", dependencies=[REPOSITORY_READ])

@@ -462,6 +462,11 @@ class BrainInsight(Base):
     evidence: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     recommended_action: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[str] = mapped_column(String(50), nullable=False, default="medium")
+    dismissed_evidence: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    dismissed_last_seen_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
+    dismissed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dismissed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(utc_datetime(), nullable=True)
     dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="new")
     source: Mapped[str] = mapped_column(String(50), nullable=False, default="deterministic")
@@ -684,8 +689,29 @@ class AuditEvent(Base):
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
+class BrainQueryCapturePolicy(Base):
+    """Explicit installation-wide privacy preference, never a process-local cache."""
+
+    __tablename__ = "brain_query_capture_policy"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class BrainRuntimeSetting(Base):
+    """A setting saved from the web UI that API, worker and scheduler all apply (brain.config.shared_settings)."""
+
+    __tablename__ = "brain_runtime_settings"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)  # JSON-encoded
+    updated_at: Mapped[datetime] = mapped_column(
+        utc_datetime(), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class BrainRequestTelemetry(Base):
-    """Durable, payload-free telemetry for search/context requests."""
+    """Durable request measurements; optional query capture requires operator opt-in."""
     __tablename__ = "brain_request_telemetry"
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
@@ -697,6 +723,7 @@ class BrainRequestTelemetry(Base):
     principal_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     outcome: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    query_text: Mapped[str | None] = mapped_column(String(500), nullable=True)
     latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
 
 

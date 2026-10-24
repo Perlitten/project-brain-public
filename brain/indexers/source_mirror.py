@@ -10,8 +10,8 @@ mounted source stays untouched.
 Credentials stay server-held: the origin URL (which may embed a token, from
 ``BRAIN_ORIGIN_REMOTES`` or the checkout's ``remote.origin.url``) is passed on
 the git command line only. It is never written to the mirror's config, and
-:func:`redact_url` removes userinfo from every value that is stored, logged
-or returned.
+:func:`redact_url` removes userinfo, query strings and fragments from every
+value that is stored, logged or returned.
 """
 
 from __future__ import annotations
@@ -31,14 +31,65 @@ from loguru import logger
 from brain.config.settings import settings
 from brain.indexers.source_sync import SourceSyncError, SourceSyncTransientError
 
-_USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)[^/@\s]+@")
+# Each match consumes a whole token; URL parsing below never retries a suffix.
+_REDACTION_TOKEN = re.compile(r"[^\s'\"(<]+")
+_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _MISSING_REF_MARKERS = ("couldn't find remote ref", "could not find remote ref")
 
 
+def _redact_scheme_userinfo(text: str) -> str:
+    """Mask scheme URL userinfo before punctuation-aware tokenization."""
+    pieces: list[str] = []
+    copied = 0
+    search_from = 0
+    while (marker := text.find("://", search_from)) >= 0:
+        scheme_start = marker
+        while scheme_start and (text[scheme_start - 1].isalnum() or text[scheme_start - 1] in "+.-"):
+            scheme_start -= 1
+        if scheme_start == marker or not text[scheme_start].isalpha():
+            search_from = marker + 3
+            continue
+
+        authority_start = marker + 3
+        authority_end = authority_start
+        last_at = -1
+        while authority_end < len(text):
+            char = text[authority_end]
+            if char.isspace() or char in '/?#"':
+                break
+            if char == "@":
+                last_at = authority_end
+            authority_end += 1
+        if last_at >= authority_start:
+            pieces.extend((text[copied:authority_start], "***@"))
+            copied = last_at + 1
+        search_from = max(authority_end, marker + 3)
+    pieces.append(text[copied:])
+    return "".join(pieces)
+
+
+def _redact_remote_token(match: re.Match[str]) -> str:
+    token = match.group(0)
+    scheme, separator, rest = token.partition("://")
+    has_scheme = bool(separator and _SCHEME.fullmatch(scheme))
+    prefix = scheme + separator if has_scheme else ""
+    remote = rest if has_scheme else token
+    # Only the authority can contain userinfo; @ in a path is ordinary data.
+    routing = remote.split("?", 1)[0].split("#", 1)[0]
+    authority, slash, path = routing.partition("/")
+    userinfo, at, host = authority.rpartition("@")
+    bare_credentials = bool(at and (":" in userinfo or (slash and ":" not in host)))
+    if at and (has_scheme or bare_credentials):
+        return prefix + "***@" + host + slash + path
+    if has_scheme:
+        return prefix + routing
+    return token
+
+
 def redact_url(text: str | None) -> str:
-    """Drop ``user:password@`` from every URL in ``text``."""
-    return _USERINFO.sub(r"\g<scheme>***@", str(text or ""))
+    """Drop remote credentials and query/fragment data in linear time."""
+    return _REDACTION_TOKEN.sub(_redact_remote_token, _redact_scheme_userinfo(str(text or "")))
 
 
 @dataclass(frozen=True)
@@ -105,9 +156,21 @@ def _path_key(path: str | Path) -> str:
     return os.path.normcase(os.path.normpath(str(Path(path).resolve())))
 
 
+# What git check-ref-format forbids anywhere in a ref name.
+_REF_FORBIDDEN = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{")
+
+
+def valid_branch_ref(ref: str) -> bool:
+    """``git check-ref-format`` rules for a ``refs/heads/<branch>`` ref."""
+    if not ref.startswith("refs/heads/") or _REF_FORBIDDEN.search(ref) or ref.endswith("."):
+        return False
+    # No empty component (``//``, a trailing ``/``), none starting with ``.`` or ending with ``.lock``.
+    return all(part and not part.startswith(".") and not part.endswith(".lock") for part in ref.split("/"))
+
+
 def _default_branch() -> str:
     ref = str(settings.PROJECT_BRAIN_WEBHOOK_REF or "").strip()
-    if ref.startswith("refs/heads/") and len(ref) > len("refs/heads/"):
+    if valid_branch_ref(ref):
         return ref[len("refs/heads/"):]
     return "main"
 

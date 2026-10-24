@@ -31,15 +31,11 @@ steps:
   - bash scripts/ci/codeql.sh
   pull: false
 - name: publish-code-scanning
-  image: localhost/woodpecker-codeql@sha256:48e89e410cce721de876673c0d8c58dd931f74a046a5cbab84835b8c8f2da47f
-  environment:
-    GITHUB_TOKEN:
+  image: localhost/brain-codeql-publish@sha256:5cfb507368419fe8c823969384d68f30b19b26160a2664fe3eb552ce6e0dd88b
+  settings:
+    token:
       from_secret: github_code_scanning_token
-    CODEQL_LANGUAGE: python
-  commands:
-  - git config --global --add safe.directory "$${CI_WORKSPACE}"
-  - codeql version --format=json | python3 -c 'import json,sys; assert json.load(sys.stdin)["version"] == "2.27.3"'
-  - codeql github upload-results --repository="$CI_REPO" --ref="$CI_COMMIT_REF" --commit="$CI_COMMIT_SHA" --sarif="artifacts/codeql/$CODEQL_LANGUAGE/results.sarif"
+    language: python
   when:
   - event: push
     branch: main

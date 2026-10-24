@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 
 from brain.database.models import File
 from brain.database.session import async_session_factory
+from brain.indexers.source_mirror import redact_url
 from brain.memory.source_manifest import read_source_manifest, revision_matches
 
 
@@ -322,8 +323,9 @@ def apply_origin_state(freshness: dict[str, Any], state: dict[str, Any] | None) 
     indexed = str(out.get("indexed_commit") or "").strip() or None
     out["origin_poll_status"] = state.get("poll_status")
     out["origin_polled_at"] = _iso_or_none(state.get("polled_at"))
-    out["origin_poll_error"] = state.get("poll_error")
-    out["origin_remote"] = state.get("remote_url")
+    # Rows written before redaction covered scheme-less remotes may still hold a token.
+    out["origin_poll_error"] = redact_url(state["poll_error"]) if state.get("poll_error") else None
+    out["origin_remote"] = redact_url(state["remote_url"]) if state.get("remote_url") else None
     mode = state.get("source_mode")
     if mode:
         out["index_source"] = mode
@@ -486,8 +488,8 @@ async def _assess_repository_freshness_uncached(repo: Any) -> dict[str, Any]:
         if is_git:
             freshness.update(await describe_origin(repo_path, indexed_commit))
 
-        file_count = await _count_indexed_files(repo)
         if not indexed_commit:
+            file_count = await _count_indexed_files(repo)
             if file_count == 0:
                 freshness["status"] = "unindexed"
                 freshness["note"] = "No indexed commit and no indexed files were found."

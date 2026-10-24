@@ -22,7 +22,7 @@ def _env_files() -> tuple[str, ...]:
     if os.getenv("BRAIN_STORAGE_MODE") == "lite":
         explicit = os.getenv("BRAIN_ENV_FILE", "").strip()
         return (explicit,) if explicit else ()
-    package_env = Path(__file__).resolve().parents[2] / ".env"
+    package_env = Path(__file__).resolve().parents[3] / ".env"
     if package_env.is_file():
         files.append(str(package_env))
     files.append(".env")

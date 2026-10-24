@@ -26,6 +26,7 @@ Start with the files for the task rather than relying on a stale repository size
 | `routers/harness.py` | `brain/database/harness_models.py`, `brain/memory/harness_store.py` | `test_harness_api.py`, `test_harness_store.py`, `test_memory_observation_protocol.py` |
 | `routers/core_memory.py` (episodes, learnings, skills) | `brain/memory/consolidation.py`, `skill_distiller.py`, `learning_retrieval.py`, `skill_store.py` | `test_consolidation_gates.py`, `test_memory_consolidation_db.py`, `test_skill_distiller.py`, `test_runtime_memory_projection.py` |
 | `routers/jobs.py` | `brain/workers/` | `test_worker_queue.py`, `test_worker_capacity_readiness.py` |
+| `routers/git_connect.py` (connect a repository by URL) | `brain/indexers/git_connect.py`, `brain/workers/git_connect.py` | `test_git_connect.py` |
 | `routers/lab.py` | `brain/lab/` | `test_change_laboratory.py` |
 | `routers/experiments.py` | `brain/experiments/` | `test_remediation_experiments.py` |
 | `routers/portfolio.py` | `brain/portfolio/` | `test_portfolio_graph.py` |

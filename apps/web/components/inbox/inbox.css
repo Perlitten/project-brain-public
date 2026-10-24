@@ -1,0 +1,46 @@
+/* The dashboard inbox: what needs a person first, then what agents are doing now.
+   Rows follow the Board's plan list: a stage word, the item, why, the next step. */
+.ib { display: flex; flex-direction: column; gap: var(--s-7); margin-bottom: var(--s-8); }
+.ib-sec { display: flex; flex-direction: column; gap: var(--s-3); }
+.ib-sec__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3); margin: 0; }
+.ib-sec__head h2, .ib-sec__h { margin: 0; font-size: var(--fs-12); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
+.ib-sec__head .num { font-size: var(--fs-12); color: var(--text-3); }
+.ib-sec__note { font-size: var(--fs-12); color: var(--text-3); }
+.ib-sec__more { margin-left: auto; font-size: var(--fs-12); }
+
+.ib-items { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--surface-module); overflow: hidden; }
+.ib-item {
+  display: grid; grid-template-columns: 116px minmax(0, 1fr) auto; align-items: start; gap: var(--s-1) var(--s-4);
+  padding: var(--s-3) var(--s-4); border-top: 1px solid var(--border-subtle);
+}
+.ib-item:first-child { border-top: 0; }
+.ib-item__stage { padding-top: 1px; }
+.ib-stage {
+  display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: var(--r-pill);
+  background: var(--tone-soft); color: var(--tone); font-size: var(--fs-12); font-weight: 600; white-space: nowrap;
+}
+.ib-item__body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ib-item__title { font-size: var(--fs-14); font-weight: 500; line-height: 1.35; color: var(--text-1); overflow-wrap: anywhere; text-decoration: none; }
+.ib-item__title:hover, .ib-item__title:focus-visible { color: var(--teal-fg); outline: none; text-decoration: underline; text-underline-offset: 3px; }
+.ib-item__why { margin: 0; font-size: var(--fs-12); line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
+.ib-item__act { display: flex; justify-content: flex-end; gap: var(--s-2); }
+
+.ib-quiet {
+  margin: 0; padding: var(--s-4); border: 1px dashed var(--border-default); border-radius: var(--r-md);
+  font-size: var(--fs-14); color: var(--text-2);
+}
+.ib-quiet b { color: var(--ok-fg); font-weight: 600; }
+
+/* Agents right now: who, on what, since when. */
+.ib-agent { grid-template-columns: 116px minmax(0, 1fr) auto; }
+.ib-agent__who { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: var(--fs-12); color: var(--text-1); text-decoration: none; }
+.ib-agent__who:hover { color: var(--teal-fg); }
+.ib-agent__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok-fg); box-shadow: 0 0 0 3px var(--ok-soft); animation: ib-pulse 1.8s ease-in-out infinite; }
+@keyframes ib-pulse { 50% { box-shadow: 0 0 0 5px transparent; } }
+@media (prefers-reduced-motion: reduce) { .ib-agent__dot { animation: none; } }
+.ib-agent__since { font-family: var(--mono); font-size: var(--fs-12); color: var(--text-3); white-space: nowrap; padding-top: 2px; }
+
+@media (max-width: 720px) {
+  .ib-item, .ib-agent { grid-template-columns: minmax(0, 1fr); }
+  .ib-item__act { justify-content: flex-start; }
+}

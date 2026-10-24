@@ -1,17 +1,22 @@
 "use client";
-// Board controls: columns of tasks by state, live leases, overlap warnings and
-// the integration queue, with a conflict view that says what conflicts and what
-// the signed-in member may do about it. Controls appear only where Brain would
-// allow them (lib/board-model.ts); Brain still checks every call with the
-// member's own key, the lease's fencing token and the entry's version.
+// The team Board: a sentence on what can't land and what is next, then one view
+// (the plan by attention, who is changing which path, or the integration queue)
+// beside a side column with what needs a person or one task in full. Controls appear only where
+// Brain would allow them (lib/board-model.ts); Brain still checks every call
+// with the member's own key, the lease's fencing token and the entry's version.
 
-import { useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CodeBlock, Dialog, LockNote, RunButton, useAction } from "@/components/act";
-import { Chip, Table } from "@/components/ui";
+import { AtlasVerdict, reveal } from "@/components/atlas/Atlas";
+import { Chip, EmptyState } from "@/components/ui";
+import { ViewPane } from "@/components/PageTabs";
 import { integrateEntry, rejectEntry, releaseLease, renewLease, requestRun, type NewRun } from "@/lib/actions/board";
 import {
-  BOARD_COLUMNS, entryActions, instructionHref, leaseActions, queuePosition,
-  type BoardTask, type Lease, type Overlap, type ProjectBoard, type QueueEntry, type QueueStatus, type SupersededInstruction,
+  BOARD_COLUMNS, attention, boardVerdict, claimMap, entryActions, instructionHref, knownBase, leaseActions, normPath, queuePosition,
+  type Attention, type BoardColumn, type BoardTask, type Claim, type Lease, type Overlap, type ProjectBoard, type QueueEntry, type QueueStatus,
+  type SupersededInstruction,
 } from "@/lib/board-model";
 import type { Tone } from "@/lib/types";
 import "./board.css";
@@ -26,8 +31,12 @@ const anchor = (taskId: string) => `task-${taskId}`;
 
 interface Ctx { board: ProjectBoard; selfId: number | null; title: (id: string) => string; has: (id: string) => boolean }
 
+/** Board views, one beside the side column at a time (app/team/board/page.tsx picks one). */
+export type BoardView = "plan" | "paths" | "queue";
+
+// The plan view holds the task anchors; from another view the link opens it there.
 function TaskLink({ id, ctx, fallback }: { id: string; ctx: Ctx; fallback?: string | null }) {
-  return <a href={`#${anchor(id)}`}>{ctx.has(id) ? ctx.title(id) : fallback || ctx.title(id)}</a>;
+  return <a href={`/team/board#${anchor(id)}`}>{ctx.has(id) ? ctx.title(id) : fallback || ctx.title(id)}</a>;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,15 +65,15 @@ function LeaseControls({ lease, ctx }: { lease: Lease; ctx: Ctx }) {
   );
 }
 
-function RequestRunButton({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
+function RequestRunButton({ task, ctx, label = "Request a fresh run", primary = false }: { task: BoardTask; ctx: Ctx; label?: string; primary?: boolean }) {
   const [run, setRun] = useState<NewRun | null>(null);
   const { run: go, pending, mode } = useAction(requestRun, { title: "Request run" });
   const [asking, setAsking] = useState(false);
   return (
     <>
-      <button type="button" className="btn btn--neutral btn--sm" disabled={pending || mode !== "on" || !task.branch} onClick={() => setAsking(true)}>
+      <button type="button" className={`btn ${primary ? "btn--primary" : "btn--neutral"} btn--sm`} disabled={pending || mode === "locked" || !task.branch} onClick={() => setAsking(true)}>
         {pending ? <span className="spin" aria-hidden="true" /> : null}
-        Request a fresh run
+        {label}
       </button>
       <Dialog open={asking} onClose={() => setAsking(false)} title={`Request a fresh run of “${task.title}”?`}>
         <p className="dialog__text">
@@ -76,7 +85,7 @@ function RequestRunButton({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
           <button
             type="button"
             className="btn btn--primary"
-            disabled={pending || mode !== "on"}
+            disabled={pending || mode === "locked"}
             onClick={async () => {
               const res = await go(ctx.board.id, task.id, task.branch);
               setAsking(false);
@@ -109,13 +118,14 @@ function RequestRunButton({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
   );
 }
 
-function IntegrateButton({ entry, ctx }: { entry: QueueEntry; ctx: Ctx }) {
+function IntegrateButton({ entry, ctx, label = "Integrate", small = true }: { entry: QueueEntry; ctx: Ctx; label?: string; small?: boolean }) {
+  const known = knownBase(ctx.board, entry);
   const [open, setOpen] = useState(false);
-  const [base, setBase] = useState("");
+  const [base, setBase] = useState(known?.source === "integrated" ? known.sha : "");
   const { run, pending, mode } = useAction(integrateEntry, { title: "Integrate" });
   return (
     <>
-      <button type="button" className="btn btn--primary btn--sm" disabled={pending || mode !== "on"} onClick={() => setOpen(true)}>Integrate</button>
+      <button type="button" className={`btn btn--primary${small ? " btn--sm" : ""}`} disabled={pending || mode === "locked"} onClick={() => setOpen(true)}>{label}</button>
       <Dialog open={open} onClose={() => setOpen(false)} title={`Integrate “${ctx.title(entry.taskId)}”?`}>
         <p className="dialog__text">
           Brain re-checks the run against the current base and the decisions and rules it started with. If either changed, the entry is marked
@@ -126,12 +136,13 @@ function IntegrateButton({ entry, ctx }: { entry: QueueEntry; ctx: Ctx }) {
           <input className="input input--mono" value={base} onChange={(e) => setBase(e.target.value)} placeholder="Defaults to the last integrated head" maxLength={40} />
           <span className="field__hint">Required until something has been integrated in this repository.</span>
         </label>
+        <KnownShas entry={entry} known={known} onUse={setBase} />
         <div className="dialog__actions">
           <button type="button" className="btn btn--neutral" onClick={() => setOpen(false)}>Cancel</button>
           <button
             type="button"
             className="btn btn--primary"
-            disabled={pending || mode !== "on"}
+            disabled={pending || mode === "locked"}
             onClick={async () => {
               const res = await run(ctx.board.id, entry.id, entry.version, base || undefined);
               if (res.ok) setOpen(false);
@@ -145,6 +156,28 @@ function IntegrateButton({ entry, ctx }: { entry: QueueEntry; ctx: Ctx }) {
   );
 }
 
+/** The SHAs a reviewer would otherwise hunt for: the base the board knows and the one the run started from. */
+function KnownShas({ entry, known, onUse }: { entry: QueueEntry; known: ReturnType<typeof knownBase>; onUse: (sha: string) => void }) {
+  const rows: [string, string][] = [];
+  if (known) rows.push([known.source === "integrated" ? "Last integrated head" : "Base last checked", known.sha]);
+  if (entry.baseSha && entry.baseSha !== known?.sha) rows.push(["Run started from", entry.baseSha]);
+  if (!rows.length) return null;
+  return (
+    <dl className="board-shas">
+      {rows.map(([label, sha]) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd>
+            <code className="mono" title={sha}>{short(sha)}</code>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => onUse(sha)}>Use</button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => navigator.clipboard?.writeText(sha).catch(() => undefined)}>Copy</button>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function RejectButton({ entry, ctx, withdraw }: { entry: QueueEntry; ctx: Ctx; withdraw: boolean }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState(withdraw ? "Withdrawn by the member who queued it" : "");
@@ -152,7 +185,7 @@ function RejectButton({ entry, ctx, withdraw }: { entry: QueueEntry; ctx: Ctx; w
   const verb = withdraw ? "Withdraw" : "Reject";
   return (
     <>
-      <button type="button" className="btn btn--neutral btn--sm" disabled={pending || mode !== "on"} onClick={() => setOpen(true)}>{verb}</button>
+      <button type="button" className="btn btn--neutral btn--sm" disabled={pending || mode === "locked"} onClick={() => setOpen(true)}>{verb}</button>
       <Dialog open={open} onClose={() => setOpen(false)} title={`${verb} “${ctx.title(entry.taskId)}” from the queue?`}>
         <label className="field">
           <span className="field__label">Reason</span>
@@ -164,7 +197,7 @@ function RejectButton({ entry, ctx, withdraw }: { entry: QueueEntry; ctx: Ctx; w
           <button
             type="button"
             className="btn btn--danger"
-            disabled={pending || mode !== "on" || !reason.trim()}
+            disabled={pending || mode === "locked" || !reason.trim()}
             onClick={async () => {
               const res = await run(ctx.board.id, entry.id, entry.version, reason);
               if (res.ok) setOpen(false);
@@ -288,11 +321,11 @@ export function ConflictView({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
   );
 }
 
-function ConflictButton({ task, ctx, label = "See conflict" }: { task: BoardTask; ctx: Ctx; label?: string }) {
+function ConflictButton({ task, ctx, label = "See conflict", className = "btn btn--ghost btn--sm" }: { task: BoardTask; ctx: Ctx; label?: string; className?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className="btn btn--ghost btn--sm" onClick={() => setOpen(true)}>{label}</button>
+      <button type="button" className={className} onClick={() => setOpen(true)}>{label}</button>
       <Dialog open={open} onClose={() => setOpen(false)} title={`Conflict: ${task.title}`} wide>
         <ConflictView task={task} ctx={ctx} />
       </Dialog>
@@ -301,146 +334,563 @@ function ConflictButton({ task, ctx, label = "See conflict" }: { task: BoardTask
 }
 
 // ---------------------------------------------------------------------------
-// Board
+// Board: a sentence, then one view (the plan by attention, who changes which path,
+// or the queue) and a side column that lists what needs a person or inspects one task.
 
-function Card({ task, ctx, position }: { task: BoardTask; ctx: Ctx; position: number | null }) {
-  const overlaps = ctx.board.overlaps.filter((o) => o.taskId === task.id || o.otherTaskId === task.id).length;
-  const leases = ctx.board.leases.filter((l) => l.taskId === task.id);
-  const conflicted = overlaps > 0 || task.column === "needs_rebase" || task.column === "stale_instructions";
-  return (
-    <li className={`board-card${conflicted ? " board-card--warn" : ""}`} id={anchor(task.id)}>
-      <span className="board-card__title">{task.title}</span>
-      {task.parentId && <span className="sub">in <TaskLink id={task.parentId} ctx={ctx} /></span>}
-      <div className="chips">
-        {task.waitingOn.length > 0 && <Chip tone="warn" dot={false}>waiting on {task.waitingOn.length}</Chip>}
-        {task.dependsOn.length > 0 && task.waitingOn.length === 0 && <Chip tone="ok" dot={false}>{task.dependsOn.length} dependencies done</Chip>}
-        {position !== null && <Chip tone="info" dot={false}>#{position} in queue</Chip>}
-        {overlaps > 0 && <Chip tone="warn" dot={false}>{overlaps === 1 ? "1 overlap" : `${overlaps} overlaps`}</Chip>}
-        {leases.length > 0 && <Chip tone="idle" dot={false}>{leases.length === 1 ? "1 lease" : `${leases.length} leases`}</Chip>}
-      </div>
-      {task.dependsOn.length > 0 && (
-        <span className="sub board-card__deps">
-          Depends on{" "}
-          {task.dependsOn.map((d, i) => (
-            <span key={d}>
-              {i > 0 && ", "}
-              <TaskLink id={d} ctx={ctx} />
-              {task.waitingOn.includes(d) ? " (not done)" : ""}
-            </span>
-          ))}
-        </span>
-      )}
-      {task.scopePaths.length > 0 && <span className="sub mono board-card__scope" title={task.scopePaths.join("\n")}>{task.scopePaths.slice(0, 2).join(", ")}{task.scopePaths.length > 2 ? ` +${task.scopePaths.length - 2}` : ""}</span>}
-      {conflicted && <ConflictButton task={task} ctx={ctx} />}
-    </li>
-  );
-}
-
-export function BoardColumns({ board, selfId }: { board: ProjectBoard; selfId: number | null }) {
-  const ctx = context(board, selfId);
-  const position = new Map(board.queue.map((e, i) => [e.taskId, i + 1]));
-  return (
-    <div className="board" role="list" aria-label={`Tasks in ${board.name} by state`}>
-      {BOARD_COLUMNS.map((col) => {
-        const tasks = board.tasks.filter((t) => t.column === col.id);
-        return (
-          <section key={col.id} className={`board-col board-col--${col.id}`} role="listitem" aria-label={col.label}>
-            <header className="board-col__head" title={col.hint}>
-              <span>{col.label}</span>
-              <span className="num">{tasks.length}</span>
-            </header>
-            {tasks.length ? (
-              <ul className="board-col__cards">
-                {tasks.map((t) => <Card key={t.id} task={t} ctx={ctx} position={position.get(t.id) ?? null} />)}
-              </ul>
-            ) : (
-              <p className="board-col__empty">None</p>
-            )}
-          </section>
-        );
-      })}
-    </div>
-  );
-}
+// Stages run left to right as work moves; a stage's tone says whether it needs a person.
+type StageTone = Tone | "teal";
+const STAGE_TONE: Record<BoardColumn, StageTone> = {
+  blocked: "idle", ready: "info", running: "teal", awaiting: "info", needs_rebase: "warn", stale_instructions: "warn", integrated: "ok",
+};
+const STAGE_SHORT: Record<BoardColumn, string> = {
+  blocked: "Blocked", ready: "Ready", running: "Running", awaiting: "To integrate", needs_rebase: "Needs rebase", stale_instructions: "Stale", integrated: "Done",
+};
+const REFRESH_MS = 30_000;
 
 function context(board: ProjectBoard, selfId: number | null): Ctx {
   const titles = new Map(board.tasks.map((t) => [t.id, t.title]));
   return { board, selfId, title: (id) => titles.get(id) ?? `task ${id.slice(0, 8)}`, has: (id) => titles.has(id) };
 }
 
-export function LeasesTable({ board, selfId }: { board: ProjectBoard; selfId: number | null }) {
-  const ctx = context(board, selfId);
+/** Which tasks are lit (hovered anywhere on the board) and how to inspect one. */
+interface Focus { lit: string[] | null; picked: string | null; light: (ids: string[] | null) => void; pick: (id: string | null) => void }
+const FocusContext = createContext<Focus>({ lit: null, picked: null, light: () => undefined, pick: () => undefined });
+/** data-lit / data-dim for an element showing these tasks, while something is lit. */
+function useLit(ids: string[]) {
+  const { lit, picked } = useContext(FocusContext);
+  if (lit === null) return {};
+  const hit = ids.some((id) => lit.includes(id) || id === picked);
+  return { "data-lit": hit || undefined, "data-dim": !hit || undefined };
+}
+
+// The demo runs from its own moment, so its leases count down instead of reading "expired".
+const ClockContext = createContext<number | null>(null);
+function useNow(): number | null {
+  const anchor = useContext(ClockContext);
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    const start = Date.now();
+    const tick = () => setNow(anchor === null ? Date.now() : anchor + Date.now() - start);
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [anchor]);
+  return now;
+}
+
+/** Time left on a lease, by the second once the page runs; the server renders the end time instead. */
+function Left({ at }: { at: string | null }) {
+  const now = useNow();
+  if (!at) return <span className="text-faint">no expiry</span>;
+  if (now === null) return <span className="tb-left num">until {when(at).slice(11)}</span>;
+  const s = Math.round((Date.parse(at) - now) / 1000);
+  if (s <= 0) return <span className="tb-left tone-bad num" title={`Expired ${when(at)}`}>expired</span>;
   return (
-    <>
-      <Table<Lease>
-        caption="Live leases"
-        rows={board.leases}
-        rowKey={(l) => String(l.id)}
-        columns={[
-          { head: "Path", cell: (l) => <span className="mono">{l.resource}</span> },
-          { head: "Holder", cell: (l) => who(l.holderId, selfId) },
-          { head: "Task", cell: (l) => (l.taskId ? <TaskLink id={l.taskId} ctx={ctx} /> : <span className="text-faint">none</span>) },
-          { head: "Expires", cell: (l) => <span className="num">{when(l.expiresAt)}</span> },
-          { head: "Fencing token", cell: (l) => <span className="num mono">{l.fencingToken}</span> },
-          { head: "", cell: (l) => <LeaseControls lease={l} ctx={ctx} /> },
-        ]}
-      />
-      <LockNote />
-    </>
+    <span className={`tb-left num${s < 120 ? " tone-warn" : ""}`} title={`Expires ${when(at)}`}>
+      {Math.floor(s / 60)}m {String(s % 60).padStart(2, "0")}s left
+    </span>
   );
 }
 
-export function OverlapList({ board, selfId }: { board: ProjectBoard; selfId: number | null }) {
-  const ctx = context(board, selfId);
-  const byId = new Map(board.tasks.map((t) => [t.id, t]));
+const Lock = () => (
+  <svg className="tb-lock" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+    <rect x="2" y="5.5" width="8" height="5.5" rx="1.2" fill="currentColor" />
+    <path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+  </svg>
+);
+
+/** A task named in running text: hover lights it everywhere, click inspects it. */
+function TaskRef({ id, ctx, fallback }: { id: string; ctx: Ctx; fallback?: string | null }) {
+  const f = useContext(FocusContext);
+  const label = ctx.has(id) ? ctx.title(id) : fallback || ctx.title(id);
+  if (!ctx.has(id)) return <span>{label}</span>;
   return (
-    <ul className="board-overlaps">
-      {board.overlaps.map((o, i) => {
-        const task = byId.get(o.taskId);
+    <button type="button" className="tb-ref" onClick={() => f.pick(id)} onMouseEnter={() => f.light([id])} onMouseLeave={() => f.light(null)}>
+      {label}
+    </button>
+  );
+}
+
+function Stage({ column }: { column: BoardColumn }) {
+  return <span className={`tb-stage tone-${STAGE_TONE[column]}`}><span className="dot" aria-hidden="true" />{STAGE_SHORT[column]}</span>;
+}
+
+function Section({ title, note, children }: { title: string; note?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="tb-sec">
+      <header className="tb-sec__head">
+        <h3>{title}</h3>
+        {note && <span className="tb-sec__note">{note}</span>}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+// ---------- plan: every task in flight, what needs a person first, each row saying why and what to do
+
+// Groups top to bottom by who moves the task next; within a group, the stages that block most come first.
+const PLAN_GROUPS: { id: string; title: string; columns: BoardColumn[] }[] = [
+  { id: "act", title: "Needs a person", columns: ["needs_rebase", "stale_instructions", "awaiting", "ready"] },
+  { id: "running", title: "Agents working", columns: ["running"] },
+  { id: "blocked", title: "Waiting on dependencies", columns: ["blocked"] },
+];
+
+/** Tasks that do work: a task that only groups subtasks shows through them. */
+function planTasks(board: ProjectBoard) {
+  const groups = new Set(board.tasks.map((t) => t.parentId).filter((id): id is string => id !== null));
+  return board.tasks.filter((t) => t.column !== null && !groups.has(t.id));
+}
+
+function planOrder(board: ProjectBoard, columns: BoardColumn[]) {
+  const rank = (t: BoardTask) => columns.indexOf(t.column as BoardColumn);
+  const pos = (t: BoardTask) => (t.entry && t.entry.status === "queued" ? queuePosition(board.queue, t.entry) ?? 99 : 99);
+  return (a: BoardTask, b: BoardTask) => rank(a) - rank(b) || pos(a) - pos(b);
+}
+
+/** Why the task is where it is, in one line. */
+function PlanWhy({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
+  const { board, selfId } = ctx;
+  const e = task.entry;
+  switch (task.column) {
+    case "needs_rebase":
+      return e
+        ? <>Started from <span className="mono">{short(e.baseSha)}</span>; the base is now <span className="mono">{short(e.checkedBaseSha)}</span>. Rebase and run again.</>
+        : <>The run&apos;s base is not the current base.</>;
+    case "stale_instructions": {
+      const reason = e?.reason || "A decision or rule changed since the run started.";
+      return <>{/[.!?]$/.test(reason) ? reason : `${reason}.`} A fresh run picks up the current versions.</>;
+    }
+    case "awaiting": {
+      const pos = e ? queuePosition(board.queue, e) : null;
+      const by = e ? ` · queued by ${who(e.enqueuedBy, selfId)}` : "";
+      return <>{pos === 1 ? "First in the integration queue" : pos ? `#${pos} in the integration queue; the entries ahead land first` : "In the integration queue"}{by}</>;
+    }
+    case "ready":
+      return <>Dependencies are done; nobody has requested a run yet.</>;
+    case "running":
+      return <>A run is in progress{task.branch ? <> on <span className="mono">{task.branch}</span></> : null}; it joins the queue when the agent finishes.</>;
+    case "blocked":
+      return task.waitingOn.length
+        ? <>Waits for {task.waitingOn.map((d, i) => <span key={d}>{i > 0 && ", "}<TaskRef id={d} ctx={ctx} /></span>)}.</>
+        : <>A dependency was cancelled.</>;
+    case "integrated":
+      return e?.headSha ? <>Integrated at <span className="mono">{short(e.headSha)}</span>{e.decidedAt ? ` · ${when(e.decidedAt)}` : ""}</> : <>Completed.</>;
+    default:
+      return null;
+  }
+}
+
+/** The one thing to do next, when the signed-in member may do it. */
+function PlanAction({ task, ctx, overlapped }: { task: BoardTask; ctx: Ctx; overlapped: boolean }) {
+  const { board, selfId } = ctx;
+  const e = task.entry;
+  if (task.column === "needs_rebase" || task.column === "stale_instructions") {
+    return <ConflictButton task={task} ctx={ctx} label="Resolve" className="btn btn--neutral btn--sm" />;
+  }
+  if (task.column === "awaiting" && e) {
+    const can = entryActions(e, board.permissions, selfId);
+    if (can.integrate && queuePosition(board.queue, e) === 1) return <IntegrateButton entry={e} ctx={ctx} />;
+    if (can.withdraw) return <RejectButton entry={e} ctx={ctx} withdraw />;
+  }
+  if (task.column === "ready" && board.permissions.includes("run.request")) return <RequestRunButton task={task} ctx={ctx} label="Request run" primary />;
+  if (overlapped) return <ConflictButton task={task} ctx={ctx} label="What can I do?" className="btn btn--ghost btn--sm" />;
+  return null;
+}
+
+function PlanItem({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
+  const f = useContext(FocusContext);
+  const { board, selfId } = ctx;
+  const column = task.column as BoardColumn;
+  const lit = useLit([task.id]);
+  const overlaps = board.overlaps.filter((o) => o.taskId === task.id || o.otherTaskId === task.id);
+  const parent = task.parentId ? ctx.title(task.parentId) : null;
+  const scope = task.scopePaths.length ? `${task.scopePaths[0]}${task.scopePaths.length > 1 ? ` +${task.scopePaths.length - 1}` : ""}` : null;
+  return (
+    <li id={anchor(task.id)} className={`tb-item tone-${STAGE_TONE[column]}`} data-picked={f.picked === task.id || undefined} {...lit}>
+      <span className="tb-item__stage"><Stage column={column} /></span>
+      <div className="tb-item__body">
+        <button
+          type="button"
+          className="tb-item__title"
+          onClick={() => f.pick(task.id)}
+          onMouseEnter={() => f.light([task.id])}
+          onMouseLeave={() => f.light(null)}
+          onFocus={() => f.light([task.id])}
+          onBlur={() => f.light(null)}
+        >
+          {task.title}
+        </button>
+        <p className="tb-item__why"><PlanWhy task={task} ctx={ctx} /></p>
+        {overlaps.map((o, i) => {
+          const mine = o.taskId === task.id;
+          const other = mine ? o.otherTaskId : o.taskId;
+          return (
+            <p key={i} className="tb-item__warn">
+              {o.kind === "lease" && mine
+                ? <>Needs <span className="mono">{o.resource}</span>, leased by {who(o.holderId, selfId)} · <Left at={o.expiresAt} /></>
+                : <>{o.kind === "dependency" ? "Imports code from" : "Changes the same paths as"} <TaskRef id={other ?? ""} ctx={ctx} fallback={mine ? o.otherTitle : null} /></>}
+            </p>
+          );
+        })}
+        {(parent || scope || task.runs.length > 0) && (
+          <p className="tb-item__meta">
+            {parent && <>in {parent}</>}
+            {parent && scope && " · "}
+            {scope && <span className="mono" title={task.scopePaths.join("\n")}>{scope}</span>}
+            {task.runs.length > 0 && <>{(parent || scope) && " · "}<Link className="link" href={`/runs?q=${encodeURIComponent(task.id.slice(0, 8))}`}>{task.runs.length === 1 ? "1 agent run" : `${task.runs.length} agent runs`}</Link></>}
+          </p>
+        )}
+      </div>
+      <div className="tb-item__act"><PlanAction task={task} ctx={ctx} overlapped={overlaps.length > 0} /></div>
+    </li>
+  );
+}
+
+function Plan({ ctx }: { ctx: Ctx }) {
+  const { board } = ctx;
+  const tasks = planTasks(board);
+  if (!tasks.length) return <EmptyState title="No tasks yet" body="Tasks and subtasks created for this project show up here, what needs a person first." />;
+  const done = tasks.filter((t) => t.column === "integrated");
+  return (
+    <div className="tb-plan" role="group" aria-label={`Tasks in ${board.name}, what needs a person first`}>
+      {PLAN_GROUPS.map((g) => {
+        const rows = tasks.filter((t) => g.columns.includes(t.column as BoardColumn)).sort(planOrder(board, g.columns));
+        if (!rows.length) return null;
         return (
-          <li key={i} className="board-overlap">
-            <div>
-              <b><TaskLink id={o.taskId} ctx={ctx} /></b>
-              <OverlapDetail o={o} ctx={ctx} />
-            </div>
-            {task && <ConflictButton task={task} ctx={ctx} label="What can I do?" />}
-          </li>
+          <section key={g.id} className={`tb-group tb-group--${g.id}`}>
+            <h4 className="tb-group__head">{g.title} <span className="num">{rows.length}</span></h4>
+            <ul className="tb-items">{rows.map((t) => <PlanItem key={t.id} task={t} ctx={ctx} />)}</ul>
+          </section>
         );
+      })}
+      {done.length > 0 && (
+        <details className="tb-group tb-group--done">
+          <summary className="tb-group__head">Done <span className="num">{done.length}</span></summary>
+          <ul className="tb-items">{done.map((t) => <PlanItem key={t.id} task={t} ctx={ctx} />)}</ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// ---------- claims: which paths are being changed, by which task, under which lease
+
+function Claims({ ctx }: { ctx: Ctx }) {
+  const { board, selfId } = ctx;
+  const f = useContext(FocusContext);
+  const claims = claimMap(board);
+  const byId = new Map(board.tasks.map((t) => [t.id, t]));
+  if (!claims.length) return <p className="tb-none">No task in flight declares a path, and nobody holds a lease.</p>;
+  return (
+    <ul className="tb-claims">
+      {claims.map((c) => <ClaimRow key={c.path} c={c} ctx={ctx} byId={byId} selfId={selfId} f={f} />)}
+    </ul>
+  );
+}
+
+function ClaimRow({ c, ctx, byId, selfId, f }: { c: Claim; ctx: Ctx; byId: Map<string, BoardTask>; selfId: number | null; f: Focus }) {
+  const ids = [...c.tasks, ...c.leases.map((l) => l.taskId).filter((id): id is string => id !== null)];
+  const lit = useLit(ids);
+  return (
+    <li
+      className={`tb-claim${c.overlap ? " tb-claim--shared" : ""}`}
+      style={{ "--depth": c.depth } as CSSProperties}
+      onMouseEnter={() => ids.length && f.light(ids)}
+      onMouseLeave={() => f.light(null)}
+      title={c.path}
+      {...lit}
+    >
+      <span className="tb-claim__path mono">
+        {c.depth > 0 && <span className="tb-claim__elbow" aria-hidden="true" />}
+        {c.label}
+      </span>
+      <span className="tb-claim__who">
+        {c.overlap && <span className="tb-claim__shared">shared</span>}
+        {c.tasks.map((id) => {
+          const t = byId.get(id);
+          return (
+            <button key={id} type="button" className={`tb-chip tone-${t?.column ? STAGE_TONE[t.column] : "idle"}`} onClick={() => f.pick(id)}>
+              <span className="dot" aria-hidden="true" />{ctx.title(id)}
+            </button>
+          );
+        })}
+        {c.leases.map((l) => (
+          <span key={l.id} className={`tb-chip tb-chip--lease${l.holderId === selfId ? " tone-teal" : " tone-idle"}`} title={`Lease ${l.id}, fencing token ${l.fencingToken}: writes under an older token are refused`}>
+            <Lock />{who(l.holderId, selfId)} · <Left at={l.expiresAt} />
+          </span>
+        ))}
+      </span>
+    </li>
+  );
+}
+
+// ---------- queue: per repository, the last integrated head, then the line in order
+
+function Queue({ ctx }: { ctx: Ctx }) {
+  const { board, selfId } = ctx;
+  const byId = new Map(board.tasks.map((t) => [t.id, t]));
+  const repoIds = [...new Set([...board.queue.map((e) => e.repositoryId), ...board.tasks.filter((t) => t.entry?.status === "integrated").map((t) => t.repositoryId)])];
+  if (!board.queue.length) return <p className="tb-none">The queue is empty. Runs queued for integration line up here, oldest first.</p>;
+  const repoName = (id: number | null) => board.repositories.find((r) => r.id === id)?.name ?? "repository";
+  return (
+    <div className="tb-queues">
+      {repoIds.map((repo) => {
+        const line = board.queue.filter((e) => e.repositoryId === repo && e.status === "queued");
+        const held = board.queue.filter((e) => e.repositoryId === repo && e.status !== "queued");
+        if (!line.length && !held.length) return null;
+        const last = board.tasks.map((t) => t.entry).filter((e): e is QueueEntry => e !== null && e.status === "integrated" && e.repositoryId === repo)
+          .sort((a, b) => (Date.parse(b.decidedAt ?? "") || 0) - (Date.parse(a.decidedAt ?? "") || 0) || b.id - a.id)[0];
+        return (
+          <div key={String(repo)} className="tb-queue">
+            {repoIds.length > 1 && <p className="tb-queue__repo mono">{repoName(repo)}</p>}
+            <ol className="tb-train">
+              <li className="tb-train__base">
+                <span className="tb-train__pos" aria-hidden="true">✓</span>
+                <span className="tb-train__body">
+                  <span className="tb-train__label">Base</span>
+                  {last ? <span>last integrated <TaskRef id={last.taskId} ctx={ctx} /> · head <code className="mono" title={last.headSha}>{short(last.headSha)}</code></span> : <span className="text-faint">nothing integrated here yet</span>}
+                </span>
+              </li>
+              {line.map((e, i) => (
+                <TrainCar key={e.id} entry={e} pos={i + 1} ctx={ctx} task={byId.get(e.taskId)} selfId={selfId} />
+              ))}
+              {!line.length && <li className="tb-train__empty text-faint">Nothing is waiting in line.</li>}
+            </ol>
+            {held.length > 0 && (
+              <div className="tb-held">
+                <p className="tb-held__head">Held back <span className="text-faint">— they don’t block the line</span></p>
+                <ul>
+                  {held.map((e) => {
+                    const task = byId.get(e.taskId);
+                    return (
+                      <HeldRow key={e.id} entry={e} ctx={ctx} task={task} />
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TrainCar({ entry, pos, ctx, task, selfId }: { entry: QueueEntry; pos: number; ctx: Ctx; task?: BoardTask; selfId: number | null }) {
+  const lit = useLit([entry.taskId]);
+  return (
+    <li className={`tb-train__car${pos === 1 ? " tb-train__car--head" : ""}`} {...lit}>
+      <span className="tb-train__pos num">{pos}</span>
+      <span className="tb-train__body">
+        <TaskRef id={entry.taskId} ctx={ctx} />
+        <span className="tb-train__meta">
+          queued by {who(entry.enqueuedBy, selfId)}{entry.enqueuedAt ? ` · ${when(entry.enqueuedAt).slice(11)}` : ""} · head <code className="mono" title={entry.headSha}>{short(entry.headSha)}</code>
+        </span>
+      </span>
+      <EntryControls entry={entry} ctx={ctx} task={task} />
+    </li>
+  );
+}
+
+function HeldRow({ entry, ctx, task }: { entry: QueueEntry; ctx: Ctx; task?: BoardTask }) {
+  const lit = useLit([entry.taskId]);
+  return (
+    <li className="tb-held__row" {...lit}>
+      <span className="tb-held__body">
+        <span><TaskRef id={entry.taskId} ctx={ctx} /> <Chip tone={STATUS_TONE[entry.status]}>{STATUS_WORD[entry.status]}</Chip></span>
+        {entry.reason && <span className="tb-held__why">{entry.reason}</span>}
+      </span>
+      {task && <ConflictButton task={task} ctx={ctx} label="Resolve" className="btn btn--neutral btn--sm" />}
+    </li>
+  );
+}
+
+// ---------- side column: what needs a person, or one task in full
+
+function NeedsYou({ ctx, items }: { ctx: Ctx; items: Attention[] }) {
+  const { board, selfId } = ctx;
+  const byId = new Map(board.tasks.map((t) => [t.id, t]));
+  if (!items.length) {
+    return (
+      <div className="tb-needs__none">
+        <p className="tb-needs__calm">Nothing needs a person.</p>
+        <p className="text-faint">Runs that can’t land, entries waiting for your review, your leases and overlapping work show up here first.</p>
+      </div>
+    );
+  }
+  return (
+    <ul className="tb-needs">
+      {items.map((a) => {
+        const task = a.taskId ? byId.get(a.taskId) : undefined;
+        const key = a.kind === "lease" ? `lease-${a.lease.id}` : a.kind === "overlap" ? `overlap-${a.taskId}-${a.overlap.leaseId ?? a.overlap.otherTaskId}` : `${a.kind}-${a.entry.id}`;
+        return <NeedItem key={key} a={a} task={task} ctx={ctx} selfId={selfId} />;
       })}
     </ul>
   );
 }
 
-export function QueueTable({ board, selfId }: { board: ProjectBoard; selfId: number | null }) {
-  const ctx = context(board, selfId);
-  const byId = new Map(board.tasks.map((t) => [t.id, t]));
+function NeedItem({ a, task, ctx, selfId }: { a: Attention; task?: BoardTask; ctx: Ctx; selfId: number | null }) {
+  const f = useContext(FocusContext);
+  const ids = [a.taskId, a.kind === "overlap" ? a.overlap.otherTaskId : null].filter((id): id is string => Boolean(id));
+  const tone = a.kind === "held" || a.kind === "overlap" ? "warn" : a.kind === "integrate" ? "info" : "teal";
   return (
-    <>
-      <Table<QueueEntry>
-        caption="Pending integration entries"
-        rows={board.queue}
-        rowKey={(e) => String(e.id)}
-        columns={[
-          { head: "Repo queue", cell: (e) => <span className="num">{queuePosition(board.queue, e) ?? "—"}</span> },
-          { head: "Task", cell: (e) => <><TaskLink id={e.taskId} ctx={ctx} /><span className="sub mono">run {e.runId.slice(0, 8)} · head {short(e.headSha)}</span></> },
-          { head: "Status", cell: (e) => <Chip tone={STATUS_TONE[e.status]}>{STATUS_WORD[e.status]}</Chip> },
-          { head: "Base", cell: (e) => <span className="mono">{short(e.baseSha)}{e.checkedBaseSha && e.checkedBaseSha !== e.baseSha ? ` → ${short(e.checkedBaseSha)}` : ""}</span> },
-          { head: "Queued by", cell: (e) => who(e.enqueuedBy, selfId) },
-          {
-            head: "",
-            cell: (e) => {
-              const task = byId.get(e.taskId);
-              return (
-                <div className="row-actions">
-                  {task && e.status !== "queued" && <ConflictButton task={task} ctx={ctx} />}
-                  <EntryControls entry={e} ctx={ctx} />
-                </div>
-              );
-            },
-          },
-        ]}
-      />
-      <LockNote />
-    </>
+    <li className={`tb-need tone-${tone}`} onMouseEnter={() => f.light(ids)} onMouseLeave={() => f.light(null)}>
+      <p className="tb-need__what">
+        {a.kind === "held" && <><TaskRef id={a.taskId} ctx={ctx} /> {a.entry.status === "needs_rebase" ? "needs a rebase" : "has stale instructions"}</>}
+        {a.kind === "integrate" && <><TaskRef id={a.taskId} ctx={ctx} /> is first in line for your review</>}
+        {a.kind === "lease" && <>Your lease on <span className="mono">{a.lease.resource}</span></>}
+        {a.kind === "overlap" && (a.overlap.kind === "lease"
+          ? <><TaskRef id={a.taskId} ctx={ctx} /> needs <span className="mono">{a.overlap.resource}</span>, leased by {who(a.overlap.holderId, selfId)}</>
+          : <><TaskRef id={a.taskId} ctx={ctx} /> {a.overlap.kind === "dependency" ? "depends on code in" : "overlaps"} <TaskRef id={a.overlap.otherTaskId ?? ""} ctx={ctx} fallback={a.overlap.otherTitle} /></>)}
+      </p>
+      <p className="tb-need__why">
+        {a.kind === "held" && (a.entry.status === "needs_rebase"
+          ? <>Started from <span className="mono">{short(a.entry.baseSha)}</span>; the base is now <span className="mono">{short(a.entry.checkedBaseSha)}</span>.</>
+          : "A decision or rule changed since the run started.")}
+        {a.kind === "integrate" && <>Queued by {who(a.entry.enqueuedBy, selfId)} · head <span className="mono">{short(a.entry.headSha)}</span></>}
+        {a.kind === "lease" && <><Left at={a.lease.expiresAt} /> · token {a.lease.fencingToken}{a.lease.taskId ? <> · for <TaskRef id={a.lease.taskId} ctx={ctx} /></> : null}</>}
+        {a.kind === "overlap" && (a.overlap.kind === "lease" ? <>The lease ends <Left at={a.overlap.expiresAt} />.</> : "A warning: nothing is blocked.")}
+      </p>
+      <div className="row-actions row-actions--wrap">
+        {a.kind === "held" && task && <ConflictButton task={task} ctx={ctx} label="Resolve" className="btn btn--neutral btn--sm" />}
+        {a.kind === "integrate" && <EntryControls entry={a.entry} ctx={ctx} task={task} />}
+        {a.kind === "lease" && <LeaseControls lease={a.lease} ctx={ctx} />}
+        {a.kind === "overlap" && task && <ConflictButton task={task} ctx={ctx} label="What can I do?" className="btn btn--ghost btn--sm" />}
+      </div>
+    </li>
   );
 }
+
+function Inspector({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
+  const { board, selfId } = ctx;
+  const f = useContext(FocusContext);
+  const column = task.column as BoardColumn;
+  const hint = BOARD_COLUMNS.find((c) => c.id === column)?.hint;
+  const kids = board.tasks.filter((t) => t.parentId === task.id && t.column !== null);
+  const leases = board.leases.filter((l) => l.taskId === task.id);
+  const hot = new Set(board.overlaps.filter((o) => o.taskId === task.id).flatMap((o) => o.paths.map(([mine]) => normPath(mine))));
+  const conflicted = column === "needs_rebase" || column === "stale_instructions" || board.overlaps.some((o) => o.taskId === task.id || o.otherTaskId === task.id);
+  const pending = task.entry && task.entry.status === "queued" ? task.entry : null;
+  const canRun = column === "ready" && board.permissions.includes("run.request");
+  return (
+    <div className="tb-inspect">
+      <button type="button" className="tb-back" onClick={() => f.pick(null)}>‹ What needs attention</button>
+      <div className="tb-inspect__head">
+        <Stage column={column} />
+        {task.parentId && <span className="text-faint">in <TaskRef id={task.parentId} ctx={ctx} fallback={task.parentTitle} /></span>}
+      </div>
+      <h3 className="tb-inspect__title">{task.title}</h3>
+      {hint && <p className="tb-inspect__hint">{hint}.</p>}
+      <dl className="tb-facts">
+        {kids.length > 0 && (
+          <div><dt>Subtasks</dt><dd><ul className="tb-facts__list">{kids.map((k) => <li key={k.id}><TaskRef id={k.id} ctx={ctx} /> <Stage column={k.column as BoardColumn} /></li>)}</ul></dd></div>
+        )}
+        {task.waitingOn.length > 0 && (
+          <div><dt>Waits for</dt><dd className="tb-facts__warn">{task.waitingOn.map((d, i) => <span key={d}>{i > 0 && ", "}<TaskRef id={d} ctx={ctx} /></span>)}</dd></div>
+        )}
+        {task.dependsOn.length > 0 && (
+          <div><dt>Depends on</dt><dd>{task.dependsOn.map((d, i) => <span key={d}>{i > 0 && ", "}<TaskRef id={d} ctx={ctx} /></span>)}</dd></div>
+        )}
+        {task.scopePaths.length > 0 && (
+          <div><dt>Changes</dt><dd><ul className="tb-facts__list">{task.scopePaths.map((p) => <li key={p} className="mono">{p}{hot.has(normPath(p)) && <span className="tb-claim__shared">shared</span>}</li>)}</ul></dd></div>
+        )}
+        {task.branch && <div><dt>Branch</dt><dd className="mono">{task.branch}</dd></div>}
+        {task.runs.length > 0 && <div><dt>Runs</dt><dd><span className="num">{task.runs.length}</span> <span className="text-faint mono">latest {task.runs[task.runs.length - 1].slice(0, 8)}</span></dd></div>}
+        {pending && <div><dt>Queue</dt><dd>#{queuePosition(board.queue, pending)} in line · queued by {who(pending.enqueuedBy, selfId)}</dd></div>}
+        {leases.map((l) => (
+          <div key={l.id}>
+            <dt>Lease</dt>
+            <dd className="tb-facts__lease">
+              <span><Lock /> <span className="mono">{l.resource}</span> · {who(l.holderId, selfId)} · <Left at={l.expiresAt} /></span>
+              <LeaseControls lease={l} ctx={ctx} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {(canRun || pending) && (
+        <div className="row-actions row-actions--wrap">
+          {canRun && <RequestRunButton task={task} ctx={ctx} />}
+          {pending && <EntryControls entry={pending} ctx={ctx} task={task} />}
+        </div>
+      )}
+      {conflicted && <ConflictView task={task} ctx={ctx} />}
+    </div>
+  );
+}
+
+/** One project's board. `clock` freezes "now" for the demo; `live` refreshes the data while the tab is visible. */
+export function TeamBoard({ board, selfId, live, clock, named, view = "plan" }: { board: ProjectBoard; selfId: number | null; live: boolean; clock: string | null; named: boolean; view?: BoardView }) {
+  const ctx = useMemo(() => context(board, selfId), [board, selfId]);
+  const router = useRouter();
+  const [lit, setLit] = useState<string[] | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const asideId = `board-${board.id}-aside`;
+  const focus = useMemo<Focus>(() => ({
+    lit, picked, light: setLit,
+    pick: (id) => {
+      setPicked(id);
+      setLit(null);
+      requestAnimationFrame(() => reveal(document.getElementById(asideId)));
+    },
+  }), [lit, picked, asideId]);
+
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => { if (document.visibilityState === "visible") router.refresh(); }, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [live, router]);
+
+  const segments = useMemo(() => boardVerdict(board, selfId), [board, selfId]);
+  const items = useMemo(() => attention(board, selfId), [board, selfId]);
+  const next = items.find((a): a is Extract<Attention, { kind: "integrate" }> => a.kind === "integrate");
+  const task = picked ? board.tasks.find((t) => t.id === picked && t.column !== null) : undefined;
+  const active = board.tasks.filter((t) => t.column !== null && t.column !== "integrated" && !board.tasks.some((k) => k.parentId === t.id)).length;
+  const done = board.tasks.filter((t) => t.column === "integrated" && !board.tasks.some((k) => k.parentId === t.id)).length;
+  const repos = board.repositories.map((r) => r.name).join(", ");
+  const notes = [
+    board.missing.length ? `Brain didn’t return ${board.missing.join(", ")}; the rest of the board is current.` : null,
+    board.truncated ? "This project has more tasks than the board loads; the oldest are not shown." : null,
+  ].filter((n): n is string => n !== null);
+  const counts = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+  return (
+    <ClockContext.Provider value={clock ? Date.parse(clock) : null}>
+      <FocusContext.Provider value={focus}>
+        <section className="tb" id={`board-${board.id}`} aria-label={`${board.name} board`}>
+          {named && <h2 className="tb__project">{board.name}</h2>}
+          {notes.map((n) => <div key={n} className="callout tone-warn">{n}</div>)}
+          <AtlasVerdict
+            segments={segments}
+            sub={<>{counts(active, "task", "tasks")} in flight · {counts(board.queue.length, "entry", "entries")} in the queue · {counts(board.leases.length, "live lease", "live leases")} · you are <b>{board.role}</b>{repos ? ` on ${repos}` : ""}</>}
+            actions={next ? <IntegrateButton entry={next.entry} ctx={ctx} label="Integrate next" small={false} /> : null}
+            onMention={(ref) => setLit(ref ? [ref] : null)}
+            onPick={(ref) => focus.pick(ref)}
+          />
+          <div className="atlas-split tb-split">
+            <ViewPane id={view} className="tb-main">
+              {view === "plan" && <Section title="Plan" note={`${active} in flight · ${done} done`}><Plan ctx={ctx} /></Section>}
+              {view === "paths" && <Section title="Who is changing what" note="declared scopes and live leases, by path"><Claims ctx={ctx} /></Section>}
+              {view === "queue" && <Section title="Integration queue" note="a reviewer lands entries in order; the first blocks the rest"><Queue ctx={ctx} /></Section>}
+            </ViewPane>
+            <aside className="tb-aside" id={asideId} aria-label={task ? `Task: ${task.title}` : "What needs attention"}>
+              {task ? (
+                <Inspector key={task.id} task={task} ctx={ctx} />
+              ) : (
+                <>
+                  <header className="tb-aside__head">
+                    <h3>Needs attention <span className="tb-count num">{items.length}</span></h3>
+                    {live && <span className="chip chip--info chip--live"><span className="chip__dot" aria-hidden="true" />Live</span>}
+                  </header>
+                  <NeedsYou ctx={ctx} items={items} />
+                </>
+              )}
+              <LockNote />
+            </aside>
+          </div>
+        </section>
+      </FocusContext.Provider>
+    </ClockContext.Provider>
+  );
+}
+

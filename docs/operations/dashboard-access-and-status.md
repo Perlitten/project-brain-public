@@ -62,13 +62,52 @@ option retain the original full overview, including service probes. An omitted
 probe is `null`, never a fabricated healthy result. Failed jobs collection is
 unavailable, distinct from a successful empty job history.
 
-Saving Settings updates the API immediately. Workers need a restart to use those
-changes. Environment/deployment overrides can return after restart; update the
+Saving Settings updates the API immediately. Worker and scheduler settings need a
+restart in those processes, with two exceptions. The shared query-capture preference:
+API and MCP recorders read it before every query record. And **Git & origin sync**
+(webhook ref, source fetch and timeout, origin poll interval and timeout, mirror
+directory): these are also stored in the `brain_runtime_settings` table, which the
+API applies at start-up and the worker and scheduler re-read every 15 seconds, so a
+save reaches polling and webhook jobs within a minute without a restart. A saved
+value wins over the deployment's environment until it is saved again; the webhook
+secret and `BRAIN_ORIGIN_REMOTES` stay in the API's `.env`. Environment/deployment overrides can return after restart; update the
 deployment configuration when the Settings page identifies an override. Displayed
 server times use the shared UTC formatter; values without timezone information are
 not assigned one silently.
 
+**Connect repository by URL** (Projects → Connect repository → Git URL) needs the
+**Clones directory** (`BRAIN_MANAGED_REPOS_DIR`, also editable under Git & origin
+sync): the dialog checks the address first (`POST /git/probe` lists branches and
+says whether a token is required), then `POST /git/connect` queues a `git_connect`
+job that clones the chosen branch into `<clones directory>/<name>-<hash>`,
+registers it and, when asked, indexes it. A token for a private repository is sent
+only in the request body; the API hands it to the worker through a one-time file
+and neither job params nor logs contain it. Transient clone retries retain the
+private hand-off until cloning succeeds, fails permanently or the file expires;
+the clone keeps its origin credentials for later fetches. Queue URLs preserve SSH
+logins and never contain HTTPS credentials. Fresh production clone volumes are
+owned by the non-root runtime user. Without a writable clones directory the
+dialog explains what to set and the API answers 409. Cloning requires `jobs:write`
+and, in team mode, `run.request` in the selected project even when initial
+indexing is disabled; admission checks precede registration and queueing.
+
 The UI changes do not diagnose a running installation's missing mount or API
 latency, change deployment settings, or rotate live credentials automatically.
 
+
+## Content history and finding actions
+
+Current memory contains agreed, proposed and verified decisions. Replaced decisions have their own view. The API advertises `memory_current`; an older API cannot silently substitute an unfiltered or empty decision list for that view.
+
+Finding dismissal requires operator/team-administrator authority, `core:write`, a reason and the observed evidence timestamp. A changed finding returns 409. A retry preserves the first reason and verified caller. The evidence shown at dismissal is saved separately from later scan updates. Dismissed findings are not revived automatically. Findings remain global in the current data model: repository-scoped listing still fails closed. Duplicate grouping covers the loaded page and uses evidence identity and recorded recurrence counts.
+
+Open code reads bounded chunks from the index using the repository and file explicitly named in the finding evidence. It never reads an arbitrary server file or guesses a repository from a module name. Project source permissions are checked separately from operator access to global findings. Historical module-only findings do not gain file identity retroactively.
+
+Request telemetry remains metadata-only by default. A team administrator may explicitly enable **Settings → Activity history → Record query text** (`REQUEST_TELEMETRY_CAPTURE_QUERY`) for future HTTP and MCP requests. This stores at most 500 characters; queries may contain source or secrets. The shared database stores this preference; API and already-running MCP processes check it before each query record. Disabling stops future capture across processes and does not erase previously stored text. The environment value seeds a new installation only once and cannot undo a later disable on restart. A missing/unreadable preference fails closed to metadata-only recording. Historical queries cannot be recovered. Trace details use the same repository/admin authorization as request history.
+
+These contracts require the updated API and its startup migrations. The dashboard does not deploy the server, change Vercel bindings, or enable query capture automatically. Existing clients keep the previous metadata-only behavior unless the operator opts in.
+
+
 Repository registration in team mode requires a live team administrator and the target project administrator checks; existing administrator credentials keep their scopes and remain compatible. Solo registration continues to require the explicit `workspace:write` credential scope. The dialog reports this permission missing before submission, without changing stored keys.
+
+Upgrades preserve existing PostgreSQL and Lite/SQLite histories. Lite startup adds the six optional content-history columns without recreating tables; repeated startup is safe.

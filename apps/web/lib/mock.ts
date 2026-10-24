@@ -24,10 +24,12 @@ import type {
 } from "./types";
 
 export const repositories: Repository[] = [
-  { id: 1, slug: "project-brain", name: "project-brain", path: "/srv/repos/project-brain", branch: "master", head: "d57f014", behind: 3 },
+  { id: 1, slug: "project-brain", name: "project-brain", path: "/srv/repos/project-brain", branch: "master", head: "d57f014", behind: 3,
+    originPoll: { status: "ok", at: "02 Oct 2026, 03:25 UTC", remote: "https://***@github.com/you/project-brain.git", behind: 3 } },
   { id: 2, slug: "docs-site", name: "docs-site", path: "/srv/repos/docs-site", branch: "main", head: "b113aca", behind: 0 },
   { id: 3, slug: "mobile-app", name: "mobile-app", path: "/srv/repos/mobile-app", branch: "master", head: "bec759d", behind: 0 },
-  { id: 4, slug: "billing-service", name: "billing-service", path: "/srv/repos/billing-service", branch: "main", head: "9f949e9", behind: 41 },
+  { id: 4, slug: "billing-service", name: "billing-service", path: "/srv/repos/billing-service", branch: "main", head: "9f949e9", behind: 41,
+    originPoll: { status: "error", at: "02 Oct 2026, 03:25 UTC", remote: "git@github.com:you/billing-service.git", error: "git ls-remote timed out after 30s", behind: null } },
 ];
 
 export function findRepository(slug?: string | null): Repository {
@@ -136,6 +138,10 @@ export const agentRuns: AgentRun[] = [
   { id: "r-2288", agent: "claude-code", task: "Explain drift in sync engine", status: "completed", tokens: 12880, packHit: true, startedAt: "11:07", duration: "1m 48s", repo: "mobile-app" },
   { id: "r-2287", agent: "devin", task: "Offline queue replay ordering", status: "running", tokens: 30512, packHit: true, startedAt: "10:55", duration: "—", repo: "mobile-app" },
   { id: "r-2286", agent: "codex", task: "Versioned docs layout for v2", status: "timed_out", tokens: 61104, packHit: true, startedAt: "09:44", duration: "1h 00m", repo: "docs-site" },
+  // The demo Board's tasks (lib/board-demo.ts): ids are the first 8 characters of the task id.
+  { id: "00000006", agent: "codex", task: "Document the retry policy", status: "running", tokens: 9120, packHit: true, startedAt: "08:52", duration: "—" },
+  { id: "00000003", agent: "claude-code", task: "Wire retries into the checkout API", status: "running", tokens: 27440, packHit: true, startedAt: "08:31", duration: "—" },
+  { id: "00000002", agent: "claude-code", task: "Retry policy module", status: "completed", tokens: 18305, packHit: true, startedAt: "08:04", duration: "11m 20s" },
 ];
 
 export const events: LedgerEvent[] = [
@@ -163,12 +169,12 @@ export const indexRuns: IndexRun[] = [
 ];
 
 export const contextPacks: ContextPack[] = [
-  { id: "1042", task: "Fix lease renewal in worker queue", budget: "medium", tokens: 6120, files: 9, createdAt: "13:58", stale: true, consumer: "claude-code", repo: "billing-service" },
-  { id: "1041", task: "Split invoice PDF renderer per locale", budget: "large", tokens: 14880, files: 21, createdAt: "12:57", stale: true, consumer: "codex", repo: "billing-service" },
-  { id: "1038", task: "Explain drift in sync engine", budget: "small", tokens: 2410, files: 4, createdAt: "11:06", stale: false, consumer: "claude-code", repo: "mobile-app" },
-  { id: "1037", task: "Offline queue replay ordering", budget: "medium", tokens: 7330, files: 11, createdAt: "10:54", stale: false, consumer: "devin", repo: "mobile-app" },
-  { id: "1031", task: "Versioned docs layout for v2", budget: "large", tokens: 15990, files: 26, createdAt: "Oct 1", stale: false, consumer: "codex", repo: "docs-site" },
-  { id: "1029", task: "Retry policy capped at three attempts", budget: "small", tokens: 3102, files: 5, createdAt: "Oct 1", stale: false, consumer: "claude-code", repo: "billing-service" },
+  { id: "1042", task: "Fix lease renewal in worker queue", budget: "medium", tokens: 6120, files: 9, createdAt: "13:58", stale: true, consumer: "claude-code", memory: { rules: 2, decisions: 2, learnings: 0 }, repo: "billing-service" },
+  { id: "1041", task: "Split invoice PDF renderer per locale", budget: "large", tokens: 14880, files: 21, createdAt: "12:57", stale: true, consumer: "codex", memory: { rules: 1, decisions: 0, learnings: 0 }, repo: "billing-service" },
+  { id: "1038", task: "Explain drift in sync engine", budget: "small", tokens: 2410, files: 4, createdAt: "11:06", stale: false, consumer: "claude-code", memory: { rules: 0, decisions: 0, learnings: 0 }, repo: "mobile-app" },
+  { id: "1037", task: "Offline queue replay ordering", budget: "medium", tokens: 7330, files: 11, createdAt: "10:54", stale: false, consumer: "devin", memory: { rules: 0, decisions: 1, learnings: 0 }, repo: "mobile-app" },
+  { id: "1031", task: "Versioned docs layout for v2", budget: "large", tokens: 15990, files: 26, createdAt: "Oct 1", stale: false, consumer: "codex", memory: { rules: 0, decisions: 1, learnings: 0 }, repo: "docs-site" },
+  { id: "1029", task: "Retry policy capped at three attempts", budget: "small", tokens: 3102, files: 5, createdAt: "Oct 1", stale: false, consumer: "claude-code", memory: { rules: 0, decisions: 1, learnings: 0 }, repo: "billing-service" },
 ];
 
 // Demo pack bodies, keyed by pack id above.
@@ -198,11 +204,11 @@ export const rules: Rule[] = [
 ];
 
 export const insights: Insight[] = [
-  { id: "in-71", tone: "bad", kind: "drift", title: "payments/retry.py bypasses the ORM session rule in a new place", evidence: "retry.py:88 — direct session.commit(), rule R-014 forbids it", module: "billing-service/payments", detectedAt: "13:21" },
-  { id: "in-70", tone: "warn", kind: "coupling", title: "sync engine ↔ conflict resolver co-change rose to 0.71", evidence: "17 of 24 commits touching sync/engine.kt also touched sync/conflict.kt", module: "mobile-app/sync", detectedAt: "11:40" },
-  { id: "in-69", tone: "warn", kind: "hotspot", title: "gateway.py is the top churn file this month", evidence: "38 commits, 2,140 lines changed, 3 authors", module: "billing-service/payments", detectedAt: "Oct 1" },
-  { id: "in-67", tone: "warn", kind: "other", title: "Open PR touches payments and migrations in one diff", evidence: "PR #214 changes retry.py and adds migration 0042 — review flagged it as risky", module: "billing-service", detectedAt: "Oct 1" },
-  { id: "in-68", tone: "info", kind: "freshness", title: "4 context packs reference files changed since build", evidence: "pk-1042, pk-1041, pk-1030, pk-1028", module: "billing-service", detectedAt: "Oct 1" },
+  { id: "71", lastSeenAt: "2026-10-02T13:21:00Z", codeAvailable: true, occurrences: 3, tone: "bad", kind: "drift", title: "payments/retry.py bypasses the ORM session rule in a new place", evidence: "retry.py:88 — direct session.commit(), rule R-014 forbids it", module: "billing-service/payments", detectedAt: "13:21" },
+  { id: "70", lastSeenAt: "2026-10-02T11:40:00Z", codeAvailable: true, tone: "warn", kind: "coupling", title: "sync engine ↔ conflict resolver co-change rose to 0.71", evidence: "17 of 24 commits touching sync/engine.kt also touched sync/conflict.kt", module: "mobile-app/sync", detectedAt: "11:40" },
+  { id: "69", lastSeenAt: "2026-10-01T16:05:00Z", codeAvailable: true, tone: "warn", kind: "hotspot", title: "gateway.py is the top churn file this month", evidence: "38 commits, 2,140 lines changed, 3 authors", module: "billing-service/payments", detectedAt: "Oct 1" },
+  { id: "67", lastSeenAt: "2026-10-01T15:12:00Z", tone: "warn", kind: "other", title: "Open PR touches payments and migrations in one diff", evidence: "PR #214 changes retry.py and adds migration 0042 — review flagged it as risky", module: "billing-service", detectedAt: "Oct 1" },
+  { id: "68", lastSeenAt: "2026-10-01T15:40:00Z", tone: "info", kind: "freshness", title: "4 context packs reference files changed since build", evidence: "pk-1042, pk-1041, pk-1030, pk-1028", module: "billing-service", detectedAt: "Oct 1" },
 ];
 
 export const moduleEdges: ModuleEdge[] = [

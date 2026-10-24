@@ -23,12 +23,12 @@ export default async function Quality({ searchParams }: { searchParams: Promise<
   const gate = await adminOnlyPage("Quality");
   if (gate) return gate;
   return <>
+      <SectionTabs section="quality" active="/quality" />
       <PageHead
         title="Quality"
-        lede="Whether Brain finds the right code. Measured by asking questions whose right answers are known, not from live traffic — live request success is on Activity."
+        lede="Whether Brain finds the right code, measured with questions whose right answers are known. Live request success is on Activity."
         actions={<RunButton action={startBenchmark} label="Run the benchmark" icon="play" title="Run search benchmark" />}
       />
-      <SectionTabs section="quality" active="/quality" />
     <Suspense fallback={<p role="status" aria-live="polite">Loading measurements…</p>}><QualityData searchParams={searchParams} /></Suspense>
   </>;
 }

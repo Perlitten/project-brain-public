@@ -12,6 +12,7 @@ import type { NewKey } from "@/lib/actions/admin";
 import { EXPIRY_CHOICES } from "@/lib/scopes";
 import { PROJECT_ROLES, ROLE_WORD, type ProjectRole } from "@/lib/team-scopes";
 import type { TeamMemberRow, TeamProjectRow } from "@/lib/team-view";
+import "./team-ux.css";
 
 export function AddMemberForm() {
   const [name, setName] = useState("");
@@ -71,7 +72,7 @@ export function AddMemberForm() {
           Team admin — can add and revoke members and change project roles
         </label>
         <div className="btn-row">
-          <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !name.trim()}>
+          <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || !name.trim()}>
             {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="plus" size={15} />}
             {existing ? "Add to the team" : "Add member and issue key"}
           </button>
@@ -111,7 +112,7 @@ function MemberKeyDialog({ k, onClose }: { k: NewKey | null; onClose: () => void
 export function MemberTable({ members, projects, selfId }: { members: TeamMemberRow[]; projects: TeamProjectRow[]; selfId: number | null }) {
   const live = projects.filter((p) => !p.disabled);
   return (
-    <div className="table-wrap">
+    <div className="table-wrap team-members-wrap">
       <table className="table team-members">
         <caption className="sr-only">Team members</caption>
         <thead>
@@ -119,7 +120,7 @@ export function MemberTable({ members, projects, selfId }: { members: TeamMember
             <th scope="col">Member</th>
             <th scope="col">Status</th>
             {live.map((p) => (
-              <th scope="col" key={p.id}>
+              <th scope="col" key={p.id} className="team-members__project" title={p.name}>
                 {p.name}
               </th>
             ))}
@@ -183,7 +184,7 @@ function RoleSelect({ project, member }: { project: TeamProjectRow; member: Team
       className="select"
       aria-label={`${member.name}’s role in ${project.name}`}
       value={current}
-      disabled={pending || set.mode !== "on"}
+      disabled={pending || set.mode === "locked"}
       title={current ? ROLE_WORD[current as ProjectRole] : "Not in this project"}
       onChange={(e) => {
         const next = e.target.value;

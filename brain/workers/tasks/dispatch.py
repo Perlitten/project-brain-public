@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 from brain.config.settings import settings
 from brain.database.session import redis_client
+from brain.workers.git_connect import run_git_connect
 from brain.workers.origin_poll import run_origin_poll
 from brain.workers.db_fencing import DbFence, check_db_fence_open, current_job_fence
 from brain.workers.errors import StaleWorkerFencingError
@@ -62,6 +63,7 @@ async def execute_job(
         "memory_consolidation": run_memory_consolidation,
         "self_diagnosis": run_self_diagnosis,
         "origin_poll": run_origin_poll,
+        "git_connect": run_git_connect,
         "nightly_maintenance": run_nightly_maintenance,
         "deep_context": run_deep_context,
         "team_run_execution": run_team_run_execution,

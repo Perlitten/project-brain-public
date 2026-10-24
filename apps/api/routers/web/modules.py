@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from brain.database.models import Embedding, File, FileChunk
 from brain.database.session import async_session_factory
 from ._common import REPOSITORY_READ, _repository_dict, _resolve_repository, module_of, router
@@ -92,22 +92,23 @@ def _add_module_row(row: tuple[Any, ...], modules: dict[str, dict[str, Any]], co
     from brain.embeddings.integrity import fast_embedding_reason
     from brain.search.filters import should_exclude_from_retrieval
 
-    path, emb_id, dim, provider, model = row
+    path, emb_id, dim, provider, model = row[:5]
+    count = int(row[5]) if len(row) > 5 and row[5] is not None else 1
     name = module_of(path)
     bucket = modules.setdefault(
         name,
         {"name": name, "chunks": 0, "current": 0, "outdated": 0, "missing": 0, "excluded": 0},
     )
-    bucket["chunks"] += 1
+    bucket["chunks"] += count
     if should_exclude_from_retrieval(path):
-        bucket["excluded"] += 1
+        bucket["excluded"] += count
         return
     reason = fast_embedding_reason(emb_id, dim, provider, model, None, config)
-    bucket["current" if reason == "current" else "missing" if reason == "missing" else "outdated"] += 1
+    bucket["current" if reason == "current" else "missing" if reason == "missing" else "outdated"] += count
 
 
 def aggregate_modules(rows: list[tuple[Any, ...]], config: Any) -> list[dict[str, Any]]:
-    """rows: (path, embedding_id, dimension, provider, model) per chunk."""
+    """rows: (path, embedding_id, dimension, provider, model[, chunk_count]) per chunk or file group."""
     modules: dict[str, dict[str, Any]] = {}
     for row in rows:
         _add_module_row(row, modules, config)
@@ -123,13 +124,22 @@ async def web_modules(repository_id: int | None = None) -> dict[str, Any]:
         return {"repository": None, "modules": []}
     config = get_embedding_config()
     modules: dict[str, dict[str, Any]] = {}
+    has_emb = case((Embedding.id.is_not(None), 1), else_=None)
     async with async_session_factory() as session:
         rows = await session.stream(
-            select(File.path, Embedding.id, Embedding.dimension, Embedding.provider, Embedding.model)
+            select(
+                File.path,
+                has_emb,
+                Embedding.dimension,
+                Embedding.provider,
+                Embedding.model,
+                func.count(FileChunk.id),
+            )
             .select_from(FileChunk)
             .join(File, FileChunk.file_id == File.id)
             .outerjoin(Embedding, FileChunk.embedding_id == Embedding.id)
             .where(File.repository_id == repository.id)
+            .group_by(File.path, has_emb, Embedding.dimension, Embedding.provider, Embedding.model)
             .execution_options(yield_per=1000)
         )
         async for row in rows:

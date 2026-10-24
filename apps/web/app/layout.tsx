@@ -4,13 +4,15 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { BOOT_SCRIPT, Boot } from "@/components/Boot";
 import { getCapabilities } from "@/lib/capabilities";
-import { ApplyShellConfiguration } from "@/components/ShellConfiguration";
+import { ApplyShellConfiguration, ApplyShellUrgent } from "@/components/ShellConfiguration";
 import { Shell, type ShellRepo } from "@/components/Shell";
 import { actionsMode } from "@/lib/actions/gate";
 import { signInMode } from "@/lib/sign-in-view";
 import { currentMember } from "@/lib/team-session";
 import { dataSource, getRepositoryFeed } from "@/lib/data";
 import { repositoryStatus } from "@/lib/repository-status";
+import { getSetupProgress } from "@/lib/setup-view";
+import { getInbox } from "@/lib/inbox";
 import "./globals.css";
 import "./actions.css";
 
@@ -64,6 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Suspense>
           <Shell demo={dataSource === "demo"}>
             <Suspense fallback={null}><Configuration /></Suspense>
+            <Suspense fallback={null}><UrgentCount /></Suspense>
             {children}
           </Shell>
         </Suspense>
@@ -74,12 +77,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
 
 async function Configuration() {
-  const [feed, mode, access, member, capabilities] = await Promise.all([getRepositoryFeed(), actionsMode(), signInMode(), currentMember(), getCapabilities()]);
+  const [feed, mode, access, member, capabilities, setupProgress] = await Promise.all([getRepositoryFeed(), actionsMode(), signInMode(), currentMember(), getCapabilities(), getSetupProgress()]);
   const repos: ShellRepo[] = feed.repositories.map((r) => ({
     slug: r.slug,
     name: r.name,
     path: r.path,
     ...repositoryStatus(r),
   }));
-  return <ApplyShellConfiguration value={{ repos, mode, access, capabilities, member: member ? { id: member.id, name: member.name, admin: member.admin } : null }} />;
+  // Members never see Setup, so the rail only asks for progress on behalf of an owner or team admin.
+  const setup = member && !member.admin ? null : setupProgress;
+  return <ApplyShellConfiguration value={{ repos, mode, access, capabilities, setup, member: member ? { id: member.id, name: member.name, admin: member.admin } : null }} />;
+}
+
+async function UrgentCount() {
+  const [capabilities, feed, member] = await Promise.all([getCapabilities(), getRepositoryFeed(), currentMember()]);
+  // A legacy server has no team discovery contract. Do not let the global
+  // badge probe /team/* routes that the corresponding pages correctly gate.
+  if (!capabilities.supported.includes("team")) return <ApplyShellUrgent value={0} />;
+  const urgent = await getInbox(member === null, feed.repositories.map((r) => ({ repo: r, ...repositoryStatus(r), available: feed.available })))
+    .then((i) => i.needs.length)
+    .catch(() => 0);
+  return <ApplyShellUrgent value={urgent} />;
 }

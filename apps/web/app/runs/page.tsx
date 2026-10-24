@@ -2,8 +2,12 @@ import { adminOnlyPage } from "@/components/AdminOnly";
 import Link from "next/link";
 import { Term } from "@/components/Term";
 import { SectionTabs } from "@/components/SectionNav";
-import { Chip, EmptyState, JobChip, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
-import { getPagedAgentRuns } from "@/lib/data";
+import { Chip, EmptyState, PageHead, Panel, Stat, Table, fmt } from "@/components/ui";
+import { getContextPacks, getPagedAgentRuns, getRepositoryFeed } from "@/lib/data";
+import { packForRun } from "@/lib/task-links";
+import { TaskResult } from "@/components/TaskActions";
+import { NewTaskButton } from "@/components/NewTaskButton";
+import { agentHref } from "@/lib/agent-link";
 import { getListQuery } from "@/lib/list-query";
 
 export const metadata = { title: "Agent tasks" };
@@ -12,8 +16,13 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
   const gate = await adminOnlyPage("Agent tasks");
   if (gate) return gate;
   const params = await searchParams;
-  const result = await getPagedAgentRuns(typeof params.repo === "string" ? params.repo : undefined, getListQuery(params));
+  const one = (k: string) => (typeof params[k] === "string" ? (params[k] as string) : undefined);
+  const [result, packs, feed] = await Promise.all([getPagedAgentRuns(one("repo"), getListQuery(params)), getContextPacks(200), getRepositoryFeed()]);
   const runs = result.items;
+  const projects = feed.repositories.map((r) => ({ slug: r.slug, name: r.name, path: r.path }));
+  // ?new=task&title=…&goal=… opens the dialog filled in (a finding turned into work).
+  const prefill = one("new") === "task" ? { title: one("title")?.slice(0, 300), goal: one("goal")?.slice(0, 10000) } : undefined;
+  const back = `/runs${params.q ? `?q=${encodeURIComponent(String(params.q))}` : ""}`;
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
   const briefed = runs.filter((r) => r.packHit).length;
   const briefingTracked = runs.some((r) => r.packHit !== undefined);
@@ -23,6 +32,7 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
   const timedOut = runs.filter((r) => r.status === "timed_out").length;
   return (
     <>
+      <SectionTabs section="logs" active="/runs" />
       <PageHead
         title="Agent tasks"
         lede={
@@ -31,8 +41,8 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
             themselves; a task nobody closes is marked timed out, which doesn’t mean the work failed.
           </>
         }
+        actions={<NewTaskButton projects={projects} prefill={prefill} />}
       />
-      <SectionTabs section="logs" active="/runs" />
       {result.available !== false && <div className="stats">
         <Stat label="Tasks" value={fmt(result.paging.total)} note={hasQuery ? "matching the filters" : "all recorded"} />
         <div className="tone-ok">
@@ -70,19 +80,23 @@ export default async function Runs({ searchParams }: { searchParams: Promise<Rec
                 <>
                   <span>{r.task}</span>
                   <span className="sub mono" title={r.id}>
-                    {r.agent} · {r.id.length > 12 ? r.id.slice(0, 8) : r.id}
+                    {agentHref(r.agent) ? <Link className="link" href={agentHref(r.agent)!}>{r.agent}</Link> : r.agent} · {r.id.length > 12 ? r.id.slice(0, 8) : r.id}
                   </span>
                 </>
               ),
             },
             {
               head: "Context pack",
-              cell: (r) =>
-                r.packHit === undefined ? <span className="text-faint">—</span> : r.packHit ? <Chip tone="ok">yes</Chip> : <Chip tone="warn">none</Chip>,
+              cell: (r) => {
+                if (r.packHit === undefined) return <span className="text-faint">—</span>;
+                if (!r.packHit) return <Chip tone="warn">none</Chip>;
+                const pack = packForRun(r, packs);
+                return pack ? <Link className="link" href={`/packs/${encodeURIComponent(pack.id)}?back=${encodeURIComponent(back)}`}>pack #{pack.id}</Link> : <Chip tone="ok">yes</Chip>;
+              },
             },
             { head: <Term k="tokens">Tokens</Term>, cell: (r) => (r.tokens === undefined ? "—" : fmt(r.tokens)), align: "right" },
             { head: "Took", cell: (r) => r.duration, align: "right" },
-            { head: "Result", cell: (r) => <JobChip status={r.status} /> },
+            { head: "Result", cell: (r) => <TaskResult run={r} /> },
           ]}
         />
         )}

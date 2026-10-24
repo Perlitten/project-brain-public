@@ -57,6 +57,11 @@ class SettingsCore:
     # Mirrors nginx `client_max_body_size 25m` for deployments that expose
     # uvicorn directly (docker compose publishes 8000 without the proxy).
     # 0 disables the application-level cap.
+    # Off by default: query text can contain source or secrets. Metadata-only
+    # history remains available without this opt-in; old queries cannot be recovered.
+    # Seeds the persisted installation-wide capture preference only once.
+    REQUEST_TELEMETRY_CAPTURE_QUERY: bool = False
+
     API_MAX_REQUEST_BODY_BYTES: int = 25 * 1024 * 1024
 
     BRAIN_STALE_CONTEXT_POLICY: Literal["warn_and_serve", "strict_block"] = "warn_and_serve"
@@ -228,6 +233,13 @@ class SettingsCore:
     # <dir>/<name>-<hash>.git and indexed from the mirror commit. Blank
     # disables mirrors: such a checkout then fails as before.
     BRAIN_SOURCE_MIRROR_DIR: str = ""
+
+    # Brain-owned writable directory for repositories connected from the web UI
+    # by URL (brain/indexers/git_connect.py). Each one is cloned into
+    # <dir>/<name>-<hash> and then registered, indexed and polled like any
+    # other attached repository. The directory is implicitly an allowed
+    # repository root. Blank disables connecting by URL.
+    BRAIN_MANAGED_REPOS_DIR: str = ""
 
     # JSON map of repository path -> origin, for sources with no usable
     # `origin` remote: {"/app": "https://github.com/org/repo.git"} or

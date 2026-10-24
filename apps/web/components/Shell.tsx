@@ -8,13 +8,13 @@ import type { ActionResult, ActionsMode, SignInMode } from "@/lib/actions/types"
 import { startBenchmark, startHealthCheck, startInsights, startReindex, startSelfDiagnosis } from "@/lib/actions/jobs";
 import { verifyProviders } from "@/lib/actions/setup";
 import { activeSection, adminOnly, allNavItems, locate, navGroups, withProject } from "@/lib/nav";
-import { ActionsProvider, LOCK_REASON, Toaster, dismissToast, report, toast } from "./act";
+import { ActionsProvider, LOCK_REASON, demoPreview, Toaster, dismissToast, report, toast } from "./act";
 import { Ambient } from "./Ambient";
 import { BrandMark, Icon, type IconName } from "./Icon";
 import { RestrictedMemberProvider, useRestrictedMember } from "./MemberScope";
 import type { Capabilities } from "@/lib/capability-contract";
 import { CapabilitiesProvider, useCapabilities } from "./Capabilities";
-import { ShellConfigurationContext } from "./ShellConfiguration";
+import { ShellConfigurationContext, ShellUrgentContext } from "./ShellConfiguration";
 import { PulseProvider } from "./PulseProvider";
 import { RailPulse } from "./RailPulse";
 
@@ -41,10 +41,15 @@ export interface ShellConfiguration {
   access: SignInMode;
   member: ShellMember | null;
   capabilities: Capabilities;
+  /** Setup steps done; null when unknown or not this browser's business (members). */
+  setup?: { done: number; total: number } | null;
+  /** Items on the Dashboard inbox that ask for a person; shown on the Dashboard entry. */
+  urgent?: number;
 }
 export function Shell({ demo, children }: { demo: boolean; children: ReactNode }) {
   const [configuration, setConfiguration] = useState<ShellConfiguration | null>(null);
-  const { repos, mode, access, member, capabilities } = configuration ?? {
+  const [urgent, setUrgent] = useState(0);
+  const { repos, mode, access, member, capabilities, setup } = configuration ?? {
     repos: [], mode: demo ? "demo" : "locked", access: "unknown", member: null,
     capabilities: { state: "unavailable", supported: [] },
   } as ShellConfiguration;
@@ -142,6 +147,7 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
 
   return (
     <ShellConfigurationContext.Provider value={setConfiguration}>
+    <ShellUrgentContext.Provider value={setUrgent}>
     <CapabilitiesProvider value={capabilities}>
     <RestrictedMemberProvider value={restricted}>
     <ActionsProvider mode={mode}>
@@ -159,7 +165,7 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
             <small>memory for your AI agents</small>
           </span>
         </Link>
-        <RailNav path={path} withRepo={withRepo} slim={slim} />
+        <RailNav path={path} withRepo={withRepo} slim={slim} setup={setup} urgent={urgent} />
         {mobile && drawer && <button type="button" className="btn btn--neutral rail__close" onClick={() => setDrawer(false)}>Close menu</button>}
         <div className="rail__foot">
           {demo && process.env.NEXT_PUBLIC_DEMO_SITE === "1" && (
@@ -227,7 +233,7 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
               <span className={`dot tone-${repo?.tone}`} aria-hidden="true" />
               <span className="repo__label">
                 <small>Repository</small>
-                {repo?.name ?? (configuration === null ? "Loading projects…" : !repos.length ? "No projects connected" : allowsAllRepos && !repoSlug ? "All repositories" : "Repository not found")}
+                {repo?.name ?? (configuration === null ? "Loading projects…" : !repos.length ? "No projects connected" : allowsAllRepos && !repoSlug ? "All projects" : "Repository not found")}
               </span>
               <Icon name="arrow" size={14} className="repo__caret" />
             </button>
@@ -247,7 +253,17 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
             )}
           </div>
           )}
-          {!scoped && <span className="text-faint">Across all projects</span>}
+          {!scoped && (
+            <div className="repo" title="This screen covers the whole Brain server; the repository filter does not apply here.">
+              <span className="repo__btn repo__btn--static">
+                <Icon name="layers" size={14} />
+                <span className="repo__label">
+                  <small>Scope</small>
+                  Server-wide
+                </span>
+              </span>
+            </div>
+          )}
           {access === "open" && (
             <Link className="access-chip chip chip--warn" href="/admin#sign-in" title="Anyone who opens this address gets in. Set a login and password.">
               <span className="chip__dot" aria-hidden="true" />
@@ -304,18 +320,20 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
     </ActionsProvider>
     </RestrictedMemberProvider>
     </CapabilitiesProvider>
+    </ShellUrgentContext.Provider>
     </ShellConfigurationContext.Provider>
   );
 }
 
 // The active marker is one element that travels between items, so a route
 // change reads as movement from where you were to where you are.
-function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: string) => string; slim: boolean }) {
+function RailNav({ path, withRepo, slim, setup, urgent = 0 }: { path: string; withRepo: (href: string) => string; slim: boolean; setup?: { done: number; total: number } | null; urgent?: number }) {
   const restricted = useRestrictedMember();
   const capabilities = useCapabilities();
   const ref = useRef<HTMLElement>(null);
   const [mark, setMark] = useState<{ y: number; h: number } | null>(null);
   const [ready, setReady] = useState(false);
+  const unfinished = !restricted && !!setup && setup.done < setup.total;
 
   useLayoutEffect(() => {
     const place = () => {
@@ -327,7 +345,7 @@ function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: stri
     const ro = new ResizeObserver(place);
     if (ref.current) ro.observe(ref.current);
     return () => ro.disconnect();
-  }, [path, slim]);
+  }, [path, slim, setup?.done]);
   useEffect(() => {
     const t = requestAnimationFrame(() => setReady(true));
     return () => cancelAnimationFrame(t);
@@ -336,12 +354,23 @@ function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: stri
   return (
     <nav className={`nav${ready ? " nav--ready" : ""}`} ref={ref}>
       {mark && <span className="nav__mark" style={{ "--y": `${mark.y}px`, "--h": `${mark.h}px` } as CSSProperties} aria-hidden="true" />}
+      {/* An unfinished server leads with the way to finish it; once every step is done, Setup sits with the other configuration. */}
+      {unfinished && (
+        <div className="nav__group">
+          <Link href={withRepo("/setup")} className={`nav__item nav__item--setup${activeSection(path) === "setup" ? " is-on" : ""}`} aria-current={activeSection(path) === "setup" ? "page" : undefined} title={`Finish setup — ${setup!.done} of ${setup!.total} steps done`}>
+            <Icon name="flag" />
+            <span className="nav__text">Finish setup</span>
+            <span className="nav__progress num" aria-label={`${setup!.done} of ${setup!.total} steps done`}>{setup!.done}/{setup!.total}</span>
+          </Link>
+        </div>
+      )}
       {navGroups.map((g) => (
         <div className="nav__group" key={g.label}>
           <p className="nav__label">{g.label}</p>
           {g.items.map((item) => {
             if (item.capability && !capabilities.supported.includes(item.capability)) return null;
             if (restricted && adminOnly(item.href)) return null;
+            if (unfinished && item.key === "setup") return null;
             const href = item.href;
             const on = activeSection(path) === item.key;
             return (
@@ -354,6 +383,7 @@ function RailNav({ path, withRepo, slim }: { path: string; withRepo: (href: stri
               >
                 <Icon name={item.icon} />
                 <span className="nav__text">{item.label}</span>
+                {item.key === "command" && urgent > 0 && <span className="nav__badge num" aria-label={`${urgent} need attention`} title={`${urgent} need${urgent === 1 ? "s" : ""} attention`}>{urgent}</span>}
               </Link>
             );
           })}
@@ -456,7 +486,8 @@ function Palette({
     onClose();
     if (e.href) return router.push(e.href);
     if (!e.run) return;
-    if (mode !== "on") return toast({ tone: "warn", title: e.label, message: LOCK_REASON[mode] });
+    if (mode === "locked") return toast({ tone: "warn", title: e.label, message: LOCK_REASON[mode] });
+    if (mode === "demo") return toast({ tone: "info", title: e.label, message: demoPreview(e.label) });
     const pending = toast({ tone: "info", title: e.label, message: "Starting…" });
     let res: ActionResult;
     try {
@@ -516,7 +547,7 @@ function Palette({
               aria-selected={i === sel}
               data-i={i}
               className={`palette__row${i === sel ? " is-on" : ""}${e.run ? " palette__row--run" : ""}`}
-              aria-disabled={e.run && mode !== "on" ? true : undefined}
+              aria-disabled={e.run && mode === "locked" ? true : undefined}
               style={{ "--i": Math.min(i, 12) } as CSSProperties}
               onMouseMove={() => i !== sel && setSel(i)}
               onClick={() => go(e)}

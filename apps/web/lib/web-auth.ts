@@ -46,9 +46,12 @@ export type LoginState =
 /** Why a request got 503 instead of the dashboard. */
 export type LockReason = "unconfigured" | "misconfigured" | "unreachable";
 
-const STATE_TTL_MS = 10_000;
+// A changed login is still noticed sooner: an unrecognised session cookie looks again.
+const STATE_TTL_MS = 60_000;
 const BASIC_TTL_MS = 60_000;
 let cached: { at: number; state: LoginState & { kind: "brain" | "team" } } | null = null;
+// One page load fans out into many requests; they share a single probe of Brain.
+let probing: Promise<LoginState> | null = null;
 const basicOk = new Map<string, number>();
 
 const apiBase = () => process.env.BRAIN_API_URL?.trim();
@@ -111,6 +114,7 @@ async function callBrain(method: "GET" | "POST", path: string, body?: unknown, k
 /** Drop what this process remembers, after a change made here. */
 export function forgetLoginState() {
   cached = null;
+  probing = null;
   basicOk.clear();
 }
 
@@ -147,6 +151,15 @@ const TEAM_REFUSAL = /^(Named credential required|Team administrator required)/;
 
 async function brainLogin(fresh: boolean): Promise<LoginState> {
   if (!fresh && cached && Date.now() - cached.at < STATE_TTL_MS) return cached.state;
+  if (probing) return probing;
+  const probe = probeBrainLogin().finally(() => {
+    if (probing === probe) probing = null;
+  });
+  probing = probe;
+  return probe;
+}
+
+async function probeBrainLogin(): Promise<LoginState> {
   try {
     const { status, data } = await callBrain("GET", "/api/web-login");
     if (status === 200 && data && data.mode === "open") {

@@ -155,6 +155,28 @@ class SQLiteJobQueue:
             return {**json.loads(row[0]), "status": row[1]} if row else None
         return await asyncio.to_thread(read)
 
+    async def get_jobs(self, job_ids):
+        """Read jobs in bulk while preserving the requested order and gaps."""
+        if not job_ids:
+            return []
+
+        def read():
+            found = {}
+            # Stay below SQLite builds whose host-parameter limit is 999.
+            for start in range(0, len(job_ids), 900):
+                batch = job_ids[start:start + 900]
+                placeholders = ",".join("?" for _ in batch)
+                with self.redis.connection() as db:
+                    rows = db.execute(
+                        f"SELECT id,payload,status FROM jobs WHERE prefix=? AND id IN ({placeholders})",
+                        (self.prefix, *batch),
+                    ).fetchall()
+                found.update({job_id: {**json.loads(payload), "status": status}
+                              for job_id, payload, status in rows})
+            return [found.get(job_id) for job_id in job_ids]
+
+        return await asyncio.to_thread(read)
+
     async def recent_job_ids(self, *, limit=50, offset=0):
         def read():
             with self.redis.connection() as db:

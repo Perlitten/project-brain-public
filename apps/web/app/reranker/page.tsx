@@ -16,13 +16,13 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
   const later = off ? "shown once it is on" : undefined;
   return (
     <>
+      <SectionTabs section="settings" active="/reranker" />
       <PageHead
         title="Reranker"
         status={off && !r.notSetUp ? { tone: "warn", text: <>The second search pass is turned off<small>Search still works; results are ranked by the first pass only.</small></> } : undefined}
         lede={
           <>
-            After a quick first search, a second model — the <Term k="reranker">reranker</Term> — re-checks the top results and
-            moves the most relevant code to the top. This screen shows whether it is running, how fast it is and how much code it covers.
+            A second pass: the <Term k="reranker">reranker</Term> re-checks the top search results and moves the most relevant code up. Here: whether it runs, how fast, and how much code it covers.
           </>
         }
         actions={
@@ -32,7 +32,6 @@ export default async function Reranker({ searchParams }: { searchParams: Promise
           </>
         }
       />
-      <SectionTabs section="settings" active="/reranker" />
       {r.notSetUp ? (
         <Panel id="optional" title="Optional, and not set up on this server">
           <p className="text-dim">

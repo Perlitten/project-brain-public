@@ -235,6 +235,30 @@ test('overview failures cannot suppress another repository or a recovered reques
   assert.ok(calls.includes('/api/web/overview?include_health=false&repository_id=4'));
 });
 
+test('a dashboard full of projects sends only a few overview reads at a time', async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const overviews = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async path => {
+      if (path === '/repositories') return { repositories: Array.from({ length: 20 }, (_, i) => ({ id: i + 1, name: `repo${i + 1}` })) };
+      if (!path.startsWith('/api/web/overview')) return null;
+      overviews.push(path);
+      peak = Math.max(peak, ++inFlight);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return path.endsWith('=3') ? null : { counts: { files: 1 }, jobs: [] };
+    } },
+  });
+  const corpora = await Promise.all(Array.from({ length: 20 }, (_, i) => data.getCorpus(String(i + 1))));
+  assert.equal(overviews.length, 20);
+  assert.equal(peak, 6);
+  // A failed read still hands its slot on: every later project was read.
+  assert.equal(corpora.filter(c => c.available).length, 19);
+});
+
 test('repository feed distinguishes empty success, malformed payload and an outage', async () => {
   let response = { repositories: [] };
   const data = load('lib/data.ts', {
@@ -481,6 +505,22 @@ test('agent value reports absence as absence rather than as a zero score', async
   assert.equal(dashboard.measuredShare(undefined), '—');
 });
 
+test('context-pack feed retains repository identity for project filtering', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async request => request.startsWith('/api/web/context-packs') ? {
+        packs: [{ id: 9, task: 'Fix queue', budget: 'small', tokens: 120, files: 2, created_at: '2026-10-23T12:00:00Z', stale: false, consumer: 'codex', repository_id: 7, memory: { rules: 1, decisions: 2, learnings: 0 } }],
+      } : null,
+    },
+  });
+  const [pack] = await data.getContextPacks(12);
+  assert.equal(pack.repo, '7');
+  assert.deepEqual(JSON.parse(JSON.stringify(pack.memory)), { rules: 1, decisions: 2, learnings: 0 });
+});
+
 test('checked but unmerged decisions are not shown as agreed', async () => {
   const data = load('lib/data.ts', {
     'next/server': { connection: async () => {} },
@@ -491,16 +531,30 @@ test('checked but unmerged decisions are not shown as agreed', async () => {
         decisions: [
           { id: 1, title: 'Pending merge', status: 'validated_unmerged' },
           { id: 2, title: 'Approved', status: 'accepted' },
+          { id: 3, title: 'Proposed', status: 'proposed', raw_status: 'proposed', version: 3, current: true },
         ],
-        total: 2, page: 1, page_size: 20,
-        facets: { status: { validated_unmerged: 1, accepted: 1 } },
+        total: 3, page: 1, page_size: 20,
+        facets: { status: { validated_unmerged: 1, accepted: 1, proposed: 1 } },
       } : null,
     },
   });
   const result = await data.getPagedDecisions(undefined);
   assert.equal(result.items[0].status, 'validated_unmerged');
   assert.equal(result.items[1].status, 'accepted');
+  assert.equal(result.items[2].write.status, 'proposed');
   assert.equal(result.paging.facets.validated_unmerged, 1);
+});
+
+test('editing a proposed decision preserves its status until Accept is used', async () => {
+  const calls = [];
+  const memory = load('lib/actions/memory.ts', {
+    './gate': { mutate: async (path, options) => { calls.push({ path, options }); return { ok: true, message: 'saved', data: {} }; } },
+  });
+  const target = { title: 'Use one queue', repoPath: '/repo', description: 'old', reason: '', status: 'proposed', version: 4 };
+  assert.equal((await memory.saveDecision(target, { description: 'new', reason: 'because' })).ok, true);
+  assert.equal(calls[0].options.body.status, 'proposed');
+  await memory.acceptDecision(target);
+  assert.equal(calls[1].options.body.status, 'active');
 });
 
 test('reindex refuses an explicitly empty repository path but permits a scoped path', async () => {
@@ -706,6 +760,24 @@ test('Brain-kept login: open only in WEB_OPEN_MODE until set, then a password wh
       auth.forgetLoginState();
       assert.equal(await auth.authorizeWebRequest(null, fresh), 503);
       assert.deepEqual(plain(await auth.signIn('owner', 'correct horse')), { status: 503 });
+    });
+  } finally { global.fetch = oldFetch; }
+});
+
+test('requests that land together share one login probe instead of each asking Brain', async () => {
+  const brain = fakeBrainLogin({ mode: 'password', user: 'owner', version: 'v1' }, 'correct horse');
+  const oldFetch = global.fetch;
+  global.fetch = brain.fetch;
+  try {
+    const auth = load('lib/web-auth.ts');
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' }, async () => {
+      const session = auth.sessionForLogin('owner', 'v1');
+      const results = await Promise.all(Array.from({ length: 8 }, () => auth.authorizeWebRequest(null, session)));
+      assert.deepEqual(results, Array(8).fill(200));
+      assert.deepEqual(brain.calls, ['GET /api/web-login']);
+      // Within the cache window the next page load asks nothing.
+      assert.equal(await auth.authorizeWebRequest(null, session), 200);
+      assert.equal(brain.calls.length, 1);
     });
   } finally { global.fetch = oldFetch; }
 });
@@ -1008,6 +1080,35 @@ test('selected repository scopes indexing and graph requests, and unknown freshn
   for (const status of ['unknown', 'source_missing', 'stale', 'freshness_error']) {
     assert.notEqual(repositoryStatus({ ...repo, freshness: status }).tone, 'ok');
   }
+});
+
+test('origin remotes and poll errors never render credentials, with or without a scheme', async () => {
+  const { redactRemote } = load('lib/repository-status.ts');
+  assert.equal(redactRemote('https://bot:s3cret@github.com/acme/app.git'), 'https://***@github.com/acme/app.git');
+  assert.equal(redactRemote('oauth2:glpat-TOKEN@gitlab.com/acme/app.git'), '***@gitlab.com/acme/app.git');
+  assert.equal(redactRemote('ghp_TOKEN@github.com/acme/app'), '***@github.com/acme/app');
+  assert.equal(redactRemote('https://github.com/acme/app.git?token=SECRET#private'), 'https://github.com/acme/app.git');
+  assert.equal(redactRemote('oauth2:TOKEN@gitlab.com/acme/app.git?access_token=SECRET'), '***@gitlab.com/acme/app.git');
+  assert.equal(redactRemote('git@github.com:acme/app.git'), 'git@github.com:acme/app.git');
+  assert.equal(redactRemote("fatal: unable to access 'oauth2:TOKEN@gitlab.com/acme/app.git/': 403"),
+    "fatal: unable to access '***@gitlab.com/acme/app.git/': 403");
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, 'react': { cache: fn => fn },
+    './mock': {}, './api': { apiConfigured: true, brainFetch: async endpoint => {
+      if (endpoint === '/repositories') return { repositories: [{ id: 7, name: 'app', freshness: {
+        status: 'current', commits_behind: 0, origin_poll_status: 'error',
+        origin_remote: 'oauth2:TOKEN@gitlab.com/acme/app.git',
+        origin_poll_error: 'git ls-remote https://u:TOKEN@gitlab.com/acme/app.git failed: oauth2:TOKEN@gitlab.com/acme/app.git',
+      } }] };
+      throw new Error(endpoint);
+    } },
+  });
+  const repo = await data.getRepository('7');
+  assert.equal(repo.originPoll.remote, '***@gitlab.com/acme/app.git');
+  assert.doesNotMatch(repo.originPoll.error, /TOKEN/);
+  const page = fs.readFileSync(path.join(root, 'app/projects/page.tsx'), 'utf8');
+  assert.match(page, /\{redactRemote\(p\.remote\)\}/);
+  assert.match(page, /\{redactRemote\(p\.error\)\}/);
 });
 
 test('uncommitted observations preserve known zero, unknown and invalid counts', () => {
@@ -1702,6 +1803,55 @@ test('settings delivery and scheduled job observations share explicit UTC format
   assert.match(expected, /03:30 UTC$/);
 });
 
+test('workflow trigger snippet follows the configured webhook branch', () => {
+  const { workflowTrigger, webhookBranch } = load('lib/git-workflow.ts');
+  assert.equal(workflowTrigger('refs/heads/release/1.x'), "on:\n  push:\n    branches: ['release/1.x']");
+  assert.equal(webhookBranch('refs/heads/main'), 'main');
+  // Anything that is not a branch ref falls back to the server default.
+  for (const ref of [undefined, '', 'refs/heads/', 'refs/tags/v1', 'main']) assert.equal(webhookBranch(ref), 'main');
+  // Glob characters are escaped and quotes doubled, so the filter matches exactly that branch.
+  assert.equal(workflowTrigger("refs/heads/a+b!c'd"), "on:\n  push:\n    branches: ['a\\+b\\!c''d']");
+});
+
+test('settings git integration keeps masked remotes and drops malformed entries', async () => {
+  let git = {
+    webhook_path: '/webhooks/git-merge',
+    webhook_url: null,
+    workflow_example: 'docs/examples/reindex-on-push.yml',
+    origin_remotes: { remotes: [{ path: '/app', url: 'https://***@github.com/o/r.git', branch: 'main' }, { path: '/x' }, 'junk'], skipped: 2, error: null },
+  };
+  const settings = load('lib/settings-view.ts', {
+    'next/server': { connection: async () => {} },
+    './api': { apiConfigured: true, brainFetch: async path => path === '/api/settings' ? { sections: [], git } : null },
+  });
+  const view = (await settings.getSettingsView()).git;
+  assert.equal(view.webhookPath, '/webhooks/git-merge');
+  assert.equal(view.webhookUrl, undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(view.originRemotes)), {
+    remotes: [{ path: '/app', url: 'https://***@github.com/o/r.git', branch: 'main' }],
+    skipped: 2,
+  });
+  git = undefined; // a server without the git section
+  assert.equal((await settings.getSettingsView()).git, null);
+});
+
+test('repository origin poll status is read from freshness only when the poll has run', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => ({ repositories: [
+      { id: 1, name: 'a', freshness: { origin_poll_status: 'error', origin_polled_at: '2026-10-22T06:30:00Z', origin_poll_error: 'timed out', origin_remote: 'https://***@h/r.git', commits_behind_origin: null } },
+      { id: 2, name: 'b', freshness: { status: 'current' } },
+    ] }) },
+  });
+  const [polled, never] = (await data.getRepositoryFeed()).repositories;
+  assert.equal(polled.originPoll.status, 'error');
+  assert.equal(polled.originPoll.error, 'timed out');
+  assert.equal(polled.originPoll.remote, 'https://***@h/r.git');
+  assert.equal(polled.originPoll.behind, null);
+  assert.match(polled.originPoll.at, /06:30 UTC$/);
+  assert.equal(never.originPoll, undefined);
+});
+
 
 test('a missed health probe retains independently reported build identity', async () => {
   const { getPulse } = load('lib/actions/pulse.ts', {
@@ -1785,6 +1935,46 @@ test('adding a repository validates paths, preserves defaults and reports index 
   assert.ok(!('target_repo_path' in writes[0].body), 'the default repository must not change');
 });
 
+test('Current memory excludes replaced decisions and keeps each view count honest', async () => {
+  const data = load('lib/data.ts', { 'next/server': { connection: async () => {} }, react: { cache: fn => fn }, './api': { apiConfigured: false } });
+  const current = await data.getPagedDecisions(null, { status: 'current', size: 100 });
+  assert.ok(current.items.length > 0);
+  assert.ok(current.items.every(row => ['accepted', 'proposed', 'validated_unmerged'].includes(row.status)));
+  const replaced = await data.getPagedDecisions(null, { status: 'superseded', size: 100 });
+  assert.ok(replaced.items.length > 0 && replaced.items.every(row => row.status === 'superseded'));
+  assert.equal(current.paging.total + replaced.paging.total, (await data.getPagedDecisions(null, { size: 100 })).paging.total);
+});
+
+test('duplicate findings retain evidence identity rather than merging matching titles across modules', () => {
+  const { groupFindings } = load('lib/finding-groups.ts');
+  const first = { id: '1', title: 'same title', kind: 'drift', module: 'a', evidence: 'same evidence', tone: 'warn', occurrences: 3 };
+  const otherModule = { ...first, id: '2', module: 'b' };
+  const duplicate = { ...first, id: '3', tone: 'bad', occurrences: 2 };
+  const groups = groupFindings([first, otherModule, duplicate]);
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].count, 5);
+  assert.equal(groups[0].rep.id, '3');
+  assert.deepEqual([...groups[0].members.map(row => row.id)], ['1', '3']);
+  assert.equal(groups[1].rep.id, '2');
+});
+
+
+test('finding cards retain file and line evidence when repository provenance comes first', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async () => ({ total: 1, insights: [{ id: 1, title: 'synthetic', severity: 'warn', insight_type: 'drift', source: 'deterministic', evidence: [
+      { label: 'repository_id', value: 2 }, { label: 'file_path', value: 'src/code.py' }, { label: 'line_number', value: 10 },
+    ], occurrence_count: 4, code_available: true, last_seen_at: '2026-10-22T00:00:00Z' }] }) },
+  });
+  const finding = (await data.getPagedInsights(null)).items[0];
+  assert.equal(finding.module, 'src/code.py');
+  assert.match(finding.evidence, /repository_id: 2/);
+  assert.match(finding.evidence, /file_path: src\/code.py/);
+  assert.match(finding.evidence, /line_number: 10/);
+  assert.equal(finding.occurrences, 4);
+  assert.equal(finding.codeAvailable, true);
+});
+
 test('team registration only offers indexing where the selected project grants run.request', async () => {
   let identity = { team_state: 'team', scopes: ['workspace:read'], is_team_admin: true, projects: [] };
   const writes = [], indexes = [];
@@ -1836,7 +2026,6 @@ test('registered sources use server-correlated index identities and demo mode ma
     { name: 'Pending', path: '/repos/pending', indexedRepositoryId: null },
   ]);
 });
-
 test('activity entries retain seconds while decision calendar dates stay timezone-free', async () => {
   const data = load('lib/data.ts', {
     'next/server': { connection: async () => {} }, react: { cache: fn => fn },
@@ -1891,4 +2080,221 @@ test('repository registration refuses insufficient credentials before offering o
   const allowed = await projects.projectRegistrationContext();
   assert.equal(allowed.ok, true, 'existing team-admin credentials remain compatible');
   assert.equal(allowed.data.projects[0].id, 'active-project');
+});
+
+test('memory search and pages reach Brain, and a D- id still finds its decision', async () => {
+  const asked = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async request => { asked.push(request); return { total: 0, page: 2, page_size: 100, decisions: [], rules: [] }; } },
+  });
+  await data.getPagedDecisions(undefined, { size: 100, page: 2, q: 'queue', status: 'superseded' });
+  await data.getPagedRules(undefined, { size: 100, page: 2, q: 'queue' });
+  assert.match(asked[0], /^\/api\/web\/decisions\?page=2&page_size=100&q=queue&status=superseded/);
+  assert.match(asked[1], /^\/api\/web\/rules\?page=2&page_size=100&q=queue/);
+
+  const page = fs.readFileSync(path.join(root, 'app/memory/page.tsx'), 'utf8');
+  assert.ok(page.includes('const decisionQ = q.replace(/^D-(?=\\d+$)/i, "");'));
+  assert.equal('D-42'.replace(/^D-(?=\d+$)/i, ''), '42');
+  assert.equal('D-day plan'.replace(/^D-(?=\d+$)/i, ''), 'D-day plan');
+  for (const call of page.match(/getPaged(?:Decisions|Rules)\(repo, \{[^}]+\}\)/g)) assert.match(call, /page, q/);
+  const board = fs.readFileSync(path.join(root, 'components/atlas/MemoryBoard.tsx'), 'utf8');
+  assert.match(board, /<Form action="\/memory"[^>]*role="search"/);
+  assert.match(board, /name="q" defaultValue=\{query\.q\}/);
+  assert.match(board, /rel="next">Next/);
+  assert.doesNotMatch(board, /counted but not drawn/);
+});
+
+test('picking a record or a named project brings it into view', () => {
+  const atlas = fs.readFileSync(path.join(root, 'components/atlas/Atlas.tsx'), 'utf8');
+  assert.match(atlas, /data-region=\{g\.key\}/);
+  assert.match(atlas, /prefers-reduced-motion: reduce/);
+  const today = fs.readFileSync(path.join(root, 'components/atlas/TodayBoard.tsx'), 'utf8');
+  assert.match(today, /if \(pinned !== ref\) revealRegion\(ref\)/);
+  const board = fs.readFileSync(path.join(root, 'components/atlas/MemoryBoard.tsx'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'components/atlas/atlas.css'), 'utf8');
+  const stacked = board.match(/const STACKED = "(\(max-width: \d+px\))"/)[1];
+  assert.ok(css.includes(`@media ${stacked} { .atlas-split`), 'the reveal breakpoint must match where the inspector stacks');
+  assert.match(board, /matchMedia\(STACKED\)\.matches\) reveal\(inspector\.current\)/);
+  assert.match(board, /<aside ref=\{inspector\} aria-label="Selected record"/);
+});
+
+test('the dashboard map draws the projects needing attention, worst first', () => {
+  const page = fs.readFileSync(path.join(root, 'app/page.tsx'), 'utf8');
+  assert.match(page, /const ranked = \[\.\.\.baseSnapshots\]\.sort\(byAttention\)/);
+  assert.match(page, /ranked\.map\(async \(s, i\) => \(\{[\s\S]*?modules: i < MAP_PROJECTS \?/);
+  assert.match(page, /const byAttention = [^\n]*severity\[b\.tone\] - severity\[a\.tone\] \|\| \(b\.repo\.behind \?\? 0\) - \(a\.repo\.behind \?\? 0\)/);
+});
+
+test('agent pages support every valid identity name and reject synthetic identities', () => {
+  const { agentHref } = load('lib/agent-link.ts');
+  assert.equal(agentHref('claude laptop'), '/agents/claude%20laptop');
+  assert.equal(agentHref('claude@work'), '/agents/claude%40work');
+  assert.equal(agentHref('agent'), null);
+  assert.equal(agentHref('bad/name'), null);
+});
+
+test('task and context-pack links require one unambiguous repository match', () => {
+  const links = load('lib/task-links.ts');
+  const run = { id: 'task-1', task: 'Fix queue', agent: 'codex', repo: '7' };
+  const pack = { id: 'pack-1', task: ' fix   queue ', consumer: 'CODEX', repo: '7' };
+  assert.equal(links.runForPack(pack, [run]), run);
+  assert.equal(links.packForRun(run, [pack]), pack);
+  assert.equal(links.runForPack(pack, [run, { ...run, id: 'task-2' }]), undefined);
+  assert.equal(links.runForPack(pack, [{ ...run, repo: '8' }]), undefined);
+  assert.equal(links.runForPack(pack, [{ ...run, repo: undefined }]), undefined);
+});
+
+test('new harness tasks keep version zero and repository provenance', async () => {
+  const taskId = '00000000-0000-0000-0000-000000000001';
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async endpoint => {
+      if (endpoint === '/repositories') return { repositories: [{ id: 7, name: 'app', path: '/repos/app' }] };
+      if (endpoint.startsWith('/harness/tasks?')) return { tasks: [{ id: taskId, title: 'New task', status: 'created', version: 0, repo_path: '/repos/app' }] };
+      throw new Error(endpoint);
+    } },
+  });
+  const [run] = await data.getAgentRuns();
+  assert.equal(run.version, 0);
+  assert.equal(run.repo, '7');
+});
+
+test('task actions accept version zero and describe ledger recording honestly', async () => {
+  const calls = [];
+  const tasks = load('lib/actions/tasks.ts', {
+    './gate': { mutate: async (path, options) => { calls.push({ path, options }); return { ok: true, message: options.success }; } },
+  });
+  const id = '00000000-0000-0000-0000-000000000001';
+  assert.equal((await tasks.cancelTask(id, 0)).ok, true);
+  assert.equal(calls[0].options.body.expected_task_version, 0);
+  assert.equal((await tasks.cancelTask(id, -1)).ok, false);
+  await tasks.createTask({ title: 'Fix queue', goal: 'Make it safe', repoPath: '/repos/app' });
+  assert.match(calls[1].options.success, /Recorded/);
+  assert.doesNotMatch(calls[1].options.success, /Queued|claims it/);
+});
+
+test('the inbox never reports an all-clear when a source is unavailable', async () => {
+  const inbox = load('lib/inbox.ts', {
+    react: { cache: fn => fn },
+    './data': {
+      getAccessView: async () => ({ readable: false, identities: [] }),
+      getAgentRuns: async () => [], getInsights: async () => [], getJobs: async () => null,
+      getMcpTools: async () => null, getSetupSteps: async () => [],
+    },
+    './board-view': { getBoardView: async () => ({ kind: 'unavailable' }), attention: () => [] },
+    './review-view': { getReviewView: async () => ({ kind: 'unavailable' }) },
+    './repository-status': {},
+  });
+  const result = await inbox.getInbox(true, []);
+  assert.equal(result.needs.length, 0);
+  assert.equal(result.complete, false);
+  assert.deepEqual([...result.unavailable], ['Board', 'tool health', 'Access', 'memory review', 'background jobs']);
+});
+
+test('inbox sources are fetched once per render even when shell and dashboard pass separate repository arrays', async () => {
+  let insightReads = 0;
+  const memoCache = (fn) => {
+    const map = new Map();
+    return (...args) => {
+      const key = args.length === 1 && typeof args[0] === 'boolean' ? args[0] : Symbol('miss');
+      if (!map.has(key)) map.set(key, fn(...args));
+      return map.get(key);
+    };
+  };
+  const inbox = load('lib/inbox.ts', {
+    react: { cache: memoCache },
+    './data': {
+      getAccessView: async () => ({ readable: true, identities: [] }),
+      getAgentRuns: async () => [],
+      getInsights: async () => { insightReads++; return []; },
+      getJobs: async () => [],
+      getMcpTools: async () => [],
+      getSetupSteps: async () => [],
+    },
+    './board-view': { getBoardView: async () => ({ kind: 'solo' }), attention: () => [] },
+    './review-view': { getReviewView: async () => ({ kind: 'ok', queue: [] }) },
+    './repository-status': { repositoryAction: () => ({ href: '/indexing', label: 'Open index runs' }), canReindex: () => true },
+  });
+  const repo = { id: 3, slug: '3', name: 'brain', path: '/repos/brain', branch: 'main', head: 'abc', behind: 2, freshness: 'behind' };
+  const [fromShell, fromPage] = await Promise.all([
+    inbox.getInbox(true, [{ repo, tone: 'warn', status: '2 changes not read yet', available: true }]),
+    inbox.getInbox(true, [{ repo, tone: 'warn', status: '2 changes not read yet', available: true }]),
+  ]);
+  assert.equal(insightReads, 1);
+  assert.equal(fromShell.needs.length, 1);
+  assert.equal(fromPage.needs.length, 1);
+});
+
+test('unscoped getJobs reads global orchestration jobs without waiting for /repositories or per-repo overview', async () => {
+  const calls = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async path => {
+        calls.push(path);
+        if (path === '/api/web/health') {
+          return { orchestration: { recent_jobs: [{ id: 'j-1', kind: 'reindex', status: 'failed', detail: 'boom' }], redis_error: null } };
+        }
+        throw new Error(`Unexpected call: ${path}`);
+      },
+    },
+  });
+  const jobs = await data.getJobs();
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].id, 'j-1');
+  assert.equal(jobs[0].status, 'failed');
+  assert.deepEqual(calls, ['/api/web/health']);
+});
+
+test('getInsights excludes stale/actioned findings and getInbox groups duplicate broken rules', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async path => {
+        if (path === '/insights?limit=100') {
+          return {
+            insights: [
+              { id: 568, status: 'stale', severity: 'bad', title: 'High Task Timeout Rate', summary: 'old' },
+              { id: 569, status: 'actioned', severity: 'bad', title: 'Closed finding', summary: 'done' },
+              { id: 570, status: 'new', severity: 'bad', title: 'Active rule break', summary: 'live', dedupe_key: 'dup-1' },
+            ],
+          };
+        }
+        throw new Error(`Unexpected call: ${path}`);
+      },
+    },
+  });
+  const insights = await data.getInsights();
+  assert.deepEqual(insights.map(i => i.id), ['570']);
+
+  const inbox = load('lib/inbox.ts', {
+    react: { cache: fn => fn },
+    './data': {
+      getAccessView: async () => ({ readable: true, identities: [] }),
+      getAgentRuns: async () => [
+        { id: 'old-timeout', agent: 'Codex', task: 'Validated compact memory release 349fa69', status: 'timed_out', startedAt: '09 Oct 2020, 06:28 UTC', duration: '19h 31m' },
+        { id: 'recent-fail', agent: 'Codex', task: 'Fresh failed task', status: 'failed', startedAt: '12:31', duration: '3m 11s' },
+      ],
+      getInsights: async () => [
+        { id: '1', tone: 'bad', kind: 'other', title: 'Duplicate finding', evidence: 'same', module: '—', detectedAt: 'now', dedupeKey: 'k1' },
+        { id: '2', tone: 'bad', kind: 'other', title: 'Duplicate finding', evidence: 'same', module: '—', detectedAt: 'now', dedupeKey: 'k1' },
+      ],
+      getJobs: async () => [],
+      getMcpTools: async () => [],
+      getSetupSteps: async () => [],
+    },
+    './board-view': { getBoardView: async () => ({ kind: 'solo' }), attention: () => [] },
+    './review-view': { getReviewView: async () => ({ kind: 'ok', queue: [] }) },
+    './repository-status': {},
+  });
+  const res = await inbox.getInbox(true, []);
+  assert.equal(res.needs.length, 2);
+  assert.equal(res.needs[0].title, 'Duplicate finding');
+  assert.equal(res.needs[1].title, 'Fresh failed task');
 });

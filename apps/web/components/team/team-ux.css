@@ -1,0 +1,14 @@
+/* Member × project role matrix: with many projects the table scrolls sideways
+   inside its frame while the Member column stays put. */
+.team-members-wrap { overscroll-behavior-x: contain; }
+.team-members th:first-child, .team-members td:first-child {
+  position: sticky; left: 0; z-index: 1;
+  background: var(--surface-module);
+  box-shadow: 1px 0 0 var(--border-subtle);
+}
+.team-members tbody tr:hover td:first-child { background: var(--surface-inset); }
+.team-members thead th.team-members__project { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; }
+.team-members td:first-child { min-width: 14ch; }
+
+/* One-line pointer between Team (people) and Access (credentials). */
+.team-crosslink { margin: 0 0 var(--s-4); font-size: var(--fs-12); color: var(--text-3); }

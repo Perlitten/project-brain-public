@@ -686,7 +686,7 @@ async def build_task_context(body: ContextRequest, request: Request = cast(Reque
     finally:
         if request is not None:
             await observe_http_request(request, operation="context", result=result, repo_path=repo_path,
-                                       outcome=outcome, started=started)
+                                       outcome=outcome, started=started, query_text=body.task_description)
 
 
 @router.post("/impact", dependencies=[Depends(require_api_key), Depends(require_scope("core:write"))])
@@ -860,7 +860,7 @@ async def search_code_endpoint(body: SearchRequest, request: Request, principal:
     finally:
         await observe_http_request(request, operation="search", result=result,
                                    repo_path=_agent_repo_path(body.repo_path) if _agent_v2_mode() == "on" and body.response_mode == "locator" else body.repo_path,
-                                   outcome=outcome, started=started)
+                                   outcome=outcome, started=started, query_text=body.query)
 
 
 @router.get("/repositories", dependencies=[Depends(require_api_key), Depends(require_scope("core:read"))])
@@ -873,6 +873,14 @@ async def list_repositories(principal: ResolvedPrincipal = Depends(require_princ
         readable = await team_access.readable_repository_ids(principal, [repo.id for repo in repos])
         if readable is not None:
             repos = [repo for repo in repos if repo.id in readable]
+
+        sem = asyncio.Semaphore(8)
+
+        async def _assess(repo: Repository) -> dict[str, Any]:
+            async with sem:
+                return await assess_repository_freshness(repo)
+
+        freshness_by_repo = await asyncio.gather(*(_assess(repo) for repo in repos))
 
         return {
             "repositories": [
@@ -888,9 +896,9 @@ async def list_repositories(principal: ResolvedPrincipal = Depends(require_princ
                     # timestamp indexing actually bumps. Reading the missing
                     # attribute directly made this endpoint 500 on every call.
                     "last_indexed_at": repo.updated_at,
-                    "freshness": await assess_repository_freshness(repo),
+                    "freshness": freshness,
                 }
-                for repo in repos
+                for repo, freshness in zip(repos, freshness_by_repo)
             ]
         }
     except Exception as exc:

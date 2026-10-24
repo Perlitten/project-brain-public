@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getCapabilities } from "@/lib/capabilities";
 import { capabilityGate } from "@/components/CapabilityGate";
 import { CodeBlock } from "@/components/act";
@@ -6,25 +7,33 @@ import { RetryRead } from "@/components/RetryRead";
 import { InvitationTable, InviteForm } from "@/components/team/Invitations";
 import { AddMemberForm, MemberTable } from "@/components/team/Team";
 import { SectionTabs } from "@/components/SectionNav";
+import { PageTabs, ViewPane, pickTab, type TabTone } from "@/components/PageTabs";
 import { Chip, EmptyState, Fold, PageHead, Panel, Stat, fmt } from "@/components/ui";
 import { signInMode } from "@/lib/sign-in-view";
 import { getInvitationsView } from "@/lib/invitation-view";
 import { currentMember } from "@/lib/team-session";
 import { getTeamView } from "@/lib/team-view";
+import { DEMO_MEMBER } from "@/lib/team-demo";
 
 export const metadata = { title: "Team" };
 
-const LEDE = "Everyone on the team signs in to this dashboard with their own key. Brain checks that key on every request, so revoking a member locks them out of the dashboard at once; revoke their key under Access to stop their agents too.";
+type Props = { searchParams: Promise<{ view?: string }> };
+const VIEWS = ["members", "invitations"] as const;
 
-export default async function Team() {
+const LEDE = "People and their project roles. Each member signs in with their own key, so revoking a member locks them out at once.";
+
+export default async function Team({ searchParams }: Props) {
   const unsupported = await capabilityGate("team", "Team");
   if (unsupported) return unsupported;
-  const [observedMode, member] = await Promise.all([signInMode(), currentMember()]);
+  const [observedMode, signedIn] = await Promise.all([signInMode(), currentMember()]);
+  // The demo is seen as a team admin, like Me and Team activity, so the three pages tell one story.
+  const member = signedIn ?? (observedMode === "demo" ? DEMO_MEMBER : null);
   const mode = member ? "team" : observedMode;
   const head = (
     <>
-      <PageHead title="Team" lede={LEDE} />
       <SectionTabs section="team" active="/team" />
+      <PageHead title="Team" lede={LEDE} />
+      <p className="team-crosslink">Team is people and their project roles. API identities and agent or service keys are under <Link href="/admin">Access</Link>.</p>
     </>
   );
 
@@ -36,7 +45,7 @@ export default async function Team() {
       <>
         {head}
         <Panel id="team-bootstrap" title="Enable team" desc="Prepare and save your own administrator key before changing how this dashboard signs you in.">{bootstrap ? <Bootstrap /> : <p>This server supports team membership but not dashboard bootstrap. Use the server setup below.</p>}</Panel>
-        <Panel id="team-setup" title="Server setup and recovery" desc="Use this route when the dashboard credential cannot issue administrator scopes, or when you need to recover access.">
+        <Fold id="team-setup" title="Server setup and recovery" desc="For when the dashboard key cannot issue administrator scopes, or you need a way back in." cta="Show the commands">
           <div className="form form--wide">
             <p className="field__hint">
               A team is set up on the Brain server, so the first admin is created by someone who can run commands there. Once the team has a member,
@@ -56,7 +65,7 @@ brain team member add --principal alice --admin --mint-key`}
               <code>/invite</code> on this dashboard and paste the printed token. You become the first admin and are signed in with your own key.
             </p>
           </div>
-        </Panel>
+        </Fold>
       </>
     );
   }
@@ -79,6 +88,9 @@ brain team member add --principal alice --admin --mint-key`}
   const [view, invites] = await Promise.all([getTeamView(), getInvitationsView()]);
   const members = view.kind === "ok" ? view.members : [];
   const active = members.filter((m) => !m.revoked);
+  const tab = pickTab(VIEWS, (await searchParams).view);
+  const pending = invites.kind === "ok" ? invites.invitations.filter((i) => i.state === "invited").length : 0;
+  const unread = (kind: string): TabTone | undefined => (kind === "ok" ? undefined : "warn");
   return (
     <>
       {head}
@@ -90,52 +102,72 @@ brain team member add --principal alice --admin --mint-key`}
         </div>
       )}
 
-      <Fold id="add-member" title="Add a member" desc="Creates the person and their dashboard key. You’ll see the key once, right after." cta="+ Add member">
-        <AddMemberForm />
-      </Fold>
+      <PageTabs
+        label="Team views"
+        path="/team"
+        current={tab}
+        tabs={[
+          { id: "members", label: "Members", badge: view.kind === "ok" ? active.length : "unread", tone: unread(view.kind) ?? "info" },
+          { id: "invitations", label: "Invitations", badge: invites.kind === "ok" ? (pending ? `${pending} pending` : invites.invitations.length) : "unread", tone: unread(invites.kind) ?? (pending ? "info" : undefined) },
+        ]}
+      />
 
-      <Fold id="invite-member" title="Invite a member" desc="Creates a one-time link. They open it, become a member and pick up their own key; nobody else sees it." cta="+ Invite">
-        <InviteForm projects={view.kind === "ok" ? view.projects : []} projectsAvailable={view.kind === "ok"} />
-      </Fold>
+      <ViewPane id={tab}>
+        {tab === "members" && (
+          <>
+            <Fold id="add-member" title="Add a member" desc="Creates the person and their dashboard key. You’ll see the key once, right after." cta="+ Add member">
+              <AddMemberForm />
+            </Fold>
 
-      <Panel id="members" title={`${active.length} member${active.length === 1 ? "" : "s"}`} desc="Pick a role per project; revoking signs the member out on their next request." flush>
-        {view.kind === "denied" ? (
-          <EmptyState
-            title="Brain didn’t list the team"
-            body="Listing members needs a team admin whose key carries the team:admin permission. Ask another admin to issue you a new key."
-          />
-        ) : view.kind === "unavailable" ? (
-          <EmptyState title="Brain isn’t answering" body="The member list couldn’t be read right now. Reload in a moment." />
-        ) : members.length === 0 ? (
-          <EmptyState title="No members yet" body="Add the first one above." />
-        ) : (
-          <MemberTable members={members} projects={view.projects} selfId={member.id} />
+            <Panel id="members" title={`${active.length} member${active.length === 1 ? "" : "s"}`} desc="Pick a role per project; revoking signs the member out on their next request." flush>
+              {view.kind === "denied" ? (
+                <EmptyState
+                  title="Brain didn’t list the team"
+                  body="Listing members needs a team admin whose key carries the team:admin permission. Ask another admin to issue you a new key."
+                />
+              ) : view.kind === "unavailable" ? (
+                <EmptyState title="Brain isn’t answering" body="The member list couldn’t be read right now. Reload in a moment." />
+              ) : members.length === 0 ? (
+                <EmptyState title="No members yet" body="Add the first one above." />
+              ) : (
+                <MemberTable members={members} projects={view.projects} selfId={member.id} />
+              )}
+            </Panel>
+
+            <div className="callout tone-info">
+              <b>Keys made elsewhere</b>
+              <span>
+                Keys from <code>brain team member add --mint-key</code> and from invitations carry the same permissions as keys issued here; Brain
+                still limits each member to the projects and roles set above. A key minted before this release keeps the permissions it was issued
+                with, so issue a new one if it can’t open the dashboard.
+              </span>
+            </div>
+          </>
         )}
-      </Panel>
 
-      <Panel id="invitations" title="Invitations" desc="Pending, accepted and revoked invitations. Revoking an accepted one revokes the member it created too." flush>
-        {invites.kind === "denied" ? (
-          <EmptyState
-            title="Brain didn’t list the invitations"
-            body="Listing invitations needs a team admin whose key carries the team:admin permission. Ask another admin to issue you a new key."
-          />
-        ) : invites.kind === "unavailable" ? (
-          <EmptyState title="Brain isn’t answering" body="The invitations couldn’t be read right now, so this isn’t an empty list. Reload in a moment." />
-        ) : invites.invitations.length === 0 ? (
-          <EmptyState title="No invitations yet" body="Invite someone above; their invitation shows up here until it’s accepted, expires or is revoked." />
-        ) : (
-          <InvitationTable invitations={invites.invitations} projects={view.kind === "ok" ? view.projects : []} selfId={member.id} />
+        {tab === "invitations" && (
+          <>
+            <Fold id="invite-member" title="Invite a member" desc="Creates a one-time link. They open it, become a member and pick up their own key; nobody else sees it." cta="+ Invite">
+              <InviteForm projects={view.kind === "ok" ? view.projects : []} projectsAvailable={view.kind === "ok"} />
+            </Fold>
+
+            <Panel id="invitations" title="Invitations" desc="Pending, accepted and revoked invitations. Revoking an accepted one revokes the member it created too." flush>
+              {invites.kind === "denied" ? (
+                <EmptyState
+                  title="Brain didn’t list the invitations"
+                  body="Listing invitations needs a team admin whose key carries the team:admin permission. Ask another admin to issue you a new key."
+                />
+              ) : invites.kind === "unavailable" ? (
+                <EmptyState title="Brain isn’t answering" body="The invitations couldn’t be read right now, so this isn’t an empty list. Reload in a moment." />
+              ) : invites.invitations.length === 0 ? (
+                <EmptyState title="No invitations yet" body="Invite someone above; their invitation shows up here until it’s accepted, expires or is revoked." />
+              ) : (
+                <InvitationTable invitations={invites.invitations} projects={view.kind === "ok" ? view.projects : []} selfId={member.id} />
+              )}
+            </Panel>
+          </>
         )}
-      </Panel>
-
-      <div className="callout tone-info">
-        <b>Keys made elsewhere</b>
-        <span>
-          Keys from <code>brain team member add --mint-key</code> and from invitations carry the same permissions as keys issued here; Brain
-          still limits each member to the projects and roles set above. A key minted before this release keeps the permissions it was issued
-          with, so issue a new one if it can’t open the dashboard.
-        </span>
-      </div>
+      </ViewPane>
     </>
   );
 }

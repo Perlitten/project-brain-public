@@ -12,7 +12,7 @@ import { KeyDialog } from "@/components/KeyDialog";
 import { ListFrame } from "@/components/ListFrame";
 import { Chip } from "@/components/ui";
 import { createAgentKey, disablePrincipal, enablePrincipal, mintKey, revokeCredential, type NewKey } from "@/lib/actions/admin";
-import { EXPIRY_CHOICES, KNOWN_SCOPES, SCOPE_GROUPS, SCOPE_PRESETS, TEAM_SCOPES, sameScopes, isNamedScope } from "@/lib/scopes";
+import { EXPIRY_CHOICES, KNOWN_SCOPES, SCOPE_GROUPS, SCOPE_PRESETS, TEAM_SCOPES, sameScopes, isNamedScope, scopeWords } from "@/lib/scopes";
 import type { AccessKey, Identity, Tone } from "@/lib/types";
 
 type Kind = Identity["kind"];
@@ -25,6 +25,7 @@ const presetScopes = (id: string) => SCOPE_PRESETS.find((p) => p.id === id)?.sco
 export interface AgentTarget {
   apiUrl: string;
   repoPath?: string;
+  httpMcp: boolean;
 }
 
 const KEY_HINT = (
@@ -138,8 +139,8 @@ function ExpirySelect({ value, onChange }: { value: number; onChange: (days: num
 // ---------------------------------------------------------------------------
 // New identity with its first key
 
-export function NewIdentityForm({ target }: { target: AgentTarget }) {
-  const [name, setName] = useState("");
+export function NewIdentityForm({ target, initialName = "" }: { target: AgentTarget; initialName?: string }) {
+  const [name, setName] = useState(initialName);
   const [kind, setKind] = useState<Kind>("agent");
   const [scopes, setScopes] = useState<string[]>(() => [...presetScopes("agent")].sort());
   const [ttl, setTtl] = useState(90);
@@ -187,14 +188,14 @@ export function NewIdentityForm({ target }: { target: AgentTarget }) {
         </div>
         <ScopePicker value={scopes} onChange={setScopes} />
         <div className="btn-row">
-          <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !name.trim() || scopes.length === 0 || scopes.some(scope => !isNamedScope(scope))}>
+          <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || !name.trim() || scopes.length === 0 || scopes.some(scope => !isNamedScope(scope))}>
             {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="key" size={15} />}
             Create identity and key
           </button>
         </div>
         <LockNote />
       </form>
-      <KeyDialog k={key} apiUrl={target.apiUrl} repoPath={target.repoPath} onClose={() => setKey(null)} hint={KEY_HINT} />
+      <KeyDialog k={key} apiUrl={target.apiUrl} repoPath={target.repoPath} httpMcp={target.httpMcp} onClose={() => setKey(null)} hint={target.httpMcp ? KEY_HINT : undefined} />
     </>
   );
 }
@@ -204,7 +205,7 @@ export function NewIdentityForm({ target }: { target: AgentTarget }) {
 
 type StatusFilter = "all" | "active" | "disabled";
 
-export function IdentityList({ identities, target }: { identities: Identity[]; target: AgentTarget }) {
+export function IdentityList({ identities, target, mintFor = null }: { identities: Identity[]; target: AgentTarget; mintFor?: number | null }) {
   const [status, setStatus] = useState<StatusFilter>("all");
   const counts = { all: identities.length, active: identities.filter((i) => !i.disabled).length, disabled: identities.filter((i) => i.disabled).length };
   const shown = useMemo(() => identities.filter((i) => status === "all" || (status === "disabled") === i.disabled), [identities, status]);
@@ -224,7 +225,7 @@ export function IdentityList({ identities, target }: { identities: Identity[]; t
       )}
       <ListFrame
         rows={shown.map((i, n) => (
-          <IdentityRow key={i.id} identity={i} index={n} target={target} />
+          <IdentityRow key={i.id} identity={i} index={n} target={target} startMinting={mintFor === i.id} />
         ))}
         meta={shown.map((i) => ({
           q: `${i.name} ${KIND_WORD[i.kind]} ${i.kind} ${i.scopes.join(" ")} ${i.disabled ? "disabled" : ""}`.toLowerCase(),
@@ -246,14 +247,17 @@ function keyTone(k: AccessKey, disabled: boolean): [Tone, string] {
   return ["ok", "active"];
 }
 
-function IdentityRow({ identity: i, index, target }: { identity: Identity; index: number; target: AgentTarget }) {
-  const [open, setOpen] = useState(false);
-  const [minting, setMinting] = useState<AccessKey | "new" | null>(null);
+function IdentityRow({ identity: i, index, target, startMinting = false }: { identity: Identity; index: number; target: AgentTarget; startMinting?: boolean }) {
+  // Linked here to mint a key (?new=key&for=<id>): the row opens with its key dialog up.
+  const [open, setOpen] = useState(startMinting);
+  const [minting, setMinting] = useState<AccessKey | "new" | null>(startMinting && !i.disabled ? "new" : null);
   const [key, setKey] = useState<NewKey | null>(null);
   const newest = i.keys.find((k) => k.status === "active");
+  // Keys worth acting on without opening the row: running out, or never used.
+  const attention = i.disabled ? [] : i.keys.filter((k) => k.status === "active" && (k.expiringSoon || k.neverUsed));
   const panel = `ident-${i.id}`;
   return (
-    <li className={`ident${open ? " is-open" : ""}${i.disabled ? " is-disabled" : ""}`} style={{ "--i": Math.min(index, 12) } as CSSProperties}>
+    <li id={`identity-${i.id}`} className={`ident${open ? " is-open" : ""}${i.disabled ? " is-disabled" : ""}`} style={{ "--i": Math.min(index, 12) } as CSSProperties}>
       <button type="button" className="ident__head" aria-expanded={open} aria-controls={panel} onClick={() => setOpen((v) => !v)}>
         <span className="ident__name">
           <span className="mono">{i.name}</span>
@@ -265,19 +269,49 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
         <span className="chips ident__scopes">
           {i.disabled && <Chip tone="bad">disabled</Chip>}
           {i.scopes.map((s) => (
-            <Chip key={s} tone="idle" dot={false}>
-              {s}
+            <Chip key={s} tone={s === "*" ? "warn" : "idle"} dot={false} title={s}>
+              {scopeWords(s)}
             </Chip>
           ))}
         </span>
         <span className="ident__count num">
           {i.activeKeys} active key{i.activeKeys === 1 ? "" : "s"}
+          {attention.length > 0 && !open && (
+            <span className="sub"> · {attention.map((k) => (k.expiringSoon ? `#${k.id} expires soon` : `#${k.id} never used`)).join(", ")}</span>
+          )}
         </span>
         <span className="ident__toggle">
           {open ? "Hide" : "Manage"}
           <Icon name="arrow" size={14} />
         </span>
       </button>
+      {attention.length > 0 && !open && (
+        <div className="ident__quick btn-row">
+          {attention.map((k) => (
+            <RunButton
+              key={k.id}
+              small
+              variant="danger"
+              action={() => revokeCredential(k.id)}
+              disabled={k.current !== false}
+              disabledReason="The API has not identified the dashboard key. Open Manage to rotate it first."
+              label={`Revoke #${k.id}`}
+              title={`Revoke key #${k.id}`}
+              confirm={{
+                title: `Revoke key #${k.id} of “${i.name}”?`,
+                body: `${k.neverUsed ? "This key was never presented to Brain." : `It expires ${k.expires}.`} Anything using it is locked out right away. This can’t be undone — create a new key if access is still needed.`,
+                yes: "Revoke key",
+              }}
+            />
+          ))}
+          {attention.some((k) => k.expiringSoon) && !i.disabled && (
+            <button type="button" className="btn btn--neutral btn--sm" onClick={() => { setOpen(true); setMinting("new"); }}>
+              <Icon name="key" size={15} />
+              New key
+            </button>
+          )}
+        </div>
+      )}
 
       {open && (
         <div className="ident__panel" id={panel}>
@@ -349,8 +383,8 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
                         <td>
                           <span className="chips">
                             {k.scopes.map((s) => (
-                              <Chip key={s} tone={s === "*" ? "warn" : "idle"} dot={false}>
-                                {s === "*" ? "everything" : s}
+                              <Chip key={s} tone={s === "*" ? "warn" : "idle"} dot={false} title={s}>
+                                {scopeWords(s)}
                               </Chip>
                             ))}
                           </span>
@@ -401,7 +435,7 @@ function IdentityRow({ identity: i, index, target }: { identity: Identity; index
           }}
         />
       </Dialog>
-      <KeyDialog k={key} apiUrl={target.apiUrl} repoPath={target.repoPath} onClose={() => setKey(null)} hint={KEY_HINT} />
+      <KeyDialog k={key} apiUrl={target.apiUrl} repoPath={target.repoPath} httpMcp={target.httpMcp} onClose={() => setKey(null)} hint={target.httpMcp ? KEY_HINT : undefined} />
     </li>
   );
 }
@@ -433,7 +467,7 @@ function MintForm({ identity, initial, onCancel, onMinted }: { identity: Identit
         <button type="button" className="btn btn--neutral" onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || scopes.length === 0 || scopes.some(scope => !isNamedScope(scope))}>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || scopes.length === 0 || scopes.some(scope => !isNamedScope(scope))}>
           {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="key" size={15} />}
           Create key
         </button>

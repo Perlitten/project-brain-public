@@ -13,7 +13,7 @@ export function AddProject() {
   if (capabilities.state === "demo" || !capabilities.supported.includes("repository_registration") || restricted) return null;
   return <><button className="btn btn--primary" type="button" onClick={() => setOpen(true)}>Add project</button><Dialog open={open} onClose={() => setOpen(false)} title="Add project">{open && <AddProjectForm />}</Dialog></>;
 }
-function AddProjectForm() {
+export function AddProjectForm() {
   const [name, setName] = useState(""); const [path, setPath] = useState(""); const [project, setProject] = useState(""); const [indexNow, setIndexNow] = useState(false);
   const [context, setContext] = useState<Awaited<ReturnType<typeof projectRegistrationContext>> | null>(null);
   const [result, setResult] = useState<Awaited<ReturnType<typeof addProject>> | null>(null);
@@ -33,6 +33,6 @@ function AddProjectForm() {
     {context?.data?.team && project && !canIndex && <p className="text-dim">Your role or this project’s policy does not grant run.request. A Contributor or Reviewer with run permission can index it after registration.</p>}
     {!context ? <p role="status">Checking server capabilities and project access…</p> : !context.ok && <p role="alert">{context.message}</p>}
     {result && !result.ok && <p role="alert">{result.message}</p>}
-    <LockNote /><button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !context?.ok}>{pending ? "Adding…" : "Add project"}</button>
+    <LockNote /><button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || !context?.ok}>{pending ? "Adding…" : "Add project"}</button>
   </form>;
 }

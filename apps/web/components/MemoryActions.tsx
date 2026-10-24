@@ -3,13 +3,15 @@
 // Each write sends the version the page showed (lib/actions/memory.ts).
 import { useState } from "react";
 import { Dialog, LOCK_REASON, LockNote, RunButton, useAction, useActionsMode } from "./act";
+import { CopyCommand } from "./CopyCommand";
+import "./memory-ux.css";
 import { acceptDecision, retireDecision, retireRule, saveDecision, saveRule } from "@/lib/actions/memory";
 import type { Decision, Rule } from "@/lib/types";
 
 /** Opens the edit dialog; locked like every other action outside "on" mode. */
 function EditButton({ name, onOpen }: { name: string; onOpen: () => void }) {
   const mode = useActionsMode();
-  const locked = mode !== "on";
+  const locked = mode === "locked";
   return <button type="button" className="btn btn--neutral btn--sm" disabled={locked} title={locked ? LOCK_REASON[mode] : `Edit ${name}`} onClick={onOpen}>Edit</button>;
 }
 
@@ -44,7 +46,7 @@ function DecisionForm({ decision, onDone }: { decision: Decision; onDone: () => 
       <LockNote />
       <div className="dialog__actions">
         <button type="button" className="btn btn--neutral" onClick={onDone}>Cancel</button>
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !description.trim()}>{pending ? "Saving…" : "Save decision"}</button>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || !description.trim()}>{pending ? "Saving…" : "Save decision"}</button>
       </div>
     </form>
   );
@@ -93,8 +95,28 @@ function RuleForm({ rule, onDone }: { rule: Rule; onDone: () => void }) {
       <LockNote />
       <div className="dialog__actions">
         <button type="button" className="btn btn--neutral" onClick={onDone}>Cancel</button>
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !description.trim()}>{pending ? "Saving…" : "Save rule"}</button>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || !description.trim()}>{pending ? "Saving…" : "Save rule"}</button>
       </div>
     </form>
+  );
+}
+
+// New decisions and rules come from agents and the CLI; this page edits what
+// they recorded. The hint names the exact tool and command for each.
+export function RecordHint({ kind, repoPath }: { kind: "decision" | "rule"; repoPath?: string }) {
+  const scopedDecision = kind === "decision" && Boolean(repoPath);
+  const command =
+    kind === "decision"
+      ? `brain decision add "<title>" --desc "<what was decided>" --reason "<why>"`
+      : `brain rules add "<name>"${repoPath ? ` --repo ${repoPath.includes(" ") ? `"${repoPath}"` : repoPath}` : ""} --desc "<the rule>" --severity high`;
+  return (
+    <div className="record-hint">
+      <p className="record-hint__text">
+        Agents call the <code className="mono">{kind === "decision" ? "record_decision" : "record_rule"}</code> tool.{scopedDecision ? " Use it for this project." : " From a terminal:"}
+      </p>
+      {scopedDecision
+        ? <p className="field__hint">Use the agent tool on this project; the CLI does not currently accept a repository scope for decisions.</p>
+        : <CopyCommand command={command} />}
+    </div>
   );
 }

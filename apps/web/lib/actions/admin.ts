@@ -5,7 +5,8 @@ import { isNamedScope } from "../scopes";
 import { mutate } from "./gate";
 import type { ActionResult } from "./types";
 
-const ACCESS = ["/admin", "/setup"];
+// /agents shows each agent's keys, so a key change has to reach it too.
+const ACCESS = ["/admin", "/setup", "/agents"];
 const AGENT_SCOPES = ["core:write", "jobs:read"];
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,119}$/;
 

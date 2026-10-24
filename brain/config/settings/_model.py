@@ -22,7 +22,7 @@ from ._agent import SettingsAgent
 from ._memory import SettingsMemory
 
 
-class Settings(SettingsCore, SettingsInfra, SettingsWorker, SettingsTeam, SettingsLate, SettingsRetrieval, SettingsLlm, SettingsAgent, SettingsMemory, BaseSettings):
+class Settings(SettingsMemory, SettingsAgent, SettingsLlm, SettingsRetrieval, SettingsLate, SettingsTeam, SettingsWorker, SettingsInfra, SettingsCore, BaseSettings):
     model_config = SettingsConfigDict(env_file=_env_files(), env_file_encoding="utf-8", extra="ignore")
 
     @model_validator(mode="after")
@@ -260,7 +260,7 @@ class Settings(SettingsCore, SettingsInfra, SettingsWorker, SettingsTeam, Settin
                 )
             report_root = Path(
                 self.REPORT_OUTPUT_DIR
-                or Path(__file__).resolve().parents[2] / "reports"
+                or Path(__file__).resolve().parents[3] / "reports"
             ).resolve()
             evidence_path = Path(evidence_value)
             if not evidence_path.is_absolute():

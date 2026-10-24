@@ -12,7 +12,7 @@ import pytest
 from brain.config.settings import settings
 from brain.workers.errors import PermanentJobError
 from brain.workers.tasks import run_deep_context, run_nightly_maintenance
-import brain.workers.tasks as worker_tasks
+import brain.workers.tasks.jobs as worker_tasks
 
 
 def _repository():
@@ -83,16 +83,16 @@ async def test_nightly_job_runs_standard_maintenance_without_deep_lane(monkeypat
     monkeypatch.setattr(settings, "NIGHTLY_DEEP_MAINTENANCE_ENABLED", False)
     record = _repository()
     with (
-        patch("brain.workers.tasks.init_db", new=AsyncMock()),
-        patch("brain.workers.tasks.auto_heal_stale_repositories", new=AsyncMock(return_value={"healed": [], "skipped": []})),
-        patch("brain.workers.tasks._deep_repo_path", return_value=Path("/repo")),
-        patch("brain.workers.tasks.get_repository_by_path", new=AsyncMock(return_value=record)),
-        patch("brain.workers.tasks._approved_deep_repository", new=AsyncMock()) as approved,
-        patch("brain.workers.tasks._reconcile_exact_lfm", new=AsyncMock()) as lfm,
-        patch("brain.workers.tasks.run_reindex", new=AsyncMock(return_value={"status": "success", "commit_hash": "sha"})) as reindex,
-        patch("brain.workers.tasks.verify_embeddings", new=AsyncMock(return_value=_dense_result())),
-        patch("brain.workers.tasks.deliver_maintenance_alert", new=AsyncMock(return_value={"status": "disabled"})),
-        patch("brain.workers.tasks.redis_client", new=SimpleNamespace(set=AsyncMock())),
+        patch("brain.workers.tasks.jobs.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.jobs.auto_heal_stale_repositories", new=AsyncMock(return_value={"healed": [], "skipped": []})),
+        patch("brain.workers.tasks.jobs._deep_repo_path", return_value=Path("/repo")),
+        patch("brain.workers.tasks.jobs.get_repository_by_path", new=AsyncMock(return_value=record)),
+        patch("brain.workers.tasks.jobs._approved_deep_repository", new=AsyncMock()) as approved,
+        patch("brain.workers.tasks.jobs._reconcile_exact_lfm", new=AsyncMock()) as lfm,
+        patch("brain.workers.tasks.jobs.run_reindex", new=AsyncMock(return_value={"status": "success", "commit_hash": "sha"})) as reindex,
+        patch("brain.workers.tasks.jobs.verify_embeddings", new=AsyncMock(return_value=_dense_result())),
+        patch("brain.workers.tasks.jobs.deliver_maintenance_alert", new=AsyncMock(return_value={"status": "disabled"})),
+        patch("brain.workers.tasks.jobs.redis_client", new=SimpleNamespace(set=AsyncMock())),
     ):
         result = await run_nightly_maintenance({"scheduled": True})
 
@@ -108,9 +108,9 @@ async def test_nightly_job_runs_standard_maintenance_without_deep_lane(monkeypat
 async def test_nightly_job_fails_cleanly_when_repo_is_not_indexed(monkeypatch):
     monkeypatch.setattr(settings, "NIGHTLY_DEEP_MAINTENANCE_ENABLED", False)
     with (
-        patch("brain.workers.tasks.init_db", new=AsyncMock()),
-        patch("brain.workers.tasks._deep_repo_path", return_value=Path("/repo")),
-        patch("brain.workers.tasks.get_repository_by_path", new=AsyncMock(return_value=None)),
+        patch("brain.workers.tasks.jobs.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.jobs._deep_repo_path", return_value=Path("/repo")),
+        patch("brain.workers.tasks.jobs.get_repository_by_path", new=AsyncMock(return_value=None)),
     ):
         with pytest.raises(PermanentJobError, match="not indexed yet"):
             await run_nightly_maintenance({"scheduled": True})
@@ -125,18 +125,18 @@ async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality(monkeypat
     probes = [_quality_probe() for _ in range(3)]
 
     with (
-        patch("brain.workers.tasks.init_db", new=AsyncMock()),
-        patch("brain.workers.tasks.auto_heal_stale_repositories", new=AsyncMock(return_value={"healed": [], "skipped": []})) as sweep,
+        patch("brain.workers.tasks.jobs.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.jobs.auto_heal_stale_repositories", new=AsyncMock(return_value={"healed": [], "skipped": []})) as sweep,
         patch(
-            "brain.workers.tasks._deep_repo_path",
+            "brain.workers.tasks.jobs._deep_repo_path",
             return_value=Path("/app"),
         ),
         patch(
-            "brain.workers.tasks._approved_deep_repository",
+            "brain.workers.tasks.jobs._approved_deep_repository",
             new=AsyncMock(return_value=record),
         ),
         patch(
-            "brain.workers.tasks.run_reindex",
+            "brain.workers.tasks.jobs.run_reindex",
             new=AsyncMock(
                 return_value={
                     "status": "success",
@@ -145,7 +145,7 @@ async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality(monkeypat
             ),
         ) as reindex,
         patch(
-            "brain.workers.tasks.verify_embeddings",
+            "brain.workers.tasks.jobs.verify_embeddings",
             new=AsyncMock(
                 side_effect=[
                     _dense_result(passed=False),
@@ -154,7 +154,7 @@ async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality(monkeypat
             ),
         ),
         patch(
-            "brain.workers.tasks.run_embedding_backfill",
+            "brain.workers.tasks.jobs.run_embedding_backfill",
             new=AsyncMock(
                 return_value={
                     "regenerated": 2,
@@ -163,7 +163,7 @@ async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality(monkeypat
             ),
         ) as backfill,
         patch(
-            "brain.workers.tasks._reconcile_exact_lfm",
+            "brain.workers.tasks.jobs._reconcile_exact_lfm",
             new=AsyncMock(
                 return_value=(
                     {
@@ -177,15 +177,15 @@ async def test_nightly_job_repairs_dense_corpus_and_proves_lfm_quality(monkeypat
             ),
         ),
         patch(
-            "brain.workers.tasks._run_deep_quality_probes",
+            "brain.workers.tasks.jobs._run_deep_quality_probes",
             new=AsyncMock(return_value=probes),
         ),
         patch(
-            "brain.workers.tasks.deliver_maintenance_alert",
+            "brain.workers.tasks.jobs.deliver_maintenance_alert",
             new=AsyncMock(return_value={"status": "sent"}),
         ),
         patch(
-            "brain.workers.tasks.redis_client.set",
+            "brain.workers.tasks.jobs.redis_client.set",
             new=redis_set,
         ),
     ):
@@ -214,33 +214,33 @@ async def test_nightly_job_fails_closed_on_relevance_probe_miss(monkeypatch):
     exact_client = SimpleNamespace(aclose=AsyncMock())
 
     with (
-        patch("brain.workers.tasks.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.jobs.init_db", new=AsyncMock()),
         patch(
-            "brain.workers.tasks._deep_repo_path",
+            "brain.workers.tasks.jobs._deep_repo_path",
             return_value=Path("/app"),
         ),
         patch(
-            "brain.workers.tasks._approved_deep_repository",
+            "brain.workers.tasks.jobs._approved_deep_repository",
             new=AsyncMock(return_value=record),
         ),
         patch(
-            "brain.workers.tasks.run_reindex",
+            "brain.workers.tasks.jobs.run_reindex",
             new=AsyncMock(return_value={"commit_hash": "build-sha"}),
         ),
         patch(
-            "brain.workers.tasks.verify_embeddings",
+            "brain.workers.tasks.jobs.verify_embeddings",
             new=AsyncMock(return_value=_dense_result()),
         ),
         patch(
-            "brain.workers.tasks._reconcile_exact_lfm",
+            "brain.workers.tasks.jobs._reconcile_exact_lfm",
             new=AsyncMock(return_value=({"passed": True}, exact_client)),
         ),
         patch(
-            "brain.workers.tasks._run_deep_quality_probes",
+            "brain.workers.tasks.jobs._run_deep_quality_probes",
             new=AsyncMock(return_value=[_quality_probe(passed=False)]),
         ),
         patch(
-            "brain.workers.tasks.redis_client.set",
+            "brain.workers.tasks.jobs.redis_client.set",
             new=AsyncMock(),
         ) as redis_set,
     ):
@@ -283,17 +283,17 @@ async def test_deep_context_returns_only_after_applied_exact_lfm(monkeypatch):
     )
 
     with (
-        patch("brain.workers.tasks.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.jobs.init_db", new=AsyncMock()),
         patch(
-            "brain.workers.tasks._deep_repo_path",
+            "brain.workers.tasks.jobs._deep_repo_path",
             return_value=Path("/app"),
         ),
         patch(
-            "brain.workers.tasks._approved_deep_repository",
+            "brain.workers.tasks.jobs._approved_deep_repository",
             new=AsyncMock(return_value=record),
         ),
         patch(
-            "brain.workers.tasks.assess_repository_freshness",
+            "brain.workers.tasks.jobs.assess_repository_freshness",
             new=AsyncMock(
                 return_value={
                     "status": "current",
@@ -308,11 +308,11 @@ async def test_deep_context_returns_only_after_applied_exact_lfm(monkeypatch):
             ),
         ),
         patch(
-            "brain.workers.tasks.verify_embeddings",
+            "brain.workers.tasks.jobs.verify_embeddings",
             new=AsyncMock(return_value=_dense_result()),
         ),
         patch(
-            "brain.workers.tasks._reconcile_exact_lfm",
+            "brain.workers.tasks.jobs._reconcile_exact_lfm",
             new=AsyncMock(
                 return_value=(
                     {
@@ -328,7 +328,7 @@ async def test_deep_context_returns_only_after_applied_exact_lfm(monkeypatch):
             return_value=builder,
         ),
         patch(
-            "brain.workers.tasks.deliver_deep_context_alert",
+            "brain.workers.tasks.jobs.deliver_deep_context_alert",
             new=AsyncMock(return_value={"status": "sent"}),
         ),
     ):
@@ -369,8 +369,8 @@ async def test_deep_context_without_lfm_builds_standard_durable_pack(monkeypatch
     monkeypatch.setattr(settings, "LATE_INTERACTION_DEEP_ENABLED", False)
     builder = SimpleNamespace(build_context_pack=AsyncMock(return_value={"id": 42, "markdown_content": "x", "files": []}))
     with (
-        patch("brain.workers.tasks.init_db", new=AsyncMock()),
-        patch("brain.workers.tasks.get_repository_by_path", new=AsyncMock(return_value=_repository())),
+            patch("brain.workers.tasks._deep.init_db", new=AsyncMock()),
+            patch("brain.workers.tasks._deep.get_repository_by_path", new=AsyncMock(return_value=_repository())),
         patch("brain.context.context_pack_builder.ContextPackBuilder", return_value=builder),
     ):
         result = await run_deep_context({"task_description": "add rate limiting", "repo_path": str(tmp_path), "consumer": "mcp:test"})

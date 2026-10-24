@@ -22,6 +22,22 @@ export interface Repository {
   head: string;
   behind: number | null;
   freshness?: string;
+  /** Working-tree edits omitted by the latest index run, when reported with the feed. */
+  uncommitted?: number | null;
+  /** The scheduled origin check (git ls-remote), when it has run for this repository. */
+  originPoll?: OriginPoll;
+}
+
+export interface OriginPoll {
+  /** ok · error · unconfigured */
+  status: string;
+  /** Formatted in UTC. */
+  at?: string;
+  error?: string;
+  /** Credentials already masked by the server. */
+  remote?: string;
+  /** Commits on origin that the index does not have yet. */
+  behind: number | null;
 }
 
 export interface ConditionTile {
@@ -81,6 +97,14 @@ export interface AgentRun {
   duration: string;
   /** Demo data only: repository slug this task ran on. */
   repo?: string;
+  /** The full task id, when the source has one (the row's `id` may be shortened). */
+  taskId?: string;
+  /** Compare-and-swap version a cancel must send; absent when the source has none. */
+  version?: number;
+  /** Brain's own status word (e.g. "validating"), finer than `status`. */
+  rawStatus?: string;
+  /** Someone already asked Brain to stop this task. */
+  cancelRequested?: boolean;
 }
 
 export interface LedgerEvent {
@@ -89,6 +113,8 @@ export interface LedgerEvent {
   source: string;
   text: string;
   ref?: string;
+  /** Where the ref leads, when Brain named the entity. */
+  href?: string;
 }
 
 export interface IndexRun {
@@ -117,7 +143,9 @@ export interface ContextPack {
   /** null: Brain can't tell (the pack doesn't record which commit it was built from). */
   stale: boolean | null;
   consumer: string;
-  /** Demo data only: repository slug this pack was built for. */
+  /** Memory the pack carried, when Brain recorded its contents (null: not recorded). */
+  memory?: { rules: number | null; decisions: number | null; learnings: number | null };
+  /** Repository slug this pack was built for; absent on legacy/global packs. */
   repo?: string;
 }
 
@@ -128,6 +156,8 @@ export interface Decision {
   scope: string;
   recordedAt: string;
   summary: string;
+  /** Stored repository path; null means the decision applies to every project. */
+  repoPath?: string | null;
   /** Demo data only: repository slug this decision belongs to. */
   repo?: string;
   /** How to address the stored row when editing it; absent on history copies. */
@@ -140,6 +170,8 @@ export interface DecisionWrite {
   repoPath: string | null;
   description: string;
   reason: string;
+  /** As stored (for example proposed); edits must not implicitly accept it. */
+  status: string;
   /** Compare-and-swap: the version this page read. */
   version: number;
 }
@@ -167,6 +199,8 @@ export interface Rule {
   delivered30d?: number;
   /** Diff reviews that cited this rule over the same window: did it catch anything. */
   caught30d?: number;
+  /** Stored repository path; null means the rule applies to every project. */
+  repoPath?: string | null;
   /** Demo data only: repository slug this rule belongs to. */
   repo?: string;
   /** How to address the stored row when editing it; absent on history copies. */
@@ -181,6 +215,10 @@ export interface Insight {
   evidence: string;
   module: string;
   detectedAt: string;
+  lastSeenAt?: string;
+  occurrences?: number;
+  dedupeKey?: string;
+  codeAvailable?: boolean;
 }
 
 export interface ModuleEdge {

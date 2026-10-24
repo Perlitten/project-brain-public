@@ -579,13 +579,13 @@ def test_image_manifest_digest_matches_canonical_build_input_digest(tmp_path):
 
 
 def test_deployment_control_files_have_a_separate_verified_digest(tmp_path):
-    includes = [
-        "Dockerfile",
-        "deploy/docker-compose.prod.yml",
-        "deploy/server_up.sh",
-        "scripts/write_source_manifest.py",
-        "scripts/validate_lfm_release_gate.py",
-    ]
+    # Use the real release command; a second hard-coded list can hide a new
+    # host-side input that the Dockerfile forgot to copy into the builder.
+    server_up = (ROOT / "deploy/server_up.sh").read_text(encoding="utf-8")
+    command = server_up.split('deploy_manifest_temp="$(mktemp)"', 1)[1].split('BRAIN_DEPLOY_DIGEST=', 1)[0]
+    arguments = shlex.split(command.replace("\\\n", " "))
+    includes = [arguments[i + 1] for i, value in enumerate(arguments) if value == "--include"]
+    assert includes
     copied_root = tmp_path / "release-inputs"
     copied_root.mkdir()
     # Reproduce the Dockerfile's actual control-input COPY destinations. A

@@ -143,7 +143,7 @@ async def indexing_db(monkeypatch, tmp_path):
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr("brain.indexers.file_indexer.async_session_factory", sessions)
     monkeypatch.setattr("brain.indexers.reliability.async_engine", engine)
-    monkeypatch.setattr("brain.workers.tasks.async_session_factory", sessions)
+    monkeypatch.setattr("brain.workers.tasks.jobs.async_session_factory", sessions)
     monkeypatch.setenv("FAST_INDEX", "true")
     monkeypatch.setattr(settings, "DEFAULT_EMBEDDING_PROVIDER", "mock")
     monkeypatch.setattr(settings, "LATE_INTERACTION_ENABLED", False)
@@ -374,8 +374,8 @@ async def test_degraded_run_persists_progress_and_enqueues_causal_repair(indexin
     provider.embed = AsyncMock(side_effect=RuntimeError("500"))
     indexer = FileIndexer()
     indexer.router = SimpleNamespace(embedding=lambda _: provider)
-    monkeypatch.setattr("brain.workers.tasks.FileIndexer", lambda: indexer)
-    monkeypatch.setattr("brain.workers.tasks.init_db", AsyncMock())
+    monkeypatch.setattr("brain.workers.tasks.jobs.FileIndexer", lambda: indexer)
+    monkeypatch.setattr("brain.workers.tasks.jobs.init_db", AsyncMock())
     report, enqueue = AsyncMock(), AsyncMock(return_value="repair-123")
     runtime_token = current_job.set(JobRuntime("parent-123", report, AsyncMock(), enqueue))
     try:
@@ -422,13 +422,13 @@ async def test_repair_promotes_only_its_latest_exact_run(indexing_db, tmp_path, 
     if newer_run:
         async with sessions.begin() as session:
             session.add(IndexingRun(repository_id=record.id, commit_hash="b" * 40, status="failed"))
-    monkeypatch.setattr("brain.workers.tasks.init_db", AsyncMock())
-    monkeypatch.setattr("brain.workers.tasks.get_repository_by_path", AsyncMock(return_value=record))
-    monkeypatch.setattr("brain.workers.tasks.backfill_embeddings", AsyncMock(return_value=SimpleNamespace(
+    monkeypatch.setattr("brain.workers.tasks.jobs.init_db", AsyncMock())
+    monkeypatch.setattr("brain.workers.tasks.jobs.get_repository_by_path", AsyncMock(return_value=record))
+    monkeypatch.setattr("brain.workers.tasks.jobs.backfill_embeddings", AsyncMock(return_value=SimpleNamespace(
         to_dict=lambda: {"regenerated": 1, "failed": 0})))
-    monkeypatch.setattr("brain.workers.tasks.collect_embedding_inventory", AsyncMock(return_value=SimpleNamespace(
+    monkeypatch.setattr("brain.workers.tasks.jobs.collect_embedding_inventory", AsyncMock(return_value=SimpleNamespace(
         to_dict=lambda: {"missing_embeddings": 0})))
-    monkeypatch.setattr("brain.workers.tasks.verify_embeddings", AsyncMock(return_value={"pass": True}))
+    monkeypatch.setattr("brain.workers.tasks.jobs.verify_embeddings", AsyncMock(return_value={"pass": True}))
     result = await run_embedding_backfill({"repo_path": record.path, "repository_id": record.id,
                                           "indexing_run_id": indexer.indexing_run_id,
                                           "source_revision": record.last_indexed_commit,

@@ -7,7 +7,7 @@ import { ReadProblem } from "@/components/ReadProblem";
 
 import Link from "next/link";
 import "./setup.css";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { CodeBlock, LockNote, RunButton, useAction } from "@/components/act";
 import { Icon } from "@/components/Icon";
 import { mcpUrl } from "@/lib/mcp-address";
@@ -25,45 +25,44 @@ const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const sentence = (s: string) => (s ? cap(s.trim()).replace(/[.\s]*$/, ".") : s);
 
-export function SetupSteps({ view, clients = [] }: { view: SetupView; clients?: ClientConfig[] }) {
-  // One step open at a time — the next one — so the page reads as a checklist.
-  const [open, setOpen] = useState<string | null>(view.nextStep ?? null);
-  const show = (id: string) => {
-    setOpen(id);
-    requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }));
-  };
-  // A link to /setup#provider opens that step and scrolls to it.
-  useEffect(() => {
-    const go = () => {
-      const id = location.hash.slice(1);
-      if (view.steps.some((s) => s.id === id)) show(id);
-    };
-    go();
-    window.addEventListener("hashchange", go);
-    return () => window.removeEventListener("hashchange", go);
-  }, [view.steps]);
-
+// One step per view tab: the page shows the step's controls and nothing else.
+// The tab strip above is the stepper (each tab says done, next or to do).
+export function SetupSteps({ view, current, clients = [], httpMcp = false, stepHref }: { view: SetupView; current: string; clients?: ClientConfig[]; httpMcp?: boolean; stepHref: Record<string, string> }) {
+  const index = Math.max(0, view.steps.findIndex((s) => s.id === current));
+  const s = view.steps[index];
+  if (!s) return null;
+  const after = view.steps[index + 1];
   return (
-    <ol className="steps">
-      {view.steps.map((s, i) => (
-        <Step key={s.id} step={s} index={i} isNext={s.id === view.nextStep} open={open === s.id} onToggle={() => setOpen(open === s.id ? null : s.id)}>
-          {s.id === "services" && <Services step={s} />}
-          {s.id === "repo" && <Repo step={s} repoPath={view.repoPath} />}
-          {s.id === "provider" && <Providers step={s} view={view} />}
-          {s.id === "indexed" && <Index step={s} repoPath={view.repoPath} />}
-          {s.id === "agent" && <Agent step={s} apiUrl={view.publicApiUrl} repoPath={view.repoPath} clients={clients} />}
-          {s.id === "first_task" && <FirstTask step={s} repoPath={view.repoPath} />}
-        </Step>
-      ))}
+    <ol className="steps setup-steps" start={index + 1}>
+      <Step key={s.id} step={s} index={index} isNext={s.id === view.nextStep}>
+        {s.id === "services" && <Services step={s} />}
+        {s.id === "repo" && <Repo step={s} repoPath={view.repoPath} />}
+        {s.id === "provider" && <Providers step={s} view={view} />}
+        {s.id === "indexed" && <Index step={s} repoPath={view.repoPath} />}
+        {s.id === "agent" && <Agent step={s} apiUrl={view.publicApiUrl} repoPath={view.repoPath} clients={clients} httpMcp={httpMcp} />}
+        {s.id === "first_task" && <FirstTask step={s} repoPath={view.repoPath} />}
+        {after && (
+          <p className="setup-step__onward">
+            <Link className="link" href={stepHref[after.id]} scroll={false}>
+              {s.done ? "Next" : "Skip to"}: {STEP_COPY[after.id]?.title ?? after.title} <Icon name="arrow" size={13} />
+            </Link>
+          </p>
+        )}
+      </Step>
     </ol>
   );
 }
 
 // ---------------------------------------------------------------------------
 
-function Step({ step, index, isNext, open, onToggle, children }: { step: StepView; index: number; isNext: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
+function Step({ step, index, isNext, children }: { step: StepView; index: number; isNext: boolean; children: ReactNode }) {
   const state = step.done ? "done" : isNext ? "next" : "todo";
-  const chip = step.done ? null : isNext ? (
+  const chip = step.done ? (
+    <span className="chip chip--ok">
+      <span className="chip__dot" aria-hidden="true" />
+      Done
+    </span>
+  ) : isNext ? (
     <span className="chip chip--info">
       <span className="chip__dot" aria-hidden="true" />
       Next
@@ -80,7 +79,7 @@ function Step({ step, index, isNext, open, onToggle, children }: { step: StepVie
   const status = statusLine(step);
 
   return (
-    <li id={step.id} className={`step step--${state} setup-step${open ? " is-open" : ""}`} style={{ "--i": index } as CSSProperties}>
+    <li id={step.id} className={`step step--${state} setup-step is-open`} style={{ "--i": 0 } as CSSProperties}>
       <span className="step__badge" aria-label={step.done ? "Done" : `Step ${index + 1}`}>
         {step.done ? (
           <svg className="step__check" width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -92,17 +91,12 @@ function Step({ step, index, isNext, open, onToggle, children }: { step: StepVie
       </span>
       <div className="setup-step__body">
         <div className="setup-step__row">
-          <button type="button" className="setup-step__head" aria-expanded={open} onClick={onToggle}>
+          <h2 className="setup-step__head">
             <span className="step__title">{copy?.title ?? step.title}</span>
             {chip}
-            <span className="setup-step__toggle" aria-hidden="true">
-              {open ? "Hide" : step.done ? "Change" : "Open"}
-              <Icon name="arrow" size={14} />
-            </span>
-          </button>
+          </h2>
         </div>
-        {/* A finished step is one line; its explanation comes back when you open it. */}
-        {copy && (!step.done || open) && <p className="setup-step__why">{copy.why}</p>}
+        {copy && <p className="setup-step__why">{copy.why}</p>}
         {status && (
           <p className={`setup-step__status setup-step__status--${state}`}>
             {status.now && (
@@ -118,7 +112,7 @@ function Step({ step, index, isNext, open, onToggle, children }: { step: StepVie
             )}
           </p>
         )}
-        {open && <div className="setup-step__panel">{children}</div>}
+        <div className="setup-step__panel">{children}</div>
       </div>
     </li>
   );
@@ -220,7 +214,7 @@ function Repo({ step, repoPath }: { step: StepView; repoPath?: string }) {
                 className={`btn btn--sm ${r.path === repoPath ? "btn--primary" : "btn--neutral"}`}
                 aria-pressed={r.path === path.trim()}
                 title={r.path}
-                disabled={pending || mode !== "on" || r.path === repoPath}
+                disabled={pending || mode === "locked" || r.path === repoPath}
                 onClick={() => {
                   setPath(r.path);
                   run(r.path);
@@ -239,7 +233,7 @@ function Repo({ step, repoPath }: { step: StepView; repoPath?: string }) {
         <span className="field__hint">An absolute path to a checkout on the machine Brain runs on, not on your laptop. Saved to the server’s .env.</span>
       </label>
       <div className="btn-row">
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !path.trim() || (!changed && step.done)}>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || !path.trim() || (!changed && step.done)}>
           {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="check" size={15} />}
           Save folder
         </button>
@@ -470,7 +464,7 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
           </div>
 
           <div className="btn-row">
-            <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || badUrl || badDim || (!preset?.baseUrl && !d.baseUrl.trim())}>
+            <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || badUrl || badDim || (!preset?.baseUrl && !d.baseUrl.trim())}>
               {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="check" size={15} />}
               Save {slot === "llm" ? "language model" : "embedding model"}
             </button>
@@ -547,7 +541,7 @@ function Index({ step, repoPath }: { step: StepView; repoPath?: string }) {
 // ---------------------------------------------------------------------------
 // 5. Agent
 
-function Agent({ step, apiUrl, repoPath, clients }: { step: StepView; apiUrl: string; repoPath?: string; clients: ClientConfig[] }) {
+function Agent({ step, apiUrl, repoPath, clients, httpMcp }: { step: StepView; apiUrl: string; repoPath?: string; clients: ClientConfig[]; httpMcp: boolean }) {
   const ext = obj(step.extra.external_client);
   const check = obj(step.extra.self_check);
 
@@ -563,7 +557,9 @@ function Agent({ step, apiUrl, repoPath, clients }: { step: StepView; apiUrl: st
         <dd>{checked}</dd>
       </dl>
 
-      <CodeBlock label="Brain’s MCP address" code={mcpUrl(apiUrl)} />
+      {httpMcp
+        ? <CodeBlock label="Brain’s MCP address" code={mcpUrl(apiUrl)} />
+        : <div className="callout tone-warn"><b>HTTP MCP is disabled</b><span>Use the local-process configuration below from a Project Brain checkout.</span></div>}
       {/* Keys are made and revoked in one place, Access; its dialog carries the agent config. */}
       <div className="btn-row">
         <Link className="btn btn--primary" href="/admin?new=agent#new-identity">
@@ -573,12 +569,12 @@ function Agent({ step, apiUrl, repoPath, clients }: { step: StepView; apiUrl: st
         <RunButton action={verifyAgent} label="Run self-check" icon="check" title="Agent self-check" />
       </div>
       <p className="field__hint">
-        Agents connect to this address with a key of their own. Create one in Access — it shows the key once, with a command to paste into your agent
+        {httpMcp ? "Agents connect to this address with a key of their own." : "Agents connect through the local stdio bridge."} Create a key in Access — it shows the key once, with a command to paste into your agent
         {repoPath ? <> (tools work on <code>{repoPath}</code> by default)</> : null}. Self-check calls the same tools from the server to prove they work.
       </p>
       <LockNote />
       {clients.length > 0 && (
-        <details className="disclosure">
+        <details className="disclosure" open={!httpMcp}>
           <summary>Agent runs on the Brain server itself?</summary>
           <p>Then it can start Brain’s tools directly, without a key. The paths below are the server’s, not your laptop’s.</p>
           <AgentConfigurations clients={clients} />
@@ -625,7 +621,7 @@ function FirstTask({ step, repoPath }: { step: StepView; repoPath?: string }) {
         </span>
       </label>
       <div className="btn-row">
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || length < 8}>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || length < 8}>
           {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="layers" size={15} />}
           {pending ? "Building…" : "Build context pack"}
         </button>

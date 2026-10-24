@@ -4,14 +4,16 @@
 // show demo data. In live mode an unavailable endpoint yields an honest empty
 // value — never demo numbers. Components never import mock.ts directly.
 import { connection } from "next/server";
+import { getCapabilities } from "./capabilities";
 import { cache } from "react";
 import { apiConfigured, brainFetch, brainRead, readFailureNote, type ReadFailure } from "./api";
 import * as mock from "./mock";
 import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./list-query";
+import { eventHref } from "./event-link";
 import { shortRevision } from "./revision";
 import { SLOW_TOOL_MS } from "./tool-health";
 import { utcTime } from "./time";
-import { uncommittedCount } from "./repository-status";
+import { redactRemote, uncommittedCount } from "./repository-status";
 import type {
   AccessKey,
   AccessView,
@@ -153,6 +155,12 @@ type RawFreshness = {
   status?: string | null;
   age_seconds?: number | null;
   note?: string | null;
+  origin_poll_status?: string | null;
+  origin_polled_at?: string | null;
+  origin_poll_error?: string | null;
+  origin_remote?: string | null;
+  commits_behind_origin?: number | null;
+  uncommitted_changes?: number | null;
 };
 type RawRepo = {
   id: number;
@@ -161,11 +169,13 @@ type RawRepo = {
   indexing_status?: string | null;
   last_indexed_commit?: string | null;
   last_indexed_at?: string | null;
+  uncommitted_changes?: number | null;
   freshness?: RawFreshness | null;
 };
 
 const fetchRepositoryFeed = cache(async (): Promise<{ repos: RawRepo[] | null; reason?: ReadFailure }> => {
-  const result = await brainRead<unknown>("/repositories", { fresh: true, timeoutMs: 2000 });
+  // A loaded Brain answers in 2–4 s; a shorter wait reads as "no projects connected".
+  const result = await brainRead<unknown>("/repositories", { fresh: true, timeoutMs: 6000 });
   if (!result.ok) return { repos: null, reason: result.reason };
   if (!Array.isArray(result.data) && !Array.isArray(obj(result.data).repositories)) {
     return { repos: null, reason: "invalid_response" };
@@ -186,6 +196,18 @@ function toRepository(r: RawRepo): Repository {
     head: shortRevision(commit),
     behind: num(f.commits_behind) ?? null,
     freshness: str(f.status) || "unknown",
+    ...(uncommittedCount(f.uncommitted_changes ?? r.uncommitted_changes) !== null
+      ? { uncommitted: uncommittedCount(f.uncommitted_changes ?? r.uncommitted_changes) }
+      : {}),
+    ...(str(f.origin_poll_status) ? {
+      originPoll: {
+        status: str(f.origin_poll_status),
+        at: str(f.origin_polled_at) ? utcTime(str(f.origin_polled_at)) : undefined,
+        error: redactRemote(str(f.origin_poll_error)) || undefined,
+        remote: redactRemote(str(f.origin_remote)) || undefined,
+        behind: num(f.commits_behind_origin) ?? null,
+      },
+    } : {}),
   };
 }
 
@@ -228,11 +250,28 @@ const pageResult = <T>(data: Json, key: string, q: ListQuery, map: (v: Json) => 
 // Overview (new /api/web router; may be missing on older APIs)
 
 type RawOverview = Json;
+// The dashboard asks for every project's overview at once. Brain's proxy turns
+// away a burst of more than about twenty and its database pool holds twenty, so
+// only a few go out together; the rest wait for a slot before their clock starts.
+const OVERVIEW_READS = 6;
+let overviewSlots = OVERVIEW_READS;
+const overviewWaiters: (() => void)[] = [];
+async function withOverviewSlot<T>(read: () => Promise<T>): Promise<T> {
+  if (overviewSlots > 0) overviewSlots--;
+  else await new Promise<void>((go) => overviewWaiters.push(go));
+  try {
+    return await read();
+  } finally {
+    const next = overviewWaiters.shift();
+    if (next) next();
+    else overviewSlots++;
+  }
+}
 // React cache deduplicates reads within the render. A failed repository never
 // suppresses another one or a new request after the backend recovers.
-const fetchOverviewResult = cache((repositoryId?: number) =>
+const fetchOverviewResult = cache((repositoryId?: number) => withOverviewSlot(() =>
   brainRead<RawOverview>(`/api/web/overview?include_health=false${repositoryId ? `&repository_id=${repositoryId}` : ""}`,
-    { fresh: true, timeoutMs: 2000 }),
+    { fresh: true, timeoutMs: 6000 })),
 );
 const fetchOverview = cache(async (repositoryId?: number): Promise<RawOverview | null> => {
   const result = await fetchOverviewResult(repositoryId);
@@ -249,6 +288,18 @@ function toJob(j: Json, repoName: string): Job {
     duration: j.duration == null && j.duration_seconds == null ? undefined : durationOf(j.duration ?? j.duration_seconds),
     detail: str(j.detail) || undefined,
   };
+}
+
+const fetchHealthJobs = cache(() => brainFetch<Json>("/api/web/health", { fresh: true, timeoutMs: 6000 }));
+
+async function loadGlobalJobs(): Promise<Job[] | null> {
+  const data = await fetchHealthJobs();
+  if (!data) return null;
+  const orch = obj(data.orchestration);
+  const rawJobs = arr(orch.recent_jobs ?? data.jobs ?? data.recent_jobs).map(obj);
+  const err = orch.redis_error ?? data.jobs_error;
+  if (err && !rawJobs.length) return null;
+  return rawJobs.map((j) => toJob(j, str(obj(data.repository).name)));
 }
 
 async function loadJobs(repositoryId?: number, repoName = ""): Promise<Job[] | null> {
@@ -468,27 +519,29 @@ function evidenceText(e: unknown): string {
   const o = obj(e);
   const where = [str(o.file) || str(o.path), str(o.line)].filter(Boolean).join(":");
   const what = str(o.detail) || str(o.summary) || str(o.message) || str(o.text);
-  return [where, what].filter(Boolean).join(" — ");
+  const pair = str(o.label) && o.value != null ? `${str(o.label)}: ${typeof o.value === "object" ? JSON.stringify(o.value) : String(o.value)}` : "";
+  return [where, what, pair].filter(Boolean).join(" — ");
+}
+
+function toInsight(i: Json): Insight {
+  const evidence = arr(i.evidence).slice(0, 100);
+  const entries = evidence.map(obj), first = entries[0] ?? {};
+  const labels = Object.fromEntries(entries.filter(e => typeof e.label === "string").map(e => [str(e.label), e.value]));
+  return {
+    id: str(i.id), tone: severityTone(i.severity), kind: insightKind(str(i.insight_type)),
+    title: str(i.title, "Untitled finding"), evidence: evidence.map(evidenceText).filter(Boolean).join("\n").slice(0, 20000) || str(i.summary),
+    module: str(labels.file_path) || str(first.module) || str(first.file) || str(first.path) || str(i.source) || "—",
+    detectedAt: fmtShort(i.last_seen_at ?? i.created_at), lastSeenAt: str(i.last_seen_at) || undefined,
+    occurrences: num(i.occurrence_count), dedupeKey: str(i.dedupe_key) || undefined, codeAvailable: i.code_available === true,
+  };
 }
 
 async function loadInsights(): Promise<Insight[] | null> {
   const data = await brainFetch<Json>("/insights?limit=100", { fresh: true });
   if (!data) return null;
   return list(data, "insights")
-    .filter((i) => !["resolved", "dismissed", "closed", "archived"].includes(str(i.status).toLowerCase()))
-    .map((i) => {
-      const evidence = arr(i.evidence);
-      const first = obj(evidence[0]);
-      return {
-        id: str(i.id),
-        tone: severityTone(i.severity),
-        kind: insightKind(str(i.insight_type)),
-        title: str(i.title, "Untitled finding"),
-        evidence: evidenceText(evidence[0]) || str(i.summary),
-        module: str(first.module) || str(first.file) || str(first.path) || str(i.source) || "—",
-        detectedAt: fmtShort(i.last_seen_at ?? i.created_at),
-      };
-    });
+    .filter((i) => !["resolved", "dismissed", "closed", "archived", "stale", "actioned"].includes(str(i.status).toLowerCase()))
+    .map(toInsight);
 }
 
 // ---------------------------------------------------------------------------
@@ -515,6 +568,7 @@ function toEvent(e: Json): LedgerEvent {
     source: type.split(".")[0] || words(str(e.entity_type)) || str(e.actor_type) || "brain",
     text: `${what}${subject && !str(e.action) ? "" : subject ? ` — ${subject}` : ""}${transition}${reason ? `: ${reason}` : ""}`,
     ref: ref ? (ref.length > 18 ? `${ref.slice(0, 16)}…` : ref) : undefined,
+    href: eventHref(ref, str(e.entity_type), ref) ?? undefined,
   };
 }
 
@@ -604,37 +658,54 @@ export const getLatestUncommittedChanges = async (repoPath?: string): Promise<nu
 export const getJobs = async (slug?: string | null): Promise<Job[] | null> => {
   if (!apiConfigured) return mock.jobs;
   return live<Job[] | null>(null, async () => {
+    if (!slug) return loadGlobalJobs();
     const repo = pickRepo(await fetchRepos(), slug);
-    if (slug && !repo) return [];
-    return loadJobs(repo?.id, str(repo?.name));
+    if (!repo) return [];
+    return loadJobs(repo.id, str(repo.name));
   });
 };
 
 export const getAgentRuns = async (slug?: string | null): Promise<AgentRun[]> => {
   if (!apiConfigured) return mock.agentRuns;
   return live<AgentRun[]>([], async () => {
-    const repo = pickRepo(await fetchRepos(), slug);
-    if (slug && !repo) return [];
     const params = new URLSearchParams({ page: "1", page_size: "100" });
-    if (repo?.path) params.set("repo_path", repo.path);
-    const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
+    let repos: RawRepo[] | null;
+    let data: Json | null;
+    if (slug) {
+      repos = await fetchRepos();
+      const repo = pickRepo(repos, slug);
+      if (!repo) return [];
+      if (repo.path) params.set("repo_path", repo.path);
+      data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
+    } else {
+      [repos, data] = await Promise.all([fetchRepos(), brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true })]);
+    }
     if (!data) return null;
-    return list(data, "tasks").map((t) => {
-      const status = jobStatus(t.status);
-      const finished = !["running", "queued", "retrying"].includes(status);
-      return {
-        id: str(t.id).slice(0, 8),
-        agent: str(t.target_agent) || str(t.owner_agent) || "agent",
-        task: str(t.title) || str(t.goal) || "Untitled task",
-        status,
-        tokens: num(t.tokens),
-        packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined,
-        startedAt: fmtShort(t.created_at),
-        duration: finished ? between(t.created_at, t.updated_at) : "—",
-      };
-    });
+    return list(data, "tasks").map((t) => toRun(t, true, repos?.find((r) => r.path === str(t.repo_path))));
   });
 };
+
+/** One harness task as a row; `short` trims the id to what the lists show. */
+function toRun(t: Json, short: boolean, repo?: RawRepo): AgentRun {
+  const status = jobStatus(t.status);
+  const finished = !["running", "queued", "retrying"].includes(status);
+  const version = num(t.version);
+  return {
+    id: short ? str(t.id).slice(0, 8) : str(t.id),
+    agent: str(t.target_agent) || str(t.owner_agent) || "agent",
+    task: str(t.title) || str(t.goal) || "Untitled task",
+    status,
+    tokens: num(t.tokens),
+    packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined,
+    startedAt: fmtShort(t.created_at),
+    duration: finished ? between(t.created_at, t.updated_at) : "—",
+    ...(repo ? { repo: String(repo.id) } : {}),
+    taskId: str(t.id) || undefined,
+    version: version !== undefined && Number.isInteger(version) && version >= 0 ? version : undefined,
+    rawStatus: str(t.status) || undefined,
+    cancelRequested: Boolean(t.cancellation_requested_at),
+  };
+}
 
 export const getEvents = async (limit = 50, slug?: string | null): Promise<LedgerEvent[]> => {
   if (!apiConfigured) return mock.events;
@@ -652,18 +723,22 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
     return demoPage(rows, q, (r) => `${r.task} ${r.id} ${r.agent}`, (r) => r.status);
   }
   return live(unread(q), async () => {
-    const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
-    if (slug && !repo) return null;
     const params = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
-    if (repo?.path) params.set("repo_path", repo.path);
     if (q.q) params.set("q", q.q);
     if (q.status) params.set("display_status", q.status);
-    const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
+    let repos: RawRepo[] | null;
+    let data: Json | null;
+    if (slug) {
+      repos = await fetchRepos();
+      const repo = pickRepo(repos, slug);
+      if (!repo) return null;
+      if (repo.path) params.set("repo_path", repo.path);
+      data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
+    } else {
+      [repos, data] = await Promise.all([fetchRepos(), brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true })]);
+    }
     if (!data) return null;
-    const result = pageResult(data, "tasks", q, (t) => {
-      const status = jobStatus(t.status), finished = !["running", "queued", "retrying"].includes(status);
-      return { id: str(t.id), agent: str(t.target_agent) || str(t.owner_agent) || "agent", task: str(t.title) || str(t.goal) || "Untitled task", status, tokens: num(t.tokens), packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined, startedAt: fmtShort(t.created_at), duration: finished ? between(t.created_at, t.updated_at) : "—" };
-    });
+    const result = pageResult(data, "tasks", q, (t) => toRun(t, false, repos?.find((r) => r.path === str(t.repo_path))));
     result.paging.facets = Object.entries(result.paging.facets).reduce<Record<string, number>>((acc, [key, value]) => {
       const normalized = jobStatus(key);
       acc[normalized] = (acc[normalized] || 0) + Number(value);
@@ -675,6 +750,7 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
 
 export const getPagedEvents = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<LedgerEvent>> => {
   const q = getListQuery(input);
+  if (!apiConfigured) return demoPage(mock.events, q, (e) => `${e.source} ${e.text} ${e.ref ?? ""} ${e.at}`, (e) => e.tone);
   return live(unread(q), async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
     if (slug && !repo) return null;
@@ -734,10 +810,10 @@ export const getIndexRuns = async (slug?: string | null): Promise<IndexRun[]> =>
   });
 };
 
-export const getContextPacks = async (): Promise<ContextPack[]> => {
-  if (!apiConfigured) return mock.contextPacks;
+export const getContextPacks = async (limit = 200): Promise<ContextPack[]> => {
+  if (!apiConfigured) return mock.contextPacks.slice(0, limit);
   return live<ContextPack[]>([], async () => {
-    const data = await brainFetch<Json>("/api/web/context-packs?limit=200", { fresh: true });
+    const data = await brainFetch<Json>(`/api/web/context-packs?limit=${limit}`, { fresh: true });
     if (!data) return null;
     return list(data, "packs").map((p) => {
       const budget = str(p.budget).toLowerCase();
@@ -750,10 +826,15 @@ export const getContextPacks = async (): Promise<ContextPack[]> => {
         createdAt: fmtShort(p.created_at),
         stale: typeof p.stale === "boolean" ? p.stale : null,
         consumer: str(p.consumer) || "an agent",
+        ...(num(p.repository_id) !== undefined ? { repo: String(num(p.repository_id)) } : {}),
+        ...(p.memory && typeof p.memory === "object" ? { memory: packMemory(obj(p.memory)) } : {}),
       };
     });
   });
 };
+
+// Counts stay null when the pack predates content recording: unknown is not zero.
+const packMemory = (m: Json): NonNullable<ContextPack["memory"]> => ({ rules: num(m.rules) ?? null, decisions: num(m.decisions) ?? null, learnings: num(m.learnings) ?? null });
 
 function decisionStatus(v: unknown): Decision["status"] {
   const s = str(v).toLowerCase();
@@ -787,7 +868,7 @@ export const getDecisions = async (): Promise<Decision[]> => {
 function decisionWrite(d: Json): Decision["write"] {
   const version = num(d.version);
   if (!version || d.current === false || decisionStatus(d.raw_status ?? d.status) === "superseded" || !str(d.title)) return undefined;
-  return { title: str(d.title), repoPath: str(d.repo_path) || null, description: str(d.description), reason: str(d.reason), version };
+  return { title: str(d.title), repoPath: str(d.repo_path) || null, description: str(d.description), reason: str(d.reason), status: str(d.raw_status ?? d.status) || "active", version };
 }
 function ruleWrite(r: Json): Rule["write"] {
   const version = num(r.version);
@@ -960,10 +1041,7 @@ export const getPagedInsights = async (slug: string | null | undefined, input: P
       params.set("repository_id", String(repo.id));
     }
     const data = await brainFetch<Json>(`/insights?${params}`, { fresh: true });
-    return data ? pageResult(data, "insights", q, (i) => {
-      const evidence = arr(i.evidence), first = obj(evidence[0]);
-      return { id: str(i.id), tone: severityTone(i.severity), kind: insightKind(str(i.insight_type)), title: str(i.title, "Untitled finding"), evidence: evidenceText(evidence[0]) || str(i.summary), module: str(first.module) || str(first.file) || str(first.path) || str(i.source) || "—", detectedAt: fmtShort(i.last_seen_at ?? i.created_at) };
-    }) : null;
+    return data ? pageResult(data, "insights", q, toInsight) : null;
   });
 };
 
@@ -971,14 +1049,18 @@ export const getPagedDecisions = async (slug: string | null | undefined, input: 
   const q = getListQuery(input);
   if (!apiConfigured) {
     // Demo rows carry a write target too, so the page shows its (locked) controls.
-    const rows = mock.decisions.filter((d) => !slug || d.repo === slug).map((d) => d.status === "superseded" ? d : { ...d, write: { title: d.title, repoPath: null, description: d.summary, reason: "", version: 1 } });
+    const rows = mock.decisions
+      .filter((d) => (!slug || d.repo === slug) && (q.status !== "current" || ["accepted", "proposed", "validated_unmerged"].includes(d.status)))
+      .map((d) => d.status === "superseded" ? d : { ...d, write: { title: d.title, repoPath: null, description: d.summary, reason: "", status: d.status === "proposed" ? "proposed" : "active", version: 1 } });
+    if (q.status === "current") return demoPage(rows, { ...q, status: "" }, (d) => `${d.title} ${d.summary} ${d.scope} ${d.id}`, (d) => d.status);
     return demoPage(rows, q, (d) => `${d.title} ${d.summary} ${d.scope} ${d.id}`, (d) => d.status);
   }
+  if (q.status === "current" && !(await getCapabilities()).supported.includes("memory_current")) return unread(q);
   return live(unread(q), async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null; if (slug && !repo) return null;
     const scope = repo ? `&repository_id=${repo.id}` : "";
     const data = await brainFetch<Json>(`/api/web/decisions?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${q.status ? `&status=${q.status}` : ""}${scope}`, { fresh: true });
-    return data ? pageResult(data, "decisions", q, (d) => ({ id: `D-${str(d.id)}`, title: str(d.title) || "Untitled decision", status: decisionStatus(d.status), scope: str(d.repo_path).split(/[\\/]/).filter(Boolean).pop() || "whole project", recordedAt: fmtShort(d.date ?? d.created_at), summary: str(d.description) || str(d.reason) || "", write: decisionWrite(d) })) : null;
+    return data ? pageResult(data, "decisions", q, (d) => ({ id: `D-${str(d.id)}`, title: str(d.title) || "Untitled decision", status: decisionStatus(d.status), scope: str(d.repo_path).split(/[\\/]/).filter(Boolean).pop() || "whole project", recordedAt: fmtShort(d.date ?? d.created_at), summary: str(d.description) || str(d.reason) || "", repoPath: str(d.repo_path) || null, write: decisionWrite(d) })) : null;
   });
 };
 
@@ -993,7 +1075,7 @@ export const getPagedRules = async (slug: string | null | undefined, input: Part
     const scope = repo ? `&repository_id=${repo.id}` : "";
     const severity = q.status && ["block", "warn", "advise"].includes(q.status) ? `&severity=${q.status}` : "";
     const data = await brainFetch<Json>(`/api/web/rules?page=${q.page}&page_size=${q.size}${q.q ? `&q=${encodeURIComponent(q.q)}` : ""}${scope}${severity}`, { fresh: true });
-    return data ? pageResult(data, "rules", q, (r) => ({ id: str(r.id), rule: str(r.description) || str(r.name) || str(r.id), severity: ruleSeverity(r.severity), scope: ruleScope(r.applies_to, str(r.type)), delivered30d: num(r.delivered_30d), caught30d: num(r.flagged_30d), write: ruleWrite(r) })) : null;
+    return data ? pageResult(data, "rules", q, (r) => ({ id: str(r.id), rule: str(r.description) || str(r.name) || str(r.id), severity: ruleSeverity(r.severity), scope: ruleScope(r.applies_to, str(r.type)), delivered30d: num(r.delivered_30d), caught30d: num(r.flagged_30d), repoPath: str(r.repo_path) || null, write: ruleWrite(r) })) : null;
   });
 };
 

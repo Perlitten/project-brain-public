@@ -58,7 +58,15 @@ async def web_decisions(page: int = Query(1, ge=1), page_size: int = Query(50, g
     facets: dict[str, int] = defaultdict(int)
     for row in readable:
         facets[_decision_status(row.status)] += 1
-    filtered = [row for row in readable if not status or _decision_status(row.status) == _decision_status(status)]
+    filtered = [
+        row
+        for row in readable
+        if (
+            _decision_status(row.status) in {"accepted", "proposed", "validated_unmerged"}
+            if status == "current"
+            else not status or _decision_status(row.status) == _decision_status(status)
+        )
+    ]
     total = len(filtered)
     rows = filtered[(page - 1) * page_size:page * page_size]
     return {"total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),

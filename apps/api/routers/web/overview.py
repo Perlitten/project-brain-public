@@ -1,6 +1,7 @@
 """Overview and orchestration-health endpoints."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 from fastapi import HTTPException, Query
@@ -125,33 +126,50 @@ async def web_overview(
     freshness: dict[str, Any] | None = None
     last_run: dict[str, Any] | None = None
     if repository is not None:
-        embedding_health = await get_embedding_retrieval_health(
-            repository_id=repository.id, repository_path=repository.path
-        )
-        async with async_session_factory() as session:
-            counts = dict(await get_db_counts(session, repository_id=repository.id, repository_path=repository.path))
-            run = (
-                await session.execute(
-                    select(IndexingRun)
-                    .where(IndexingRun.repository_id == repository.id)
-                    .order_by(IndexingRun.id.desc())
-                    .limit(1)
+        async def _load_counts_and_run(
+            repo_id: int, repo_path: str
+        ) -> tuple[dict[str, int], Any]:
+            async with async_session_factory() as session:
+                db_counts = dict(
+                    await get_db_counts(
+                        session,
+                        repository_id=repo_id,
+                        repository_path=repo_path,
+                    )
                 )
-            ).scalar_one_or_none()
+                latest_run = (
+                    await session.execute(
+                        select(IndexingRun)
+                        .where(IndexingRun.repository_id == repo_id)
+                        .order_by(IndexingRun.id.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+            return db_counts, latest_run
+
+        embedding_health, (counts, run), freshness, job_data = await asyncio.gather(
+            get_embedding_retrieval_health(
+                repository_id=repository.id,
+                repository_path=repository.path,
+            ),
+            _load_counts_and_run(repository.id, repository.path),
+            _repository_freshness(repository),
+            get_recent_brain_jobs(
+                limit=jobs_limit,
+                repository_id=repository.id,
+                repository_path=repository.path,
+            ),
+        )
         coverage = build_coverage(embedding_health, _as_int(counts.get("chunks")))
-        freshness = await _repository_freshness(repository)
         last_run = shape_index_run(run) if run is not None else None
         index_moment = _parse_dt(freshness.get("last_indexed_at")) or _parse_dt(getattr(run, "started_at", None))
         freshness["index_age_seconds"] = (
             max(int((datetime.now(timezone.utc) - index_moment).total_seconds()), 0) if index_moment else None
         )
+    else:
+        job_data = await get_recent_brain_jobs(limit=jobs_limit)
 
     config = get_embedding_config()
-    job_data = await get_recent_brain_jobs(
-        limit=jobs_limit,
-        repository_id=repository.id if repository else None,
-        repository_path=repository.path if repository else None,
-    )
     return {
         "repository": _repository_dict(repository),
         "services": services,
@@ -170,19 +188,24 @@ async def web_health() -> dict[str, Any]:
     from brain.database.session import redis_client
     from brain.workers.scheduler import scheduler_status
 
-    services = await check_health()
-    try:
-        scheduler: dict[str, Any] = await scheduler_status(redis_client)
-    except Exception as exc:  # noqa: BLE001 — Redis down is reported in services
-        logger.warning("Scheduler status unavailable: {}: {}", type(exc).__name__, exc)
-        scheduler = {
-            "error": "Scheduler status unavailable",
-            "error_type": type(exc).__name__,
-            "jobs": [],
-            "stale": [],
-        }
-    job_data = await get_recent_brain_jobs(limit=10)
-    diagnostics = await get_self_diagnosis_status()
+    async def _load_scheduler() -> dict[str, Any]:
+        try:
+            return await scheduler_status(redis_client)
+        except Exception as exc:  # noqa: BLE001 — Redis down is reported in services
+            logger.warning("Scheduler status unavailable: {}: {}", type(exc).__name__, exc)
+            return {
+                "error": "Scheduler status unavailable",
+                "error_type": type(exc).__name__,
+                "jobs": [],
+                "stale": [],
+            }
+
+    services, scheduler, job_data, diagnostics = await asyncio.gather(
+        check_health(),
+        _load_scheduler(),
+        get_recent_brain_jobs(limit=10),
+        get_self_diagnosis_status(),
+    )
     return {
         "services": services,
         "orchestration": {
