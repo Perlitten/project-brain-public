@@ -220,7 +220,7 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
             request = StepRequest(index=index, tool=tool, args=tuple(step["args"]), secrets=secrets,
                                   timeout_seconds=min(float(budget["step_timeout_seconds"]), remaining),
                                   output_cap=int(budget["output_bytes"]),
-                                  check_interval=max(0.2, min(5.0, policy.lease_seconds / 3)),
+                                  check_interval=max(0.05, min(5.0, policy.lease_seconds / 6)),
                                   environment=resolved, egress=egress)
             result = await backend.run_step(copy, request, runner.probe)
             evidence = result.evidence()
