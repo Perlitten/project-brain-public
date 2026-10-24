@@ -537,12 +537,12 @@ async def get_recent_brain_jobs(
             # few reads replace walking the global index.
             try:
                 if await queue.ensure_scope_index():
-                    keys = queue.scope_index_keys(repository_id=repository_id, repository_path=repository_path)
+                    scope_keys = queue.scope_index_keys(repository_id=repository_id, repository_path=repository_path)
                     page_size = max(limit * 2, 20)
                     offset = 0
                     seen_job_ids: set[str] = set()
                     while len(jobs) < limit:
-                        page_job_ids = await queue.recent_scoped_job_ids(keys, limit=page_size, offset=offset)
+                        page_job_ids = await queue.recent_scoped_job_ids(scope_keys, limit=page_size, offset=offset)
                         if not page_job_ids:
                             break
                         offset += page_size

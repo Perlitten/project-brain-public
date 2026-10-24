@@ -713,7 +713,10 @@ class JobQueue:
             return False
         start = 0
         while True:
-            entries = await self.redis.zrange(self.index_key, start, start + 999, withscores=True)
+            entries = cast(
+                list[tuple[str | bytes, float]],
+                await self.redis.zrange(self.index_key, start, start + 999, withscores=True),
+            )
             if not entries:
                 if start == 0:
                     # An empty global index may be an upgraded installation
@@ -723,12 +726,13 @@ class JobQueue:
                     return False
                 break
             pipe = self.redis.pipeline()
-            for job_id, _score in entries:
-                pipe.hget(self._job_key(job_id.decode() if isinstance(job_id, bytes) else str(job_id)), "params")
+            for entry_id, _score in entries:
+                pipe.hget(self._job_key(entry_id.decode() if isinstance(entry_id, bytes) else str(entry_id)), "params")
             raw_params = await pipe.execute()
             pipe = self.redis.pipeline()
             touched: set[str] = set()
-            for (job_id, score), raw in zip(entries, raw_params):
+            for (raw_job_id, score), raw in zip(entries, raw_params):
+                job_id = raw_job_id.decode() if isinstance(raw_job_id, bytes) else str(raw_job_id)
                 try:
                     params = json.loads(raw) if raw else {}
                 except (json.JSONDecodeError, TypeError):
@@ -755,7 +759,7 @@ class JobQueue:
         for key in keys:
             pipe.zrevrange(key, start, start + page_size - 1, withscores=True)
         scores: Dict[str, float] = {}
-        for entries in await pipe.execute():
+        for entries in cast(list[list[tuple[str | bytes, float]]], await pipe.execute()):
             for value, score in entries:
                 job_id = value.decode() if isinstance(value, bytes) else str(value)
                 scores[job_id] = max(float(score), scores.get(job_id, float("-inf")))
