@@ -550,8 +550,9 @@ async def get_recent_brain_jobs(
 
         offset = 0
         while True:
-            for job_id in job_ids:
-                job = await queue.get_job(job_id)
+            # One pipelined read per page: a scoped overview walks up to a
+            # thousand jobs, and one Redis round trip each took seconds.
+            for job_id, job in zip(job_ids, await queue.get_jobs(job_ids)):
                 if not job:
                     continue
                 if not job.get("id"):
