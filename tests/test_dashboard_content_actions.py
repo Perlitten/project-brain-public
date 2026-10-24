@@ -85,6 +85,24 @@ async def test_dismiss_requires_authority_reason_version_and_verified_authorship
 
 
 @pytest.mark.asyncio
+async def test_default_insights_feed_excludes_stale_and_actioned_findings(content_api):
+    client, factory = content_api
+    async with factory() as session, session.begin():
+        session.add_all([
+            BrainInsight(id=10, insight_type="task_health", severity="critical", title="High Task Timeout Rate",
+                         summary="old stale scan", evidence=[], dedupe_key="synthetic-stale", status="stale", last_seen_at=STAMP),
+            BrainInsight(id=11, insight_type="task_health", severity="critical", title="Remediated issue",
+                         summary="actioned scan", evidence=[], dedupe_key="synthetic-actioned", status="actioned", last_seen_at=STAMP),
+        ])
+    feed = await client.get("/insights", headers=ADMIN)
+    assert feed.status_code == 200
+    ids = {row["id"] for row in feed.json()["insights"]}
+    assert 10 not in ids and 11 not in ids
+    stale_only = await client.get("/insights?status=stale", headers=ADMIN)
+    assert stale_only.status_code == 200 and [row["id"] for row in stale_only.json()["insights"]] == [10]
+
+
+@pytest.mark.asyncio
 async def test_open_code_uses_recorded_repository_and_never_guesses_a_source(content_api):
     client, _ = content_api
     allowed = await client.get("/insights/1/code", headers=ADMIN)

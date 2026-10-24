@@ -5,6 +5,7 @@
 import "server-only";
 import { cache } from "react";
 import { getAccessView, getAgentRuns, getInsights, getJobs, getMcpTools, getSetupSteps } from "./data";
+import { groupFindings } from "./finding-groups";
 import { attention, getBoardView, type ProjectBoard } from "./board-view";
 import { getReviewView } from "./review-view";
 import { canReindex, repositoryAction } from "./repository-status";
@@ -61,7 +62,13 @@ export interface InboxRepo {
 }
 
 const RANK: Record<Tone, number> = { bad: 0, warn: 1, info: 2, idle: 2, ok: 3 };
+const RECENT_RUN_MS = 7 * 86_400_000;
 const short = (sha: string) => sha.slice(0, 7);
+
+function isRecentRun(r: AgentRun, now: number): boolean {
+  const at = Date.parse(r.startedAt);
+  return Number.isNaN(at) || now - at <= RECENT_RUN_MS;
+}
 
 function fromBoard(board: ProjectBoard, selfId: number | null): InboxItem[] {
   const title = (id: string) => board.tasks.find((t) => t.id === id)?.title ?? `task ${id.slice(0, 8)}`;
@@ -155,7 +162,8 @@ export const getInbox = cache(async (admin: boolean, repos: InboxRepo[]): Promis
   }
 
   // 3. Findings that break a rule.
-  for (const f of insights.filter((i) => i.tone === "bad")) {
+  for (const g of groupFindings(insights.filter((i) => i.tone === "bad"))) {
+    const f = g.rep;
     needs.push({
       key: `finding-${f.id}`, source: "finding", tone: "bad", stage: "Rule broken",
       title: f.title, why: f.evidence, href: `/insights?q=${encodeURIComponent(f.id)}`,
@@ -164,7 +172,8 @@ export const getInbox = cache(async (admin: boolean, repos: InboxRepo[]): Promis
   }
 
   // 4. Agent tasks that ended badly.
-  for (const r of runs.filter((r) => r.status === "failed" || r.status === "timed_out" || r.status === "error")) {
+  const nowMs = Date.now();
+  for (const r of runs.filter((r) => (r.status === "failed" || r.status === "timed_out" || r.status === "error") && isRecentRun(r, nowMs))) {
     needs.push({
       key: `run-${r.id}`, source: "run", tone: "warn", stage: r.status === "timed_out" ? "Timed out" : "Failed",
       title: r.task,

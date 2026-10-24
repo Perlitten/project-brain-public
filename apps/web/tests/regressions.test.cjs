@@ -2249,3 +2249,52 @@ test('unscoped getJobs reads global orchestration jobs without waiting for /repo
   assert.equal(jobs[0].status, 'failed');
   assert.deepEqual(calls, ['/api/web/health']);
 });
+
+test('getInsights excludes stale/actioned findings and getInbox groups duplicate broken rules', async () => {
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async path => {
+        if (path === '/insights?limit=100') {
+          return {
+            insights: [
+              { id: 568, status: 'stale', severity: 'bad', title: 'High Task Timeout Rate', summary: 'old' },
+              { id: 569, status: 'actioned', severity: 'bad', title: 'Closed finding', summary: 'done' },
+              { id: 570, status: 'new', severity: 'bad', title: 'Active rule break', summary: 'live', dedupe_key: 'dup-1' },
+            ],
+          };
+        }
+        throw new Error(`Unexpected call: ${path}`);
+      },
+    },
+  });
+  const insights = await data.getInsights();
+  assert.deepEqual(insights.map(i => i.id), ['570']);
+
+  const inbox = load('lib/inbox.ts', {
+    react: { cache: fn => fn },
+    './data': {
+      getAccessView: async () => ({ readable: true, identities: [] }),
+      getAgentRuns: async () => [
+        { id: 'old-timeout', agent: 'Codex', task: 'Validated compact memory release 349fa69', status: 'timed_out', startedAt: '09 Oct 2020, 06:28 UTC', duration: '19h 31m' },
+        { id: 'recent-fail', agent: 'Codex', task: 'Fresh failed task', status: 'failed', startedAt: '12:31', duration: '3m 11s' },
+      ],
+      getInsights: async () => [
+        { id: '1', tone: 'bad', kind: 'other', title: 'Duplicate finding', evidence: 'same', module: '—', detectedAt: 'now', dedupeKey: 'k1' },
+        { id: '2', tone: 'bad', kind: 'other', title: 'Duplicate finding', evidence: 'same', module: '—', detectedAt: 'now', dedupeKey: 'k1' },
+      ],
+      getJobs: async () => [],
+      getMcpTools: async () => [],
+      getSetupSteps: async () => [],
+    },
+    './board-view': { getBoardView: async () => ({ kind: 'solo' }), attention: () => [] },
+    './review-view': { getReviewView: async () => ({ kind: 'ok', queue: [] }) },
+    './repository-status': {},
+  });
+  const res = await inbox.getInbox(true, []);
+  assert.equal(res.needs.length, 2);
+  assert.equal(res.needs[0].title, 'Duplicate finding');
+  assert.equal(res.needs[1].title, 'Fresh failed task');
+});

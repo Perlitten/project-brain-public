@@ -191,7 +191,10 @@ class RepositoryGraphEnricher:
         # C. Extract IMPORTS from Python, JS, TS
         if ext in [".py", ".js", ".ts", ".tsx"]:
             try:
-                content = await asyncio.to_thread(self.read_file, filepath)
+                try:
+                    content = await asyncio.to_thread(self.read_file, filepath)
+                except ValueError:  # Binary files are intentional exclusions, matching index_file.
+                    return ""
 
                 imported_modules = []
                 if ext == ".py":

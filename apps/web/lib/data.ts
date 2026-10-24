@@ -540,7 +540,7 @@ async function loadInsights(): Promise<Insight[] | null> {
   const data = await brainFetch<Json>("/insights?limit=100", { fresh: true });
   if (!data) return null;
   return list(data, "insights")
-    .filter((i) => !["resolved", "dismissed", "closed", "archived"].includes(str(i.status).toLowerCase()))
+    .filter((i) => !["resolved", "dismissed", "closed", "archived", "stale", "actioned"].includes(str(i.status).toLowerCase()))
     .map(toInsight);
 }
 
@@ -668,12 +668,18 @@ export const getJobs = async (slug?: string | null): Promise<Job[] | null> => {
 export const getAgentRuns = async (slug?: string | null): Promise<AgentRun[]> => {
   if (!apiConfigured) return mock.agentRuns;
   return live<AgentRun[]>([], async () => {
-    const repos = await fetchRepos();
-    const repo = pickRepo(repos, slug);
-    if (slug && !repo) return [];
     const params = new URLSearchParams({ page: "1", page_size: "100" });
-    if (repo?.path) params.set("repo_path", repo.path);
-    const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
+    let repos: RawRepo[] | null;
+    let data: Json | null;
+    if (slug) {
+      repos = await fetchRepos();
+      const repo = pickRepo(repos, slug);
+      if (!repo) return [];
+      if (repo.path) params.set("repo_path", repo.path);
+      data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
+    } else {
+      [repos, data] = await Promise.all([fetchRepos(), brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true })]);
+    }
     if (!data) return null;
     return list(data, "tasks").map((t) => toRun(t, true, repos?.find((r) => r.path === str(t.repo_path))));
   });

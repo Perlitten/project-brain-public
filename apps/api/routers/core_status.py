@@ -124,7 +124,11 @@ async def list_insights(
         if status:
             stmt = stmt.where(BrainInsight.status == status)
         else:
-            stmt = stmt.where(BrainInsight.status.not_in(("resolved", "dismissed", "closed", "archived")))
+            stmt = stmt.where(
+                BrainInsight.status.not_in(
+                    ("resolved", "dismissed", "closed", "archived", "stale", "actioned")
+                )
+            )
         if q:
             needle = f"%{q.strip()}%"
             stmt = stmt.where(BrainInsight.title.ilike(needle) | BrainInsight.summary.ilike(needle))
