@@ -7,6 +7,7 @@ does not record is returned as ``null`` rather than invented.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from collections import defaultdict
@@ -931,22 +932,23 @@ def _add_module_row(row: tuple[Any, ...], modules: dict[str, dict[str, Any]], co
     from brain.embeddings.integrity import fast_embedding_reason
     from brain.search.filters import should_exclude_from_retrieval
 
-    path, emb_id, dim, provider, model = row
+    path, emb_id, dim, provider, model = row[:5]
+    count = int(row[5]) if len(row) > 5 and row[5] is not None else 1
     name = module_of(path)
     bucket = modules.setdefault(
         name,
         {"name": name, "chunks": 0, "current": 0, "outdated": 0, "missing": 0, "excluded": 0},
     )
-    bucket["chunks"] += 1
+    bucket["chunks"] += count
     if should_exclude_from_retrieval(path):
-        bucket["excluded"] += 1
+        bucket["excluded"] += count
         return
     reason = fast_embedding_reason(emb_id, dim, provider, model, None, config)
-    bucket["current" if reason == "current" else "missing" if reason == "missing" else "outdated"] += 1
+    bucket["current" if reason == "current" else "missing" if reason == "missing" else "outdated"] += count
 
 
 def aggregate_modules(rows: list[tuple[Any, ...]], config: Any) -> list[dict[str, Any]]:
-    """rows: (path, embedding_id, dimension, provider, model) per chunk."""
+    """rows: (path, embedding_id, dimension, provider, model[, chunk_count]) per chunk or file group."""
     modules: dict[str, dict[str, Any]] = {}
     for row in rows:
         _add_module_row(row, modules, config)
@@ -962,13 +964,22 @@ async def web_modules(repository_id: int | None = None) -> dict[str, Any]:
         return {"repository": None, "modules": []}
     config = get_embedding_config()
     modules: dict[str, dict[str, Any]] = {}
+    has_emb = case((Embedding.id.is_not(None), 1), else_=None)
     async with async_session_factory() as session:
         rows = await session.stream(
-            select(File.path, Embedding.id, Embedding.dimension, Embedding.provider, Embedding.model)
+            select(
+                File.path,
+                has_emb,
+                Embedding.dimension,
+                Embedding.provider,
+                Embedding.model,
+                func.count(FileChunk.id),
+            )
             .select_from(FileChunk)
             .join(File, FileChunk.file_id == File.id)
             .outerjoin(Embedding, FileChunk.embedding_id == Embedding.id)
             .where(File.repository_id == repository.id)
+            .group_by(File.path, has_emb, Embedding.dimension, Embedding.provider, Embedding.model)
             .execution_options(yield_per=1000)
         )
         async for row in rows:
@@ -1094,33 +1105,39 @@ async def web_overview(
     freshness: dict[str, Any] | None = None
     last_run: dict[str, Any] | None = None
     if repository is not None:
-        embedding_health = await get_embedding_retrieval_health(
-            repository_id=repository.id, repository_path=repository.path
+        async def _load_counts_and_run(repo_id: int, repo_path: str) -> tuple[dict[str, int], Any]:
+            async with async_session_factory() as session:
+                db_counts = dict(await get_db_counts(session, repository_id=repo_id, repository_path=repo_path))
+                latest_run = (
+                    await session.execute(
+                        select(IndexingRun)
+                        .where(IndexingRun.repository_id == repo_id)
+                        .order_by(IndexingRun.id.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+            return db_counts, latest_run
+
+        embedding_health, (counts, run), freshness, job_data = await asyncio.gather(
+            get_embedding_retrieval_health(repository_id=repository.id, repository_path=repository.path),
+            _load_counts_and_run(repository.id, repository.path),
+            _repository_freshness(repository),
+            get_recent_brain_jobs(
+                limit=jobs_limit,
+                repository_id=repository.id,
+                repository_path=repository.path,
+            ),
         )
-        async with async_session_factory() as session:
-            counts = dict(await get_db_counts(session, repository_id=repository.id, repository_path=repository.path))
-            run = (
-                await session.execute(
-                    select(IndexingRun)
-                    .where(IndexingRun.repository_id == repository.id)
-                    .order_by(IndexingRun.id.desc())
-                    .limit(1)
-                )
-            ).scalar_one_or_none()
         coverage = build_coverage(embedding_health, _as_int(counts.get("chunks")))
-        freshness = await _repository_freshness(repository)
         last_run = shape_index_run(run) if run is not None else None
         index_moment = _parse_dt(freshness.get("last_indexed_at")) or _parse_dt(getattr(run, "started_at", None))
         freshness["index_age_seconds"] = (
             max(int((datetime.now(timezone.utc) - index_moment).total_seconds()), 0) if index_moment else None
         )
+    else:
+        job_data = await get_recent_brain_jobs(limit=jobs_limit)
 
     config = get_embedding_config()
-    job_data = await get_recent_brain_jobs(
-        limit=jobs_limit,
-        repository_id=repository.id if repository else None,
-        repository_path=repository.path if repository else None,
-    )
     return {
         "repository": _repository_dict(repository),
         "services": services,
@@ -1142,19 +1159,24 @@ async def web_health() -> dict[str, Any]:
     from brain.database.session import redis_client
     from brain.workers.scheduler import scheduler_status
 
-    services = await check_health()
-    try:
-        scheduler: dict[str, Any] = await scheduler_status(redis_client)
-    except Exception as exc:  # noqa: BLE001 — Redis down is reported in services
-        logger.warning("Scheduler status unavailable: {}: {}", type(exc).__name__, exc)
-        scheduler = {
-            "error": "Scheduler status unavailable",
-            "error_type": type(exc).__name__,
-            "jobs": [],
-            "stale": [],
-        }
-    job_data = await get_recent_brain_jobs(limit=10)
-    diagnostics = await get_self_diagnosis_status()
+    async def _load_scheduler() -> dict[str, Any]:
+        try:
+            return await scheduler_status(redis_client)
+        except Exception as exc:  # noqa: BLE001 — Redis down is reported in services
+            logger.warning("Scheduler status unavailable: {}: {}", type(exc).__name__, exc)
+            return {
+                "error": "Scheduler status unavailable",
+                "error_type": type(exc).__name__,
+                "jobs": [],
+                "stale": [],
+            }
+
+    services, scheduler, job_data, diagnostics = await asyncio.gather(
+        check_health(),
+        _load_scheduler(),
+        get_recent_brain_jobs(limit=10),
+        get_self_diagnosis_status(),
+    )
     return {
         "services": services,
         "orchestration": {

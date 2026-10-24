@@ -22,6 +22,8 @@ export interface Repository {
   head: string;
   behind: number | null;
   freshness?: string;
+  /** Working-tree edits omitted by the latest index run, when reported with the feed. */
+  uncommitted?: number | null;
   /** The scheduled origin check (git ls-remote), when it has run for this repository. */
   originPoll?: OriginPoll;
 }

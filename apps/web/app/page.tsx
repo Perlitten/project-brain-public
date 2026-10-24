@@ -39,28 +39,34 @@ async function DashboardData({ searchParams }: Props) {
   const query = await searchParams;
   await scopeMemberToProject("/", query);
   const slug = query.repo;
-  const feed = await getRepositoryFeed();
+  const tab = pickTab(VIEWS, query.view);
+  const [feed, packs, member] = await Promise.all([
+    getRepositoryFeed(),
+    tab === "freshness" ? getContextPacks(PACKS) : Promise.resolve([]),
+    restrictedMember(),
+  ]);
   const repositories = feed.repositories;
   const selected = slug ? repositories.find((r) => r.slug === slug || r.name.toLowerCase() === slug.toLowerCase()) : undefined;
   const projects = slug ? selected ? [selected] : [] : repositories;
-  const [baseSnapshots, packs, member] = await Promise.all([
-    Promise.all(projects.map(async (repo) => {
-      const corpus = await getCorpus(repo.slug);
-      return { repo, corpus, ...repositoryStatus(repo, corpus.uncommitted) };
-    })),
-    getContextPacks(PACKS),
-    restrictedMember(),
-  ]);
+  const baseSnapshots = await Promise.all(projects.map(async (repo) => {
+    const corpus = slug && tab === "freshness"
+      ? await getCorpus(repo.slug)
+      : { files: 0, chunks: 0, symbols: 0, embeddings: 0, meters: [], available: feed.available, uncommitted: repo.uncommitted };
+    return { repo, corpus, ...repositoryStatus(repo, corpus.uncommitted) };
+  }));
   // The verdict names the projects needing attention first. Draw those same
   // projects, worst first, so every mention can focus a real region even when
   // there are more repositories than the map's visual limit.
   const ranked = [...baseSnapshots].sort(byAttention);
-  const snapshots = await Promise.all(ranked.map(async (s, i) => ({
-    ...s,
-    modules: i < MAP_PROJECTS ? await getCodeModules(s.repo.slug) : null,
-  })));
-  // Activity and Quality cover the whole server: only team admins get links to them.
   const admin = member === null;
+  const [snapshots, inbox] = await Promise.all([
+    Promise.all(ranked.map(async (s, i) => ({
+      ...s,
+      modules: i < MAP_PROJECTS ? (tab === "freshness" ? await getCodeModules(s.repo.slug) : null) : null,
+    }))),
+    getInbox(admin, ranked.map((s) => ({ repo: s.repo, tone: s.tone, status: s.status, available: s.corpus.available }))),
+  ]);
+  // Activity and Quality cover the whole server: only team admins get links to them.
   const attention = snapshots.filter((s) => s.tone !== "ok");
   const first = attention[0];
   const nextAction = first ? repositoryAction(first.repo) : null;
@@ -114,9 +120,7 @@ async function DashboardData({ searchParams }: Props) {
 
   // The inbox first: what asks for a person across the Board, findings, tools,
   // keys and setup, then who is working. The freshness verdict and map follow.
-  const inbox = await getInbox(admin, snapshots.map((s) => ({ repo: s.repo, tone: s.tone, status: s.status, available: s.corpus.available })));
   const unread = snapshots.some((s) => s.corpus.available === false) || !feed.available || !inbox.complete;
-  const tab = pickTab(VIEWS, query.view);
   // An inbox Brain could not fully check is never an all-clear.
   const needsTone: TabTone = inbox.needs.some((n) => n.tone === "bad") ? "bad" : inbox.needs.length || !inbox.complete ? "warn" : "ok";
   const staleTone: TabTone = attention.some((s) => s.tone === "bad") ? "bad" : attention.length ? "warn" : "ok";

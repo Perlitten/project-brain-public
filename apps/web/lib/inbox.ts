@@ -112,18 +112,20 @@ function fromBoard(board: ProjectBoard, selfId: number | null): InboxItem[] {
   return out;
 }
 
+const loadInboxSources = cache((admin: boolean) => Promise.all([
+  getBoardView(),
+  getInsights(),
+  admin ? getMcpTools() : Promise.resolve([]),
+  admin ? getAccessView() : Promise.resolve(null),
+  getReviewView(admin),
+  admin ? getSetupSteps() : Promise.resolve([]),
+  getAgentRuns(),
+  admin ? getJobs() : Promise.resolve(null),
+]));
+
 /** Every item that asks for a person, most blocking first, and what agents are doing now. */
 export const getInbox = cache(async (admin: boolean, repos: InboxRepo[]): Promise<Inbox> => {
-  const [boardView, insights, tools, access, review, steps, runs, jobs] = await Promise.all([
-    getBoardView(),
-    getInsights(),
-    admin ? getMcpTools() : Promise.resolve([]),
-    admin ? getAccessView() : Promise.resolve(null),
-    getReviewView(admin),
-    admin ? getSetupSteps() : Promise.resolve([]),
-    getAgentRuns(),
-    admin ? getJobs() : Promise.resolve(null),
-  ]);
+  const [boardView, insights, tools, access, review, steps, runs, jobs] = await loadInboxSources(admin);
 
   const needs: InboxItem[] = [];
   const unavailable = new Set<string>();

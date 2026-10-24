@@ -160,6 +160,7 @@ type RawFreshness = {
   origin_poll_error?: string | null;
   origin_remote?: string | null;
   commits_behind_origin?: number | null;
+  uncommitted_changes?: number | null;
 };
 type RawRepo = {
   id: number;
@@ -168,6 +169,7 @@ type RawRepo = {
   indexing_status?: string | null;
   last_indexed_commit?: string | null;
   last_indexed_at?: string | null;
+  uncommitted_changes?: number | null;
   freshness?: RawFreshness | null;
 };
 
@@ -194,6 +196,9 @@ function toRepository(r: RawRepo): Repository {
     head: shortRevision(commit),
     behind: num(f.commits_behind) ?? null,
     freshness: str(f.status) || "unknown",
+    ...(uncommittedCount(f.uncommitted_changes ?? r.uncommitted_changes) !== null
+      ? { uncommitted: uncommittedCount(f.uncommitted_changes ?? r.uncommitted_changes) }
+      : {}),
     ...(str(f.origin_poll_status) ? {
       originPoll: {
         status: str(f.origin_poll_status),
@@ -283,6 +288,18 @@ function toJob(j: Json, repoName: string): Job {
     duration: j.duration == null && j.duration_seconds == null ? undefined : durationOf(j.duration ?? j.duration_seconds),
     detail: str(j.detail) || undefined,
   };
+}
+
+const fetchHealthJobs = cache(() => brainFetch<Json>("/api/web/health", { fresh: true, timeoutMs: 6000 }));
+
+async function loadGlobalJobs(): Promise<Job[] | null> {
+  const data = await fetchHealthJobs();
+  if (!data) return null;
+  const orch = obj(data.orchestration);
+  const rawJobs = arr(orch.recent_jobs ?? data.jobs ?? data.recent_jobs).map(obj);
+  const err = orch.redis_error ?? data.jobs_error;
+  if (err && !rawJobs.length) return null;
+  return rawJobs.map((j) => toJob(j, str(obj(data.repository).name)));
 }
 
 async function loadJobs(repositoryId?: number, repoName = ""): Promise<Job[] | null> {
@@ -641,9 +658,10 @@ export const getLatestUncommittedChanges = async (repoPath?: string): Promise<nu
 export const getJobs = async (slug?: string | null): Promise<Job[] | null> => {
   if (!apiConfigured) return mock.jobs;
   return live<Job[] | null>(null, async () => {
+    if (!slug) return loadGlobalJobs();
     const repo = pickRepo(await fetchRepos(), slug);
-    if (slug && !repo) return [];
-    return loadJobs(repo?.id, str(repo?.name));
+    if (!repo) return [];
+    return loadJobs(repo.id, str(repo.name));
   });
 };
 
@@ -699,14 +717,20 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
     return demoPage(rows, q, (r) => `${r.task} ${r.id} ${r.agent}`, (r) => r.status);
   }
   return live(unread(q), async () => {
-    const repos = await fetchRepos();
-    const repo = slug ? pickRepo(repos, slug) : null;
-    if (slug && !repo) return null;
     const params = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
-    if (repo?.path) params.set("repo_path", repo.path);
     if (q.q) params.set("q", q.q);
     if (q.status) params.set("display_status", q.status);
-    const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
+    let repos: RawRepo[] | null;
+    let data: Json | null;
+    if (slug) {
+      repos = await fetchRepos();
+      const repo = pickRepo(repos, slug);
+      if (!repo) return null;
+      if (repo.path) params.set("repo_path", repo.path);
+      data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
+    } else {
+      [repos, data] = await Promise.all([fetchRepos(), brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true })]);
+    }
     if (!data) return null;
     const result = pageResult(data, "tasks", q, (t) => toRun(t, false, repos?.find((r) => r.path === str(t.repo_path))));
     result.paging.facets = Object.entries(result.paging.facets).reduce<Record<string, number>>((acc, [key, value]) => {

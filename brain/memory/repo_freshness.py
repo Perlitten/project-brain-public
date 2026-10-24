@@ -488,8 +488,8 @@ async def _assess_repository_freshness_uncached(repo: Any) -> dict[str, Any]:
         if is_git:
             freshness.update(await describe_origin(repo_path, indexed_commit))
 
-        file_count = await _count_indexed_files(repo)
         if not indexed_commit:
+            file_count = await _count_indexed_files(repo)
             if file_count == 0:
                 freshness["status"] = "unindexed"
                 freshness["note"] = "No indexed commit and no indexed files were found."

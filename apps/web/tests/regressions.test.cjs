@@ -2192,3 +2192,60 @@ test('the inbox never reports an all-clear when a source is unavailable', async 
   assert.equal(result.complete, false);
   assert.deepEqual([...result.unavailable], ['Board', 'tool health', 'Access', 'memory review', 'background jobs']);
 });
+
+test('inbox sources are fetched once per render even when shell and dashboard pass separate repository arrays', async () => {
+  let insightReads = 0;
+  const memoCache = (fn) => {
+    const map = new Map();
+    return (...args) => {
+      const key = args.length === 1 && typeof args[0] === 'boolean' ? args[0] : Symbol('miss');
+      if (!map.has(key)) map.set(key, fn(...args));
+      return map.get(key);
+    };
+  };
+  const inbox = load('lib/inbox.ts', {
+    react: { cache: memoCache },
+    './data': {
+      getAccessView: async () => ({ readable: true, identities: [] }),
+      getAgentRuns: async () => [],
+      getInsights: async () => { insightReads++; return []; },
+      getJobs: async () => [],
+      getMcpTools: async () => [],
+      getSetupSteps: async () => [],
+    },
+    './board-view': { getBoardView: async () => ({ kind: 'solo' }), attention: () => [] },
+    './review-view': { getReviewView: async () => ({ kind: 'ok', queue: [] }) },
+    './repository-status': { repositoryAction: () => ({ href: '/indexing', label: 'Open index runs' }), canReindex: () => true },
+  });
+  const repo = { id: 3, slug: '3', name: 'brain', path: '/repos/brain', branch: 'main', head: 'abc', behind: 2, freshness: 'behind' };
+  const [fromShell, fromPage] = await Promise.all([
+    inbox.getInbox(true, [{ repo, tone: 'warn', status: '2 changes not read yet', available: true }]),
+    inbox.getInbox(true, [{ repo, tone: 'warn', status: '2 changes not read yet', available: true }]),
+  ]);
+  assert.equal(insightReads, 1);
+  assert.equal(fromShell.needs.length, 1);
+  assert.equal(fromPage.needs.length, 1);
+});
+
+test('unscoped getJobs reads global orchestration jobs without waiting for /repositories or per-repo overview', async () => {
+  const calls = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': {
+      apiConfigured: true,
+      brainFetch: async path => {
+        calls.push(path);
+        if (path === '/api/web/health') {
+          return { orchestration: { recent_jobs: [{ id: 'j-1', kind: 'reindex', status: 'failed', detail: 'boom' }], redis_error: null } };
+        }
+        throw new Error(`Unexpected call: ${path}`);
+      },
+    },
+  });
+  const jobs = await data.getJobs();
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].id, 'j-1');
+  assert.equal(jobs[0].status, 'failed');
+  assert.deepEqual(calls, ['/api/web/health']);
+});

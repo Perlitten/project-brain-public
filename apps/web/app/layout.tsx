@@ -77,7 +77,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
 
 async function Configuration() {
-  const [feed, mode, access, member, capabilities] = await Promise.all([getRepositoryFeed(), actionsMode(), signInMode(), currentMember(), getCapabilities()]);
+  const [feed, mode, access, member, capabilities, setupProgress] = await Promise.all([getRepositoryFeed(), actionsMode(), signInMode(), currentMember(), getCapabilities(), getSetupProgress()]);
   const repos: ShellRepo[] = feed.repositories.map((r) => ({
     slug: r.slug,
     name: r.name,
@@ -85,16 +85,15 @@ async function Configuration() {
     ...repositoryStatus(r),
   }));
   // Members never see Setup, so the rail only asks for progress on behalf of an owner or team admin.
-  const setup = member && !member.admin ? null : await getSetupProgress();
+  const setup = member && !member.admin ? null : setupProgress;
   return <ApplyShellConfiguration value={{ repos, mode, access, capabilities, setup, member: member ? { id: member.id, name: member.name, admin: member.admin } : null }} />;
 }
 
 async function UrgentCount() {
-  const capabilities = await getCapabilities();
+  const [capabilities, feed, member] = await Promise.all([getCapabilities(), getRepositoryFeed(), currentMember()]);
   // A legacy server has no team discovery contract. Do not let the global
   // badge probe /team/* routes that the corresponding pages correctly gate.
   if (!capabilities.supported.includes("team")) return <ApplyShellUrgent value={0} />;
-  const [feed, member] = await Promise.all([getRepositoryFeed(), currentMember()]);
   const urgent = await getInbox(member === null, feed.repositories.map((r) => ({ repo: r, ...repositoryStatus(r), available: feed.available })))
     .then((i) => i.needs.length)
     .catch(() => 0);

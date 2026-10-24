@@ -32,11 +32,20 @@ async function ActivityData({ searchParams }: { searchParams: Promise<Record<str
   const params = await searchParams;
   const repo = typeof params.repo === "string" ? params.repo : undefined;
   const period = dashboardPeriod(typeof params.period === "string" ? params.period : undefined);
-  const repositories = await getRepositories();
+  const [repositories, result, unscopedJobs, unscopedTelemetry] = await Promise.all([
+    getRepositories(),
+    getPagedEvents(repo, getListQuery(params)),
+    repo ? Promise.resolve(null) : getJobs(),
+    repo ? Promise.resolve(null) : getRequestTelemetry(period),
+  ]);
   const selected = repo ? repositories.find((r) => r.slug === repo) : undefined;
-  const projects = repo ? selected ? [selected] : [] : repositories;
-  const [result, jobLists, telemetry] = await Promise.all([getPagedEvents(repo, getListQuery(params)), Promise.all(projects.map((p) => getJobs(p.slug))), getRequestTelemetry(period, repo ? selected?.id ?? 0 : undefined)]);
-  const jobs = [...new Map(jobLists.flatMap((list) => (list ?? []).slice(0, 5)).map((j) => [j.id, j])).values()];
+  const [jobLists, telemetry] = repo
+    ? await Promise.all([
+        selected ? getJobs(selected.slug).then((list) => [list]) : Promise.resolve([] as (Awaited<ReturnType<typeof getJobs>>)[]),
+        getRequestTelemetry(period, selected?.id ?? 0),
+      ])
+    : [[unscopedJobs], unscopedTelemetry];
+  const jobs = [...new Map(jobLists.flatMap((list) => (list ?? []).slice(0, 10)).map((j) => [j.id, j])).values()];
   const events = result.items;
   const hasQuery = Boolean(params.q || params.status || params.page || params.page_size);
   const tab = pickTab(VIEWS, typeof params.view === "string" ? params.view : undefined);

@@ -874,6 +874,14 @@ async def list_repositories(principal: ResolvedPrincipal = Depends(require_princ
         if readable is not None:
             repos = [repo for repo in repos if repo.id in readable]
 
+        sem = asyncio.Semaphore(8)
+
+        async def _assess(repo: Repository) -> dict[str, Any]:
+            async with sem:
+                return await assess_repository_freshness(repo)
+
+        freshness_by_repo = await asyncio.gather(*(_assess(repo) for repo in repos))
+
         return {
             "repositories": [
                 {
@@ -888,9 +896,9 @@ async def list_repositories(principal: ResolvedPrincipal = Depends(require_princ
                     # timestamp indexing actually bumps. Reading the missing
                     # attribute directly made this endpoint 500 on every call.
                     "last_indexed_at": repo.updated_at,
-                    "freshness": await assess_repository_freshness(repo),
+                    "freshness": freshness,
                 }
-                for repo in repos
+                for repo, freshness in zip(repos, freshness_by_repo)
             ]
         }
     except Exception as exc:
