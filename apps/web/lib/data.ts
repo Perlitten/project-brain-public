@@ -245,11 +245,28 @@ const pageResult = <T>(data: Json, key: string, q: ListQuery, map: (v: Json) => 
 // Overview (new /api/web router; may be missing on older APIs)
 
 type RawOverview = Json;
+// The dashboard asks for every project's overview at once. Brain's proxy turns
+// away a burst of more than about twenty and its database pool holds twenty, so
+// only a few go out together; the rest wait for a slot before their clock starts.
+const OVERVIEW_READS = 6;
+let overviewSlots = OVERVIEW_READS;
+const overviewWaiters: (() => void)[] = [];
+async function withOverviewSlot<T>(read: () => Promise<T>): Promise<T> {
+  if (overviewSlots > 0) overviewSlots--;
+  else await new Promise<void>((go) => overviewWaiters.push(go));
+  try {
+    return await read();
+  } finally {
+    const next = overviewWaiters.shift();
+    if (next) next();
+    else overviewSlots++;
+  }
+}
 // React cache deduplicates reads within the render. A failed repository never
 // suppresses another one or a new request after the backend recovers.
-const fetchOverviewResult = cache((repositoryId?: number) =>
+const fetchOverviewResult = cache((repositoryId?: number) => withOverviewSlot(() =>
   brainRead<RawOverview>(`/api/web/overview?include_health=false${repositoryId ? `&repository_id=${repositoryId}` : ""}`,
-    { fresh: true, timeoutMs: 2000 }),
+    { fresh: true, timeoutMs: 6000 })),
 );
 const fetchOverview = cache(async (repositoryId?: number): Promise<RawOverview | null> => {
   const result = await fetchOverviewResult(repositoryId);

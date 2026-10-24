@@ -505,6 +505,16 @@ class JobQueue:
             return None
         return self._deserialize_job(raw)
 
+    async def get_jobs(self, job_ids: list[str]) -> list[Optional[Dict[str, Any]]]:
+        """Read many jobs in one round trip; a missing job is None in its place."""
+        if not job_ids:
+            return []
+        pipe = self.redis.pipeline()
+        for job_id in job_ids:
+            pipe.hgetall(self._job_key(job_id))
+        raws = cast(list[Dict[str, str]], await pipe.execute())
+        return [self._deserialize_job(raw) if raw else None for raw in raws]
+
     # Atomically verify the caller's fencing token and apply the status write.
     # KEYS[1] = job hash, KEYS[2] = lease hash; ARGV[1] = token,
     # ARGV[2..#ARGV-1] = field/value pairs, ARGV[#ARGV] = job-key expire seconds.

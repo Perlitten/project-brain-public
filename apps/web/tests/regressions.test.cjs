@@ -235,6 +235,30 @@ test('overview failures cannot suppress another repository or a recovered reques
   assert.ok(calls.includes('/api/web/overview?include_health=false&repository_id=4'));
 });
 
+test('a dashboard full of projects sends only a few overview reads at a time', async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const overviews = [];
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} },
+    react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async path => {
+      if (path === '/repositories') return { repositories: Array.from({ length: 20 }, (_, i) => ({ id: i + 1, name: `repo${i + 1}` })) };
+      if (!path.startsWith('/api/web/overview')) return null;
+      overviews.push(path);
+      peak = Math.max(peak, ++inFlight);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return path.endsWith('=3') ? null : { counts: { files: 1 }, jobs: [] };
+    } },
+  });
+  const corpora = await Promise.all(Array.from({ length: 20 }, (_, i) => data.getCorpus(String(i + 1))));
+  assert.equal(overviews.length, 20);
+  assert.equal(peak, 6);
+  // A failed read still hands its slot on: every later project was read.
+  assert.equal(corpora.filter(c => c.available).length, 19);
+});
+
 test('repository feed distinguishes empty success, malformed payload and an outage', async () => {
   let response = { repositories: [] };
   const data = load('lib/data.ts', {

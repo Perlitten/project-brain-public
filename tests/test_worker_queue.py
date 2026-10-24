@@ -77,6 +77,10 @@ class _Pipeline:
         self.operations.append(("llen", key))
         return self
 
+    def hgetall(self, key):
+        self.operations.append(("hgetall", key))
+        return self
+
     def zcard(self, key):
         self.operations.append(("zcard", key))
         return self
@@ -289,6 +293,17 @@ async def test_enqueue_idempotency_returns_the_existing_job():
     job = await queue.get_job(first)
     assert job["max_attempts"] == 3
     assert job["attempt"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_jobs_reads_many_in_one_pipeline_and_keeps_gaps():
+    redis = _FakeRedis()
+    queue = JobQueue(redis)
+    first = await queue.enqueue("reindex")
+    second = await queue.enqueue("health_check")
+    jobs = await queue.get_jobs([first, "missing", second])
+    assert [job and job["type"] for job in jobs] == ["reindex", None, "health_check"]
+    assert await queue.get_jobs([]) == []
 
 
 @pytest.mark.asyncio

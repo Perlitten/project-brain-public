@@ -26,6 +26,9 @@ def test_recent_brain_jobs_filters_before_result_limit():
             )
             return {"id": job_id, "params": params, "created_at": job_id}
 
+        async def get_jobs(self, job_ids):
+            return [await self.get_job(job_id) for job_id in job_ids]
+
     with (
         patch("brain.database.session.redis_client", SimpleNamespace()),
         patch.object(helpers, "settings", SimpleNamespace(WORKER_REDIS_PREFIX="brain:worker")),
@@ -53,6 +56,9 @@ def test_recent_brain_jobs_scoped_scan_stops_after_requested_matches():
 
         async def get_job(self, job_id):
             return {"id": job_id, "params": {"repository_id": 7 if job_id == "wanted" else 8}}
+
+        async def get_jobs(self, job_ids):
+            return [await self.get_job(job_id) for job_id in job_ids]
 
     with (
         patch("brain.database.session.redis_client", SimpleNamespace()),
