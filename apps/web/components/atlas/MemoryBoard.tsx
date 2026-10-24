@@ -162,7 +162,7 @@ export function MemoryBoard({ decisions, replaced, rules, projects, scoped, tab:
   const tabUnavailable = (t: MemoryTab) => t === "replaced" ? unavailable.replaced : t === "rules" ? unavailable.rules : t === "decisions" ? unavailable.decisions : unavailable.rules && unavailable.decisions;
 
   return (
-    <div className="atlas">
+    <div className="atlas atlas--fill">
       <AtlasVerdict
         segments={segments}
         sub={unavailable.decisions || unavailable.rules

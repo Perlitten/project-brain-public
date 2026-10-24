@@ -279,7 +279,15 @@ code, .mono { font-family: var(--mono); }
   /* ...and the list itself scrolls. */
   :is(.route > .view-pane, .route:not(:has(> .view-pane)) > :last-child) :is(.lf > :not(.lf__bar, .lf__pager), .fill-list) { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   .view-pane--fill { overflow: hidden; }
+  /* A panel that ends the page reaches the bottom of the frame, so short pages keep the same edge as full ones. */
+  .route > .view-pane > .panel:last-child,
+  .route:not(:has(> .view-pane)) > .panel:last-child { flex-grow: 1; }
+  /* A list cut by its frame fades at the bottom edge, so a half-shown row reads as "more below"; the fade lifts at the end. */
+  :is(.route > .view-pane, .route:not(:has(> .view-pane)) > :last-child) :is(.lf > :not(.lf__bar, .lf__pager), .fill-list),
+  .atlas--fill .atlas-map { mask-image: linear-gradient(to bottom, #000 calc(100% - var(--more)), transparent); animation: more-below linear both; animation-timeline: scroll(self); }
 }
+@property --more { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes more-below { from, 94% { --more: 36px; } to { --more: 0px; } }
 
 /* ---------- route choreography ---------- */
 .route { display: grid; gap: var(--s-6); max-width: 1320px; }

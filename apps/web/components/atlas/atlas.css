@@ -31,6 +31,17 @@
 .atlas-split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s-7); align-items: start; }
 .atlas-split > * { min-width: 0; }
 @media (max-width: 900px) { .atlas-split { grid-template-columns: 1fr; } }
+/* In the desktop frame the sentence, search and tabs stay put; only the map scrolls under them. */
+@media (min-width: 901px) and (min-height: 600px) {
+  .route > .atlas.atlas--fill:last-child { display: flex; flex-direction: column; overflow: hidden; }
+  .atlas--fill > * { flex: none; }
+  .atlas--fill .atlas-verdict__line { font-size: var(--fs-20); line-height: 1.35; }
+  .atlas--fill > .atlas-split { flex: 0 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  .atlas--fill > .atlas-split > section { display: flex; flex-direction: column; gap: var(--s-4); min-height: 0; }
+  .atlas--fill > .atlas-split > section > * { flex: none; }
+  .atlas--fill > .atlas-split > section > .atlas-map { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 2px; }
+  .atlas--fill > .atlas-split > aside { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+}
 /* The feed beside the map keeps its own scroll, so a long feed never stretches the page. */
 @media (min-width: 901px) { .atlas-feed { position: sticky; top: var(--s-5); max-height: calc(100vh - 260px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding-right: var(--s-2); } }
 
