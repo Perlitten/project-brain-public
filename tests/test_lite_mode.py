@@ -21,6 +21,9 @@ async def test_lite_queue_retries_and_lists_persisted_jobs(tmp_path):
 
     assert await queue.recent_job_ids(limit=1) == [second]
     assert await queue.recent_job_ids(limit=1, offset=1) == [first]
+    jobs = await queue.get_jobs([second, "missing", first])
+    assert [job and job["job_id"] for job in jobs] == [second, None, first]
+    assert await queue.get_jobs([]) == []
 
     job, token = await queue.claim()
     assert job["job_id"] == first and job["attempt"] == 1
