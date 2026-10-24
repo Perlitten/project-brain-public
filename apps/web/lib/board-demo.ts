@@ -1,7 +1,8 @@
 // Demo data for the Board when no Brain API is configured. Raw API shapes, so
 // the demo goes through the same mapping as live data (lib/board-model.ts).
 
-const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+// The first 8 characters are what Agent tasks shows and searches by, so they differ per task.
+const id = (n: number) => `${String(n).padStart(8, "0")}-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const PROJECT = "11111111-1111-4111-8111-111111111111";
 const PARENT = id(1);
 const [S1, S2, S3, S4, S5, T2] = [id(2), id(3), id(4), id(5), id(6), id(7)];

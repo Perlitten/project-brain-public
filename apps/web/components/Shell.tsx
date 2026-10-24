@@ -8,7 +8,7 @@ import type { ActionResult, ActionsMode, SignInMode } from "@/lib/actions/types"
 import { startBenchmark, startHealthCheck, startInsights, startReindex, startSelfDiagnosis } from "@/lib/actions/jobs";
 import { verifyProviders } from "@/lib/actions/setup";
 import { activeSection, adminOnly, allNavItems, locate, navGroups, withProject } from "@/lib/nav";
-import { ActionsProvider, LOCK_REASON, Toaster, dismissToast, report, toast } from "./act";
+import { ActionsProvider, LOCK_REASON, demoPreview, Toaster, dismissToast, report, toast } from "./act";
 import { Ambient } from "./Ambient";
 import { BrandMark, Icon, type IconName } from "./Icon";
 import { RestrictedMemberProvider, useRestrictedMember } from "./MemberScope";
@@ -43,10 +43,12 @@ export interface ShellConfiguration {
   capabilities: Capabilities;
   /** Setup steps done; null when unknown or not this browser's business (members). */
   setup?: { done: number; total: number } | null;
+  /** Items on the Dashboard inbox that ask for a person; shown on the Dashboard entry. */
+  urgent?: number;
 }
 export function Shell({ demo, children }: { demo: boolean; children: ReactNode }) {
   const [configuration, setConfiguration] = useState<ShellConfiguration | null>(null);
-  const { repos, mode, access, member, capabilities, setup } = configuration ?? {
+  const { repos, mode, access, member, capabilities, setup, urgent = 0 } = configuration ?? {
     repos: [], mode: demo ? "demo" : "locked", access: "unknown", member: null,
     capabilities: { state: "unavailable", supported: [] },
   } as ShellConfiguration;
@@ -161,7 +163,7 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
             <small>memory for your AI agents</small>
           </span>
         </Link>
-        <RailNav path={path} withRepo={withRepo} slim={slim} setup={setup} />
+        <RailNav path={path} withRepo={withRepo} slim={slim} setup={setup} urgent={urgent} />
         {mobile && drawer && <button type="button" className="btn btn--neutral rail__close" onClick={() => setDrawer(false)}>Close menu</button>}
         <div className="rail__foot">
           {demo && process.env.NEXT_PUBLIC_DEMO_SITE === "1" && (
@@ -229,7 +231,7 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
               <span className={`dot tone-${repo?.tone}`} aria-hidden="true" />
               <span className="repo__label">
                 <small>Repository</small>
-                {repo?.name ?? (configuration === null ? "Loading projects…" : !repos.length ? "No projects connected" : allowsAllRepos && !repoSlug ? "All repositories" : "Repository not found")}
+                {repo?.name ?? (configuration === null ? "Loading projects…" : !repos.length ? "No projects connected" : allowsAllRepos && !repoSlug ? "All projects" : "Repository not found")}
               </span>
               <Icon name="arrow" size={14} className="repo__caret" />
             </button>
@@ -322,7 +324,7 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
 
 // The active marker is one element that travels between items, so a route
 // change reads as movement from where you were to where you are.
-function RailNav({ path, withRepo, slim, setup }: { path: string; withRepo: (href: string) => string; slim: boolean; setup?: { done: number; total: number } | null }) {
+function RailNav({ path, withRepo, slim, setup, urgent = 0 }: { path: string; withRepo: (href: string) => string; slim: boolean; setup?: { done: number; total: number } | null; urgent?: number }) {
   const restricted = useRestrictedMember();
   const capabilities = useCapabilities();
   const ref = useRef<HTMLElement>(null);
@@ -378,6 +380,7 @@ function RailNav({ path, withRepo, slim, setup }: { path: string; withRepo: (hre
               >
                 <Icon name={item.icon} />
                 <span className="nav__text">{item.label}</span>
+                {item.key === "command" && urgent > 0 && <span className="nav__badge num" aria-label={`${urgent} need attention`} title={`${urgent} need${urgent === 1 ? "s" : ""} attention`}>{urgent}</span>}
               </Link>
             );
           })}
@@ -480,7 +483,8 @@ function Palette({
     onClose();
     if (e.href) return router.push(e.href);
     if (!e.run) return;
-    if (mode !== "on") return toast({ tone: "warn", title: e.label, message: LOCK_REASON[mode] });
+    if (mode === "locked") return toast({ tone: "warn", title: e.label, message: LOCK_REASON[mode] });
+    if (mode === "demo") return toast({ tone: "info", title: e.label, message: demoPreview(e.label) });
     const pending = toast({ tone: "info", title: e.label, message: "Starting…" });
     let res: ActionResult;
     try {
@@ -540,7 +544,7 @@ function Palette({
               aria-selected={i === sel}
               data-i={i}
               className={`palette__row${i === sel ? " is-on" : ""}${e.run ? " palette__row--run" : ""}`}
-              aria-disabled={e.run && mode !== "on" ? true : undefined}
+              aria-disabled={e.run && mode === "locked" ? true : undefined}
               style={{ "--i": Math.min(i, 12) } as CSSProperties}
               onMouseMove={() => i !== sel && setSel(i)}
               onClick={() => go(e)}

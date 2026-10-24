@@ -12,6 +12,7 @@ import { currentMember } from "@/lib/team-session";
 import { dataSource, getRepositoryFeed } from "@/lib/data";
 import { repositoryStatus } from "@/lib/repository-status";
 import { getSetupProgress } from "@/lib/setup-view";
+import { getInbox } from "@/lib/inbox";
 import "./globals.css";
 import "./actions.css";
 
@@ -84,5 +85,7 @@ async function Configuration() {
   }));
   // Members never see Setup, so the rail only asks for progress on behalf of an owner or team admin.
   const setup = member && !member.admin ? null : await getSetupProgress();
-  return <ApplyShellConfiguration value={{ repos, mode, access, capabilities, setup, member: member ? { id: member.id, name: member.name, admin: member.admin } : null }} />;
+  // The Dashboard entry carries how many items ask for a person, so the count is visible from any screen.
+  const urgent = await getInbox(member === null, feed.repositories.map((r) => ({ repo: r, ...repositoryStatus(r) }))).then((i) => i.needs.length).catch(() => 0);
+  return <ApplyShellConfiguration value={{ repos, mode, access, capabilities, setup, urgent, member: member ? { id: member.id, name: member.name, admin: member.admin } : null }} />;
 }

@@ -77,7 +77,7 @@ export default async function Insights({ searchParams }: { searchParams: Promise
               )}
               <span>found {g.rep.detectedAt}{g.count > 1 ? ` · seen ${g.count} times` : ""}</span>
             </p>
-            {!member && <FindingActions id={g.rep.id} codeAvailable={g.rep.codeAvailable === true} targets={g.members.filter(f => f.lastSeenAt && /^\d+$/.test(f.id)).map(f => ({ id: f.id, lastSeenAt: f.lastSeenAt! }))} />}
+            {!member && <FindingActions id={g.rep.id} title={g.rep.title} evidence={g.rep.evidence} module={g.rep.module} codeAvailable={g.rep.codeAvailable === true} targets={g.members.filter(f => f.lastSeenAt && /^\d+$/.test(f.id)).map(f => ({ id: f.id, lastSeenAt: f.lastSeenAt! }))} />}
           </article>
         ))}
       />

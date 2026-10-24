@@ -6,6 +6,7 @@
 // with the member's own key, the lease's fencing token and the entry's version.
 
 import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CodeBlock, Dialog, LockNote, RunButton, useAction } from "@/components/act";
 import { AtlasVerdict, reveal } from "@/components/atlas/Atlas";
@@ -65,7 +66,7 @@ function RequestRunButton({ task, ctx, label = "Request a fresh run", primary = 
   const [asking, setAsking] = useState(false);
   return (
     <>
-      <button type="button" className={`btn ${primary ? "btn--primary" : "btn--neutral"} btn--sm`} disabled={pending || mode !== "on" || !task.branch} onClick={() => setAsking(true)}>
+      <button type="button" className={`btn ${primary ? "btn--primary" : "btn--neutral"} btn--sm`} disabled={pending || mode === "locked" || !task.branch} onClick={() => setAsking(true)}>
         {pending ? <span className="spin" aria-hidden="true" /> : null}
         {label}
       </button>
@@ -79,7 +80,7 @@ function RequestRunButton({ task, ctx, label = "Request a fresh run", primary = 
           <button
             type="button"
             className="btn btn--primary"
-            disabled={pending || mode !== "on"}
+            disabled={pending || mode === "locked"}
             onClick={async () => {
               const res = await go(ctx.board.id, task.id, task.branch);
               setAsking(false);
@@ -119,7 +120,7 @@ function IntegrateButton({ entry, ctx, label = "Integrate", small = true }: { en
   const { run, pending, mode } = useAction(integrateEntry, { title: "Integrate" });
   return (
     <>
-      <button type="button" className={`btn btn--primary${small ? " btn--sm" : ""}`} disabled={pending || mode !== "on"} onClick={() => setOpen(true)}>{label}</button>
+      <button type="button" className={`btn btn--primary${small ? " btn--sm" : ""}`} disabled={pending || mode === "locked"} onClick={() => setOpen(true)}>{label}</button>
       <Dialog open={open} onClose={() => setOpen(false)} title={`Integrate “${ctx.title(entry.taskId)}”?`}>
         <p className="dialog__text">
           Brain re-checks the run against the current base and the decisions and rules it started with. If either changed, the entry is marked
@@ -136,7 +137,7 @@ function IntegrateButton({ entry, ctx, label = "Integrate", small = true }: { en
           <button
             type="button"
             className="btn btn--primary"
-            disabled={pending || mode !== "on"}
+            disabled={pending || mode === "locked"}
             onClick={async () => {
               const res = await run(ctx.board.id, entry.id, entry.version, base || undefined);
               if (res.ok) setOpen(false);
@@ -179,7 +180,7 @@ function RejectButton({ entry, ctx, withdraw }: { entry: QueueEntry; ctx: Ctx; w
   const verb = withdraw ? "Withdraw" : "Reject";
   return (
     <>
-      <button type="button" className="btn btn--neutral btn--sm" disabled={pending || mode !== "on"} onClick={() => setOpen(true)}>{verb}</button>
+      <button type="button" className="btn btn--neutral btn--sm" disabled={pending || mode === "locked"} onClick={() => setOpen(true)}>{verb}</button>
       <Dialog open={open} onClose={() => setOpen(false)} title={`${verb} “${ctx.title(entry.taskId)}” from the queue?`}>
         <label className="field">
           <span className="field__label">Reason</span>
@@ -191,7 +192,7 @@ function RejectButton({ entry, ctx, withdraw }: { entry: QueueEntry; ctx: Ctx; w
           <button
             type="button"
             className="btn btn--danger"
-            disabled={pending || mode !== "on" || !reason.trim()}
+            disabled={pending || mode === "locked" || !reason.trim()}
             onClick={async () => {
               const res = await run(ctx.board.id, entry.id, entry.version, reason);
               if (res.ok) setOpen(false);
@@ -527,11 +528,12 @@ function PlanItem({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
             </p>
           );
         })}
-        {(parent || scope) && (
+        {(parent || scope || task.runs.length > 0) && (
           <p className="tb-item__meta">
             {parent && <>in {parent}</>}
             {parent && scope && " · "}
             {scope && <span className="mono" title={task.scopePaths.join("\n")}>{scope}</span>}
+            {task.runs.length > 0 && <>{(parent || scope) && " · "}<Link className="link" href={`/runs?q=${encodeURIComponent(task.id.slice(0, 8))}`}>{task.runs.length === 1 ? "1 agent run" : `${task.runs.length} agent runs`}</Link></>}
           </p>
         )}
       </div>

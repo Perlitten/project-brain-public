@@ -12,15 +12,18 @@ import { signInMode } from "@/lib/sign-in-view";
 import { getInvitationsView } from "@/lib/invitation-view";
 import { currentMember } from "@/lib/team-session";
 import { getTeamView } from "@/lib/team-view";
+import { DEMO_MEMBER } from "@/lib/team-demo";
 
 export const metadata = { title: "Team" };
 
-const LEDE = "Everyone on the team signs in to this dashboard with their own key. Brain checks that key on every request, so revoking a member locks them out of the dashboard at once; revoke their key under Access to stop their agents too.";
+const LEDE = "People and their project roles. Each member signs in with their own key, so revoking a member locks them out at once.";
 
 export default async function Team() {
   const unsupported = await capabilityGate("team", "Team");
   if (unsupported) return unsupported;
-  const [observedMode, member] = await Promise.all([signInMode(), currentMember()]);
+  const [observedMode, signedIn] = await Promise.all([signInMode(), currentMember()]);
+  // The demo is seen as a team admin, like Me and Team activity, so the three pages tell one story.
+  const member = signedIn ?? (observedMode === "demo" ? DEMO_MEMBER : null);
   const mode = member ? "team" : observedMode;
   const head = (
     <>
@@ -38,7 +41,7 @@ export default async function Team() {
       <>
         {head}
         <Panel id="team-bootstrap" title="Enable team" desc="Prepare and save your own administrator key before changing how this dashboard signs you in.">{bootstrap ? <Bootstrap /> : <p>This server supports team membership but not dashboard bootstrap. Use the server setup below.</p>}</Panel>
-        <Panel id="team-setup" title="Server setup and recovery" desc="Use this route when the dashboard credential cannot issue administrator scopes, or when you need to recover access.">
+        <Fold id="team-setup" title="Server setup and recovery" desc="For when the dashboard key cannot issue administrator scopes, or you need a way back in." cta="Show the commands">
           <div className="form form--wide">
             <p className="field__hint">
               A team is set up on the Brain server, so the first admin is created by someone who can run commands there. Once the team has a member,
@@ -58,7 +61,7 @@ brain team member add --principal alice --admin --mint-key`}
               <code>/invite</code> on this dashboard and paste the printed token. You become the first admin and are signed in with your own key.
             </p>
           </div>
-        </Panel>
+        </Fold>
       </>
     );
   }

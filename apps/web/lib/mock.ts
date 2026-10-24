@@ -138,6 +138,10 @@ export const agentRuns: AgentRun[] = [
   { id: "r-2288", agent: "claude-code", task: "Explain drift in sync engine", status: "completed", tokens: 12880, packHit: true, startedAt: "11:07", duration: "1m 48s", repo: "mobile-app" },
   { id: "r-2287", agent: "devin", task: "Offline queue replay ordering", status: "running", tokens: 30512, packHit: true, startedAt: "10:55", duration: "—", repo: "mobile-app" },
   { id: "r-2286", agent: "codex", task: "Versioned docs layout for v2", status: "timed_out", tokens: 61104, packHit: true, startedAt: "09:44", duration: "1h 00m", repo: "docs-site" },
+  // The demo Board's tasks (lib/board-demo.ts): ids are the first 8 characters of the task id.
+  { id: "00000006", agent: "codex", task: "Document the retry policy", status: "running", tokens: 9120, packHit: true, startedAt: "08:52", duration: "—" },
+  { id: "00000003", agent: "claude-code", task: "Wire retries into the checkout API", status: "running", tokens: 27440, packHit: true, startedAt: "08:31", duration: "—" },
+  { id: "00000002", agent: "claude-code", task: "Retry policy module", status: "completed", tokens: 18305, packHit: true, startedAt: "08:04", duration: "11m 20s" },
 ];
 
 export const events: LedgerEvent[] = [
@@ -200,11 +204,11 @@ export const rules: Rule[] = [
 ];
 
 export const insights: Insight[] = [
-  { id: "in-71", tone: "bad", kind: "drift", title: "payments/retry.py bypasses the ORM session rule in a new place", evidence: "retry.py:88 — direct session.commit(), rule R-014 forbids it", module: "billing-service/payments", detectedAt: "13:21" },
-  { id: "in-70", tone: "warn", kind: "coupling", title: "sync engine ↔ conflict resolver co-change rose to 0.71", evidence: "17 of 24 commits touching sync/engine.kt also touched sync/conflict.kt", module: "mobile-app/sync", detectedAt: "11:40" },
-  { id: "in-69", tone: "warn", kind: "hotspot", title: "gateway.py is the top churn file this month", evidence: "38 commits, 2,140 lines changed, 3 authors", module: "billing-service/payments", detectedAt: "Oct 1" },
-  { id: "in-67", tone: "warn", kind: "other", title: "Open PR touches payments and migrations in one diff", evidence: "PR #214 changes retry.py and adds migration 0042 — review flagged it as risky", module: "billing-service", detectedAt: "Oct 1" },
-  { id: "in-68", tone: "info", kind: "freshness", title: "4 context packs reference files changed since build", evidence: "pk-1042, pk-1041, pk-1030, pk-1028", module: "billing-service", detectedAt: "Oct 1" },
+  { id: "71", lastSeenAt: "2026-10-02T13:21:00Z", codeAvailable: true, occurrences: 3, tone: "bad", kind: "drift", title: "payments/retry.py bypasses the ORM session rule in a new place", evidence: "retry.py:88 — direct session.commit(), rule R-014 forbids it", module: "billing-service/payments", detectedAt: "13:21" },
+  { id: "70", lastSeenAt: "2026-10-02T11:40:00Z", codeAvailable: true, tone: "warn", kind: "coupling", title: "sync engine ↔ conflict resolver co-change rose to 0.71", evidence: "17 of 24 commits touching sync/engine.kt also touched sync/conflict.kt", module: "mobile-app/sync", detectedAt: "11:40" },
+  { id: "69", lastSeenAt: "2026-10-01T16:05:00Z", codeAvailable: true, tone: "warn", kind: "hotspot", title: "gateway.py is the top churn file this month", evidence: "38 commits, 2,140 lines changed, 3 authors", module: "billing-service/payments", detectedAt: "Oct 1" },
+  { id: "67", lastSeenAt: "2026-10-01T15:12:00Z", tone: "warn", kind: "other", title: "Open PR touches payments and migrations in one diff", evidence: "PR #214 changes retry.py and adds migration 0042 — review flagged it as risky", module: "billing-service", detectedAt: "Oct 1" },
+  { id: "68", lastSeenAt: "2026-10-01T15:40:00Z", tone: "info", kind: "freshness", title: "4 context packs reference files changed since build", evidence: "pk-1042, pk-1041, pk-1030, pk-1028", module: "billing-service", detectedAt: "Oct 1" },
 ];
 
 export const moduleEdges: ModuleEdge[] = [

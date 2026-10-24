@@ -244,7 +244,7 @@ function SectionForm({ section, telegram }: { section?: SettingsSection; telegra
   const bad = fields.some((f) => problem(f, d[f.key] ?? initial(f)));
 
   const submit = async () => {
-    if (pending || mode !== "on" || !dirty || bad) return;
+    if (pending || mode === "locked" || !dirty || bad) return;
     const res = await run(values, clears);
     if (res.ok) {
       setD((x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, fields.find((f) => f.key === k)?.kind === "secret" ? "" : v])));
@@ -332,7 +332,7 @@ function SectionForm({ section, telegram }: { section?: SettingsSection; telegra
       )}
 
       {(dirty > 0 || pending) && <div className="btn-row settings-actions" role="group" aria-label="Unsaved changes">
-        <button type="submit" className="btn btn--primary btn--sm" disabled={pending || mode !== "on" || !dirty || bad}>
+        <button type="submit" className="btn btn--primary btn--sm" disabled={pending || mode === "locked" || !dirty || bad}>
           {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="check" size={14} />}
           {pending ? "Saving…" : "Save changes"}
         </button>

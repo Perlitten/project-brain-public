@@ -9,6 +9,7 @@ import { cache } from "react";
 import { apiConfigured, brainFetch, brainRead, readFailureNote, type ReadFailure } from "./api";
 import * as mock from "./mock";
 import { getListQuery, type ListPaging, type ListQuery, pagingFrom } from "./list-query";
+import { eventHref } from "./event-link";
 import { shortRevision } from "./revision";
 import { SLOW_TOOL_MS } from "./tool-health";
 import { utcTime } from "./time";
@@ -532,6 +533,7 @@ function toEvent(e: Json): LedgerEvent {
     source: type.split(".")[0] || words(str(e.entity_type)) || str(e.actor_type) || "brain",
     text: `${what}${subject && !str(e.action) ? "" : subject ? ` — ${subject}` : ""}${transition}${reason ? `: ${reason}` : ""}`,
     ref: ref ? (ref.length > 18 ? `${ref.slice(0, 16)}…` : ref) : undefined,
+    href: eventHref(ref, str(e.entity_type), ref) ?? undefined,
   };
 }
 
@@ -636,22 +638,30 @@ export const getAgentRuns = async (slug?: string | null): Promise<AgentRun[]> =>
     if (repo?.path) params.set("repo_path", repo.path);
     const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
     if (!data) return null;
-    return list(data, "tasks").map((t) => {
-      const status = jobStatus(t.status);
-      const finished = !["running", "queued", "retrying"].includes(status);
-      return {
-        id: str(t.id).slice(0, 8),
-        agent: str(t.target_agent) || str(t.owner_agent) || "agent",
-        task: str(t.title) || str(t.goal) || "Untitled task",
-        status,
-        tokens: num(t.tokens),
-        packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined,
-        startedAt: fmtShort(t.created_at),
-        duration: finished ? between(t.created_at, t.updated_at) : "—",
-      };
-    });
+    return list(data, "tasks").map((t) => toRun(t, true));
   });
 };
+
+/** One harness task as a row; `short` trims the id to what the lists show. */
+function toRun(t: Json, short: boolean): AgentRun {
+  const status = jobStatus(t.status);
+  const finished = !["running", "queued", "retrying"].includes(status);
+  const version = num(t.version);
+  return {
+    id: short ? str(t.id).slice(0, 8) : str(t.id),
+    agent: str(t.target_agent) || str(t.owner_agent) || "agent",
+    task: str(t.title) || str(t.goal) || "Untitled task",
+    status,
+    tokens: num(t.tokens),
+    packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined,
+    startedAt: fmtShort(t.created_at),
+    duration: finished ? between(t.created_at, t.updated_at) : "—",
+    taskId: str(t.id) || undefined,
+    version: version && Number.isInteger(version) && version > 0 ? version : undefined,
+    rawStatus: str(t.status) || undefined,
+    cancelRequested: Boolean(t.cancellation_requested_at),
+  };
+}
 
 export const getEvents = async (limit = 50, slug?: string | null): Promise<LedgerEvent[]> => {
   if (!apiConfigured) return mock.events;
@@ -677,10 +687,7 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
     if (q.status) params.set("display_status", q.status);
     const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
     if (!data) return null;
-    const result = pageResult(data, "tasks", q, (t) => {
-      const status = jobStatus(t.status), finished = !["running", "queued", "retrying"].includes(status);
-      return { id: str(t.id), agent: str(t.target_agent) || str(t.owner_agent) || "agent", task: str(t.title) || str(t.goal) || "Untitled task", status, tokens: num(t.tokens), packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined, startedAt: fmtShort(t.created_at), duration: finished ? between(t.created_at, t.updated_at) : "—" };
-    });
+    const result = pageResult(data, "tasks", q, (t) => toRun(t, false));
     result.paging.facets = Object.entries(result.paging.facets).reduce<Record<string, number>>((acc, [key, value]) => {
       const normalized = jobStatus(key);
       acc[normalized] = (acc[normalized] || 0) + Number(value);
@@ -692,6 +699,7 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
 
 export const getPagedEvents = async (slug: string | null | undefined, input: Partial<ListQuery> = {}): Promise<Paged<LedgerEvent>> => {
   const q = getListQuery(input);
+  if (!apiConfigured) return demoPage(mock.events, q, (e) => `${e.source} ${e.text} ${e.ref ?? ""} ${e.at}`, (e) => e.tone);
   return live(unread(q), async () => {
     const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
     if (slug && !repo) return null;

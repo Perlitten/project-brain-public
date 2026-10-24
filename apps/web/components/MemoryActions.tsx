@@ -11,7 +11,7 @@ import type { Decision, Rule } from "@/lib/types";
 /** Opens the edit dialog; locked like every other action outside "on" mode. */
 function EditButton({ name, onOpen }: { name: string; onOpen: () => void }) {
   const mode = useActionsMode();
-  const locked = mode !== "on";
+  const locked = mode === "locked";
   return <button type="button" className="btn btn--neutral btn--sm" disabled={locked} title={locked ? LOCK_REASON[mode] : `Edit ${name}`} onClick={onOpen}>Edit</button>;
 }
 
@@ -46,7 +46,7 @@ function DecisionForm({ decision, onDone }: { decision: Decision; onDone: () => 
       <LockNote />
       <div className="dialog__actions">
         <button type="button" className="btn btn--neutral" onClick={onDone}>Cancel</button>
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !description.trim()}>{pending ? "Saving…" : "Save decision"}</button>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || !description.trim()}>{pending ? "Saving…" : "Save decision"}</button>
       </div>
     </form>
   );
@@ -95,7 +95,7 @@ function RuleForm({ rule, onDone }: { rule: Rule; onDone: () => void }) {
       <LockNote />
       <div className="dialog__actions">
         <button type="button" className="btn btn--neutral" onClick={onDone}>Cancel</button>
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !description.trim()}>{pending ? "Saving…" : "Save rule"}</button>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || !description.trim()}>{pending ? "Saving…" : "Save rule"}</button>
       </div>
     </form>
   );

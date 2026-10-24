@@ -81,7 +81,7 @@ function PackForm({ repoPath }: { repoPath?: string }) {
       )}
       <LockNote />
       <div className="dialog__actions">
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || length < 8}>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || length < 8}>
           {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="layers" size={15} />}
           {pending ? "Building…" : built ? "Build again" : "Build context pack"}
         </button>

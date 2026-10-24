@@ -3,6 +3,8 @@ import Link from "next/link";
 import { RetryRead } from "@/components/RetryRead";
 import { PageHead } from "@/components/ui";
 import { TodayBoard, type TodayRegion } from "@/components/atlas/TodayBoard";
+import { Inbox } from "@/components/inbox/Inbox";
+import { getInbox } from "@/lib/inbox";
 import { getCodeModules, getContextPacks, getCorpus, getRepositoryFeed } from "@/lib/data";
 import { apiConfigured } from "@/lib/api";
 import { scopeMemberToProject } from "@/lib/member-scope";
@@ -109,8 +111,13 @@ async function DashboardData({ searchParams }: Props) {
   });
 
   const unread = snapshots.some((s) => s.corpus.available === false) || !feed.available;
+  // The inbox first: what asks for a person across the Board, findings, tools,
+  // keys and setup, then who is working. The freshness verdict and map follow.
+  const inbox = await getInbox(admin, snapshots.map((s) => ({ repo: s.repo, tone: s.tone, status: s.status })));
   return <>
     {unread && <div className="callout tone-warn" role="status"><b>Some measurements could not be read</b><span>Timeouts describe a failed request, not a stopped server. Retry, then check API logs if the problem persists.</span><RetryRead /></div>}
+    <Inbox needs={inbox.needs} agents={inbox.agents} />
+    <div className="ib-sec__head" style={{ marginBottom: "var(--s-4)" }}><h2 className="ib-sec__h">Memory freshness</h2><span className="ib-sec__note">Whether what agents get matches the code, and what they were given last.</span></div>
     <TodayBoard
       segments={segments}
       sub={sub}

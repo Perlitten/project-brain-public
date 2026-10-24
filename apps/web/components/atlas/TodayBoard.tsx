@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AtlasLegend, AtlasMap, AtlasVerdict, revealRegion, type AtlasRegionData } from "./Atlas";
 import { moduleNote, type ModuleTile, type ModuleTotals, type Segment } from "@/lib/atlas";
+import { agentHref } from "@/lib/agent-link";
 import type { ContextPack } from "@/lib/types";
 
 export interface TodayRegion extends Omit<AtlasRegionData, "tiles" | "dim"> {
@@ -124,7 +125,7 @@ export function TodayBoard({ segments, sub, actions, regions, hidden, packs, liv
               >
                 <span className="atlas-ev__top">
                   <span className="atlas-ev__time">{p.createdAt}</span>
-                  <span className="atlas-ev__who"><b>{p.consumer}</b><span> got a context pack</span></span>
+                  <span className="atlas-ev__who">{agentHref(p.consumer) ? <Link href={agentHref(p.consumer)!} onClick={(e) => e.stopPropagation()}><b>{p.consumer}</b></Link> : <b>{p.consumer}</b>}<span> got a context pack</span></span>
                 </span>
                 <span className="atlas-ev__line">{p.task}</span>
                 <span className="atlas-ev__meta">{[packMemory(p), p.repo].filter(Boolean).join(" · ")}</span>

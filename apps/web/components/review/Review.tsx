@@ -37,7 +37,7 @@ function RejectButton({ row }: { row: ProposalRow }) {
   const { run, pending, mode } = useAction(rejectProposal, { title: "Reject" });
   return (
     <>
-      <button type="button" className="btn btn--neutral btn--sm" disabled={pending || mode !== "on"} onClick={() => setOpen(true)}>
+      <button type="button" className="btn btn--neutral btn--sm" disabled={pending || mode === "locked"} onClick={() => setOpen(true)}>
         Reject
       </button>
       <Dialog open={open} onClose={() => setOpen(false)} title={`Reject “${row.title}”?`}>
@@ -53,7 +53,7 @@ function RejectButton({ row }: { row: ProposalRow }) {
           <button
             type="button"
             className="btn btn--danger"
-            disabled={pending || mode !== "on"}
+            disabled={pending || mode === "locked"}
             onClick={async () => {
               const res = await run(row.id, row.version, reason);
               if (res.ok) setOpen(false);

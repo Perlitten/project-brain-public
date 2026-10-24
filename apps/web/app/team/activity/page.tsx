@@ -54,7 +54,7 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
-            <IdPicker name="repository" label="Repository" all="All repositories" options={repositories} value={filters.repository} />
+            <IdPicker name="repository" label="Repository" all="All projects" options={repositories} value={filters.repository} />
             <IdPicker name="actor" label="Who" all="Anyone" options={actors} value={filters.actor} manual={me.kind === "ok" && !me.teamAdmin && !me.allRepositories} />
             <label className="field">
               <span className="field__label">Kind</span>

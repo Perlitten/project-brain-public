@@ -3,7 +3,8 @@
 // see: /team/me describes the presented key, and /team/activity only returns
 // events the caller may read, so these screens never filter anything out.
 import "server-only";
-import { brainRead } from "./api";
+import { apiConfigured, brainRead } from "./api";
+import { DEMO_ME, demoActivity } from "./team-demo";
 
 export interface MeRepository { id: number; name: string; path: string }
 export interface MeProject {
@@ -254,11 +255,13 @@ export function toMeView(raw: unknown): MeResult {
 }
 
 export async function getMeView(): Promise<MeResult> {
+  if (!apiConfigured) return DEMO_ME;
   const res = await brainRead<unknown>("/team/me", { fresh: true });
   return res.ok ? toMeView(res.data) : { kind: "unavailable" };
 }
 
 export async function getActivity(filters: ActivityFilters): Promise<ActivityResult> {
+  if (!apiConfigured) return { kind: "ok", ...demoActivity(filters, ACTIVITY_PAGE_SIZE) };
   const res = await brainRead<unknown>(activityPath(filters), { fresh: true, timeoutMs: 8000 });
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {

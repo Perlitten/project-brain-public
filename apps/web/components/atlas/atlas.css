@@ -163,5 +163,8 @@ a.atlas-region__name:hover { color: var(--teal-fg); }
 }
 
 /* ---------- memory: how to record, idle inspector ---------- */
-.atlas-record { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--s-4); animation: atlas-fade 450ms var(--ease) both; }
+.atlas-record { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: var(--s-6); padding: var(--s-4); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--surface-rail); animation: atlas-fade 450ms var(--ease) both; }
+@media (max-width: 860px) { .atlas-record { grid-template-columns: 1fr; } }
+.atlas-record__aside { display: grid; gap: var(--s-3); align-content: start; }
+.atlas-record__lead { margin: 0; font-size: var(--fs-12); color: var(--text-2); }
 .atlas-inspector--idle { min-height: 120px; justify-content: center; }

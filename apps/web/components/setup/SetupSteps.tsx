@@ -220,7 +220,7 @@ function Repo({ step, repoPath }: { step: StepView; repoPath?: string }) {
                 className={`btn btn--sm ${r.path === repoPath ? "btn--primary" : "btn--neutral"}`}
                 aria-pressed={r.path === path.trim()}
                 title={r.path}
-                disabled={pending || mode !== "on" || r.path === repoPath}
+                disabled={pending || mode === "locked" || r.path === repoPath}
                 onClick={() => {
                   setPath(r.path);
                   run(r.path);
@@ -239,7 +239,7 @@ function Repo({ step, repoPath }: { step: StepView; repoPath?: string }) {
         <span className="field__hint">An absolute path to a checkout on the machine Brain runs on, not on your laptop. Saved to the server’s .env.</span>
       </label>
       <div className="btn-row">
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !path.trim() || (!changed && step.done)}>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || !path.trim() || (!changed && step.done)}>
           {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="check" size={15} />}
           Save folder
         </button>
@@ -470,7 +470,7 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
           </div>
 
           <div className="btn-row">
-            <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || badUrl || badDim || (!preset?.baseUrl && !d.baseUrl.trim())}>
+            <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || badUrl || badDim || (!preset?.baseUrl && !d.baseUrl.trim())}>
               {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="check" size={15} />}
               Save {slot === "llm" ? "language model" : "embedding model"}
             </button>
@@ -627,7 +627,7 @@ function FirstTask({ step, repoPath }: { step: StepView; repoPath?: string }) {
         </span>
       </label>
       <div className="btn-row">
-        <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || length < 8}>
+        <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || length < 8}>
           {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="layers" size={15} />}
           {pending ? "Building…" : "Build context pack"}
         </button>

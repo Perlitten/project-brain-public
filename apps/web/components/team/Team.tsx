@@ -72,7 +72,7 @@ export function AddMemberForm() {
           Team admin — can add and revoke members and change project roles
         </label>
         <div className="btn-row">
-          <button type="submit" className="btn btn--primary" disabled={pending || mode !== "on" || !name.trim()}>
+          <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || !name.trim()}>
             {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="plus" size={15} />}
             {existing ? "Add to the team" : "Add member and issue key"}
           </button>
@@ -184,7 +184,7 @@ function RoleSelect({ project, member }: { project: TeamProjectRow; member: Team
       className="select"
       aria-label={`${member.name}’s role in ${project.name}`}
       value={current}
-      disabled={pending || set.mode !== "on"}
+      disabled={pending || set.mode === "locked"}
       title={current ? ROLE_WORD[current as ProjectRole] : "Not in this project"}
       onChange={(e) => {
         const next = e.target.value;

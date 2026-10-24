@@ -28,11 +28,11 @@ const SECTIONS = {
   projects: { label: "Project views", items: [["/projects", "Projects"], ["/indexing", "Index runs"], ["/graph", "Code map"], ["/insights", "Findings"]] },
   memory: { label: "Memory views", items: [["/memory", "Memory"], ["/packs", "Context packs"], ["/review", "Review"]] },
   quality: { label: "Quality views", items: [["/quality", "Quality"]] },
-  logs: { label: "Activity views", items: [["/activity", "Activity"], ["/runs", "Agent tasks"]] },
+  logs: { label: "Activity views", items: [["/activity", "Activity"], ["/agents", "Agents"], ["/runs", "Agent tasks"], ["/mcp", "Agent tools"]] },
   // Reranker is a switch with a measurement next to it, not a report: it
   // belongs with the other things you configure.
   team: { label: "Team views", items: [["/team", "Team"], ["/team/me", "Me"], ["/team/activity", "Team activity"], ["/team/board", "Board"]] },
-  settings: { label: "Settings views", items: [["/settings", "General"], ["/admin", "Access"], ["/mcp", "Agent tools"], ["/reranker", "Reranker"]] },
+  settings: { label: "Settings views", items: [["/settings", "General"], ["/admin", "Access"], ["/reranker", "Reranker"]] },
 } as const;
 
 export function SectionTabs({ section, active }: { section: keyof typeof SECTIONS; active: string }) {

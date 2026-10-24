@@ -46,6 +46,9 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
   ]);
   const scoped = repo ? feed.repositories.find((r) => r.slug === repo || r.name.toLowerCase() === repo.toLowerCase()) : undefined;
   const projects = (scoped ? [scoped] : feed.repositories).map((r) => ({ slug: r.slug, name: r.name, path: r.path }));
+  // ?new=rule&title=…&description=… opens the record panel filled in (a finding turned into memory).
+  const newKind = one("new");
+  const prefill = newKind === "rule" || newKind === "decision" ? { kind: newKind as "rule" | "decision", title: one("title")?.slice(0, 500), description: one("description")?.slice(0, 10000) } : undefined;
   return (
     <>
       <SectionTabs section="memory" active="/memory" />
@@ -75,6 +78,7 @@ export default async function Memory({ searchParams }: { searchParams: Promise<R
         totals={{ decisions: current.paging.total, rules: rules.paging.total, replaced: replaced.paging.total }}
         repoPath={scoped?.path}
         unavailable={{ decisions: current.available === false, rules: rules.available === false, replaced: replaced.available === false }}
+        prefill={prefill}
       />
     </>
   );

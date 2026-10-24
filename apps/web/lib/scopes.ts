@@ -98,6 +98,27 @@ export const EXPIRY_CHOICES: { days: number; label: string }[] = [
 ];
 
 
+const AREA_LABEL = new Map(SCOPE_GROUPS.flatMap((g) => g.areas.map((a) => [a.area, a.label] as const)));
+const TEAM_WORDS: Record<string, string> = {
+  "team:read": "Team: read",
+  "team:knowledge.propose": "Team: propose memory",
+  "team:knowledge.approve": "Team: approve memory",
+  "team:task.create": "Team: create tasks",
+  "team:task.accept": "Team: accept tasks",
+  "team:run.request": "Team: request runs",
+  "team:admin": "Team: admin",
+};
+
+/** A permission in words: "core:write" → "Code memory: read and write". Unknown scopes come back as they are. */
+export function scopeWords(scope: string): string {
+  if (scope === "*") return "Everything";
+  if (TEAM_WORDS[scope]) return TEAM_WORDS[scope];
+  const [area, verb] = scope.split(":");
+  const label = AREA_LABEL.get(area);
+  if (!label || !verb) return scope;
+  return verb === "write" ? `${label}: read and write` : verb === "read" ? `${label}: read` : `${label}: ${verb}`;
+}
+
 /** The credential API accepts explicit names, never legacy wildcard scopes. */
 export function isNamedScope(value: string): boolean {
   return /^[a-z_]+:[a-z_]+(?:\.[a-z_]+)*$/.test(value);

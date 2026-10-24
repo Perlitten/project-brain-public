@@ -172,6 +172,7 @@ code, .mono { font-family: var(--mono); }
 .nav__item.is-on svg { color: var(--teal-fg); }
 .nav__item--setup { color: var(--text-1); background: color-mix(in oklab, var(--warn-soft, var(--surface-inset)) 70%, transparent); box-shadow: inset 0 0 0 1px var(--warn-line, var(--border-subtle)); }
 .nav__item--setup svg { color: var(--warn-fg, var(--teal-fg)); }
+.nav__badge { margin-left: auto; min-width: 1.25rem; padding: 2px 6px; border-radius: 999px; text-align: center; font: 600 var(--fs-11, 11px) / 1.2 var(--mono); color: var(--bad-fg, #fff); background: var(--bad-soft, color-mix(in oklab, var(--bad-fg) 18%, transparent)); box-shadow: inset 0 0 0 1px var(--bad-line, transparent); }
 .nav__progress { margin-left: auto; font: 500 var(--fs-12) / 1 var(--mono); color: var(--warn-fg, var(--text-2)); }
 .nav__mark {
   position: absolute; left: var(--s-2); right: var(--s-2); top: 0;
@@ -452,6 +453,8 @@ code, .mono { font-family: var(--mono); }
 .ledger__source { font: 500 var(--fs-12) / 1.35 var(--mono); color: var(--text-2); }
 .ledger__text { line-height: var(--lh-ui); }
 .ledger__ref { font-size: var(--fs-12); color: var(--text-3); white-space: nowrap; }
+a.ledger__ref { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line-2, var(--text-3)); text-underline-offset: 2px; }
+a.ledger__ref:hover { color: var(--text-1); }
 .ledger--compact .ledger__row { grid-template-columns: 56px 10px minmax(0, 1fr); padding: var(--s-2) var(--s-4); }
 .ledger--compact .ledger__source, .ledger--compact .ledger__ref { display: none; }
 
@@ -958,3 +961,7 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
 @media (max-width: 560px) { .access-chip__more { display: none; } }
 
 .request-query { min-width: 12rem; max-width: 28rem; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+/* Result cell of an agent task: status chip + the one verb next to it. */
+.task-result { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.task-result .link.sub { font-size: inherit; }

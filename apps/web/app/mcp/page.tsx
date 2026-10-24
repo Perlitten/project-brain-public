@@ -21,7 +21,7 @@ export default async function Mcp() {
   const tracked = tools.some((t) => t.calls24h !== undefined || t.errorRate !== undefined);
   return (
     <>
-      <SectionTabs section="settings" active="/mcp" />
+      <SectionTabs section="logs" active="/mcp" />
       <PageHead
         title="Agent tools"
         status={
@@ -83,8 +83,11 @@ export default async function Mcp() {
                       t.errorRate === undefined ? (
                         "—"
                       ) : (
-                        <span className={t.errorRate > 0.05 ? "text-bad" : t.errorRate > 0.02 ? "text-warn" : undefined}>
-                          {(t.errorRate * 100).toFixed(1)}%
+                        <span className="task-result">
+                          <span className={t.errorRate > 0.05 ? "text-bad" : t.errorRate > 0.02 ? "text-warn" : undefined}>
+                            {(t.errorRate * 100).toFixed(1)}%
+                          </span>
+                          {t.errorRate > 0.05 && <Link className="link sub" href="/activity#requests" title="Recent requests, newest first — the failing calls are there">recent calls</Link>}
                         </span>
                       ),
                     align: "right" as const,

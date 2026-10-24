@@ -114,7 +114,7 @@ export function InviteForm({ projects, projectsAvailable = true }: { projects: T
           Team admin — can add and revoke members and change project roles
         </label>
         <div className="btn-row">
-          <button type="submit" className="btn btn--primary" disabled={!projectsAvailable || pending || mode !== "on"}>
+          <button type="submit" className="btn btn--primary" disabled={!projectsAvailable || pending || mode === "locked"}>
             {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="plus" size={15} />}
             Create invitation
           </button>

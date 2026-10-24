@@ -1,4 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
+import Link from "next/link";
+import { eventHref } from "@/lib/event-link";
 import type { Condition, JobStatus, LedgerEvent, Meter as MeterData, Tone } from "@/lib/types";
 import { Decode } from "./Decode";
 import { ListFrame, type FacetSpec, type ListPaging } from "./ListFrame";
@@ -23,9 +25,9 @@ export function jobTone(status: JobStatus): Tone {
   }
 }
 
-export function Chip({ tone, children, dot = true }: { tone: Tone; children: ReactNode; dot?: boolean }) {
+export function Chip({ tone, children, dot = true, title }: { tone: Tone; children: ReactNode; dot?: boolean; title?: string }) {
   return (
-    <span className={`chip chip--${tone}`}>
+    <span className={`chip chip--${tone}`} title={title}>
       {dot && <span className="chip__dot" aria-hidden="true" />}
       {children}
     </span>
@@ -286,7 +288,10 @@ export function Ledger({ events, limit, compact, paged, paging }: { events: Ledg
       <span className={`ledger__dot tone-${e.tone}`} aria-label={e.tone} role="img" />
       <span className="ledger__source">{e.source}</span>
       <span className="ledger__text">{e.text}</span>
-      {e.ref && <span className="ledger__ref num">{e.ref}</span>}
+      {e.ref && (() => {
+        const href = e.href ?? eventHref(e.ref);
+        return href ? <Link className="ledger__ref num link" href={href}>{e.ref}</Link> : <span className="ledger__ref num">{e.ref}</span>;
+      })()}
     </li>
   ));
   const cls = compact ? "ledger ledger--compact" : "ledger";

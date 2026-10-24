@@ -67,11 +67,10 @@ async function ProjectsData({ searchParams }: { searchParams: Promise<{ repo?: s
       ) : <Panel id="projects" title="Connected repositories" flush>
         {repositories.length === 0 ? <EmptyState title="No projects connected" body={member ? "No project is shared with you yet. Ask a team admin to give you a role on one." : "Connect a repository to give Brain code it can index and search."} action={member ? undefined : <Link className="btn btn--primary" href="/setup">Connect a project</Link>} /> : (
           <Table caption="Connected repositories" rows={repositories} rowKey={(r) => r.slug} columns={[
-            { head: "Project", cell: (r) => <><Link className="link" href={`/projects?repo=${encodeURIComponent(r.slug)}`}>{r.name}</Link><span className="sub mono">{r.path || "path unavailable"}</span></> },
+            // Branch and indexed revision ride under the name: they explain the freshness chip, they are not something to scan down.
+            { head: "Project", cell: (r) => <><Link className="link" href={`/projects?repo=${encodeURIComponent(r.slug)}`}>{r.name}</Link><span className="sub mono">{r.path || "path unavailable"}</span><span className="sub">{r.branch ? <>branch <span className="mono">{r.branch}</span></> : "branch not recorded"}{r.head ? <> · indexed at <span className="mono">{r.head}</span></> : null}</span></> },
             { head: "Freshness", cell: (r) => <Chip tone={repositoryStatus(r).tone}>{repositoryStatus(r).status}</Chip> },
-            { head: "Branch", cell: (r) => <span className="mono">{r.branch || "—"}</span> },
             { head: "Origin", cell: (r) => <OriginCell r={r} canSync={!member} /> },
-            { head: "Indexed revision", cell: (r) => r.head || "—", align: "right" },
             // Members index through their role on the project page; the owner re-indexes from the row.
             ...(member ? [] : [{ head: <span className="sr-only">Actions</span>, cell: (r: (typeof repositories)[number]) => canReindex(r) ? <RunButton small variant={repositoryStatus(r).tone === "ok" ? "neutral" : "primary"} action={async () => { "use server"; return startReindex({ repoPath: r.path }); }} label="Re-index" title={`Re-index ${r.name}`} /> : null, align: "right" as const }]),
           ]} />

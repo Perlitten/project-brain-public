@@ -13,13 +13,17 @@ import { getCapabilities } from "@/lib/capabilities";
 
 export const metadata = { title: "Access" };
 
-export default async function Admin({ searchParams }: { searchParams: Promise<{ new?: string }> }) {
+export default async function Admin({ searchParams }: { searchParams: Promise<{ new?: string; name?: string; for?: string }> }) {
   const gate = await adminOnlyPage("Access");
   if (gate) return gate;
   const [view, agent, signIn, capabilities] = await Promise.all([getAccessView(), getAgentTarget(), getSignInView(), getCapabilities()]);
   const { summary: s, identities } = view;
-  // Setup and Agent tools link here with ?new=agent: keys are created in this one place.
-  const asked = (await searchParams).new === "agent";
+  // Setup, Agent tools and Agents link here with ?new=agent (optionally &name=): keys
+  // are created in this one place. ?new=key&for=<id> opens that identity's key dialog.
+  const query = await searchParams;
+  const asked = query.new === "agent";
+  const suggestedName = asked && typeof query.name === "string" ? query.name.slice(0, 120) : "";
+  const mintFor = query.new === "key" && query.for && /^\d+$/.test(query.for) ? Number(query.for) : null;
   const target = { apiUrl: agent.publicApiUrl, repoPath: agent.repoPath, httpMcp: capabilities.supported.includes("mcp_http") };
   // In team state only a team admin is offered new identities; Brain still checks the call.
   const canCreate = signIn.mode !== "team" || (await currentMember())?.admin === true;
@@ -58,7 +62,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
           cta="+ New identity"
           open={asked || (view.readable && identities.length === 0)}
         >
-          <NewIdentityForm target={target} />
+          <NewIdentityForm target={target} initialName={suggestedName} />
         </Fold>
       )}
 
@@ -71,7 +75,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<{ 
         ) : identities.length === 0 ? (
           <EmptyState title="No identities yet" body="Create the first one above — an agent key is the usual start." />
         ) : (
-          <IdentityList identities={identities} target={target} />
+          <IdentityList identities={identities} target={target} mintFor={mintFor} />
         )}
       </Panel>
 
