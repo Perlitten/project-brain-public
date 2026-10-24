@@ -30,7 +30,7 @@ class Lease:
     token: int
 
 
-async def acquire_lease(factory: SessionFactory, run_id: uuid.UUID, owner: str, *, lease_seconds: int) -> Lease | None:
+async def acquire_run_lease(factory: SessionFactory, run_id: uuid.UUID, owner: str, *, lease_seconds: int) -> Lease | None:
     """Start the run's single execution. ``None`` when it already started, finished or was cancelled."""
     async with factory() as session, session.begin():
         now = _now()
@@ -107,3 +107,7 @@ async def recover_orphaned_runs(factory: SessionFactory, *,
             if reaper is not None:
                 await asyncio.to_thread(reaper, run_id)
     return fenced
+
+
+# Compat alias: historical name; new code should use acquire_run_lease.
+acquire_lease = acquire_run_lease

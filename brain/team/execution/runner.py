@@ -17,7 +17,7 @@ from brain.team.authorization import TeamConflict, TeamDenied, fresh
 from brain.team.models import AgentRun, AgentRunExecution, TeamTaskBinding
 from brain.team.execution._common import SessionFactory, _event
 from brain.team.execution.artifacts import ArtifactDraft, _patch_artifact, _store_artifacts, step_artifacts
-from brain.team.execution.lease import Lease, _fence, acquire_lease, recover_orphaned_runs, worker_owner
+from brain.team.execution.lease import Lease, _fence, acquire_run_lease, recover_orphaned_runs, worker_owner
 from brain.team.execution.policy import (Capabilities, ExecutionPolicy, authorize_execution, default_backend, operator_policy)
 from brain.team.execution.state import execution_state
 
@@ -154,7 +154,7 @@ async def execute_run(run_id: uuid.UUID, *, owner: str | None = None, factory: S
         environment_name, egress = row.environment, tuple(row.egress)
         source, base_sha, branch = Path(repository.path), run.base_sha, run.branch
         project_id, task_id = binding.project_id, run.task_id
-    lease = await acquire_lease(factory, run_id, owner, lease_seconds=policy.lease_seconds)
+    lease = await acquire_run_lease(factory, run_id, owner, lease_seconds=policy.lease_seconds)
     if lease is None:
         return await execution_state(factory, run_id)
     runner = ExecutionRunner(factory, lease, project_id, task_id, policy, backend)

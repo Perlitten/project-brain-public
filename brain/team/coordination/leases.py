@@ -35,7 +35,7 @@ def _ttl(value: int | None) -> timedelta:
     return timedelta(seconds=seconds)
 
 
-async def acquire_lease(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
+async def acquire_task_lease(session: AsyncSession, caller: ResolvedPrincipal, project_id: uuid.UUID,
                         payload: dict) -> dict:
     """Take an exclusive lease, or take over an expired or released one (the fencing token increases)."""
     task_id = _uuid(payload["task_id"], "task id") if payload.get("task_id") else None
@@ -203,3 +203,7 @@ async def list_leases(session: AsyncSession, caller: ResolvedPrincipal, project_
                       repository_id: int | None = None, include_inactive: bool = False) -> list[dict]:
     await authorize(session, caller, project_id, Permission.READ)
     return await leases_view(session, project_id, repository_id, include_inactive)
+
+
+# Compat alias: historical name; new code should use acquire_task_lease.
+acquire_lease = acquire_task_lease
