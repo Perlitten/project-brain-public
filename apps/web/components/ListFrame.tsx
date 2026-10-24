@@ -74,8 +74,22 @@ function ListBody({
   const [q, setQ] = useState(paramQ);
   const draftQuery = useRef<string | null>(null);
   const f = params.get("status") || null;
+  // A remote list can only ask for the sizes the API serves; a local one also offers its own default.
+  const baseSize = paging ? SIZES[0] : pageSize;
+  const options = useMemo(() => [...new Set([baseSize, ...SIZES])].sort((a, b) => a - b), [baseSize]);
+  // The chosen size is remembered per list, so switching tabs or coming back keeps it.
+  const sizeKey = `lf:size:${pathname}:${noun[1]}`;
+  const [saved, setSaved] = useState<number | null>(null);
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem(sizeKey));
+      setSaved(options.includes(v) ? v : null);
+    } catch {
+      setSaved(null);
+    }
+  }, [sizeKey, options]);
   const requestedSize = Number(params.get("page_size"));
-  const size = SIZES.includes(requestedSize) ? requestedSize : paging?.size ?? pageSize;
+  const size = options.includes(requestedSize) ? requestedSize : !paging && saved ? saved : paging?.size ?? pageSize;
   const requestedPage = Number(params.get("page"));
   const page = Math.max(0, Number.isSafeInteger(requestedPage) ? requestedPage - 1 : 0);
   const [touched, setTouched] = useState(false);
@@ -98,6 +112,18 @@ function ListBody({
     if (paging) startTransition(() => push ? router.push(href, { scroll: false }) : router.replace(href, { scroll: false }));
     else if (push) window.history.pushState(null, "", href);
     else window.history.replaceState(null, "", href);
+  };
+  useEffect(() => {
+    // A remote list asks the server again for the remembered size, unless the link already names a page.
+    if (paging && saved && saved !== paging.size && !params.get("page_size") && !params.get("page")) navigate({ page_size: String(saved) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved]);
+  const resize = (s: number) => {
+    try {
+      if (s === baseSize) localStorage.removeItem(sizeKey); else localStorage.setItem(sizeKey, String(s));
+    } catch {}
+    setSaved(s === baseSize ? null : s);
+    navigate({ page_size: s === baseSize ? null : String(s), page: null });
   };
   useEffect(() => {
     if (q === paramQ) return;
@@ -143,6 +169,10 @@ function ListBody({
   const shown = paging ? rows.map((_, i) => i) : hits.slice(at * size, at * size + size);
   const filtered = Boolean(needle || f);
 
+  // A new page starts at its first row, even where the list scrolls inside its frame.
+  useEffect(() => {
+    top.current?.querySelectorAll<HTMLElement>(":scope > :not(.lf__bar, .lf__pager)").forEach((el) => { el.scrollTop = 0; });
+  }, [at, size]);
   const go = (p: number) => {
     navigate({ page: String(Math.max(0, Math.min(pages - 1, p)) + 1) }, true);
     const el = top.current;
@@ -238,46 +268,55 @@ function ListBody({
         empty
       )}
 
-      {(pages > 1 || total > SIZES[0] || size !== pageSize || at > 0) && (
+      {(pages > 1 || size !== baseSize || at > 0) && (
         <nav className="lf__pager" aria-label="Pages">
-          <button type="button" className="btn btn--neutral btn--sm" onClick={() => go(at - 1)} disabled={at === 0 || busy} aria-label="Previous page">
-            <span className="lf__flip">
-              <Icon name="arrow" size={14} />
-            </span>
-            Previous
-          </button>
-          <span className="lf__pages">
-            {pageList(at, pages).map((p, i) =>
-              p < 0 ? (
-                <span key={`gap${i}`} className="lf__gap" aria-hidden="true">
-                  …
-                </span>
-              ) : (
-                <button key={p} type="button" className="lf__page num" aria-current={p === at ? "page" : undefined} disabled={busy} onClick={() => go(p)}>
-                  {p + 1}
-                </button>
-              ),
-            )}
-          </span>
-          <button type="button" className="btn btn--neutral btn--sm" onClick={() => go(at + 1)} disabled={at >= pages - 1 || busy} aria-label="Next page">
-            Next
-            <Icon name="arrow" size={14} />
-          </button>
-          {total > SIZES[0] && <label className="lf__size">
-            <span>Per page</span>
-            <select className="select" value={size} aria-label="Items per page" disabled={pending} onChange={(e) => navigate({ page_size: e.target.value, page: null })}>
-              {/* A list with its own small page keeps that size as the first choice. */}
-              {(SIZES.includes(size) ? SIZES : [size, ...SIZES]).map((s) => (
-                <option key={s} value={s}>
-                  {s}
+          <label className="lf__size">
+            <span>Show</span>
+            <select className="select" value={size} aria-label={`${noun[1]} per page`} disabled={pending} onChange={(e) => resize(Number(e.target.value))}>
+              {sizeChoices(options, size, total).map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
                 </option>
               ))}
             </select>
-          </label>}
+            <span>per page</span>
+          </label>
+          {pages > 1 && (
+            <span className="lf__pages">
+              <button type="button" className="lf__page lf__step" onClick={() => go(at - 1)} disabled={at === 0 || busy} aria-label="Previous page" title="Previous page">
+                <span className="lf__flip">
+                  <Icon name="chevron" size={14} />
+                </span>
+              </button>
+              {pageList(at, pages).map((p, i) =>
+                p < 0 ? (
+                  <span key={`gap${i}`} className="lf__gap" aria-hidden="true">
+                    …
+                  </span>
+                ) : (
+                  <button key={p} type="button" className="lf__page num" aria-current={p === at ? "page" : undefined} disabled={busy} onClick={() => go(p)}>
+                    {p + 1}
+                  </button>
+                ),
+              )}
+              <button type="button" className="lf__page lf__step" onClick={() => go(at + 1)} disabled={at >= pages - 1 || busy} aria-label="Next page" title="Next page">
+                <Icon name="chevron" size={14} />
+              </button>
+            </span>
+          )}
         </nav>
       )}
     </div>
   );
+}
+
+/** Sizes up to the first that fits everything, which reads "All"; the current size always stays listed. */
+function sizeChoices(options: number[], size: number, total: number): { value: number; label: string }[] {
+  const fit = options.findIndex((s) => s >= total);
+  const shown = fit < 0 ? options : options.slice(0, fit + 1);
+  if (!shown.includes(size)) shown.push(size);
+  const all = fit < 0 ? -1 : options[fit];
+  return shown.sort((a, b) => a - b).map((s) => ({ value: s, label: s === all && fit > 0 ? `All ${total.toLocaleString("en")}` : String(s) }));
 }
 
 /** 1 … 4 5 6 … 12 — always the ends, the current page and its neighbours. */
