@@ -11,7 +11,8 @@ from brain.team import execution_llm
 from brain.team._util import _iso, _now
 from brain.team.activity import record_event
 from brain.team.authorization import Permission, TeamConflict, administrator, authorize, fresh, require_team_storage
-from brain.team.models import ProjectMember, TeamExecutionGrant, TeamMember, TeamProject
+from brain.team.models import AgentRun, AgentRunExecution, ProjectMember, TeamExecutionGrant, TeamMember, TeamProject, TeamTaskBinding
+from brain.team.execution._common import _event
 from brain.team.execution.policy import EXECUTION_ROLES, operator_policy
 
 
@@ -67,6 +68,18 @@ async def revoke_grant(session: AsyncSession, project_id: uuid.UUID, principal_i
     if grant.revoked_at is None:
         grant.revoked_at, grant.revoked_by = _now(), revoked_by[:128]
         grant.version += 1
+        # Write the terminal event on live executions now: a fenced-out owner
+        # cannot commit results, and without this row a revoked run would later
+        # derive as "orphaned" once its lease lapses.
+        live = await session.execute(
+            select(AgentRun, AgentRunExecution)
+            .join(AgentRunExecution, AgentRunExecution.run_id == AgentRun.id)
+            .join(TeamTaskBinding, TeamTaskBinding.task_id == AgentRun.task_id)
+            .where(TeamTaskBinding.project_id == project_id,
+                   AgentRun.requested_by == principal_id,
+                   AgentRunExecution.released_at.is_(None)))
+        for run, row in live.all():
+            _event(session, run, "revoked", f"grant:{grant.version}", revoked_by, {})
         await session.flush()
         await _record_grant_event(session, "execution.revoked", "Execution grant revoked", grant, revoked_by)
     return grant

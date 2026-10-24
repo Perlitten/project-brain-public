@@ -612,16 +612,25 @@ async def test_timeout_kills_and_removes_the_step_container(team_db, source_repo
 
 
 @pytest.mark.asyncio
-async def test_revocation_kills_the_step_container(team_db, source_repo, container, monkeypatch):
+async def test_revocation_kills_the_step_container(team_db, source_repo, container, enabled, monkeypatch):
     factory, a, _ = team_db
     backend, log = container
-    monkeypatch.setattr(settings, "BRAIN_EXECUTION_LEASE_SECONDS", 1)
+    # Lease must outlive worktree prepare + container spawn; 1s only works on
+    # fast hosts and turned this into an orphaned-vs-revoked flake on Windows.
+    monkeypatch.setattr(settings, "BRAIN_EXECUTION_LEASE_SECONDS", 4)
     task_id, run_id, _ = await make_run(factory, a, source_repo[1])
     await grant(factory, a)
     await request(factory, a, task_id, run_id, payload("slow", "hello", environment="py"), backend=backend())
 
     async def revoke_soon():
-        await asyncio.sleep(1.5)
+        # Wait until the step is actually in flight — the "slow" tool drops
+        # started.txt on entry. A wall-clock sleep(1.5) is unreliable on slow
+        # hosts: worktree prepare + docker spawn can take longer, and the
+        # revocation then lands before any step exists (in_flight=None).
+        for _ in range(600):
+            if any(enabled.rglob("started.txt")):
+                break
+            await asyncio.sleep(0.05)
         async with factory() as session, session.begin():
             await execution.revoke_grant(session, a, 2, "operator:test")
 
