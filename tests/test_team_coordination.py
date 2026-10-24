@@ -226,7 +226,7 @@ def test_dependency_pairs_are_import_edges_between_scopes_in_either_direction():
 async def test_dependency_overlap_warns_without_blocking_and_reaches_the_feed(team_db, monkeypatch):
     factory, a, _ = team_db
     calls: list = []
-    monkeypatch.setattr(coordination, "dependency_provider",
+    monkeypatch.setattr(coordination.overlaps, "dependency_provider",
                         fake_graph({"src/api/routes.py": ["src/lib/db.py"]}, calls=calls))
     async with factory() as session, session.begin():
         lib = await make_parent(session, a, "dep-lib-0001")
@@ -288,7 +288,7 @@ async def test_dependency_overlap_degrades_to_paths_when_the_graph_is_stale_or_m
         version = 0
         for status, reason in (("stale", "The repository index is behind; re-index to compare imports"),
                                ("unavailable", "The repository index is unindexed")):
-            monkeypatch.setattr(coordination, "dependency_provider",
+            monkeypatch.setattr(coordination.overlaps, "dependency_provider",
                                 fake_graph({"src/api/routes.py": ["src/lib/db.py"]}, status=status, reason=reason))
             result = await coordination.update_plan(session, caller(3), a, api, {
                 "scope_paths": ["src/api/routes.py"], "expected_version": version})
@@ -301,7 +301,7 @@ async def test_dependency_overlap_degrades_to_paths_when_the_graph_is_stale_or_m
 
         # Past MAX_DEPENDENCY_PATHS files the lookup is bounded and the response says it was partial.
         calls: list = []
-        monkeypatch.setattr(coordination, "dependency_provider", fake_graph({}, calls=calls))
+        monkeypatch.setattr(coordination.overlaps, "dependency_provider", fake_graph({}, calls=calls))
         wide = [f"src/w/f{i:02}.py" for i in range(40)]
         result = await coordination.update_plan(session, caller(3), a, api, {"scope_paths": wide,
                                                                              "expected_version": version})
@@ -352,7 +352,7 @@ async def test_default_dependency_provider_reads_imports_only_from_a_current_ind
                       "truncated": False}
         failed = await coordination.graph_dependencies(session, 1, ["boom.py"])
         assert failed["status"] == "unavailable" and "RuntimeError" in failed["reason"]
-        monkeypatch.setattr(coordination, "DEPENDENCY_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr(coordination.overlaps, "DEPENDENCY_TIMEOUT_SECONDS", 0.05)
         FakeGraph.delay = 1.0
         slow = await coordination.graph_dependencies(session, 1, ["src/api/routes.py"])
         assert slow["status"] == "unavailable" and "timed out" in slow["reason"]

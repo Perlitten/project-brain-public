@@ -25,6 +25,7 @@ from brain.config.settings import settings
 from brain.database.models import ApiCredential, Principal, Repository, RepositoryOriginState
 from brain.memory.source_manifest import revision_matches
 from brain.auth.principals import ALL_SCOPES
+from brain.team._util import _aware, _now
 from brain.team.authorization import team_state
 from brain.team.execution import execution_config_health, operator_policy
 from brain.team.models import (AgentRun, AgentRunExecution, TeamAccessFence, TeamIdentity, TeamInvitation,
@@ -49,16 +50,6 @@ class Check:
 
     def as_dict(self) -> dict[str, str]:
         return asdict(self)
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _aware(value: datetime | None) -> datetime | None:
-    if value is not None and value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
 
 
 def _names(values: list[str], limit: int = 5) -> str:

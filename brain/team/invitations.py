@@ -46,11 +46,10 @@ from brain.database.models import ApiCredential, Principal
 from brain.team.authorization import ROLE_PERMISSIONS, TeamConflict, TeamDenied, fresh
 from brain.team.locking import advisory_xact_lock
 from brain.team.models import ProjectMember, TeamIdentity, TeamInvitation, TeamMember, TeamProject
+from brain.team._util import _iso, _now
 from brain.team.provisioning import (
     TEAM_ID,
     TeamNotFound,
-    _iso,
-    _now,
     add_member,
     assign_project_member,
     member_dict,

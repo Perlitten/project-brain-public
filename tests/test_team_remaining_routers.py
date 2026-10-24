@@ -106,9 +106,9 @@ def remaining_app(factory, monkeypatch, tmp_path):
     monkeypatch.setattr(core_lifecycle, "collect_late_interaction_operator_status",
                         AsyncMock(return_value={"status": "ok"}))
     # web
-    monkeypatch.setattr(web, "get_reports_list", lambda: [])
-    monkeypatch.setattr(web, "reports_dir", lambda *_: tmp_path)
-    monkeypatch.setattr(web, "check_health", AsyncMock(side_effect=_reached))
+    monkeypatch.setattr(web.reports, "get_reports_list", lambda: [])
+    monkeypatch.setattr(web.reports, "reports_dir", lambda *_: tmp_path)
+    monkeypatch.setattr(web.overview, "check_health", AsyncMock(side_effect=_reached))
     # impact: two cached runs bound to the repositories they analyzed
     for run_id, repository_id in (("run-a", 1), ("run-b", 2)):
         monkeypatch.setitem(impact._IMPACT_CACHE, run_id, SimpleNamespace(

@@ -10,13 +10,14 @@ contradictory arguments raise ``TeamConflict`` instead of rewriting state.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import mint_credential
+from brain.team._util import _iso, _now
 from brain.team.activity import record_event
 from brain.database.models import ApiCredential, OAuthRefreshToken, Principal, Repository
 from brain.memory.proposals import retire_personal_learnings, withdraw_author_proposals
@@ -63,14 +64,6 @@ def member_scopes(is_admin: bool = False) -> list[str]:
     if is_admin:
         scopes |= ADMIN_EXTRA_SCOPES
     return sorted(scopes)
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso(value: datetime | None) -> str | None:
-    return value.isoformat() if value else None
 
 
 async def _record_membership(session: AsyncSession, kind: str, summary: str, *, actor_id: int | None,

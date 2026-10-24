@@ -131,12 +131,12 @@ async def test_health_check_prunes_tool_calls_and_survives_a_failure(monkeypatch
         pruned.append(days)
         return 7
 
-    monkeypatch.setattr(tasks, "init_db", noop)
+    monkeypatch.setattr(tasks.jobs, "init_db", noop)
     monkeypatch.setattr(tasks.settings, "HARNESS_STALE_REAPER_ENABLED", False)
     monkeypatch.setattr(tasks.settings, "MCP_TOOL_CALLS_RETENTION_DAYS", 14)
-    monkeypatch.setattr(tasks, "check_health", healthy)
-    monkeypatch.setattr(tasks, "get_repository_by_path", no_repo)
-    monkeypatch.setattr(tasks, "collect_embedding_inventory", inventory)
+    monkeypatch.setattr(tasks.jobs, "check_health", healthy)
+    monkeypatch.setattr(tasks.jobs, "get_repository_by_path", no_repo)
+    monkeypatch.setattr(tasks.jobs, "collect_embedding_inventory", inventory)
     from brain.telemetry import tool_calls
     monkeypatch.setattr(tool_calls, "prune_tool_calls", prune)
 

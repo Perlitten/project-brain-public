@@ -30,7 +30,7 @@ def test_pack_freshness_facets_and_search_cover_all_pages():
         async def factory():
             yield AsyncSession()
 
-        with patch.object(web, "async_session_factory", factory), patch.object(web, "resolve_context_pack_file", return_value=None):
+        with patch.object(web.packs, "async_session_factory", factory), patch.object(web.packs, "resolve_context_pack_file", return_value=None):
             fresh = asyncio.run(web.web_context_packs(page=2, page_size=20, status="fresh", repository_id=3))
             assert fresh["total"] == 75
             assert len(fresh["packs"]) == 20
@@ -70,7 +70,8 @@ def test_index_history_search_facets_respect_query_and_repository():
         async def factory():
             yield AsyncSession()
 
-        with patch.object(web, "async_session_factory", factory):
+        with (patch.object(web.indexing, "async_session_factory", factory),
+              patch.object(web._common, "async_session_factory", factory)):
             result = asyncio.run(web.web_index_runs(repository_id=3, page=1, page_size=20, q="current", status="failed"))
             assert result["total"] == 0 and result["runs"] == []
             assert result["facets"] == {"completed": 1}
@@ -106,7 +107,7 @@ def test_memory_filters_normalize_legacy_statuses_before_filtering():
         async def factory():
             yield AsyncSession()
 
-        with patch.object(web, "async_session_factory", factory):
+        with patch.object(web.rules, "async_session_factory", factory):
             result = asyncio.run(web.web_decisions(page=1, page_size=20, q="legacy", status="superseded"))
             assert result["total"] == 2
             assert result["facets"]["status"] == {"superseded": 2}
