@@ -90,6 +90,10 @@ async function Configuration() {
 }
 
 async function UrgentCount() {
+  const capabilities = await getCapabilities();
+  // A legacy server has no team discovery contract. Do not let the global
+  // badge probe /team/* routes that the corresponding pages correctly gate.
+  if (!capabilities.supported.includes("team")) return <ApplyShellUrgent value={0} />;
   const [feed, member] = await Promise.all([getRepositoryFeed(), currentMember()]);
   const urgent = await getInbox(member === null, feed.repositories.map((r) => ({ repo: r, ...repositoryStatus(r), available: feed.available })))
     .then((i) => i.needs.length)
