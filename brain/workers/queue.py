@@ -8,6 +8,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Tuple, cast
 
 from redis.asyncio import Redis
@@ -28,6 +29,29 @@ _RedisMapping = Mapping[
     bytes | bytearray | memoryview | str | int | float,
 ]
 _DEEP_JOB_TYPES = {"deep_context", "nightly_maintenance", "diff_review"}
+# Newest jobs kept per repository index; the dashboard reads a handful.
+SCOPE_INDEX_CAP = 500
+
+
+def job_scope_tokens(params: Mapping[str, Any]) -> list[str]:
+    """Repository scopes a job belongs to, as index-key suffixes.
+
+    Mirrors the dashboard's scope test: a job matches by repository id or by
+    its resolved repository path, so it is indexed under both.
+    """
+    tokens = []
+    repository_id = params.get("repository_id")
+    if repository_id is not None and str(repository_id) != "":
+        tokens.append(f"repository:{repository_id}")
+    path = params.get("repo_path") or params.get("repository_path")
+    if isinstance(path, str) and path:
+        try:
+            resolved = str(Path(path).resolve())
+        except (OSError, RuntimeError):
+            resolved = ""
+        if resolved:
+            tokens.append("path:" + hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:32])
+    return tokens
 
 
 def worker_pool_for_job(job_type: str) -> str:
@@ -288,6 +312,12 @@ class JobQueue:
             if idempotency_redis_key:
                 await self._release_idempotency_claim(idempotency_redis_key, job_id)
             raise
+        try:
+            await self._index_job_scopes(job_id, params or {})
+        except Exception as exc:
+            # The job is queued; a missing scope entry only hides it from a
+            # per-repository dashboard read.
+            logger.warning(f"Could not index job {job_id} by repository: {exc}")
         return job_id
 
     async def _release_idempotency_claim(self, key: str, expected_job_id: str) -> bool:
@@ -641,6 +671,86 @@ class JobQueue:
             start + batch_size - 1,
         )
         return [value.decode() if isinstance(value, bytes) else str(value) for value in values]
+
+    def scope_index_keys(self, *, repository_id: Any = None, repository_path: str | None = None) -> list[str]:
+        return [
+            f"{self.index_key}:{token}"
+            for token in job_scope_tokens({"repository_id": repository_id, "repo_path": repository_path})
+        ]
+
+    async def _index_job_scopes(self, job_id: str, params: Dict[str, Any]) -> None:
+        """Mirror one job into its repositories' recent-job indexes.
+
+        The global index stays authoritative; these let a per-repository read
+        skip every other repository's jobs. Scores reuse the global sequence
+        so ids from two scope indexes merge in enqueue order.
+        """
+        keys = [f"{self.index_key}:{token}" for token in job_scope_tokens(params)]
+        if not keys:
+            return
+        score = await self.redis.zscore(self.index_key, job_id)
+        if score is None:
+            return
+        pipe = self.redis.pipeline()
+        for key in keys:
+            pipe.zadd(key, {job_id: score})
+            pipe.zremrangebyrank(key, 0, -SCOPE_INDEX_CAP - 1)
+            pipe.expire(key, 30 * 24 * 60 * 60)
+        await pipe.execute()
+
+    async def ensure_scope_index(self) -> bool:
+        """Backfill scope indexes once from the global index; False while not ready.
+
+        Jobs queued before the scope indexes existed are only in the global
+        index. One process walks it under a short lock; until the ready marker
+        is set callers fall back to scanning the global index.
+        """
+        ready_key = f"{self.index_key}:scopes-ready"
+        if await self.redis.get(ready_key):
+            return True
+        if not await self.redis.set(f"{self.index_key}:scopes-backfill", "1", nx=True, ex=300):
+            return False
+        start = 0
+        while True:
+            entries = await self.redis.zrange(self.index_key, start, start + 999, withscores=True)
+            if not entries:
+                break
+            pipe = self.redis.pipeline()
+            for job_id, _score in entries:
+                pipe.hget(self._job_key(job_id.decode() if isinstance(job_id, bytes) else str(job_id)), "params")
+            raw_params = await pipe.execute()
+            pipe = self.redis.pipeline()
+            touched: set[str] = set()
+            for (job_id, score), raw in zip(entries, raw_params):
+                try:
+                    params = json.loads(raw) if raw else {}
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                for token in job_scope_tokens(params if isinstance(params, dict) else {}):
+                    key = f"{self.index_key}:{token}"
+                    pipe.zadd(key, {job_id: score})
+                    touched.add(key)
+            for key in touched:
+                pipe.zremrangebyrank(key, 0, -SCOPE_INDEX_CAP - 1)
+                pipe.expire(key, 30 * 24 * 60 * 60)
+            await pipe.execute()
+            start += len(entries)
+        await self.redis.set(ready_key, "1")
+        return True
+
+    async def recent_scoped_job_ids(self, keys: list[str], limit: int) -> list[str]:
+        """Newest ids across the given scope indexes, at most ``limit`` from each."""
+        if not keys:
+            return []
+        pipe = self.redis.pipeline()
+        for key in keys:
+            pipe.zrevrange(key, 0, max(1, int(limit)) - 1, withscores=True)
+        scores: Dict[str, float] = {}
+        for entries in await pipe.execute():
+            for value, score in entries:
+                job_id = value.decode() if isinstance(value, bytes) else str(value)
+                scores[job_id] = max(float(score), scores.get(job_id, float("-inf")))
+        return sorted(scores, key=lambda job_id: scores[job_id], reverse=True)
 
     async def heartbeat(self, value: str) -> None:
         await self.redis.set(
