@@ -740,6 +740,24 @@ test('Brain-kept login: open only in WEB_OPEN_MODE until set, then a password wh
   } finally { global.fetch = oldFetch; }
 });
 
+test('requests that land together share one login probe instead of each asking Brain', async () => {
+  const brain = fakeBrainLogin({ mode: 'password', user: 'owner', version: 'v1' }, 'correct horse');
+  const oldFetch = global.fetch;
+  global.fetch = brain.fetch;
+  try {
+    const auth = load('lib/web-auth.ts');
+    await withEnv({ BRAIN_API_URL: 'https://api.example', BRAIN_API_KEY: 'fixture' }, async () => {
+      const session = auth.sessionForLogin('owner', 'v1');
+      const results = await Promise.all(Array.from({ length: 8 }, () => auth.authorizeWebRequest(null, session)));
+      assert.deepEqual(results, Array(8).fill(200));
+      assert.deepEqual(brain.calls, ['GET /api/web-login']);
+      // Within the cache window the next page load asks nothing.
+      assert.equal(await auth.authorizeWebRequest(null, session), 200);
+      assert.equal(brain.calls.length, 1);
+    });
+  } finally { global.fetch = oldFetch; }
+});
+
 test('password removed in another instance: open only in WEB_OPEN_MODE, locked otherwise', async () => {
   const brain = fakeBrainLogin({ mode: 'password', user: 'owner', version: 'v1' }, 'correct horse');
   const oldFetch = global.fetch;

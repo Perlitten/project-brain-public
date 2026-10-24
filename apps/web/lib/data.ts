@@ -172,7 +172,8 @@ type RawRepo = {
 };
 
 const fetchRepositoryFeed = cache(async (): Promise<{ repos: RawRepo[] | null; reason?: ReadFailure }> => {
-  const result = await brainRead<unknown>("/repositories", { fresh: true, timeoutMs: 2000 });
+  // A loaded Brain answers in 2–4 s; a shorter wait reads as "no projects connected".
+  const result = await brainRead<unknown>("/repositories", { fresh: true, timeoutMs: 6000 });
   if (!result.ok) return { repos: null, reason: result.reason };
   if (!Array.isArray(result.data) && !Array.isArray(obj(result.data).repositories)) {
     return { repos: null, reason: "invalid_response" };
