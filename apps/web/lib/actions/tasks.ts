@@ -11,7 +11,7 @@ const UUID = /^[0-9a-f-]{32,36}$/i;
 
 export async function cancelTask(taskId: string, version: number, note?: string): Promise<ActionResult> {
   if (typeof taskId !== "string" || !UUID.test(taskId)) return { ok: false, message: "That task doesn’t look right. Reload the page." };
-  if (!Number.isInteger(version) || version < 1) return { ok: false, message: "That task doesn’t look right. Reload the page." };
+  if (!Number.isInteger(version) || version < 0) return { ok: false, message: "That task doesn’t look right. Reload the page." };
   const res = await mutate(`/harness/tasks/${encodeURIComponent(taskId)}`, {
     method: "PATCH",
     body: { status: "cancelled", expected_task_version: version, ...(typeof note === "string" && note.trim() ? { note: note.trim().slice(0, 1000) } : {}) },
@@ -24,7 +24,7 @@ export async function cancelTask(taskId: string, version: number, note?: string)
 const PRIORITIES = new Set(["P0", "P1", "P2", "P3"]);
 const clean = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
-/** Puts a task on the queue for an agent to claim; Brain hands it a context pack when it starts. */
+/** Records a task in Brain's harness ledger. The external harness dispatcher starts recorded tasks. */
 export async function createTask(input: { title: string; goal: string; repoPath: string; targetAgent?: string; priority?: string }): Promise<ActionResult> {
   const title = clean(input?.title, 300);
   const goal = clean(input?.goal, 10000);
@@ -36,7 +36,9 @@ export async function createTask(input: { title: string; goal: string; repoPath:
   const priority = PRIORITIES.has(clean(input?.priority, 2)) ? clean(input?.priority, 2) : "P2";
   const res = await mutate(`/harness/tasks`, {
     body: { title, goal, repo_path: repoPath, owner_agent: "dashboard", target_agent: targetAgent || undefined, priority },
-    success: targetAgent ? `Queued for ${targetAgent} — it shows here as soon as the agent claims it.` : "Queued — the next agent that asks for work claims it.",
+    success: targetAgent
+      ? `Recorded for ${targetAgent}. Start it with the harness dispatcher when ready.`
+      : "Recorded. Start it with the harness dispatcher when ready.",
     revalidate: SCREENS,
   });
   return { ok: res.ok, message: res.message };

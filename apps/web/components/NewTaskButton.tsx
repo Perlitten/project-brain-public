@@ -1,7 +1,7 @@
 "use client";
-// Give an agent a task from the dashboard. Brain queues it; the next agent that
-// asks for work (or the one named) claims it and gets a context pack built for
-// it. A finding can open the dialog pre-filled (/runs?new=task&title=…&goal=…).
+// Record an agent task from the dashboard. The harness ledger stores it; an
+// external dispatcher still has to launch it. A finding can open the dialog
+// pre-filled (/runs?new=task&title=…&goal=…).
 import { useState } from "react";
 import { Dialog, LockNote, useAction } from "./act";
 import { createTask } from "@/lib/actions/tasks";
@@ -31,7 +31,7 @@ export function NewTaskButton({ projects, prefill, small }: { projects: Project[
   const [repoPath, setRepoPath] = useState(projects.length === 1 ? projects[0].path : "");
   const [agent, setAgent] = useState("");
   const [priority, setPriority] = useState("P2");
-  const { run, pending, mode, last } = useAction(createTask, { title: "Give an agent a task" });
+  const { run, pending, mode, last } = useAction(createTask, { title: "Record an agent task" });
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await run({ title, goal, repoPath, targetAgent: agent || undefined, priority });
@@ -48,10 +48,10 @@ export function NewTaskButton({ projects, prefill, small }: { projects: Project[
       <button type="button" className={`btn btn--primary${small ? " btn--sm" : ""}`} onClick={() => setOpen(true)} disabled={locked} title={locked ? "Actions are locked until the dashboard has a password." : undefined}>
         New task
       </button>
-      <Dialog open={open} onClose={() => setOpen(false)} title="Give an agent a task" wide>
+      <Dialog open={open} onClose={() => setOpen(false)} title="Record an agent task" wide>
         <form className="form form--wide" onSubmit={submit} autoComplete="off">
           <p className="dialog__text">
-            Brain queues it. The next agent that asks for work claims it, gets a context pack built for it, and reports back here.
+            Brain records it in the harness ledger. This does not start the work: launch the recorded task with your harness dispatcher.
           </p>
           <label className="field">
             <span className="field__label">Title</span>
@@ -94,7 +94,7 @@ export function NewTaskButton({ projects, prefill, small }: { projects: Project[
           <div className="dialog__actions">
             <button type="button" className="btn btn--neutral" onClick={() => setOpen(false)}>Cancel</button>
             <button type="submit" className="btn btn--primary" disabled={pending || locked || !title.trim() || !goal.trim() || !repoPath}>
-              {pending ? "Queuing…" : "Queue task"}
+              {pending ? "Recording…" : "Record task"}
             </button>
           </div>
         </form>

@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { BOOT_SCRIPT, Boot } from "@/components/Boot";
 import { getCapabilities } from "@/lib/capabilities";
-import { ApplyShellConfiguration } from "@/components/ShellConfiguration";
+import { ApplyShellConfiguration, ApplyShellUrgent } from "@/components/ShellConfiguration";
 import { Shell, type ShellRepo } from "@/components/Shell";
 import { actionsMode } from "@/lib/actions/gate";
 import { signInMode } from "@/lib/sign-in-view";
@@ -66,6 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Suspense>
           <Shell demo={dataSource === "demo"}>
             <Suspense fallback={null}><Configuration /></Suspense>
+            <Suspense fallback={null}><UrgentCount /></Suspense>
             {children}
           </Shell>
         </Suspense>
@@ -85,7 +86,13 @@ async function Configuration() {
   }));
   // Members never see Setup, so the rail only asks for progress on behalf of an owner or team admin.
   const setup = member && !member.admin ? null : await getSetupProgress();
-  // The Dashboard entry carries how many items ask for a person, so the count is visible from any screen.
-  const urgent = await getInbox(member === null, feed.repositories.map((r) => ({ repo: r, ...repositoryStatus(r) }))).then((i) => i.needs.length).catch(() => 0);
-  return <ApplyShellConfiguration value={{ repos, mode, access, capabilities, setup, urgent, member: member ? { id: member.id, name: member.name, admin: member.admin } : null }} />;
+  return <ApplyShellConfiguration value={{ repos, mode, access, capabilities, setup, member: member ? { id: member.id, name: member.name, admin: member.admin } : null }} />;
+}
+
+async function UrgentCount() {
+  const [feed, member] = await Promise.all([getRepositoryFeed(), currentMember()]);
+  const urgent = await getInbox(member === null, feed.repositories.map((r) => ({ repo: r, ...repositoryStatus(r), available: feed.available })))
+    .then((i) => i.needs.length)
+    .catch(() => 0);
+  return <ApplyShellUrgent value={urgent} />;
 }

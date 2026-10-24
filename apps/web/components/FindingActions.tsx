@@ -15,7 +15,7 @@ export function FindingActions({ id, targets, codeAvailable, title, evidence, mo
   const ruleHref = `/memory?new=rule&title=${encodeURIComponent(title.slice(0, 200))}&description=${encodeURIComponent(evidence.slice(0, 2000))}#record`;
   const taskHref = `/runs?new=task&title=${encodeURIComponent(`Fix: ${title}`.slice(0, 300))}&goal=${encodeURIComponent(`${evidence}${where}`.slice(0, 4000))}`;
   return <><div className="btn-row">
-    <Link className="btn btn--primary btn--sm" href={taskHref} title="Queue this for an agent to fix">Give to an agent</Link>
+    <Link className="btn btn--primary btn--sm" href={taskHref} title="Record an agent task for this finding">Record task</Link>
     <Link className="btn btn--neutral btn--sm" href={ruleHref} title="Record a rule so reviews catch this from now on">Make a rule</Link>
     {supported && codeAvailable ? <Link className="btn btn--neutral btn--sm" href={`/insights/${encodeURIComponent(id)}/code`}>Open code</Link> : <button type="button" className="btn btn--neutral btn--sm" disabled title={supported ? "This finding has no indexed file evidence with an explicit repository identity" : "Update the API to support finding actions"}>Open code</button>}
     <button type="button" className="btn btn--neutral btn--sm" onClick={() => setOpen(true)} disabled={!supported || !targets.length || mode === "locked"}>Dismiss{targets.length > 1 ? ` ${targets.length} duplicates` : ""}</button>

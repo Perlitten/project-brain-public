@@ -632,18 +632,19 @@ export const getJobs = async (slug?: string | null): Promise<Job[] | null> => {
 export const getAgentRuns = async (slug?: string | null): Promise<AgentRun[]> => {
   if (!apiConfigured) return mock.agentRuns;
   return live<AgentRun[]>([], async () => {
-    const repo = pickRepo(await fetchRepos(), slug);
+    const repos = await fetchRepos();
+    const repo = pickRepo(repos, slug);
     if (slug && !repo) return [];
     const params = new URLSearchParams({ page: "1", page_size: "100" });
     if (repo?.path) params.set("repo_path", repo.path);
     const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
     if (!data) return null;
-    return list(data, "tasks").map((t) => toRun(t, true));
+    return list(data, "tasks").map((t) => toRun(t, true, repos?.find((r) => r.path === str(t.repo_path))));
   });
 };
 
 /** One harness task as a row; `short` trims the id to what the lists show. */
-function toRun(t: Json, short: boolean): AgentRun {
+function toRun(t: Json, short: boolean, repo?: RawRepo): AgentRun {
   const status = jobStatus(t.status);
   const finished = !["running", "queued", "retrying"].includes(status);
   const version = num(t.version);
@@ -656,8 +657,9 @@ function toRun(t: Json, short: boolean): AgentRun {
     packHit: typeof t.pack_hit === "boolean" ? t.pack_hit : undefined,
     startedAt: fmtShort(t.created_at),
     duration: finished ? between(t.created_at, t.updated_at) : "—",
+    ...(repo ? { repo: String(repo.id) } : {}),
     taskId: str(t.id) || undefined,
-    version: version && Number.isInteger(version) && version > 0 ? version : undefined,
+    version: version !== undefined && Number.isInteger(version) && version >= 0 ? version : undefined,
     rawStatus: str(t.status) || undefined,
     cancelRequested: Boolean(t.cancellation_requested_at),
   };
@@ -679,7 +681,8 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
     return demoPage(rows, q, (r) => `${r.task} ${r.id} ${r.agent}`, (r) => r.status);
   }
   return live(unread(q), async () => {
-    const repo = slug ? pickRepo(await fetchRepos(), slug) : null;
+    const repos = await fetchRepos();
+    const repo = slug ? pickRepo(repos, slug) : null;
     if (slug && !repo) return null;
     const params = new URLSearchParams({ page: String(q.page), page_size: String(q.size) });
     if (repo?.path) params.set("repo_path", repo.path);
@@ -687,7 +690,7 @@ export const getPagedAgentRuns = async (slug: string | null | undefined, input: 
     if (q.status) params.set("display_status", q.status);
     const data = await brainFetch<Json>(`/harness/tasks?${params}`, { fresh: true });
     if (!data) return null;
-    const result = pageResult(data, "tasks", q, (t) => toRun(t, false));
+    const result = pageResult(data, "tasks", q, (t) => toRun(t, false, repos?.find((r) => r.path === str(t.repo_path))));
     result.paging.facets = Object.entries(result.paging.facets).reduce<Record<string, number>>((acc, [key, value]) => {
       const normalized = jobStatus(key);
       acc[normalized] = (acc[normalized] || 0) + Number(value);

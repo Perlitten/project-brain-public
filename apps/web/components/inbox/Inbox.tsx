@@ -25,14 +25,14 @@ function Action({ item }: { item: InboxItem }) {
   return <Link className={`btn btn--sm ${item.tone === "bad" ? "btn--primary" : "btn--neutral"}`} href={a.href}>{a.label}</Link>;
 }
 
-export function Inbox({ needs, agents }: { needs: InboxItem[]; agents: AgentNow[] }) {
+export function Inbox({ needs, agents, complete, unavailable }: { needs: InboxItem[]; agents: AgentNow[]; complete: boolean; unavailable: string[] }) {
   return (
     <div className="ib">
       <section className="ib-sec" aria-labelledby="ib-needs">
         <div className="ib-sec__head">
           <h2 id="ib-needs">Needs you now</h2>
           {needs.length > 0 && <span className="num">{needs.length}</span>}
-          <span className="ib-sec__note">{needs.length ? "Most blocking first. Everything else runs on its own." : ""}</span>
+          <span className="ib-sec__note">{needs.length ? complete ? "Most blocking first. Everything else runs on its own." : "Most blocking first. Some sources could not be checked." : ""}</span>
         </div>
         {needs.length ? (
           <ul className="ib-items">
@@ -47,6 +47,8 @@ export function Inbox({ needs, agents }: { needs: InboxItem[]; agents: AgentNow[
               </li>
             ))}
           </ul>
+        ) : !complete ? (
+          <p className="ib-quiet"><b>No visible item needs you.</b> Brain could not check {unavailable.join(", ")}; retry before treating this as an all-clear.</p>
         ) : (
           <p className="ib-quiet"><b>Nothing needs you.</b> Every run can land, no rule is broken, every tool and key is healthy.</p>
         )}

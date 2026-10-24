@@ -14,7 +14,7 @@ import { BrandMark, Icon, type IconName } from "./Icon";
 import { RestrictedMemberProvider, useRestrictedMember } from "./MemberScope";
 import type { Capabilities } from "@/lib/capability-contract";
 import { CapabilitiesProvider, useCapabilities } from "./Capabilities";
-import { ShellConfigurationContext } from "./ShellConfiguration";
+import { ShellConfigurationContext, ShellUrgentContext } from "./ShellConfiguration";
 import { PulseProvider } from "./PulseProvider";
 import { RailPulse } from "./RailPulse";
 
@@ -48,7 +48,8 @@ export interface ShellConfiguration {
 }
 export function Shell({ demo, children }: { demo: boolean; children: ReactNode }) {
   const [configuration, setConfiguration] = useState<ShellConfiguration | null>(null);
-  const { repos, mode, access, member, capabilities, setup, urgent = 0 } = configuration ?? {
+  const [urgent, setUrgent] = useState(0);
+  const { repos, mode, access, member, capabilities, setup } = configuration ?? {
     repos: [], mode: demo ? "demo" : "locked", access: "unknown", member: null,
     capabilities: { state: "unavailable", supported: [] },
   } as ShellConfiguration;
@@ -146,6 +147,7 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
 
   return (
     <ShellConfigurationContext.Provider value={setConfiguration}>
+    <ShellUrgentContext.Provider value={setUrgent}>
     <CapabilitiesProvider value={capabilities}>
     <RestrictedMemberProvider value={restricted}>
     <ActionsProvider mode={mode}>
@@ -318,6 +320,7 @@ export function Shell({ demo, children }: { demo: boolean; children: ReactNode }
     </ActionsProvider>
     </RestrictedMemberProvider>
     </CapabilitiesProvider>
+    </ShellUrgentContext.Provider>
     </ShellConfigurationContext.Provider>
   );
 }

@@ -2084,3 +2084,69 @@ test('the dashboard map draws the projects needing attention, worst first', () =
   assert.match(page, /ranked\.map\(async \(s, i\) => \(\{[\s\S]*?modules: i < MAP_PROJECTS \?/);
   assert.match(page, /const byAttention = [^\n]*severity\[b\.tone\] - severity\[a\.tone\] \|\| \(b\.repo\.behind \?\? 0\) - \(a\.repo\.behind \?\? 0\)/);
 });
+
+test('agent pages support every valid identity name and reject synthetic identities', () => {
+  const { agentHref } = load('lib/agent-link.ts');
+  assert.equal(agentHref('claude laptop'), '/agents/claude%20laptop');
+  assert.equal(agentHref('claude@work'), '/agents/claude%40work');
+  assert.equal(agentHref('agent'), null);
+  assert.equal(agentHref('bad/name'), null);
+});
+
+test('task and context-pack links require one unambiguous repository match', () => {
+  const links = load('lib/task-links.ts');
+  const run = { id: 'task-1', task: 'Fix queue', agent: 'codex', repo: '7' };
+  const pack = { id: 'pack-1', task: ' fix   queue ', consumer: 'CODEX', repo: '7' };
+  assert.equal(links.runForPack(pack, [run]), run);
+  assert.equal(links.packForRun(run, [pack]), pack);
+  assert.equal(links.runForPack(pack, [run, { ...run, id: 'task-2' }]), undefined);
+  assert.equal(links.runForPack(pack, [{ ...run, repo: '8' }]), undefined);
+  assert.equal(links.runForPack(pack, [{ ...run, repo: undefined }]), undefined);
+});
+
+test('new harness tasks keep version zero and repository provenance', async () => {
+  const taskId = '00000000-0000-0000-0000-000000000001';
+  const data = load('lib/data.ts', {
+    'next/server': { connection: async () => {} }, react: { cache: fn => fn },
+    './api': { apiConfigured: true, brainFetch: async endpoint => {
+      if (endpoint === '/repositories') return { repositories: [{ id: 7, name: 'app', path: '/repos/app' }] };
+      if (endpoint.startsWith('/harness/tasks?')) return { tasks: [{ id: taskId, title: 'New task', status: 'created', version: 0, repo_path: '/repos/app' }] };
+      throw new Error(endpoint);
+    } },
+  });
+  const [run] = await data.getAgentRuns();
+  assert.equal(run.version, 0);
+  assert.equal(run.repo, '7');
+});
+
+test('task actions accept version zero and describe ledger recording honestly', async () => {
+  const calls = [];
+  const tasks = load('lib/actions/tasks.ts', {
+    './gate': { mutate: async (path, options) => { calls.push({ path, options }); return { ok: true, message: options.success }; } },
+  });
+  const id = '00000000-0000-0000-0000-000000000001';
+  assert.equal((await tasks.cancelTask(id, 0)).ok, true);
+  assert.equal(calls[0].options.body.expected_task_version, 0);
+  assert.equal((await tasks.cancelTask(id, -1)).ok, false);
+  await tasks.createTask({ title: 'Fix queue', goal: 'Make it safe', repoPath: '/repos/app' });
+  assert.match(calls[1].options.success, /Recorded/);
+  assert.doesNotMatch(calls[1].options.success, /Queued|claims it/);
+});
+
+test('the inbox never reports an all-clear when a source is unavailable', async () => {
+  const inbox = load('lib/inbox.ts', {
+    react: { cache: fn => fn },
+    './data': {
+      getAccessView: async () => ({ readable: false, identities: [] }),
+      getAgentRuns: async () => [], getInsights: async () => [], getJobs: async () => null,
+      getMcpTools: async () => null, getSetupSteps: async () => [],
+    },
+    './board-view': { getBoardView: async () => ({ kind: 'unavailable' }), attention: () => [] },
+    './review-view': { getReviewView: async () => ({ kind: 'unavailable' }) },
+    './repository-status': {},
+  });
+  const result = await inbox.getInbox(true, []);
+  assert.equal(result.needs.length, 0);
+  assert.equal(result.complete, false);
+  assert.deepEqual([...result.unavailable], ['Board', 'tool health', 'Access', 'memory review', 'background jobs']);
+});

@@ -46,12 +46,18 @@ export interface Inbox {
   agents: AgentNow[];
   /** How many of the items block work outright. */
   urgent: number;
+  /** False when at least one source could not be measured. */
+  complete: boolean;
+  /** Human-readable source names that were unavailable. */
+  unavailable: string[];
 }
 
 export interface InboxRepo {
   repo: Repository;
   tone: Tone;
   status: string;
+  /** False when this project's corpus measurements could not be read. */
+  available?: boolean;
 }
 
 const RANK: Record<Tone, number> = { bad: 0, warn: 1, info: 2, idle: 2, ok: 3 };
@@ -120,6 +126,15 @@ export const getInbox = cache(async (admin: boolean, repos: InboxRepo[]): Promis
   ]);
 
   const needs: InboxItem[] = [];
+  const unavailable = new Set<string>();
+
+  if (boardView.kind === "unavailable") unavailable.add("Board");
+  if (boardView.kind === "ok" && boardView.projects.some((p) => p.missing.length > 0)) unavailable.add("Board measurements");
+  if (admin && tools === null) unavailable.add("tool health");
+  if (admin && (!access || !access.readable)) unavailable.add("Access");
+  if (review.kind === "unavailable") unavailable.add("memory review");
+  if (admin && jobs === null) unavailable.add("background jobs");
+  if (repos.some((r) => r.available === false)) unavailable.add("project memory");
 
   // 1. The Board: runs that can't land, reviews waiting on you, overlaps.
   if (boardView.kind === "ok") for (const board of boardView.projects) needs.push(...fromBoard(board, boardView.selfId));
@@ -241,5 +256,11 @@ export const getInbox = cache(async (admin: boolean, repos: InboxRepo[]): Promis
     }
   }
 
-  return { needs, agents, urgent: needs.filter((n) => n.tone === "bad").length };
+  return {
+    needs,
+    agents,
+    urgent: needs.filter((n) => n.tone === "bad").length,
+    complete: unavailable.size === 0,
+    unavailable: [...unavailable],
+  };
 });
