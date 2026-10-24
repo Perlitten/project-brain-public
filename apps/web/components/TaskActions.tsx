@@ -40,7 +40,7 @@ export function TaskResult({ run }: { run: AgentRun }) {
     return (
       <span className="task-result">
         <JobChip status={run.status} />
-        <Link className="link sub" href={`/activity?q=${encodeURIComponent(shortId)}#events`} title="What Brain recorded about this task">
+        <Link className="link sub" href={`/activity?view=events&q=${encodeURIComponent(shortId)}`} title="What Brain recorded about this task">
           what happened
         </Link>
       </span>

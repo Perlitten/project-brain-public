@@ -103,7 +103,7 @@ export function TodayBoard({ segments, sub, actions, regions, hidden, packs, liv
           </>}
         </section>
 
-        <aside aria-label="What your agents got from Brain">
+        <aside className="atlas-feed" aria-label="What your agents got from Brain">
           <div className="atlas-side__head">
             <h2 className="atlas-side__title">Given to agents</h2>
             {live && <span className="live-dot" aria-hidden="true" />}

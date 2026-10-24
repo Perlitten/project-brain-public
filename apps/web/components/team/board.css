@@ -176,6 +176,18 @@ li.tb-train__empty { display: block; padding-left: 44px; font-size: var(--fs-14)
 .tb-facts__lease { display: flex; flex-direction: column; gap: 6px; }
 .tb-facts__lease .row-actions { justify-content: flex-start; }
 
+/* In the desktop app frame a single board fills the window: the plan and the
+   side column each scroll on their own, under the verdict that stays put. */
+@media (min-width: 901px) and (min-height: 600px) {
+  .route > .tb-projects:has(> .tb:only-child) { flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; }
+  .tb-projects > .tb:only-child { flex: 1 1 auto; min-height: 0; }
+  .tb-projects > .tb:only-child > * { flex: none; }
+  .tb-projects > .tb:only-child > .tb-split { flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  .tb-projects > .tb:only-child > .tb-split > :is(.tb-main, .tb-aside) { position: static; max-height: none; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .tb-projects > .tb:only-child > .tb-split > .tb-main { padding-right: var(--s-2); }
+  /* The verdict is a summary line here, not a headline: the board under it is the work. */
+  .tb-projects > .tb:only-child .atlas-verdict__line { font-size: var(--fs-20); line-height: 1.35; }
+}
 @media (max-width: 900px) {
   .tb-aside { position: static; order: -1; max-height: none; overflow: visible; padding: 0 0 var(--s-6); border-left: 0; border-bottom: 1px solid var(--border-subtle); }
 }

@@ -31,6 +31,8 @@
 .atlas-split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s-7); align-items: start; }
 .atlas-split > * { min-width: 0; }
 @media (max-width: 900px) { .atlas-split { grid-template-columns: 1fr; } }
+/* The feed beside the map keeps its own scroll, so a long feed never stretches the page. */
+@media (min-width: 901px) { .atlas-feed { position: sticky; top: var(--s-5); max-height: calc(100vh - 260px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding-right: var(--s-2); } }
 
 /* ---------- map ---------- */
 .atlas-map { display: flex; flex-wrap: wrap; gap: var(--s-5) var(--s-4); }

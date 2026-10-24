@@ -2,17 +2,13 @@
 .setup-step { scroll-margin-top: calc(var(--plate-h) + var(--s-4)); }
 .setup-step__body { min-width: 0; }
 .setup-step__head {
-  flex: 1; min-width: 0;
+  flex: 1; min-width: 0; margin: 0;
   display: flex; align-items: center; gap: var(--s-2) var(--s-3); width: 100%;
-  padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit;
+  font: inherit; color: inherit;
 }
 .setup-step__row { display: flex; align-items: center; gap: var(--s-2); min-height: 36px; }
-.setup-step__head .step__title { margin-right: auto; min-width: 0; }
+.setup-step__head .step__title { min-width: 0; }
 .setup-step__head .chip { flex: none; }
-.setup-step__toggle { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-12); font-weight: 500; color: var(--text-3); }
-.setup-step__toggle svg { transition: transform 220ms var(--ease); transform: rotate(90deg); }
-.setup-step.is-open .setup-step__toggle svg { transform: rotate(-90deg); }
-.setup-step__head:hover .setup-step__toggle, .setup-step__head:focus-visible .setup-step__toggle { color: var(--teal-fg); }
 .setup-step__panel {
   margin-top: var(--s-4); padding-top: var(--s-4); border-top: 1px solid var(--border-subtle);
   animation: fade-up 260ms var(--ease-out) backwards;
@@ -47,6 +43,7 @@
 .setup-step .disclosure { margin-top: var(--s-2); }
 .setup-step .disclosure > p { margin: var(--s-2) 0 var(--s-3); }
 
-/* A finished, closed step is a single compact row: title, "Done …", Change. */
-.setup-step.step--done:not(.is-open) { padding-block: var(--s-3); align-items: center; }
-.setup-step.step--done:not(.is-open) .setup-step__status { margin-top: 0; }
+/* The stepper: each view tab is one step, numbered in order. */
+.setup-tab__n { margin-right: 6px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.setup-step__onward { margin-top: var(--s-5); font-size: var(--fs-14); }
+.setup-step__onward .link { display: inline-flex; align-items: center; gap: 4px; }

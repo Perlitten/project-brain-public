@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import { TabStrip } from "./TabStrip";
 import { useSearchParams } from "next/navigation";
 import { adminOnly, locate, withProject } from "@/lib/nav";
 import { useCapabilities } from "./Capabilities";
@@ -11,14 +11,14 @@ export type SectionNavItem = { href: string; label: string; active?: boolean };
 export function SectionNav({ label, items }: { label: string; items: SectionNavItem[] }) {
   const params = useSearchParams();
   const repo = params.get("repo") ?? undefined;
+  const current = items.find((i) => i.active)?.href ?? "";
   return (
-    <nav className="page-tabs section-nav" aria-label={label}>
-      {items.map((item) => (
-        <Link key={item.href} href={withProject(item.href, repo)} className="page-tabs__tab" aria-current={item.active ? "page" : undefined} scroll={false}>
-          {item.label}
-        </Link>
-      ))}
-    </nav>
+    <TabStrip
+      variant="section"
+      label={label}
+      current={current}
+      items={items.map((item) => ({ id: item.href, href: withProject(item.href, repo), label: item.label }))}
+    />
   );
 }
 

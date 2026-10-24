@@ -238,7 +238,7 @@ function ListBody({
         empty
       )}
 
-      {(total > SIZES[0] || size !== pageSize || at > 0) && (
+      {(pages > 1 || total > SIZES[0] || size !== pageSize || at > 0) && (
         <nav className="lf__pager" aria-label="Pages">
           <button type="button" className="btn btn--neutral btn--sm" onClick={() => go(at - 1)} disabled={at === 0 || busy} aria-label="Previous page">
             <span className="lf__flip">
@@ -263,16 +263,17 @@ function ListBody({
             Next
             <Icon name="arrow" size={14} />
           </button>
-          <label className="lf__size">
+          {total > SIZES[0] && <label className="lf__size">
             <span>Per page</span>
             <select className="select" value={size} aria-label="Items per page" disabled={pending} onChange={(e) => navigate({ page_size: e.target.value, page: null })}>
-              {SIZES.map((s) => (
+              {/* A list with its own small page keeps that size as the first choice. */}
+              {(SIZES.includes(size) ? SIZES : [size, ...SIZES]).map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
               ))}
             </select>
-          </label>
+          </label>}
         </nav>
       )}
     </div>

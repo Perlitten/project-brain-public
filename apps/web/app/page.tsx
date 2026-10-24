@@ -3,7 +3,8 @@ import Link from "next/link";
 import { RetryRead } from "@/components/RetryRead";
 import { PageHead } from "@/components/ui";
 import { TodayBoard, type TodayRegion } from "@/components/atlas/TodayBoard";
-import { Inbox } from "@/components/inbox/Inbox";
+import { InboxAgents, InboxNeeds } from "@/components/inbox/Inbox";
+import { PageTabs, ViewPane, pickTab, type TabTone } from "@/components/PageTabs";
 import { getInbox } from "@/lib/inbox";
 import { getCodeModules, getContextPacks, getCorpus, getRepositoryFeed } from "@/lib/data";
 import { apiConfigured } from "@/lib/api";
@@ -17,7 +18,8 @@ import type { Tone } from "@/lib/types";
 
 export const metadata = { title: "Dashboard" };
 
-type Props = { searchParams: Promise<{ repo?: string }> };
+type Props = { searchParams: Promise<{ repo?: string; view?: string }> };
+const VIEWS = ["needs", "agents", "freshness"] as const;
 const severity: Record<Tone, number> = { bad: 3, warn: 2, info: 1, idle: 1, ok: 0 };
 // The map draws at most this many projects; the sentence still counts all of them.
 const MAP_PROJECTS = 8;
@@ -114,19 +116,36 @@ async function DashboardData({ searchParams }: Props) {
   // keys and setup, then who is working. The freshness verdict and map follow.
   const inbox = await getInbox(admin, snapshots.map((s) => ({ repo: s.repo, tone: s.tone, status: s.status, available: s.corpus.available })));
   const unread = snapshots.some((s) => s.corpus.available === false) || !feed.available || !inbox.complete;
+  const tab = pickTab(VIEWS, query.view);
+  // An inbox Brain could not fully check is never an all-clear.
+  const needsTone: TabTone = inbox.needs.some((n) => n.tone === "bad") ? "bad" : inbox.needs.length || !inbox.complete ? "warn" : "ok";
+  const staleTone: TabTone = attention.some((s) => s.tone === "bad") ? "bad" : attention.length ? "warn" : "ok";
   return <>
     {unread && <div className="callout tone-warn" role="status"><b>Some measurements could not be read</b><span>Timeouts describe a failed request, not a stopped server. Retry, then check API logs if the problem persists.</span><RetryRead /></div>}
-    <Inbox needs={inbox.needs} agents={inbox.agents} complete={inbox.complete} unavailable={inbox.unavailable} />
-    <div className="ib-sec__head" style={{ marginBottom: "var(--s-4)" }}><h2 className="ib-sec__h">Memory freshness</h2><span className="ib-sec__note">Whether what agents get matches the code, and what they were given last.</span></div>
-    <TodayBoard
-      segments={segments}
-      sub={sub}
-      actions={actions}
-      regions={regions}
-      hidden={Math.max(0, snapshots.length - MAP_PROJECTS)}
-      packs={packs}
-      live={apiConfigured}
-      footer={admin ? <>Background jobs live in <Link href="/activity">Activity</Link>, search quality in <Link href="/quality">Quality</Link>.</> : null}
+    <PageTabs
+      label="Dashboard views"
+      path="/"
+      params={{ repo: slug }}
+      current={tab}
+      tabs={[
+        { id: "needs", label: "Needs you", badge: inbox.needs.length, tone: needsTone },
+        { id: "agents", label: "Agents working", badge: inbox.agents.length, tone: inbox.agents.length ? "info" : undefined },
+        { id: "freshness", label: "Memory freshness", badge: attention.length ? `${attention.length} stale` : "current", tone: staleTone },
+      ]}
     />
+    <ViewPane id={tab} fill={tab !== "freshness"}>
+      {tab === "needs" && <InboxNeeds needs={inbox.needs} complete={inbox.complete} unavailable={inbox.unavailable} />}
+      {tab === "agents" && <InboxAgents agents={inbox.agents} />}
+      {tab === "freshness" && <TodayBoard
+        segments={segments}
+        sub={sub}
+        actions={actions}
+        regions={regions}
+        hidden={Math.max(0, snapshots.length - MAP_PROJECTS)}
+        packs={packs}
+        live={apiConfigured}
+        footer={admin ? <>Background jobs live in <Link href="/activity">Activity</Link>, search quality in <Link href="/quality">Quality</Link>.</> : null}
+      />}
+    </ViewPane>
   </>;
 }

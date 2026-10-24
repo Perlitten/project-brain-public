@@ -1,7 +1,7 @@
 "use client";
-// The team Board: a sentence on what can't land and what is next, the plan by
-// attention, who is changing which path, the integration queue, and a side column
-// with what needs a person or one task in full. Controls appear only where
+// The team Board: a sentence on what can't land and what is next, then one view
+// (the plan by attention, who is changing which path, or the integration queue)
+// beside a side column with what needs a person or one task in full. Controls appear only where
 // Brain would allow them (lib/board-model.ts); Brain still checks every call
 // with the member's own key, the lease's fencing token and the entry's version.
 
@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { CodeBlock, Dialog, LockNote, RunButton, useAction } from "@/components/act";
 import { AtlasVerdict, reveal } from "@/components/atlas/Atlas";
 import { Chip, EmptyState } from "@/components/ui";
+import { ViewPane } from "@/components/PageTabs";
 import { integrateEntry, rejectEntry, releaseLease, renewLease, requestRun, type NewRun } from "@/lib/actions/board";
 import {
   BOARD_COLUMNS, attention, boardVerdict, claimMap, entryActions, instructionHref, knownBase, leaseActions, normPath, queuePosition,
@@ -30,8 +31,12 @@ const anchor = (taskId: string) => `task-${taskId}`;
 
 interface Ctx { board: ProjectBoard; selfId: number | null; title: (id: string) => string; has: (id: string) => boolean }
 
+/** Board views, one beside the side column at a time (app/team/board/page.tsx picks one). */
+export type BoardView = "plan" | "paths" | "queue";
+
+// The plan view holds the task anchors; from another view the link opens it there.
 function TaskLink({ id, ctx, fallback }: { id: string; ctx: Ctx; fallback?: string | null }) {
-  return <a href={`#${anchor(id)}`}>{ctx.has(id) ? ctx.title(id) : fallback || ctx.title(id)}</a>;
+  return <a href={`/team/board#${anchor(id)}`}>{ctx.has(id) ? ctx.title(id) : fallback || ctx.title(id)}</a>;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,8 +334,8 @@ function ConflictButton({ task, ctx, label = "See conflict", className = "btn bt
 }
 
 // ---------------------------------------------------------------------------
-// Board: a sentence, the plan by attention, who changes which path, the queue, and
-// a side column that lists what needs a person or inspects one task.
+// Board: a sentence, then one view (the plan by attention, who changes which path,
+// or the queue) and a side column that lists what needs a person or inspects one task.
 
 // Stages run left to right as work moves; a stage's tone says whether it needs a person.
 type StageTone = Tone | "teal";
@@ -815,7 +820,7 @@ function Inspector({ task, ctx }: { task: BoardTask; ctx: Ctx }) {
 }
 
 /** One project's board. `clock` freezes "now" for the demo; `live` refreshes the data while the tab is visible. */
-export function TeamBoard({ board, selfId, live, clock, named }: { board: ProjectBoard; selfId: number | null; live: boolean; clock: string | null; named: boolean }) {
+export function TeamBoard({ board, selfId, live, clock, named, view = "plan" }: { board: ProjectBoard; selfId: number | null; live: boolean; clock: string | null; named: boolean; view?: BoardView }) {
   const ctx = useMemo(() => context(board, selfId), [board, selfId]);
   const router = useRouter();
   const [lit, setLit] = useState<string[] | null>(null);
@@ -863,11 +868,11 @@ export function TeamBoard({ board, selfId, live, clock, named }: { board: Projec
             onPick={(ref) => focus.pick(ref)}
           />
           <div className="atlas-split tb-split">
-            <div className="tb-main">
-              <Section title="Plan" note={`${active} in flight · ${done} done`}><Plan ctx={ctx} /></Section>
-              <Section title="Who is changing what" note="declared scopes and live leases, by path"><Claims ctx={ctx} /></Section>
-              <Section title="Integration queue" note="a reviewer lands entries in order; the first blocks the rest"><Queue ctx={ctx} /></Section>
-            </div>
+            <ViewPane id={view} className="tb-main">
+              {view === "plan" && <Section title="Plan" note={`${active} in flight · ${done} done`}><Plan ctx={ctx} /></Section>}
+              {view === "paths" && <Section title="Who is changing what" note="declared scopes and live leases, by path"><Claims ctx={ctx} /></Section>}
+              {view === "queue" && <Section title="Integration queue" note="a reviewer lands entries in order; the first blocks the rest"><Queue ctx={ctx} /></Section>}
+            </ViewPane>
             <aside className="tb-aside" id={asideId} aria-label={task ? `Task: ${task.title}` : "What needs attention"}>
               {task ? (
                 <Inspector key={task.id} task={task} ctx={ctx} />

@@ -9,6 +9,7 @@ import { getAgent } from "@/lib/agents";
 import { scopeWords } from "@/lib/scopes";
 import { packForRun, runForPack } from "@/lib/task-links";
 import { TaskResult } from "@/components/TaskActions";
+import { PageTabs, ViewPane, pickTab, type TabTone } from "@/components/PageTabs";
 import type { AccessKey, Tone } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -17,6 +18,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 }
 
 const RUNNING = new Set(["running", "retrying", "queued"]);
+const VIEWS = ["tasks", "packs", "keys"] as const;
 
 function keyState(k: AccessKey, disabled: boolean): [Tone, string] {
   if (k.status === "revoked") return ["idle", "revoked"];
@@ -27,8 +29,8 @@ function keyState(k: AccessKey, disabled: boolean): [Tone, string] {
   return ["ok", "active"];
 }
 
-export default async function Agent({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function Agent({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ view?: string }> }) {
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   const name = decodeURIComponent(id);
   const gate = await adminOnlyPage(`Agent ${name}`);
   if (gate) return gate;
@@ -46,8 +48,14 @@ export default async function Agent({ params }: { params: Promise<{ id: string }
         : running.length
           ? { tone: "ok" as Tone, text: `Working on ${running.length === 1 ? `“${running[0].task}”` : `${running.length} tasks`} right now.` }
           : agent.failed
-            ? { tone: "warn" as Tone, text: `Idle. ${agent.failed} of its recent tasks ended badly; see below.` }
+            ? { tone: "warn" as Tone, text: `Idle. ${agent.failed} of its recent tasks ended badly; see Tasks.` }
             : { tone: "ok" as Tone, text: `Idle. Last seen ${agent.lastSeen}.` };
+
+  const tab = pickTab(VIEWS, query.view);
+  const expiring = ident ? ident.keys.filter((k) => k.status === "active" && k.expiringSoon).length : 0;
+  const tasksTone: TabTone | undefined = running.length ? "info" : agent.failed ? "warn" : agent.runs.length ? "ok" : undefined;
+  const keysTone: TabTone = !ident || ident.disabled ? "warn" : !ident.activeKeys ? "bad" : expiring ? "warn" : "ok";
+  const keysBadge = !ident ? "no identity" : ident.disabled ? "disabled" : !ident.activeKeys ? "no active key" : expiring ? `${expiring} expiring` : `${ident.activeKeys} active`;
 
   const identId = ident?.id;
   const actions = ident ? (
@@ -85,7 +93,18 @@ export default async function Agent({ params }: { params: Promise<{ id: string }
         <Stat label="Tokens" value={fmt(agent.runs.reduce((n, r) => n + (r.tokens ?? 0), 0))} note="across recorded tasks" />
       </div>
 
-      <Panel id="identity" title="Identity and keys" desc={ident ? `${ident.kind === "agent" ? "AI agent" : ident.kind} in Access since ${ident.createdAt}. Revoking a key locks out whatever uses it at once.` : "This name is not in Access."}>
+      <PageTabs
+        label="Agent views"
+        path={`/agents/${encodeURIComponent(agent.name)}`}
+        current={tab}
+        tabs={[
+          { id: "tasks", label: "Tasks", badge: running.length ? `${running.length} running` : agent.failed ? `${agent.failed} ended badly` : agent.runs.length, tone: tasksTone },
+          { id: "packs", label: "Context packs", badge: agent.packs.length, tone: agent.packs.length ? "info" : undefined },
+          { id: "keys", label: "Keys", badge: keysBadge, tone: keysTone },
+        ]}
+      />
+      <ViewPane id={tab}>
+      {tab === "keys" && <Panel id="identity" title="Identity and keys" desc={ident ? `${ident.kind === "agent" ? "AI agent" : ident.kind} in Access since ${ident.createdAt}. Revoking a key locks out whatever uses it at once.` : "This name is not in Access."}>
         {!ident ? (
           <EmptyState title="No identity" body="Brain sees this name only because an agent reported tasks under it. Create an identity to give it its own key, permissions and an off switch." action={<Link className="btn btn--primary" href={`/admin?new=agent&name=${encodeURIComponent(agent.name)}#new-identity`}>Create identity</Link>} />
         ) : (
@@ -121,9 +140,9 @@ export default async function Agent({ params }: { params: Promise<{ id: string }
             )}
           </>
         )}
-      </Panel>
+      </Panel>}
 
-      <Panel id="tasks" title="Tasks" desc="What this agent told Brain it was doing, newest first. A task nobody closed is marked timed out; the work may still have finished." flush>
+      {tab === "tasks" && <Panel id="tasks" title="Tasks" desc="What this agent told Brain it was doing, newest first. A task nobody closed is marked timed out; the work may still have finished." flush>
         {agent.runs.length === 0 ? <EmptyState title="No tasks recorded" body="This agent has not reported a task to Brain yet." /> : (
           <Table
             caption={`Tasks of ${agent.name}`}
@@ -155,9 +174,9 @@ export default async function Agent({ params }: { params: Promise<{ id: string }
             ]}
           />
         )}
-      </Panel>
+      </Panel>}
 
-      <Panel id="packs" title="Context packs given" desc="What Brain handed this agent for each task: files, rules and decisions within a token budget." flush>
+      {tab === "packs" && <Panel id="packs" title="Context packs given" desc="What Brain handed this agent for each task: files, rules and decisions within a token budget." flush>
         {agent.packs.length === 0 ? <EmptyState title="No packs yet" body="This agent has not asked Brain for context. Packs appear here the moment it does." /> : (
           <Table
             caption={`Context packs for ${agent.name}`}
@@ -172,7 +191,8 @@ export default async function Agent({ params }: { params: Promise<{ id: string }
             ]}
           />
         )}
-      </Panel>
+      </Panel>}
+      </ViewPane>
     </>
   );
 }

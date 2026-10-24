@@ -9,16 +9,23 @@ import { getMcpTools } from "@/lib/data";
 import { getAgentTarget } from "@/lib/setup-view";
 import type { McpTool } from "@/lib/types";
 import { getCapabilities } from "@/lib/capabilities";
+import { PageTabs, ViewPane, pickTab, type TabTone } from "@/components/PageTabs";
 
 export const metadata = { title: "Agent tools" };
 
+const VIEWS = ["tools", "connect"] as const;
 const health = { ok: "healthy", warn: "slow", bad: "failing", info: "not measured", idle: "unused" } as const;
 
-export default async function Mcp() {
-  const [read, agent, capabilities] = await Promise.all([getMcpTools(), getAgentTarget(), getCapabilities()]);
+export default async function Mcp({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+  const [read, agent, capabilities, query] = await Promise.all([getMcpTools(), getAgentTarget(), getCapabilities(), searchParams]);
   const tools = read ?? [];
   const httpMcp = capabilities.supported.includes("mcp_http");
   const tracked = tools.some((t) => t.calls24h !== undefined || t.errorRate !== undefined);
+  const tab = pickTab(VIEWS, query.view);
+  const failing = tools.filter((t) => t.status === "bad").length;
+  const slow = tools.filter((t) => t.status === "warn").length;
+  const toolsTone: TabTone | undefined = read === null ? "warn" : failing ? "bad" : slow ? "warn" : !tools.length ? undefined : tracked && tools.every((t) => t.status === "ok") ? "ok" : "info";
+  const toolsBadge = read === null ? "unavailable" : failing ? `${failing} failing` : slow ? `${slow} slow` : tools.length;
   return (
     <>
       <SectionTabs section="logs" active="/mcp" />
@@ -37,7 +44,17 @@ export default async function Mcp() {
           </>
         }
       />
-      <Panel
+      <PageTabs
+        label="Agent tool views"
+        path="/mcp"
+        current={tab}
+        tabs={[
+          { id: "tools", label: "Tools", badge: toolsBadge, tone: toolsTone },
+          { id: "connect", label: "Connect", badge: httpMcp ? "ready" : "stdio only", tone: httpMcp ? "ok" : "info" },
+        ]}
+      />
+      <ViewPane id={tab}>
+      {tab === "connect" && <Panel
         id="connect"
         title="Connect an agent"
         desc="Agents reach these tools at one address, each with its own key. Keys are created and revoked in Access."
@@ -46,8 +63,8 @@ export default async function Mcp() {
         {httpMcp
           ? <CodeBlock label="MCP address" code={mcpUrl(agent.publicApiUrl)} />
           : <EmptyState title="HTTP MCP is disabled" body="This Brain server does not expose /mcp. Use the local stdio bridge configuration in Setup instead." action={<Link className="btn btn--neutral" href="/setup#agent">Open agent setup</Link>} />}
-      </Panel>
-      <Panel id="tools" title="Tools" desc={tracked ? "Last 24 hours. Errors above 5% are red; p95 responses over 2 seconds are slow. Unused tools have no verified health." : "What your agent can ask Brain for. This server doesn’t count calls yet, so usage and errors aren’t shown."} flush>
+      </Panel>}
+      {tab === "tools" && <Panel id="tools" title="Tools" desc={tracked ? "Last 24 hours. Errors above 5% are red; p95 responses over 2 seconds are slow. Unused tools have no verified health." : "What your agent can ask Brain for. This server doesn’t count calls yet, so usage and errors aren’t shown."} flush>
         {read === null ? (
           <EmptyState title="Tool status unavailable" body="Brain didn’t answer the agent-tool status request just now. Reload in a moment." />
         ) : tools.length === 0 ? (
@@ -98,7 +115,8 @@ export default async function Mcp() {
           ]}
         />
         )}
-      </Panel>
+      </Panel>}
+      </ViewPane>
     </>
   );
 }

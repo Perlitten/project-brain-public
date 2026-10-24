@@ -88,6 +88,7 @@ export default async function TeamActivity({ searchParams }: { searchParams: Pro
                 rows={result.rows}
                 rowKey={(r) => r.id}
                 caption="Team activity, newest first"
+                fill
                 columns={[
                   { head: "When", cell: (r) => <span className="num">{when(r.occurredAt)}</span> },
                   { head: "Who", cell: (r) => r.actor },

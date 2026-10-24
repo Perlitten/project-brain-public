@@ -359,6 +359,7 @@ export function Table<T>({
   caption,
   filter,
   paging,
+  fill,
 }: {
   rows: T[];
   columns: Column<T>[];
@@ -366,6 +367,8 @@ export function Table<T>({
   caption: string;
   filter?: TableFilter<T>;
   paging?: ListPaging;
+  /** A long, paged table: on a desktop it scrolls inside itself so the page head and pager stay in sight. */
+  fill?: boolean;
 }) {
   const head = (
     <tr>
@@ -401,7 +404,7 @@ export function Table<T>({
     );
   }
   return (
-    <div className="table-wrap">
+    <div className={fill ? "table-wrap fill-list" : "table-wrap"}>
       <table className="table">
         <caption className="sr-only">{caption}</caption>
         <thead>{head}</thead>
