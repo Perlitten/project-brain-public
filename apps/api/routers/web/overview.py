@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from fastapi import HTTPException, Query
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import select, text
 from apps.api.helpers import (get_db_counts, get_embedding_retrieval_health, get_recent_brain_jobs, get_self_diagnosis_status)
 from brain.database.models import IndexingRun, Repository
 from brain.database.session import async_session_factory, check_health
@@ -200,11 +200,30 @@ async def web_health() -> dict[str, Any]:
                 "stale": [],
             }
 
-    services, scheduler, job_data, diagnostics = await asyncio.gather(
+    async def _slo_snapshot() -> Any:
+        """Latency percentiles per operation over the last 24h from request telemetry."""
+        try:
+            async with async_session_factory() as session:
+                rows = (await session.execute(text(
+                    "SELECT operation, count(*) AS n, "
+                    "percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50, "
+                    "percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95, "
+                    "percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms) AS p99 "
+                    "FROM brain_request_telemetry "
+                    "WHERE created_at > now() - interval '24 hours' "
+                    "GROUP BY operation ORDER BY p95 DESC LIMIT 20"))).all()
+            return [{"operation": op, "requests": n,
+                     "p50_ms": round(float(p50), 1), "p95_ms": round(float(p95), 1),
+                     "p99_ms": round(float(p99), 1)} for op, n, p50, p95, p99 in rows]
+        except Exception as exc:  # noqa: BLE001 — telemetry table/lite mode reported, never fatal
+            return {"error": str(exc)[:200]}
+
+    services, scheduler, job_data, diagnostics, slo = await asyncio.gather(
         check_health(),
         _load_scheduler(),
         get_recent_brain_jobs(limit=10),
         get_self_diagnosis_status(),
+        _slo_snapshot(),
     )
     return {
         "services": services,
@@ -213,5 +232,6 @@ async def web_health() -> dict[str, Any]:
             "recent_jobs": [shape_job(job) for job in job_data.get("jobs") or []],
             "redis_error": job_data.get("error"),
             "diagnostics": diagnostics,
+            "slo": slo,
         },
     }
