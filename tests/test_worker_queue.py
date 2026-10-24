@@ -89,6 +89,18 @@ class _Pipeline:
         self.operations.append(("zadd", key, mapping))
         return self
 
+    def zremrangebyrank(self, key, start, end):
+        self.operations.append(("zremrangebyrank", key, start, end))
+        return self
+
+    def hget(self, key, field):
+        self.operations.append(("hget", key, field))
+        return self
+
+    def zrevrange(self, key, start, end, withscores=False):
+        self.operations.append(("zrevrange", key, start, end, withscores))
+        return self
+
     async def execute(self):
         results = []
         for operation in self.operations:
@@ -255,16 +267,26 @@ class _FakeRedis:
         ]
         return due[start : start + num]
 
-    async def zrevrange(self, key, start, end):
-        ordered = [
-            item
-            for item, _score in sorted(
-                self.sorted_sets[key].items(),
-                key=lambda pair: pair[1],
-                reverse=True,
-            )
-        ]
-        return ordered[start : end + 1]
+    async def zrevrange(self, key, start, end, withscores=False):
+        ordered = sorted(self.sorted_sets[key].items(), key=lambda pair: pair[1], reverse=True)
+        window = ordered[start : None if end == -1 else end + 1]
+        return window if withscores else [item for item, _score in window]
+
+    async def zrange(self, key, start, end, withscores=False):
+        ordered = sorted(self.sorted_sets[key].items(), key=lambda pair: pair[1])
+        window = ordered[start : None if end == -1 else end + 1]
+        return window if withscores else [item for item, _score in window]
+
+    async def zscore(self, key, member):
+        return self.sorted_sets[key].get(member)
+
+    async def zremrangebyrank(self, key, start, end):
+        ordered = sorted(self.sorted_sets[key].items(), key=lambda pair: pair[1])
+        stop = len(ordered) + end + 1 if end < 0 else end + 1
+        doomed = ordered[start:max(start, stop)]
+        for item, _score in doomed:
+            del self.sorted_sets[key][item]
+        return len(doomed)
 
     async def zrem(self, key, value):
         return int(self.sorted_sets[key].pop(value, None) is not None)
@@ -779,3 +801,60 @@ async def test_worker_skips_a_job_cancelled_after_dequeue(monkeypatch):
     redis.hashes[queue._job_key(job_id)]["status"] = "cancelled"
     assert await process_one(queue) is True
     assert job_id not in await redis.lrange(queue.processing_key, 0, -1)
+
+
+@pytest.mark.asyncio
+async def test_enqueue_indexes_jobs_by_repository_id_and_path(tmp_path):
+    redis = _FakeRedis()
+    queue = JobQueue(redis)
+    repo = tmp_path / "repo"
+    older = await queue.enqueue("reindex", {"repository_id": 7})
+    await queue.enqueue("reindex", {"repository_id": 8, "repo_path": str(tmp_path / "other")})
+    newer = await queue.enqueue("reindex", {"repo_path": str(repo / ".." / "repo")})
+
+    keys = queue.scope_index_keys(repository_id=7, repository_path=str(repo))
+
+    assert await queue.recent_scoped_job_ids(keys, limit=10) == [newer, older]
+    assert await queue.recent_scoped_job_ids(keys, limit=1) == [newer, older]
+    assert await queue.recent_scoped_job_ids(queue.scope_index_keys(repository_id=9), limit=10) == []
+
+
+@pytest.mark.asyncio
+async def test_repository_index_keeps_only_the_newest_jobs(monkeypatch):
+    monkeypatch.setattr(queue_module, "SCOPE_INDEX_CAP", 2)
+    redis = _FakeRedis()
+    queue = JobQueue(redis)
+    ids = [await queue.enqueue("reindex", {"repository_id": 7}) for _ in range(3)]
+
+    assert await queue.recent_scoped_job_ids(queue.scope_index_keys(repository_id=7), limit=10) == ids[:0:-1]
+
+
+@pytest.mark.asyncio
+async def test_scope_index_backfills_jobs_queued_before_it_existed():
+    redis = _FakeRedis()
+    queue = JobQueue(redis)
+    for score, (job_id, params) in enumerate(
+        [("legacy-7", '{"repository_id": 7}'), ("legacy-8", '{"repository_id": 8}'), ("bare", "{}")], start=1
+    ):
+        redis.hashes[queue._job_key(job_id)] = {"id": job_id, "params": params}
+        redis.sorted_sets[queue.index_key][job_id] = score
+
+    await redis.set(f"{queue.index_key}:scopes-backfill", "1")
+    assert await queue.ensure_scope_index() is False
+
+    await redis.delete(f"{queue.index_key}:scopes-backfill")
+    assert await queue.ensure_scope_index() is True
+    assert await queue.recent_scoped_job_ids(queue.scope_index_keys(repository_id=7), limit=10) == ["legacy-7"]
+    assert await queue.ensure_scope_index() is True
+
+
+@pytest.mark.asyncio
+async def test_scope_index_stays_unready_without_the_global_index():
+    redis = _FakeRedis()
+    queue = JobQueue(redis)
+    redis.hashes[queue._job_key("legacy-7")] = {"id": "legacy-7", "params": '{"repository_id": 7}'}
+
+    assert await queue.ensure_scope_index() is False
+    assert await redis.get(f"{queue.index_key}:scopes-ready") is None
+    assert await redis.get(f"{queue.index_key}:scopes-backfill") is None
+

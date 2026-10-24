@@ -515,23 +515,6 @@ async def get_recent_brain_jobs(
     jobs: List[Dict[str, Any]] = []
     try:
         queue = JobQueue(redis_client, prefix=settings.WORKER_REDIS_PREFIX)
-        # Repository filtering happens after loading job payloads, so fetch the
-        # largest indexed window before applying the requested result limit.
-        # Otherwise unrelated repositories can hide matching jobs among the
-        # first 100 global entries.
-        scoped_request = repository_id is not None or repository_path
-        lookup_limit = 1000 if scoped_request else max(limit, 100)
-        job_ids = await queue.recent_job_ids(limit=lookup_limit)
-        # Upgrade fallback: jobs created before the ZSET index was introduced.
-        if not job_ids:
-            cursor = 0
-            keys: List[str] = []
-            while True:
-                cursor, batch = await redis_client.scan(cursor, match=f"{queue.prefix}:job:*", count=100)
-                keys.extend(cast(List[str], batch))
-                if cursor == 0 or len(keys) >= 5000:
-                    break
-            job_ids = [key.rsplit(":", 1)[-1] for key in keys]
         wanted = str(Path(repository_path).resolve()) if repository_path else None
 
         def belongs_to_scope(job: Dict[str, Any]) -> bool:
@@ -547,6 +530,52 @@ async def get_recent_brain_jobs(
                 except (OSError, RuntimeError):
                     return False
             return False
+
+        scoped_request = repository_id is not None or repository_path
+        if scoped_request and hasattr(queue, "recent_scoped_job_ids"):
+            # Per-repository indexes hold only this repository's jobs, so a
+            # few reads replace walking the global index.
+            try:
+                if await queue.ensure_scope_index():
+                    scope_keys = queue.scope_index_keys(repository_id=repository_id, repository_path=repository_path)
+                    page_size = max(limit * 2, 20)
+                    offset = 0
+                    seen_job_ids: set[str] = set()
+                    while len(jobs) < limit:
+                        page_job_ids = await queue.recent_scoped_job_ids(scope_keys, limit=page_size, offset=offset)
+                        if not page_job_ids:
+                            break
+                        offset += page_size
+                        job_ids = [job_id for job_id in page_job_ids if job_id not in seen_job_ids]
+                        if not job_ids:
+                            continue
+                        seen_job_ids.update(job_ids)
+                        for job_id, job in zip(job_ids, await queue.get_jobs(job_ids)):
+                            if job and belongs_to_scope(job):
+                                if not job.get("id"):
+                                    job["id"] = job_id
+                                jobs.append(job)
+                    jobs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+                    return {"jobs": jobs[:limit], "error": None}
+            except Exception as exc:
+                logger.warning(f"Repository job index unavailable, scanning recent jobs: {exc}")
+                jobs = []
+        # Repository filtering happens after loading job payloads, so fetch the
+        # largest indexed window before applying the requested result limit.
+        # Otherwise unrelated repositories can hide matching jobs among the
+        # first 100 global entries.
+        lookup_limit = 1000 if scoped_request else max(limit, 100)
+        job_ids = await queue.recent_job_ids(limit=lookup_limit)
+        # Upgrade fallback: jobs created before the ZSET index was introduced.
+        if not job_ids:
+            cursor = 0
+            keys: List[str] = []
+            while True:
+                cursor, batch = await redis_client.scan(cursor, match=f"{queue.prefix}:job:*", count=100)
+                keys.extend(cast(List[str], batch))
+                if cursor == 0 or len(keys) >= 5000:
+                    break
+            job_ids = [key.rsplit(":", 1)[-1] for key in keys]
 
         offset = 0
         while True:
