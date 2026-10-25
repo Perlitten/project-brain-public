@@ -272,6 +272,17 @@ All notable changes to this project are documented here. The format follows
 - Reconcile the live repository metadata with the productization GO assessment
   and use a portable empty env file in Compose tests.
 
+## [0.10.0] - 2026-10-25
+
+### Changed
+
+- Refactored the largest modules into domain packages: `brain/team/coordination`, `brain/team/execution`, `apps/api/routers/web`, `brain/workers/tasks`, `brain/database/migrations`, `brain/config/settings` (domain mixins), `brain/retrieval/pipeline` (12-stage orchestrator) and `brain/late_interaction/gpu_service`.
+- Execution grant revocation now records a `run.execution.revoked` ledger event immediately, so fenced owners can no longer mask revocation as orphaned.
+
+### Added
+
+- Schema-version ledger (`brain_schema_migrations`) and SLO latency percentiles in `/web-health`.
+
 ## [0.9.2] - 2026-10-13
 
 ### Productization
