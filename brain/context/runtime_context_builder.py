@@ -375,12 +375,17 @@ class RuntimeContextBuilder:
             # Navigation alone cannot satisfy an evidence-bearing context.
             # Report a budget gap rather than caching a false successful pack —
             # but keep memory/procedures that survived the budget: with no code
-            # slices they are the only durable evidence left.
+            # slices they are the only durable evidence left. Rebuild through
+            # the budgeted builder so the hard byte cap still holds.
             metadata["status"] = "partial"
             metadata["missing"].append("code_slices_excluded_by_budget")
-            built["status"] = "partial"
-            built["missing"] = [*built.get("missing", []), "code_slices_excluded_by_budget"]
-            return finish(built)
+            return finish(
+                BudgetedPayloadBuilder(max_bytes, metadata=metadata)
+                .add("candidates", built.get("candidates", []), priority=1)
+                .add("memory", built.get("memory", {}), priority=5)
+                .add("procedures", built.get("procedures", {}), priority=5)
+                .build()
+            )
         if not stale:
             put_cached_context(repo_str, task_description, {"evidence_cache_version": 1, "slices": slices},
                                source_revision=repo.get("source_revision"),

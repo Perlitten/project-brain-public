@@ -84,8 +84,11 @@ async def test_named_ui_style_context_preserves_nearby_scoped_stylesheet(monkeyp
     assert payload["status"] == "ok"
     assert [c["path"] for c in payload["candidates"]][:2] == ["ui/cards/Bubble.tsx", "ui/cards/Bubble.css"]
     assert len(result.candidates) == 12 and len(payload["candidates"]) == 6
-    statement = session.execute.await_args.args[0]
-    assert "files.repository_id = 42" in str(statement.compile(compile_kwargs={"literal_binds": True}))
+    # The companion-style lookup must stay repository-scoped; later sections
+    # (memory continuation) may issue further queries after it.
+    compiled = [str(call.args[0].compile(compile_kwargs={"literal_binds": True}))
+                for call in session.execute.call_args_list]
+    assert any("files.repository_id = 42" in sql for sql in compiled)
 
 
 @pytest.mark.parametrize("query", ["Fix Bubble API serialization", "Fix Missing CSS clipping"])
