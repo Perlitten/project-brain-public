@@ -2,22 +2,24 @@
   "continuity_hit_rate": 1.0,
   "expected_reads": 8,
   "expected_hits": 8,
+  "expected_absences": 3,
+  "expected_absence_failures": 0,
   "fact_survival_by_filler": {
     "0": 1.0,
     "2": 1.0
   },
   "stale_surface_rate": 0.0,
   "context_bytes": {
-    "handoff-resume-basic": 323,
-    "learning-direct-L3": 233,
-    "decision-surfaces-on-topic": 182,
-    "rot-chain-recency-window": 721,
-    "rot-chain-within-window": 459,
-    "cross-repo-isolation": 163,
-    "global-handoff-visible": 190,
-    "operational-decision-demoted-not-dropped": 136,
-    "open-tasks-surface": 192,
-    "mixed-memory-pack": 663
+    "handoff-resume-basic": 293,
+    "learning-direct-L3": 187,
+    "decision-surfaces-on-topic": 161,
+    "rot-chain-recency-window": 658,
+    "rot-chain-within-window": 408,
+    "cross-repo-isolation": 124,
+    "global-handoff-visible": 151,
+    "operational-decision-demoted-not-dropped": 115,
+    "open-tasks-surface": 153,
+    "mixed-memory-pack": 628
   },
   "per_scenario": [
     {
@@ -29,7 +31,10 @@
       "ok": true,
       "missing_facts": [],
       "forbidden_surfaced": [],
-      "context_bytes": 323,
+      "stale_opportunity": false,
+      "stale_surfaced": false,
+      "context_bytes": 293,
+      "context_max_bytes": 14000,
       "filler_sessions": 0
     },
     {
@@ -41,7 +46,10 @@
       "ok": true,
       "missing_facts": [],
       "forbidden_surfaced": [],
-      "context_bytes": 233,
+      "stale_opportunity": false,
+      "stale_surfaced": false,
+      "context_bytes": 187,
+      "context_max_bytes": 14000,
       "filler_sessions": 0
     },
     {
@@ -53,7 +61,10 @@
       "ok": true,
       "missing_facts": [],
       "forbidden_surfaced": [],
-      "context_bytes": 182,
+      "stale_opportunity": false,
+      "stale_surfaced": false,
+      "context_bytes": 161,
+      "context_max_bytes": 14000,
       "filler_sessions": 0
     },
     {
@@ -67,7 +78,10 @@
         "pydantic field order"
       ],
       "forbidden_surfaced": [],
-      "context_bytes": 721,
+      "stale_opportunity": false,
+      "stale_surfaced": false,
+      "context_bytes": 658,
+      "context_max_bytes": 14000,
       "filler_sessions": 6
     },
     {
@@ -79,7 +93,10 @@
       "ok": true,
       "missing_facts": [],
       "forbidden_surfaced": [],
-      "context_bytes": 459,
+      "stale_opportunity": false,
+      "stale_surfaced": false,
+      "context_bytes": 408,
+      "context_max_bytes": 14000,
       "filler_sessions": 2
     },
     {
@@ -93,7 +110,10 @@
         "secret-only-in-repo-A"
       ],
       "forbidden_surfaced": [],
-      "context_bytes": 163,
+      "stale_opportunity": false,
+      "stale_surfaced": false,
+      "context_bytes": 124,
+      "context_max_bytes": 14000,
       "filler_sessions": 0
     },
     {
@@ -105,7 +125,10 @@
       "ok": true,
       "missing_facts": [],
       "forbidden_surfaced": [],
-      "context_bytes": 190,
+      "stale_opportunity": false,
+      "stale_surfaced": false,
+      "context_bytes": 151,
+      "context_max_bytes": 14000,
       "filler_sessions": 0
     },
     {
@@ -119,7 +142,10 @@
         "checkpoint"
       ],
       "forbidden_surfaced": [],
-      "context_bytes": 32,
+      "stale_opportunity": true,
+      "stale_surfaced": false,
+      "context_bytes": 2,
+      "context_max_bytes": 14000,
       "filler_sessions": 0
     },
     {
@@ -131,7 +157,10 @@
       "ok": true,
       "missing_facts": [],
       "forbidden_surfaced": [],
-      "context_bytes": 136,
+      "stale_opportunity": false,
+      "stale_surfaced": false,
+      "context_bytes": 115,
+      "context_max_bytes": 14000,
       "filler_sessions": 0
     },
     {
@@ -143,7 +172,10 @@
       "ok": true,
       "missing_facts": [],
       "forbidden_surfaced": [],
-      "context_bytes": 192,
+      "stale_opportunity": false,
+      "stale_surfaced": false,
+      "context_bytes": 153,
+      "context_max_bytes": 14000,
       "filler_sessions": 0
     },
     {
@@ -155,7 +187,10 @@
       "ok": true,
       "missing_facts": [],
       "forbidden_surfaced": [],
-      "context_bytes": 663,
+      "stale_opportunity": false,
+      "stale_surfaced": false,
+      "context_bytes": 628,
+      "context_max_bytes": 14000,
       "filler_sessions": 0
     }
   ]
