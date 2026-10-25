@@ -38,22 +38,33 @@ def _identifier_hits(content: str, identifiers: set[str]) -> int:
     return len(words & identifiers)
 
 
-_OPEN_TASK_STATUSES = ("created", "queued", "in_progress", "running", "paused", "attempt")
-
-
 def _bounded_memory(memory: Any, learnings: list[dict[str, Any]], max_bytes: int,
                     continuation: dict[str, Any] | None = None) -> dict[str, Any]:
     """Interleave applicable records so one memory layer cannot consume the cap."""
     groups = {"learnings": learnings, "rules": (memory or {}).get("rules", []) if isinstance(memory, dict) else [],
               "decisions": (memory or {}).get("decisions", []) if isinstance(memory, dict) else []}
-    if continuation:
-        groups["continuation"] = [continuation]
+    continuation_items: list[tuple[str, dict[str, Any]]] = []
+    if isinstance(continuation, dict):
+        open_tasks = continuation.get("open_tasks", [])
+        handoffs = continuation.get("handoffs", [])
+        for index in range(max(len(open_tasks), len(handoffs))):
+            if index < len(open_tasks):
+                continuation_items.append(("open_tasks", open_tasks[index]))
+            if index < len(handoffs):
+                continuation_items.append(("handoffs", handoffs[index]))
     bounded: dict[str, Any] = {}
-    for index in range(max((len(items) for items in groups.values()), default=0)):
+    for index in range(max([*(len(items) for items in groups.values()), len(continuation_items)], default=0)):
         for name, items in groups.items():
             if index >= len(items):
                 continue
             proposed = {**bounded, name: [*bounded.get(name, []), items[index]]}
+            if len(json.dumps(proposed, ensure_ascii=False, separators=(",", ":")).encode()) <= max_bytes:
+                bounded = proposed
+        if index < len(continuation_items):
+            name, item = continuation_items[index]
+            current = bounded.get("continuation", [{}])[0]
+            block = {**current, name: [*current.get(name, []), item]}
+            proposed = {**bounded, "continuation": [block]}
             if len(json.dumps(proposed, ensure_ascii=False, separators=(",", ":")).encode()) <= max_bytes:
                 bounded = proposed
     return bounded
@@ -425,13 +436,14 @@ class RuntimeContextBuilder:
         session always started empty even when the previous one left a summary.
         """
         try:
-            from brain.database.harness_models import AgentTask, MemoryHandoff
+            from brain.database.harness_models import AgentTask, MemoryHandoff, TASK_STATUSES, TERMINAL_STATUSES
 
             normalized = normalize_repo_scope(repo_path)
+            open_statuses = tuple(status for status in TASK_STATUSES if status not in TERMINAL_STATUSES)
             async with async_session_factory() as session:
                 tasks = (await session.execute(
                     select(AgentTask)
-                    .where(AgentTask.status.in_(_OPEN_TASK_STATUSES))
+                    .where(AgentTask.status.in_(open_statuses))
                     .where(scope_equals(AgentTask.repo_path, normalized))
                     .order_by(AgentTask.updated_at.desc()).limit(4))).scalars().all()
                 rows = (await session.execute(

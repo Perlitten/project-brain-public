@@ -427,7 +427,7 @@ async def impact_analysis(change_request: str, repo_path: Optional[str] = None) 
                 "freshness": unknown_envelope("tool_failed")}
 
 
-async def _local_governed_write(kind: Literal["decision", "rule"], fields: dict) -> dict | None:
+async def _local_governed_write(kind: Literal["decision", "rule", "learning"], fields: dict) -> dict | None:
     """Act as ``BRAIN_LOCAL_PRINCIPAL_KEY`` when it is set: the HTTP handler, hence the same governance.
 
     None means no key is configured and the caller writes as the operator.
@@ -575,6 +575,11 @@ async def record_learning(
     declined = await confirm_memory_write(ctx, f"Record learning: {statement}".strip())
     if declined is not None:
         return declined
+    governed = await _local_governed_write("learning", dict(
+        statement=statement, repo_scope=repo_path, category=category or "agent_note",
+        confidence=confidence, visibility="shared"))
+    if governed is not None:
+        return governed
     try:
         from brain.memory.learning_store import LearningStore
 
@@ -613,19 +618,14 @@ async def record_handoff(
     if declined is not None:
         return declined
     try:
-        from brain.database.harness_models import MemoryHandoff
-        from brain.database.session import async_session_factory
+        from brain.memory.harness_store import HarnessStore
 
-        handoff = MemoryHandoff(
+        handoff = await HarnessStore.add_handoff(
             task_id=_uuid.UUID(task_id) if task_id else None,
             session_id=session_id or "mcp",
             summary=summary,
             memory_ref=memory_ref,
         )
-        async with async_session_factory() as session:
-            session.add(handoff)
-            await session.commit()
-            await session.refresh(handoff)
         return {"status": "success", "handoff_id": handoff.id,
                 "message": f"Handoff {handoff.id} recorded for the next session"}
     except Exception as e:

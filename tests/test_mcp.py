@@ -315,17 +315,25 @@ async def test_stdio_memory_writes_act_as_the_configured_local_principal(monkeyp
     governed = AsyncMock(return_value={"status": "proposed", "proposal_id": 5, "version": 1})
     operator_decision = AsyncMock()
     operator_rule = AsyncMock()
+    operator_learning = AsyncMock()
     monkeypatch.setattr(local_memory, "local_write", governed)
     with patch("apps.mcp_server.server.DecisionStore.record_decision", operator_decision), \
-            patch("apps.mcp_server.server.RuleStore.record_rule", operator_rule):
+            patch("apps.mcp_server.server.RuleStore.record_rule", operator_rule), \
+            patch("brain.memory.learning_store.LearningStore.add_learning", operator_learning):
         made = await mcp.call_tool("record_decision", {"title": "Use one queue", "repo_path": "/indexed/example"})
         ruled = await mcp.call_tool("record_rule", {"name": "No blocking IO", "repo_path": "/indexed/example"})
+        learned = await mcp.call_tool(
+            "record_learning", {"statement": "Use one queue", "repo_path": "/indexed/example"}
+        )
     assert json.loads(made.content[0].text)["status"] == "proposed"
     assert json.loads(ruled.content[0].text)["status"] == "proposed"
-    assert [call.args[0] for call in governed.await_args_list] == ["decision", "rule"]
+    assert json.loads(learned.content[0].text)["status"] == "proposed"
+    assert [call.args[0] for call in governed.await_args_list] == ["decision", "rule", "learning"]
     assert governed.await_args_list[0].args[1]["repo_path"] == "/indexed/example"
+    assert governed.await_args_list[2].args[1]["visibility"] == "shared"
     operator_decision.assert_not_awaited()
     operator_rule.assert_not_awaited()
+    operator_learning.assert_not_awaited()
 
     # A failing governed write is reported, never retried as the operator.
     monkeypatch.setattr(local_memory, "local_write", AsyncMock(side_effect=RuntimeError("database is down")))
@@ -333,3 +341,16 @@ async def test_stdio_memory_writes_act_as_the_configured_local_principal(monkeyp
         failed = await mcp.call_tool("record_decision", {"title": "Use one queue"})
     assert json.loads(failed.content[0].text)["status"] == "failed"
     operator_decision.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_record_handoff_uses_harness_store_for_l1_mirroring():
+    stored = AsyncMock(return_value=SimpleNamespace(id=17))
+    with patch("brain.memory.harness_store.HarnessStore.add_handoff", stored):
+        result = await mcp.call_tool(
+            "record_handoff",
+            {"summary": "Continue the ledger migration", "task_id": "00000000-0000-0000-0000-000000000123"},
+        )
+    assert __import__("json").loads(result.content[0].text)["handoff_id"] == 17
+    stored.assert_awaited_once()
+    assert str(stored.await_args.kwargs["task_id"]) == "00000000-0000-0000-0000-000000000123"

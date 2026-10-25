@@ -38,7 +38,7 @@ async def ctx_db(tmp_path, monkeypatch):
 async def test_handoff_written_last_session_is_read_next(ctx_db):
     """Session 1 records a handoff + open task; session 2 sees them in the
     continuation block that prepare_task_context now returns."""
-    task = AgentTask(title="M4 ledger migration", goal="ship it", status="in_progress",
+    task = AgentTask(title="M4 ledger migration", goal="ship it", status="running",
                      repo_path="/RepoA", priority="P1")
     async with ctx_db() as session:
         session.add(task)
@@ -57,7 +57,7 @@ async def test_handoff_written_last_session_is_read_next(ctx_db):
 async def test_done_tasks_and_other_repo_handoffs_are_hidden(ctx_db):
     async with ctx_db() as session:
         session.add(AgentTask(title="finished", goal="g", status="completed", repo_path="/RepoA"))
-        session.add(AgentTask(title="other repo", goal="g", status="in_progress", repo_path="/RepoB"))
+        session.add(AgentTask(title="other repo", goal="g", status="running", repo_path="/RepoB"))
         session.add(MemoryHandoff(session_id="s", summary="global note",
                                   task_id=None))
         await session.commit()
@@ -69,6 +69,37 @@ async def test_done_tasks_and_other_repo_handoffs_are_hidden(ctx_db):
     assert "finished" not in titles and "other repo" not in titles
     # task-less handoffs stay repository-agnostic and visible
     assert continuation["handoffs"][0]["summary"] == "global note"
+
+
+@pytest.mark.parametrize(
+    "status", ["routed", "claimed", "artifacted", "memory_updated", "validating", "acceptance_pending"]
+)
+@pytest.mark.asyncio
+async def test_every_nonterminal_harness_state_is_visible(ctx_db, status):
+    async with ctx_db() as session:
+        session.add(AgentTask(title=status, goal="resume", status=status, repo_path="/RepoA"))
+        await session.commit()
+
+    continuation = await runtime_context_builder.RuntimeContextBuilder._load_continuation("/RepoA", {})
+
+    assert continuation is not None
+    assert continuation["open_tasks"][0]["status"] == status
+
+
+def test_oversized_continuation_keeps_individual_records_within_budget():
+    continuation = {
+        "open_tasks": [],
+        "handoffs": [
+            {"summary": str(index) + ("x" * 400), "created_at": None, "task_id": None}
+            for index in range(5)
+        ],
+    }
+
+    bounded = runtime_context_builder._bounded_memory({}, [], 700, continuation=continuation)
+
+    kept = bounded["continuation"][0]["handoffs"]
+    assert 0 < len(kept) < 5
+    assert len(__import__("json").dumps(bounded, separators=(",", ":")).encode()) <= 700
 
 
 @pytest.mark.asyncio
