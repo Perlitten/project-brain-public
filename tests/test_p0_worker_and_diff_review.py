@@ -56,8 +56,8 @@ async def test_run_reindex_calls_index_repository_and_returns_result(tmp_path):
     indexer.index_repository = AsyncMock(return_value=repo)
     indexer.verification = {"status": "ok"}
     with (
-        patch.object(tasks, "init_db", new=AsyncMock()),
-        patch.object(tasks, "FileIndexer", return_value=indexer),
+        patch.object(tasks.jobs, "init_db", new=AsyncMock()),
+        patch.object(tasks.jobs, "FileIndexer", return_value=indexer),
     ):
         result = await tasks.run_reindex({"repo_path": tmp_path.as_posix()})
 
@@ -73,7 +73,7 @@ async def test_run_diff_review_imports_cleanly_and_delegates(tmp_path):
     analyzer = MagicMock()
     analyzer.review_diff = AsyncMock(return_value={"status": "completed", "report": "ok"})
     with (
-        patch.object(tasks, "init_db", new=AsyncMock()),
+        patch.object(tasks.jobs, "init_db", new=AsyncMock()),
         patch("brain.analyzers.diff_analyzer.DiffAnalyzer", return_value=analyzer) as analyzer_cls,
     ):
         result = await tasks.run_diff_review({"repo_path": tmp_path.as_posix(), "base": "main", "head": "current"})
@@ -137,7 +137,7 @@ async def test_remote_mcp_get_diff_review_url_quotes_job_id():
 async def test_execute_job_dispatches_reindex_and_diff_review_to_their_handlers():
     reindex = AsyncMock(return_value={"handler": "reindex"})
     diff_review = AsyncMock(return_value={"handler": "diff_review"})
-    with patch.object(tasks, "run_reindex", reindex), patch.object(tasks, "run_diff_review", diff_review):
+    with patch.object(tasks.dispatch, "run_reindex", reindex), patch.object(tasks.dispatch, "run_diff_review", diff_review):
         assert await tasks.execute_job("reindex", {"repo_path": "a"}) == {"handler": "reindex"}
         assert await tasks.execute_job("diff_review", {"repo_path": "b"}) == {"handler": "diff_review"}
     reindex.assert_awaited_once_with({"repo_path": "a"})

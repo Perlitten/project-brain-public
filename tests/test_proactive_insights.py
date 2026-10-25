@@ -628,9 +628,9 @@ async def test_persistence_outage_keeps_diagnostic_candidates_for_alerting():
 @pytest.mark.asyncio
 async def test_scheduled_worker_job_skips_when_disabled():
     with (
-        patch("brain.workers.tasks.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.jobs.init_db", new=AsyncMock()),
         patch(
-            "brain.workers.tasks.settings.PROACTIVE_INSIGHTS_ENABLED",
+            "brain.workers.tasks.jobs.settings.PROACTIVE_INSIGHTS_ENABLED",
             False,
         ),
     ):

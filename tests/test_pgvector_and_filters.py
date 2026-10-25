@@ -36,7 +36,7 @@ def test_failed_pgvector_index_build_keeps_column_swap():
     so the enclosing migration transaction still commits the new column."""
     import asyncio
 
-    from brain.database import migrations
+    from brain.database.migrations import _embeddings as migrations
 
     class Savepoint:
         def __init__(self, conn):

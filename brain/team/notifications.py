@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from brain.database.models import MemoryProposal, Principal, Repository
 from brain.database.repository_utils import find_repository_id
+from brain.team._util import _aware
 from brain.team.authorization import (ROLE_PERMISSIONS, Permission, registry_records, registry_trust_ceiling,
                                       team_state)
 from brain.team.models import (ProjectMember, ProjectRepository, TeamMember, TeamNotification, TeamProject,
@@ -260,12 +261,6 @@ def _mask(chat_id: Optional[str]) -> Optional[str]:
     if not chat_id:
         return None
     return f"…{chat_id[-4:]}" if len(chat_id) > 4 else "…"
-
-
-def _aware(value: Optional[datetime]) -> Optional[datetime]:
-    if value is not None and value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
 
 
 def telegram_link_dict(link: Optional[TeamTelegramLink], *, available: bool) -> dict[str, Any]:

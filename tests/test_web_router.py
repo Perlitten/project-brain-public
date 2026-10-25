@@ -41,14 +41,14 @@ def test_project_overview_can_skip_unrelated_health_probes_without_losing_counts
         yield session
 
     with (
-        patch.object(web, "check_health", health),
-        patch.object(web, "_resolve_repository", AsyncMock(return_value=REPO)),
-        patch.object(web, "get_embedding_retrieval_health", AsyncMock(return_value={})),
-        patch.object(web, "async_session_factory", factory),
-        patch.object(web, "get_db_counts", AsyncMock(return_value={"files": 7, "chunks": 12})),
-        patch.object(web, "build_coverage", return_value={"eligible_chunks": 12}),
-        patch.object(web, "_repository_freshness", AsyncMock(return_value={})),
-        patch.object(web, "get_recent_brain_jobs", AsyncMock(return_value={"jobs": []})),
+        patch.object(web.overview, "check_health", health),
+        patch.object(web.overview, "_resolve_repository", AsyncMock(return_value=REPO)),
+        patch.object(web.overview, "get_embedding_retrieval_health", AsyncMock(return_value={})),
+        patch.object(web.overview, "async_session_factory", factory),
+        patch.object(web.overview, "get_db_counts", AsyncMock(return_value={"files": 7, "chunks": 12})),
+        patch.object(web.overview, "build_coverage", return_value={"eligible_chunks": 12}),
+        patch.object(web.overview, "_repository_freshness", AsyncMock(return_value={})),
+        patch.object(web.overview, "get_recent_brain_jobs", AsyncMock(return_value={"jobs": []})),
         patch("brain.embeddings.config.get_embedding_config", return_value=CONFIG),
     ):
         suffix = "&include_health=false" if light else ""
@@ -107,7 +107,7 @@ def test_report_detail_rejects_path_traversal():
 def test_report_detail_returns_markdown_content_and_preserves_md_id(tmp_path):
     report = tmp_path / "eval-report.md"
     report.write_text("# Evaluation\n\nscore: 0.8\n", encoding="utf-8")
-    with patch.object(web, "reports_dir", return_value=tmp_path):
+    with patch.object(web.reports, "reports_dir", return_value=tmp_path):
         result = asyncio.run(web.web_report_detail("eval-report.md"))
     assert result["report"]["id"] == "eval-report.md"
     assert result["content"].startswith("# Evaluation")
@@ -127,7 +127,7 @@ def test_repository_scoped_pack_filter_does_not_fallback_for_unknown_id():
     async def factory():
         yield session
 
-    with patch.object(web, "async_session_factory", factory):
+    with patch.object(web.packs, "async_session_factory", factory):
         result = asyncio.run(web.web_context_packs(limit=50, repository_id=999))
     assert result["packs"] == []
     assert result["total"] == 0
@@ -159,8 +159,8 @@ def test_context_packs_reports_exact_total_and_page_for_more_than_200_rows():
         yield session
 
     with (
-        patch.object(web, "async_session_factory", factory),
-        patch.object(web, "resolve_context_pack_file", return_value=None),
+        patch.object(web.packs, "async_session_factory", factory),
+        patch.object(web.packs, "resolve_context_pack_file", return_value=None),
     ):
         result = asyncio.run(web.web_context_packs(page=9, page_size=25))
     assert result["total"] == 250
@@ -354,8 +354,8 @@ def test_context_pack_freshness_uses_each_repository_commit():
         yield session
 
     with (
-        patch.object(web, "async_session_factory", factory),
-        patch.object(web, "resolve_context_pack_file", return_value=None),
+        patch.object(web.packs, "async_session_factory", factory),
+        patch.object(web.packs, "resolve_context_pack_file", return_value=None),
     ):
         result = asyncio.run(web.web_context_packs(limit=50))
     assert [pack["stale"] for pack in result["packs"]] == [False, False, None]
@@ -378,8 +378,8 @@ def test_modules_streams_chunk_rows_without_materializing_query_results():
         yield session
 
     with (
-        patch.object(web, "async_session_factory", factory),
-        patch.object(web, "_resolve_repository", AsyncMock(return_value=REPO)),
+        patch.object(web.modules, "async_session_factory", factory),
+        patch.object(web.modules, "_resolve_repository", AsyncMock(return_value=REPO)),
         patch("brain.embeddings.config.get_embedding_config", return_value=CONFIG),
     ):
         result = asyncio.run(web.web_modules(repository_id=REPO.id))
@@ -392,7 +392,7 @@ def test_modules_streams_chunk_rows_without_materializing_query_results():
 
 def test_reports_endpoint():
     raw = [{"name": "a_audit.md", "created_at": "2026-09-01 10:00:00", "size": 10}] * 3
-    with patch.object(web, "get_reports_list", return_value=raw):
+    with patch.object(web.reports, "get_reports_list", return_value=raw):
         response = client.get("/api/web/reports?limit=2")
     assert response.status_code == 200
     reports = response.json()["reports"]
@@ -401,7 +401,7 @@ def test_reports_endpoint():
 
 
 def test_reports_endpoint_unreadable_folder_is_503():
-    with patch.object(web, "get_reports_list", side_effect=OSError("denied")):
+    with patch.object(web.reports, "get_reports_list", side_effect=OSError("denied")):
         response = client.get("/api/web/reports")
     assert response.status_code == 503
 
@@ -409,7 +409,7 @@ def test_reports_endpoint_unreadable_folder_is_503():
 def test_health_endpoint_shape():
     services = {"postgres": {"status": "healthy"}}
     with (
-        patch.object(web, "check_health", AsyncMock(return_value=dict(services))),
+        patch.object(web.overview, "check_health", AsyncMock(return_value=dict(services))),
         patch(
             "brain.workers.scheduler.scheduler_status",
             AsyncMock(
@@ -421,7 +421,7 @@ def test_health_endpoint_shape():
             ),
         ),
         patch.object(
-            web,
+            web.overview,
             "get_recent_brain_jobs",
             AsyncMock(
                 return_value={
@@ -430,7 +430,7 @@ def test_health_endpoint_shape():
                 }
             ),
         ),
-        patch.object(web, "get_self_diagnosis_status", AsyncMock(return_value={"status": "ok"})),
+        patch.object(web.overview, "get_self_diagnosis_status", AsyncMock(return_value={"status": "ok"})),
     ):
         response = client.get("/api/web/health")
     assert response.status_code == 200
@@ -445,9 +445,9 @@ def test_health_endpoint_shape():
 
 def test_module_graph_endpoint():
     with (
-        patch.object(web, "_resolve_repository", AsyncMock(return_value=REPO)),
+        patch.object(web.modules, "_resolve_repository", AsyncMock(return_value=REPO)),
         patch.object(
-            web,
+            web.modules,
             "load_file_import_edges",
             AsyncMock(
                 return_value=[
@@ -466,15 +466,16 @@ def test_module_graph_endpoint():
 
 def test_module_graph_graph_store_down_is_503():
     with (
-        patch.object(web, "_resolve_repository", AsyncMock(return_value=REPO)),
-        patch.object(web, "load_file_import_edges", AsyncMock(side_effect=RuntimeError("neo4j down"))),
+        patch.object(web.modules, "_resolve_repository", AsyncMock(return_value=REPO)),
+        patch.object(web.modules, "load_file_import_edges", AsyncMock(side_effect=RuntimeError("neo4j down"))),
     ):
         response = client.get("/api/web/module-graph")
     assert response.status_code == 503
 
 
 def test_repo_scoped_endpoints_without_repository_return_empty():
-    with patch.object(web, "_resolve_repository", AsyncMock(return_value=None)):
+    with (patch.object(web.indexing, "_resolve_repository", AsyncMock(return_value=None)),
+          patch.object(web.modules, "_resolve_repository", AsyncMock(return_value=None))):
         assert client.get("/api/web/index-runs").json() == {"repository": None, "runs": []}
         assert client.get("/api/web/modules").json() == {"repository": None, "modules": []}
         assert client.get("/api/web/module-graph").json() == {

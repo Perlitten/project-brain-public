@@ -280,16 +280,16 @@ async def test_self_diagnosis_delivery_failure_fails_job_for_retry():
     redis.set = AsyncMock(return_value=True)
 
     with (
-        patch("brain.workers.tasks.init_db", new=AsyncMock()),
+        patch("brain.workers.tasks.jobs.init_db", new=AsyncMock()),
         patch(
-            "brain.workers.tasks.generate_proactive_insights",
+            "brain.workers.tasks.jobs.generate_proactive_insights",
             new=AsyncMock(return_value=diagnosis),
         ),
         patch(
-            "brain.workers.tasks.deliver_diagnosis_alert",
+            "brain.workers.tasks.jobs.deliver_diagnosis_alert",
             new=AsyncMock(return_value={"status": "failed"}),
         ),
-        patch("brain.workers.tasks.redis_client", redis),
+        patch("brain.workers.tasks.jobs.redis_client", redis),
     ):
         with pytest.raises(RuntimeError, match="Telegram delivery"):
             await run_self_diagnosis({"use_llm": True})
@@ -327,16 +327,16 @@ async def test_self_diagnosis_still_alerts_when_schema_initialization_is_down():
     redis = AsyncMock()
     redis.set = AsyncMock(return_value=True)
     with (
-        patch("brain.workers.tasks.init_db", new=AsyncMock(side_effect=RuntimeError("postgres down"))),
+        patch("brain.workers.tasks.jobs.init_db", new=AsyncMock(side_effect=RuntimeError("postgres down"))),
         patch(
-            "brain.workers.tasks.generate_proactive_insights",
+            "brain.workers.tasks.jobs.generate_proactive_insights",
             new=AsyncMock(return_value=diagnosis),
         ),
         patch(
-            "brain.workers.tasks.deliver_diagnosis_alert",
+            "brain.workers.tasks.jobs.deliver_diagnosis_alert",
             new=AsyncMock(return_value={"status": "sent"}),
         ) as deliver,
-        patch("brain.workers.tasks.redis_client", redis),
+        patch("brain.workers.tasks.jobs.redis_client", redis),
     ):
         result = await run_self_diagnosis({"use_llm": True})
 

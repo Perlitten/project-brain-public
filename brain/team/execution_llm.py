@@ -35,6 +35,7 @@ from typing import Iterable, Mapping
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from brain.team._util import _iso, _now
 from brain.team.activity import record_event
 from brain.team.authorization import TeamConflict, TeamDenied, fresh, require_team_storage, team_state
 from brain.team.models import AgentRun, AgentRunExecution, TeamLlmBudget, TeamLlmConsent, TeamProject, TeamTaskBinding
@@ -73,14 +74,6 @@ class LlmCeiling:
     """What a run's parents allow: unbounded for a top-level run, else the narrowed parent declaration."""
     bounded: bool = False
     cap: Mapping | None = None  # None while bounded: a parent declared no LLM use, so the child may not
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso(value: datetime | None) -> str | None:
-    return value.isoformat() if value else None
 
 
 def host_name(entry: str) -> str:

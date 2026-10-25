@@ -424,9 +424,9 @@ def _mirror_indexer(expect_file: str | None = None):
 
 async def _reindex(params, indexer):
     with (
-        patch.object(tasks, "init_db", new=AsyncMock()),
-        patch.object(tasks, "FileIndexer", return_value=indexer),
-        patch.object(tasks, "upsert_origin_state", new=AsyncMock(return_value=True)) as upsert,
+        patch.object(tasks.jobs, "init_db", new=AsyncMock()),
+        patch.object(tasks.jobs, "FileIndexer", return_value=indexer),
+        patch.object(tasks._source_plan, "upsert_origin_state", new=AsyncMock(return_value=True)) as upsert,
     ):
         result = await tasks.run_reindex(params)
     return result, upsert
@@ -457,8 +457,8 @@ async def test_read_only_checkout_is_indexed_from_the_mirror(repos, mirrors, mon
     # instead of moving the index back to the stale checkout.
     later = _mirror_indexer()
     with (
-        patch.object(tasks, "get_repository_by_path", new=AsyncMock(return_value=SimpleNamespace(id=7))),
-        patch.object(tasks, "get_origin_state", new=AsyncMock(return_value={"source_mode": "mirror"})),
+        patch.object(tasks._source_plan, "get_repository_by_path", new=AsyncMock(return_value=SimpleNamespace(id=7))),
+        patch.object(tasks._source_plan, "get_origin_state", new=AsyncMock(return_value={"source_mode": "mirror"})),
     ):
         again, _ = await _reindex({"repo_path": repos.server.as_posix()}, later)
     assert later.seen["source_commit"] == new_sha

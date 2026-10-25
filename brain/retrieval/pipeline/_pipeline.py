@@ -1,649 +1,33 @@
-"""Hybrid retrieval pipeline: query understanding → channels → fusion → rerank."""
-
+"""The hybrid retrieval pipeline orchestrator."""
 from __future__ import annotations
 
 import asyncio
 import copy
-import hashlib
-import re
 import time
-from typing import Awaitable, Dict, List, Optional, Tuple, TypeVar
-
+from typing import Dict, List, Optional
 from loguru import logger
-from sqlalchemy import case, or_, select, true
-
+from sqlalchemy import case, or_, select
 from brain.config.settings import settings
 from brain.context.context_pack_builder import StableMemoryCache
-from brain.database.models import File, FileChunk, Repository, Symbol
+from brain.database.models import File, Repository, Symbol
 from brain.database.session import async_session_factory
 from brain.graph.graph_client import GraphClient
-from brain.retrieval.fusion import (
-    FusionPolicy, fuse_candidates, prepare_channels, rank_channel_paths,
-    _v2_fused_scores as score_v2_channels,
-    _normalize_channel as _normalize_channel,
-    _content_match_bonus as _content_match_bonus,
-    _rank_paths_from_channel as _rank_paths_from_channel,
-    _is_strong_channel as _is_strong_channel,
-)
+from brain.retrieval.fusion import fuse_candidates, prepare_channels, rank_channel_paths
 from brain.retrieval.graph_extractors import retrieval_tab_core_boost
-from brain.late_interaction.application import (
-    apply_late_interaction,
-    late_interaction_candidate_budget,
-    late_interaction_canary_selected,
-    late_interaction_requested,
-)
-from brain.retrieval.reranker import RerankCandidate, RerankResult, rerank_top_k
-from brain.retrieval.types import (
-    ChannelCandidate,
-    QueryRoute,
-    RecallStageResult,
-    RetrievalPipelineResult,
-    RetrievalTiming,
-    SurfacePool,
-)
+from brain.late_interaction.application import apply_late_interaction, late_interaction_requested
+from brain.retrieval.reranker import RerankResult, rerank_top_k
+from brain.retrieval.types import (ChannelCandidate, QueryRoute, RecallStageResult, RetrievalPipelineResult, RetrievalTiming, SurfacePool)
 from brain.search.code_search import vector_search_cards, vector_search_chunks
-from brain.search.filters import (
-    HISTORICAL_SUMMARY_PREFIX,
-    RRF_PIPELINE_WEIGHTS,
-    enforce_precision_top_k,
-    expand_protected_pairs,
-    is_extension_noise_path,
-    is_extension_tab_path,
-    is_root_config_path,
-    is_test_path,
-    knowledge_authority_weight,
-    paired_test_path,
-    should_exclude_from_retrieval,
-    query_requests_historical_context,
-    trim_ranked_files,
-)
+from brain.search.filters import (HISTORICAL_SUMMARY_PREFIX, expand_protected_pairs, is_extension_noise_path, is_extension_tab_path, is_root_config_path, is_test_path, knowledge_authority_weight, paired_test_path, should_exclude_from_retrieval, query_requests_historical_context)
 from brain.search.path_hints import derive_path_hints, expand_keywords, path_hint_bonus
-from brain.search.lexical_ranking import score_path_for_keywords, probe_paths_for_keywords
-from brain.search.surfaces import (
-    IMPORT_TARGET_KIND,
-    V6_SYMBOL_KINDS,
-    classify_surface,
-    surfaces_for_pool,
-)
+from brain.search.lexical_ranking import probe_paths_for_keywords
+from brain.search.surfaces import IMPORT_TARGET_KIND, V6_SYMBOL_KINDS, classify_surface
 from brain.search.task_intent import audit_test_boost_paths, derive_task_intent
-
-
-def classify_query_route(task_type: str, keywords: List[str], task_description: str) -> QueryRoute:
-    lower = task_description.lower()
-    if any(re.search(r"\b[A-Z][a-zA-Z0-9_]+\b", kw) for kw in keywords):
-        return QueryRoute.EXACT_IDENTIFIER
-    if any(token in lower for token in ("depends", "dependency", "import", "calls", "uses")):
-        return QueryRoute.DEPENDENCY
-    if any(token in lower for token in ("rule", "decision", "adr", "policy", "must not", "boundary", "enforce")):
-        return QueryRoute.DECISION_RULE
-    if any(
-        token in lower for token in ("across", "frontend", "backend", "extension", "nginx", "docker", "deploy", "wire")
-    ):
-        return QueryRoute.CROSS_SURFACE
-    if task_type in {"deletion_rename"}:
-        return QueryRoute.EXACT_IDENTIFIER
-    if task_type in {"feature", "refactor", "database", "analytics", "api_contract"}:
-        return QueryRoute.CONCEPTUAL
-    if task_type in {"bugfix", "design_change"} and len(keywords) >= 2:
-        return QueryRoute.EXACT_IDENTIFIER
-    return QueryRoute.GENERAL
-
-
-def _channel_weight(route: QueryRoute, channel: str) -> float:
-    if channel == "card":
-        # Moderate card_vector weight (never card-first); route-neutral.
-        return float(getattr(settings, "RETRIEVAL_CARD_VECTOR_WEIGHT", 0.9))
-    base = RRF_PIPELINE_WEIGHTS.get(channel, 1.0)
-    boosts = {
-        QueryRoute.EXACT_IDENTIFIER: {"symbol": 2.0, "lexical": 1.6, "hints": 1.5, "vector": 0.55},
-        QueryRoute.CONCEPTUAL: {"vector": 1.5, "lexical": 0.95, "symbol": 1.1},
-        QueryRoute.DEPENDENCY: {"graph": 1.5, "symbol": 1.4},
-        QueryRoute.DECISION_RULE: {"memory": 1.6, "lexical": 1.3, "hints": 1.2},
-        QueryRoute.CROSS_SURFACE: {"graph": 1.2, "hints": 1.35, "symbol": 1.15, "vector": 0.85},
-    }
-    return base * boosts.get(route, {}).get(channel, 1.0)
-
-
-def _path_keyword_hits(path: str, keywords: List[str], task_description: str = "") -> float:
-    return score_path_for_keywords(path, keywords, task_description)
-
-
-def _channel_strength(
-    paths: List[str],
-    limit: int,
-    candidates: List[ChannelCandidate],
-) -> float:
-    if not paths:
-        return 0.0
-    by_path = {c.item_id: c for c in candidates}
-    score = 0.0
-    for idx, path in enumerate(paths[:limit]):
-        cand = by_path.get(path)
-        base = cand.normalized_score if cand else 0.5
-        score += base / (idx + 1)
-    return score
-
-
-def select_surface_balanced_pool(
-    reranked: List[ChannelCandidate],
-    pool_limit: int,
-    expected_surface: str,
-    min_quota: int,
-) -> Tuple[List[ChannelCandidate], Dict[str, SurfacePool]]:
-    """v6 recall: guarantee each routed surface a quota before global score fill.
-
-    Prevents a dominant surface (scripts/tests on engine bugfixes) from crowding
-    tail required files out of the top-100 pool. Pure / DB-free.
-    """
-    by_surface: Dict[str, List[ChannelCandidate]] = {}
-    for cand in reranked:
-        by_surface.setdefault(classify_surface(cand.item_id), []).append(cand)
-
-    selected: List[ChannelCandidate] = []
-    seen: set[str] = set()
-    pools: Dict[str, SurfacePool] = {}
-
-    for surface in surfaces_for_pool(expected_surface):
-        bucket = by_surface.get(surface, [])
-        pool = SurfacePool(surface=surface, quota=min_quota)
-        for cand in bucket[:min_quota]:
-            if cand.item_id not in seen:
-                selected.append(cand)
-                seen.add(cand.item_id)
-                pool.paths.append(cand.item_id)
-        pools[surface] = pool
-
-    # Global fill by reranker score until pool_limit reached.
-    for cand in reranked:
-        if len(selected) >= pool_limit:
-            break
-        if cand.item_id not in seen:
-            selected.append(cand)
-            seen.add(cand.item_id)
-
-    return selected[:pool_limit], pools
-
-
-def _synth_pool_candidate(path: str, floor_score: float, source: str) -> ChannelCandidate:
-    """Synthetic recall-pool candidate for a co-rank injected path."""
-    return ChannelCandidate(
-        channel="fused",
-        item_id=path,
-        raw_score=floor_score,
-        normalized_score=floor_score,
-        reranker_score=floor_score,
-        metadata={"ranks": {}, "injected": source},
-    )
-
-
-def _late_canary_selected(repository_id: int, query: str) -> bool:
-    """Backward-compatible test/import surface for the shared sampler."""
-    return late_interaction_canary_selected(repository_id, query)
-
-
-_LateResult = TypeVar("_LateResult")
-
-
-async def _await_late_rerank(
-    awaitable: Awaitable[_LateResult],
-) -> tuple[Optional[_LateResult], bool]:
-    try:
-        result = await asyncio.wait_for(
-            awaitable,
-            timeout=settings.LATE_INTERACTION_RERANK_TIMEOUT_S,
-        )
-        return result, False
-    except asyncio.TimeoutError:
-        return None, True
-
-
-def _apply_late_interaction_scores(
-    candidates: list[ChannelCandidate],
-    scores: dict[str, float],
-) -> int:
-    """Apply a bounded rank bonus; raw MaxSim scales are not cross-query comparable."""
-    ranked_scores = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    score_rank = {path: rank for rank, (path, _score) in enumerate(ranked_scores, 1)}
-    denominator = max(1, len(score_rank) - 1)
-    applied = 0
-    for candidate in candidates:
-        rank = score_rank.get(candidate.item_id)
-        if rank is None:
-            continue
-        normalized = 1.0 - ((rank - 1) / denominator)
-        candidate.reranker_score += settings.LATE_INTERACTION_SCORE_WEIGHT * normalized
-        candidate.metadata["late_interaction_score"] = scores[candidate.item_id]
-        candidate.metadata["late_interaction_rank"] = rank
-        applied += 1
-    candidates.sort(key=lambda candidate: candidate.reranker_score, reverse=True)
-    return applied
-
-
-def _content_hash(content: str) -> str:
-    return hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()
-
-
-async def _resolve_late_interaction_candidates(
-    *,
-    repository_id: int,
-    pool_paths: list[str],
-    dense_matches: list[tuple[float, FileChunk, Optional[File]]],
-) -> list:
-    """Resolve a bounded, repository-scoped chunk pool.
-
-    Dense provenance is retained first in its original similarity order.  Any
-    remaining budget is filled by file-pool order and then ``FileChunk.id``.
-    """
-    from brain.late_interaction.client import LateInteractionCandidate
-
-    budget = late_interaction_candidate_budget()
-    ordered_paths = list(dict.fromkeys(pool_paths))
-    allowed_paths = set(ordered_paths)
-    selected: list = []
-    seen_chunk_ids: set[int] = set()
-
-    for _similarity, chunk, file_obj in dense_matches:
-        path = file_obj.path if file_obj else ""
-        if (
-            not path
-            or getattr(file_obj, "repository_id", repository_id) != repository_id
-            or path not in allowed_paths
-            or chunk.id in seen_chunk_ids
-        ):
-            continue
-        selected.append(
-            LateInteractionCandidate(
-                chunk_id=chunk.id,
-                path=path,
-                content_hash=_content_hash(chunk.content or ""),
-            )
-        )
-        seen_chunk_ids.add(chunk.id)
-        if len(selected) >= budget:
-            return selected
-
-    remaining = budget - len(selected)
-    if remaining <= 0 or not ordered_paths:
-        return selected
-
-    path_priority = case(
-        {path: rank for rank, path in enumerate(ordered_paths)},
-        value=File.path,
-        else_=len(ordered_paths),
-    )
-    async with async_session_factory() as session:
-        stmt = (
-            select(FileChunk.id, FileChunk.content, File.path)
-            .join(File, FileChunk.file_id == File.id)
-            .where(
-                File.repository_id == repository_id,
-                File.path.in_(ordered_paths),
-                FileChunk.id.notin_(seen_chunk_ids) if seen_chunk_ids else true(),
-            )
-            .order_by(path_priority, FileChunk.id)
-            .limit(remaining)
-        )
-        rows = (await session.execute(stmt)).all()
-    for chunk_id, content, path in rows:
-        selected.append(
-            LateInteractionCandidate(
-                chunk_id=chunk_id,
-                path=path,
-                content_hash=_content_hash(content or ""),
-            )
-        )
-    return selected
-
-
-def _build_rerank_pool(
-    pool_candidates: list[ChannelCandidate],
-    *,
-    path_to_file: dict[str, File],
-    vector_by_path: dict[str, float],
-    lexical_by_path: dict[str, float],
-    symbol_by_path: dict[str, float],
-    graph_by_path: dict[str, float],
-    card_by_path: dict[str, float],
-    card_rerank: bool,
-) -> list[RerankCandidate]:
-    return [
-        RerankCandidate(
-            path=candidate.item_id,
-            reranker_score=candidate.reranker_score,
-            lexical_score=lexical_by_path.get(candidate.item_id, 0.0),
-            vector_score=vector_by_path.get(candidate.item_id, 0.0),
-            graph_score=graph_by_path.get(candidate.item_id, 0.0),
-            symbol_score=symbol_by_path.get(candidate.item_id, 0.0),
-            card_score=card_by_path.get(candidate.item_id, 0.0) if card_rerank else 0.0,
-            summary=(path_to_file[candidate.item_id].summary or "")
-            if candidate.item_id in path_to_file
-            else "",
-        )
-        for candidate in pool_candidates
-    ]
-
-
-async def _rerank_late_counterfactual(
-    rerank_pool: list[RerankCandidate],
-    *,
-    task_description: str,
-    task_type: str,
-    repository_name: str,
-    precision_k: int,
-    expected_surface: str,
-    two_stage: bool,
-    commit_hash: str,
-):
-    """Run the LFM arm outside the production cache and without a second LLM call."""
-    return await rerank_top_k(
-        rerank_pool,
-        task_description=task_description,
-        task_type=task_type,
-        repo_hash=repository_name,
-        top_k=precision_k,
-        use_cache=False,
-        use_llm=False,
-        expected_surface=expected_surface,
-        two_stage=two_stage,
-        commit_hash=commit_hash,
-    )
-
-
-def _pin_qualified_path_hints(
-    candidates: list[ChannelCandidate], hints: list[str], pinned: list[str], limit: int,
-) -> list[str]:
-    """Retain indexed qualified file hints during keyword-based promotion.
-
-    Basename/directory hints remain ranking signals. Only the existing strongest
-    qualified-file match becomes a protected choice inside the output budget.
-    """
-    anchors = [candidate.item_id for candidate in sorted(
-        candidates, key=lambda c: (-path_hint_bonus(c.item_id, hints), c.rank, c.item_id),
-    ) if path_hint_bonus(candidate.item_id, hints) >= 0.55]
-    return list(dict.fromkeys(anchors + pinned))[:limit]
-
-
-def _select_final_paths(
-    *,
-    reranked: list[ChannelCandidate],
-    v5_top: list[str],
-    file_limit: int,
-    precision_k: int,
-    candidates_by_channel: dict[str, list[ChannelCandidate]],
-    keywords_lower: list[str],
-    task_type: str,
-    task_description: str,
-    pinned: list[str],
-) -> list[str]:
-    scored_tuples = [
-        (candidate.reranker_score, candidate.item_id, {"final_score": candidate.reranker_score})
-        for candidate in reranked
-    ]
-    trimmed = trim_ranked_files(
-        scored_tuples,
-        file_limit,
-        min_keep=min(10, file_limit),
-        aggressive=file_limit < 15,
-    )
-    tail_selected = [path for _, path, _ in trimmed]
-
-    promoted: list[str] = []
-    seen_selected: set[str] = set()
-    for path in v5_top + tail_selected:
-        if path not in seen_selected:
-            promoted.append(path)
-            seen_selected.add(path)
-    for channel in ("hints", "lexical", "symbol"):
-        for candidate in candidates_by_channel.get(channel, [])[:8]:
-            if candidate.item_id in seen_selected:
-                continue
-            lexical_score = _path_keyword_hits(
-                candidate.item_id,
-                keywords_lower,
-                task_description,
-            )
-            if lexical_score < 3.5 and channel != "hints":
-                continue
-            promoted.append(candidate.item_id)
-            seen_selected.add(candidate.item_id)
-    score_by_path = {candidate.item_id: candidate.reranker_score for candidate in reranked}
-    promoted.sort(
-        key=lambda path: score_by_path.get(path, 0.0)
-        + _path_keyword_hits(path, keywords_lower, task_description) * 0.05,
-        reverse=True,
-    )
-    pinned_set = set(pinned)
-    rest = [path for path in promoted if path not in pinned_set]
-    selected = (pinned + rest)[:file_limit]
-    head = [path for path in v5_top if path in selected]
-    selected = head + [path for path in selected if path not in head]
-    selected = enforce_precision_top_k(
-        selected,
-        task_type,
-        task_description,
-        k=precision_k,
-        priority_paths=v5_top + pinned,
-    )[:file_limit]
-    head = [path for path in v5_top if path in selected]
-    return head + [path for path in selected if path not in head]
-
-
-# ---------- v2 helpers (all inert unless settings.RETRIEVAL_V2_ENABLED) ----------
-
-_IDENT_RE = re.compile(
-    r"\b(?:[a-z][a-z0-9]*_[a-z0-9_]{2,}|[a-z]+[A-Z][a-zA-Z0-9]*|[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)+)\b"
-)
-# File paths are mined without a backtracking regex: candidate tokens are cut on
-# characters that cannot appear in a path, then checked for shape in plain code.
-_PATH_TOKEN_RE = re.compile(r"[\w./-]+")
-_SOURCE_FILE_EXTENSIONS = frozenset({
-    "py", "pyi", "js", "ts", "tsx", "jsx", "java", "go", "rs", "c", "h", "hpp", "cpp", "rb",
-    "md", "rst", "txt", "html", "css", "toml", "yaml", "yml", "json",
-})
-
-
-def _extract_file_paths(text: str) -> List[str]:
-    """Return ``dir/file.ext`` tokens: at least one directory segment and a known extension."""
-    paths: List[str] = []
-    for token in _PATH_TOKEN_RE.findall(text):
-        candidate = token.rstrip("./-")
-        if "/" not in candidate:
-            continue
-        segments = [segment for segment in candidate.split("/") if segment]
-        if len(segments) < 2:
-            continue
-        name = segments[-1]
-        stem, dot, ext = name.rpartition(".")
-        if not dot or not stem or ext not in _SOURCE_FILE_EXTENSIONS:
-            continue
-        paths.append(candidate)
-    return paths
-_ERROR_NAME_RE = re.compile(r"\b[A-Z][a-zA-Z0-9]*(?:Error|Exception|Warning|Fault|Timeout|NotFound)\b")
-_STACK_FRAME_RE = re.compile(r'File "([^"]+)", line \d+')
-
-_ID_QUERY_STOPWORDS = frozenset({
-    "__init__", "__main__", "__name__", "self.args", "self.assert", "self.assertEqual",
-    "None.None", "True.False",
-})
-
-
-def extract_code_query_terms(text: str, limit: int = 24) -> List[str]:
-    """Mine a task description for code-shaped terms: file paths, stack frames,
-    CamelCase/snake_case/dotted identifiers, and *Error/*Exception names.
-    Feeds the lexical/symbol/hints channels so issue text becomes a code query."""
-    import keyword
-
-    terms: List[str] = []
-    terms.extend(_extract_file_paths(text))
-    terms.extend(_STACK_FRAME_RE.findall(text))
-    terms.extend(_ERROR_NAME_RE.findall(text))
-    terms.extend(_IDENT_RE.findall(text))
-    seen: set = set()
-    out: List[str] = []
-    for term in terms:
-        norm = term.strip().lower()
-        if len(norm) < 4 or norm in seen or norm in _ID_QUERY_STOPWORDS:
-            continue
-        head = norm.split(".")[-1]
-        if keyword.iskeyword(head) or keyword.iskeyword(norm):
-            continue
-        seen.add(norm)
-        out.append(term.strip())
-        if len(out) >= limit:
-            break
-    return out
-
-
-_TOKEN_RE = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
-
-
-def _bm25_tokenize(text: str) -> List[str]:
-    return _TOKEN_RE.findall((text or "").lower())
-
-
-async def _content_bm25_channel(
-    repository_id: Optional[int],
-    query: str,
-    top_n: int = 50,
-) -> List[ChannelCandidate]:
-    """Content-level BM25 over chunk text — the fallback channel for corpora
-    where path/symbol lexical channels cannot fire (anonymous snippets)."""
-    async with async_session_factory() as session:
-        stmt = select(FileChunk.content, File.path).join(File, FileChunk.file_id == File.id)
-        if repository_id is not None:
-            stmt = stmt.where(File.repository_id == repository_id)
-        rows = (await session.execute(stmt)).all()
-    if not rows:
-        return []
-    docs = [_bm25_tokenize(r[0]) for r in rows]
-    q = list(dict.fromkeys(_bm25_tokenize(query)))
-    if not q:
-        return []
-    k1, b = 1.5, 0.75
-    n_docs = len(docs)
-    df: Dict[str, int] = {}
-    tfs: List[Dict[str, int]] = []
-    total_len = 0
-    for d in docs:
-        tf: Dict[str, int] = {}
-        for tok in d:
-            tf[tok] = tf.get(tok, 0) + 1
-        tfs.append(tf)
-        total_len += len(d)
-        for tok in tf:
-            df[tok] = df.get(tok, 0) + 1
-    avg_len = total_len / max(n_docs, 1) or 1.0
-    import math
-
-    idf = {w: math.log(1.0 + (n_docs - df.get(w, 0) + 0.5) / (df.get(w, 0) + 0.5)) for w in q}
-    best_by_path: Dict[str, float] = {}
-    for tf, (_content, path) in zip(tfs, rows):
-        dl = len(tf) or 1
-        s = 0.0
-        for w in q:
-            f = tf.get(w)
-            if not f:
-                continue
-            s += idf[w] * f * (k1 + 1) / (f + k1 * (1 - b + b * dl / avg_len))
-        if s > best_by_path.get(path, 0.0):
-            best_by_path[path] = s
-    ranked = sorted(best_by_path.items(), key=lambda kv: -kv[1])[:top_n]
-    return [
-        ChannelCandidate("bm25", path, score, rank=i)
-        for i, (path, score) in enumerate(ranked, 1)
-    ]
-
-
-_LIN_CHANNEL_WEIGHTS_ATTRS: Dict[str, str] = {
-    "vector": "RETRIEVAL_V2_LIN_W_VEC",
-    "lexical": "RETRIEVAL_V2_LIN_W_LEX",
-    "symbol": "RETRIEVAL_V2_LIN_W_SYM",
-    "hints": "RETRIEVAL_V2_LIN_W_HINT",
-    "graph": "RETRIEVAL_V2_LIN_W_GRAPH",
-    "bm25": "RETRIEVAL_V2_LIN_W_BM25",
-    "memory": "RETRIEVAL_V2_LIN_W_GRAPH",
-    "card": "RETRIEVAL_V2_LIN_W_GRAPH",
-}
-
-
-def _fusion_policy(
-    route: QueryRoute, *, v2_enabled: bool = False, v6_enabled: bool = False,
-    expected_surface: str = "",
-) -> FusionPolicy:
-    return FusionPolicy(
-        channel_weights={channel: _channel_weight(route, channel) for channel in _LIN_CHANNEL_WEIGHTS_ATTRS},
-        linear_weights={channel: float(getattr(settings, attr, 0.25))
-                        for channel, attr in _LIN_CHANNEL_WEIGHTS_ATTRS.items()},
-        vector_multiplier=float(getattr(settings, "RETRIEVAL_V2_WRRF_VEC_WEIGHT", 2.0)),
-        mode=getattr(settings, "RETRIEVAL_V2_FUSION", "wrrf"),
-        v2_enabled=v2_enabled, v6_enabled=v6_enabled, expected_surface=expected_surface,
-    )
-
-
-def _v2_fused_scores(
-    file_ranks: Dict[str, Dict[str, int]],
-    candidates_by_channel: Dict[str, List[ChannelCandidate]],
-    route: QueryRoute,
-) -> Dict[str, float]:
-    """Compatibility entry point; policy reads remain in the orchestrator."""
-    return score_v2_channels(file_ranks, candidates_by_channel, _fusion_policy(route))
-
-
-def _should_abstain(
-    *,
-    selected: list[str],
-    reranked: list[ChannelCandidate],
-    candidates_by_channel: dict[str, list[ChannelCandidate]],
-    task_type: str,
-    keywords: list[str] | None = None,
-) -> bool:
-    """Return true when retrieval has no grounded evidence for a locator pack.
-
-    Dense similarity always returns a nearest neighbour, even for an unrelated
-    query.  An empty result is safer than presenting that neighbour as context
-    when every lexical/symbol/path/graph channel is empty and the top score is
-    below a conservative heuristic confidence floor. Explicitly routed tasks retain the
-    historical fail-open behavior because their surface constraints provide
-    independent evidence.
-    """
-    v2_enabled = bool(settings.RETRIEVAL_V2_ENABLED)
-    if not selected or task_type in {"deletion_rename", "database", "api_contract", "bugfix"}:
-        return False
-    if not reranked:
-        return False
-    grounded = any(candidates_by_channel.get(name) for name in ("symbol", "hints", "graph", "memory"))
-    if grounded:
-        return False
-    if v2_enabled and float(reranked[0].reranker_score) >= 0.5:
-        return False
-    lexical = candidates_by_channel.get("lexical", [])
-    if lexical:
-        # Generic words such as app/configure/deployment create incidental
-        # lexical hits.  Require at least one distinctive query term to occur
-        # in a candidate path before treating that channel as evidence.
-        distinctive = {token.lower() for token in (keywords or []) if len(token) >= 7}
-        path_text = " ".join(candidate.item_id.lower() for candidate in lexical)
-        summary_text = " ".join(
-            str(candidate.metadata.get("summary", "")).lower() for candidate in lexical
-        )
-        if distinctive and any(token in f"{path_text} {summary_text}" for token in distinctive):
-            return False
-        if not distinctive:
-            return False
-        # Legacy scores are RRF-scaled, so use query/path evidence rather than
-        # a numeric threshold. Two or more distinctive terms absent from every
-        # lexical path indicate an unsupported domain (generic words created
-        # the lexical hit), while one-term semantic queries remain fail-open.
-        if not v2_enabled and len(distinctive) >= 2:
-            return True
-        return v2_enabled
-    return v2_enabled and float(reranked[0].reranker_score) < 0.15
-
-
-def _lexical_file_candidate(file_obj: File, rank: int) -> ChannelCandidate:
-    """Build the lexical candidate with the file metadata used by abstention."""
-    return ChannelCandidate("lexical", file_obj.path, 1.0 / rank, rank=rank,
-                            metadata={"summary": file_obj.summary or ""})
+from ._channels import (_lexical_file_candidate, _path_keyword_hits, _should_abstain, _synth_pool_candidate, classify_query_route, select_surface_balanced_pool)
+from ._fusion import _fusion_policy
+from ._late import (_apply_late_interaction_scores, _build_rerank_pool, _rerank_late_counterfactual, _resolve_late_interaction_candidates)
+from ._select import _pin_qualified_path_hints, _select_final_paths
+from ._terms import _content_bm25_channel, extract_code_query_terms
 
 
 class HybridRetrievalPipeline:
@@ -698,6 +82,101 @@ class HybridRetrievalPipeline:
             "card": [],
         }
 
+        (lexical_files, lexical_symbols, symbol_paths, hint_files) = await self._stage_lexical_symbols(
+            keywords_lower=keywords_lower, repository_id=repository_id, task_description=task_description, v6_enabled=v6_enabled, candidates_by_channel=candidates_by_channel, timing=timing)
+        (vector_result, chunk_files) = await self._stage_vector(
+            task_description=task_description, deep_mode=deep_mode, v6_enabled=v6_enabled, repository_id=repository_id, v2_enabled=v2_enabled, candidates_by_channel=candidates_by_channel, timing=timing)
+        (card_by_path) = await self._stage_cards(
+            task_description=task_description, repository_id=repository_id, card_recall=card_recall, card_rerank=card_rerank, candidates_by_channel=candidates_by_channel, timing=timing)
+        (graph_counts) = await self._stage_graph(
+            repository_id=repository_id, route=route, keywords_lower=keywords_lower, candidates_by_channel=candidates_by_channel, timing=timing)
+        await self._stage_memory(
+            repository_id=repository_id, keywords_lower=keywords_lower, candidates_by_channel=candidates_by_channel, timing=timing)
+        await self._stage_bm25_fallback(
+            v2_enabled=v2_enabled, repository_id=repository_id, task_description=task_description, candidates_by_channel=candidates_by_channel)
+        (prepared_fusion, fused_ranking, channel_paths, path_to_file) = await self._stage_fusion(
+            candidates_by_channel=candidates_by_channel, route=route, card_recall=card_recall, lexical_files=lexical_files, hint_files=hint_files, chunk_files=chunk_files, card_by_path=card_by_path, repository_id=repository_id, v2_enabled=v2_enabled, v6_enabled=v6_enabled, expected_surface=expected_surface, task_type=task_type, task_description=task_description, keywords_lower=keywords_lower, timing=timing)
+        (reranked, probe_list, hint_tokens, v2_rerank_off) = await self._stage_rerank_boosts(
+            fused_ranking=fused_ranking, keywords_lower=keywords_lower, task_description=task_description, intent=intent, candidates_by_channel=candidates_by_channel, graph_counts=graph_counts, route=route, path_to_file=path_to_file, task_type=task_type, v2_enabled=v2_enabled, timing=timing)
+        (recall, pool_candidates) = await self._stage_recall_pool(
+            v6_enabled=v6_enabled, reranked=reranked, expected_surface=expected_surface, file_limit=file_limit, repository_id=repository_id, path_to_file=path_to_file, intent=intent, task_type=task_type, timing=timing)
+        (precision_k, commit_hash, v5_result, baseline_v5_top, available, vector_by_path, lexical_by_path, symbol_by_path, graph_by_path) = await self._stage_v5_rerank(
+            candidates_by_channel=candidates_by_channel, pool_candidates=pool_candidates, path_to_file=path_to_file, card_by_path=card_by_path, card_rerank=card_rerank, file_limit=file_limit, repository_id=repository_id, v2_rerank_off=v2_rerank_off, reranked=reranked, task_description=task_description, task_type=task_type, repository_name=repository_name, v6_enabled=v6_enabled, expected_surface=expected_surface, recall=recall, timing=timing)
+        (pinned, baseline_selected) = await self._stage_baseline_selection(
+            probe_list=probe_list, v2_rerank_off=v2_rerank_off, repository_id=repository_id, path_to_file=path_to_file, hint_tokens=hint_tokens, file_limit=file_limit, candidates_by_channel=candidates_by_channel, reranked=reranked, baseline_v5_top=baseline_v5_top, precision_k=precision_k, keywords_lower=keywords_lower, task_type=task_type, task_description=task_description, timing=timing)
+        (selected, v5_top, v5_debug_result, reranked, late_debug) = await self._stage_late_interaction(
+            repository_id=repository_id, deep_mode=deep_mode, task_description=task_description, pool_candidates=pool_candidates, vector_result=vector_result, reranked=reranked, path_to_file=path_to_file, vector_by_path=vector_by_path, lexical_by_path=lexical_by_path, symbol_by_path=symbol_by_path, graph_by_path=graph_by_path, card_by_path=card_by_path, card_rerank=card_rerank, available=available, precision_k=precision_k, expected_surface=expected_surface, v6_enabled=v6_enabled, commit_hash=commit_hash, task_type=task_type, repository_name=repository_name, file_limit=file_limit, candidates_by_channel=candidates_by_channel, keywords_lower=keywords_lower, pinned=pinned, baseline_selected=baseline_selected, baseline_v5_top=baseline_v5_top, v5_result=v5_result, late_interaction_client=late_interaction_client, route=route, timing=timing)
+
+        abstained = _should_abstain(
+            selected=selected,
+            reranked=reranked,
+            candidates_by_channel=candidates_by_channel,
+            task_type=task_type,
+            keywords=keywords_lower,
+        )
+        if abstained:
+            selected = []
+
+        seen_selected = set(selected)
+        fallback_reason = "hybrid_rrf_v5_rerank"
+        for cand in reranked:
+            cand.included = cand.item_id in seen_selected
+            if not cand.included:
+                cand.exclusion_reason = "budget_cap"
+
+        return RetrievalPipelineResult(
+            route=route,
+            vector_status=vector_result.status,
+            candidates_by_channel=candidates_by_channel,
+            fused_ranking=fused_ranking,
+            reranked=reranked,
+            selected_paths=selected,
+            v5_top_paths=v5_top,
+            pool_paths=recall.pool_paths,
+            recall_debug=recall.to_debug(),
+            v5_rerank_debug={
+                "cache_hit": v5_debug_result.cache_hit,
+                "cache_key": v5_debug_result.cache_key,
+                "used_llm": v5_debug_result.used_llm,
+                "fallback": v5_debug_result.fallback,
+                "fallback_reason": v5_debug_result.fallback_reason,
+                "stage": v5_debug_result.stage,
+                "reranker_version": v5_debug_result.reranker_version,
+                "abstained": abstained,
+                "latency_ms": round(v5_debug_result.latency_ms, 2),
+                "estimated_cost_usd": v5_debug_result.estimated_cost_usd,
+                "position_changes": v5_debug_result.position_changes,
+                "excluded_relevant": v5_debug_result.excluded_relevant,
+                "explanations": {c.path: c.explanation for c in v5_debug_result.candidates},
+                "confidence": {c.path: c.confidence for c in v5_debug_result.candidates},
+            },
+            timing=timing,
+            debug={
+                "route": route.value,
+                "retrieval_mode": retrieval_mode,
+                "vector_message": vector_result.message,
+                "channel_counts": {k: len(v) for k, v in candidates_by_channel.items()},
+                "selection_mode": fallback_reason,
+                "best_channel": None,
+                "channel_path_counts": {k: len(v) for k, v in channel_paths.items()},
+                "v6_enabled": v6_enabled,
+                "expected_surface": expected_surface,
+                "recall": recall.to_debug(),
+                "cards": {
+                    "enabled": cards_enabled,
+                    "card_recall": card_recall,
+                    "card_rerank": card_rerank,
+                    "card_matches": len(card_by_path),
+                    "card_scores": {
+                        p: round(s, 4) for p, s in sorted(card_by_path.items(), key=lambda x: x[1], reverse=True)[:15]
+                    },
+                },
+                "late_interaction": late_debug,
+            },
+        )
+
+
+    async def _stage_lexical_symbols(self, *, keywords_lower, repository_id, task_description, v6_enabled, candidates_by_channel, timing):
         # Lexical + symbol
         t_lex = time.perf_counter()
         lexical_files: List[File] = []
@@ -799,7 +278,8 @@ class HybridRetrievalPipeline:
             )
         for rank, f in enumerate(hint_files, 1):
             candidates_by_channel["hints"].append(ChannelCandidate("hints", f.path, 2.0 / rank, rank=rank))
-
+        return lexical_files, lexical_symbols, symbol_paths, hint_files
+    async def _stage_vector(self, *, task_description, deep_mode, v6_enabled, repository_id, v2_enabled, candidates_by_channel, timing):
         # Vector
         t_vec = time.perf_counter()
         vector_limit = (
@@ -841,7 +321,8 @@ class HybridRetrievalPipeline:
                 seen_vec_paths[path] = max(sims) if v2_enabled else max(0.0, max(sims))
         for rank, (path, sim) in enumerate(sorted(seen_vec_paths.items(), key=lambda x: x[1], reverse=True), 1):
             candidates_by_channel["vector"].append(ChannelCandidate("vector", path, sim, rank=rank))
-
+        return vector_result, chunk_files
+    async def _stage_cards(self, *, task_description, repository_id, card_recall, card_rerank, candidates_by_channel, timing):
         # Card vector (v6 P3) — file-role signal channel; gated, never card-first.
         card_by_path: Dict[str, float] = {}
         if card_recall or card_rerank:
@@ -854,7 +335,8 @@ class HybridRetrievalPipeline:
                 for rank, (path, sim) in enumerate(sorted(card_by_path.items(), key=lambda x: x[1], reverse=True), 1):
                     candidates_by_channel["card"].append(ChannelCandidate("card", path, sim, rank=rank))
             timing.graph_expansion_ms += (time.perf_counter() - t_card) * 1000
-
+        return card_by_path
+    async def _stage_graph(self, *, repository_id, route, keywords_lower, candidates_by_channel, timing):
         # Graph (skip for routes/channels where it rarely helps latency or precision)
         t_graph = time.perf_counter()
         graph_counts: Dict[str, int] = {}
@@ -897,7 +379,8 @@ class HybridRetrievalPipeline:
         timing.neo4j_ms = (time.perf_counter() - t_graph) * 1000
         for rank, (path, count) in enumerate(sorted(graph_counts.items(), key=lambda x: x[1], reverse=True), 1):
             candidates_by_channel["graph"].append(ChannelCandidate("graph", path, float(count), rank=rank))
-
+        return graph_counts
+    async def _stage_memory(self, *, repository_id, keywords_lower, candidates_by_channel, timing):
         # Memory / cache
         t_mem = time.perf_counter()
         await self.cache.initialize(repository_id=repository_id)
@@ -909,7 +392,7 @@ class HybridRetrievalPipeline:
                             ChannelCandidate("memory", f.path, 0.8, metadata={"source": "cache"})
                         )
         timing.memory_ms = (time.perf_counter() - t_mem) * 1000
-
+    async def _stage_bm25_fallback(self, *, v2_enabled, repository_id, task_description, candidates_by_channel):
         # v2 (c): when every lexical-side channel came back empty (anonymous
         # corpora where path/symbol/hint matching cannot fire), fall back to a
         # content-BM25 channel so fusion still mixes a lexical signal with the
@@ -924,7 +407,7 @@ class HybridRetrievalPipeline:
                 candidates_by_channel["bm25"] = await _content_bm25_channel(
                     repository_id, task_description
                 )
-
+    async def _stage_fusion(self, *, candidates_by_channel, route, card_recall, lexical_files, hint_files, chunk_files, card_by_path, repository_id, v2_enabled, v6_enabled, expected_surface, task_type, task_description, keywords_lower, timing):
         # Normalize per channel
         t_fusion = time.perf_counter()
         prepared_fusion = prepare_channels(candidates_by_channel, route, card_recall=card_recall)
@@ -963,7 +446,8 @@ class HybridRetrievalPipeline:
         timing.fusion_ms = (time.perf_counter() - t_fusion) * 1000
 
         channel_paths = rank_channel_paths(prepared_fusion, candidates_by_channel)
-
+        return prepared_fusion, fused_ranking, channel_paths, path_to_file
+    async def _stage_rerank_boosts(self, *, fused_ranking, keywords_lower, task_description, intent, candidates_by_channel, graph_counts, route, path_to_file, task_type, v2_enabled, timing):
         # Rerank: lexical + hint boosts for precision at top-k
         t_rerank = time.perf_counter()
         probe_list = probe_paths_for_keywords(keywords_lower, task_description)
@@ -1037,7 +521,8 @@ class HybridRetrievalPipeline:
                 reranked.append(cand)
             reranked.sort(key=lambda c: c.reranker_score, reverse=True)
             timing.rerank_ms = (time.perf_counter() - t_rerank) * 1000
-
+        return reranked, probe_list, hint_tokens, v2_rerank_off
+    async def _stage_recall_pool(self, *, v6_enabled, reranked, expected_surface, file_limit, repository_id, path_to_file, intent, task_type, timing):
         # Recall stage (v6) → deterministic rerank → precision top-10.
         # v5 path: simple top-30 fused slice. v6 path: surface-balanced top-100
         # pool with colocated-test / docs-config co-rank injection.
@@ -1121,7 +606,8 @@ class HybridRetrievalPipeline:
             recall.pool_paths = [c.item_id for c in pool_candidates]
             recall.pool_limit = pool_limit
         timing.recall_pool_ms = (time.perf_counter() - t_recall) * 1000
-
+        return recall, pool_candidates
+    async def _stage_v5_rerank(self, *, candidates_by_channel, pool_candidates, path_to_file, card_by_path, card_rerank, file_limit, repository_id, v2_rerank_off, reranked, task_description, task_type, repository_name, v6_enabled, expected_surface, recall, timing):
         t_v5 = time.perf_counter()
         vector_by_path = {c.item_id: c.raw_score for c in candidates_by_channel.get("vector", [])}
         lexical_by_path = {c.item_id: c.normalized_score for c in candidates_by_channel.get("lexical", [])}
@@ -1167,7 +653,8 @@ class HybridRetrievalPipeline:
         available = {c.item_id for c in reranked} | set(recall.pool_paths)
         baseline_v5_top = expand_protected_pairs(baseline_v5_top, available)[:precision_k]
         timing.v5_rerank_ms = (time.perf_counter() - t_v5) * 1000
-
+        return precision_k, commit_hash, v5_result, baseline_v5_top, available, vector_by_path, lexical_by_path, symbol_by_path, graph_by_path
+    async def _stage_baseline_selection(self, *, probe_list, v2_rerank_off, repository_id, path_to_file, hint_tokens, file_limit, candidates_by_channel, reranked, baseline_v5_top, precision_k, keywords_lower, task_type, task_description, timing):
         # Final selection retains qualified hints while promoting recall paths.
         t_budget = time.perf_counter()
         pinned: List[str] = []
@@ -1202,7 +689,8 @@ class HybridRetrievalPipeline:
                 pinned=pinned,
             )
         timing.budget_selection_ms = (time.perf_counter() - t_budget) * 1000
-
+        return pinned, baseline_selected
+    async def _stage_late_interaction(self, *, repository_id, deep_mode, task_description, pool_candidates, vector_result, reranked, path_to_file, vector_by_path, lexical_by_path, symbol_by_path, graph_by_path, card_by_path, card_rerank, available, precision_k, expected_surface, v6_enabled, commit_hash, task_type, repository_name, file_limit, candidates_by_channel, keywords_lower, pinned, baseline_selected, baseline_v5_top, v5_result, late_interaction_client, route, timing):
         late_debug: dict = {
             "status": "disabled",
             "shadow": bool(getattr(settings, "LATE_INTERACTION_SHADOW_ENABLED", False)),
@@ -1326,71 +814,4 @@ class HybridRetrievalPipeline:
                 reranked = counterfactual_state["reranked"]
                 v5_top = counterfactual_state["v5_top"]
                 v5_debug_result = counterfactual_state["v5_result"]
-
-        abstained = _should_abstain(
-            selected=selected,
-            reranked=reranked,
-            candidates_by_channel=candidates_by_channel,
-            task_type=task_type,
-            keywords=keywords_lower,
-        )
-        if abstained:
-            selected = []
-
-        seen_selected = set(selected)
-        fallback_reason = "hybrid_rrf_v5_rerank"
-        for cand in reranked:
-            cand.included = cand.item_id in seen_selected
-            if not cand.included:
-                cand.exclusion_reason = "budget_cap"
-
-        return RetrievalPipelineResult(
-            route=route,
-            vector_status=vector_result.status,
-            candidates_by_channel=candidates_by_channel,
-            fused_ranking=fused_ranking,
-            reranked=reranked,
-            selected_paths=selected,
-            v5_top_paths=v5_top,
-            pool_paths=recall.pool_paths,
-            recall_debug=recall.to_debug(),
-            v5_rerank_debug={
-                "cache_hit": v5_debug_result.cache_hit,
-                "cache_key": v5_debug_result.cache_key,
-                "used_llm": v5_debug_result.used_llm,
-                "fallback": v5_debug_result.fallback,
-                "fallback_reason": v5_debug_result.fallback_reason,
-                "stage": v5_debug_result.stage,
-                "reranker_version": v5_debug_result.reranker_version,
-                "abstained": abstained,
-                "latency_ms": round(v5_debug_result.latency_ms, 2),
-                "estimated_cost_usd": v5_debug_result.estimated_cost_usd,
-                "position_changes": v5_debug_result.position_changes,
-                "excluded_relevant": v5_debug_result.excluded_relevant,
-                "explanations": {c.path: c.explanation for c in v5_debug_result.candidates},
-                "confidence": {c.path: c.confidence for c in v5_debug_result.candidates},
-            },
-            timing=timing,
-            debug={
-                "route": route.value,
-                "retrieval_mode": retrieval_mode,
-                "vector_message": vector_result.message,
-                "channel_counts": {k: len(v) for k, v in candidates_by_channel.items()},
-                "selection_mode": fallback_reason,
-                "best_channel": None,
-                "channel_path_counts": {k: len(v) for k, v in channel_paths.items()},
-                "v6_enabled": v6_enabled,
-                "expected_surface": expected_surface,
-                "recall": recall.to_debug(),
-                "cards": {
-                    "enabled": cards_enabled,
-                    "card_recall": card_recall,
-                    "card_rerank": card_rerank,
-                    "card_matches": len(card_by_path),
-                    "card_scores": {
-                        p: round(s, 4) for p, s in sorted(card_by_path.items(), key=lambda x: x[1], reverse=True)[:15]
-                    },
-                },
-                "late_interaction": late_debug,
-            },
-        )
+        return selected, v5_top, v5_debug_result, reranked, late_debug

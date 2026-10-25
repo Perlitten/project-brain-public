@@ -399,9 +399,10 @@ async def test_git_connect_job_records_a_clone_failure_on_the_origin_state(origi
 def test_git_connect_is_a_registered_job_type():
     from brain.workers.tasks import execute_job  # noqa: F401  (import side effects register handlers)
     from brain.workers import tasks
+    from brain.workers.tasks import dispatch
 
     handlers = getattr(tasks, "JOB_HANDLERS", None) or getattr(tasks, "_HANDLERS", None)
-    source = Path(tasks.__file__).read_text(encoding="utf-8")
+    source = Path(dispatch.__file__).read_text(encoding="utf-8")
     assert handlers is None or "git_connect" in handlers
     assert '"git_connect": run_git_connect' in source
 

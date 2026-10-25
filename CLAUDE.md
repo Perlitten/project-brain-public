@@ -14,7 +14,7 @@ Start with the files for the task rather than relying on a stale repository size
 | Router | Core | Tests |
 |---|---|---|
 | `routers/core.py` | `brain/search/`, `brain/database/` | `test_repo_scoped_search.py`, `test_vector_search.py` |
-| `routers/web.py` (JSON for the web UI) | `brain/embeddings/integrity.py`, `apps/api/helpers.py` | `test_web_router.py` |
+| `routers/web/` (JSON for the web UI; `_common.py` holds the router + shared shapers, one module per screen group) | `brain/embeddings/integrity.py`, `apps/api/helpers.py` | `test_web_router.py` |
 | `routers/graph_v2.py` | `brain/graph/` | `test_graph_and_memory.py`, `test_graph_v3_identity.py` |
 | `routers/impact.py` | `brain/insights/impact_*.py`, `brain/analyzers/` | `test_impact_analysis.py`, `test_impact_bounded.py` |
 | `routers/drift.py` | `brain/insights/drift_*.py` | `test_drift_analyzer_v3.py`, `test_architecture_change_guard.py` |
@@ -43,7 +43,7 @@ Start with the files for the task rather than relying on a stale repository size
 | API response shape / DTOs | `apps/api/schemas.py`, `brain/database/models.py` |
 | Code search, ranking | `brain/search/code_search.py`, `lexical_ranking.py`, `similarity.py` |
 | Context pack assembly, budgets | `brain/context/context_pack_builder.py` (selection and storage), `rendering.py` (artifact contract), `budget.py`, `brain/search/code_search.py` |
-| Retrieval pipeline, rerank | `brain/retrieval/pipeline.py` (I/O orchestration), `fusion.py` (in-memory scoring), `service.py`, `reranker.py` |
+| Retrieval pipeline, rerank | `brain/retrieval/pipeline/` package (`_pipeline.py` holds the `run()` orchestration; helpers split into `_channels`/`_terms`/`_late`/`_fusion`/`_select`), `fusion.py` (in-memory scoring), `service.py`, `reranker.py` |
 | Repository indexing | `brain/indexers/repo_indexer.py`, `file_indexer.py` (SQL/providers), `graph_enrichment.py` (buffered projection), `symbol_extractors.py` |
 | Embeddings, pgvector | `brain/embeddings/store.py`, `pgvector_sql.py`, `integrity.py` |
 | ColBERT / late interaction | `brain/late_interaction/provider.py`, `store.py`, `client.py` |
@@ -60,11 +60,11 @@ Start with the files for the task rather than relying on a stale repository size
 | Team provisioning (team, projects, members, repos), OAuth clients as team members | `apps/cli/commands/team.py`, `brain/team/provisioning.py`, `brain/team/oauth_link.py`; ADR — `docs/adr/team-collaboration.md` |
 | Who may read/write a repository (solo vs. team state, roles, `Named credential required`) | `brain/team/authorization.py` (`team_state`, `authorize_repository`), `apps/api/team_access.py`, `apps/api/auth.py::named_credential_required`; `tests/test_team_transport.py` |
 | Deferred MCP results and inline byte budgets | `apps/mcp_server/deferred_payload.py`, `tests/test_mcp_deferred_payload.py` |
-| Bounded team execution (M2: grants, capabilities, leases, subprocess and container backends, egress proxy, LLM consent/budget, artifacts) | `brain/team/execution.py`, `execution_llm.py`, `brain/execution/bounded.py`, `container.py`, `egress.py`, `docs/operations/TEAM_EXECUTION.md`, `tests/test_team_execution.py`, `test_team_execution_container.py`, `test_team_execution_llm_artifacts.py` |
-| Team coordination (M3: subtasks/dependencies, overlap warnings, instruction versions, fenced leases, integration queue) | `brain/team/coordination.py`, `apps/api/routers/team_coordination.py`, `docs/TEAM.md#team-coordination-m3`, `tests/test_team_coordination.py` |
-| Background jobs | `brain/workers/tasks.py`, `queue.py`, `worker.py` |
-| DB schema, migrations | `brain/database/models.py`, `harness_models.py`, `migrations.py` |
-| Settings, paths | `brain/config/settings.py`, `paths.py` |
+| Bounded team execution (M2: grants, capabilities, leases, subprocess and container backends, egress proxy, LLM consent/budget, artifacts) | `brain/team/execution/` package (`policy.py`, `state.py`, `artifacts.py`, `grants.py`, `lease.py`, `runner.py`), `execution_llm.py`, `brain/execution/bounded.py`, `container.py`, `egress.py`, `docs/operations/TEAM_EXECUTION.md`, `tests/test_team_execution.py`, `test_team_execution_container.py`, `test_team_execution_llm_artifacts.py` |
+| Team coordination (M3: subtasks/dependencies, overlap warnings, instruction versions, fenced leases, integration queue) | `brain/team/coordination/` package (`plans.py`, `overlaps.py`, `instructions.py`, `leases.py`, `queue.py`), `apps/api/routers/team_coordination.py`, `docs/TEAM.md#team-coordination-m3`, `tests/test_team_coordination.py` |
+| Background jobs | `brain/workers/tasks/` package (`dispatch.py`, `jobs.py`, `_source_plan.py`, `_deep.py`), `queue.py`, `worker.py` |
+| DB schema, migrations | `brain/database/models.py`, `harness_models.py`, `migrations/` package (`apply.py` orchestrates per-domain `_ensure_*` modules) |
+| Settings, paths | `brain/config/settings/` package (field mixins per domain; `Settings` assembled in `_model.py`), `paths.py` |
 
 ## Entry points
 
@@ -77,8 +77,7 @@ Start with the files for the task rather than relying on a stale repository size
 ## Layer boundaries
 
 - `brain/` — the core: logic, storage, analysis. **It must not import `apps/`.**
-  Existing exceptions: 4 lazy imports of `apps.api.helpers` inside functions in
-  `brain/insights/proactive.py`, and the `brain/__main__.py` shim. Do not add new ones — move
+  The only exception is the `brain/__main__.py` shim. Do not add new ones — move
   shared code into `brain/` instead of pulling transport into the core.
 - `apps/` — transport: HTTP, CLI, MCP. Business logic does not belong here.
 - Storage: Postgres + pgvector (relational data and vectors), Neo4j (graph, via

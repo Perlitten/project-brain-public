@@ -60,11 +60,10 @@ from brain.database.models import ApiCredential, Principal
 from brain.team import invitations
 from brain.team.authorization import TeamConflict, TeamDenied, fresh
 from brain.team.models import TeamIdentity, TeamMember, TeamOidcFlow
+from brain.team._util import _iso, _now
 from brain.team.provisioning import (
     TEAM_ID,
     TeamNotFound,
-    _iso,
-    _now,
     member_dict,
     member_scopes,
     record_sso_event,

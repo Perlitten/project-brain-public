@@ -41,6 +41,7 @@ from brain.database.harness_models import AgentTask
 from brain.database.models import Decision, Learning, MemoryEpisode, MemorySkill, Principal, Repository, Rule
 from brain.database.repository_utils import find_repository_id, repository_path_candidates
 from brain.memory.repo_scope import normalize_repo_scope
+from brain.team._util import _aware
 from brain.team.models import AgentRun, ProjectRepository, TeamActivityEvent, TeamInvitation, TeamTaskBinding
 
 # The personal tier (brain.memory.proposals.PERSONAL_STATUS): only the author ever reads those learnings.
@@ -142,12 +143,6 @@ class _Stream:
     paths: Callable[[Any], str | None] = field(default=lambda _row: None)
 
 
-def _utc(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
-
-
 def _wanted(kind: str, kinds: frozenset[str]) -> bool:
     return not kinds or kind in kinds or kind.split(".", 1)[0] in kinds
 
@@ -224,7 +219,7 @@ def _event(kind: str, key: str, occurred_at: datetime | None, actor_id: int | No
            project_id: uuid.UUID | str | None = None, actor_label: str | None = None,
            details: dict | None = None) -> dict:
     return {
-        "id": key, "kind": kind, "occurred_at": _utc(occurred_at),
+        "id": key, "kind": kind, "occurred_at": _aware(occurred_at),
         "actor_principal_id": actor_id, "actor_label": actor_label, "summary": summary,
         "project_id": str(project_id) if project_id else None, "repository_id": repository_id,
         "repo_path": repo_path, "subject": subject, "details": details or {},

@@ -64,12 +64,12 @@ class FakeQueue:
 
 
 def read_app(factory, artifact, monkeypatch):
-    for module in (auth, team_access, core_retrieval, web):
+    for module in (auth, team_access, core_retrieval, web._common, web.packs, web.rules):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr(core_retrieval, "assess_repository_freshness", AsyncMock(return_value={}))
     monkeypatch.setattr("brain.workers.queue.queue_for_job", lambda *_, **__: FakeQueue())
-    monkeypatch.setattr(web, "resolve_context_pack_file", lambda _path: artifact)
+    monkeypatch.setattr(web.packs, "resolve_context_pack_file", lambda _path: artifact)
     app = FastAPI()
     app.include_router(core_retrieval.router)
     app.include_router(web.router)
@@ -137,7 +137,7 @@ async def test_team_unscoped_web_memory_is_member_filtered_and_resolves_relative
             Rule(id="repo-b", name="B", repo_path="/synthetic/B", status="active"),
         ])
     app = read_app(factory, artifact, monkeypatch)
-    monkeypatch.setattr(web, "_rule_usage_for_page", AsyncMock(
+    monkeypatch.setattr(web.rules, "_rule_usage_for_page", AsyncMock(
         return_value={"measurement_started_at": None, "counts": {}}))
     async with client_for(app) as client:
         decisions = await client.get("/api/web/decisions", headers=READER)

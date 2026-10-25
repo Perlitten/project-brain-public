@@ -196,8 +196,8 @@ async def test_run_reindex_fetches_origin_when_the_webhook_sha_is_new(repos, mon
     monkeypatch.setattr(tasks.settings, "BRAIN_WEBHOOK_FETCH_SOURCE", True)
     indexer = _indexer_returning(repos.server)
     with (
-        patch.object(tasks, "init_db", new=AsyncMock()),
-        patch.object(tasks, "FileIndexer", return_value=indexer),
+        patch.object(tasks.jobs, "init_db", new=AsyncMock()),
+        patch.object(tasks.jobs, "FileIndexer", return_value=indexer),
     ):
         result = await tasks.run_reindex({"repo_path": repos.server.as_posix(), "source_revision": new_sha})
 
@@ -214,12 +214,14 @@ async def test_run_reindex_fetches_origin_when_the_webhook_sha_is_new(repos, mon
 async def test_run_reindex_at_head_does_not_touch_the_checkout(repos, monkeypatch):
     monkeypatch.setattr(tasks.settings, "BRAIN_WEBHOOK_FETCH_SOURCE", True)
     monkeypatch.setattr(
-        tasks, "sync_checkout_to_revision", lambda *a, **k: pytest.fail("no sync when HEAD already matches")
+        tasks._source_plan,
+        "sync_checkout_to_revision",
+        lambda *a, **k: pytest.fail("no sync when HEAD already matches"),
     )
     indexer = _indexer_returning(repos.server)
     with (
-        patch.object(tasks, "init_db", new=AsyncMock()),
-        patch.object(tasks, "FileIndexer", return_value=indexer),
+        patch.object(tasks.jobs, "init_db", new=AsyncMock()),
+        patch.object(tasks.jobs, "FileIndexer", return_value=indexer),
     ):
         result = await tasks.run_reindex({"repo_path": repos.server.as_posix(), "source_revision": repos.first})
     assert result["source_sync"]["status"] == "already_at_revision"
@@ -232,8 +234,8 @@ async def test_run_reindex_unreachable_sha_is_a_permanent_failure(repos, monkeyp
     indexer = _indexer_returning(repos.server)
     bogus = "0123456789abcdef0123456789abcdef01234567"
     with (
-        patch.object(tasks, "init_db", new=AsyncMock()),
-        patch.object(tasks, "FileIndexer", return_value=indexer),
+        patch.object(tasks.jobs, "init_db", new=AsyncMock()),
+        patch.object(tasks.jobs, "FileIndexer", return_value=indexer),
         pytest.raises(PermanentJobError) as excinfo,
     ):
         await tasks.run_reindex({"repo_path": repos.server.as_posix(), "source_revision": bogus})
@@ -250,8 +252,8 @@ async def test_run_reindex_read_only_checkout_fails_clearly(repos, monkeypatch):
     monkeypatch.setattr("brain.indexers.source_sync.checkout_is_writable", lambda *a, **k: False)
     indexer = _indexer_returning(repos.server)
     with (
-        patch.object(tasks, "init_db", new=AsyncMock()),
-        patch.object(tasks, "FileIndexer", return_value=indexer),
+        patch.object(tasks.jobs, "init_db", new=AsyncMock()),
+        patch.object(tasks.jobs, "FileIndexer", return_value=indexer),
         pytest.raises(PermanentJobError) as excinfo,
     ):
         await tasks.run_reindex({"repo_path": repos.server.as_posix(), "source_revision": new_sha})
@@ -267,8 +269,8 @@ async def test_run_reindex_with_fetch_disabled_keeps_the_old_mismatch_failure(re
     monkeypatch.setattr(tasks.settings, "BRAIN_WEBHOOK_FETCH_SOURCE", False)
     indexer = _indexer_returning(repos.server)
     with (
-        patch.object(tasks, "init_db", new=AsyncMock()),
-        patch.object(tasks, "FileIndexer", return_value=indexer),
+        patch.object(tasks.jobs, "init_db", new=AsyncMock()),
+        patch.object(tasks.jobs, "FileIndexer", return_value=indexer),
         pytest.raises(PermanentJobError) as excinfo,
     ):
         await tasks.run_reindex({"repo_path": repos.server.as_posix(), "source_revision": new_sha})
@@ -286,11 +288,11 @@ async def test_run_reindex_transient_fetch_failure_is_retryable(repos, monkeypat
     def failing_sync(*_a, **_k):
         raise SourceSyncTransientError("git fetch origin failed: could not resolve host")
 
-    monkeypatch.setattr(tasks, "sync_checkout_to_revision", failing_sync)
+    monkeypatch.setattr(tasks._source_plan, "sync_checkout_to_revision", failing_sync)
     indexer = _indexer_returning(repos.server)
     with (
-        patch.object(tasks, "init_db", new=AsyncMock()),
-        patch.object(tasks, "FileIndexer", return_value=indexer),
+        patch.object(tasks.jobs, "init_db", new=AsyncMock()),
+        patch.object(tasks.jobs, "FileIndexer", return_value=indexer),
         pytest.raises(SourceSyncTransientError),
     ):
         await tasks.run_reindex({"repo_path": repos.server.as_posix(), "source_revision": new_sha})

@@ -32,7 +32,16 @@ async def content_api(team_db, monkeypatch, tmp_path):
         await connection.run_sync(lambda sync: BrainInsight.metadata.create_all(
             sync, tables=[BrainInsight.__table__, BrainRequestTelemetry.__table__, BrainQueryCapturePolicy.__table__,
                           File.__table__, FileChunk.__table__, Embedding.__table__]))
-    for module in (auth, team_access, core_status, web, telemetry, query_capture):
+    for module in (
+        auth,
+        team_access,
+        core_status,
+        web._common,
+        web.dashboard,
+        web.rules,
+        telemetry,
+        query_capture,
+    ):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     async with factory() as session, session.begin():
