@@ -490,14 +490,18 @@ def local_key(monkeypatch, headers) -> None:
 async def test_local_surfaces_follow_team_governance_as_the_configured_principal(team_db, monkeypatch):
     factory, _, _ = team_db
     review_app(factory, monkeypatch)
+    await learning_table(factory)
 
-    # A contributor's key: the stdio tools file proposals exactly like POST /decisions and /rules.
+    # A contributor's key: the stdio tools file proposals exactly like the HTTP memory routes.
     local_key(monkeypatch, CONTRIBUTOR)
     made = await stdio_server.record_decision(title="Use one queue", repo_path=REPO, description="synthetic")
     ruled = await stdio_server.record_rule(name="No blocking IO", repo_path=REPO, description="synthetic")
-    assert made["status"] == "proposed" and ruled["status"] == "proposed"
+    learned = await stdio_server.record_learning(statement="Queue workers are idempotent", repo_path=REPO)
+    assert made["status"] == "proposed" and ruled["status"] == "proposed" and learned["status"] == "proposed"
     assert await count(factory, Decision) == 0 and await count(factory, Rule) == 0
-    assert (await proposal_row(factory, made["proposal_id"])).author_principal_id == 2
+    assert await count(factory, Learning) == 1
+    assert {(await proposal_row(factory, body["proposal_id"])).author_principal_id
+            for body in (made, ruled, learned)} == {2}
     # Bulk operator commands (rules sync, decision deprecate, import) write directly: refused.
     with pytest.raises(local_memory.LocalPrincipalError, match="team administrator"):
         await local_memory.require_local_administrator("rules sync")

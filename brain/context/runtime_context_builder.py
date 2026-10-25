@@ -21,6 +21,7 @@ from brain.database.models import File, FileChunk, Symbol
 from brain.database.session import async_session_factory
 from brain.memory.relevance import select_relevant_normative_memory
 from brain.memory.learning_retrieval import select_learnings_for_context
+from brain.memory.repo_scope import normalize_repo_scope, scope_equals
 from brain.retrieval.service import RetrievalCandidate, RetrievalResult, RetrievalService
 from brain.search.path_hints import derive_path_hints, path_hint_bonus
 
@@ -37,16 +38,33 @@ def _identifier_hits(content: str, identifiers: set[str]) -> int:
     return len(words & identifiers)
 
 
-def _bounded_memory(memory: Any, learnings: list[dict[str, Any]], max_bytes: int) -> dict[str, Any]:
+def _bounded_memory(memory: Any, learnings: list[dict[str, Any]], max_bytes: int,
+                    continuation: dict[str, Any] | None = None) -> dict[str, Any]:
     """Interleave applicable records so one memory layer cannot consume the cap."""
     groups = {"learnings": learnings, "rules": (memory or {}).get("rules", []) if isinstance(memory, dict) else [],
               "decisions": (memory or {}).get("decisions", []) if isinstance(memory, dict) else []}
+    continuation_items: list[tuple[str, dict[str, Any]]] = []
+    if isinstance(continuation, dict):
+        open_tasks = continuation.get("open_tasks", [])
+        handoffs = continuation.get("handoffs", [])
+        for index in range(max(len(open_tasks), len(handoffs))):
+            if index < len(open_tasks):
+                continuation_items.append(("open_tasks", open_tasks[index]))
+            if index < len(handoffs):
+                continuation_items.append(("handoffs", handoffs[index]))
     bounded: dict[str, Any] = {}
-    for index in range(max((len(items) for items in groups.values()), default=0)):
+    for index in range(max([*(len(items) for items in groups.values()), len(continuation_items)], default=0)):
         for name, items in groups.items():
             if index >= len(items):
                 continue
             proposed = {**bounded, name: [*bounded.get(name, []), items[index]]}
+            if len(json.dumps(proposed, ensure_ascii=False, separators=(",", ":")).encode()) <= max_bytes:
+                bounded = proposed
+        if index < len(continuation_items):
+            name, item = continuation_items[index]
+            current = bounded.get("continuation", [{}])[0]
+            block = {**current, name: [*current.get(name, []), item]}
+            proposed = {**bounded, "continuation": [block]}
             if len(json.dumps(proposed, ensure_ascii=False, separators=(",", ":")).encode()) <= max_bytes:
                 bounded = proposed
     return bounded
@@ -366,12 +384,17 @@ class RuntimeContextBuilder:
         built = builder.build()
         if not built.get("slices"):
             # Navigation alone cannot satisfy an evidence-bearing context.
-            # Report a budget gap rather than caching a false successful pack.
+            # Report a budget gap rather than caching a false successful pack —
+            # but keep memory/procedures that survived the budget: with no code
+            # slices they are the only durable evidence left. Rebuild through
+            # the budgeted builder so the hard byte cap still holds.
             metadata["status"] = "partial"
             metadata["missing"].append("code_slices_excluded_by_budget")
             return finish(
                 BudgetedPayloadBuilder(max_bytes, metadata=metadata)
                 .add("candidates", built.get("candidates", []), priority=1)
+                .add("memory", built.get("memory", {}), priority=5)
+                .add("procedures", built.get("procedures", {}), priority=5)
                 .build()
             )
         if not stale:
@@ -401,7 +424,50 @@ class RuntimeContextBuilder:
             logger.warning("L3 runtime retrieval skipped: {}", type(exc).__name__)
             metadata["missing"].append("learning_retrieval_unavailable")
             learnings = []
-        return _bounded_memory(memory, learnings, memory_cap)
+        continuation = await RuntimeContextBuilder._load_continuation(repo.get("path"), metadata)
+        return _bounded_memory(memory, learnings, memory_cap, continuation=continuation)
+
+    @staticmethod
+    async def _load_continuation(repo_path: Any, metadata: dict[str, Any]) -> dict[str, Any] | None:
+        """Recent handoffs and still-open agent tasks — the 'resume work' block.
+
+        Until now prepare_task_context could not see any of this: handoffs,
+        agent tasks and L1 episodes lived in tables nothing read, so a new
+        session always started empty even when the previous one left a summary.
+        """
+        try:
+            from brain.database.harness_models import AgentTask, MemoryHandoff, TASK_STATUSES, TERMINAL_STATUSES
+
+            normalized = normalize_repo_scope(repo_path)
+            open_statuses = tuple(status for status in TASK_STATUSES if status not in TERMINAL_STATUSES)
+            async with async_session_factory() as session:
+                tasks = (await session.execute(
+                    select(AgentTask)
+                    .where(AgentTask.status.in_(open_statuses))
+                    .where(scope_equals(AgentTask.repo_path, normalized))
+                    .order_by(AgentTask.updated_at.desc()).limit(4))).scalars().all()
+                rows = (await session.execute(
+                    select(MemoryHandoff)
+                    .outerjoin(AgentTask, MemoryHandoff.task_id == AgentTask.id)
+                    .where(or_(MemoryHandoff.task_id.is_(None),
+                               scope_equals(AgentTask.repo_path, normalized)))
+                    .order_by(MemoryHandoff.created_at.desc()).limit(5))).scalars().all()
+            if not tasks and not rows:
+                return None
+            return {
+                "open_tasks": [{"id": str(t.id), "title": t.title, "status": t.status,
+                                "priority": t.priority} for t in tasks],
+                "handoffs": [{"summary": truncate_utf8(h.summary or "", 400),
+                              "created_at": h.created_at.isoformat() if h.created_at else None,
+                              "task_id": str(h.task_id) if h.task_id else None}
+                             for h in rows],
+            }
+        except Exception as exc:
+            from loguru import logger
+
+            logger.warning("Continuation block skipped: {}", type(exc).__name__)
+            metadata["missing"].append("continuation_unavailable")
+            return None
 
     @staticmethod
     async def _overlay_current_slices(

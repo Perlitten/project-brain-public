@@ -7,7 +7,7 @@ team administrator over HTTP.
 
 ``BRAIN_LOCAL_PRINCIPAL_KEY`` names a credential instead. The local surfaces
 then act as that principal and run the very same HTTP handlers
-(``core_memory.create_decision`` / ``create_rule``), so team-state governance
+(``core_memory.create_decision`` / ``create_rule`` / ``create_learning``), so team-state governance
 (proposal for non-administrators, direct write for administrators and solo)
 has a single implementation. A configured key that does not resolve fails
 closed: the write is refused, never silently performed as the operator.
@@ -22,7 +22,7 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
 from apps.api.auth import named_credential_required, resolve_api_key
-from apps.api.schemas import DecisionCreate, RuleCreate
+from apps.api.schemas import DecisionCreate, LearningCreate, RuleCreate
 from brain.auth.principals import ResolvedPrincipal
 from brain.config.settings import settings
 
@@ -67,7 +67,9 @@ def _failure(exc: HTTPException) -> dict[str, Any]:
 
 
 async def governed_write(
-    kind: Literal["decision", "rule"], body: DecisionCreate | RuleCreate, principal: ResolvedPrincipal,
+    kind: Literal["decision", "rule", "learning"],
+    body: DecisionCreate | RuleCreate | LearningCreate,
+    principal: ResolvedPrincipal,
 ) -> dict[str, Any]:
     """Run the HTTP write handler as ``principal`` and return its answer as a plain dict.
 
@@ -82,9 +84,12 @@ async def governed_write(
         if kind == "decision":
             assert isinstance(body, DecisionCreate)
             result: Any = await core_memory.create_decision(body, caller=principal)
-        else:
+        elif kind == "rule":
             assert isinstance(body, RuleCreate)
             result = await core_memory.create_rule(body, caller=principal)
+        else:
+            assert isinstance(body, LearningCreate)
+            result = await core_memory.create_learning(body, principal=principal)
     except HTTPException as exc:
         return _failure(exc)
     if isinstance(result, JSONResponse):
@@ -92,8 +97,10 @@ async def governed_write(
     return dict(result)
 
 
-async def local_write(kind: Literal["decision", "rule"], fields: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """A decision/rule write from a local surface as the configured principal.
+async def local_write(
+    kind: Literal["decision", "rule", "learning"], fields: dict[str, Any]
+) -> Optional[dict[str, Any]]:
+    """A governed memory write from a local surface as the configured principal.
 
     None: no key is configured, so the caller writes as the operator. Otherwise the
     handler's answer (see ``governed_write``); an unusable key answers ``denied``.
@@ -104,5 +111,11 @@ async def local_write(kind: Literal["decision", "rule"], fields: dict[str, Any])
         return {"status": "denied", "error": str(exc)}
     if principal is None:
         return None
-    body: DecisionCreate | RuleCreate = DecisionCreate(**fields) if kind == "decision" else RuleCreate(**fields)
+    body: DecisionCreate | RuleCreate | LearningCreate
+    if kind == "decision":
+        body = DecisionCreate(**fields)
+    elif kind == "rule":
+        body = RuleCreate(**fields)
+    else:
+        body = LearningCreate(**fields)
     return await governed_write(kind, body, principal)

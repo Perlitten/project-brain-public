@@ -90,6 +90,8 @@ TOOL_ANNOTATIONS: dict[str, ToolAnnotations] = {
     "record_decision": _annotations("Record a decision", read_only=False, idempotent=True),
     "record_rule": _annotations("Record a rule", read_only=False),
     "record_task_lesson": _annotations("Record a task lesson", read_only=False, idempotent=True),
+    "record_learning": _annotations("Record a learning", read_only=False),
+    "record_handoff": _annotations("Record a session handoff", read_only=False),
     "record_task_observation": _annotations("Record a task observation", read_only=False, idempotent=True),
     "record_procedure_outcome": _annotations("Record a skill outcome", read_only=False, idempotent=True),
     "team_me": _annotations("Show my team access", read_only=True),

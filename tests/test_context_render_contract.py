@@ -9,7 +9,9 @@ from brain.context.rendering import PackDocument, render_document, render_eviden
 from brain.database.models import Decision, File, Learning, Rule, Symbol
 
 
-CASES = json.loads((Path(__file__).parent / "fixtures" / "context_render_contract.json").read_text())
+CASES = json.loads(
+    (Path(__file__).parent / "fixtures" / "context_render_contract.json").read_text(encoding="utf-8")
+)
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case["name"])
