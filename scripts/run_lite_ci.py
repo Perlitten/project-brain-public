@@ -5,8 +5,10 @@ import sys
 
 # The captured output is decoded as UTF-8 but Windows consoles default to
 # cp1252 — printing it raw crashes the wrapper and hides the real failure.
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+for stream in (sys.stdout, sys.stderr):
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8", errors="replace")
 
 
 def main() -> int:

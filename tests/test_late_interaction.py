@@ -304,7 +304,7 @@ def test_runtime_gate_rejects_symlinked_evidence(tmp_path):
 def test_production_lfm_uses_baked_manifest_not_spoofable_build_env(
     monkeypatch,
 ):
-    settings_module = importlib.import_module("brain.config.settings")
+    settings_module = importlib.import_module("brain.config.settings._model")
     monkeypatch.setattr(
         settings_module,
         "read_baked_source_manifest",

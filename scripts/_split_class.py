@@ -28,6 +28,7 @@ def main() -> None:
     member_node = {}
     member_order = []
     for m in cls.body:
+        nm: str | None
         if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             nm = m.name
         elif isinstance(m, ast.Assign):
@@ -51,7 +52,7 @@ def main() -> None:
 
     # imports used by members per module
     imports = [n for n in mod.body if isinstance(n, (ast.Import, ast.ImportFrom))]
-    bind = {}
+    bind: dict[str, ast.Import | ast.ImportFrom] = {}
     for imp in imports:
         for a in imp.names:
             bind.setdefault(a.asname or a.name.split(".")[0], imp)
