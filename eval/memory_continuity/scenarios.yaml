@@ -1,0 +1,130 @@
+# Memory continuity eval corpus.
+#
+# Each scenario replays a real two-agent workflow: session 1 writes memory
+# artifacts (handoff / open task / learning / decision), then a fresh session
+# reads the runtime context for a follow-up task. `required_facts` are the
+# substrings a successful read must surface (case-insensitive).
+#
+# `filler_sessions` simulates intervening work between write and read: that
+# many new handoffs + open tasks are injected, exercising the recency window
+# and the byte budget — the rot-resistance axis.
+#
+# `expect_hit: false` marks reads where the design contract says the fact
+# should NOT surface (evicted by recency, wrong repo, demoted). Those reads
+# verify the absence rather than the presence of memory.
+
+scenarios:
+  - name: handoff-resume-basic
+    repo: /repos/ledger-app
+    writes:
+      handoffs:
+        - "stopped at brain_schema_migrations ledger, apply.py needs split"
+      tasks:
+        - {title: "M4 ledger migration", status: running}
+    reads:
+      - task: "continue the ledger migration work"
+        required_facts: ["schema_migrations", "M4 ledger migration"]
+
+  - name: learning-direct-L3
+    repo: /repos/ledger-app
+    writes:
+      learnings:
+        - statement: "Never deploy to prod without the release stamp file"
+          category: ops
+    reads:
+      - task: "how do we deploy the api safely"
+        required_facts: ["release stamp"]
+
+  - name: decision-surfaces-on-topic
+    repo: /repos/ledger-app
+    writes:
+      decisions:
+        - {title: "G2 consolidation needs two independent events",
+           description: "single-agent lessons go through explicit record_learning instead"}
+    reads:
+      - task: "why was my lesson rejected by consolidation"
+        required_facts: ["two independent events"]
+
+  - name: rot-chain-recency-window
+    # The honest rot test: does the session-1 handoff survive N later handoffs?
+    repo: /repos/long-running-app
+    writes:
+      handoffs:
+        - "root cause: pydantic field order broke lite DATABASE_URL"
+    filler_sessions: 6   # pushes the fact out of the last-5 handoff window
+    reads:
+      - task: "what was the lite mode bug about"
+        required_facts: ["pydantic field order"]
+        expect_hit: false   # evicted by the 5-handoff recency window — by design
+
+  - name: rot-chain-within-window
+    repo: /repos/long-running-app
+    writes:
+      handoffs:
+        - "root cause: pydantic field order broke lite DATABASE_URL"
+    filler_sessions: 2
+    reads:
+      - task: "what was the lite mode bug about"
+        required_facts: ["pydantic field order"]
+
+  - name: cross-repo-isolation
+    repo: /repos/app-a
+    writes:
+      tasks:
+        - {title: "secret-only-in-repo-A", status: running}
+      handoffs:
+        - "repo A internal note"
+    reads:
+      - task: "resume work"
+        repo_override: /repos/app-b
+        required_facts: ["secret-only-in-repo-A"]
+        expect_hit: false   # tasks scoped to A must not leak into B
+
+  - name: global-handoff-visible
+    # task-less handoffs are repository-agnostic by design
+    writes:
+      handoffs:
+        - "CI queue keeps losing workflows - restart agent"
+    reads:
+      - task: "why is ci stuck"
+        required_facts: ["CI queue"]
+
+  - name: operational-decision-demoted-not-dropped
+    # historical markers demote but must not delete
+    repo: /repos/ledger-app
+    writes:
+      decisions:
+        - {title: "Release 0.10.0 checkpoint deployed",
+           description: "deployment of release to prod"}
+    reads:
+      - task: "unrelated refactor task"
+        required_facts: ["checkpoint"]
+        expect_hit: false   # demoted below threshold for off-topic tasks
+      - task: "what release was deployed to prod"
+        required_facts: ["Release 0.10.0", "deploy"]
+
+  - name: open-tasks-surface
+    repo: /repos/eunoia
+    writes:
+      tasks:
+        - {title: "finish Android Lab adapter", status: running}
+        - {title: "done-task-hidden", status: passed}
+    reads:
+      - task: "what remains to be done here"
+        required_facts: ["Android Lab"]
+        forbidden_facts: ["done-task-hidden"]
+
+  - name: mixed-memory-pack
+    repo: /repos/full-stack
+    writes:
+      handoffs: ["halfway through the settings split, mixins reordered"]
+      tasks: [{title: "settings domain configs", status: created}]
+      learnings:
+        - statement: "settings mixin SettingsCore must stay last in the base-class list"
+          category: gotcha
+      decisions:
+        - {title: "Settings mixins: field order is reverse-MRO",
+           description: "DATABASE_URL must not precede BRAIN_STORAGE_MODE"}
+    reads:
+      - task: "continue the settings refactor"
+        required_facts: ["settings split", "domain configs", "SettingsCore", "reverse-MRO"]

@@ -104,7 +104,7 @@ async def select_relevant_normative_memory(
         # Operational updates are durable evidence, not default runtime policy:
         # demote instead of dropping, so a release/deploy note stays reachable
         # when the task clearly asks about it.
-        demotion = 0.35 if any(marker in text.casefold() for marker in _HISTORICAL_MARKERS) else 1.0
+        demotion = 0.5 if any(marker in text.casefold() for marker in _HISTORICAL_MARKERS) else 1.0
         score = _score(text, task_terms, paths, decision_scope == normalized_scope) * demotion
         if score <= (4.0 if decision_scope == normalized_scope else 1.0):
             continue

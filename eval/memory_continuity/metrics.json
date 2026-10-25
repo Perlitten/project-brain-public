@@ -1,0 +1,162 @@
+{
+  "continuity_hit_rate": 1.0,
+  "expected_reads": 8,
+  "expected_hits": 8,
+  "fact_survival_by_filler": {
+    "0": 1.0,
+    "2": 1.0
+  },
+  "stale_surface_rate": 0.0,
+  "context_bytes": {
+    "handoff-resume-basic": 323,
+    "learning-direct-L3": 233,
+    "decision-surfaces-on-topic": 182,
+    "rot-chain-recency-window": 721,
+    "rot-chain-within-window": 459,
+    "cross-repo-isolation": 163,
+    "global-handoff-visible": 190,
+    "operational-decision-demoted-not-dropped": 136,
+    "open-tasks-surface": 192,
+    "mixed-memory-pack": 663
+  },
+  "per_scenario": [
+    {
+      "scenario": "handoff-resume-basic",
+      "task": "continue the ledger migration work",
+      "repo": "/repos/ledger-app",
+      "expect_hit": true,
+      "hit": true,
+      "ok": true,
+      "missing_facts": [],
+      "forbidden_surfaced": [],
+      "context_bytes": 323,
+      "filler_sessions": 0
+    },
+    {
+      "scenario": "learning-direct-L3",
+      "task": "how do we deploy the api safely",
+      "repo": "/repos/ledger-app",
+      "expect_hit": true,
+      "hit": true,
+      "ok": true,
+      "missing_facts": [],
+      "forbidden_surfaced": [],
+      "context_bytes": 233,
+      "filler_sessions": 0
+    },
+    {
+      "scenario": "decision-surfaces-on-topic",
+      "task": "why was my lesson rejected by consolidation",
+      "repo": "/repos/ledger-app",
+      "expect_hit": true,
+      "hit": true,
+      "ok": true,
+      "missing_facts": [],
+      "forbidden_surfaced": [],
+      "context_bytes": 182,
+      "filler_sessions": 0
+    },
+    {
+      "scenario": "rot-chain-recency-window",
+      "task": "what was the lite mode bug about",
+      "repo": "/repos/long-running-app",
+      "expect_hit": false,
+      "hit": false,
+      "ok": true,
+      "missing_facts": [
+        "pydantic field order"
+      ],
+      "forbidden_surfaced": [],
+      "context_bytes": 721,
+      "filler_sessions": 6
+    },
+    {
+      "scenario": "rot-chain-within-window",
+      "task": "what was the lite mode bug about",
+      "repo": "/repos/long-running-app",
+      "expect_hit": true,
+      "hit": true,
+      "ok": true,
+      "missing_facts": [],
+      "forbidden_surfaced": [],
+      "context_bytes": 459,
+      "filler_sessions": 2
+    },
+    {
+      "scenario": "cross-repo-isolation",
+      "task": "resume work",
+      "repo": "/repos/app-b",
+      "expect_hit": false,
+      "hit": false,
+      "ok": true,
+      "missing_facts": [
+        "secret-only-in-repo-A"
+      ],
+      "forbidden_surfaced": [],
+      "context_bytes": 163,
+      "filler_sessions": 0
+    },
+    {
+      "scenario": "global-handoff-visible",
+      "task": "why is ci stuck",
+      "repo": null,
+      "expect_hit": true,
+      "hit": true,
+      "ok": true,
+      "missing_facts": [],
+      "forbidden_surfaced": [],
+      "context_bytes": 190,
+      "filler_sessions": 0
+    },
+    {
+      "scenario": "operational-decision-demoted-not-dropped",
+      "task": "unrelated refactor task",
+      "repo": "/repos/ledger-app",
+      "expect_hit": false,
+      "hit": false,
+      "ok": true,
+      "missing_facts": [
+        "checkpoint"
+      ],
+      "forbidden_surfaced": [],
+      "context_bytes": 32,
+      "filler_sessions": 0
+    },
+    {
+      "scenario": "operational-decision-demoted-not-dropped",
+      "task": "what release was deployed to prod",
+      "repo": "/repos/ledger-app",
+      "expect_hit": true,
+      "hit": true,
+      "ok": true,
+      "missing_facts": [],
+      "forbidden_surfaced": [],
+      "context_bytes": 136,
+      "filler_sessions": 0
+    },
+    {
+      "scenario": "open-tasks-surface",
+      "task": "what remains to be done here",
+      "repo": "/repos/eunoia",
+      "expect_hit": true,
+      "hit": true,
+      "ok": true,
+      "missing_facts": [],
+      "forbidden_surfaced": [],
+      "context_bytes": 192,
+      "filler_sessions": 0
+    },
+    {
+      "scenario": "mixed-memory-pack",
+      "task": "continue the settings refactor",
+      "repo": "/repos/full-stack",
+      "expect_hit": true,
+      "hit": true,
+      "ok": true,
+      "missing_facts": [],
+      "forbidden_surfaced": [],
+      "context_bytes": 663,
+      "filler_sessions": 0
+    }
+  ]
+}
