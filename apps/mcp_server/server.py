@@ -556,6 +556,82 @@ async def record_rule(
         return {"error": f"Failed to record rule: {str(e)}", "status": "failed"}
 
 
+@mcp.tool(**tool_meta("record_learning"))
+async def record_learning(
+    statement: str,
+    repo_path: Optional[str] = None,
+    category: Optional[str] = None,
+    confidence: float = 0.5,
+    ctx: Optional[Context] = None,
+) -> dict | InputRequiredResult:
+    """Record a verified lesson directly into L3 semantic memory (active).
+
+    This is the explicit-write path for a single confirmed lesson: the
+    consolidation gates (G2 requires ≥2 independent L1 events) would reject a
+    one-off agent note, so lessons recorded this way are stored as ``active``
+    with an ``agent_explicit`` evidence marker. Use for durable facts the
+    caller already verified, not for guesses.
+    """
+    declined = await confirm_memory_write(ctx, f"Record learning: {statement}".strip())
+    if declined is not None:
+        return declined
+    try:
+        from brain.memory.learning_store import LearningStore
+
+        learning_id = await LearningStore.add_learning(
+            statement=statement,
+            category=category or "agent_note",
+            confidence=confidence,
+            evidence=[{"kind": "agent_explicit", "source": "mcp_record_learning"}],
+            repo_scope=repo_path,
+            status="active",
+        )
+        return {"status": "success", "learning_id": learning_id,
+                "message": f"Learning {learning_id} recorded as active L3 memory"}
+    except Exception as e:
+        return {"error": f"Failed to record learning: {str(e)}", "status": "failed"}
+
+
+@mcp.tool(**tool_meta("record_handoff"))
+async def record_handoff(
+    summary: str,
+    task_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    memory_ref: Optional[str] = None,
+    ctx: Optional[Context] = None,
+) -> dict | InputRequiredResult:
+    """Leave a session-handoff note the next session can pick up.
+
+    ``prepare_task_context`` returns recent handoffs in the ``continuation``
+    memory block, so writing one at the end of a session is the supported way
+    to say "here is where I stopped". Pass ``task_id`` to attach the note to a
+    repository task; a free-standing handoff stays repository-agnostic.
+    """
+    import uuid as _uuid
+
+    declined = await confirm_memory_write(ctx, f"Record handoff: {summary[:160]}".strip())
+    if declined is not None:
+        return declined
+    try:
+        from brain.database.harness_models import MemoryHandoff
+        from brain.database.session import async_session_factory
+
+        handoff = MemoryHandoff(
+            task_id=_uuid.UUID(task_id) if task_id else None,
+            session_id=session_id or "mcp",
+            summary=summary,
+            memory_ref=memory_ref,
+        )
+        async with async_session_factory() as session:
+            session.add(handoff)
+            await session.commit()
+            await session.refresh(handoff)
+        return {"status": "success", "handoff_id": handoff.id,
+                "message": f"Handoff {handoff.id} recorded for the next session"}
+    except Exception as e:
+        return {"error": f"Failed to record handoff: {str(e)}", "status": "failed"}
+
+
 @mcp.tool(**tool_meta("search_code"))
 @_mcp_telemetry("search")
 async def search_code(query: str, repo_path: Optional[str] = None) -> dict:

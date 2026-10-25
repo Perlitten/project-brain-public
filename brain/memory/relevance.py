@@ -101,10 +101,11 @@ async def select_relevant_normative_memory(
             decision.title or "", decision.description or "", decision.reason or "",
             _flatten(decision.affected_files), _flatten(decision.affected_modules),
         ))
-        # Operational updates are durable evidence, not default runtime policy.
-        if any(marker in text.casefold() for marker in _HISTORICAL_MARKERS):
-            continue
-        score = _score(text, task_terms, paths, decision_scope == normalized_scope)
+        # Operational updates are durable evidence, not default runtime policy:
+        # demote instead of dropping, so a release/deploy note stays reachable
+        # when the task clearly asks about it.
+        demotion = 0.35 if any(marker in text.casefold() for marker in _HISTORICAL_MARKERS) else 1.0
+        score = _score(text, task_terms, paths, decision_scope == normalized_scope) * demotion
         if score <= (4.0 if decision_scope == normalized_scope else 1.0):
             continue
         relevant_decisions.append((score, {
