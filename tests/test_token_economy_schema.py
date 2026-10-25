@@ -110,7 +110,11 @@ def test_current_web_corpus_replaces_deleted_targets_and_preserves_curated_prove
     assert len(tasks) == 50
     assert DEFAULT_MANIFEST_PATH.name == "token_economy_tasks_web.json"
     assert corpus["acceptance_eligible"] is False
-    assert all((ROOT / file).is_file() for task in tasks for file in task.expected_files)
+    assert all(
+        (ROOT / file).is_file() or (ROOT / file.removesuffix(".py") / "__init__.py").is_file()
+        for task in tasks
+        for file in task.expected_files
+    )
     assert all(task.provenance.get("production_real") is False for task in tasks)
     auth = next(task for task in tasks if task.id == "q012")
     assert "apps/web/lib/web-auth.ts" in auth.expected_files

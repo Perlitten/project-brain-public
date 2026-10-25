@@ -73,7 +73,7 @@ def remaining_app(factory, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     for module in (auth, team_access, telegram_bridge, core_memory):
         monkeypatch.setattr(module, "async_session_factory", factory)
-    for module in (web._common, web.dashboard, web.indexing, web.modules,
+    for module in (web, web._common, web.dashboard, web.indexing, web.modules,
                    web.overview, web.packs, web.rules):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
