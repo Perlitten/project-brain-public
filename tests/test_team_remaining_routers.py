@@ -71,7 +71,11 @@ def _fake_harness():
 def remaining_app(factory, monkeypatch, tmp_path):
     """Every touched router over the fixture database, with storage and engines stubbed out."""
     monkeypatch.chdir(tmp_path)
-    for module in (auth, team_access, telegram_bridge, core_memory, web._common, web.dashboard, web.indexing, web.modules, web.overview, web.packs, web.rules):
+    for module in (
+        auth, team_access, telegram_bridge, core_memory, web, web._common,
+        web.dashboard, web.indexing, web.modules, web.overview, web.packs,
+        web.rules,
+    ):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr("apps.api.request_observation.observe_http_request", AsyncMock())

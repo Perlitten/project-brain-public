@@ -15,10 +15,9 @@ import sys
 from pathlib import Path
 
 
-def bound_names(imp: ast.stmt) -> dict[str, ast.stmt]:
-    out = {}
-    names = imp.names if isinstance(imp, (ast.Import, ast.ImportFrom)) else []
-    for a in names:
+def bound_names(imp: ast.Import | ast.ImportFrom) -> dict[str, ast.stmt]:
+    out: dict[str, ast.stmt] = {}
+    for a in imp.names:
         name = a.asname or a.name.split(".")[0]
         out[name] = imp
     return out
@@ -37,7 +36,7 @@ def main() -> None:
     lines = src.splitlines()
 
     docstring = ast.get_docstring(mod, clean=False) or ""
-    imports: list[ast.stmt] = []
+    imports: list[ast.Import | ast.ImportFrom] = []
     import_bind: dict[str, ast.stmt] = {}
     stmts: dict[str, ast.stmt] = {}
     stmt_order: list[str] = []
@@ -107,7 +106,7 @@ def main() -> None:
                 imp_lines.append("import " + ", ".join(
                     a.name + (f" as {a.asname}" if a.asname else "") for a in used))
 
-        cross = {}
+        cross: dict[str, list[str]] = {}
         for nm in sorted(needed):
             if nm in owner and owner[nm] != sub:
                 cross.setdefault(owner[nm], []).append(nm)
@@ -139,7 +138,7 @@ def main() -> None:
         line = f"from .{sub} import ({names_str})"
         init += line + "\n"
     if "__all__" in stmts:
-        init += "\n" + ast.get_source_segment(src, stmts["__all__"]) + "\n"
+        init += "\n" + (ast.get_source_segment(src, stmts["__all__"]) or "") + "\n"
     (pkg_dir / "__init__.py").write_text(init, encoding="utf-8")
     print("__init__.py written")
 

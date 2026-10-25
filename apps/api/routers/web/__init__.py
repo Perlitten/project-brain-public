@@ -14,4 +14,5 @@ from .reports import (report_kind as report_kind, shape_report as shape_report, 
 from .indexing import (shape_index_run as shape_index_run, web_index_runs as web_index_runs)
 from .modules import (MODULE_GRAPH_EDGE_LIMIT as MODULE_GRAPH_EDGE_LIMIT, _dotted as _dotted, file_edge_violates as file_edge_violates, aggregate_module_edges as aggregate_module_edges, load_file_import_edges as load_file_import_edges, web_module_graph as web_module_graph, _add_module_row as _add_module_row, aggregate_modules as aggregate_modules, web_modules as web_modules)
 from .overview import (shape_job as shape_job, _repository_freshness as _repository_freshness, build_coverage as build_coverage, web_overview as web_overview, web_health as web_health)
+from brain.database.session import async_session_factory as async_session_factory
 from fastapi import HTTPException as HTTPException
