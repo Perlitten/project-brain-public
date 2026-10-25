@@ -306,7 +306,7 @@ def test_production_lfm_uses_baked_manifest_not_spoofable_build_env(
 ):
     settings_module = importlib.import_module("brain.config.settings")
     monkeypatch.setattr(
-        settings_module,
+        importlib.import_module("brain.config.settings._model"),
         "read_baked_source_manifest",
         lambda: {
             "source_revision": "immutable-release",

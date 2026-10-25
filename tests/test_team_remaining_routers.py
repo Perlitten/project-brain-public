@@ -71,7 +71,7 @@ def _fake_harness():
 def remaining_app(factory, monkeypatch, tmp_path):
     """Every touched router over the fixture database, with storage and engines stubbed out."""
     monkeypatch.chdir(tmp_path)
-    for module in (auth, team_access, telegram_bridge, core_memory, web):
+    for module in (auth, team_access, telegram_bridge, core_memory, web._common, web.dashboard, web.indexing, web.modules, web.overview, web.packs, web.rules):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr("apps.api.request_observation.observe_http_request", AsyncMock())
@@ -125,7 +125,7 @@ def remaining_app(factory, monkeypatch, tmp_path):
     monkeypatch.setattr(core_retrieval, "_agent_v2_mode", lambda: "on")
     monkeypatch.setattr(core_retrieval, "_ask_v2", AsyncMock(return_value={"answer": "fine"}))
     app = FastAPI()
-    for module in (harness, jobs, core_memory, core_lifecycle, web, impact, graph_v2, drift, remediation,
+    for module in (harness, jobs, core_memory, core_lifecycle, web._common, impact, graph_v2, drift, remediation,
                    web_login, telegram_bridge):
         app.include_router(module.router)
     return app

@@ -64,7 +64,7 @@ class FakeQueue:
 
 
 def read_app(factory, artifact, monkeypatch):
-    for module in (auth, team_access, core_retrieval, web):
+    for module in (auth, team_access, core_retrieval, web._common, web.dashboard, web.indexing, web.modules, web.overview, web.packs, web.rules):
         monkeypatch.setattr(module, "async_session_factory", factory)
     monkeypatch.setattr(team_access, "current_team_state", live_team_state)
     monkeypatch.setattr(core_retrieval, "assess_repository_freshness", AsyncMock(return_value={}))

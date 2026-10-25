@@ -38,7 +38,7 @@ def documentation_copy(tmp_path):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(original.read_bytes())
         if original.suffix == ".md":
-            for raw in MARKDOWN_LINK.findall(_without_code(original.read_text())):
+            for raw in MARKDOWN_LINK.findall(_without_code(original.read_text(encoding="utf-8"))):
                 link = urlsplit(raw)
                 if link.scheme or link.netloc or not link.path:
                     continue

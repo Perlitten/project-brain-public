@@ -1,9 +1,9 @@
 from pathlib import Path
 
-__version__ = "0.9.2"
-VERSION = "0.9.2"
+__version__ = "0.10.0"
+VERSION = "0.10.0"
 RELEASE_CHANNEL = "self-hosted"
-RELEASE_CODENAME = "productization-v0.9.2"
+RELEASE_CODENAME = "productization-v0.10.0"
 
 
 def _static_fingerprint() -> str:

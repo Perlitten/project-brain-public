@@ -686,7 +686,7 @@ async def test_pipeline_candidate_resolution_is_dense_first_bounded_and_repo_sco
         yield _Session()
 
     monkeypatch.setattr(
-        "brain.retrieval.pipeline.async_session_factory",
+        "brain.retrieval.pipeline._late.async_session_factory",
         session_factory,
     )
     dense[0][2].path = "dense.py"
@@ -714,7 +714,7 @@ async def test_pipeline_counterfactual_never_reuses_baseline_cache_or_llm(
 ):
     expected = RerankResult(top_paths=["a.py"], candidates=[])
     rerank = AsyncMock(return_value=expected)
-    monkeypatch.setattr("brain.retrieval.pipeline.rerank_top_k", rerank)
+    monkeypatch.setattr("brain.retrieval.pipeline._late.rerank_top_k", rerank)
     pool = [RerankCandidate(path="a.py", reranker_score=1.0)]
 
     result = await _rerank_late_counterfactual(

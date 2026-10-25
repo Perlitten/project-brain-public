@@ -87,7 +87,7 @@
       "id": "q002",
       "question": "How does the hybrid search pipeline combine lexical/symbol/vector/graph/memory surfaces and apply Reciprocal Rank Fusion weights and query caps?",
       "expect_files": [
-        "brain/retrieval/pipeline.py",
+        "brain/retrieval/pipeline/_pipeline.py",
         "brain/search/filters.py",
         "brain/retrieval/reranker.py"
       ],
@@ -170,7 +170,7 @@
       "expect_files": [
         "brain/llm/__init__.py",
         "brain/embeddings/config.py",
-        "brain/config/settings.py"
+        "brain/config/settings/_model.py"
       ],
       "expect_symbols": [
         "get_llm_provider",
@@ -944,7 +944,7 @@
       "id": "q013",
       "question": "Which read-only web APIs expose repository and usage analytics, and how are overview metrics shaped?",
       "expect_files": [
-        "apps/api/routers/web.py",
+        "apps/api/routers/web/overview.py",
         "apps/api/helpers.py",
         "apps/web/lib/data.ts"
       ],
@@ -1248,7 +1248,7 @@
       "id": "q018",
       "question": "Which job types are supported and which services/modules do they execute when run?",
       "expect_files": [
-        "brain/workers/tasks.py",
+        "brain/workers/tasks/jobs.py",
         "brain/workers/worker.py"
       ],
       "expect_symbols": [
@@ -1573,7 +1573,7 @@
       "id": "q022",
       "question": "Where are the lexical, symbol, vector, graph and memory channels merged, and how are RRF weights applied to them?",
       "expect_files": [
-        "brain/retrieval/pipeline.py",
+        "brain/retrieval/pipeline/_pipeline.py",
         "brain/search/filters.py",
         "brain/retrieval/reranker.py"
       ],
@@ -1655,7 +1655,7 @@
       "question": "Which embedding providers are supported, and what happens with an unknown provider name?",
       "expect_files": [
         "brain/embeddings/config.py",
-        "brain/config/settings.py",
+        "brain/config/settings/_model.py",
         "brain/llm/__init__.py"
       ],
       "expect_symbols": [
@@ -2643,7 +2643,7 @@
       "id": "q036",
       "question": "Which settings keep late-interaction disabled by default and reject a remote provider URL unless it is explicitly allowed?",
       "expect_files": [
-        "brain/config/settings.py",
+        "brain/config/settings/_model.py",
         "brain/late_interaction/provider.py",
         "tests/test_late_interaction.py"
       ],
@@ -2725,7 +2725,7 @@
       "question": "Where is the late_interaction_embeddings table declared and idempotently migrated without changing the dense pgvector column?",
       "expect_files": [
         "brain/database/models.py",
-        "brain/database/migrations.py"
+        "brain/database/migrations/_embeddings.py"
       ],
       "expect_symbols": [
         "Base",
@@ -3207,7 +3207,7 @@
       "expect_files": [
         "brain/late_interaction/shadow.py",
         "brain/database/models.py",
-        "brain/database/migrations.py"
+        "brain/database/migrations/_embeddings.py"
       ],
       "expect_symbols": [
         "hash_query",
@@ -3449,7 +3449,7 @@
       "question": "How does self-diagnosis combine deterministic probes with optional LLM synthesis and degrade when the configured model fails?",
       "expect_files": [
         "brain/insights/proactive.py",
-        "brain/workers/tasks.py",
+        "brain/workers/tasks/jobs.py",
         "brain/llm/router.py"
       ],
       "expect_symbols": [
