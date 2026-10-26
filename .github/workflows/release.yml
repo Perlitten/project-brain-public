@@ -62,7 +62,7 @@ jobs:
           python scripts/check_third_party_notices.py dist/*.whl dist/*.tar.gz
           (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS)
       - name: Upload distributions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -137,7 +137,7 @@ jobs:
         run: |
           docker push "$IMAGE:$RELEASE_TAG"
           docker push "$IMAGE:latest"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom-${{ matrix.name }}
           path: |
@@ -160,7 +160,7 @@ jobs:
           upload-release-assets: false
       - name: Checksum source inventory
         run: sha256sum sbom-source.spdx.json > sbom-source.spdx.json.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom-source
           path: |
