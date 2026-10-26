@@ -28,7 +28,7 @@ dependencies = [
     "pydantic-settings",
     # asyncio extras pull in greenlet — required by brain.database.session,
     # which is imported by the CLI entrypoint.
-    "sqlalchemy[asyncio]>=2.1.4",
+    "sqlalchemy[asyncio]>=2.1.6",
     "asyncpg",
     "aiosqlite>=0.22.1,<1",
     "redis>=8.1.0",
