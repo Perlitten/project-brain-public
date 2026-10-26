@@ -128,7 +128,8 @@ async def test_key_resolution_does_not_queue_behind_authorization(team_db):
     factory, _, _ = team_db
     async with factory() as holder, holder.begin():
         await live_credential(holder, 2, 2)
-        async with asyncio.timeout(2), factory() as resolver, resolver.begin():
+        # Queuing behind the holder would block until it commits, so 10s only absorbs CI load.
+        async with asyncio.timeout(10), factory() as resolver, resolver.begin():
             assert (await resolve_credential(resolver, "fixture-2")).id == 2
     # Usage is recorded on an unlocked key, and throttled for repeated requests.
     async with factory() as session, session.begin():
