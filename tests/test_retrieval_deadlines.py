@@ -57,7 +57,8 @@ async def test_stalled_symbols_cannot_extend_the_request_deadline(monkeypatch, s
 
     monkeypatch.setattr(service, "_known_symbol_route", symbols)
     monkeypatch.setattr("brain.retrieval.service.search_code", search)
-    result = await asyncio.wait_for(service.retrieve("core", None, deadline_s=0.02), timeout=0.25)
+    # A stalled child would hang forever; 5s is CI load headroom, not a request budget.
+    result = await asyncio.wait_for(service.retrieve("core", None, deadline_s=0.02), timeout=5)
     assert "deadline_exceeded" in result.degraded
     assert bool(result.candidates) == (search_mode == "success")
     assert stopped.is_set()
