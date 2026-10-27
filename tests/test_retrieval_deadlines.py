@@ -176,12 +176,13 @@ async def test_deadline_does_not_wait_for_slow_provider_cancellation_cleanup(mon
     monkeypatch.setattr("brain.retrieval.service.search_code", search)
     monkeypatch.setattr(service, "_known_symbol_route", AsyncMock(return_value=[]))
     try:
-        result = await asyncio.wait_for(service.retrieve("core", None, deadline_s=0.02), 0.25)
+        # A retrieve that waited for cleanup would hang until release; 5s is load headroom, not a budget.
+        result = await asyncio.wait_for(service.retrieve("core", None, deadline_s=0.02), 5)
         assert result.degraded == ["deadline_exceeded"]
         assert not cleaned.is_set()
     finally:
         release.set()
-        await asyncio.wait_for(cleaned.wait(), 0.25)
+        await asyncio.wait_for(cleaned.wait(), 5)
 
 
 @pytest.mark.parametrize("error", [RuntimeError("stream failed"), OperationalError("read", {}, RuntimeError("offline")), ValueError("budget"), TimeoutError()])

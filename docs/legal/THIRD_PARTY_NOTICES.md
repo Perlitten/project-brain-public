@@ -170,7 +170,7 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 
 | Package | Version | License |
 |---|---|---|
-| next | 16.4.2 | MIT |
+| next | 16.4.3 | MIT |
 | react | 19.3.1 | MIT |
 | react-dom | 19.3.1 | MIT |
 | typescript | 7.0.2 | Apache-2.0 |
