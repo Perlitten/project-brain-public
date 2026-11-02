@@ -230,6 +230,9 @@ All notable changes to this project are documented here. The format follows
   distinguish the TypeScript npm alias, include notices in runtime wheels,
   and check versions, licenses and packaged notice retention in CI.
 
+- Serialize Full-mode schema initialization with a transaction-owned advisory
+  lock on the same connection as every schema write. Failed or cancelled
+  initialization rolls back, remains uninitialized and can be retried.
 - Add opt-in Lite source profile with durable SQLite memory, maintenance queues,
   local token-hash embeddings, SQLite graph adjacency and a disabled default LLM.
   Lite commands and local state are not in published v0.9.2 artifacts.
