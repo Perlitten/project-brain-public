@@ -23,7 +23,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import hash_credential, mint_credential
-from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken
+from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken, Principal
 from brain.team.authorization import TeamDenied
 from brain.team.oauth_link import bind_team_scopes
 from brain.team.restore_fence import FENCED, access_fenced
@@ -158,7 +158,7 @@ async def _live_refresh(session: AsyncSession, raw: str, *, for_update: bool = F
 
 async def load_refresh(session: AsyncSession, raw: str) -> Optional[StoredRefresh]:
     row = await _live_refresh(session, raw)
-    if row is None:
+    if row is None or not await _refresh_authority_live(session, row):
         return None
     return StoredRefresh(
         token=raw,
@@ -169,6 +169,16 @@ async def load_refresh(session: AsyncSession, raw: str) -> Optional[StoredRefres
     )
 
 
+async def _refresh_authority_live(session: AsyncSession, row: OAuthRefreshToken) -> bool:
+    # Expiry is deliberately ignored: refresh exists to replace an expired access key.
+    return (await session.execute(
+        select(ApiCredential.id)
+        .join(Principal, ApiCredential.principal_id == Principal.id)
+        .where(ApiCredential.id == row.access_credential_id, ApiCredential.revoked_at.is_(None),
+               Principal.disabled_at.is_(None))
+    )).scalar_one_or_none() is not None
+
+
 async def load_access(session: AsyncSession, raw: str) -> Optional[StoredAccess]:
     """An OAuth-issued access credential with the client it was issued to."""
     if await access_fenced(session):
@@ -177,7 +187,8 @@ async def load_access(session: AsyncSession, raw: str) -> Optional[StoredAccess]
         await session.execute(
             select(ApiCredential, OAuthRefreshToken.client_id)
             .join(OAuthRefreshToken, OAuthRefreshToken.access_credential_id == ApiCredential.id)
-            .where(ApiCredential.key_hash == hash_credential(raw))
+            .join(Principal, ApiCredential.principal_id == Principal.id)
+            .where(ApiCredential.key_hash == hash_credential(raw), Principal.disabled_at.is_(None))
         )
     ).first()
     if row is None:
@@ -211,7 +222,7 @@ async def rotate_refresh(
 ) -> Optional[IssuedTokens]:
     """Spend a refresh token: revoke it and its access key, issue the next pair."""
     row = await _live_refresh(session, raw, for_update=True)
-    if row is None:
+    if row is None or not await _refresh_authority_live(session, row):
         return None
     await _revoke_row(session, row)
     return await issue_tokens(
