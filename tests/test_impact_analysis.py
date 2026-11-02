@@ -3,9 +3,13 @@
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from apps.api.auth import require_api_key
 from apps.api.main import app
+from apps.api.routers import impact
+from brain.config.settings import settings
 from brain.insights.impact_engine import ImpactAnalysisEngine
 from brain.insights.impact_models import ImpactedEntity
 from brain.insights.test_impact import TestImpactSelector
@@ -41,7 +45,9 @@ def test_impact_analysis_engine(tmp_path):
         assert "api" in res.impacted_subsystems
 
 
-def test_impact_api_endpoints(tmp_path):
+def test_impact_api_endpoints(tmp_path, monkeypatch):
+    engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
+    monkeypatch.setattr(impact, "async_session_factory", async_sessionmaker(engine, expire_on_commit=False))
     app.dependency_overrides[require_api_key] = lambda: None
     client = TestClient(app)
 
