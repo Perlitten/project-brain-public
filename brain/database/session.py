@@ -1,7 +1,7 @@
 import asyncio
 import time
 from typing import AsyncGenerator, Dict, Any
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncConnection, AsyncSession
 from sqlalchemy.pool import QueuePool
 from redis.asyncio import Redis, from_url as redis_from_url
 from neo4j import AsyncGraphDatabase, AsyncDriver
@@ -177,7 +177,7 @@ async def close_database_connections() -> None:
     logger.info("Database connections closed.")
 
 
-async def _init_db_unlocked() -> None:
+async def _init_db_unlocked(conn: AsyncConnection | None = None) -> None:
     """Initializes the database schema by creating all tables if they do not exist."""
     from sqlalchemy import text
     from brain.database import Base
@@ -199,37 +199,36 @@ async def _init_db_unlocked() -> None:
             await initialize_query_capture(conn, settings.REQUEST_TELEMETRY_CAPTURE_QUERY)
         return
 
+    if conn is None:
+        raise RuntimeError("Full schema initialization requires its lock-owning connection")
+
     # The `embeddings` table declares a pgvector column, so the `vector` extension
     # must exist BEFORE create_all — otherwise a fresh database fails with
     # "type vector does not exist". Idempotent; safe on every boot.
-    async with async_engine.begin() as conn:
-        try:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        except Exception as exc:
-            # Fail fast with a clear message instead of letting create_all crash
-            # later with an opaque "type vector does not exist" error.
-            raise RuntimeError(
-                "pgvector extension is required but could not be created "
-                f"(is the pgvector image/extension installed?): {exc}"
-            ) from exc
+    try:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    except Exception as exc:
+        # Fail fast with a clear message instead of letting create_all crash
+        # later with an opaque "type vector does not exist" error.
+        raise RuntimeError(
+            "pgvector extension is required but could not be created "
+            f"(is the pgvector image/extension installed?): {exc}"
+        ) from exc
 
     # The harness task ledger (brain/database/harness_models.py) lives in its
     # own schema so it never collides with Brain's own tables — the schema
     # must exist before create_all, since Postgres won't create it implicitly.
-    async with async_engine.begin() as conn:
-        from brain.database.harness_models import HARNESS_SCHEMA
+    from brain.database.harness_models import HARNESS_SCHEMA
 
-        await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {HARNESS_SCHEMA}"))
+    await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {HARNESS_SCHEMA}"))
 
-    async with async_engine.begin() as conn:
-        from brain.database import harness_models  # noqa: F401 - registers models on Base
-        from brain.team import models as team_models  # noqa: F401 - additive scope/run tables
+    from brain.database import harness_models  # noqa: F401 - registers models on Base
+    from brain.team import models as team_models  # noqa: F401 - additive scope/run tables
 
-        await conn.run_sync(Base.metadata.create_all)
+    await conn.run_sync(Base.metadata.create_all)
 
-    async with async_engine.begin() as conn:
-        await apply_migrations(conn, acquire_lock=False)
-        await initialize_query_capture(conn, settings.REQUEST_TELEMETRY_CAPTURE_QUERY)
+    await apply_migrations(conn, acquire_lock=False)
+    await initialize_query_capture(conn, settings.REQUEST_TELEMETRY_CAPTURE_QUERY)
 
 
 async def _initialize_graph_schema() -> bool:
@@ -256,11 +255,11 @@ async def _init_db_with_advisory_lock() -> None:
     from sqlalchemy import text
     from brain.database.migrations import SCHEMA_MIGRATION_LOCK_ID
 
-    async with async_engine.begin() as lock_conn:
-        # Wait for concurrent startup before using the schema. Transaction-owned
-        # locks release on failure/cancellation, even with pooled connections.
-        await lock_conn.execute(text(f"SELECT pg_advisory_xact_lock({SCHEMA_MIGRATION_LOCK_ID})"))
-        await _init_db_unlocked()
+    async with async_engine.begin() as conn:
+        # Ownership and schema writes share a transaction: losing the owner
+        # connection rolls back its writes before another startup can proceed.
+        await conn.execute(text(f"SELECT pg_advisory_xact_lock({SCHEMA_MIGRATION_LOCK_ID})"))
+        await _init_db_unlocked(conn)
 
 
 
