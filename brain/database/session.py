@@ -256,21 +256,11 @@ async def _init_db_with_advisory_lock() -> None:
     from sqlalchemy import text
     from brain.database.migrations import SCHEMA_MIGRATION_LOCK_ID
 
-    async with async_engine.connect() as lock_conn:
-        try:
-            res = await lock_conn.execute(text(f"SELECT pg_try_advisory_lock({SCHEMA_MIGRATION_LOCK_ID})"))
-            acquired = res.scalar()
-            if acquired:
-                try:
-                    await _init_db_unlocked()
-                finally:
-                    await lock_conn.execute(text(f"SELECT pg_advisory_unlock({SCHEMA_MIGRATION_LOCK_ID})"))
-                    await lock_conn.commit()
-            else:
-                logger.info("Advisory lock held by concurrent worker; skipping duplicate schema migration.")
-        except Exception as exc:
-            logger.warning(f"Advisory lock acquiring failed: {exc}; proceeding with unlocked initialization.")
-            await _init_db_unlocked()
+    async with async_engine.begin() as lock_conn:
+        # Wait for concurrent startup before using the schema. Transaction-owned
+        # locks release on failure/cancellation, even with pooled connections.
+        await lock_conn.execute(text(f"SELECT pg_advisory_xact_lock({SCHEMA_MIGRATION_LOCK_ID})"))
+        await _init_db_unlocked()
 
 
 
