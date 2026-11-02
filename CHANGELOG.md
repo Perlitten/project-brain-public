@@ -24,6 +24,10 @@ All notable changes to this project are documented here. The format follows
   `uvicorn --workers`, whose lost `accept()` race froze a worker for 120 s; and
   late-write checks compare on the database clock, so host/database clock skew
   no longer flags writes the revoke already withdrew. Harness only (#159).
+- Report Lite onboarding providers truthfully: local identifier-feature
+  embeddings need no key and can be verified offline; an intentionally disabled
+  LLM stays disabled, not remote-ready. Setup can save these defaults and lists
+  their supported slots without suggesting credentials or model downloads.
 - Make team concurrency safe: one global row-lock order, a deadlock-free member
   revoke with bounded retries (503 + `Retry-After` when it gives up), a write
   fence (`brain/team/write_fence.py`) so a write authorized before a revoke

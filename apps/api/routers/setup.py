@@ -25,7 +25,7 @@ from brain.config.settings import settings
 from brain.llm.presets import PRESETS, normalize_provider_name, resolve_embedding_endpoint, resolve_llm_endpoint
 from brain.onboarding.envfile import SUPPORTED_SETUP_PROVIDERS, setup_env_path, update_env_file
 from brain.onboarding.setup_state import state_dir
-from brain.onboarding.provider_check import verify_configured_providers
+from brain.onboarding.provider_check import LOCAL_EMBEDDING_LABEL, verify_configured_providers
 from brain.onboarding.readiness import collect_setup_status
 
 router = APIRouter(prefix="/api/setup", tags=["setup"],
@@ -132,7 +132,12 @@ def _provider_view() -> Dict[str, Any]:
     view: Dict[str, Any] = {}
     llm_name = normalize_provider_name(settings.DEFAULT_LLM_PROVIDER or "mock")
     emb_name = normalize_provider_name(settings.DEFAULT_EMBEDDING_PROVIDER or "mock")
-    if llm_name in PRESETS:
+    if llm_name == "disabled":
+        view["llm"] = {
+            "provider": llm_name, "native": True, "offline": True, "disabled": True,
+            "requires_key": False, "key_set": False,
+        }
+    elif llm_name in PRESETS:
         ep = resolve_llm_endpoint(llm_name)
         view["llm"] = {
             "provider": llm_name,
@@ -145,7 +150,15 @@ def _provider_view() -> Dict[str, Any]:
         }
     else:
         view["llm"] = {"provider": llm_name, "native": True}
-    if emb_name in PRESETS:
+    if emb_name == "local":
+        from brain.llm.providers.local_embedding import LocalEmbeddingProvider
+
+        view["embedding"] = {
+            "provider": emb_name, "native": True, "offline": True, "requires_key": False, "key_set": False,
+            "model": LocalEmbeddingProvider.model, "dimension": LocalEmbeddingProvider.dimension,
+            "configured_dimension": settings.EMBEDDING_DIMENSION,
+        }
+    elif emb_name in PRESETS:
         ep = resolve_embedding_endpoint(emb_name)
         view["embedding"] = {
             "provider": emb_name,
@@ -212,10 +225,27 @@ async def provider_presets() -> Dict[str, Any]:
             "summarizer_model": p.summarizer_model,
             "embedding_model": p.embedding_model,
             "embedding_dimension": p.embedding_dimension,
+            "llm": True,
             "embeddings": p.name in SUPPORTED_SETUP_PROVIDERS["DEFAULT_EMBEDDING_PROVIDER"],
         }
         for p in PRESETS.values()
     ]
+    from brain.llm.providers.local_embedding import LocalEmbeddingProvider
+
+    presets.extend([
+        {
+            "name": "local", "label": LOCAL_EMBEDDING_LABEL, "display_name": LOCAL_EMBEDDING_LABEL,
+            "llm": False, "embeddings": True, "requires_key": False,
+            "native": True, "offline": True, "disabled": False,
+            "embedding_model": LocalEmbeddingProvider.model,
+            "embedding_dimension": LocalEmbeddingProvider.dimension,
+        },
+        {
+            "name": "disabled", "label": "LLM intentionally disabled", "display_name": "LLM intentionally disabled",
+            "llm": True, "embeddings": False, "requires_key": False,
+            "native": True, "offline": True, "disabled": True,
+        },
+    ])
     return {"presets": presets, "current": _provider_view()}
 
 
