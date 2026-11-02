@@ -130,6 +130,98 @@ async def test_oauth_access_lookup_refuses_disabled_principal(oauth_http):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("token_kind", ["access_token", "refresh_token"])
+async def test_revoke_while_disabled_remains_revoked_after_enable(oauth_http, token_kind):
+    client, client_id, tokens, sessions = oauth_http
+    await _change_oauth_authority(client, sessions, tokens, "disable_principal")
+    response = await client.post("/revoke", data={
+        "client_id": client_id, "token": tokens[token_kind], "token_type_hint": token_kind,
+    })
+    assert response.status_code == 200
+    async with sessions() as session:
+        credential = (await session.scalars(select(ApiCredential))).one()
+        refresh = (await session.scalars(select(OAuthRefreshToken))).one()
+        assert refresh.revoked_at is not None
+        assert credential.revoked_at is not None
+        principal_id = credential.principal_id
+    response = await client.post(f"/admin/principals/{principal_id}/enable", headers={"X-API-Key": LEGACY_KEY})
+    assert response.status_code == 200
+    response = await client.post("/token", data={
+        "grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"],
+    })
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_grant"
+
+
+@pytest.mark.asyncio
+async def test_admin_revoke_rotated_credential_cannot_leave_successor_live(oauth_http):
+    client, client_id, tokens, sessions = oauth_http
+    rotated = await client.post("/token", data={
+        "grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"],
+    })
+    assert rotated.status_code == 200, rotated.text
+    successor = rotated.json()
+    await _change_oauth_authority(client, sessions, tokens, "revoke_credential")
+    async with sessions() as session:
+        assert await oauth_store.load_access(session, successor["access_token"]) is None
+        assert await oauth_store.load_refresh(session, successor["refresh_token"]) is None
+        next_row = (await session.scalars(select(OAuthRefreshToken).where(
+            OAuthRefreshToken.token_hash == hash_credential(successor["refresh_token"]),
+        ))).one()
+        assert next_row.revoked_at is not None
+    response = await client.post("/token", data={
+        "grant_type": "refresh_token", "client_id": client_id, "refresh_token": successor["refresh_token"],
+    })
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_revoke_rejects_different_client_without_token_oracle(oauth_http):
+    client, _, tokens, sessions = oauth_http
+    other_client = await _register(client)
+    response = await client.post("/revoke", data={
+        "client_id": other_client, "token": tokens["refresh_token"], "token_type_hint": "refresh_token",
+    })
+    assert response.status_code == 200
+    async with sessions() as session:
+        assert await oauth_store.load_refresh(session, tokens["refresh_token"]) is not None
+
+
+@pytest.mark.asyncio
+async def test_family_revocation_preserves_other_consent_subject(oauth_storage):
+    sessions, _ = oauth_storage
+    async with sessions.begin() as session:
+        await oauth_store.save_client(session, "reader", {"client_name": "Reader"})
+        pairs = [await oauth_store.issue_tokens(
+            session, client_id="reader", client_name="Reader", scopes=["core:read"], subject=subject,
+            access_ttl=timedelta(hours=1), refresh_ttl=timedelta(days=1),
+        ) for subject in ("approver-one", "approver-one", "approver-two")]
+    async with sessions.begin() as session:
+        await oauth_store.revoke(session, pairs[0].refresh_token, client_id="reader")
+    async with sessions() as session:
+        for pair in pairs[:2]:
+            assert await oauth_store.load_access(session, pair.access_token) is None
+            assert await oauth_store.load_refresh(session, pair.refresh_token) is None
+        assert await oauth_store.load_access(session, pairs[2].access_token) is not None
+        assert await oauth_store.load_refresh(session, pairs[2].refresh_token) is not None
+
+
+@pytest.mark.asyncio
+async def test_revoke_idempotent_unknown_and_expired_tokens_have_same_response(oauth_http):
+    client, client_id, tokens, sessions = oauth_http
+    async with sessions.begin() as session:
+        credential = (await session.scalars(select(ApiCredential))).one()
+        credential.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+    for raw in ("unknown-token", tokens["access_token"], tokens["access_token"], tokens["refresh_token"]):
+        response = await client.post("/revoke", data={"client_id": client_id, "token": raw})
+        assert response.status_code == 200
+        assert response.content == b""
+        assert response.headers["cache-control"] == "no-store"
+    async with sessions() as session:
+        assert (await session.scalars(select(OAuthRefreshToken))).one().revoked_at is not None
+
+
+@pytest.mark.asyncio
 async def test_client_updates_are_persisted_without_overwriting_another_client(oauth_storage):
     sessions, _ = oauth_storage
     async with sessions() as session, session.begin():

@@ -144,6 +144,20 @@ async def test_bind_team_scopes_requires_member_within_roles(team_db):
 
 
 @pytest.mark.asyncio
+async def test_revocation_follows_team_grant_narrowed_to_service_principal(team_db):
+    factory, _, _ = team_db
+    await register_client(factory)
+    await verify_by_credential(factory, 2)
+    original = await issue(factory, "human-2", ["core:read", "team:read"])
+    narrowed = await rotate(factory, original.refresh_token, ["core:read"])
+    assert (await owner_of(factory, narrowed.access_token)).name.startswith("oauth:Reader:")
+    async with factory.begin() as session:
+        await oauth_store.revoke(session, original.refresh_token, client_id=CLIENT_ID)
+    assert await owner_of(factory, narrowed.access_token) is None
+    assert await rotate(factory, narrowed.refresh_token, ["core:read"]) is None
+
+
+@pytest.mark.asyncio
 async def test_issue_tokens_mints_on_member_and_refresh_reevaluates(team_db):
     factory, _, _ = team_db
     await register_client(factory)
