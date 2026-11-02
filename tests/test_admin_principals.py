@@ -182,17 +182,27 @@ def test_mint_credential_disabled_principal_409():
 
 def test_revoke_credential_sets_timestamp():
     cred = _credential()
-    session = _FakeSession(scalars_rows=[[cred]])
-    with _patch_session(session):
+    session = _FakeSession()
+
+    async def revoke(_session, ids):
+        assert ids == [cred.id]
+        cred.revoked_at = datetime.now(timezone.utc)
+
+    with (_patch_session(session),
+          patch("apps.api.routers.admin.oauth_store.lock_credential", new=AsyncMock(return_value=(_principal(), cred))),
+          patch("apps.api.routers.admin.oauth_store.credential_family_ids", new=AsyncMock(return_value=[cred.id])),
+          patch("apps.api.routers.admin.oauth_store.revoke_credentials", new=AsyncMock(side_effect=revoke)) as revoked):
         response = client.post("/admin/credentials/11/revoke")
+    revoked.assert_awaited_once_with(session, [cred.id])
     assert response.status_code == 200
     assert cred.revoked_at is not None
     assert response.json()["credential"]["revoked_at"] is not None
 
 
 def test_revoke_unknown_credential_404():
-    session = _FakeSession(scalars_rows=[[]])
-    with _patch_session(session):
+    session = _FakeSession()
+    with (_patch_session(session),
+          patch("apps.api.routers.admin.oauth_store.lock_credential", new=AsyncMock(return_value=None))):
         response = client.post("/admin/credentials/999/revoke")
     assert response.status_code == 404
 
@@ -222,8 +232,10 @@ def test_current_dashboard_credential_cannot_lock_itself_out(team, action):
 def test_disable_then_enable_principal():
     principal = _principal()
     session = _FakeSession(scalars_rows=[[principal]])
-    with _patch_session(session):
+    with (_patch_session(session),
+          patch("apps.api.routers.admin.lock_principal", new=AsyncMock(return_value=principal)) as locked):
         response = client.post("/admin/principals/3/disable")
+    locked.assert_awaited_once_with(session, 3)
     assert response.status_code == 200
     assert principal.disabled_at is not None
 

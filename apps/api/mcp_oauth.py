@@ -236,9 +236,12 @@ class BrainOAuthProvider:
         )
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        await self.revoke_client_token(token.client_id, token.token)
+
+    async def revoke_client_token(self, client_id: str, token: str) -> None:
         async with async_session_factory() as session:
             async with session.begin():
-                await oauth_store.revoke(session, token.token)
+                await oauth_store.revoke(session, token, client_id=client_id)
 
 
 def _token_response(issued: oauth_store.IssuedTokens) -> OAuthToken:
@@ -397,15 +400,7 @@ def revocation_route(provider: BrainOAuthProvider) -> Route:
             form = RevocationForm.model_validate(dict(await request.form()))
         except ValidationError:
             return JSONResponse({"error": "invalid_request"}, status_code=400)
-        for token_type in (("refresh", "access") if form.token_type_hint == "refresh_token" else ("access", "refresh")):
-            token = (
-                await provider.load_refresh_token(client, form.token)
-                if token_type == "refresh" else await provider.load_access_token(form.token)
-            )
-            if token is not None:
-                if token.client_id == client.client_id:
-                    await provider.revoke_token(token)
-                break
+        await provider.revoke_client_token(client.client_id, form.token)
         return Response(status_code=200, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
 
     endpoint = CORSMiddleware(

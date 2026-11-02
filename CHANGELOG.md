@@ -221,6 +221,12 @@ All notable changes to this project are documented here. The format follows
   the unified model above.)
   Personal/full and personal/Lite retain their existing defaults.
 
+- Make OAuth refresh and revocation serialize on persisted authority: an admin
+  revoke cannot race a refresh into a live successor, and client logout while
+  a principal is disabled remains revoked after re-enable. Preserve refresh
+  after ordinary access expiry; conservatively revoke grants sharing the same
+  OAuth client and consent subject, including rotated credentials.
+
 - Clarify self-reported MCP telemetry labels versus authenticated principals,
   native OAuth discovery/TLS and single-worker restart limits, and full/Lite
   queue cancellation and idempotency retention without claiming hosted-client

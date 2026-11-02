@@ -19,13 +19,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.auth.principals import hash_credential, mint_credential
 from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken, Principal
 from brain.team.authorization import TeamDenied
 from brain.team.oauth_link import bind_team_scopes
+from brain.team.provisioning import lock_principal
 from brain.team.restore_fence import FENCED, access_fenced
 
 REFRESH_PREFIX = "pbr"
@@ -144,7 +145,7 @@ async def _live_refresh(session: AsyncSession, raw: str, *, for_update: bool = F
     query = select(OAuthRefreshToken).where(OAuthRefreshToken.token_hash == hash_credential(raw))
     if for_update:
         # Serialize the live check and issuance across competing transactions.
-        query = query.with_for_update()
+        query = query.with_for_update().execution_options(populate_existing=True)
     row = (
         await session.execute(query)
     ).scalar_one_or_none()
@@ -200,15 +201,70 @@ async def load_access(session: AsyncSession, raw: str) -> Optional[StoredAccess]
     return StoredAccess(token=raw, client_id=client_id, scopes=list(credential.scopes or []), expires_at=expires_at)
 
 
-async def _revoke_row(session: AsyncSession, row: OAuthRefreshToken) -> None:
+async def lock_credential(session: AsyncSession, credential_id: int) -> Optional[tuple[Principal, ApiCredential]]:
+    """OAuth family gate, then principals, then credentials; held through issue/revoke.
+
+    The client gate precedes authority locks only in OAuth transactions. Team
+    revocation never takes this gate. NO KEY UPDATE permits foreign-key inserts.
+    """
+    client_id = await session.scalar(select(OAuthRefreshToken.client_id).where(
+        OAuthRefreshToken.access_credential_id == credential_id))
+    if client_id is not None:
+        await session.execute(select(OAuthClient).where(OAuthClient.client_id == client_id)
+                              .with_for_update(key_share=True))
+    family_ids = await credential_family_ids(session, credential_id)
+    principal_ids = (await session.scalars(select(ApiCredential.principal_id).where(
+        ApiCredential.id.in_(family_ids)).distinct().order_by(ApiCredential.principal_id))).all()
+    principals = {value: await lock_principal(session, value) for value in principal_ids}
+    credential = await session.scalar(select(ApiCredential).where(ApiCredential.id == credential_id)
+                                      .with_for_update().execution_options(populate_existing=True))
+    if credential is None:
+        return None
+    principal = principals.get(credential.principal_id)
+    if principal is None:
+        return None
+    return principal, credential
+
+
+async def credential_family_ids(session: AsyncSession, credential_id: int) -> list[int]:
+    """Without stored lineage, a family is the OAuth client and consent subject.
+
+    The subject survives rotations that narrow team scopes to personal scopes,
+    which deliberately move the access credential to a service principal.
+    Separate consents by the same subject/client are conservatively revoked too.
+    """
+    grant = (await session.execute(select(OAuthRefreshToken.client_id, OAuthRefreshToken.subject)
+                                   .where(OAuthRefreshToken.access_credential_id == credential_id))).first()
+    if grant is None:
+        return [credential_id]
+    ids = (await session.scalars(select(ApiCredential.id).join(
+        OAuthRefreshToken, OAuthRefreshToken.access_credential_id == ApiCredential.id).where(
+        OAuthRefreshToken.client_id == grant.client_id, OAuthRefreshToken.subject == grant.subject,
+        or_(ApiCredential.revoked_at.is_(None), OAuthRefreshToken.revoked_at.is_(None)),
+    ))).all()
+    return sorted({credential_id, *ids})
+
+
+async def revoke_credentials(session: AsyncSession, credential_ids: Sequence[int]) -> None:
+    """Caller holds the principal gate through family discovery and this revocation."""
+    now = _now()
+    await session.execute(update(ApiCredential).where(ApiCredential.id.in_(credential_ids),
+                                                     ApiCredential.revoked_at.is_(None)).values(revoked_at=now))
+    await session.execute(update(OAuthRefreshToken).where(OAuthRefreshToken.access_credential_id.in_(credential_ids),
+                                                         OAuthRefreshToken.revoked_at.is_(None)).values(revoked_at=now))
+
+
+async def _revoke_row(session: AsyncSession, row: OAuthRefreshToken) -> bool:
     now = _now()
     row.revoked_at = now
     if row.access_credential_id is not None:
-        await session.execute(
+        claimed = await session.scalar(
             update(ApiCredential)
             .where(ApiCredential.id == row.access_credential_id, ApiCredential.revoked_at.is_(None))
-            .values(revoked_at=now)
+            .values(revoked_at=now).returning(ApiCredential.id)
         )
+        return claimed is not None
+    return False
 
 
 async def rotate_refresh(
@@ -221,10 +277,20 @@ async def rotate_refresh(
     refresh_ttl: Optional[timedelta],
 ) -> Optional[IssuedTokens]:
     """Spend a refresh token: revoke it and its access key, issue the next pair."""
-    row = await _live_refresh(session, raw, for_update=True)
-    if row is None or not await _refresh_authority_live(session, row):
+    candidate = await _live_refresh(session, raw)
+    if candidate is None or candidate.access_credential_id is None:
         return None
-    await _revoke_row(session, row)
+    authority = await lock_credential(session, candidate.access_credential_id)
+    if authority is None:
+        return None
+    principal, credential = authority
+    row = await _live_refresh(session, raw, for_update=True)
+    # Access expiry is deliberately ignored: refresh replaces an expired access key.
+    if (row is None or principal.disabled_at is not None or credential.revoked_at is not None
+            or row.access_credential_id != credential.id):
+        return None
+    if not await _revoke_row(session, row):
+        return None
     return await issue_tokens(
         session,
         client_id=row.client_id,
@@ -236,16 +302,16 @@ async def rotate_refresh(
     )
 
 
-async def revoke(session: AsyncSession, raw: str) -> None:
-    """Revoke a refresh or access token together with its counterpart (RFC 7009)."""
-    row = await _live_refresh(session, raw)
-    if row is None:
-        row = (
-            await session.execute(
-                select(OAuthRefreshToken)
-                .join(ApiCredential, OAuthRefreshToken.access_credential_id == ApiCredential.id)
-                .where(ApiCredential.key_hash == hash_credential(raw), OAuthRefreshToken.revoked_at.is_(None))
-            )
-        ).scalar_one_or_none()
-    if row is not None:
-        await _revoke_row(session, row)
+async def revoke(session: AsyncSession, raw: str, *, client_id: Optional[str] = None) -> None:
+    """Client-bound revocation also works for disabled, expired, and rotated grants."""
+    digest = hash_credential(raw)
+    query = (select(OAuthRefreshToken).outerjoin(ApiCredential,
+             OAuthRefreshToken.access_credential_id == ApiCredential.id).where(
+                 or_(OAuthRefreshToken.token_hash == digest, ApiCredential.key_hash == digest)))
+    if client_id is not None:
+        query = query.where(OAuthRefreshToken.client_id == client_id)
+    row = (await session.scalars(query)).one_or_none()
+    if row is None or row.access_credential_id is None:
+        return
+    if await lock_credential(session, row.access_credential_id) is not None:
+        await revoke_credentials(session, await credential_family_ids(session, row.access_credential_id))
