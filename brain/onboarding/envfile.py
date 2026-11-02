@@ -44,12 +44,12 @@ _URL_KEYS = frozenset({"LLM_BASE_URL", "EMBEDDING_BASE_URL"})
 _OPENAI_COMPATIBLE_ALIASES = frozenset({"openai_compatible", "custom", "openai-compatible"})
 SUPPORTED_SETUP_PROVIDERS = {
     "DEFAULT_LLM_PROVIDER": frozenset(
-        {"mock", "anthropic", "google", "openai", "nvidia", "openrouter", "groq",
+        {"disabled", "mock", "anthropic", "google", "openai", "nvidia", "openrouter", "groq",
          "together", "deepseek", "mistral", "ollama", "lmstudio"}
     ) | _OPENAI_COMPATIBLE_ALIASES,
-    # Only providers that serve an /embeddings endpoint.
+    # Built-in embeddings plus providers that serve an /embeddings endpoint.
     "DEFAULT_EMBEDDING_PROVIDER": frozenset(
-        {"mock", "google", "openai", "nvidia", "together", "mistral", "ollama", "lmstudio"}
+        {"local", "mock", "google", "openai", "nvidia", "together", "mistral", "ollama", "lmstudio"}
     ) | _OPENAI_COMPATIBLE_ALIASES,
 }
 

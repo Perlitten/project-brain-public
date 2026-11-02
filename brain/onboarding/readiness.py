@@ -45,11 +45,10 @@ _BLOCKED = "blocked"
 
 
 def _provider_status(provider: str, kind: str) -> Dict[str, Any]:
-    """One provider slot. ``configured`` proves a key is present;
-    ``verified``/``failed`` only come from a recorded live probe whose
-    credential fingerprint still matches the current key value."""
+    """A configured active slot is not necessarily verified; disabled LLMs
+    are intentional, not configured generation providers."""
     state = provider_state(provider, "llm" if kind == "LLM" else "embedding")
-    state["configured"] = state["state"] != "missing"
+    state["configured"] = state["state"] not in {"missing", "disabled"}
     return state
 
 
@@ -140,18 +139,23 @@ def _provider_step() -> Dict[str, Any]:
     # Mock is a warning, not a finished step: it runs, but nothing it returns
     # is meaningful, so the step stays open with the free way out.
     mock = any(s["state"] == "demo" for s in (llm, emb))
-    ok = all(s["state"] == "verified" for s in (llm, emb))
+    ok = llm["state"] in {"verified", "disabled"} and emb["state"] == "verified"
     unverified = any(s["state"] == "configured" for s in (llm, emb))
     hint = ""
     if mock:
         hint = FREE_PROVIDER_HINT
+    elif any(s["state"] == "missing" for s in (llm, emb)):
+        hint = "supply the required provider configuration shown above, then verify again"
     elif unverified:
-        hint = "run Verify provider credentials below — a key present is not a key verified"
+        if all(s["provider"] == "local" for s in (llm, emb) if s["state"] == "configured"):
+            hint = "run Verify providers below — check offline identifier features without downloading a model"
+        else:
+            hint = "run Verify provider credentials below — a key present is not a key verified"
     elif not ok:
-        hint = "export the provider key in your environment, then restart"
+        hint = "resolve the provider error above, then run Verify providers again"
     return {
         "id": "provider",
-        "title": "Provider credentials",
+        "title": "Provider readiness",
         "status": _DONE if ok else _ACTION,
         "detail": f"llm: {llm['detail']} · embeddings: {emb['detail']}",
         "hint": hint,

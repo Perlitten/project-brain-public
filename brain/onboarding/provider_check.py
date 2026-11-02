@@ -2,9 +2,9 @@
 
 Env-key presence proves configuration, not credentials. This module runs a
 minimal real call through the existing provider adapters (one short
-generation / one embedding) and records the outcome in the setup state keyed
-by a fingerprint of the key value, so a rotated key invalidates the old
-verdict. Errors are sanitized — a credential value can never reach the
+generation / one embedding, including offline token features) and records the
+outcome keyed by credential or built-in model identity, so a rotated key
+invalidates the old verdict. Errors are sanitized — a credential value can never reach the
 response, logs, or the state file.
 """
 
@@ -32,6 +32,7 @@ _TIMEOUT_SECONDS = 20.0
 # The built-in mock answers instantly and offline, but its vectors and answers
 # carry no meaning: search ranks by noise. Every surface says so in these words.
 MOCK_LABEL = "mock — smoke test only, results not meaningful"
+LOCAL_EMBEDDING_LABEL = "offline identifier features — not learned semantic embeddings"
 FREE_PROVIDER_HINT = (
     "for real results without a key: install Ollama, run `ollama pull nomic-embed-text`, "
     "set DEFAULT_EMBEDDING_PROVIDER=ollama, then re-index"
@@ -76,6 +77,19 @@ def _slot(provider: str, kind: str) -> Dict[str, Any]:
     configuration error that makes the slot unusable; ``env`` names the setting
     that supplies (or should supply) the key.
     """
+    if provider == "local" and kind == "embedding":
+        from brain.llm.providers.local_embedding import LocalEmbeddingProvider
+
+        return {
+            "env": LOCAL_EMBEDDING_LABEL,
+            "credential": None,
+            "identity": key_fingerprint(f"builtin:{LocalEmbeddingProvider.model}:{LocalEmbeddingProvider.dimension}"),
+            "problem": (
+                f"EMBEDDING_DIMENSION must be {LocalEmbeddingProvider.dimension} (or 0 for automatic) "
+                "for local identifier features; re-index after changing the embedding model"
+                if settings.EMBEDDING_DIMENSION not in {0, LocalEmbeddingProvider.dimension} else None
+            ),
+        }
     endpoint = _endpoint(provider, kind)
     if endpoint is None:
         env = _env_key(provider)
@@ -109,7 +123,7 @@ def _slot(provider: str, kind: str) -> Dict[str, Any]:
 
 
 def provider_state(provider: str, kind: str) -> Dict[str, Any]:
-    """Observed state of one provider slot: demo | missing | configured |
+    """Observed state of one provider slot: disabled | demo | missing | configured |
     verified | failed (verified/failed only match the current key value)."""
     from brain.llm.presets import normalize_provider_name
 
@@ -120,13 +134,19 @@ def provider_state(provider: str, kind: str) -> Dict[str, Any]:
     )
     if name not in supported:
         return {"provider": name, "state": "missing", "detail": f"unsupported {kind} provider"}
+    if name == "disabled":
+        return {
+            "provider": name,
+            "state": "disabled",
+            "detail": "LLM intentionally disabled — chat generation is unavailable; no API key required",
+        }
     if name == "mock":
         return {
             "provider": name,
             "state": "demo",
             "detail": MOCK_LABEL,
         }
-    if _env_key(name) is None:
+    if name != "local" and _env_key(name) is None:
         return {"provider": name, "state": "missing", "detail": f"unknown {kind} provider"}
     slot = _slot(name, kind)
     env = slot["env"]
@@ -155,7 +175,8 @@ def provider_state(provider: str, kind: str) -> Dict[str, Any]:
     return {
         "provider": name,
         "state": "configured",
-        "detail": f"{env} present — credentials not verified yet",
+        "detail": (f"{env} — not verified yet" if name == "local"
+                   else f"{env} present — credentials not verified yet"),
     }
 
 
@@ -184,18 +205,18 @@ async def _probe_embedding(provider: str) -> None:
 
 
 async def verify_provider(provider: str, kind: str) -> Dict[str, Any]:
-    """Run the cheap live probe and record the verdict. kind: 'llm'|'embedding'."""
+    """Probe active providers; leave disabled LLMs disabled. kind: 'llm'|'embedding'."""
     from brain.llm.presets import normalize_provider_name
 
     name = normalize_provider_name(provider) or "mock"
     slot_name = f"{kind}:{name}"
     observed = provider_state(name, kind)
-    if observed["state"] == "missing":
+    if observed["state"] in {"missing", "disabled"}:
         return observed
     if name == "mock":
         setup_state.record_provider_verification(slot_name, name, None, "demo")
         return {"provider": name, "state": "demo", "detail": MOCK_LABEL}
-    if _env_key(name) is None:
+    if name != "local" and _env_key(name) is None:
         return provider_state(name, kind)
     slot = _slot(name, kind)
     if slot["problem"] or slot["identity"] is None:
@@ -217,7 +238,8 @@ async def verify_provider(provider: str, kind: str) -> Dict[str, Any]:
             "detail": masked,
         }
     setup_state.record_provider_verification(slot_name, name, slot["identity"], "verified")
-    return {"provider": name, "state": "verified", "detail": "credential probe passed"}
+    detail = f"{LOCAL_EMBEDDING_LABEL} — probe passed" if name == "local" else "credential probe passed"
+    return {"provider": name, "state": "verified", "detail": detail}
 
 
 async def verify_configured_providers() -> Dict[str, Any]:
