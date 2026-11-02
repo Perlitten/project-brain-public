@@ -973,12 +973,14 @@ html[data-boot-out="skip"] .boot, html[data-boot-out="skip"] .boot::after { anim
   .ledger__source, .ledger__ref { display: none; }
 }
 @media (max-width: 560px) {
+  .shell { grid-template-rows: auto 1fr; }
+  .mast { height: auto; min-height: var(--plate-h); flex-wrap: wrap; padding-block: var(--s-2); }
   .tiles { grid-template-columns: 1fr 1fr; }
   .tile__value { font-size: var(--fs-20); }
   .map { padding: var(--s-4); }
   .pop { right: auto; left: 0; min-width: min(300px, calc(100vw - 32px)); }
-  .mast__where { display: none; }
-  .mast__tools { margin-left: 0; flex: 1; justify-content: space-between; }
+  .mast .mast__where { display: none; }
+  .mast__tools { margin-left: 0; flex: 1 1 100%; min-width: 0; flex-wrap: wrap; justify-content: space-between; }
 }
 
 @media (prefers-reduced-motion: reduce) {
