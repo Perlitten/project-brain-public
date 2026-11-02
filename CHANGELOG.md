@@ -33,6 +33,9 @@ All notable changes to this project are documented here. The format follows
   [runbook](docs/runbooks/team-memory-load-e2e.md),
   [report](docs/reports/team-memory-load-e2e-2026-10-18.md)) and fix the mock
   embedder that mapped unrelated texts to near-duplicates (#155).
+- Retire stale indexed source when a tracked file becomes binary or oversized,
+  and delete its owned chunk/card embeddings on replacement, rename or removal.
+  Existing historical orphan embeddings are not swept automatically.
 - Make decision and rule compare-and-set atomic under concurrency: exactly one
   writer wins per `expected_version`, blind writes form one history chain,
   concurrent creates and CAS losers answer 409 instead of 500, and only one of
