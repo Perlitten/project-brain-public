@@ -531,6 +531,7 @@ function Palette({
                 e.preventDefault();
                 setSel((s) => Math.max(s - 1, 0));
               } else if (e.key === "Enter") {
+                e.preventDefault();
                 go(entries[sel]);
               }
             }}

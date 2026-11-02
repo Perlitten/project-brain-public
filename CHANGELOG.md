@@ -18,7 +18,8 @@ All notable changes to this project are documented here. The format follows
   older server-folder registration stays as the second tab (#189).
 - Keep the Connect form's indexing intent while capabilities load, refuse stale
   repository-probe responses after URL/token edits, and report the effective
-  indexing choice truthfully.
+  indexing choice truthfully. Wrap narrow-screen header controls and keep Enter
+  navigation from reopening the command palette over the destination.
 - Fix two harness artefacts in the multi-user memory load e2e: on Windows,
   `--api-workers N` starts one API process per port instead of
   `uvicorn --workers`, whose lost `accept()` race froze a worker for 120 s; and
