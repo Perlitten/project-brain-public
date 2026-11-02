@@ -697,9 +697,11 @@ def test_worker_and_deploy_doctor_use_closed_loop_readiness():
 def test_schema_initialization_is_serialized_across_api_and_worker():
     session_source = (ROOT / "brain" / "database" / "session.py").read_text(encoding="utf-8")
     migrations_source = (ROOT / "brain" / "database" / "migrations" / "apply.py").read_text(encoding="utf-8")
-    assert "pg_advisory_lock" in session_source or "pg_try_advisory_lock" in session_source
-    assert "pg_advisory_unlock" in session_source or "pg_try_advisory_lock" in session_source
-    assert "await _init_db_unlocked()" in session_source
+    assert "pg_advisory_xact_lock" in session_source
+    assert "pg_try_advisory_lock" not in session_source
+    assert "pg_advisory_unlock" not in session_source
+    assert "async with async_engine.begin() as conn:" in session_source
+    assert "await _init_db_unlocked(conn)" in session_source
     assert "apply_migrations(conn, acquire_lock=False)" in session_source
     assert "pg_advisory_xact_lock" in migrations_source
 
