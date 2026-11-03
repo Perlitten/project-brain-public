@@ -254,17 +254,20 @@ interface Draft {
   model: string;
   summarizerModel: string;
   dimension: string;
+  dimensionEdited: boolean;
   apiKey: string;
   clearApiKey: boolean;
 }
 
 function draftFrom(slot: Slot, cur?: ProviderSlot): Draft {
+  const offline = (slot === "llm" && cur?.provider === "disabled") || (slot === "embedding" && cur?.provider === "local");
   return {
-    provider: cur && !cur.native ? cur.provider : "",
+    provider: cur && (!cur.native || offline) ? cur.provider : "",
     baseUrl: cur?.baseUrl ?? "",
     model: cur?.model ?? "",
     summarizerModel: slot === "llm" ? (cur?.summarizerModel ?? "") : "",
     dimension: slot === "embedding" && cur?.dimension ? String(cur.dimension) : "",
+    dimensionEdited: false,
     apiKey: "",
     clearApiKey: false,
   };
@@ -276,13 +279,15 @@ const STATE_TONE: Record<string, "ok" | "warn" | "bad" | "idle" | "info"> = {
   missing: "bad",
   failed: "bad",
   demo: "warn",
+  disabled: "idle",
 };
 const STATE_WORD: Record<string, string> = {
   verified: "works",
   configured: "saved, not verified",
-  missing: "key missing",
+  missing: "configuration needed",
   failed: "failed",
   demo: "mock — smoke test only",
+  disabled: "intentionally disabled",
 };
 
 function Providers({ step, view }: { step: StepView; view: SetupView }) {
@@ -321,7 +326,7 @@ function Providers({ step, view }: { step: StepView; view: SetupView }) {
       <div className="btn-row">
         <RunButton action={verifyProviders} label="Verify both" icon="check" title="Verify providers" variant={step.done ? "neutral" : "primary"} />
       </div>
-      <p className="field__hint">Verify makes one real call to each model with the saved settings.</p>
+      <p className="field__hint">Verify checks the saved settings: built-in local embeddings run offline, disabled language models are skipped, and other providers receive a real test call.</p>
       <LockNote />
     </div>
   );
@@ -335,7 +340,10 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
   const preset = presets.find((p) => p.name === d.provider);
   const keySaved = Boolean(current?.keySet) && current?.provider === d.provider;
   const needsKey = preset ? preset.requiresKey : true;
-  const usable = presets.filter((p) => (slot === "embedding" ? p.embeddings : true));
+  const offline = (slot === "llm" && d.provider === "disabled") || (slot === "embedding" && d.provider === "local");
+  const dimension = offline && !d.dimensionEdited && current?.provider === d.provider
+    ? draftFrom(slot, current).dimension : d.dimension;
+  const usable = presets.filter((p) => (slot === "embedding" ? p.embeddings : p.llm !== false));
 
   const pick = (p: ProviderPreset) =>
     set({
@@ -343,7 +351,8 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
       baseUrl: p.baseUrl ?? "",
       model: (slot === "llm" ? p.llmModel : p.embeddingModel) ?? "",
       summarizerModel: slot === "llm" ? (p.summarizerModel ?? "") : "",
-      dimension: slot === "embedding" && p.embeddingDimension ? String(p.embeddingDimension) : "",
+      dimension: slot === "embedding" && p.name === "local" ? d.dimension : slot === "embedding" && p.embeddingDimension ? String(p.embeddingDimension) : "",
+      dimensionEdited: p.name === "local" && d.dimensionEdited,
       apiKey: "",
       clearApiKey: false,
     });
@@ -352,22 +361,21 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
     const input: ProviderInput = {
       slot,
       provider: d.provider,
-      baseUrl: d.baseUrl.trim(),
-      model: d.model.trim(),
-      apiKey: d.apiKey,
-      clearApiKey: d.clearApiKey,
+      ...(!offline && { baseUrl: d.baseUrl.trim(), model: d.model.trim(), apiKey: d.apiKey, clearApiKey: d.clearApiKey }),
     };
-    if (slot === "llm") input.summarizerModel = d.summarizerModel.trim();
-    if (slot === "embedding") input.dimension = d.dimension.trim() ? Number(d.dimension) : 0;
+    if (slot === "llm" && !offline) input.summarizerModel = d.summarizerModel.trim();
+    if (slot === "embedding" && (!offline || d.dimensionEdited)) {
+      input.dimension = dimension.trim() ? Number(dimension) : 0;
+    }
     const res = await run(input);
     if (res.ok) {
-      setD((x) => ({ ...x, apiKey: "", clearApiKey: false }));
+      setD((x) => ({ ...x, apiKey: "", clearApiKey: false, dimensionEdited: false }));
       setNotes(res.data?.notes ?? []);
     }
   };
 
   const badUrl = d.baseUrl.trim() !== "" && !/^https?:\/\/[^\s]+$/.test(d.baseUrl.trim());
-  const badDim = d.dimension.trim() !== "" && !/^\d{1,5}$/.test(d.dimension.trim());
+  const badDim = dimension.trim() !== "" && !/^\d{1,5}$/.test(dimension.trim());
 
   return (
     <form
@@ -378,7 +386,7 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
       }}
       autoComplete="off"
     >
-      {current?.native && (
+      {current?.native && !offline && (
         <p className="field__hint">
           Now using <b>{current.provider}</b> through a built-in adapter. Pick a provider below to switch to an OpenAI-compatible endpoint.
         </p>
@@ -400,6 +408,9 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
 
       {d.provider && (
         <>
+          {offline ? (
+            <p className="field__hint">{slot === "llm" ? "No language model calls or summaries. Offline retrieval remains available." : "Built-in identifier features run without a model download, endpoint or API key. This is not learned semantic retrieval."}</p>
+          ) : (<>
           <div className="form__row">
             <label className="field">
               <span className="field__label">
@@ -432,7 +443,7 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
                 <span className="field__label">
                   Vector size <em>blank = model default</em>
                 </span>
-                <input className="input input--mono" inputMode="numeric" value={d.dimension} onChange={(e) => set({ dimension: e.target.value })} placeholder={preset?.embeddingDimension ? String(preset.embeddingDimension) : "1536"} />
+                <input className="input input--mono" inputMode="numeric" value={dimension} onChange={(e) => set({ dimension: e.target.value, dimensionEdited: true })} placeholder={preset?.embeddingDimension ? String(preset.embeddingDimension) : "1536"} />
                 {badDim && <span className="field__hint field__hint--bad">A whole number, e.g. 1024.</span>}
               </label>
             )}
@@ -463,8 +474,17 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
             )}
           </div>
 
+          </>)}
+          {offline && slot === "embedding" && (
+            <label className="field">
+              <span className="field__label">Vector size</span>
+              <input className="input input--mono" inputMode="numeric" value={dimension} onChange={(e) => set({ dimension: e.target.value, dimensionEdited: true })} placeholder="384 (or 0 for automatic)" />
+              <span className="field__hint">Built-in features require 384 dimensions (0 = automatic). Changing this requires reindexing; existing data is not migrated.</span>
+              {badDim && <span className="field__hint field__hint--bad">A whole number, e.g. 384.</span>}
+            </label>
+          )}
           <div className="btn-row">
-            <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || badUrl || badDim || (!preset?.baseUrl && !d.baseUrl.trim())}>
+            <button type="submit" className="btn btn--primary" disabled={pending || mode === "locked" || (slot === "embedding" && badDim) || (!offline && (badUrl || (!preset?.baseUrl && !d.baseUrl.trim())))}>
               {pending ? <span className="spin" aria-hidden="true" /> : <Icon name="check" size={15} />}
               Save {slot === "llm" ? "language model" : "embedding model"}
             </button>
