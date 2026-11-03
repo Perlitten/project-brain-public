@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select, text, update
+from sqlalchemy import event, select, text, update
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.ext.asyncio.engine import create_async_engine
@@ -64,8 +64,10 @@ async def _wait_for_waiter(engine, holder_pid, pending):
     async def blocked():
         async with engine.connect() as observer:
             while not pending.done():
+                # Unlike pg_stat_activity, pg_locks does not cache away newly connected waiters.
                 if await observer.scalar(text(
-                        "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE :holder = ANY(pg_blocking_pids(pid)))"
+                        "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE NOT granted "
+                        "AND :holder = ANY(pg_blocking_pids(pid)))"
                 ), {"holder": holder_pid}):
                     return
                 await asyncio.sleep(.01)
@@ -79,6 +81,37 @@ async def _wait_for_waiter(engine, holder_pid, pending):
 async def _rotate(session, token):
     return await oauth_store.rotate_refresh(session, token, client_name="Race", scopes=["core:read"],
         access_ttl=timedelta(hours=1), refresh_ttl=timedelta(days=1))
+
+
+@pytest.mark.asyncio
+async def test_waiter_observer_detects_backend_created_after_first_poll(race_storage):
+    engine, sessions, tokens, credential = race_storage
+    polled = asyncio.Event()
+
+    def after_poll(connection, cursor, statement, parameters, context, executemany):
+        if "pg_blocking_pids" in statement:
+            polled.set()
+
+    async def rotate_after_poll():
+        await polled.wait()
+        async with sessions.begin() as rotating:
+            return await _rotate(rotating, tokens.refresh_token)
+
+    async with sessions.begin() as holding:
+        holder_pid = await holding.scalar(text("SELECT pg_backend_pid()"))
+        await holding.execute(select(Principal).where(Principal.id == credential.principal_id).with_for_update())
+        event.listen(engine.sync_engine, "after_cursor_execute", after_poll)
+        rotation = asyncio.create_task(rotate_after_poll())
+        try:
+            await _wait_for_waiter(engine, holder_pid, rotation)
+            assert polled.is_set()
+            assert not rotation.done()
+            await holding.commit()
+            assert await asyncio.wait_for(rotation, 5) is not None
+        finally:
+            event.remove(engine.sync_engine, "after_cursor_execute", after_poll)
+            rotation.cancel()
+            await asyncio.gather(rotation, return_exceptions=True)
 
 
 @pytest.mark.asyncio
