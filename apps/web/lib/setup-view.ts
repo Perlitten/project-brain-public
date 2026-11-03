@@ -32,6 +32,7 @@ export interface ProviderPreset {
   embeddingModel?: string;
   embeddingDimension?: number;
   embeddings: boolean;
+  llm?: boolean;
 }
 
 export interface ProviderSlot {
@@ -76,7 +77,7 @@ function slot(v: unknown): ProviderSlot | undefined {
     baseUrl: str(s.base_url) || undefined,
     model: str(s.model) || undefined,
     summarizerModel: str(s.summarizer_model) || undefined,
-    dimension: num(s.dimension),
+    dimension: num(s.configured_dimension) ?? num(s.dimension),
     keySet: typeof s.key_set === "boolean" ? s.key_set : undefined,
     keySource: str(s.key_source) || undefined,
     requiresKey: typeof s.requires_key === "boolean" ? s.requires_key : undefined,
@@ -96,6 +97,7 @@ function preset(v: unknown): ProviderPreset {
     embeddingModel: str(p.embedding_model) || undefined,
     embeddingDimension: num(p.embedding_dimension),
     embeddings: p.embeddings === true,
+    llm: p.llm !== false,
   };
 }
 

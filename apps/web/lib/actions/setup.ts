@@ -43,7 +43,9 @@ export async function saveProvider(input: ProviderInput): Promise<ActionResult<P
       clear_api_key: Boolean(input.clearApiKey),
     },
     success: (d) =>
-      `${input.slot === "llm" ? "Language model" : "Embeddings"} saved${d.api_key_written ? " with the new key" : ""}. Press “Verify” to test it for real.`,
+      input.provider === "disabled" && input.slot === "llm"
+        ? "Language model intentionally disabled. Offline retrieval remains available."
+        : `${input.slot === "llm" ? "Language model" : "Embeddings"} saved${d.api_key_written ? " with the new key" : ""}. Press “Verify” to test it for real.`,
     revalidate: SETUP,
   });
   // Never keep the key around in anything returned to the browser.
@@ -57,8 +59,13 @@ export async function verifyProviders(): Promise<ActionResult<{ llm?: ProbeSide;
     body: {},
     timeoutMs: 60_000,
     success: (d) => {
-      const say = (name: string, s?: ProbeSide) =>
-        !s ? "" : s.state === "verified" ? `${name} works` : s.state === "demo" ? `${name} is the mock (smoke test only, results not meaningful)` : `${name} failed: ${s.detail ?? s.state}`;
+      const say = (name: string, s?: ProbeSide) => {
+        if (!s) return "";
+        if (s.state === "disabled") return `${name} intentionally disabled`;
+        if (s.state === "verified") return `${name} works${s.provider === "local" ? " (offline identifier features, not learned semantics)" : ""}`;
+        if (s.state === "demo") return `${name} is the mock (smoke test only, results not meaningful)`;
+        return `${name} failed: ${s.detail ?? s.state}`;
+      };
       return [say("Language model", d.llm), say("Embeddings", d.embedding)].filter(Boolean).join(" · ") || "Providers checked.";
     },
     revalidate: SETUP,
