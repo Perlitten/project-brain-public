@@ -120,13 +120,12 @@ async def _keep_an_administrator(session: AsyncSession, caller: ResolvedPrincipa
                                  credential_ids: Sequence[int] = ()) -> None:
     """Team state: refuse locking yourself out, or removing the last live administrator credential.
 
-    Mirrors the self-revocation guard of ``routers/team.py``. The single team
-    row is locked so two administrators cannot disable each other concurrently."""
+    Callers hold the team serialization gate before acquiring target authority
+    locks, so a waiting administrator cannot block the winner's request fence."""
     if principal_id is not None and principal_id == caller.id:
         raise HTTPException(status_code=409, detail="Administrators cannot disable their own principal")
     if credential_id is not None and credential_id == caller.credential_id:
         raise HTTPException(status_code=409, detail="Administrators cannot revoke the credential they are using")
-    await fresh(session, Team, Team.id == TEAM_ID, exclusive=True)
     remaining = [pair for pair in await _live_admin_credentials(session)
                  if pair[0] != principal_id and pair[1] != credential_id and pair[1] not in credential_ids]
     if not remaining:
@@ -254,6 +253,8 @@ async def revoke_credential(credential_id: int, caller: ResolvedPrincipal = CALL
     team = await _team_state_is_team()
     async with async_session_factory() as session:
         async with session.begin():
+            if team:
+                await fresh(session, Team, Team.id == TEAM_ID, exclusive=True)
             authority = await oauth_store.lock_credential(session, credential_id)
             if authority is None:
                 raise HTTPException(status_code=404, detail="Credential not found")
@@ -280,6 +281,8 @@ async def disable_principal(principal_id: int, caller: ResolvedPrincipal = CALLE
     team = await _team_state_is_team()
     async with async_session_factory() as session:
         async with session.begin():
+            if team:
+                await fresh(session, Team, Team.id == TEAM_ID, exclusive=True)
             principal = await lock_principal(session, principal_id)
             if principal is None:
                 raise HTTPException(status_code=404, detail="Principal not found")
