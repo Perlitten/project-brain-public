@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 with (
     patch("sqlalchemy.ext.asyncio.create_async_engine"),
     patch("redis.asyncio.from_url"),
@@ -789,3 +791,138 @@ def test_mcp_server_records_client_initialize(tmp_path, monkeypatch):
     assert activity is not None
     assert activity["client"] == "claude-code"
     assert activity["version"] == "1.0.0"
+
+
+def _lite_provider_settings(tmp_path, monkeypatch):
+    from brain.config.settings import Settings
+
+    monkeypatch.delenv("DEFAULT_LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("DEFAULT_EMBEDDING_PROVIDER", raising=False)
+    lite = Settings(_env_file=None, BRAIN_STORAGE_MODE="lite")
+    assert (lite.DEFAULT_LLM_PROVIDER, lite.DEFAULT_EMBEDDING_PROVIDER) == ("disabled", "local")
+    monkeypatch.setenv("BRAIN_SETUP_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setattr(api_setup.settings, "DEFAULT_LLM_PROVIDER", lite.DEFAULT_LLM_PROVIDER)
+    monkeypatch.setattr(api_setup.settings, "DEFAULT_EMBEDDING_PROVIDER", lite.DEFAULT_EMBEDDING_PROVIDER)
+
+
+@pytest.mark.parametrize("slot,provider", [("llm", "disabled"), ("embedding", "local")])
+def test_api_setup_saves_offline_provider(tmp_path, monkeypatch, slot, provider):
+    monkeypatch.setenv("BRAIN_ENV_FILE", str(tmp_path / ".env"))
+    key = "DEFAULT_LLM_PROVIDER" if slot == "llm" else "DEFAULT_EMBEDDING_PROVIDER"
+    monkeypatch.setattr(api_setup.settings, key, "mock")
+    response = client.post("/api/setup/provider", json={"slot": slot, "provider": provider})
+    assert response.status_code == 200
+    assert response.json()["api_key_written"] is False
+    assert response.json()["current"][slot]["provider"] == provider
+    assert (tmp_path / ".env").read_text() == f"{key}={provider}\n"
+    assert getattr(api_setup.settings, key) == provider
+
+
+@pytest.mark.parametrize("slot,provider", [("llm", "local"), ("embedding", "disabled")])
+def test_api_setup_rejects_offline_provider_wrong_slot(tmp_path, monkeypatch, slot, provider):
+    monkeypatch.setenv("BRAIN_ENV_FILE", str(tmp_path / ".env"))
+    response = client.post("/api/setup/provider", json={"slot": slot, "provider": provider})
+    assert response.status_code == 400
+    assert not (tmp_path / ".env").exists()
+
+
+def test_lite_provider_readiness_requires_real_offline_probe(tmp_path, monkeypatch):
+    _lite_provider_settings(tmp_path, monkeypatch)
+    initial = readiness._provider_step()
+    assert initial["llm"]["state"] == "disabled"
+    assert initial["llm"]["configured"] is False
+    assert initial["embedding"]["state"] == "configured"
+    assert initial["status"] == "action"
+    assert "key" not in initial["hint"]
+    llm_probe = AsyncMock(side_effect=AssertionError("disabled LLM must never generate"))
+    monkeypatch.setattr(provider_check, "_probe_llm", llm_probe)
+    with patch("httpx.AsyncClient.send", side_effect=AssertionError("offline probe must not use HTTP")):
+        response = client.post("/api/setup/verify-provider")
+    assert response.status_code == 200
+    assert response.json()["llm"]["state"] == "disabled"
+    assert response.json()["embedding"]["state"] == "verified"
+    llm_probe.assert_not_awaited()
+    recorded = setup_state.load_state()["provider_verifications"]
+    assert "llm:disabled" not in recorded
+    assert recorded["embedding:local"]["status"] == "verified"
+    final = readiness._provider_step()
+    assert final["status"] == "done"
+    assert final["hint"] == ""
+    assert final["mock"] is False
+    assert "not learned semantic" in final["embedding"]["detail"]
+    assert "disabled" in final["llm"]["detail"]
+
+
+def test_lite_failed_embedding_probe_never_reports_ready(tmp_path, monkeypatch):
+    _lite_provider_settings(tmp_path, monkeypatch)
+    probe = AsyncMock(side_effect=RuntimeError("local embedding failure"))
+    monkeypatch.setattr(provider_check, "_probe_embedding", probe)
+    result = _run(provider_check.verify_configured_providers())
+    assert result["embedding"]["state"] == "failed"
+    probe.assert_awaited_once_with("local")
+    provider = readiness._provider_step()
+    assert provider["status"] == "action"
+    assert "local embedding failure" in provider["detail"]
+    assert "key" not in provider["hint"]
+
+
+@pytest.mark.parametrize("provider,kind", [("openai", "llm"), ("google", "llm"), ("openai", "embedding")])
+def test_remote_provider_still_requires_key_without_probing(tmp_path, monkeypatch, provider, kind):
+    _lite_provider_settings(tmp_path, monkeypatch)
+    probe = AsyncMock(side_effect=AssertionError("unconfigured remote provider must not be called"))
+    monkeypatch.setattr(provider_check, "_probe_llm", probe)
+    monkeypatch.setattr(provider_check, "_probe_embedding", probe)
+    result = _run(provider_check.verify_provider(provider, kind))
+    assert result["state"] == "missing"
+    assert "API_KEY is not set" in result["detail"]
+    probe.assert_not_awaited()
+
+
+def test_offline_catalog_declares_slots_and_current_configuration(tmp_path, monkeypatch):
+    _lite_provider_settings(tmp_path, monkeypatch)
+    monkeypatch.setattr(api_setup.settings, "LLM_API_KEY", "unused-remote-secret")
+    monkeypatch.setattr(api_setup.settings, "EMBEDDING_API_KEY", "unused-remote-secret")
+    response = client.get("/api/setup/providers")
+    assert response.status_code == 200
+    assert "unused-remote-secret" not in response.text
+    data = response.json()
+    presets = {p["name"]: p for p in data["presets"]}
+    assert presets["local"]["llm"] is False
+    assert presets["local"]["embeddings"] is True
+    assert presets["disabled"]["llm"] is True
+    assert presets["disabled"]["embeddings"] is False
+    assert presets["disabled"]["disabled"] is True
+    assert "not learned semantic" in presets["local"]["label"]
+    for name in ("local", "disabled"):
+        assert presets[name]["requires_key"] is False
+        assert presets[name]["offline"] is True
+        assert data["current"]["embedding" if name == "local" else "llm"]["key_set"] is False
+    assert all(p["llm"] is True for name, p in presets.items() if name != "local")
+    assert presets["openai"]["requires_key"] is True
+    assert "offline" not in presets["openai"]
+    assert data["current"]["embedding"]["dimension"] == 384
+
+
+def test_saving_local_preserves_overrides_but_rejects_incompatible_width(tmp_path, monkeypatch):
+    _lite_provider_settings(tmp_path, monkeypatch)
+    monkeypatch.setenv("BRAIN_ENV_FILE", str(tmp_path / ".env"))
+    overrides = {
+        "EMBEDDING_DIMENSION": "1536", "EMBEDDING_MODEL": "remote-model",
+        "EMBEDDING_BASE_URL": "https://emb.example.com/v1", "EMBEDDING_API_KEY": "unused-secret",
+    }
+    original = "".join(f"{key}={value}\n" for key, value in overrides.items())
+    (tmp_path / ".env").write_text(original)
+    for key, value in overrides.items():
+        monkeypatch.setattr(api_setup.settings, key, int(value) if key == "EMBEDDING_DIMENSION" else value)
+    response = client.post("/api/setup/provider", json={"slot": "embedding", "provider": "local"})
+    assert response.status_code == 200
+    assert response.json()["dimension_changed"] is False
+    assert response.json()["current"]["embedding"]["configured_dimension"] == 1536
+    assert (tmp_path / ".env").read_text() == original + "DEFAULT_EMBEDDING_PROVIDER=local\n"
+    probe = AsyncMock(side_effect=AssertionError("incompatible width must not pass validation"))
+    monkeypatch.setattr(provider_check, "_probe_embedding", probe)
+    result = _run(provider_check.verify_provider("local", "embedding"))
+    assert result["state"] == "missing"
+    assert "EMBEDDING_DIMENSION must be 384" in result["detail"]
+    probe.assert_not_awaited()
+    assert readiness._provider_step()["status"] == "action"
