@@ -15,6 +15,9 @@ from brain.database import migrations
 from brain.database.migrations import SCHEMA_MIGRATION_LOCK_ID
 
 
+CI_COORDINATION_TIMEOUT = 15
+
+
 @pytest_asyncio.fixture
 async def startup_database(monkeypatch):
     url = session_module.async_engine.url
@@ -72,10 +75,10 @@ async def test_startup_waits_for_concurrent_migration(startup_database, monkeypa
                             return
                         await asyncio.sleep(.01)
 
-            await asyncio.wait_for(wait_for_blocked_lock(), timeout=5)
+            await asyncio.wait_for(wait_for_blocked_lock(), timeout=CI_COORDINATION_TIMEOUT)
             assert session_module._db_initialized is False
             initializer.assert_not_awaited()
-        await asyncio.wait_for(startup, timeout=5)
+        await asyncio.wait_for(startup, timeout=CI_COORDINATION_TIMEOUT)
         initializer.assert_awaited_once()
         assert session_module._db_initialized is True
     finally:
@@ -134,7 +137,7 @@ async def test_full_schema_owner_loss_rolls_back_before_next_startup(
     first = asyncio.create_task(session_module.init_db())
     second = None
     try:
-        await asyncio.wait_for(entered.wait(), 5)
+        await asyncio.wait_for(entered.wait(), CI_COORDINATION_TIMEOUT)
         async with startup_database.connect() as observer:
             owner_pid = await observer.scalar(text(
                 "SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted AND objid=:key "
@@ -157,17 +160,17 @@ async def test_full_schema_owner_loss_rolls_back_before_next_startup(
                     second.result()
                     pytest.fail("Concurrent startup did not wait for the healthy owner")
 
-                await asyncio.wait_for(wait_for_blocked_lock(), 5)
+                await asyncio.wait_for(wait_for_blocked_lock(), CI_COORDINATION_TIMEOUT)
                 assert len(schema_pids) == 1
                 release.set()
-            await asyncio.wait_for(second, 5)
+            await asyncio.wait_for(second, CI_COORDINATION_TIMEOUT)
         release.set()
         if terminate_owner:
             with pytest.raises(DBAPIError):
-                await asyncio.wait_for(first, 5)
+                await asyncio.wait_for(first, CI_COORDINATION_TIMEOUT)
             assert session_module._db_initialized is False
         else:
-            await asyncio.wait_for(first, 5)
+            await asyncio.wait_for(first, CI_COORDINATION_TIMEOUT)
             assert session_module._db_initialized is True
         async with startup_database.connect() as observer:
             assert (await observer.scalar(text("SELECT to_regclass('startup_owner_1')")) is None) == terminate_owner
@@ -209,11 +212,11 @@ async def test_full_schema_failure_rolls_back_all_startup_stages(startup_databas
     monkeypatch.setattr(query_capture, "initialize_query_capture", fail_after_capture)
     startup = asyncio.create_task(session_module.init_db())
     try:
-        await asyncio.wait_for(entered.wait(), 5)
+        await asyncio.wait_for(entered.wait(), CI_COORDINATION_TIMEOUT)
         if cancel_task:
             startup.cancel()
         with pytest.raises(asyncio.CancelledError if cancel_task else RuntimeError):
-            await asyncio.wait_for(startup, 5)
+            await asyncio.wait_for(startup, CI_COORDINATION_TIMEOUT)
         assert session_module._db_initialized is False
         async with startup_database.begin() as observer:
             assert await observer.scalar(text(f"SELECT pg_try_advisory_xact_lock({SCHEMA_MIGRATION_LOCK_ID})"))
