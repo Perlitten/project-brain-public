@@ -71,7 +71,9 @@ async def _wait_for_waiter(engine, holder_pid, pending):
                 await asyncio.sleep(.01)
             await pending
             pytest.fail("Expected a real PostgreSQL row-lock wait, not an uncontended operation")
-    await asyncio.wait_for(blocked(), 5)
+    # A loaded shared CI runner can take several seconds to schedule the
+    # competing transaction even after its task has been created.
+    await asyncio.wait_for(blocked(), 15)
 
 
 async def _rotate(session, token):
