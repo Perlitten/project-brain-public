@@ -254,6 +254,7 @@ interface Draft {
   model: string;
   summarizerModel: string;
   dimension: string;
+  dimensionEdited: boolean;
   apiKey: string;
   clearApiKey: boolean;
 }
@@ -266,6 +267,7 @@ function draftFrom(slot: Slot, cur?: ProviderSlot): Draft {
     model: cur?.model ?? "",
     summarizerModel: slot === "llm" ? (cur?.summarizerModel ?? "") : "",
     dimension: slot === "embedding" && cur?.dimension ? String(cur.dimension) : "",
+    dimensionEdited: false,
     apiKey: "",
     clearApiKey: false,
   };
@@ -339,6 +341,8 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
   const keySaved = Boolean(current?.keySet) && current?.provider === d.provider;
   const needsKey = preset ? preset.requiresKey : true;
   const offline = (slot === "llm" && d.provider === "disabled") || (slot === "embedding" && d.provider === "local");
+  const dimension = offline && !d.dimensionEdited && current?.provider === d.provider
+    ? draftFrom(slot, current).dimension : d.dimension;
   const usable = presets.filter((p) => (slot === "embedding" ? p.embeddings : p.llm !== false));
 
   const pick = (p: ProviderPreset) =>
@@ -348,6 +352,7 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
       model: (slot === "llm" ? p.llmModel : p.embeddingModel) ?? "",
       summarizerModel: slot === "llm" ? (p.summarizerModel ?? "") : "",
       dimension: slot === "embedding" && p.name === "local" ? d.dimension : slot === "embedding" && p.embeddingDimension ? String(p.embeddingDimension) : "",
+      dimensionEdited: p.name === "local" && d.dimensionEdited,
       apiKey: "",
       clearApiKey: false,
     });
@@ -359,18 +364,18 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
       ...(!offline && { baseUrl: d.baseUrl.trim(), model: d.model.trim(), apiKey: d.apiKey, clearApiKey: d.clearApiKey }),
     };
     if (slot === "llm" && !offline) input.summarizerModel = d.summarizerModel.trim();
-    if (slot === "embedding" && (!offline || d.dimension !== (current?.dimension ? String(current.dimension) : ""))) {
-      input.dimension = d.dimension.trim() ? Number(d.dimension) : 0;
+    if (slot === "embedding" && (!offline || d.dimensionEdited)) {
+      input.dimension = dimension.trim() ? Number(dimension) : 0;
     }
     const res = await run(input);
     if (res.ok) {
-      setD((x) => ({ ...x, apiKey: "", clearApiKey: false }));
+      setD((x) => ({ ...x, apiKey: "", clearApiKey: false, dimensionEdited: false }));
       setNotes(res.data?.notes ?? []);
     }
   };
 
   const badUrl = d.baseUrl.trim() !== "" && !/^https?:\/\/[^\s]+$/.test(d.baseUrl.trim());
-  const badDim = d.dimension.trim() !== "" && !/^\d{1,5}$/.test(d.dimension.trim());
+  const badDim = dimension.trim() !== "" && !/^\d{1,5}$/.test(dimension.trim());
 
   return (
     <form
@@ -438,7 +443,7 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
                 <span className="field__label">
                   Vector size <em>blank = model default</em>
                 </span>
-                <input className="input input--mono" inputMode="numeric" value={d.dimension} onChange={(e) => set({ dimension: e.target.value })} placeholder={preset?.embeddingDimension ? String(preset.embeddingDimension) : "1536"} />
+                <input className="input input--mono" inputMode="numeric" value={dimension} onChange={(e) => set({ dimension: e.target.value, dimensionEdited: true })} placeholder={preset?.embeddingDimension ? String(preset.embeddingDimension) : "1536"} />
                 {badDim && <span className="field__hint field__hint--bad">A whole number, e.g. 1024.</span>}
               </label>
             )}
@@ -473,7 +478,7 @@ function ProviderForm({ slot, presets, current }: { slot: Slot; presets: Provide
           {offline && slot === "embedding" && (
             <label className="field">
               <span className="field__label">Vector size</span>
-              <input className="input input--mono" inputMode="numeric" value={d.dimension} onChange={(e) => set({ dimension: e.target.value })} placeholder="384 (or 0 for automatic)" />
+              <input className="input input--mono" inputMode="numeric" value={dimension} onChange={(e) => set({ dimension: e.target.value, dimensionEdited: true })} placeholder="384 (or 0 for automatic)" />
               <span className="field__hint">Built-in features require 384 dimensions (0 = automatic). Changing this requires reindexing; existing data is not migrated.</span>
               {badDim && <span className="field__hint field__hint--bad">A whole number, e.g. 384.</span>}
             </label>
