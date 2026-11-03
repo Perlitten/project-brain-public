@@ -22,11 +22,12 @@ function compile(file, requireModule, suffix = '') {
 }
 
 // Controlled component contracts, not browser rendering or live-provider proof.
-function form(slot, provider, dimension) {
+function form(slot, provider, dimension, success = false) {
   const state = [];
   let cursor = 0;
   let tree;
   const submitted = [];
+  let current = { provider, dimension, native: ['local', 'disabled'].includes(provider) };
   const { ProviderForm } = compile('components/setup/SetupSteps.tsx', name => {
     if (name === 'react') return { useState: initial => {
       const i = cursor++;
@@ -35,20 +36,26 @@ function form(slot, provider, dimension) {
     } };
     if (name === '@/components/act') return { useAction: () => ({ pending: false, mode: 'on', run: async input => {
       submitted.push(JSON.parse(JSON.stringify(input)));
-      return { ok: false };
+      return { ok: success };
     } }) };
     if (name === 'react/jsx-runtime') return require(name);
     return {};
   }, '\nexports.ProviderForm = ProviderForm;');
   const render = () => {
     cursor = 0;
-    tree = ProviderForm({ slot, presets, current: { provider, dimension, native: ['local', 'disabled'].includes(provider) } });
+    tree = ProviderForm({ slot, presets, current });
   };
   const walk = node => !node || typeof node !== 'object' ? [] : Array.isArray(node)
     ? node.flatMap(walk) : [node, ...walk(node.props?.children)];
   render();
   return { nodes: () => walk(tree), submitted,
     submit: () => tree.props.onSubmit({ preventDefault() {} }),
+    refresh: value => { current = value; render(); },
+    pick: name => {
+      walk(tree).find(n => n.type === 'button' && walk(n.props.children)
+        .some(child => child.type === 'b' && child.props.children === name)).props.onClick();
+      render();
+    },
     change: value => {
       walk(tree).find(n => n.type === 'input').props.onChange({ target: { value } });
       render();
@@ -89,6 +96,31 @@ test('remote provider still requires an endpoint when no preset supplies it', ()
   const h = form('embedding', 'custom');
   assert.equal(h.nodes().find(n => n.props?.type === 'submit').props.disabled, true);
   assert.equal(h.nodes().some(n => n.props?.type === 'password'), true);
+});
+
+test('revalidated provider-only local saves never resend a resolved remote width', async () => {
+  const h = form('embedding', 'openai', 1536, true);
+  h.pick('Offline identifier features');
+  h.submit();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.submitted[0].dimension, undefined);
+  h.refresh({ provider: 'local', native: true, dimension: 0 });
+  h.submit();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.submitted[1].dimension, undefined);
+  assert.equal(h.nodes().find(n => n.type === 'input').props.value, '');
+});
+
+test('a successful explicit vector edit becomes clean across refresh and repeat Save', async () => {
+  const h = form('embedding', 'local', 1536, true);
+  h.change('384');
+  h.submit();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.submitted[0].dimension, 384);
+  h.refresh({ provider: 'local', native: true, dimension: 384 });
+  h.submit();
+  assert.equal(h.submitted[1].dimension, undefined);
+  assert.equal(h.nodes().find(n => n.type === 'input').props.value, '384');
 });
 
 test('verification reports disabled LLM honestly and labels local embeddings as identifier-only', async () => {
