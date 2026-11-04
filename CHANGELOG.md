@@ -16,6 +16,10 @@ All notable changes to this project are documented here. The format follows
   A read-only token travels only in the request body, is handed to the worker
   through a one-time file and is never stored in job params or logs. The
   older server-folder registration stays as the second tab (#189).
+- Keep the Connect form's indexing intent while capabilities load, refuse stale
+  repository-probe responses after URL/token edits, and report the effective
+  indexing choice truthfully. Wrap narrow-screen header controls and keep Enter
+  navigation from reopening the command palette over the destination.
 - Fix two harness artefacts in the multi-user memory load e2e: on Windows,
   `--api-workers N` starts one API process per port instead of
   `uvicorn --workers`, whose lost `accept()` race froze a worker for 120 s; and

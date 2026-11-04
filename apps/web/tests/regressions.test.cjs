@@ -2106,6 +2106,16 @@ test('memory search and pages reach Brain, and a D- id still finds its decision'
   assert.doesNotMatch(board, /counted but not drawn/);
 });
 
+test('the narrow header wraps tools without clipping controls or reviving its breadcrumb', () => {
+  const css = fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8');
+  const mobile = css.match(/^@media \(max-width: 560px\) \{\n[\s\S]*?^\}/m)?.[0];
+  assert.ok(mobile);
+  assert.match(mobile, /\.shell\s*\{[^}]*grid-template-rows:\s*auto 1fr/);
+  assert.match(mobile, /\.mast\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*var\(--plate-h\);[^}]*flex-wrap:\s*wrap/);
+  assert.match(mobile, /\.mast \.mast__where\s*\{[^}]*display:\s*none/);
+  assert.match(mobile, /\.mast__tools\s*\{[^}]*flex:\s*1 1 100%;[^}]*min-width:\s*0;[^}]*flex-wrap:\s*wrap/);
+});
+
 test('picking a record or a named project brings it into view', () => {
   const atlas = fs.readFileSync(path.join(root, 'components/atlas/Atlas.tsx'), 'utf8');
   assert.match(atlas, /data-region=\{g\.key\}/);
