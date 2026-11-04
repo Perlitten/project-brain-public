@@ -1,8 +1,11 @@
 """Persisted OAuth behavior, including SQLite expiry normalization and isolation."""
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -11,6 +14,10 @@ from brain.auth.principals import hash_credential, resolve_credential
 from brain.config.settings import settings
 from brain.database.models import ApiCredential, OAuthClient, OAuthRefreshToken, Principal
 from brain.team.models import TeamAccessFence
+
+from apps.api import auth, mcp_oauth
+from apps.api.routers import admin
+from tests.test_mcp_oauth_db import LEGACY_KEY, _authorize, _consent, _pkce, _register
 
 
 @pytest_asyncio.fixture
@@ -26,6 +33,192 @@ async def oauth_storage(tmp_path):
         yield async_sessionmaker(engine, expire_on_commit=False), path
     finally:
         await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def oauth_http(oauth_storage, monkeypatch):
+    sessions, _ = oauth_storage
+    monkeypatch.setattr(settings, "BRAIN_STORAGE_MODE", "lite")
+    monkeypatch.setattr(settings, "PROJECT_BRAIN_API_KEY", LEGACY_KEY)
+    monkeypatch.setattr(auth, "async_session_factory", sessions)
+    monkeypatch.setattr(admin, "async_session_factory", sessions)
+    monkeypatch.setattr(mcp_oauth, "async_session_factory", sessions)
+    app = FastAPI()
+    provider = mcp_oauth.BrainOAuthProvider("http://localhost")
+    app.router.routes.extend(mcp_oauth.oauth_routes(provider, issuer="http://localhost", resource="http://localhost/mcp"))
+    app.include_router(mcp_oauth.consent_router(provider))
+    app.include_router(admin.router)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://localhost") as client:
+        client_id = await _register(client)
+        verifier, challenge = _pkce()
+        request_id = await _authorize(client, client_id, challenge, scope="core:read")
+        approved = await _consent(client, request_id, action="allow", api_key=LEGACY_KEY)
+        assert approved.status_code == 302
+        code = parse_qs(urlparse(approved.headers["location"]).query)["code"][0]
+        response = await client.post("/token", data={
+            "grant_type": "authorization_code", "code": code, "client_id": client_id,
+            "code_verifier": verifier, "redirect_uri": "http://127.0.0.1:9999/callback",
+        })
+        assert response.status_code == 200, response.text
+        yield client, client_id, response.json(), sessions
+
+
+async def _change_oauth_authority(client, sessions, tokens, change):
+    async with sessions() as session:
+        credential = (await session.scalars(select(ApiCredential).where(
+            ApiCredential.key_hash == hash_credential(tokens["access_token"]),
+        ))).one()
+        path = (f"/admin/credentials/{credential.id}/revoke" if change == "revoke_credential"
+                else f"/admin/principals/{credential.principal_id}/disable")
+    response = await client.post(path, headers={"X-API-Key": LEGACY_KEY})
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["revoke_credential", "disable_principal"])
+async def test_token_endpoint_cannot_refresh_revoked_authority(oauth_http, change):
+    client, client_id, tokens, sessions = oauth_http
+    await _change_oauth_authority(client, sessions, tokens, change)
+    response = await client.post("/token", data={
+        "grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"],
+    })
+    assert response.status_code == 400, response.text
+    assert response.json()["error"] == "invalid_grant"
+    async with sessions() as session:
+        assert len((await session.scalars(select(ApiCredential))).all()) == 1
+        assert len((await session.scalars(select(OAuthRefreshToken))).all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_token_endpoint_can_refresh_expired_access_credential(oauth_http):
+    client, client_id, tokens, sessions = oauth_http
+    async with sessions() as session, session.begin():
+        credential = (await session.scalars(select(ApiCredential).where(
+            ApiCredential.key_hash == hash_credential(tokens["access_token"]),
+        ))).one()
+        credential.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    response = await client.post("/token", data={
+        "grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"],
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["access_token"] != tokens["access_token"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["revoke_credential", "disable_principal"])
+async def test_rotation_rechecks_authority_after_refresh_lookup(oauth_http, change):
+    client, _, tokens, sessions = oauth_http
+    async with sessions() as session:
+        assert await oauth_store.load_refresh(session, tokens["refresh_token"]) is not None
+    await _change_oauth_authority(client, sessions, tokens, change)
+    async with sessions() as session, session.begin():
+        assert await oauth_store.rotate_refresh(
+            session, tokens["refresh_token"], client_name="Reader", scopes=["core:read"],
+            access_ttl=timedelta(hours=1), refresh_ttl=timedelta(days=30),
+        ) is None
+    async with sessions() as session:
+        assert len((await session.scalars(select(ApiCredential))).all()) == 1
+        assert len((await session.scalars(select(OAuthRefreshToken))).all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_oauth_access_lookup_refuses_disabled_principal(oauth_http):
+    client, _, tokens, sessions = oauth_http
+    await _change_oauth_authority(client, sessions, tokens, "disable_principal")
+    async with sessions() as session:
+        assert await oauth_store.load_access(session, tokens["access_token"]) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("token_kind", ["access_token", "refresh_token"])
+async def test_revoke_while_disabled_remains_revoked_after_enable(oauth_http, token_kind):
+    client, client_id, tokens, sessions = oauth_http
+    await _change_oauth_authority(client, sessions, tokens, "disable_principal")
+    response = await client.post("/revoke", data={
+        "client_id": client_id, "token": tokens[token_kind], "token_type_hint": token_kind,
+    })
+    assert response.status_code == 200
+    async with sessions() as session:
+        credential = (await session.scalars(select(ApiCredential))).one()
+        refresh = (await session.scalars(select(OAuthRefreshToken))).one()
+        assert refresh.revoked_at is not None
+        assert credential.revoked_at is not None
+        principal_id = credential.principal_id
+    response = await client.post(f"/admin/principals/{principal_id}/enable", headers={"X-API-Key": LEGACY_KEY})
+    assert response.status_code == 200
+    response = await client.post("/token", data={
+        "grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"],
+    })
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_grant"
+
+
+@pytest.mark.asyncio
+async def test_admin_revoke_rotated_credential_cannot_leave_successor_live(oauth_http):
+    client, client_id, tokens, sessions = oauth_http
+    rotated = await client.post("/token", data={
+        "grant_type": "refresh_token", "client_id": client_id, "refresh_token": tokens["refresh_token"],
+    })
+    assert rotated.status_code == 200, rotated.text
+    successor = rotated.json()
+    await _change_oauth_authority(client, sessions, tokens, "revoke_credential")
+    async with sessions() as session:
+        assert await oauth_store.load_access(session, successor["access_token"]) is None
+        assert await oauth_store.load_refresh(session, successor["refresh_token"]) is None
+        next_row = (await session.scalars(select(OAuthRefreshToken).where(
+            OAuthRefreshToken.token_hash == hash_credential(successor["refresh_token"]),
+        ))).one()
+        assert next_row.revoked_at is not None
+    response = await client.post("/token", data={
+        "grant_type": "refresh_token", "client_id": client_id, "refresh_token": successor["refresh_token"],
+    })
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_revoke_rejects_different_client_without_token_oracle(oauth_http):
+    client, _, tokens, sessions = oauth_http
+    other_client = await _register(client)
+    response = await client.post("/revoke", data={
+        "client_id": other_client, "token": tokens["refresh_token"], "token_type_hint": "refresh_token",
+    })
+    assert response.status_code == 200
+    async with sessions() as session:
+        assert await oauth_store.load_refresh(session, tokens["refresh_token"]) is not None
+
+
+@pytest.mark.asyncio
+async def test_family_revocation_preserves_other_consent_subject(oauth_storage):
+    sessions, _ = oauth_storage
+    async with sessions.begin() as session:
+        await oauth_store.save_client(session, "reader", {"client_name": "Reader"})
+        pairs = [await oauth_store.issue_tokens(
+            session, client_id="reader", client_name="Reader", scopes=["core:read"], subject=subject,
+            access_ttl=timedelta(hours=1), refresh_ttl=timedelta(days=1),
+        ) for subject in ("approver-one", "approver-one", "approver-two")]
+    async with sessions.begin() as session:
+        await oauth_store.revoke(session, pairs[0].refresh_token, client_id="reader")
+    async with sessions() as session:
+        for pair in pairs[:2]:
+            assert await oauth_store.load_access(session, pair.access_token) is None
+            assert await oauth_store.load_refresh(session, pair.refresh_token) is None
+        assert await oauth_store.load_access(session, pairs[2].access_token) is not None
+        assert await oauth_store.load_refresh(session, pairs[2].refresh_token) is not None
+
+
+@pytest.mark.asyncio
+async def test_revoke_idempotent_unknown_and_expired_tokens_have_same_response(oauth_http):
+    client, client_id, tokens, sessions = oauth_http
+    async with sessions.begin() as session:
+        credential = (await session.scalars(select(ApiCredential))).one()
+        credential.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+    for raw in ("unknown-token", tokens["access_token"], tokens["access_token"], tokens["refresh_token"]):
+        response = await client.post("/revoke", data={"client_id": client_id, "token": raw})
+        assert response.status_code == 200
+        assert response.content == b""
+        assert response.headers["cache-control"] == "no-store"
+    async with sessions() as session:
+        assert (await session.scalars(select(OAuthRefreshToken))).one().revoked_at is not None
 
 
 @pytest.mark.asyncio

@@ -20,12 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api import team_access
 from apps.api.auth import require_api_key, require_principal, require_scope
 from apps.api.team_access import team_administrator_access
+from brain.auth import oauth_store
 from brain.auth.principals import ResolvedPrincipal, mint_credential
 from brain.database.models import ApiCredential, Principal
 from brain.database.session import async_session_factory
 from brain.team.authorization import fresh
 from brain.team.models import Team, TeamMember
-from brain.team.provisioning import ADMIN_SCOPE, TEAM_ID
+from brain.team.provisioning import ADMIN_SCOPE, TEAM_ID, lock_principal
 
 router = APIRouter(prefix="/admin", tags=["admin"],
                    dependencies=[Depends(require_api_key), Depends(team_administrator_access())])
@@ -115,18 +116,18 @@ async def _live_admin_credentials(session: AsyncSession) -> list[tuple[int, int]
 
 
 async def _keep_an_administrator(session: AsyncSession, caller: ResolvedPrincipal, *,
-                                 principal_id: int | None = None, credential_id: int | None = None) -> None:
+                                 principal_id: int | None = None, credential_id: int | None = None,
+                                 credential_ids: Sequence[int] = ()) -> None:
     """Team state: refuse locking yourself out, or removing the last live administrator credential.
 
-    Mirrors the self-revocation guard of ``routers/team.py``. The single team
-    row is locked so two administrators cannot disable each other concurrently."""
+    Callers hold the team serialization gate before acquiring target authority
+    locks, so a waiting administrator cannot block the winner's request fence."""
     if principal_id is not None and principal_id == caller.id:
         raise HTTPException(status_code=409, detail="Administrators cannot disable their own principal")
     if credential_id is not None and credential_id == caller.credential_id:
         raise HTTPException(status_code=409, detail="Administrators cannot revoke the credential they are using")
-    await fresh(session, Team, Team.id == TEAM_ID, exclusive=True)
     remaining = [pair for pair in await _live_admin_credentials(session)
-                 if pair[0] != principal_id and pair[1] != credential_id]
+                 if pair[0] != principal_id and pair[1] != credential_id and pair[1] not in credential_ids]
     if not remaining:
         raise HTTPException(status_code=409,
                             detail="This would leave the team without a live administrator credential")
@@ -252,16 +253,19 @@ async def revoke_credential(credential_id: int, caller: ResolvedPrincipal = CALL
     team = await _team_state_is_team()
     async with async_session_factory() as session:
         async with session.begin():
-            res = await session.scalars(
-                select(ApiCredential).where(ApiCredential.id == credential_id)
-            )
-            cred = res.one_or_none()
-            if cred is None:
+            if team:
+                await fresh(session, Team, Team.id == TEAM_ID, exclusive=True)
+            authority = await oauth_store.lock_credential(session, credential_id)
+            if authority is None:
                 raise HTTPException(status_code=404, detail="Credential not found")
-            if team and cred.revoked_at is None:
-                await _keep_an_administrator(session, caller, credential_id=cred.id)
-            if cred.revoked_at is None:
-                cred.revoked_at = datetime.now(timezone.utc)
+            _, cred = authority
+            family_ids = await oauth_store.credential_family_ids(session, cred.id)
+            if caller.credential_id in family_ids:
+                raise HTTPException(status_code=409, detail="Cannot revoke the OAuth grant serving this request")
+            if team and await session.scalar(select(ApiCredential.id).where(
+                    ApiCredential.id.in_(family_ids), ApiCredential.revoked_at.is_(None)).limit(1)) is not None:
+                await _keep_an_administrator(session, caller, credential_ids=family_ids)
+            await oauth_store.revoke_credentials(session, family_ids)
             serialized = _serialize_credential(cred)
     return {"credential": serialized}
 
@@ -277,10 +281,9 @@ async def disable_principal(principal_id: int, caller: ResolvedPrincipal = CALLE
     team = await _team_state_is_team()
     async with async_session_factory() as session:
         async with session.begin():
-            res = await session.scalars(
-                select(Principal).where(Principal.id == principal_id)
-            )
-            principal = res.one_or_none()
+            if team:
+                await fresh(session, Team, Team.id == TEAM_ID, exclusive=True)
+            principal = await lock_principal(session, principal_id)
             if principal is None:
                 raise HTTPException(status_code=404, detail="Principal not found")
             if team and principal.disabled_at is None:
