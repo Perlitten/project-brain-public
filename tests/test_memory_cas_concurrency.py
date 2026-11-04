@@ -51,10 +51,10 @@ class ReadBarrier:
             pass  # serialized by a row lock: the others cannot read until this writer commits
 
 
-def hold_after_read(monkeypatch, module, name: str, parties: int) -> None:
+def hold_after_read(monkeypatch, module, name: str, parties: int, *, timeout: float = 0.3) -> None:
     """Wrap the store's canonical-row lookup so every concurrent writer reads before any of them writes."""
     real = getattr(module, name)
-    barrier = ReadBarrier(parties)
+    barrier = ReadBarrier(parties, timeout=timeout)
 
     async def held(*args, **kwargs):
         found = await real(*args, **kwargs)
@@ -206,7 +206,10 @@ async def test_concurrent_rule_cas_has_exactly_one_winner(team_db, monkeypatch):
 async def test_concurrent_rule_creation_is_one_create_and_conflicts(team_db, monkeypatch):
     factory, _, _ = team_db
     use_factory(monkeypatch, factory)
-    hold_after_read(monkeypatch, rule_store, "_find_rule", 4)
+    # The creation path has no row to lock, so every writer must reach the
+    # barrier before the first insert. Loaded shared runners can take longer
+    # than the short timeout used to detect serialized row-lock reads.
+    hold_after_read(monkeypatch, rule_store, "_find_rule", 4, timeout=5)
     results = await outcomes(RuleStore.record_rule(
         name="Fresh rule", repo_path=REPO, description=f"creator {index}", author_principal_id=2)
         for index in range(4))
