@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Union
 from sqlalchemy import select, delete, func, update
+from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from brain.config.settings import settings
@@ -550,6 +551,20 @@ def source_content_digest(path_obj: Path, files: List[Path]) -> str:
     return hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
 
 
+async def _delete_file_projections(session: AsyncSession, files: List[File]) -> None:
+    """Retire vectors before their owning chunks/cards cascade away."""
+    if not files:
+        return
+    file_ids = [file.id for file in files]
+    for entity_type, model in (("file_chunk", FileChunk), ("file_card", FileCard)):
+        await session.execute(delete(Embedding).where(
+            Embedding.entity_type == entity_type,
+            Embedding.entity_id.in_(select(model.id).where(model.file_id.in_(file_ids))),
+        ))
+    for file in files:
+        await session.delete(file)
+
+
 @dataclass(frozen=True)
 class PreparedFile:
     """Ready-to-commit provider output; persistence owns IDs and fencing."""
@@ -824,10 +839,13 @@ class FileIndexer:
                 await self._publish_progress()
 
                 indexed_paths: list[str] = []
+                retained_paths = {fp.relative_to(src).as_posix() for fp in scanned_files}
 
                 async def process(filepath):
                     try:
                         outcome = await self.index_file(repo_id, src, filepath)
+                        if outcome in {"excluded", "skipped_large"}:
+                            retained_paths.discard(filepath.relative_to(src).as_posix())
                         if outcome in {"excluded", "skipped_large", "unchanged"}:
                             self.progress["files"]["skipped"] += 1
                             self.file_counts["unchanged" if outcome == "unchanged" else "excluded"] += 1
@@ -850,14 +868,16 @@ class FileIndexer:
                 if settings.LATE_INTERACTION_ENABLED and settings.LATE_INTERACTION_DUAL_WRITE_ENABLED:
                     concurrency = 1
                 await bounded_map(scanned_files, process, concurrency)
-                await self._remove_stale_files(repo_id, {fp.relative_to(src).as_posix() for fp in scanned_files}, repo_name)
+                await self._remove_stale_files(repo_id, retained_paths, repo_name)
                 self.progress["phase"] = "graph"
                 await self._publish_progress()
                 from brain.graph.write_buffer import GraphWriteBuffer
                 graph_client = self.graph_client
                 self.graph_client = GraphWriteBuffer(graph_client)
                 try:
-                    await self._post_process_graph(repo.name, src, scanned_files)
+                    await self._post_process_graph(repo.name, src, [
+                        fp for fp in scanned_files if fp.relative_to(src).as_posix() in retained_paths
+                    ])
                     await self.graph_client.flush()
                 finally:
                     self.graph_client = graph_client
@@ -940,9 +960,9 @@ class FileIndexer:
                 await assert_current_db_fence(session)
                 stmt = select(File).where(File.repository_id == repo_id)
                 existing_files = (await session.execute(stmt)).scalars().all()
-                for file_obj in existing_files:
-                    if file_obj.path not in scanned_rel_paths:
-                        await session.delete(file_obj)
+                await _delete_file_projections(session, [
+                    file_obj for file_obj in existing_files if file_obj.path not in scanned_rel_paths
+                ])
         try:
             await self.graph_client.delete_repository_files_not_in(scanned_rel_paths)
         except Exception as exc:
@@ -1397,7 +1417,7 @@ class FileIndexer:
                     for existing in existing_rows:
                         obsolete_chunk_ids.extend((await session.scalars(select(FileChunk.id)
                                                   .where(FileChunk.file_id == existing.id))).all())
-                        await session.delete(existing)
+                    await _delete_file_projections(session, list(existing_rows))
                     if existing_rows:
                         await session.flush()
                     file_obj = File(repository_id=repo_id, path=rel_path, language=ext[1:] if ext else "unknown",
