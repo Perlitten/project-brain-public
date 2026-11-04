@@ -175,7 +175,7 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 | react-dom | 19.3.1 | MIT |
 | typescript | 7.0.2 | Apache-2.0 |
 | typescript5 | 5.9.3 | Apache-2.0 |
-| @types/node | 26.6.5 | MIT |
+| @types/node | 26.6.6 | MIT |
 | @types/react | 19.3.0 | MIT |
 | @types/react-dom | 19.3.0 | MIT |
 
