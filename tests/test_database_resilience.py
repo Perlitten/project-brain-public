@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -89,6 +90,53 @@ async def test_init_db_retries_only_graph_schema_after_deferred_neo4j(
     initializer.assert_awaited_once()
     assert graph_initializer.await_count == 2
     assert session_module._graph_schema_ready is True
+
+
+@pytest.mark.asyncio
+async def test_startup_does_not_retry_schema_failure_without_lock(reset_process_db_initialization):
+    connection = AsyncMock()
+    connection.execute.return_value = MagicMock()
+    connection.execute.return_value.scalar.return_value = True
+
+    @asynccontextmanager
+    async def connection_context():
+        yield connection
+
+    engine = MagicMock()
+    engine.connect = engine.begin = connection_context
+    initializer = AsyncMock(side_effect=[RuntimeError("migration failed"), None])
+    with (
+        patch.object(session_module, "_lite", False),
+        patch.object(session_module, "async_engine", engine),
+        patch.object(session_module, "_init_db_unlocked", initializer),
+    ):
+        with pytest.raises(RuntimeError, match="migration failed"):
+            await session_module.init_db()
+    initializer.assert_awaited_once()
+    assert session_module._db_initialized is False
+
+
+@pytest.mark.asyncio
+async def test_startup_does_not_initialize_when_lock_acquisition_fails(reset_process_db_initialization):
+    connection = AsyncMock()
+    connection.execute.side_effect = RuntimeError("lock connection lost")
+
+    @asynccontextmanager
+    async def connection_context():
+        yield connection
+
+    engine = MagicMock()
+    engine.connect = engine.begin = connection_context
+    initializer = AsyncMock()
+    with (
+        patch.object(session_module, "_lite", False),
+        patch.object(session_module, "async_engine", engine),
+        patch.object(session_module, "_init_db_unlocked", initializer),
+    ):
+        with pytest.raises(RuntimeError, match="lock connection lost"):
+            await session_module.init_db()
+    initializer.assert_not_awaited()
+    assert session_module._db_initialized is False
 
 
 @pytest.mark.asyncio
