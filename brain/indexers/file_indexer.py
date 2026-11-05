@@ -11,7 +11,7 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, Union
+from typing import TYPE_CHECKING, List, Dict, Any, Optional, Tuple, Union, cast
 from sqlalchemy import select, delete, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
@@ -28,7 +28,7 @@ from brain.llm.call_budget import no_provider_calls, ProviderBudgetExceeded
 from brain.memory.source_manifest import revision_matches
 from brain.workers.runtime import current_job, check_job_lease
 from brain.workers.db_fencing import assert_current_db_fence
-from brain.llm.router import get_model_router
+from brain.llm.router import ModelRouter, get_model_router
 from brain.indexers.repo_indexer import classify_file, should_ignore_dir, should_ignore_file, get_git_commit_hash
 from brain.indexers.source_summaries import source_summaries
 from brain.indexers.symbol_extractors import (
@@ -41,6 +41,10 @@ from brain.search.filters import (
     should_exclude_from_indexing,
     should_exclude_from_retrieval,
 )
+
+if TYPE_CHECKING:
+    from brain.late_interaction.provider import LfmColbertProvider
+
 
 # Public chunking defaults. Kept as module constants for configuration and reuse.
 #
@@ -459,6 +463,7 @@ def _scan_repo_files(path_obj: Path, no_provider_limits=None) -> List[Path]:
     Runs in a worker thread so blocking Git/filesystem work doesn't stall asyncio.
     """
     path_obj = path_obj.resolve()
+    candidates: List[Path]
     if no_provider_limits:
         from brain.indexers.no_provider_refresh import bounded_source_candidates
         candidates = bounded_source_candidates(path_obj, no_provider_limits, should_ignore_dir)
@@ -471,7 +476,7 @@ def _scan_repo_files(path_obj: Path, no_provider_limits=None) -> List[Path]:
                 raise RuntimeError("Git is required to enumerate checkout source") from None
             probe = None
 
-        candidates: List[Path] = []
+        candidates = []
         if probe is not None and probe.returncode == 0 and probe.stdout.strip() == b"true":
             tracked = subprocess.run([*command, "ls-files", "--cached", "-z"], capture_output=True)
             if tracked.returncode:
@@ -590,7 +595,7 @@ class FileIndexer:
         self._timeout_managed = _timeout_managed
         self.router = None if no_provider_limits else get_model_router()
         self.graph_client: Any = None  # Scoped GraphClient, or its batching proxy.
-        self._late_provider = None
+        self._late_provider: Optional["LfmColbertProvider"] = None
         self._late_dual_write_failures = 0
         self._late_dual_write_circuit_open = False
         self._provider_slots = asyncio.Semaphore(settings.INDEX_PROVIDER_CONCURRENCY)
@@ -991,7 +996,8 @@ class FileIndexer:
                     self._late_provider = None
 
     async def _preflight_no_provider(self, identity: Path, source: Path, revision: str) -> None:
-        limits = self.no_provider_limits
+        # This preflight is called only by the bounded no-provider branch.
+        limits = cast(NoProviderRefreshLimits, self.no_provider_limits)
         files = await asyncio.to_thread(_scan_repo_files, source, self.no_provider_limits)
         if len(files) > limits.max_files or sum(p.stat().st_size for p in files) > limits.max_source_bytes:
             raise NoProviderRefreshRejected("Zero-provider source exceeds resource limits")
@@ -1257,10 +1263,11 @@ class FileIndexer:
         if self.no_provider_limits:
             # A file may change after preflight. Fail before any provider/client access.
             raise ProviderBudgetExceeded("A file requires provider preparation in a zero-call refresh")
+        # The constructor creates a router unless the zero-call guard above applies.
         symbols = extract_symbols_from_content(content, ext)
         chunks = chunk_file_content(content, symbols)
         self.progress["chunks"]["discovered"] += len(chunks)
-        embedding_provider = self.router.embedding("passage")
+        embedding_provider = cast(ModelRouter, self.router).embedding("passage")
         embedding_char_limit = _infer_embedding_text_limit(embedding_provider)
         late_provider = self._late_provider
         remote_late_write = (
@@ -1304,7 +1311,7 @@ class FileIndexer:
             else:
                 try:
                     async with self._provider_slots:
-                        file_summary = await self.router.summarizer().summarize(content[:4000])
+                        file_summary = await cast(ModelRouter, self.router).summarizer().summarize(content[:4000])
                 except Exception as e:
                     logger.warning(f"Failed to generate summary for {rel_path}: {e}")
                     self._failure("summary", e, rel_path)
@@ -1338,7 +1345,7 @@ class FileIndexer:
             else:
                 try:
                     async with self._provider_slots:
-                        chunk_summary = await self.router.summarizer().summarize(chunk["content"])
+                        chunk_summary = await cast(ModelRouter, self.router).summarizer().summarize(chunk["content"])
                 except Exception:
                     chunk_summary = f"Code chunk {idx} in {rel_path}"
             chunk_summary = annotate_knowledge_summary(
