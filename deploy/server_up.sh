@@ -444,10 +444,10 @@ if docker inspect brain-neo4j >/dev/null 2>&1; then
         && echo "    Neo4j backup: $BACKUP_DIR/neo4j.dump" \
         || echo "    WARNING: Neo4j backup failed (container may not be running)"
 fi
-# Prune old backups (keep last 5)
-if [[ -d ./backups ]]; then
-    ls -1dt ./backups/20* 2>/dev/null | tail -n +6 | xargs rm -rf -- 2>/dev/null || true
-fi
+# Preserve existing snapshots. Age/count do not prove a rollback preimage or
+# last verified recovery point is disposable. Rotation is a separate reviewed
+# maintenance operation after candidate inspection and recovery verification;
+# deploying a release must never delete prior backups automatically.
 
 echo "==> Building images"
 $COMPOSE build

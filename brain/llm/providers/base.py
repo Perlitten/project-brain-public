@@ -1,7 +1,40 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
+from functools import wraps
+from inspect import iscoroutinefunction
+from brain.llm.call_budget import require_provider_budget
 
-class LLMProvider(ABC):
+
+def _guard_provider_method(method):
+    if iscoroutinefunction(method):
+        @wraps(method)
+        async def guarded(*args, **kwargs):
+            require_provider_budget()
+            return await method(*args, **kwargs)
+    else:
+        @wraps(method)
+        def guarded(*args, **kwargs):
+            require_provider_budget()
+            return method(*args, **kwargs)
+    return guarded
+
+
+class _ProviderBudgetGuard:
+    """Guard concrete overrides as well as inherited/cached provider methods.
+
+    Checking on method execution denies a coroutine created before the budget
+    scope and awaited inside it. Constructors cannot download a local model or
+    create a client during zero-provider maintenance either.
+    """
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        for name in ('__init__', 'generate', 'generate_with_metadata', 'embed', 'embed_batch', 'summarize'):
+            method = cls.__dict__.get(name)
+            if method is not None:
+                setattr(cls, name, _guard_provider_method(method))
+
+
+class LLMProvider(_ProviderBudgetGuard, ABC):
     """Abstract base class for LLM text generation providers."""
 
     @abstractmethod
@@ -29,7 +62,7 @@ class LLMProvider(ABC):
         return {"text": text, "finish_reason": None, "usage": None}
 
 
-class EmbeddingProvider(ABC):
+class EmbeddingProvider(_ProviderBudgetGuard, ABC):
     """Abstract base class for text embedding providers."""
 
     @abstractmethod
@@ -59,7 +92,7 @@ class EmbeddingProvider(ABC):
         pass
 
 
-class SummarizerProvider(ABC):
+class SummarizerProvider(_ProviderBudgetGuard, ABC):
     """Abstract base class for text summarization providers."""
 
     @abstractmethod

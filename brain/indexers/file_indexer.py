@@ -7,6 +7,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,8 @@ from brain.database.session import async_session_factory
 from brain.embeddings.store import build_embedding_record
 from brain.embeddings.integrity import verify_embeddings
 from brain.indexers.reliability import bounded_map, embed_chunks, repository_index_lock, git_source_is_clean
+from brain.indexers.no_provider_refresh import NoProviderRefreshLimits, NoProviderRefreshRejected, validate_inventory
+from brain.llm.call_budget import no_provider_calls, ProviderBudgetExceeded
 from brain.memory.source_manifest import revision_matches
 from brain.workers.runtime import current_job, check_job_lease
 from brain.workers.db_fencing import assert_current_db_fence
@@ -447,7 +450,7 @@ def compute_run_status(*, processed: int, unchanged: int, failed: int,
     return "degraded" if processed + unchanged + graph_failed > 0 else "failed"
 
 
-def _scan_repo_files(path_obj: Path) -> List[Path]:
+def _scan_repo_files(path_obj: Path, no_provider_limits=None) -> List[Path]:
     """Select tracked Git source, or walk a non-Git snapshot without symlinks.
 
     The index's revision contract requires committed source. Git's index is the
@@ -456,32 +459,36 @@ def _scan_repo_files(path_obj: Path) -> List[Path]:
     Runs in a worker thread so blocking Git/filesystem work doesn't stall asyncio.
     """
     path_obj = path_obj.resolve()
-    command = ["git", "-c", f"safe.directory={path_obj}", "-C", str(path_obj)]
-    try:
-        probe = subprocess.run([*command, "rev-parse", "--is-inside-work-tree"], capture_output=True)
-    except FileNotFoundError:
-        if (path_obj / ".git").exists():
-            raise RuntimeError("Git is required to enumerate checkout source") from None
-        probe = None
-
-    candidates: List[Path] = []
-    if probe is not None and probe.returncode == 0 and probe.stdout.strip() == b"true":
-        tracked = subprocess.run([*command, "ls-files", "--cached", "-z"], capture_output=True)
-        if tracked.returncode:
-            raise RuntimeError("Unable to enumerate tracked Git source")
-        for raw_path in tracked.stdout.split(b"\0"):
-            if not raw_path:
-                continue
-            relative = Path(os.fsdecode(raw_path))
-            if relative.is_absolute() or ".." in relative.parts:
-                raise ValueError("Git source path escapes the repository")
-            candidates.append(path_obj / relative)
+    if no_provider_limits:
+        from brain.indexers.no_provider_refresh import bounded_source_candidates
+        candidates = bounded_source_candidates(path_obj, no_provider_limits, should_ignore_dir)
     else:
-        if (path_obj / ".git").exists():
-            raise RuntimeError("Unable to inspect Git checkout metadata")
-        for root, dirs, files in os.walk(str(path_obj), followlinks=False):
-            dirs[:] = [d for d in dirs if not should_ignore_dir(d) and not (Path(root) / d).is_symlink()]
-            candidates.extend(Path(root) / name for name in files)
+        command = ["git", "-c", f"safe.directory={path_obj}", "-C", str(path_obj)]
+        try:
+            probe = subprocess.run([*command, "rev-parse", "--is-inside-work-tree"], capture_output=True)
+        except FileNotFoundError:
+            if (path_obj / ".git").exists():
+                raise RuntimeError("Git is required to enumerate checkout source") from None
+            probe = None
+
+        candidates: List[Path] = []
+        if probe is not None and probe.returncode == 0 and probe.stdout.strip() == b"true":
+            tracked = subprocess.run([*command, "ls-files", "--cached", "-z"], capture_output=True)
+            if tracked.returncode:
+                raise RuntimeError("Unable to enumerate tracked Git source")
+            for raw_path in tracked.stdout.split(b"\0"):
+                if not raw_path:
+                    continue
+                relative = Path(os.fsdecode(raw_path))
+                if relative.is_absolute() or ".." in relative.parts:
+                    raise ValueError("Git source path escapes the repository")
+                candidates.append(path_obj / relative)
+        else:
+            if (path_obj / ".git").exists():
+                raise RuntimeError("Unable to inspect Git checkout metadata")
+            for root, dirs, files in os.walk(str(path_obj), followlinks=False):
+                dirs[:] = [d for d in dirs if not should_ignore_dir(d) and not (Path(root) / d).is_symlink()]
+                candidates.extend(Path(root) / name for name in files)
 
     scanned: List[Path] = []
     for full_path in candidates:
@@ -578,8 +585,10 @@ class PreparedFile:
 class FileIndexer:
     """Handles parsing, chunking, embedding generation, and DB persistence for files."""
 
-    def __init__(self):
-        self.router = get_model_router()
+    def __init__(self, no_provider_limits: Optional[NoProviderRefreshLimits] = None, *, _timeout_managed=False):
+        self.no_provider_limits = no_provider_limits
+        self._timeout_managed = _timeout_managed
+        self.router = None if no_provider_limits else get_model_router()
         self.graph_client: Any = None  # Scoped GraphClient, or its batching proxy.
         self._late_provider = None
         self._late_dual_write_failures = 0
@@ -735,6 +744,15 @@ class FileIndexer:
         the repository keeps its identity, the files are read from the export
         and the run is recorded against ``source_commit``.
         """
+        if self.no_provider_limits and (clean or not expected_revision):
+            raise NoProviderRefreshRejected("Zero-provider refresh requires clean=false and an exact source revision")
+        with no_provider_calls() if self.no_provider_limits else nullcontext():
+            if self.no_provider_limits and not self._timeout_managed:
+                async with asyncio.timeout(self.no_provider_limits.timeout_s):
+                    return await self._index_repository_locked(repo_path, clean, expected_revision, source_root, source_commit)
+            return await self._index_repository_locked(repo_path, clean, expected_revision, source_root, source_commit)
+
+    async def _index_repository_locked(self, repo_path, clean, expected_revision, source_root, source_commit):
         path_obj = Path(repo_path).resolve()
         pinned = source_root is not None and bool(source_commit)
         if not path_obj.is_dir() and not pinned:
@@ -752,6 +770,8 @@ class FileIndexer:
                 # HEAD from a private snapshot instead of refusing: provenance stays
                 # exact (one commit), and the run reports what is not indexed yet.
                 self._uncommitted_changes = await asyncio.to_thread(_uncommitted_tracked_changes, path_obj)
+                if self._uncommitted_changes and self.no_provider_limits:
+                    raise NoProviderRefreshRejected("Zero-provider refresh requires an unchanged committed checkout")
                 if self._uncommitted_changes:
                     logger.warning(
                         f"FileIndexer: {self._uncommitted_changes} uncommitted change(s) in {path_obj}; "
@@ -782,6 +802,11 @@ class FileIndexer:
                 f"Refusing to index unverifiable snapshot {path_obj}; generate .brain-source-manifest.json first"
             )
 
+        if self.no_provider_limits:
+            if commit_hash != expected_revision:
+                raise NoProviderRefreshRejected("An exact complete source revision is required")
+            await self._preflight_no_provider(path_obj, src, commit_hash)
+
         async with async_session_factory() as session:
             async with session.begin():
                 await assert_current_db_fence(session)
@@ -790,6 +815,9 @@ class FileIndexer:
                 res = await session.execute(stmt)
                 repo = res.scalar_one_or_none()
 
+                if self.no_provider_limits and (repo is None or repo.last_indexed_commit != commit_hash
+                                                or repo.indexing_status != "completed"):
+                    raise NoProviderRefreshRejected("Index state changed after preflight")
                 if not repo:
                     repo = Repository(
                         name=repo_name,
@@ -799,7 +827,7 @@ class FileIndexer:
                     )
                     session.add(repo)
                     await session.flush()
-                else:
+                elif not self.no_provider_limits:
                     repo.indexing_status = "indexing"
 
                 # Create Indexing Run entry
@@ -815,15 +843,15 @@ class FileIndexer:
                     .values(status="failed", completed_at=datetime.now(timezone.utc),
                             verification={"status": "interrupted", "reason": "worker restart"}))
 
-            # Initialize GraphClient with the repository_id now that we have it
-            from brain.graph.graph_client import GraphClient
-
-            self.graph_client = GraphClient(repository_id=repo_id)
-
             started = time.monotonic()
-            heartbeat = asyncio.create_task(self._progress_heartbeat())
+            heartbeat = None
             try:
-                scanned_files = sorted(await asyncio.to_thread(_scan_repo_files, src))
+                # Run creation is already committed: constructor/import failures
+                # must persist a failed receipt just like projection failures.
+                from brain.graph.graph_client import GraphClient
+                self.graph_client = GraphClient(repository_id=repo_id)
+                heartbeat = asyncio.create_task(self._progress_heartbeat())
+                scanned_files = sorted(await asyncio.to_thread(_scan_repo_files, src, self.no_provider_limits))
                 if not await asyncio.to_thread(git_source_is_clean, src, scanned_files):
                     raise ValueError("Repository working tree must be clean and indexed files tracked")
                 self._source_content_hashes = await asyncio.to_thread(_source_content_snapshot, src, scanned_files)
@@ -862,7 +890,7 @@ class FileIndexer:
                         self._failure("file", exc, filepath.relative_to(src).as_posix())
                     await self._publish_progress()
 
-                concurrency = settings.INDEX_FILE_CONCURRENCY
+                concurrency = 1 if self.no_provider_limits else settings.INDEX_FILE_CONCURRENCY
                 # The optional local GPU provider has shared circuit/lifecycle
                 # state and is not safe for concurrent inference.
                 if settings.LATE_INTERACTION_ENABLED and settings.LATE_INTERACTION_DUAL_WRITE_ENABLED:
@@ -884,7 +912,7 @@ class FileIndexer:
                 self.progress["phase"] = "verification"
                 await self._publish_progress()
                 embeddings = await verify_embeddings(repo_id, path_obj.as_posix())
-                final_files = sorted(await asyncio.to_thread(_scan_repo_files, src))
+                final_files = sorted(await asyncio.to_thread(_scan_repo_files, src, self.no_provider_limits))
                 final_hashes = await asyncio.to_thread(_source_content_snapshot, src, final_files)
                 # A pinned export is immutable: the checkout HEAD is not its identity.
                 source_verified = ((source_commit is not None or get_git_commit_hash(path_obj) == commit_hash)
@@ -895,7 +923,11 @@ class FileIndexer:
                     graph_failed=self.file_counts["graph_failed"], graph_error=bool(self.progress["graph"]["failed"]))
                 status = ("failed" if not source_verified else projection_status if projection_status != "completed"
                           else "completed" if embeddings.get("pass") else "degraded")
+                if self.no_provider_limits and status != "completed":
+                    raise NoProviderRefreshRejected("Zero-provider refresh did not complete native verification")
                 self.verification = {
+                    **({"provider_call_budget": 0, "provider_calls": 0, "complete_file_preflight": True}
+                       if self.no_provider_limits else {}),
                     "status": status, "repository_id": repo_id, "repository_path": path_obj.as_posix(),
                     "commit_hash": commit_hash, "indexing_run_id": indexing_run_id,
                     "duration_seconds": round(time.monotonic() - started, 3),
@@ -914,6 +946,9 @@ class FileIndexer:
                 async with session.begin():
                     await assert_current_db_fence(session)
                     repo.indexing_status = status
+                    if self.no_provider_limits:
+                        # A real complete incremental run, not a metadata-only timestamp bump.
+                        repo.updated_at = datetime.now(timezone.utc)
                     if source_verified and projection_status == "completed":
                         repo.last_indexed_commit = commit_hash
                     run_obj = (await session.execute(select(IndexingRun).where(IndexingRun.id == indexing_run_id))).scalar_one()
@@ -921,7 +956,7 @@ class FileIndexer:
                     run_obj.verification = self.verification
                     run_obj.file_counts = self.file_counts
                     run_obj.completed_at = datetime.now(timezone.utc)
-                if (status == "completed" and settings.INDEX_LLM_SUMMARIES_MODE == "lazy"
+                if (not self.no_provider_limits and status == "completed" and settings.INDEX_LLM_SUMMARIES_MODE == "lazy"
                         and settings.INDEX_LLM_SUMMARIES_BACKGROUND):
                     await self._queue_summary_enrichment(repo_id, path_obj, commit_hash, indexed_paths)
                 return repo
@@ -941,17 +976,51 @@ class FileIndexer:
                                 .values(status="failed", progress=self.progress, file_counts=self.file_counts,
                                         updated_at=datetime.now(timezone.utc), completed_at=datetime.now(timezone.utc),
                                         verification=self.verification))
-                            await failure_session.execute(update(Repository).where(Repository.id == repo_id)
-                                                          .values(indexing_status="failed"))
+                            if not self.no_provider_limits:
+                                await failure_session.execute(update(Repository).where(Repository.id == repo_id)
+                                                              .values(indexing_status="failed"))
                 except Exception as persistence_error:
                     logger.warning("Could not persist interrupted indexing run: {}", type(persistence_error).__name__)
                 raise
             finally:
-                heartbeat.cancel()
-                await asyncio.gather(heartbeat, return_exceptions=True)
+                if heartbeat is not None:
+                    heartbeat.cancel()
+                    await asyncio.gather(heartbeat, return_exceptions=True)
                 if self._late_provider is not None:
                     await self._late_provider.aclose()
                     self._late_provider = None
+
+    async def _preflight_no_provider(self, identity: Path, source: Path, revision: str) -> None:
+        limits = self.no_provider_limits
+        files = await asyncio.to_thread(_scan_repo_files, source, self.no_provider_limits)
+        if len(files) > limits.max_files or sum(p.stat().st_size for p in files) > limits.max_source_bytes:
+            raise NoProviderRefreshRejected("Zero-provider source exceeds resource limits")
+        if not await asyncio.to_thread(git_source_is_clean, source, files):
+            raise NoProviderRefreshRejected("Source is not a clean committed revision")
+        eligible = {}
+        for path in files:
+            relative = path.relative_to(source).as_posix()
+            if should_exclude_from_retrieval(relative) or path.stat().st_size > 10 * 1024 * 1024:
+                continue
+            try:
+                content = await asyncio.to_thread(_read_text_file, path)
+            except ValueError:  # Same binary exclusion as native index_file.
+                continue
+            eligible[relative] = (calculate_file_hash(content), bool(content.strip()))
+        async with async_session_factory() as session:
+            repo = (await session.execute(select(Repository).where(Repository.path == identity.as_posix()))).scalar_one_or_none()
+            if repo is None or repo.last_indexed_commit != revision or repo.indexing_status != "completed":
+                raise NoProviderRefreshRejected("An existing complete index at the exact source revision is required")
+            stmt = (select(File.path.label("path"), File.hash.label("hash"),
+                           func.count(FileChunk.id).label("chunks"),
+                           func.max(func.length(FileChunk.content)).label("longest"))
+                    .outerjoin(FileChunk, FileChunk.file_id == File.id)
+                    .where(File.repository_id == repo.id).group_by(File.id, File.path, File.hash))
+            rows = [dict(row._mapping) for row in (await session.execute(stmt)).all()]
+            validate_inventory(eligible, rows, MAX_CHUNK_CHARS)
+            repo_id = repo.id
+        if not (await verify_embeddings(repo_id, identity.as_posix())).get("pass"):
+            raise NoProviderRefreshRejected("Embedding coverage/provenance requires repair; zero-call refresh denied")
 
     async def _remove_stale_files(self, repo_id: int, scanned_rel_paths: set[str], repo_name: str) -> None:
         """Delete indexed files that no longer exist in the repository tree."""
@@ -1185,6 +1254,9 @@ class FileIndexer:
         self, content: str, ext: str, rel_path: str, file_type: str, knowledge_status: str,
     ) -> PreparedFile:
         """Prepare structural/vector projection without holding a DB transaction."""
+        if self.no_provider_limits:
+            # A file may change after preflight. Fail before any provider/client access.
+            raise ProviderBudgetExceeded("A file requires provider preparation in a zero-call refresh")
         symbols = extract_symbols_from_content(content, ext)
         chunks = chunk_file_content(content, symbols)
         self.progress["chunks"]["discovered"] += len(chunks)
