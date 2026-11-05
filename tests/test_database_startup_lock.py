@@ -18,6 +18,88 @@ from brain.database.migrations import SCHEMA_MIGRATION_LOCK_ID
 CI_COORDINATION_TIMEOUT = 15
 
 
+async def _wait_for_startup_phase(entered, startup, *, phase):
+    """Observe the owner as well as its signal; never hide an early owner error."""
+    signal = asyncio.create_task(entered.wait())
+    try:
+        done, _ = await asyncio.wait(
+            (signal, startup), timeout=CI_COORDINATION_TIMEOUT,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if startup in done:
+            await startup  # Propagate the original exception, including cancellation.
+            raise AssertionError(f"Startup completed before reaching {phase}")
+        if signal in done:
+            return
+        stack = [frame.f_code.co_name for frame in startup.get_stack()]
+        raise TimeoutError(
+            f"Startup did not reach {phase} within {CI_COORDINATION_TIMEOUT}s; "
+            f"owner_done={startup.done()}; owner_stack={stack}; "
+            f"db_initialized={session_module._db_initialized}; "
+            f"graph_schema_ready={session_module._graph_schema_ready}"
+        )
+    finally:
+        signal.cancel()
+        await asyncio.gather(signal, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("original", [RuntimeError("startup failed before migration"), asyncio.CancelledError()])
+async def test_startup_phase_wait_propagates_original_owner_exception(original):
+
+    async def fail():
+        raise original
+
+    owner = asyncio.create_task(fail())
+    before = asyncio.all_tasks()
+    with pytest.raises(type(original)) as caught:
+        await _wait_for_startup_phase(asyncio.Event(), owner, phase="migration")
+    assert caught.value is original
+    assert asyncio.all_tasks() == before - {owner}
+
+
+@pytest.mark.asyncio
+async def test_startup_phase_wait_rejects_premature_owner_success():
+    async def finish():
+        return
+
+    owner = asyncio.create_task(finish())
+    before = asyncio.all_tasks()
+    with pytest.raises(AssertionError, match="completed before reaching migration"):
+        await _wait_for_startup_phase(asyncio.Event(), owner, phase="migration")
+    assert asyncio.all_tasks() == before - {owner}
+
+
+@pytest.mark.asyncio
+async def test_startup_phase_wait_accepts_signal_without_cancelling_owner():
+    entered = asyncio.Event()
+    owner = asyncio.create_task(asyncio.Event().wait())
+    before = asyncio.all_tasks()
+    entered.set()
+    try:
+        await _wait_for_startup_phase(entered, owner, phase="migration")
+        assert not owner.done()
+        assert asyncio.all_tasks() == before
+    finally:
+        owner.cancel()
+        await asyncio.gather(owner, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_startup_phase_wait_timeout_reports_phase_and_cleans_only_its_signal(monkeypatch):
+    monkeypatch.setitem(_wait_for_startup_phase.__globals__, "CI_COORDINATION_TIMEOUT", .01)
+    owner = asyncio.create_task(asyncio.Event().wait())
+    before = asyncio.all_tasks()
+    try:
+        with pytest.raises(TimeoutError, match="did not reach migration.*owner_stack=.*db_initialized="):
+            await _wait_for_startup_phase(asyncio.Event(), owner, phase="migration")
+        assert not owner.done()
+        assert asyncio.all_tasks() == before
+    finally:
+        owner.cancel()
+        await asyncio.gather(owner, return_exceptions=True)
+
+
 @pytest_asyncio.fixture
 async def startup_database(monkeypatch):
     url = session_module.async_engine.url
@@ -137,7 +219,7 @@ async def test_full_schema_owner_loss_rolls_back_before_next_startup(
     first = asyncio.create_task(session_module.init_db())
     second = None
     try:
-        await asyncio.wait_for(entered.wait(), CI_COORDINATION_TIMEOUT)
+        await _wait_for_startup_phase(entered, first, phase="full-schema migration entry")
         async with startup_database.connect() as observer:
             owner_pid = await observer.scalar(text(
                 "SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted AND objid=:key "
