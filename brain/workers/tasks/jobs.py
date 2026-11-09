@@ -19,6 +19,8 @@ from brain.database.models import Repository, IndexingRun
 from brain.embeddings.backfill import backfill_embeddings
 from brain.embeddings.integrity import collect_embedding_inventory, verify_embeddings
 from brain.indexers.file_indexer import FileIndexer
+from brain.indexers.no_provider_refresh import NoProviderRefreshLimits, NoProviderRefreshRejected
+from brain.llm.call_budget import no_provider_calls, ProviderBudgetExceeded
 from brain.indexers.repo_indexer import get_git_commit_hash
 from brain.indexers.reliability import repository_index_lock
 from brain.indexers.source_mirror import mirror_path, resolve_commit
@@ -48,13 +50,44 @@ async def run_enrich_summaries(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def run_reindex(params: Dict[str, Any]) -> Dict[str, Any]:
+    if params.get("provider_call_budget") is None:
+        return await _run_reindex(params)
+    if (type(params["provider_call_budget"]) is not int or params["provider_call_budget"] != 0
+            or params.get("clean") or params.get("benchmark_after")
+            or not params.get("source_revision") or not params.get("repo_path")):
+        raise NoProviderRefreshRejected("Only a pinned incremental zero-provider refresh is supported")
+    limits = NoProviderRefreshLimits(params.get("max_files", 5000),
+                                    params.get("max_source_bytes", 128 * 1024 * 1024),
+                                    params.get("timeout_s", 300))
+    try:
+        with no_provider_calls():
+            async with asyncio.timeout(limits.timeout_s):
+                return await _run_reindex(params, limits)
+    except (NoProviderRefreshRejected, ProviderBudgetExceeded, TimeoutError) as exc:
+        # A changed source/budget/coverage gap cannot be fixed by automatic retries.
+        raise PermanentJobError("Zero-provider refresh denied", result={
+            "status": "failed", "provider_call_budget": 0, "provider_calls": 0,
+            "reason": str(exc) or "Deadline exceeded", "error_type": type(exc).__name__,
+        }) from exc
+
+
+async def _run_reindex(params: Dict[str, Any], no_provider_limits=None) -> Dict[str, Any]:
     repo_path = resolve_repo_path(params.get("repo_path"))
     clean = bool(params.get("clean", False))
-    await init_db()
-    indexer = FileIndexer()
+    if not no_provider_limits:
+        await init_db()
+    # Exactly one timeout owns cancellation; nested timers can interrupt the
+    # failed-run receipt transaction milliseconds after the first cancellation.
+    indexer = (FileIndexer(no_provider_limits=no_provider_limits, _timeout_managed=True)
+               if no_provider_limits else FileIndexer())
     expected_revision = str(params.get("source_revision") or "").strip()
     plan: Optional[_SourcePlan] = None
-    if expected_revision:
+    if no_provider_limits:
+        # No fetch, checkout/reset or bootstrap DDL in zero-provider maintenance.
+        plan = await _recorded_mirror_plan(repo_path)
+        if plan is not None and plan.commit != expected_revision:
+            raise NoProviderRefreshRejected("Recorded mirror does not contain the exact requested revision")
+    elif expected_revision:
         plan = await _prepare_source_revision(repo_path, expected_revision)
     else:
         plan = await _recorded_mirror_plan(repo_path)
@@ -63,7 +96,8 @@ async def run_reindex(params: Dict[str, Any]) -> Dict[str, Any]:
         # Checkout mode keeps the exact call it always made.
         repo = await indexer.index_repository(repo_path, clean=clean, expected_revision=expected_revision)
     else:
-        repo = await _index_with_plan(indexer, repo_path, plan, clean=clean, expected_revision=expected_revision)
+        repo = await _index_with_plan(indexer, repo_path, plan, clean=clean, expected_revision=expected_revision,
+                                     **({"no_provider_limits": no_provider_limits} if no_provider_limits else {}))
     actual_revision = str(repo.last_indexed_commit or "").strip()
     if expected_revision and not revision_matches(expected_revision, actual_revision):
         raise PermanentJobError(
@@ -87,11 +121,13 @@ async def run_reindex(params: Dict[str, Any]) -> Dict[str, Any]:
     }
     if source_sync is not None:
         result["source_sync"] = source_sync
+    if no_provider_limits and result.get("status") != "completed":
+        raise NoProviderRefreshRejected("Zero-provider refresh failed native verification; repair is not permitted")
     if result.get("status") == "failed":
         raise PermanentJobError("Repository projection or source verification failed", result=result)
     await _record_source_mode(repo.id, plan)
     counts = result.get("counts") or {}
-    if (result.get("status") == "degraded" and not (counts.get("files") or {}).get("failed")
+    if (not no_provider_limits and result.get("status") == "degraded" and not (counts.get("files") or {}).get("failed")
             and not (counts.get("graph") or {}).get("failed")):
         repair = {"repo_path": repo.path, "repository_id": repo.id,
                   "source_revision": actual_revision, "indexing_run_id": indexer.indexing_run_id,
