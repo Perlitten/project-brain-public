@@ -107,8 +107,8 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 | opentelemetry-api | 1.45.0 | Apache-2.0 |
 | pgvector | 0.5.0 | MIT |
 | pycparser | 3.0 | BSD-3-Clause |
-| pydantic | 2.14.1 | MIT |
-| pydantic-core | 2.50.1 | MIT |
+| pydantic | 2.14.3 | MIT |
+| pydantic-core | 2.50.4 | MIT |
 | pydantic-settings | 2.15.0 | MIT |
 | pygments | 2.21.0 | BSD-2-Clause |
 | pyjwt[crypto] | 2.15.1 | MIT |
@@ -170,7 +170,7 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 
 | Package | Version | License |
 |---|---|---|
-| next | 16.4.3 | MIT |
+| next | 16.4.5 | MIT |
 | react | 19.3.1 | MIT |
 | react-dom | 19.3.1 | MIT |
 | typescript | 7.0.2 | Apache-2.0 |
