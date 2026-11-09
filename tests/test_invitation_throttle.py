@@ -18,6 +18,8 @@ from apps.api.routers import team_invitations
 from brain.config.settings import settings
 from brain.team import invitations
 
+SHARED_STORE_DEADLINE_S = 10.0
+
 
 class Clock:
     def __init__(self, now: float = 1_000_000.0) -> None:
@@ -86,8 +88,8 @@ async def test_two_processes_share_one_redis_window(shared_store):
     new_client, prefix = shared_store
     clock = Clock()
     # Two limiter objects with their own connections, as two API processes would have.
-    first = RedisWindow(new_client(), clock=clock, prefix=prefix)
-    second = RedisWindow(new_client(), clock=clock, prefix=prefix)
+    first = RedisWindow(new_client(), clock=clock, prefix=prefix, deadline_s=SHARED_STORE_DEADLINE_S)
+    second = RedisWindow(new_client(), clock=clock, prefix=prefix, deadline_s=SHARED_STORE_DEADLINE_S)
     assert await first.hit("10.0.0.1", limit=3, window_s=300) is None
     clock.now += 5
     assert await second.hit("10.0.0.1", limit=3, window_s=300) is None
@@ -106,7 +108,10 @@ async def test_two_processes_share_one_redis_window(shared_store):
 @pytest.mark.asyncio
 async def test_concurrent_attempts_across_processes_never_exceed_the_limit(shared_store):
     new_client, prefix = shared_store
-    limiters = [RedisWindow(new_client(), prefix=prefix) for _ in range(4)]
+    limiters = [
+        RedisWindow(new_client(), prefix=prefix, deadline_s=SHARED_STORE_DEADLINE_S)
+        for _ in range(4)
+    ]
     results = await asyncio.gather(*(limiters[i % 4].hit("10.0.0.9", limit=5, window_s=300) for i in range(20)))
     assert sum(result is None for result in results) == 5
 
@@ -169,7 +174,10 @@ async def test_two_api_apps_share_the_accept_limit_and_answer_429_with_retry_aft
 
     monkeypatch.setattr(team_invitations, "async_session_factory", no_database)
     monkeypatch.setattr(team_invitations.invitations, "accept_invitation", reject)
-    apps = [_accept_app(RedisWindow(new_client(), prefix=prefix)) for _ in range(2)]
+    apps = [
+        _accept_app(RedisWindow(new_client(), prefix=prefix, deadline_s=SHARED_STORE_DEADLINE_S))
+        for _ in range(2)
+    ]
     clients = [httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") for app in apps]
     try:
         body = {"token": "pbi_" + "y" * 43}
