@@ -24,7 +24,7 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "typer",
-    "pydantic>=2.14.2",
+    "pydantic>=2.14.3",
     "pydantic-settings",
     # asyncio extras pull in greenlet — required by brain.database.session,
     # which is imported by the CLI entrypoint.
