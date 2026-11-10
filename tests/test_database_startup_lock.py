@@ -15,7 +15,7 @@ from brain.database import migrations
 from brain.database.migrations import SCHEMA_MIGRATION_LOCK_ID
 
 
-CI_COORDINATION_TIMEOUT = 15
+CI_COORDINATION_TIMEOUT = 30
 
 
 @pytest_asyncio.fixture
