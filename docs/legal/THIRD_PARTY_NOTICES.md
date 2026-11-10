@@ -121,7 +121,7 @@ the [Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 | rich | 15.0.0 | MIT |
 | rpds-py | 2026.6.3 | MIT |
 | shellingham | 1.5.4 | ISC |
-| sqlalchemy[asyncio] | 2.1.6 | MIT |
+| sqlalchemy[asyncio] | 2.1.8 | MIT |
 | sse-starlette | 3.5.0 | BSD-3-Clause |
 | starlette | 1.7.0 | BSD-3-Clause |
 | typer[all] | 0.27.2 | MIT |
