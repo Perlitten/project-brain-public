@@ -484,6 +484,20 @@ execution or automatic rollback of external side effects.
 
 ## 12. Backups
 
+`deploy/server_up.sh` preserves all existing backup directories. A newer dump
+or a count/age threshold does not prove an older snapshot is safe to remove;
+it may be the last verified restore point or a release rollback preimage.
+Deployment performs no automatic backup rotation.
+
+For an explicit maintenance cleanup, inventory each candidate's size, owner,
+contents, dependencies, last successful verification and available independent
+replacement. Keep unknown candidates and the last verified recovery point.
+Verify checksums and a full isolated restore of retained replacements before
+removing valuable snapshots. Preserve secret-containing preimages outside Git,
+record the exact selected paths and recovery procedure, and use the existing
+deployment/maintenance locks. Failed backup attempts never replace successful
+verification evidence. A same-server copy does not protect against server loss.
+
 At minimum, back up:
 
 - `.env`

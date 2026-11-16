@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from brain.llm.call_budget import require_provider_budget
 
 from brain.llm.presets import (
     normalize_provider_name,
@@ -38,6 +39,7 @@ def _native_llm(name: str, model: Optional[str]) -> Optional[LLMProvider]:
 
 
 def create_llm_provider(provider_name: str, model: Optional[str] = None) -> LLMProvider:
+    require_provider_budget()
     name = normalize_provider_name(provider_name)
     native = _native_llm(name, model)
     if native is not None:
@@ -60,6 +62,7 @@ def create_llm_provider(provider_name: str, model: Optional[str] = None) -> LLMP
 
 
 def create_embedding_provider(provider_name: str) -> EmbeddingProvider:
+    require_provider_budget()
     name = normalize_provider_name(provider_name)
     if name == "local":
         from brain.llm.providers.local_embedding import LocalEmbeddingProvider
@@ -94,6 +97,7 @@ def create_embedding_provider(provider_name: str) -> EmbeddingProvider:
 
 
 def create_summarizer_provider(provider_name: str, model: Optional[str] = None) -> SummarizerProvider:
+    require_provider_budget()
     name = normalize_provider_name(provider_name)
     if name == "mock":
         from brain.llm.providers.mock_provider import MockSummarizerProvider

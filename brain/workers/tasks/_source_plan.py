@@ -196,6 +196,7 @@ async def _index_with_plan(
     *,
     clean: bool,
     expected_revision: str = "",
+    no_provider_limits=None,
 ) -> Any:
     """Index the checkout, or a snapshot of the planned mirror commit exported to a temporary directory."""
     if plan is None or plan.mirror is None or not plan.commit:
@@ -204,7 +205,11 @@ async def _index_with_plan(
         return await indexer.index_repository(repo_path, clean=clean)
     with tempfile.TemporaryDirectory(prefix="brain-mirror-") as tmp:
         snapshot = Path(tmp)
-        await asyncio.to_thread(export_commit, plan.mirror, plan.commit, snapshot)
+        if no_provider_limits:
+            from brain.indexers.no_provider_refresh import export_mirror_bounded
+            await asyncio.to_thread(export_mirror_bounded, plan.mirror, plan.commit, snapshot, no_provider_limits)
+        else:
+            await asyncio.to_thread(export_commit, plan.mirror, plan.commit, snapshot)
         return await indexer.index_repository(
             repo_path,
             clean=clean,

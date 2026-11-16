@@ -75,11 +75,14 @@ async def enqueue_reindex(body: ReindexJobRequest | None = None, principal: Reso
             params["source_revision"] = body.source_revision
         params["verify_after"] = body.verify_after
         params["benchmark_after"] = body.benchmark_after
+        if body.provider_call_budget == 0:
+            params.update(provider_call_budget=0, max_files=body.max_files,
+                          max_source_bytes=body.max_source_bytes, timeout_s=body.timeout_s)
     job_id = await _queue("reindex").enqueue(
         "reindex",
         params,
         idempotency_key=body.idempotency_key if body else None,
-        max_attempts=3,
+        max_attempts=1 if body and body.provider_call_budget == 0 else 3,
         initiator=_initiator(principal),
     )
     return await _queued(job_id, principal, "reindex", getattr(body, "repo_path", None))
