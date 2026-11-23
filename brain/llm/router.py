@@ -3,6 +3,7 @@ from functools import lru_cache
 from typing import Literal, Optional
 
 from brain.config.settings import settings
+from brain.llm.call_budget import require_provider_budget
 from brain.llm.factory import create_llm_provider, create_summarizer_provider
 from brain.llm.presets import (
     PRESETS,
@@ -54,6 +55,7 @@ class ModelRouter:
         This is intentionally separate from task routing: an endpoint may opt
         into a fast model without silently changing synthesis for every caller.
         """
+        require_provider_budget()
         selected = str(model or "").strip()
         if not selected:
             return self.llm(TaskKind.SYNTHESIS)
@@ -63,6 +65,7 @@ class ModelRouter:
         return self._llm_cache[key]
 
     def llm(self, task: TaskKind) -> LLMProvider:
+        require_provider_budget()
         model = self.task_model(task)
         if self._provider_name == "mock":
             key = ("mock", "__singleton__")
@@ -73,6 +76,7 @@ class ModelRouter:
         return self._llm_cache[key]
 
     def embedding(self, input_type: Literal["query", "passage"]) -> EmbeddingProvider:
+        require_provider_budget()
         del input_type  # callers pass input_type to embed(); provider is shared
         if self._embedding is None:
             from brain.llm import get_embedding_provider
@@ -81,6 +85,7 @@ class ModelRouter:
         return self._embedding
 
     def summarizer(self) -> SummarizerProvider:
+        require_provider_budget()
         if self._summarizer is None:
             model = self.task_model(TaskKind.SUMMARIZATION)
             self._summarizer = create_summarizer_provider(self._provider_name, model=model or None)

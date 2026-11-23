@@ -23,6 +23,19 @@ class EmbeddingConfig:
 
 
 def get_embedding_config(provider_name: Optional[str] = None) -> EmbeddingConfig:
+    from brain.llm.call_budget import provider_calls_forbidden
+    if provider_calls_forbidden():
+        # Resolve configured provenance without constructing a client/model.
+        name = resolve_provider_name(provider_name)
+        if name == "mock":
+            return EmbeddingConfig(name, "mock-deterministic", resolve_embedding_dimension(name, strict=True))
+        from brain.llm.presets import is_openai_compatible, resolve_embedding_endpoint
+        if not is_openai_compatible(name):
+            raise ValueError("No client-free embedding metadata resolver for this provider")
+        endpoint = resolve_embedding_endpoint(name)
+        if not endpoint.model:
+            raise ValueError("Embedding model is not configured")
+        return EmbeddingConfig(name, endpoint.model, resolve_embedding_dimension(name, strict=True))
     from brain.llm import get_embedding_provider
 
     name = resolve_provider_name(provider_name)

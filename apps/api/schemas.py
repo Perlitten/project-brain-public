@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # The freshness envelope is defined transport-independently in brain/ and
 # re-exported here as the API's response contract for the ``freshness`` block.
@@ -151,12 +151,32 @@ class OriginFreshness(BaseModel):
 
 
 class ReindexJobRequest(BaseModel):
+    # Only zero is supported: no unbounded positive paid-call budget can be inferred.
+    provider_call_budget: Optional[Literal[0]] = None
+    max_files: int = Field(default=5000, ge=1, le=10000, strict=True)
+    max_source_bytes: int = Field(default=128 * 1024 * 1024, ge=1, le=256 * 1024 * 1024, strict=True)
+    timeout_s: int = Field(default=300, ge=1, le=600, strict=True)
     repo_path: Optional[str] = None
     clean: bool = False
     source_revision: Optional[str] = Field(default=None, max_length=128)
     verify_after: bool = True
     benchmark_after: bool = False
     idempotency_key: Optional[str] = Field(default=None, max_length=255)
+
+    @field_validator("provider_call_budget", mode="before")
+    @classmethod
+    def only_integer_zero_budget(cls, value):
+        if value is not None and (type(value) is not int or value != 0):
+            raise ValueError("Only an integer zero-provider budget is supported")
+        return value
+
+    @model_validator(mode="after")
+    def zero_budget_requires_pinned_incremental_run(self):
+        if self.provider_call_budget == 0 and (
+            self.clean or self.benchmark_after or not self.source_revision or not self.repo_path
+        ):
+            raise ValueError("Zero-provider refresh requires a repository, exact revision, clean=false and no benchmark")
+        return self
 
 
 class GitProbeRequest(BaseModel):
